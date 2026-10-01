@@ -1,0 +1,13 @@
+"""Business modules.
+
+Each module lives in `app/modules/<module>/` with four layers (architecture spine, Design Paradigm):
+
+- `api/`          HTTP adapters; may depend on its own `application`.
+- `application/`  commands and queries; `public.py` is the only cross-module entry point.
+- `domain/`       entities, state machines, rules and ports; depends on nothing outside itself.
+- `adapters/`     DB repositories and external systems; implements its own `domain` ports.
+
+A module never imports another module's `domain` or `adapters` (AD-2), and never imports
+`langgraph` (AD-5). Both rules are enforced by `tests/test_architecture.py`.
+No modules exist yet; they are added from Story 1.4 onwards.
+"""
