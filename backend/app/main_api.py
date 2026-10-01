@@ -11,6 +11,8 @@ from typing import Literal
 from fastapi import APIRouter, FastAPI, Request, Response
 from pydantic import BaseModel
 
+from app.modules.identity.api.routes import router as identity_router
+from app.modules.identity.application.public import TokenValidator
 from app.platform.config import Settings, get_settings
 from app.platform.db import create_engine, ping
 from app.platform.errors import (
@@ -74,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.token_validator = TokenValidator.from_settings(settings)
     install_error_handlers(app)
 
     @app.middleware("http")
@@ -100,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(_health_router(), prefix=API_PREFIX)
+    app.include_router(identity_router, prefix=API_PREFIX)
     return app
 
 

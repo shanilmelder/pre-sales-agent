@@ -5,6 +5,7 @@ Body: `{type, title, status, code, detail, instance}`. `code` is stable and mach
 
 from collections.abc import Mapping
 from http import HTTPStatus
+from types import MappingProxyType
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -53,6 +54,7 @@ class ProblemError(Exception):
     status: int = 500
     code: str = "internal_error"
     title: str | None = None
+    headers: Mapping[str, str] | None = None
 
     def __init__(self, detail: str | None = None) -> None:
         super().__init__(detail or self.code)
@@ -63,6 +65,39 @@ class DbUnavailableError(ProblemError):
     status = 503
     code = "db_unavailable"
     title = "Database unavailable"
+
+
+class AuthenticationError(ProblemError):
+    """Base for 401s: the request carries no valid bearer token. Always sends
+    `WWW-Authenticate: Bearer` (RFC 6750). Details never echo the token or its claims."""
+
+    status = 401
+    code = "unauthenticated"
+    title = "Unauthenticated"
+    headers: Mapping[str, str] | None = MappingProxyType(
+        {"WWW-Authenticate": 'Bearer error="invalid_token"'}
+    )
+
+
+class TokenMissingError(AuthenticationError):
+    code = "token_missing"
+    headers = MappingProxyType({"WWW-Authenticate": "Bearer"})
+
+
+class TokenExpiredError(AuthenticationError):
+    code = "token_expired"
+
+
+class TokenInvalidError(AuthenticationError):
+    code = "token_invalid"
+
+
+class AuthUnavailableError(ProblemError):
+    """The identity provider's signing keys (JWKS) could not be fetched."""
+
+    status = 503
+    code = "auth_unavailable"
+    title = "Authentication unavailable"
 
 
 class ForbiddenError(ProblemError):
@@ -113,7 +148,9 @@ def problem_response(
 
 async def _problem_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ProblemError)
-    return problem_response(request, exc.status, exc.code, title=exc.title, detail=exc.detail)
+    return problem_response(
+        request, exc.status, exc.code, title=exc.title, detail=exc.detail, headers=exc.headers
+    )
 
 
 async def _http_error(request: Request, exc: Exception) -> JSONResponse:

@@ -103,6 +103,16 @@ jobs:
           body=$(curl -fsS http://localhost:3000/healthz)
           echo "$body"
           echo "$body" | jq -e --arg v "ci-${GITHUB_SHA::12}" '.status == "ok" and .version == $v'
+      - name: Web sends visitors without a session to sign-in
+        run: |
+          headers=$(curl -sS -o /dev/null -D - http://localhost:3000/)
+          echo "$headers"
+          echo "$headers" | grep -E '^HTTP/[0-9.]+ 307'
+          echo "$headers" | grep -iE '^location: (http://localhost:3000)?/auth/login\?returnTo=%2F\s*$'
+          headers=$(curl -sS -o /dev/null -D - 'http://localhost:3000/some/page?x=1')
+          echo "$headers"
+          echo "$headers" | grep -E '^HTTP/[0-9.]+ 307'
+          echo "$headers" | grep -iE '^location: .*/auth/login\?returnTo=%2Fsome%2Fpage%3Fx%3D1\s*$'
       - name: Migrations apply against compose Postgres
         # The api runs as psa_app; only this invocation gets the owner URL.
         run: |
@@ -110,6 +120,12 @@ jobs:
           docker compose --profile local exec -T \
             -e PSA_MIGRATIONS_DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
             api alembic upgrade head
+      - name: API rejects requests without a token (401 token_missing)
+        run: |
+          status=$(curl -sS -o body.json -w '%{http_code}' http://localhost:8000/api/v1/me)
+          cat body.json; echo
+          test "$status" = 401
+          jq -e '.code == "token_missing"' body.json
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

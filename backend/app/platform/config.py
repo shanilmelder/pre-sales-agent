@@ -24,6 +24,22 @@ class Settings(BaseSettings):
         ),
     )
     db_connect_timeout_s: float = Field(default=2.0, gt=0)
+    auth0_domain: str = Field(
+        default="",
+        description=(
+            "Auth0 tenant domain, e.g. `example.eu.auth0.com`. Tokens must be issued by "
+            "`https://{auth0_domain}/`; signing keys come from its JWKS endpoint."
+        ),
+    )
+    auth0_audience: str = Field(
+        default="", description="The Auth0 API identifier access tokens must carry in `aud`."
+    )
+    auth0_jwks_cache_lifespan_s: float = Field(
+        default=300, gt=0, description="How long fetched JWKS signing keys are cached."
+    )
+    auth0_jwks_timeout_s: float = Field(
+        default=5, gt=0, description="Timeout for one JWKS fetch from Auth0."
+    )
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], BeforeValidator(str.upper)
     ] = "INFO"
