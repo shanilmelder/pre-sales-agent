@@ -32,7 +32,9 @@ jobs:
           --health-cmd "pg_isready -U psa -d psa"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      PSA_DATABASE_URL: postgresql+psycopg://psa:psa-ci@localhost:5432/psa
+      # Tests run as the least-privileged app role; Alembic runs as the owner.
+      PSA_DATABASE_URL: postgresql+psycopg://psa_app:psa-app-ci@localhost:5432/psa
+      PSA_MIGRATIONS_DATABASE_URL: postgresql+psycopg://psa:psa-ci@localhost:5432/psa
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -45,9 +47,22 @@ jobs:
         run: uv run mypy app
       - name: architecture contracts (import-linter)
         run: uv run lint-imports
-      - name: migrations apply
-        run: uv run alembic upgrade head
-      - name: pytest (includes architecture tests and DB-up health test)
+      - name: create app role (same script the compose postgres runs at init)
+        env:
+          PGHOST: localhost
+          PGPASSWORD: psa-ci
+          POSTGRES_USER: psa
+          POSTGRES_DB: psa
+          PSA_APP_DB_PASSWORD: psa-app-ci
+        run: sh ../ops/postgres/init/10-app-role.sh
+      - name: migrations apply, roll back and re-apply
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade 0001_baseline
+          uv run alembic upgrade head
+      - name: models match migrations (no drift)
+        run: uv run alembic check
+      - name: pytest (includes architecture tests and DB-backed tests as psa_app)
         run: uv run pytest
 
   web:
@@ -89,7 +104,12 @@ jobs:
           echo "$body"
           echo "$body" | jq -e --arg v "ci-${GITHUB_SHA::12}" '.status == "ok" and .version == $v'
       - name: Migrations apply against compose Postgres
-        run: docker compose --profile local exec -T api alembic upgrade head
+        # The api runs as psa_app; only this invocation gets the owner URL.
+        run: |
+          set -a; . ./.env; set +a
+          docker compose --profile local exec -T \
+            -e PSA_MIGRATIONS_DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
+            api alembic upgrade head
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.platform.logging import get_logger
@@ -28,6 +29,7 @@ _HTTP_CODES: dict[int, str] = {
     412: "precondition_failed",
     415: "unsupported_media_type",
     422: "validation_error",
+    428: "precondition_required",
     429: "rate_limited",
     500: "internal_error",
     503: "service_unavailable",
@@ -61,6 +63,30 @@ class DbUnavailableError(ProblemError):
     status = 503
     code = "db_unavailable"
     title = "Database unavailable"
+
+
+class ForbiddenError(ProblemError):
+    """`identity.authorize` denied the action (AD-15)."""
+
+    status = 403
+    code = "forbidden"
+    title = "Forbidden"
+
+
+class IfMatchRequiredError(ProblemError):
+    """A write arrived without an `If-Match` header (AD-11)."""
+
+    status = 428
+    code = "if_match_required"
+    title = "If-Match required"
+
+
+class RowVersionMismatchError(ProblemError):
+    """The row changed since the client read it (AD-11)."""
+
+    status = 412
+    code = "row_version_mismatch"
+    title = "Row version mismatch"
 
 
 def problem_response(
@@ -107,6 +133,19 @@ async def _validation_error(request: Request, exc: Exception) -> JSONResponse:
     return problem_response(request, 422, "validation_error", detail=detail)
 
 
+async def _stale_data_error(request: Request, exc: Exception) -> JSONResponse:
+    """A concurrent update won the race: SQLAlchemy's versioned UPDATE matched no row."""
+    assert isinstance(exc, StaleDataError)
+    _log.info("db.stale_data", extra={"path": request.url.path})
+    return problem_response(
+        request,
+        RowVersionMismatchError.status,
+        RowVersionMismatchError.code,
+        title=RowVersionMismatchError.title,
+        detail="The resource was changed by someone else. Reload it and try again.",
+    )
+
+
 async def unhandled_error_response(request: Request, exc: Exception) -> JSONResponse:
     _log.error("request.unhandled_error", exc_info=exc, extra={"path": request.url.path})
     return problem_response(request, 500, "internal_error")
@@ -116,4 +155,5 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ProblemError, _problem_error)
     app.add_exception_handler(StarletteHTTPException, _http_error)
     app.add_exception_handler(RequestValidationError, _validation_error)
+    app.add_exception_handler(StaleDataError, _stale_data_error)
     app.add_exception_handler(Exception, unhandled_error_response)

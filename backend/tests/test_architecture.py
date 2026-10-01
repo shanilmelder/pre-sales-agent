@@ -4,7 +4,10 @@
 2. Nothing outside a business module (other modules, orchestration, agents, platform, entry
    points) imports that module's `domain` or `adapters` package.
 
-Both rules are checked by an AST scan of `app/`. Rule 1 is also an import-linter contract
+3. Nothing outside `app/platform/uow.py` calls `.commit(` (AD-25: only the edge commits,
+   through the Unit of Work).
+
+All rules are checked by an AST scan of `app/`. Rule 1 is also an import-linter contract
 (`[tool.importlinter]` in pyproject.toml), which this test runs as well.
 """
 
@@ -17,6 +20,7 @@ import pytest
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
 PRIVATE_LAYERS = {"domain", "adapters"}
+COMMIT_ALLOWED = ("platform", "uow")
 _LINT_IMPORTS = (
     "from importlinter.cli import lint_imports; raise SystemExit(lint_imports(no_cache=True))"
 )
@@ -51,12 +55,28 @@ def _imports(path: Path, root: Path) -> list[tuple[int, str]]:
     return found
 
 
+def _commit_calls(path: Path) -> list[int]:
+    """Line numbers of `<anything>.commit(...)` calls in a file."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "commit"
+    ]
+
+
 def find_violations(root: Path) -> list[str]:
     """Return human-readable boundary violations for the package rooted at `root`."""
     pkg = root.name
     violations: set[str] = set()
     for path in sorted(root.rglob("*.py")):
         parts = _module_name(path, root).split(".")
+        if tuple(parts[1:]) != COMMIT_ALLOWED:
+            for lineno in _commit_calls(path):
+                where = f"{path.relative_to(root.parent).as_posix()}:{lineno}"
+                violations.add(f"{where} calls .commit( outside platform/uow.py")
         in_orchestration = parts[:2] == [pkg, "orchestration"]
         own_module = parts[2] if parts[:2] == [pkg, "modules"] and len(parts) > 2 else None
         for lineno, target in _imports(path, root):
@@ -127,6 +147,7 @@ def test_checker_allows_legal_imports(fake_app: Path) -> None:
     _write(fake_app, "modules/a/application/svc.py", "from app.modules.b.application import x\n")
     _write(fake_app, "modules/a/adapters/repo.py", "from ..domain import thing\n")
     _write(fake_app, "modules/a/application/own.py", "from app.modules.a.domain import thing\n")
+    _write(fake_app, "platform/uow.py", "async def f(s):\n    await s.commit()\n")
     assert find_violations(fake_app) == []
 
 
@@ -143,6 +164,9 @@ def test_checker_allows_legal_imports(fake_app: Path) -> None:
         ("orchestration/graph.py", "from app.modules.b.domain import model\n"),
         ("agents/x/agent.py", "import app.modules.b.adapters\n"),
         ("main_api.py", "from app.modules.b import adapters\n"),
+        ("modules/a/application/svc.py", "async def f(uow):\n    await uow.session.commit()\n"),
+        ("platform/trace/writer.py", "def f(conn):\n    conn.commit()\n"),
+        ("main_api.py", "async def f(s):\n    await s.commit()\n"),
     ],
 )
 def test_checker_flags_violations(fake_app: Path, rel: str, body: str) -> None:
