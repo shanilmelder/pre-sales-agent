@@ -43,7 +43,11 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         # Alembic reads alembic_version before any migration runs, so the app role would
         # otherwise fail with an opaque "permission denied for table alembic_version".
-        if connection.exec_driver_sql("SELECT current_user").scalar() == APP_ROLE:
+        current_user = connection.exec_driver_sql("SELECT current_user").scalar()
+        # End the transaction that query autobegan: otherwise Alembic's begin_transaction()
+        # joins it, never commits, and every migration is rolled back on close.
+        connection.rollback()
+        if current_user == APP_ROLE:
             raise SystemExit(
                 f"Migrations must run as the schema owner, not {APP_ROLE}: set "
                 "PSA_MIGRATIONS_DATABASE_URL to the owner role's URL."
