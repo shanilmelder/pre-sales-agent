@@ -1,0 +1,62 @@
+"""The trace event catalogue (AD-12): one Pydantic payload model per `event_type`.
+
+Event names follow `<module>.<entity>.<past_tense_verb>`, e.g. `identity.user.provisioned`.
+Payloads reject unknown fields and hold IDs and technical values, never customer content.
+Register a new event by subclassing `TracePayload` and decorating it with `@register`.
+"""
+
+import re
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import ClassVar
+
+from pydantic import BaseModel, ConfigDict
+
+_SEGMENT = r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*"
+EVENT_TYPE_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
+# Past tense check on the verb's last word: regular verbs end in "ed"; list irregular
+# past participles here when an event needs one. This is a heuristic, not a guarantee:
+# non-past words that end in "ed" (need, seed) also pass, so reviewers still check names.
+_IRREGULAR_PAST_TENSE = frozenset({"built", "done", "lost", "made", "run", "sent", "won"})
+
+
+def is_valid_event_type(name: str) -> bool:
+    """Shape check plus the past-tense heuristic above (not a grammatical guarantee)."""
+    if not EVENT_TYPE_RE.match(name):
+        return False
+    last_word = name.rsplit(".", 1)[1].rsplit("_", 1)[-1]
+    return last_word.endswith("ed") or last_word in _IRREGULAR_PAST_TENSE
+
+
+class TracePayload(BaseModel):
+    """Base for event payloads. Subclasses set `event_type`."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    event_type: ClassVar[str]
+
+
+_CATALOGUE: dict[str, type[TracePayload]] = {}
+CATALOGUE: Mapping[str, type[TracePayload]] = MappingProxyType(_CATALOGUE)
+
+
+def register[P: type[TracePayload]](cls: P) -> P:
+    name = getattr(cls, "event_type", None)
+    if not isinstance(name, str) or not is_valid_event_type(name):
+        raise ValueError(f"{cls.__name__}.event_type must match <module>.<entity>.<past_verb>")
+    if name in _CATALOGUE:
+        raise ValueError(f"event_type {name!r} is already registered")
+    if cls.model_config.get("extra") != "forbid":
+        raise ValueError(f"{cls.__name__} must forbid extra fields")
+    _CATALOGUE[name] = cls
+    return cls
+
+
+# --- identity -----------------------------------------------------------------------------
+
+
+@register
+class IdentityUserProvisioned(TracePayload):
+    """A platform user was created from a first valid sign-in (Story 1.4 Part B may extend)."""
+
+    event_type: ClassVar[str] = "identity.user.provisioned"

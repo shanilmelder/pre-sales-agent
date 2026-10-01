@@ -1,6 +1,8 @@
-"""Alembic environment. The URL comes only from `app.platform.config` (PSA_DATABASE_URL).
+"""Alembic environment. URLs come only from `app.platform.config`.
 
-Migrations are expand/contract only (AD-19). They run synchronously through psycopg 3.
+Migrations run as the schema owner role (PSA_MIGRATIONS_DATABASE_URL, falling back to
+PSA_DATABASE_URL); the app connects as `psa_app`. Migrations are expand/contract only
+(AD-19) and run synchronously through psycopg 3.
 """
 
 from logging.config import fileConfig
@@ -8,19 +10,26 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
+import app.platform.trace.models  # noqa: F401  (registers tables on Base.metadata)
 from app.platform.config import get_settings
+from app.platform.db import Base
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Module metadata is registered here once modules own tables (Story 1.4+).
-target_metadata = None
+target_metadata = Base.metadata
+APP_ROLE = "psa_app"
+
+
+def _url() -> str:
+    settings = get_settings()
+    return settings.migrations_database_url or settings.database_url
 
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=get_settings().database_url,
+        url=_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -30,8 +39,15 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = create_engine(get_settings().database_url, poolclass=pool.NullPool)
+    connectable = create_engine(_url(), poolclass=pool.NullPool)
     with connectable.connect() as connection:
+        # Alembic reads alembic_version before any migration runs, so the app role would
+        # otherwise fail with an opaque "permission denied for table alembic_version".
+        if connection.exec_driver_sql("SELECT current_user").scalar() == APP_ROLE:
+            raise SystemExit(
+                f"Migrations must run as the schema owner, not {APP_ROLE}: set "
+                "PSA_MIGRATIONS_DATABASE_URL to the owner role's URL."
+            )
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
