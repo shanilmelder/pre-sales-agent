@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1480">
+<title>Opportunity Gaps</title>
+<style>
+/*
+  KEY SCREEN: Opportunity workspace — Gaps tab (tab 4) with inspector open
+  Governing spine sections:
+    EXPERIENCE.md
+      - Information Architecture: workspace tab 4 "Gaps" (Gaps and Unknowns ranked by impact; Clarification Questions with status);
+        Right pane = inspector when a row is selected (Esc closes; "Open in tab")
+      - Component Patterns: List row (j/k, Enter, x multi-select, hover/focus row actions); Gap card (why it matters, trigger,
+        editable Clarification Question draft, lifecycle status pill, Convert form: Condition or Contingency, amount for
+        Contingency, accepting person defaults to me); Inspector (fields, Evidence chips, history, actions; save on blur with If-Match);
+        Evidence chip (kind icon, short label, version)
+      - State Patterns: Weak knowledge coverage banner
+      - Key Flows: Flow 1 step 3–4 (ranked Gaps with drafted questions; edit, approve, export, mark sent)
+      - Voice and Tone: glossary terms + counts; "Answered by customer, 26 Sep"
+    DESIGN.md
+      - Colors: gap amber (open / unanswered), resolved green (answered), primary (selected-row bar, single primary button)
+      - Layout & Spacing: ≥1440 docked inspector 420px; 32px rows; 16px gutter
+      - Components: List row + selected state, Status pill, Gap badge, Evidence chip, Inspector panel (surface-inspector), Button (primary)
+  PRD: FR-11 (Gap states why it matters + trigger), FR-12 (question status: drafted, approved, sent, answered, unanswered), FR-13 (convert to Assumption)
+*/
+/* ---- DESIGN.md tokens (light theme; shadcn neutral defaults for unlisted tokens) ---- */
+:root{
+  --bg:#FFFFFF; --fg:#0A0A0A; --muted:#F5F5F5; --muted-fg:#737373; --border:#E5E5E5; --accent:#F4F4F5; --input:#E5E5E5;
+  --primary:#4F5BD5; --primary-fg:#FFFFFF; --primary-tint:#EEF0FC;
+  --blocker:#DC2626; --gap:#D97706; --resolved:#16A34A; --agent:#4F5BD5;
+  --sidebar:#F7F7F8; --inspector:#FBFBFC;
+  --row:32px; --sidebar-w:220px; --inspector-w:420px; --rail-w:300px; --gutter:16px;
+  --r-sm:4px; --r-md:6px; --r-lg:8px; --r-full:9999px;
+  --font:Inter, system-ui, sans-serif; --mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#E9E9EC}
+body{font-family:var(--font);font-size:13px;line-height:1.5;color:var(--fg);padding:32px 0 48px;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;font-weight:500}
+.mono{font-family:var(--mono);font-size:12px}
+.meta{font-size:11px;line-height:1.4;letter-spacing:.01em;color:var(--muted-fg)}
+.label{font-size:12px;font-weight:500;line-height:1.4}
+.muted{color:var(--muted-fg)}
+.section-title{font-size:14px;font-weight:600;line-height:1.4}
+a{color:var(--primary);text-decoration:none}
+.ic{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.ic.sm{width:12px;height:12px}
+.c-blocker{color:var(--blocker)} .c-gap{color:var(--gap)} .c-resolved{color:var(--resolved)} .c-agent{color:var(--agent)} .c-muted{color:var(--muted-fg)}
+
+/* ---- Mock caption & browser frame ---- */
+.caption{width:1440px;margin:0 auto 10px;font-size:12px;color:#52525B}
+.caption b{color:#18181B}
+.browser{width:1440px;margin:0 auto;background:var(--bg);border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06),0 12px 40px rgba(0,0,0,.12)}
+.chrome{height:40px;background:#EDEDF0;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid #DCDCE0}
+.lights{display:flex;gap:7px}.lights i{width:11px;height:11px;border-radius:50%;background:#D4D4D8;display:block}
+.url{flex:1;max-width:620px;margin:0 auto;height:26px;border-radius:var(--r-md);background:#FFF;border:1px solid #DCDCE0;display:flex;align-items:center;padding:0 10px;font-size:12px;color:#52525B}
+
+/* ---- Three-pane layout (DESIGN.md Layout & Spacing) ---- */
+.app{display:grid;height:900px;overflow:hidden}
+.app.with-rail{grid-template-columns:var(--sidebar-w) 1fr var(--rail-w)}
+.app.with-inspector{grid-template-columns:var(--sidebar-w) 1fr var(--inspector-w)}
+.app.no-right{grid-template-columns:var(--sidebar-w) 1fr}
+
+/* Sidebar */
+.sidebar{background:var(--sidebar);padding:10px 8px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.ws{display:flex;align-items:center;gap:8px;padding:4px 8px 10px;font-weight:600}
+.ws .logo{width:20px;height:20px;border-radius:var(--r-sm);background:var(--fg);color:#fff;font-size:11px;display:grid;place-items:center}
+.search{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border:1px solid var(--border);background:var(--bg);border-radius:var(--r-sm);color:var(--muted-fg);margin-bottom:8px}
+.search kbd{margin-left:auto}
+.nav{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:var(--r-sm);color:#3F3F46}
+.nav.active{background:#EBEBEE;color:var(--fg);font-weight:500}
+.nav .count{margin-left:auto;font-size:11px;color:var(--muted-fg)}
+.nav-group{margin-top:14px;padding:0 8px 4px;font-size:11px;color:var(--muted-fg);font-weight:500}
+.sidebar .foot{margin-top:auto;display:flex;align-items:center;gap:8px;padding:8px}
+.avatar{width:20px;height:20px;border-radius:var(--r-full);background:#E0E2F7;color:#3A44A8;font-size:10px;font-weight:600;display:inline-grid;place-items:center;flex:none}
+kbd{white-space:nowrap;font-family:var(--font);font-size:11px;color:var(--muted-fg);border:1px solid var(--border);border-bottom-width:2px;border-radius:3px;padding:0 4px;line-height:16px;background:var(--bg)}
+
+/* Main pane */
+.main{display:flex;flex-direction:column;min-width:0;border-left:1px solid var(--border);border-right:1px solid var(--border);overflow:hidden}
+.app.no-right .main{border-right:0}
+.crumbs{height:40px;display:flex;align-items:center;gap:6px;padding:0 var(--gutter);color:var(--muted-fg);font-size:12px;border-bottom:1px solid var(--border)}
+.opp-head{padding:14px var(--gutter) 10px;display:flex;align-items:flex-start;gap:12px}
+.opp-title{font-size:18px;font-weight:600;line-height:1.3;letter-spacing:-.01em}
+.opp-meta{display:flex;align-items:center;gap:14px;margin-top:6px;font-size:12px;color:var(--muted-fg)}
+.opp-meta span{display:inline-flex;align-items:center;gap:6px}
+.opp-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* Tabs */
+.tabs{display:flex;gap:2px;padding:0 var(--gutter);border-bottom:1px solid var(--border)}
+.tab{display:flex;align-items:center;gap:6px;height:34px;padding:0 7px;color:var(--muted-fg);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab .k{font-size:10px;color:#A1A1AA;font-weight:500}
+.tab.active{color:var(--fg);border-bottom-color:var(--primary)}
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+.badge .ic{width:12px;height:12px}
+.cnt{font-size:11px;color:var(--muted-fg);font-variant-numeric:tabular-nums}
+
+/* Buttons (shadcn variants; primary per DESIGN.md) */
+.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--bg);color:var(--fg);font:500 12px/1 var(--font);white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--primary-fg)}
+.btn.ghost{border-color:transparent;background:transparent;color:#3F3F46}
+.btn[disabled],.btn.disabled{color:#A1A1AA;background:var(--muted)}
+.btn kbd{border-color:rgba(0,0,0,.12);background:transparent}
+.btn.primary kbd{color:rgba(255,255,255,.8);border-color:rgba(255,255,255,.35)}
+
+/* Status pill: 20px, full radius, neutral outline, coloured leading icon */
+.pill{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px 0 6px;border-radius:var(--r-full);border:1px solid var(--border);background:var(--bg);font-size:12px;font-weight:500;line-height:1;white-space:nowrap;color:#27272A}
+.pill .ic{width:12px;height:12px}
+
+/* List rows: 32px, hover accent, selected = accent + 2px primary bar */
+.row{display:flex;align-items:center;gap:10px;height:var(--row);padding:0 var(--gutter);border-radius:var(--r-sm);position:relative;white-space:nowrap}
+.row:hover{background:var(--accent)}
+.row.selected{background:var(--accent)}
+.row.selected::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:2px;border-radius:2px;background:var(--primary)}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* Evidence chip */
+.chip{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 6px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px;line-height:1.4;letter-spacing:.01em;color:#3F3F46;background:var(--bg);white-space:nowrap}
+.chip .ic{width:11px;height:11px;color:var(--muted-fg)}
+.chip .v{color:var(--muted-fg)}
+
+/* Agent running dot */
+.dot{width:6px;height:6px;border-radius:50%;background:var(--agent);display:inline-block;flex:none;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+
+/* Card */
+.card{border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg)}
+.card-head{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-bottom:1px solid var(--border)}
+
+/* ---- Screen-specific ---- */
+.tabs{gap:0}.tab{padding:0 6px}
+.toolbar{display:flex;align-items:center;gap:8px;padding:10px var(--gutter)}
+.banner{display:flex;align-items:center;gap:8px;margin:0 var(--gutter) 8px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--muted);font-size:12px}
+.cols{display:grid;grid-template-columns:16px 16px 52px 1fr 64px 112px 150px 92px;gap:10px;align-items:center}
+.list-head{height:28px;padding:0 var(--gutter);border-bottom:1px solid var(--border);font-size:12px;font-weight:500;color:var(--muted-fg)}
+.list{padding:4px 0}
+.list .row{padding:0 var(--gutter);border-radius:0}
+.cb{width:14px;height:14px;border:1px solid #C4C4CC;border-radius:3px;background:var(--bg);display:inline-block}
+.cb.on{background:var(--primary);border-color:var(--primary);position:relative}
+.cb.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.id{font-size:12px;color:var(--muted-fg);font-variant-numeric:tabular-nums}
+.impact{font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:4px}
+.bars{display:inline-flex;gap:1px;align-items:flex-end}
+.bars i{width:3px;background:#D4D4D8;display:block;border-radius:1px}
+.bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:8px}.bars i:nth-child(3){height:11px}
+.bars.h i{background:#52525B}.bars.m i:nth-child(-n+2){background:#52525B}.bars.l i:nth-child(1){background:#52525B}
+.trig{font-size:12px;color:#3F3F46;display:inline-flex;align-items:center;gap:4px}
+.trig .ic{color:var(--muted-fg)}
+.resolved-txt{color:var(--muted-fg)}
+.footnote{padding:8px var(--gutter);font-size:11px;color:var(--muted-fg);border-top:1px solid var(--border);margin-top:auto;display:flex;gap:14px}
+/* Inspector */
+.inspector{background:var(--inspector);display:flex;flex-direction:column;overflow:hidden}
+.ins-head{padding:10px 14px;border-bottom:1px solid var(--border)}
+.ins-head .top{display:flex;align-items:center;gap:8px}
+.ins-title{font-size:14px;font-weight:600;line-height:1.4;margin-top:6px}
+.ins-body{padding:12px 14px;display:flex;flex-direction:column;gap:14px;overflow:hidden;flex:1}
+.fields{display:grid;grid-template-columns:96px 1fr;row-gap:6px;column-gap:10px;font-size:12px}
+.fields dt{color:var(--muted-fg)}
+.blk h3{font-size:12px;font-weight:500;color:var(--muted-fg);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.textarea{border:1px solid var(--input);border-radius:var(--r-sm);background:var(--bg);padding:7px 9px;font-size:13px;line-height:1.5;min-height:64px;box-shadow:0 0 0 3px rgba(79,91,213,.15);border-color:var(--primary)}
+.lifecycle{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--muted-fg);flex-wrap:wrap}
+.lifecycle .sep{color:#D4D4D8}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.convert{border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg);padding:10px;display:flex;flex-direction:column;gap:9px}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden}
+.seg label{display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;font-size:12px;font-weight:500;color:#3F3F46}
+.seg label + label{border-left:1px solid var(--border)}
+.seg .on{background:var(--accent);color:var(--fg);box-shadow:inset 0 -2px 0 var(--primary)}
+.radio{width:12px;height:12px;border:1px solid #A1A1AA;border-radius:50%;display:inline-block;flex:none}
+.on .radio{border:4px solid var(--primary)}
+.f-row{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:10px;font-size:12px}
+.f-row > span:first-child{color:var(--muted-fg);font-weight:500}
+.input{min-width:0;overflow:hidden;height:28px;border:1px solid var(--input);border-radius:var(--r-sm);background:var(--bg);display:flex;align-items:center;padding:0 8px;gap:6px;font-size:13px}
+.input .suffix{margin-left:auto;font-size:12px;color:var(--muted-fg)}
+.ins-foot{padding:10px 14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--inspector)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-blocker" viewBox="0 0 24 24"><path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86z"/><path d="M12 8v4M12 16h.01"/></symbol>
+  <symbol id="i-gap" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+  <symbol id="i-resolved" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-condition" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></symbol>
+  <symbol id="i-contingency" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v6M9 11h6"/></symbol>
+  <symbol id="i-source" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></symbol>
+  <symbol id="i-req" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-knowledge" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></symbol>
+  <symbol id="i-finding" viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 8 2a6 6 0 0 0 3.6-1.2.6.6 0 0 1 .4.2V15a6 6 0 0 1-4 1c-3 0-5-2-8-2a6 6 0 0 0-4 1"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-8"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M22 3H2l8 9.5V19l4 2v-8.5z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-diff" viewBox="0 0 24 24"><path d="M12 3v14M5 10h14M5 21h14"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></symbol>
+</svg>
+
+<p class="caption"><b>2 · Opportunity workspace — Gaps (tab 4).</b> Flow 1 step 3–4: 9 Gaps ranked by impact, questions mid-lifecycle; GAP-07 selected, inspector docked with Convert to Assumption form open.</p>
+<div class="browser">
+  <div class="chrome"><div class="lights"><i></i><i></i><i></i></div><div class="url">presales.internal/opportunities/northwind-logistics-crm/gaps/GAP-07</div></div>
+  <div class="app with-inspector">
+    <!-- Sidebar: IA (EXPERIENCE.md Information Architecture) -->
+    <nav class="sidebar" aria-label="Primary">
+      <div class="ws"><span class="logo">P</span>Presales</div>
+      <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search<kbd>Ctrl K</kbd></div>
+      <a class="nav" href="#"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="count num">3</span></a>
+      <a class="nav active" href="#"><svg class="ic"><use href="#i-user"/></svg>My Opportunities<span class="count num">6</span></a>
+      <a class="nav" href="#"><svg class="ic"><use href="#i-layers"/></svg>All Opportunities</a>
+      <a class="nav" href="#"><svg class="ic"><use href="#i-knowledge"/></svg>Knowledge</a>
+      <a class="nav" href="#"><svg class="ic"><use href="#i-chart"/></svg>Reports</a>
+      <a class="nav" href="#"><svg class="ic"><use href="#i-settings"/></svg>Admin</a>
+      <div class="nav-group">My Opportunities</div>
+      <a class="nav active" href="#" style="font-weight:500"><span class="trunc">Northwind Logistics — CRM migration</span></a>
+      <a class="nav" href="#"><span class="trunc">Fabrikam Freight — SSO rollout</span></a>
+      <a class="nav" href="#"><span class="trunc">Tailspin Retail — Data platform</span></a>
+      <div class="foot"><span class="avatar">R</span><span>Ravi</span><span class="meta" style="margin-left:auto">Presales</span></div>
+    </nav>
+
+    <main class="main">
+      <div class="crumbs">My Opportunities <svg class="ic sm"><use href="#i-chev"/></svg> Northwind Logistics — CRM migration with ERP integration <svg class="ic sm"><use href="#i-chev"/></svg> <span style="color:var(--fg)">Gaps</span></div>
+      <div class="opp-head" style="padding-bottom:8px">
+        <div>
+          <h1 class="opp-title">Northwind Logistics — CRM migration with ERP integration</h1>
+          <div class="opp-meta">
+            <span class="pill"><svg class="ic c-muted"><use href="#i-pencil"/></svg>Estimating</span>
+            <span><span class="avatar">R</span>Ravi</span>
+            <span><svg class="ic"><use href="#i-calendar"/></svg>Proposal due <b class="num" style="color:var(--fg)">14 Oct</b></span>
+          </div>
+        </div>
+      </div>
+      <div class="tabs" role="tablist">
+        <a class="tab" role="tab"><span class="k">1</span>Overview</a>
+        <a class="tab" role="tab"><span class="k">2</span>Sources <span class="cnt">3</span></a>
+        <a class="tab" role="tab"><span class="k">3</span>Requirements <span class="cnt">34</span></a>
+        <a class="tab active" role="tab" aria-selected="true"><span class="k">4</span>Gaps <span class="badge c-gap" aria-label="7 open Gaps"><svg class="ic"><use href="#i-gap"/></svg>7</span></a>
+        <a class="tab" role="tab"><span class="k">5</span>Assessments</a>
+        <a class="tab" role="tab"><span class="k">6</span>Conflicts</a>
+        <a class="tab" role="tab"><span class="k">7</span>Estimate</a>
+        <a class="tab" role="tab"><span class="k">8</span>Trace</a>
+        <a class="tab" role="tab"><span class="k">9</span>Actuals</a>
+      </div>
+
+      <div class="toolbar">
+        <span class="section-title">9 Gaps</span><span class="muted" style="font-size:12px">· 7 open · ranked by impact</span>
+        <span style="margin-left:auto"></span>
+        <button class="btn ghost"><svg class="ic"><use href="#i-filter"/></svg>Filter</button>
+        <button class="btn"><svg class="ic"><use href="#i-check"/></svg>Approve 2 selected</button>
+        <button class="btn"><svg class="ic"><use href="#i-download"/></svg>Export questions</button>
+      </div>
+      <div class="banner" role="status"><svg class="ic c-muted"><use href="#i-info"/></svg>No documentation for 1 integration type in scope (SSO with Okta) — Gap detection may be incomplete.<a href="#" style="margin-left:auto;font-weight:500">Knowledge coverage</a></div>
+
+      <div class="list-head cols"><span></span><span></span><span>ID</span><span>Gap</span><span>Impact</span><span>Affects</span><span>Trigger</span><span>Question</span></div>
+      <div class="list" role="listbox" aria-label="Gaps">
+        <div class="row cols selected" role="option" aria-selected="true">
+          <span class="cb"></span><svg class="ic c-gap" aria-label="open Gap"><use href="#i-gap"/></svg><span class="id">GAP-07</span>
+          <span class="trunc" style="font-weight:500">ERP version and custom field usage unknown</span>
+          <span class="impact"><span class="bars h"><i></i><i></i><i></i></span>High</span>
+          <span class="trunc" style="font-size:12px">ERP connector</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-req"/></svg><span class="trunc">Checklist · ERP connector Q3</span></span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-send"/></svg>sent</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb"></span><svg class="ic c-resolved" aria-label="answered"><use href="#i-resolved"/></svg><span class="id">GAP-02</span>
+          <span class="trunc resolved-txt">No data volumes for CRM migration (accounts, contacts, activities)</span>
+          <span class="impact"><span class="bars h"><i></i><i></i><i></i></span>High</span>
+          <span class="trunc" style="font-size:12px">Data migration</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-req"/></svg><span class="trunc">Checklist · Data migration Q1</span></span>
+          <span class="pill"><svg class="ic c-resolved"><use href="#i-resolved"/></svg>answered</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb"></span><svg class="ic c-gap" aria-label="open Gap"><use href="#i-gap"/></svg><span class="id">GAP-04</span>
+          <span class="trunc">Identity provider for SSO not stated</span>
+          <span class="impact"><span class="bars m"><i></i><i></i><i></i></span>Medium</span>
+          <span class="trunc" style="font-size:12px">SSO</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-knowledge"/></svg><span class="trunc">SSO integration spec v2.3</span></span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-check"/></svg>approved</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb"></span><svg class="ic c-gap" aria-label="open Gap"><use href="#i-gap"/></svg><span class="id">GAP-01</span>
+          <span class="trunc">Retention period for historical activities unknown</span>
+          <span class="impact"><span class="bars m"><i></i><i></i><i></i></span>Medium</span>
+          <span class="trunc" style="font-size:12px">Data migration</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-req"/></svg><span class="trunc">Checklist · Data migration Q4</span></span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-send"/></svg>sent</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb on"></span><svg class="ic c-gap" aria-label="open Gap"><use href="#i-gap"/></svg><span class="id">GAP-05</span>
+          <span class="trunc">Number of CRM user roles and permission sets</span>
+          <span class="impact"><span class="bars m"><i></i><i></i><i></i></span>Medium</span>
+          <span class="trunc" style="font-size:12px">Configuration</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-req"/></svg><span class="trunc">Checklist · CRM config Q2</span></span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-pencil"/></svg>drafted</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb on"></span><svg class="ic c-gap" aria-label="open Gap"><use href="#i-gap"/></svg><span class="id">GAP-08</span>
+          <span class="trunc">UAT rounds and customer tester availability</span>
+          <span class="impact"><span class="bars m"><i></i><i></i><i></i></span>Medium</span>
+          <span class="trunc" style="font-size:12px">Testing</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-knowledge"/></svg><span class="trunc">Delivery record · Fabrikam CRM</span></span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-pencil"/></svg>drafted</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb"></span><svg class="ic c-gap" aria-label="open Gap"><use href="#i-gap"/></svg><span class="id">GAP-03</span>
+          <span class="trunc">Who owns data cleansing before migration</span>
+          <span class="impact"><span class="bars m"><i></i><i></i><i></i></span>Medium</span>
+          <span class="trunc" style="font-size:12px">Data migration</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-req"/></svg><span class="trunc">Checklist · Data migration Q6</span></span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-pencil"/></svg>drafted</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb"></span><svg class="ic c-gap" aria-label="open Gap"><use href="#i-gap"/></svg><span class="id">GAP-06</span>
+          <span class="trunc">Training audience size and format</span>
+          <span class="impact"><span class="bars l"><i></i><i></i><i></i></span>Low</span>
+          <span class="trunc" style="font-size:12px">Training</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-req"/></svg><span class="trunc">Checklist · Training Q1</span></span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-check"/></svg>approved</span>
+        </div>
+        <div class="row cols" role="option">
+          <span class="cb"></span><svg class="ic c-resolved" aria-label="answered"><use href="#i-resolved"/></svg><span class="id">GAP-09</span>
+          <span class="trunc resolved-txt">Go-live cutover window</span>
+          <span class="impact"><span class="bars l"><i></i><i></i><i></i></span>Low</span>
+          <span class="trunc" style="font-size:12px">Project management</span>
+          <span class="trig trunc"><svg class="ic sm"><use href="#i-req"/></svg><span class="trunc">Checklist · PM Q5</span></span>
+          <span class="pill"><svg class="ic c-resolved"><use href="#i-resolved"/></svg>answered</span>
+        </div>
+      </div>
+      <div class="footnote"><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>x</kbd> select</span><span><kbd>Enter</kbd> open</span><span><kbd>e</kbd> edit question</span><span><kbd>Esc</kbd> close inspector</span></div>
+    </main>
+
+    <!-- Right pane: inspector (Gap card content) -->
+    <aside class="inspector" aria-label="Gap GAP-07">
+      <div class="ins-head">
+        <div class="top">
+          <span class="id">GAP-07</span>
+          <span class="pill"><svg class="ic c-gap"><use href="#i-gap"/></svg>open Gap</span>
+          <a href="#" style="margin-left:auto;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:4px"><svg class="ic sm"><use href="#i-external"/></svg>Open in tab</a>
+          <button class="btn ghost" aria-label="Close" style="padding:0 6px"><svg class="ic"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="ins-title">ERP version and custom field usage unknown</div>
+      </div>
+      <div class="ins-body">
+        <dl class="fields">
+          <dt>Impact</dt><dd><span class="impact"><span class="bars h"><i></i><i></i><i></i></span>High</span></dd>
+          <dt>Why it matters</dt><dd>ERP connector effort depends on ERP version and the number of custom fields to map. Range today: <span class="num">160–400</span> person-hours.</dd>
+          <dt>Affects</dt><dd>Estimate · ERP connector (Integration Type)</dd>
+          <dt>Trigger</dt><dd>Checklist item <b>ERP connector Q3</b> — "ERP version, edition and custom fields in use" <span class="meta">mandatory · v1.4</span></dd>
+        </dl>
+
+        <div class="blk">
+          <h3>Clarification Question <span class="pill" style="margin-left:auto"><svg class="ic c-gap"><use href="#i-send"/></svg>sent</span></h3>
+          <div class="textarea">Which version and edition of your ERP system will the CRM connect to, and roughly how many custom fields on customer and order records need to sync?</div>
+          <div class="lifecycle"><span>drafted 23 Sep</span><span class="sep">›</span><span>approved 23 Sep</span><span class="sep">›</span><span>sent 24 Sep</span><span class="sep">›</span><span class="c-gap" style="font-weight:500"><svg class="ic sm"><use href="#i-gap"/></svg> no answer after 7 days</span></div>
+        </div>
+
+        <div class="blk">
+          <h3>Evidence</h3>
+          <div class="chips">
+            <span class="chip"><svg class="ic"><use href="#i-source"/></svg>Teams transcript · 00:14:32 <span class="v">v1</span></span>
+            <span class="chip"><svg class="ic"><use href="#i-req"/></svg>REQ-21 Sync orders to CRM <span class="v">v2</span></span>
+            <span class="chip"><svg class="ic"><use href="#i-knowledge"/></svg>ERP connector spec §3.1 <span class="v">v4.2</span></span>
+          </div>
+        </div>
+
+        <div class="blk">
+          <h3>Convert to Assumption</h3>
+          <div class="convert">
+            <div class="seg" role="radiogroup" aria-label="Assumption type">
+              <label><span class="radio"></span><svg class="ic"><use href="#i-condition"/></svg>Condition</label>
+              <label class="on"><span class="radio"></span><svg class="ic"><use href="#i-contingency"/></svg>Contingency</label>
+            </div>
+            <div class="f-row"><span>Amount</span><div class="input"><span class="num">40</span><span class="suffix">person-hours · ERP connector</span></div></div>
+            <div class="f-row"><span>Wording</span><div class="input"><span class="trunc">Covers ERP versions 2021 or later with up to 40 custom fields.</span></div></div>
+            <div class="f-row"><span>Accepted by</span><div class="input"><span class="avatar">R</span>Ravi (me)<svg class="ic c-muted" style="margin-left:auto"><use href="#i-chev-down"/></svg></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="ins-foot">
+        <button class="btn">Record answer</button>
+        <button class="btn ghost">Convert to Risk</button>
+        <button class="btn primary" style="margin-left:auto">Convert to Contingency</button>
+      </div>
+    </aside>
+  </div>
+</div>
+</body>
+</html>

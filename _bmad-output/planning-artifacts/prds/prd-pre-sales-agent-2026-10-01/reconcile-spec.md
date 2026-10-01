@@ -1,0 +1,48 @@
+# Reconciliation: PRD vs Orchestration Engine Spec
+
+**Input:** `docs/BMAD Implementation Specification — LangGraph Agent Orchestration Engine.md` (v1.0)
+**Checked against:** `prd.md` + `addendum.md` (2026-10-01)
+**Excluded:** deviations listed in the PRD addendum's "Changes from the original spec" (platform scope, Gap/Estimate as core, Negotiation moved to R3, Actuals/Calibration, dropped agent names, Clarification/Proposal Agent mapping) and the R1–R4 phasing.
+
+Severity: **High** = a safety, governance or correctness rule is missing or contradicted. **Medium** = behaviour is undefined and will be guessed at in architecture or stories. **Low** = completeness or wording.
+
+## High
+
+| # | Spec source | What is missing or contradicted in the PRD | Suggested home |
+|---|---|---|---|
+| S1 | §19.3 last line; §6.2 "must not override mandatory security policies"; §22.4 | FR-29 lets an authorized human override a critical Critic or Red Team Finding "where policy permits". The spec's rule that **mandatory security and authorization policies can never be overridden through ordinary Critic or Red Team workflows** is missing. FR-30 makes mandatory constraints deterministic but never says they cannot be overridden. | FR-29 (add a non-overridable class); §9 Constraints |
+| S2 | §16.1, §16.2, §3.1–3.5 | Human review actions are reduced to Challenge (FR-38) plus an implied approve. Missing: **Reject** (and what happens to the run or Estimate Version on reject), **Request additional evidence**, **Request an alternative**, **Modify a constraint**, **Escalate to an expert** (FR-31 covers Conflicts only), **Request reassessment**. Missing behaviours: **validate reviewer authorization** before accepting a decision, **record the decision and reason**, then **resume or terminate**. In R1, no FR checks that a reviewer is entitled to approve. Self-approval is blocked only from R2 (FR-39). | FR-37 (actions and outcomes); FR-17 (resume/terminate on decision) |
+| S3 | §16.3 steps 4–5; §11.2 "Critical findings → reassessment" | After a Challenge, FR-38 reassesses the affected Assessments but does not require **re-running conflict detection and Critic/Red Team validation** on the changed output. A Challenge could produce a new Estimate Version that has skipped the checks of 4.7 and 4.8. There is also no route from a critical Finding to reassessment: FR-29 only blocks. | FR-38; FR-29; FR-44 (same for R3 targeted reassessment) |
+| S4 | §9.3 rule 5; §6.2 "silently overwrite approved decisions"; §17.3 | In R1 there is no rule for how a Baseline is set or protected. FR-39 (R2) gates Baselines on approvals and FR-44 (R3) protects them from changes, but in R1 nothing says who may mark an Estimate Version as Baseline, or that a Workflow Run, Challenge or re-extraction must not overwrite an approved version without authorization. | New FR in 4.9 or 4.10 [R1]: "Set Baseline" with R1 authorization rule |
+| S5 | §2.3 "does not replace … deterministic calculations" | Only pricing is required to be deterministic (FR-24). **Estimate arithmetic** (line totals, role-mix cost, Contingency roll-ups, duration aggregation) is not required to be computed deterministically outside the LLM. | FR-33 / FR-34; §9 Safety and correctness |
+| S6 | §8.2 last two bullets; §22.3 "restrict direct access to protected business records" | The rule that **Agent output never writes business records directly; every state change goes through authorized application services** is missing. FR-57 covers tool permissions, not this write path. FR-6's "human edits are never overwritten" depends on it. | FR-57 or FR-25; §9 |
+
+## Medium
+
+| # | Spec source | What is missing or contradicted | Suggested home |
+|---|---|---|---|
+| S7 | §23.1 `cancel`; §9.2 status `cancelled` | There is no FR to **cancel a Workflow Run**, and FR-3's task states do not include cancelled or timed-out. | FR-16/FR-17 (cancel); FR-3 (states) |
+| S8 | US-001 AC "loads the correct opportunity version"; §9.3 rule 6 | A Workflow Run is not bound to a **specific version of the Opportunity Sources/Requirements**, so the inputs to a given Estimate Version cannot be reproduced. Checkpoints are not tied to a **workflow version**: the PRD does not say what happens when a paused run resumes after a new workflow or Agent version is deployed. | FR-16; FR-41 (trace records input version) |
+| S9 | §6.1 step 3 "Validate workflow prerequisites"; §12.2 planning inputs | No prerequisites for starting assessment (for example, Requirements confirmed, mandatory Checklist Gaps handled). FR-15's planning inputs leave out security constraints, workflow policies, human-review requirements and existing Evidence. | FR-15 |
+| S10 | §3.6 "Manage policies and workflow configurations"; §12.4 "dependencies defined by workflow configuration" | No FR gives the administrator control of **workflow configuration**: task dependency rules, run budgets (FR-18), retry policies (FR-19), timeouts, and the R1 override policy that FR-29 refers to. Approval policy configuration (FR-39) starts only in R2. | FR-56 or new FR in 4.16 [R1] |
+| S11 | §21.1–21.2 | Failure behaviours not carried over: **database failure → stop unsafe state changes and recover safely**; **conflicting state updates** (for example two users editing the same Estimate, or a human edit during a run); **Research API failure → approved alternative source**; **Agent timeout → mark as timed out, apply recovery policy**; **human approval timeout in R1** (FR-40 escalation is R2); **unrecoverable failure → clear run status plus escalation**. | FR-19; FR-17; NFR-2 |
+| S12 | §19.1, §19.2 | Critic checks dropped from FR-27: **evidence quality, architecture consistency, risk coverage**. Red Team checks dropped from FR-28: **security weaknesses, unrealistic delivery assumptions, contradictory evidence, missing integrations**. Security weaknesses and missing integrations bear directly on the PRD's core problem. | FR-27, FR-28 |
+| S13 | §15.2 Round 7; §15.3 | FR-32 leaves out the **Critic review of a proposed consensus** before it reaches a human. Its limits cover rounds, time and tokens, but not the **model-call and tool-call budgets**. It also does not say "negotiation starts only when a relevant conflict is detected". | FR-32 [R3] |
+| S14 | §18.3 "Renegotiate → Validate"; §18.4 "Scenario assumptions are stored" | FR-45/46 do not require a Scenario to pass **Critic/Red Team validation and the FR-29 blocking rules before promotion**. They also do not require each Scenario's own Assumptions Register to be stored. | FR-45, FR-46 [R3] |
+| S15 | §14.2 | FR-30's Conflict types leave out **budget** and **requirement** conflicts, and §14.3's dependency-validation method. Budget conflicts become relevant once Commercial arrives in R2. | FR-30 |
+| S16 | §7.3 "Incompatible agent versions must be rejected"; US-003 | FR-56 records schema versions but does not **reject an Agent whose input/output schema version is incompatible** with the workflow. | FR-56 |
+| S17 | §22.1 "data access restrictions"; §22.4 "access data outside authorized scope" | FR-57 covers tool permissions only. **Per-Agent data-scope restrictions** (which Opportunity data, Knowledge Sources or classifications an Agent may read) are stated in §9 as intent ("only the data their task needs") but are not an enforceable FR. | FR-57 |
+| S18 | §8.1 Opportunity Agent ("business objectives and opportunity context") | The addendum says opportunity context is "part of intake", but FR-5 extracts Requirements only. Customer **business objectives, budget and timeline constraints and decision drivers** are not captured anywhere. Scenarios (FR-45) and Conflict detection need them. | FR-1 or FR-5 |
+
+## Low
+
+| # | Spec source | Note | Suggested home |
+|---|---|---|---|
+| S19 | §31 MVP acceptance criteria; §27 platform-wide DoD | §6 gives each Release a goal but **no exit or acceptance criteria**. The spec's §31 list (for example "automated tests cover critical workflows and failure paths", "unauthorized actions are blocked") has no R1 equivalent. §27 DoD is not listed in the addendum's reuse table; §28 is. | §6 (R1 acceptance criteria); addendum reuse table (add §27) |
+| S20 | §25 preamble; §25.1 | The spec calls its NFR targets "proposed, must be validated through testing", and the 2 s target excludes external dependency delays. NFR-1 states both without these qualifiers. | NFR-1 |
+| S21 | §10.2 | FR-25 validation does not list **agent/task identity, assumption-reference validity, risk structure, confidence format or permission compliance**. | FR-25 |
+| S22 | §23.1 closing line; US-001 DoD | Input validation on all endpoints, and an **audit event on workflow start/cancel/resume**, are only implied by NFR-4's "sensitive operations audited". | NFR-4 |
+| S23 | §22.3, §24.2 tenant isolation | Not addressed. Probably N/A for a single-company internal tool. State that explicitly, or map it to Opportunity-level isolation (FR-58). | §10 Data Governance |
+| S24 | §17.1 triggers | FR-43 leaves out **failed Agents, new security requirements and newly discovered Evidence** as replanning triggers. | FR-43 [R3] |
+| S25 | §9.1 | The principle that **business records (Opportunity, Requirements, Estimate) are authoritative and workflow state/checkpoints are not** appears only in the addendum's separation principle, not as a PRD rule. | §9 or FR-16 |
+| S26 | §23.2 `options` (enable_critic, enable_red_team, enable_negotiation) | The PRD does not say whether Critic and Red Team can be switched off per run. Given 4.7's intent they should be mandatory. State this so architecture does not copy the toggles. | FR-27/28 or FR-15 |
