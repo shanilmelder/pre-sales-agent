@@ -1,0 +1,4 @@
+Alembic migrations (expand/contract only, AD-19).
+
+Run from `backend/`: `uv run alembic upgrade head` (URL from PSA_DATABASE_URL).
+Each table is owned by one module and prefixed with it (AD-2).

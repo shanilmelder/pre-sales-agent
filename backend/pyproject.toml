@@ -1,0 +1,67 @@
+[project]
+name = "psa-backend"
+version = "0.1.0"
+description = "Agentic AI Presales Platform backend (modular monolith: api + worker)"
+requires-python = "==3.13.*"
+# Versions pinned to the architecture spine Stack table; others pinned to the locked resolution.
+dependencies = [
+    "fastapi==0.142.2",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy[asyncio]==2.1.1",
+    "alembic==1.20.0",
+    "psycopg[binary]==3.3.6",
+    "uvicorn==0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.9",
+    "mypy==2.3.1",
+    "httpx==0.28.1",
+    "import-linter==2.15",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = "."
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Only app.orchestration may import langgraph (AD-5)"
+type = "forbidden"
+source_modules = ["app.modules", "app.agents", "app.platform", "app.main_api", "app.main_worker"]
+forbidden_modules = ["langgraph"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Platform does not depend on business modules, orchestration or agents"
+type = "forbidden"
+source_modules = ["app.platform"]
+forbidden_modules = ["app.modules", "app.orchestration", "app.agents"]
