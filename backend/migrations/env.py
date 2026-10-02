@@ -10,7 +10,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-import app.platform.trace.models  # noqa: F401  (registers tables on Base.metadata)
+# Model imports register their tables on Base.metadata.
+import app.modules.identity.adapters.models
+import app.platform.trace.models  # noqa: F401
 from app.platform.config import get_settings
 from app.platform.db import Base
 

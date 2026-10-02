@@ -43,7 +43,13 @@ docker compose --profile local exec -T \
 
 curl http://localhost:8000/api/v1/health   # {"status":"ok","version":"...","db":"ok"}
 curl http://localhost:3000/healthz         # {"status":"ok","version":"..."}
+curl -I http://localhost:3000/             # 307 to /auth/login?returnTo=%2F (no session)
 ```
+
+The `.env.example` Auth0 values are placeholders: the stack builds and starts, and the
+health checks pass, but signing in needs a real tenant (see "Auth0 tenant setup" below).
+An existing `.env` from before Story 1.4 Part B needs the `AUTH0_*` and `APP_BASE_URL`
+lines from `.env.example`; compose refuses to start without them.
 
 - Web: http://localhost:3000
 - API docs: http://localhost:8000/api/v1/docs; spec at `/api/v1/openapi.json`
@@ -100,6 +106,69 @@ Work (`app/platform/uow.py`, handler parameter `uow: UoW`): `authorize` (identit
 `app.platform.trace.append(uow, ...)`. Commands never commit; only the edge does. Logs are
 JSON lines and carry IDs only, never customer content.
 
+## Authentication (Auth0)
+
+Auth0 (EU tenant) handles authentication only; roles live in `identity`, not in Auth0
+RBAC. The web app (`@auth0/nextjs-auth0` v4, `web/src/proxy.ts`) mounts `/auth/login`,
+`/auth/callback` and `/auth/logout`, sends visitors without a session to Universal Login
+and returns them to the page they asked for. `/healthz` and static assets stay public.
+Server components call the API through `web/src/lib/api/server.ts`, which sends the
+user's access token for the API audience as `Authorization: Bearer`.
+
+The API validates every token with PyJWT against the tenant's JWKS (RS256 only, `iss` =
+`https://$AUTH0_DOMAIN/`, `aud` = `$AUTH0_AUDIENCE`, `exp`). The first valid token for an
+unknown `sub` provisions a platform user with no roles and appends
+`identity.user.provisioned` to the trace. `GET /api/v1/me` returns `{id, name, email,
+roles}`. A user with no roles sees only "You're signed in, but you don't have access yet.
+Ask an administrator to assign a role." Failures are problem+json: 401 `token_missing`,
+`token_expired` or `token_invalid` (with `WWW-Authenticate: Bearer`), and 503
+`auth_unavailable` when the JWKS can't be fetched. Sign out (avatar menu) ends the app
+session and the Auth0 session.
+
+### Auth0 tenant setup
+
+1. Create a tenant in the **EU** region.
+2. **Applications > Create Application > Regular Web Application.** In its settings:
+   - Allowed Callback URLs: `http://localhost:3000/auth/callback`
+   - Allowed Logout URLs: `http://localhost:3000`
+   - Copy the Domain, Client ID and Client Secret.
+3. **APIs > Create API.** Identifier: `https://api.pre-sales-agent` (any URI works; it
+   becomes `AUTH0_AUDIENCE`), signing algorithm RS256. Turn on "Allow Offline Access" so
+   sessions can refresh their access token. Leave RBAC off.
+4. **Actions > Library > Create Action > Build from scratch**, trigger "Login / Post
+   Login", with this code, then Deploy and add it to the Post Login trigger
+   (**Actions > Triggers > post-login**). The API reads name and email only from these
+   namespaced access-token claims; a token without the email claim is rejected with 401
+   `token_invalid`.
+
+   ```js
+   exports.onExecutePostLogin = async (event, api) => {
+     const namespace = "https://pre-sales-agent/";
+     if (event.user.email) {
+       api.accessToken.setCustomClaim(`${namespace}email`, event.user.email);
+       api.accessToken.setCustomClaim(`${namespace}name`, event.user.name || event.user.email);
+     }
+   };
+   ```
+
+5. Put the values in your local `.env` (never commit it):
+
+   ```sh
+   AUTH0_DOMAIN=<tenant>.eu.auth0.com
+   AUTH0_AUDIENCE=https://api.pre-sales-agent
+   AUTH0_CLIENT_ID=<client id>
+   AUTH0_CLIENT_SECRET=<client secret>
+   AUTH0_SECRET=<output of: openssl rand -hex 32>
+   APP_BASE_URL=http://localhost:3000
+   ```
+
+6. Restart the stack (`docker compose --profile local up --build --wait -d`) and open
+   http://localhost:3000. A new user sees the no-access message until an administrator
+   assigns a role (Story 1.6).
+
+Running the API outside Docker, export `PSA_AUTH0_DOMAIN` and `PSA_AUTH0_AUDIENCE` (the
+same values as `AUTH0_DOMAIN` and `AUTH0_AUDIENCE`).
+
 ## Web
 
 ```sh
@@ -122,8 +191,10 @@ client in `src/lib/api`. Commit the regenerated files; CI fails if they drift.
   service: create `psa_app`, Alembic upgrade/downgrade/upgrade as the owner, `alembic
   check` (models match migrations), and pytest as `psa_app`.
 - **web**: lint, typecheck, build.
-- **compose**: brings up the local stack, checks both health endpoints and the build
-  version, applies migrations, and checks the generated client is current.
+- **compose**: brings up the local stack with the placeholder Auth0 values, checks both
+  health endpoints and the build version, checks that `/` redirects to sign-in and that
+  `/api/v1/me` without a token is 401, applies migrations, and checks the generated
+  client is current.
 
 Architecture rules enforced in CI: only `app/orchestration` may import `langgraph`, no
 module imports another module's `domain` or `adapters` package, `app/platform` imports no
