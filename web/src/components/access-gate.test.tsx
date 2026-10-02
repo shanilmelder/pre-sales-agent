@@ -15,8 +15,13 @@ vi.mock("@/lib/preferences", async (importOriginal) => ({
   }),
 }));
 vi.mock("@/app/settings/actions", () => ({ savePreferences: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/settings",
+}));
 
 import SettingsPage from "@/app/settings/page";
+import { ShellProviders } from "@/components/shell/shell-context";
 
 import { AccessGate, hasAccess } from "./access-gate";
 
@@ -71,7 +76,7 @@ describe("/settings page", () => {
 
   it("shows a user with no roles only the no-access message", async () => {
     getMe.mockResolvedValue({ kind: "ok", me: me([]) });
-    render(await SettingsPage());
+    render(<ShellProviders singleKeyShortcuts>{await SettingsPage()}</ShellProviders>);
     expect(screen.getByText(NO_ACCESS)).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
     expect(screen.queryByRole("group", { name: "Theme" })).toBeNull();
@@ -80,7 +85,7 @@ describe("/settings page", () => {
 
   it("shows the settings form to a user with a role", async () => {
     getMe.mockResolvedValue({ kind: "ok", me: me(["presales_engineer"]) });
-    const { container } = render(await SettingsPage());
+    const { container } = render(<ShellProviders singleKeyShortcuts>{await SettingsPage()}</ShellProviders>);
     expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Theme" })).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);

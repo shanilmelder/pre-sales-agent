@@ -3,6 +3,7 @@
 import { useId, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { savePreferences } from "@/app/settings/actions";
+import { useAnnounce } from "@/components/shell/live-region";
 // Types only: the preferences module imports next/headers.
 import type { Density, Preferences, Theme } from "@/lib/preferences";
 
@@ -68,7 +69,10 @@ function Section({ children }: { children: ReactNode }) {
   return <div className="border-b border-border py-4 last:border-b-0">{children}</div>;
 }
 
+const SAVE_FAILED = "Your settings could not be saved. Try again.";
+
 export function SettingsForm({ initial }: { initial: Preferences }) {
+  const announce = useAnnounce();
   const [preferences, setPreferences] = useState<Preferences>(initial);
   const [failed, setFailed] = useState(false);
   const [, startTransition] = useTransition();
@@ -93,6 +97,7 @@ export function SettingsForm({ initial }: { initial: Preferences }) {
         setPreferences(lastSaved.current);
       }
       setFailed(!ok);
+      if (!ok) announce(SAVE_FAILED);
     });
   }
 
@@ -152,9 +157,8 @@ export function SettingsForm({ initial }: { initial: Preferences }) {
           </div>
         </div>
       </Section>
-      <p role="status" aria-live="polite" className="text-meta text-destructive">
-        {failed ? "Your settings could not be saved. Try again." : ""}
-      </p>
+      {/* Screen readers hear this through the shell's single live region. */}
+      <p className="text-meta text-destructive">{failed ? SAVE_FAILED : ""}</p>
     </form>
   );
 }

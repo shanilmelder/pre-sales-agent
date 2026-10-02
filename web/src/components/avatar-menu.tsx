@@ -10,7 +10,18 @@ function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
-export function AvatarMenu({ name, email }: { name: string; email: string }) {
+export function AvatarMenu({
+  name,
+  email,
+  side = "bottom",
+  align = "end",
+}: {
+  name: string;
+  email: string;
+  /** Where the menu opens: below the header avatar, or above the sidebar footer one. */
+  side?: "top" | "bottom";
+  align?: "start" | "end";
+}) {
   return (
     <Menu.Root>
       <Menu.Trigger
@@ -20,7 +31,7 @@ export function AvatarMenu({ name, email }: { name: string; email: string }) {
         <span aria-hidden="true">{initials(name)}</span>
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Positioner align="end" sideOffset={6}>
+        <Menu.Positioner side={side} align={align} sideOffset={6}>
           <Menu.Popup className="min-w-56 rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md outline-none">
             <div className="px-2 py-1.5">
               <p className="font-medium">{name}</p>
