@@ -27,6 +27,12 @@ export function AvatarMenu({ name, email }: { name: string; email: string }) {
               <p className="text-xs text-muted-foreground">{email}</p>
             </div>
             <Menu.Separator className="my-1 h-px bg-border" />
+            <Menu.LinkItem
+              href="/settings"
+              className="block rounded-md px-2 py-1.5 outline-none data-highlighted:bg-muted"
+            >
+              Settings
+            </Menu.LinkItem>
             {/* A full navigation: /auth/logout ends the app session and the Auth0 session. */}
             <Menu.LinkItem
               href="/auth/logout"
