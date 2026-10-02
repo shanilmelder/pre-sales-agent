@@ -5,8 +5,11 @@ import type { paths } from "./schema";
 
 export type { components, paths } from "./schema";
 
-export function createApiClient(baseUrl: string = process.env.PSA_API_URL ?? "http://localhost:8000") {
-  return createClient<paths>({ baseUrl });
+export function createApiClient(
+  baseUrl: string = process.env.PSA_API_URL ?? "http://localhost:8000",
+  headers?: Record<string, string>,
+) {
+  return createClient<paths>({ baseUrl, headers });
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;
