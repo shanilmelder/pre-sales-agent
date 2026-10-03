@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { StatusPill } from "@/components/opportunities/status-pill";
 import { useShell } from "@/components/shell/shell-context";
 import {
+  EMPTY_FILTERED,
   EMPTY_LIST,
   EMPTY_LIST_CREATOR,
   formatDate,
@@ -53,11 +54,15 @@ export function OpportunitiesTable({
   items,
   caption,
   canCreate,
+  clearFiltersHref,
 }: {
   items: readonly OpportunitySummary[];
   caption: string;
   /** Whether the empty state may suggest `c` (only people who can create have it). */
   canCreate: boolean;
+  /** Set when filters are applied: an empty list then says nothing matches and offers
+   * Clear filters (this href) instead of the create empty state. */
+  clearFiltersHref?: string;
 }) {
   const { singleKeyShortcuts } = useShell();
   const skeletonDone = useSkeletonDone();
@@ -84,6 +89,20 @@ export function OpportunitiesTable({
           ))}
         </tbody>
       </table>
+    );
+  }
+
+  if (items.length === 0 && clearFiltersHref !== undefined) {
+    return (
+      <p className="flex items-center gap-3 p-gutter text-muted-foreground">
+        {EMPTY_FILTERED}
+        <Link
+          href={clearFiltersHref}
+          className="rounded-sm text-label text-foreground underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          Clear filters
+        </Link>
+      </p>
     );
   }
 

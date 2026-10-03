@@ -5,18 +5,25 @@ read answers 404 `not_found`, exactly like one that doesn't exist. Single-Opport
 responses carry its `ETag`; collaborator changes need it back in `If-Match`.
 """
 
+import re
+from datetime import date
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Header, Query, Response
+from fastapi.exceptions import RequestValidationError
 
 from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import (
     NewOpportunity,
     Opportunity,
+    OpportunityFacets,
+    OpportunityFilters,
     OpportunityPage,
+    OpportunityStatus,
 )
+from app.modules.opportunities.domain.opportunity import PRODUCT_NAME_MAX
 from app.platform.concurrency import etag
 from app.platform.errors import PROBLEM_JSON, Problem
 from app.platform.uow import UoW
@@ -99,10 +106,121 @@ async def list_opportunities(
     page_size: Annotated[
         int, Query(ge=1, le=opportunities.MAX_PAGE_SIZE)
     ] = opportunities.DEFAULT_PAGE_SIZE,
+    status: Annotated[
+        str | None,
+        Query(
+            description="`all` only: Opportunities with this derived status.",
+            json_schema_extra={"enum": [s.value for s in OpportunityStatus]},
+        ),
+    ] = None,
+    owner: Annotated[
+        str | None,
+        Query(
+            description="`all` only: Opportunities this user (a UUID) owns.",
+            json_schema_extra={"format": "uuid"},
+        ),
+    ] = None,
+    product: Annotated[
+        str | None,
+        Query(
+            description="`all` only: Opportunities with this product among theirs, trimmed "
+            f"and ignoring case; at most {PRODUCT_NAME_MAX} characters once trimmed. Blank "
+            "is ignored.",
+        ),
+    ] = None,
+    date_from: Annotated[
+        str | None,
+        Query(
+            alias="from",
+            description="`all` only: target proposal date on or after this calendar date "
+            "(`YYYY-MM-DD`).",
+            json_schema_extra={"format": "date"},
+        ),
+    ] = None,
+    date_to: Annotated[
+        str | None,
+        Query(
+            alias="to",
+            description="`all` only: target proposal date on or before this calendar date "
+            "(`YYYY-MM-DD`, not before `from`).",
+            json_schema_extra={"format": "date"},
+        ),
+    ] = None,
 ) -> OpportunityPage:
-    """Opportunities, newest first, one page at a time."""
-    query = opportunities.list_mine if scope == "mine" else opportunities.list_all
-    return await query(uow, actor, page=page, page_size=page_size)
+    """Opportunities, newest first, one page at a time. With `scope=all` the optional
+    filters combine with AND and only ever narrow what the caller can read; an invalid one
+    is a 422 naming it. `scope=mine` ignores them entirely, valid or not."""
+    if scope == "mine":
+        return await opportunities.list_mine(uow, actor, page=page, page_size=page_size)
+    filters = _parse_filters(
+        status=status, owner=owner, product=product, date_from=date_from, date_to=date_to
+    )
+    return await opportunities.list_all(uow, actor, page=page, page_size=page_size, filters=filters)
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_date(value: str) -> date:
+    if not _DATE_RE.match(value):
+        raise ValueError(value)
+    return date.fromisoformat(value)
+
+
+def _parse_filters(
+    *,
+    status: str | None,
+    owner: str | None,
+    product: str | None,
+    date_from: str | None,
+    date_to: str | None,
+) -> OpportunityFilters:
+    """The `scope=all` filters from their raw query values. Raises a 422 naming every
+    invalid parameter (both dates for a reversed range)."""
+    invalid: list[str] = []
+    parsed_status: OpportunityStatus | None = None
+    if status is not None:
+        try:
+            parsed_status = OpportunityStatus(status)
+        except ValueError:
+            invalid.append("status")
+    owner_id: UUID | None = None
+    if owner is not None:
+        try:
+            owner_id = UUID(owner)
+        except ValueError:
+            invalid.append("owner")
+    trimmed = product.strip() if product is not None else None
+    if trimmed is not None and len(trimmed) > PRODUCT_NAME_MAX:
+        invalid.append("product")
+    dates: dict[str, date | None] = {"from": None, "to": None}
+    for name, raw in (("from", date_from), ("to", date_to)):
+        if raw is not None:
+            try:
+                dates[name] = _parse_date(raw)
+            except ValueError:
+                invalid.append(name)
+    start, end = dates["from"], dates["to"]
+    if start is not None and end is not None and start > end:
+        invalid.extend(("from", "to"))
+    if invalid:
+        raise RequestValidationError(
+            [{"loc": ("query", name), "msg": "invalid", "type": "value_error"} for name in invalid]
+        )
+    return OpportunityFilters(
+        status=parsed_status,
+        owner_id=owner_id,
+        product=trimmed or None,
+        date_from=start,
+        date_to=end,
+    )
+
+
+@router.get("/facets", operation_id="opportunity_facets", responses=_responses())
+async def opportunity_facets(actor: CurrentPrincipal, uow: UoW) -> OpportunityFacets:
+    """The owners and products across the Opportunities the caller can read, for the All
+    Opportunities filters. Declared before `/{opportunity_id}` so it isn't read as an id."""
+    return await opportunities.facets(uow, actor)
 
 
 @router.get(

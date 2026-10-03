@@ -72,11 +72,19 @@ const OPPORTUNITY: Opportunity = {
   can_manage_collaborators: false,
 };
 
+const FACETS = {
+  owners: [SUMMARY.owner],
+  products: ["AutoStore", "Pick station"],
+};
+
 function listed(items: OpportunitySummary[], total = items.length, page = 1) {
-  apiGet.mockResolvedValue({
-    data: { items, page, page_size: 50, total },
+  apiGet.mockImplementation(async (path: string) => ({
+    data:
+      path === "/api/v1/opportunities/facets"
+        ? FACETS
+        : { items, page, page_size: 50, total },
     response: new Response(null, { status: 200 }),
-  });
+  }));
 }
 
 const params = (page?: string) => Promise.resolve(page ? { page } : {});
@@ -157,6 +165,105 @@ describe.each(LISTS)("%s", (_path, Page, title, scope) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     renderPage(await Page({ searchParams: params() }));
     expect(screen.getByText(/not reachable right now/)).toBeTruthy();
+  });
+});
+
+describe("All Opportunities filters", () => {
+  const OWNER_ID = SUMMARY.owner.id;
+  const query = (values: Record<string, string>) => Promise.resolve(values);
+
+  it("passes the URL's filters to the API and shows them in the filter bar", async () => {
+    signedIn(["head_of_delivery"]);
+    listed([SUMMARY]);
+    const { container } = renderPage(
+      await OpportunitiesPage({
+        searchParams: query({ owner: OWNER_ID, product: "Pick station", from: "2026-11-01" }),
+      }),
+    );
+
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities", {
+      params: {
+        query: {
+          scope: "all",
+          page: 1,
+          page_size: 50,
+          owner: OWNER_ID,
+          product: "Pick station",
+          from: "2026-11-01",
+        },
+      },
+    });
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/facets");
+    expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe(OWNER_ID);
+    expect((screen.getByLabelText("Product") as HTMLSelectElement).value).toBe("Pick station");
+    expect(screen.getByRole("link", { name: "Clear filters" }).getAttribute("href")).toBe(
+      "/opportunities",
+    );
+    expect(await screen.findByRole("link", { name: "[CUSTOMER]" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("drops invalid filters and lists unfiltered", async () => {
+    signedIn(["head_of_delivery"]);
+    listed([SUMMARY]);
+    renderPage(
+      await OpportunitiesPage({
+        searchParams: query({ status: "bogus", owner: "nope", from: "2026-13-40" }),
+      }),
+    );
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities", {
+      params: { query: { scope: "all", page: 1, page_size: 50 } },
+    });
+    expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe("");
+    expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy();
+  });
+
+  it("no matches: the filtered empty state with Clear filters, not the create one", async () => {
+    signedIn(["presales_engineer"]);
+    listed([]);
+    renderPage(await OpportunitiesPage({ searchParams: query({ status: "closed" }) }));
+    expect(await screen.findByText("No Opportunities match these filters.")).toBeTruthy();
+    expect(screen.queryByText("No Opportunities yet. Press c to create one.")).toBeNull();
+    const clears = screen.getAllByRole("link", { name: "Clear filters" });
+    expect(clears.length).toBe(2);
+    for (const link of clears) expect(link.getAttribute("href")).toBe("/opportunities");
+  });
+
+  it("page links and the past-the-end redirect keep the filters", async () => {
+    signedIn(["head_of_delivery"]);
+    listed([SUMMARY], 120, 2);
+    renderPage(
+      await OpportunitiesPage({ searchParams: query({ owner: OWNER_ID, page: "2" }) }),
+    );
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe(
+      `/opportunities?owner=${OWNER_ID}`,
+    );
+    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe(
+      `/opportunities?owner=${OWNER_ID}&page=3`,
+    );
+    listed([], 120, 9);
+    await expect(
+      OpportunitiesPage({ searchParams: query({ owner: OWNER_ID, page: "9" }) }),
+    ).rejects.toThrow(`NEXT_REDIRECT /opportunities?owner=${OWNER_ID}&page=3`);
+    listed([], 0, 2);
+    await expect(
+      OpportunitiesPage({ searchParams: query({ owner: OWNER_ID, page: "2" }) }),
+    ).rejects.toThrow(`NEXT_REDIRECT /opportunities?owner=${OWNER_ID}`);
+    expect(redirect).toHaveBeenLastCalledWith(`/opportunities?owner=${OWNER_ID}`);
+  });
+
+  it("My Opportunities has no filter bar and ignores filter params", async () => {
+    signedIn(["presales_engineer"]);
+    listed([]);
+    renderPage(
+      await MyOpportunitiesPage({ searchParams: query({ status: "closed", owner: OWNER_ID }) }),
+    );
+    expect(screen.queryByRole("group", { name: "Filters" })).toBeNull();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities", {
+      params: { query: { scope: "mine", page: 1, page_size: 50 } },
+    });
+    expect(await screen.findByText("No Opportunities yet. Press c to create one.")).toBeTruthy();
   });
 });
 
