@@ -6,3 +6,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4b-auth0-sign-in.md`
   summary: Add a web test runner and unit tests for the access gate (`hasAccess`, `AccessGate`, `getMe` result mapping) and `proxy.ts` (public paths, `/auth/*` pass-through, `returnTo`).
   evidence: Review finding #9. `web/` has no test runner (Story 1.1 chose lint, typecheck and build only), so turning `roles.length > 0` into `>= 0` would pass CI. Natural home is Story 1.5 (app shell, axe accessibility checks in CI).
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5a-design-tokens-and-settings.md`
+  summary: Story 1.5 Part B — app shell: sidebar (Inbox, My Opportunities, All Opportunities, Knowledge, Reports, Admin for platform_administrator only), right-pane container toggled with `]`, `⌘K` palette, `g`+letter navigation, `?` cheat sheet, `Esc` layering, single-key toggle honoured, EXPERIENCE.md responsive tiers and the <1024px read-only notice, placeholder pages, landmarks/tab order/polite live region, and axe checks in CI.
+  evidence: Split from Story 1.5 at user request because the full spec was about 2,200 tokens. Decided already: landing — presales_engineer → My Opportunities, everyone else (all reviewer and other roles) → Inbox; axe runs component-level with Vitest + jsdom + axe-core (the runner arrives in Part A), not Playwright with an auth bypass.
