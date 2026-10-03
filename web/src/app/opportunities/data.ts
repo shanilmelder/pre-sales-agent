@@ -1,14 +1,16 @@
 // Server-only reads for the Opportunity lists and page. Authorization is decided by the API.
 import "server-only";
 
+import type { Filters } from "@/app/opportunities/filters";
 import { createServerApiClient } from "@/lib/api/server";
-import type { Opportunity, OpportunityPage } from "@/lib/opportunities";
+import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
 import { UUID_RE } from "@/lib/opportunities";
 
 export const PAGE_SIZE = 50;
 
 export type ListScope = "mine" | "all";
 export type ListResult = { kind: "ok"; page: OpportunityPage } | { kind: "error" };
+export type FacetsResult = { kind: "ok"; facets: OpportunityFacets } | { kind: "error" };
 export type GetResult =
   | { kind: "ok"; opportunity: Opportunity }
   | { kind: "not-found" }
@@ -21,18 +23,38 @@ export function parsePage(value: string | string[] | undefined): number {
   return Number(raw);
 }
 
-/** `GET /api/v1/opportunities?scope=`. */
-export async function listOpportunities(scope: ListScope, page: number): Promise<ListResult> {
+/** `GET /api/v1/opportunities?scope=`. Filters apply to `scope=all` only (the API ignores
+ * them for `mine`, so they aren't sent). */
+export async function listOpportunities(
+  scope: ListScope,
+  page: number,
+  filters: Filters = {},
+): Promise<ListResult> {
   try {
     const api = await createServerApiClient();
-    const { data, response } = await api.GET("/api/v1/opportunities", {
-      params: { query: { scope, page, page_size: PAGE_SIZE } },
-    });
+    const query = { scope, page, page_size: PAGE_SIZE, ...(scope === "all" ? filters : {}) };
+    const { data, response } = await api.GET("/api/v1/opportunities", { params: { query } });
     if (data) return { kind: "ok", page: data };
     console.error(`GET opportunities failed: status=${response.status}`);
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET opportunities failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/facets`: the owner and product choices for the filters. */
+export async function getFacets(): Promise<FacetsResult> {
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/opportunities/facets");
+    if (data) return { kind: "ok", facets: data };
+    console.error(`GET opportunity facets failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET opportunity facets failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }

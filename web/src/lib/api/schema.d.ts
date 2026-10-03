@@ -133,7 +133,9 @@ export interface paths {
         };
         /**
          * List Opportunities
-         * @description Opportunities, newest first, one page at a time.
+         * @description Opportunities, newest first, one page at a time. With `scope=all` the optional
+         *     filters combine with AND and only ever narrow what the caller can read; an invalid one
+         *     is a 422 naming it. `scope=mine` ignores them entirely, valid or not.
          */
         get: operations["list_opportunities"];
         put?: never;
@@ -142,6 +144,27 @@ export interface paths {
          * @description Create an Opportunity owned by the caller. Presales engineers only.
          */
         post: operations["create_opportunity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Opportunity Facets
+         * @description The owners and products across the Opportunities the caller can read, for the All
+         *     Opportunities filters. Declared before `/{opportunity_id}` so it isn't read as an id.
+         */
+        get: operations["opportunity_facets"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -321,6 +344,17 @@ export interface components {
             last_changed_by: string | null;
             /** Can Manage Collaborators */
             can_manage_collaborators: boolean;
+        };
+        /**
+         * OpportunityFacets
+         * @description The filter choices for All Opportunities: the distinct owners and products across
+         *     the Opportunities the caller can read, each sorted ignoring case.
+         */
+        OpportunityFacets: {
+            /** Owners */
+            owners: components["schemas"]["UserRef"][];
+            /** Products */
+            products: string[];
         };
         /**
          * OpportunityPage
@@ -1302,6 +1336,16 @@ export interface operations {
                 scope?: "mine" | "all";
                 page?: number;
                 page_size?: number;
+                /** @description `all` only: Opportunities with this derived status. */
+                status?: "intake" | "gaps_open" | "assessing" | "estimating" | "in_review" | "baselined" | "delivered" | "closed";
+                /** @description `all` only: Opportunities this user (a UUID) owns. */
+                owner?: string | null;
+                /** @description `all` only: Opportunities with this product among theirs, trimmed and ignoring case; at most 100 characters once trimmed. Blank is ignored. */
+                product?: string | null;
+                /** @description `all` only: target proposal date on or after this calendar date (`YYYY-MM-DD`). */
+                from?: string | null;
+                /** @description `all` only: target proposal date on or before this calendar date (`YYYY-MM-DD`, not before `from`). */
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -1456,6 +1500,70 @@ export interface operations {
             };
             /** @description Invalid fields (`validation_error`) or collaborator (`invalid_collaborator`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    opportunity_facets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityFacets"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

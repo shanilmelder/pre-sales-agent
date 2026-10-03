@@ -4,7 +4,8 @@ import { OpportunityListPage } from "@/app/opportunities/list-page";
 
 export const metadata: Metadata = { title: "All Opportunities · Pre-Sales Agent" };
 
-/** Every Opportunity the user can read. Filters arrive in Story 1.7 Part B. */
+/** Every Opportunity the user can read, with filters for status, owner, product and target
+ * proposal date (in the URL query). */
 export default async function OpportunitiesPage({
   searchParams,
 }: {

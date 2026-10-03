@@ -19,11 +19,14 @@ export type OpportunityPage = components["schemas"]["OpportunityPage"];
 export type Opportunity = components["schemas"]["Opportunity"];
 export type UserRef = components["schemas"]["UserRef"];
 export type UserSummary = components["schemas"]["UserSummary"];
+export type OpportunityFacets = components["schemas"]["OpportunityFacets"];
 
 /** The empty-state sentence for people who can create Opportunities. */
 export const EMPTY_LIST_CREATOR = "No Opportunities yet. Press c to create one.";
 /** The empty-state sentence for everyone else (they have no `c`). */
 export const EMPTY_LIST = "No Opportunities yet.";
+/** The empty-state sentence when the All Opportunities filters match nothing. */
+export const EMPTY_FILTERED = "No Opportunities match these filters.";
 /** What anyone sees for an Opportunity they may not read, or one that doesn't exist. */
 export const NO_ACCESS_TO_OPPORTUNITY = "You don't have access to this Opportunity";
 

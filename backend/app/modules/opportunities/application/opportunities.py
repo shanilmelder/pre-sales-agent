@@ -18,15 +18,17 @@ from uuid import UUID
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal, Resource
 from app.modules.opportunities.adapters import repository
-from app.modules.opportunities.adapters.repository import OpportunityRecord
+from app.modules.opportunities.adapters.repository import OpportunityRecord, Where
 from app.modules.opportunities.application.models import (
     NewOpportunity,
     Opportunity,
+    OpportunityFacets,
+    OpportunityFilters,
     OpportunityPage,
     OpportunitySummary,
     UserRef,
 )
-from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE, derived_status
+from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE
 from app.platform import trace
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
@@ -104,7 +106,7 @@ async def _detail(
         products=record.products,
         industry=record.industry,
         target_proposal_date=record.target_proposal_date,
-        status=derived_status(),
+        status=record.status,
         owner=_ref(record.owner_id, names),
         collaborators=[_ref(member, names) for member in members],
         row_version=record.row_version,
@@ -123,6 +125,19 @@ async def get(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> Opport
     return await _detail(uow, actor, record, members, resource)
 
 
+def _visibility(actor: Principal, *, everything: bool) -> tuple[bool, Where | None]:
+    """Whether the caller can read any Opportunity, and the filter for the ones they can
+    (None: every one)."""
+    if everything:
+        return True, None
+    user_id = actor.user_id
+    # Owner and member access needs at least one role (the policy's rule), so a user whose
+    # roles were all removed sees nothing.
+    if user_id is None or not actor.roles:
+        return False, None
+    return True, repository.involving(user_id)
+
+
 async def _page(
     uow: UnitOfWork,
     actor: Principal,
@@ -130,15 +145,21 @@ async def _page(
     everything: bool,
     page: int,
     page_size: int,
+    filters: OpportunityFilters | None = None,
 ) -> OpportunityPage:
-    where = None
-    if not everything:
-        user_id = actor.user_id
-        # Owner and member access needs at least one role (the policy's rule), so a user
-        # whose roles were all removed lists nothing.
-        if user_id is None or not actor.roles:
-            return OpportunityPage(items=[], page=page, page_size=page_size, total=0)
-        where = repository.involving(user_id)
+    sees_any, where = _visibility(actor, everything=everything)
+    if not sees_any:
+        return OpportunityPage(items=[], page=page, page_size=page_size, total=0)
+    if filters is not None:
+        # Filters only narrow: they are ANDed onto the visibility filter.
+        where = repository.matching(
+            where,
+            status=filters.status,
+            owner_id=filters.owner_id,
+            product=filters.product,
+            date_from=filters.date_from,
+            date_to=filters.date_to,
+        )
     records, total = await repository.list_page(
         uow, where, offset=(page - 1) * page_size, limit=page_size
     )
@@ -149,7 +170,7 @@ async def _page(
                 id=str(r.id),
                 title=r.title,
                 customer_name=r.customer_name,
-                status=derived_status(),
+                status=r.status,
                 owner=_ref(r.owner_id, names),
                 target_proposal_date=r.target_proposal_date,
                 created_at=r.created_at,
@@ -170,12 +191,36 @@ async def list_mine(
 
 
 async def list_all(
-    uow: UnitOfWork, actor: Principal, *, page: int = 1, page_size: int = DEFAULT_PAGE_SIZE
+    uow: UnitOfWork,
+    actor: Principal,
+    *,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    filters: OpportunityFilters | None = None,
 ) -> OpportunityPage:
     """Every Opportunity the caller can read: all of them when a role grants reading every
-    Opportunity, otherwise the ones they own or collaborate on."""
+    Opportunity, otherwise the ones they own or collaborate on. `filters` narrow that set
+    and never widen it."""
     everything = identity.can(actor, Action.OPPORTUNITY_READ)
-    return await _page(uow, actor, everything=everything, page=page, page_size=page_size)
+    return await _page(
+        uow, actor, everything=everything, page=page, page_size=page_size, filters=filters
+    )
+
+
+async def facets(uow: UnitOfWork, actor: Principal) -> OpportunityFacets:
+    """The owners and products across the Opportunities the caller can read (the same set
+    as `list_all`), for the All Opportunities filters. Owners are sorted by name and
+    products by name, both ignoring case."""
+    sees_any, where = _visibility(actor, everything=identity.can(actor, Action.OPPORTUNITY_READ))
+    if not sees_any:
+        return OpportunityFacets(owners=[], products=[])
+    owner_ids, products = await repository.facets(uow, where)
+    names = await identity.user_names(uow, set(owner_ids))
+    owners = sorted(
+        (_ref(owner_id, names) for owner_id in owner_ids),
+        key=lambda ref: (ref.name.casefold(), ref.id),
+    )
+    return OpportunityFacets(owners=owners, products=products)
 
 
 # --- commands -------------------------------------------------------------------------------

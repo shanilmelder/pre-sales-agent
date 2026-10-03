@@ -5,13 +5,33 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, delete, func, insert, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Text,
+    and_,
+    cast,
+    delete,
+    func,
+    insert,
+    literal,
+    or_,
+    select,
+    true,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.modules.opportunities.adapters.models import CollaboratorRow, OpportunityRow
-from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE
+from app.modules.opportunities.domain.opportunity import (
+    SUBJECT_TYPE,
+    OpportunityStatus,
+    derived_status,
+)
 from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork
+
+Where = ColumnElement[bool]
+"""A row filter built here and handed back by the application layer."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +45,15 @@ class OpportunityRecord:
     target_proposal_date: date
     row_version: int
     created_at: datetime
+    status: OpportunityStatus
+
+
+def status_expression() -> ColumnElement[str]:
+    """The derived status (AD-26) as SQL, mirroring `domain.opportunity.derived_status()`.
+    Lists select it and filter on it, so the column and the filter can't disagree. Nothing
+    after intake exists yet, so it is the constant `derived_status()` returns; later stories
+    replace it with the real derivation here and in the domain together."""
+    return cast(literal(derived_status().value, Text), Text)
 
 
 _COLUMNS = (
@@ -37,6 +66,7 @@ _COLUMNS = (
     OpportunityRow.target_proposal_date,
     OpportunityRow.row_version,
     OpportunityRow.created_at,
+    status_expression().label("status"),
 )
 
 
@@ -51,6 +81,7 @@ def _record(row: Any) -> OpportunityRecord:
         target_proposal_date=row.target_proposal_date,
         row_version=row.row_version,
         created_at=row.created_at,
+        status=OpportunityStatus(row.status),
     )
 
 
@@ -107,6 +138,81 @@ def involving(user_id: UUID) -> ColumnElement[bool]:
         .exists()
     )
     return or_(OpportunityRow.owner_id == user_id, member)
+
+
+_WHITESPACE = " \t\n\r\x0b\x0c"
+
+
+def _trim(value: Any) -> ColumnElement[str]:
+    """Trim ASCII whitespace (Postgres' `trim` alone strips only spaces), as Python's
+    `str.strip` does when products are stored."""
+    return func.btrim(value, _WHITESPACE)
+
+
+def matching(
+    within: Where | None = None,
+    *,
+    status: OpportunityStatus | None = None,
+    owner_id: UUID | None = None,
+    product: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> ColumnElement[bool]:
+    """Filter: `within` (a visibility filter) AND the given conditions; every row when
+    nothing is given. Conditions only ever narrow `within`. `product` matches any of the
+    Opportunity's products, trimmed and ignoring case; the dates bound the target proposal
+    date inclusively."""
+    conditions: list[ColumnElement[bool]] = [] if within is None else [within]
+    if status is not None:
+        conditions.append(status_expression() == cast(literal(status.value, Text), Text))
+    if owner_id is not None:
+        conditions.append(OpportunityRow.owner_id == owner_id)
+    if product is not None:
+        # EXISTS (SELECT 1 FROM unnest(products) AS p WHERE lower(trim(p)) = lower(trim(:x)))
+        element = func.unnest(OpportunityRow.products).column_valued("p")
+        conditions.append(
+            select(literal(1))
+            .where(
+                func.lower(_trim(element)) == func.lower(_trim(cast(literal(product, Text), Text)))
+            )
+            .exists()
+        )
+    if date_from is not None:
+        conditions.append(OpportunityRow.target_proposal_date >= date_from)
+    if date_to is not None:
+        conditions.append(OpportunityRow.target_proposal_date <= date_to)
+    return and_(true(), *conditions)
+
+
+async def facets(
+    uow: UnitOfWork, where: ColumnElement[bool] | None
+) -> tuple[list[UUID], list[str]]:
+    """The distinct owner ids and product names across the Opportunities matching `where`
+    (every row when None). Products are trimmed and de-duplicated ignoring case (the
+    alphabetically first spelling wins), sorted ignoring case; blank ones are left out."""
+    owners_query = select(OpportunityRow.owner_id).distinct()
+    # FROM opportunities JOIN LATERAL unnest(products) AS product_names(p) ON true
+    names = (
+        func.unnest(OpportunityRow.products)
+        .table_valued("p")
+        .render_derived(name="product_names")
+        .lateral()
+    )
+    key = func.lower(_trim(names.c.p))
+    products_query = (
+        select(func.min(_trim(names.c.p)))
+        .select_from(OpportunityRow)
+        .join(names, true())
+        .where(_trim(names.c.p) != "")
+        .group_by(key)
+        .order_by(key)
+    )
+    if where is not None:
+        owners_query = owners_query.where(where)
+        products_query = products_query.where(where)
+    owners = list((await uow.session.execute(owners_query)).scalars())
+    products = list((await uow.session.execute(products_query)).scalars())
+    return owners, products
 
 
 async def list_page(

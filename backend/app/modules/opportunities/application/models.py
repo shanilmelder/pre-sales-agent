@@ -1,8 +1,9 @@
 """Inputs and read models for Opportunities (Story 1.7)."""
 
 from datetime import UTC, date, datetime
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.modules.opportunities.domain import opportunity as rules
 from app.modules.opportunities.domain.opportunity import OpportunityStatus
@@ -80,6 +81,42 @@ class OpportunityPage(BaseModel):
     page: int = Field(ge=1)
     page_size: int = Field(ge=1)
     total: int = Field(ge=0)
+
+
+class OpportunityFilters(BaseModel):
+    """All Opportunities filters (Story 1.7 Part B). Every one is optional and they combine
+    with AND. `product` matches any of the Opportunity's products, trimmed and ignoring case
+    (a blank one is ignored); `date_from`/`date_to` bound the target proposal date
+    inclusively and may not be reversed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: OpportunityStatus | None = None
+    owner_id: UUID | None = None
+    product: str | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+
+    @field_validator("product")
+    @classmethod
+    def _product(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _range(self) -> "OpportunityFilters":
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("`from` must not be after `to`")
+        return self
+
+
+class OpportunityFacets(BaseModel):
+    """The filter choices for All Opportunities: the distinct owners and products across
+    the Opportunities the caller can read, each sorted ignoring case."""
+
+    owners: list[UserRef]
+    products: list[str]
 
 
 class Opportunity(BaseModel):
