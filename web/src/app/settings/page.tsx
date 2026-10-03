@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 
-import { AccessGate, SignedInHeader, hasAccess } from "@/components/access-gate";
+import { AccessGate, hasAccess } from "@/components/access-gate";
 import { SettingsForm } from "@/components/settings-form";
+import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
 import { getPreferences } from "@/lib/preferences";
 
@@ -13,15 +14,12 @@ export default async function SettingsPage() {
 
   const preferences = await getPreferences();
   return (
-    <>
-      <SignedInHeader me={result.me} />
-      <main className="flex flex-1 flex-col p-gutter">
-        <div className="flex w-full max-w-xl flex-col">
-          <h1 className="text-title">Settings</h1>
-          <p className="text-meta text-muted-foreground">Saved in this browser.</p>
-          <SettingsForm initial={preferences} />
-        </div>
-      </main>
-    </>
+    <AppShell me={result.me}>
+      <div className="flex w-full max-w-xl flex-col p-gutter">
+        <h1 className="text-title">Settings</h1>
+        <p className="text-meta text-muted-foreground">Saved in this browser.</p>
+        <SettingsForm initial={preferences} />
+      </div>
+    </AppShell>
   );
 }

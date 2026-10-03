@@ -1,4 +1,5 @@
-import { AccessGate, SignedInHeader, hasAccess } from "@/components/access-gate";
+import { AccessGate, hasAccess } from "@/components/access-gate";
+import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
 
 // Unknown pages are gated too: a user without roles sees only the no-access message.
@@ -7,11 +8,10 @@ export default async function NotFound() {
   if (!hasAccess(result)) return <AccessGate result={result} />;
 
   return (
-    <>
-      <SignedInHeader me={result.me} />
-      <main className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-sm">
+    <AppShell me={result.me}>
+      <div className="p-gutter">
         <p>This page does not exist.</p>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

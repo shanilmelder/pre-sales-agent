@@ -56,4 +56,9 @@ describe("RootLayout", () => {
     expect(scripts).toContain(THEME_SCRIPT);
     expect(doc.body.textContent).toContain("content");
   });
+
+  it("mounts the shell providers' single polite live region around the page", async () => {
+    const doc = await renderLayout();
+    expect(doc.body.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
+  });
 });

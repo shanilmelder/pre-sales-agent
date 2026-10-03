@@ -8,6 +8,7 @@ import { axeViolations } from "@/test/axe";
 const savePreferences = vi.hoisted(() => vi.fn());
 vi.mock("@/app/settings/actions", () => ({ savePreferences }));
 
+import { LiveRegionProvider } from "./shell/live-region";
 import { SettingsForm } from "./settings-form";
 
 const DEFAULTS: Preferences = { theme: "system", density: "comfortable", singleKeyShortcuts: true };
@@ -91,7 +92,11 @@ describe("SettingsForm", () => {
     ["a rejected action", () => savePreferences.mockRejectedValue(new Error("network"))],
   ])("on %s: announces the failure and reverts to the last saved choice", async (_label, fail) => {
     const user = userEvent.setup();
-    render(<SettingsForm initial={DEFAULTS} />);
+    render(
+      <LiveRegionProvider>
+        <SettingsForm initial={DEFAULTS} />
+      </LiveRegionProvider>,
+    );
 
     // A successful save moves the "last saved" point to Light.
     await user.click(screen.getByRole("radio", { name: "Light" }));
@@ -99,8 +104,10 @@ describe("SettingsForm", () => {
 
     fail();
     await user.click(screen.getByRole("radio", { name: "Dark" }));
-    expect(await screen.findByText(/could not be saved/)).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toMatch(/could not be saved/);
+    expect((await screen.findAllByText(/could not be saved/)).length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toMatch(/could not be saved/),
+    );
     await waitFor(() =>
       expect((screen.getByRole("radio", { name: "Light" }) as HTMLInputElement).checked).toBe(true),
     );
