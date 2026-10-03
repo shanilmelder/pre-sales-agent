@@ -461,9 +461,56 @@ describe("every shortcut in the shared definition is implemented", () => {
       case "close-layer":
         expect(rightPane()).toBeNull();
         break;
+      case "create-opportunity":
+        expect(push).toHaveBeenCalledWith("/opportunities/new");
+        break;
       default:
         throw new Error(`No check for shortcut ${id}`);
     }
+  });
+});
+
+describe("c creates an Opportunity (presales engineers only)", () => {
+  it("c opens New Opportunity for a presales engineer", async () => {
+    const { user } = renderShell({ roles: ["presales_engineer"] });
+    await user.keyboard("c");
+    expect(push).toHaveBeenCalledWith("/opportunities/new");
+  });
+
+  it("c does nothing for other roles, and the cheat sheet leaves it out", async () => {
+    const { user } = renderShell({ roles: ["head_of_delivery", "platform_administrator"] });
+    await user.keyboard("c");
+    expect(push).not.toHaveBeenCalled();
+    await user.keyboard("?");
+    const terms = within(cheatSheet()!)
+      .getAllByRole("term")
+      .map((t) => t.textContent);
+    expect(terms).not.toContain("Create an Opportunity");
+    expect(terms).toHaveLength(SHORTCUTS.length - 1);
+  });
+
+  it("c is off with single-key shortcuts off, and inert while typing", async () => {
+    const off = renderShell({ singleKeyShortcuts: false });
+    await off.user.keyboard("c");
+    expect(push).not.toHaveBeenCalled();
+    off.unmount();
+    const { user } = renderShell({
+      children: <input aria-label="Field" />,
+    });
+    await user.click(screen.getByRole("textbox", { name: "Field" }));
+    await user.keyboard("c");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("the palette offers New Opportunity to presales engineers only", async () => {
+    const pse = renderShell({ roles: ["presales_engineer"] });
+    await pse.user.keyboard("{Control>}k{/Control}");
+    await pse.user.click(within(palette()!).getByRole("option", { name: "New Opportunity" }));
+    expect(push).toHaveBeenCalledWith("/opportunities/new");
+    pse.unmount();
+    const other = renderShell({ roles: ["head_of_delivery"] });
+    await other.user.keyboard("{Control>}k{/Control}");
+    expect(within(palette()!).queryByRole("option", { name: "New Opportunity" })).toBeNull();
   });
 });
 

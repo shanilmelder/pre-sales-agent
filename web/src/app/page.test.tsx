@@ -32,9 +32,7 @@ vi.mock("next/navigation", () => ({
 import AdminPage from "@/app/admin/page";
 import InboxPage from "@/app/inbox/page";
 import KnowledgePage from "@/app/knowledge/page";
-import MyOpportunitiesPage from "@/app/my-opportunities/page";
 import NotFound from "@/app/not-found";
-import OpportunitiesPage from "@/app/opportunities/page";
 import Home from "@/app/page";
 import ReportsPage from "@/app/reports/page";
 import SettingsPage from "@/app/settings/page";
@@ -63,8 +61,6 @@ function signedIn(roles: Role[]) {
 
 const SHELL_PAGES: [string, () => Promise<ReactElement>, string, string][] = [
   ["/inbox", InboxPage, "Inbox", "Nothing waiting for you."],
-  ["/my-opportunities", MyOpportunitiesPage, "My Opportunities", "Not available yet."],
-  ["/opportunities", OpportunitiesPage, "All Opportunities", "Not available yet."],
   ["/knowledge", KnowledgePage, "Knowledge", "Not available yet."],
   ["/reports", ReportsPage, "Reports", "Not available yet."],
   ["/settings", SettingsPage, "Settings", "Saved in this browser."],

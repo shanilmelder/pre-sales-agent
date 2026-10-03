@@ -9,5 +9,6 @@ Each module lives in `app/modules/<module>/` with four layers (architecture spin
 
 A module never imports another module's `domain` or `adapters` (AD-2), and never imports
 `langgraph` (AD-5). Both rules are enforced by `tests/test_architecture.py`.
-No modules exist yet; they are added from Story 1.4 onwards.
+Modules: `identity` (users, roles, the action catalogue and policy) and `opportunities`
+(Opportunities and collaborators).
 """

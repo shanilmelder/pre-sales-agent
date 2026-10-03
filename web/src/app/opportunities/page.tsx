@@ -1,18 +1,20 @@
 import type { Metadata } from "next";
 
-import { AccessGate, hasAccess } from "@/components/access-gate";
-import { AppShell, PlaceholderPage } from "@/components/shell/app-shell";
-import { getMe } from "@/lib/api/server";
+import { OpportunityListPage } from "@/app/opportunities/list-page";
 
 export const metadata: Metadata = { title: "All Opportunities · Pre-Sales Agent" };
 
-export default async function OpportunitiesPage() {
-  const result = await getMe();
-  if (!hasAccess(result)) return <AccessGate result={result} />;
-
-  return (
-    <AppShell me={result.me}>
-      <PlaceholderPage title="All Opportunities" />
-    </AppShell>
-  );
+/** Every Opportunity the user can read. Filters arrive in Story 1.7 Part B. */
+export default async function OpportunitiesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // Called, not rendered as an element, so the page resolves to its finished tree.
+  return OpportunityListPage({
+    title: "All Opportunities",
+    scope: "all",
+    basePath: "/opportunities",
+    searchParams,
+  });
 }

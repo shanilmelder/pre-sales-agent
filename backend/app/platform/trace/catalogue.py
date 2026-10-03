@@ -78,3 +78,33 @@ class IdentityUserRoleRemoved(TracePayload):
     event_type: ClassVar[str] = "identity.user.role_removed"
 
     role: str
+
+
+# --- opportunities ------------------------------------------------------------------------
+# Subject: the Opportunity (`opportunities.opportunity`), and `opportunity_id` is set.
+# Payloads hold ids only, never customer content.
+
+
+@register
+class OpportunitiesOpportunityCreated(TracePayload):
+    """A presales engineer created an Opportunity. Actor: the creator (its owner)."""
+
+    event_type: ClassVar[str] = "opportunities.opportunity.created"
+
+
+@register
+class OpportunitiesCollaboratorAdded(TracePayload):
+    """The owner added a collaborator. `user_id`: the collaborator."""
+
+    event_type: ClassVar[str] = "opportunities.collaborator.added"
+
+    user_id: str
+
+
+@register
+class OpportunitiesCollaboratorRemoved(TracePayload):
+    """The owner removed a collaborator. `user_id`: the former collaborator."""
+
+    event_type: ClassVar[str] = "opportunities.collaborator.removed"
+
+    user_id: str

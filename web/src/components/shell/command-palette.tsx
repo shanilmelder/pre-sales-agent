@@ -1,6 +1,6 @@
 "use client";
 
-import { SettingsIcon } from "lucide-react";
+import { PlusIcon, SettingsIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { useShell } from "@/components/shell/shell-context";
@@ -15,8 +15,10 @@ import {
 } from "@/components/ui/command";
 import type { Role } from "@/lib/navigation";
 import { visibleNav } from "@/lib/navigation";
+import { canCreateOpportunity, NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
 
-/** ⌘K/Ctrl+K: navigation commands (Admin only for admins) and Settings, fuzzy-filtered. */
+/** ⌘K/Ctrl+K: navigation commands (Admin only for admins), New Opportunity (presales
+ * engineers only) and Settings, fuzzy-filtered. */
 export function CommandPalette({ roles }: { roles: readonly Role[] }) {
   const router = useRouter();
   const { dialog, openDialog, closeDialog } = useShell();
@@ -51,6 +53,14 @@ export function CommandPalette({ roles }: { roles: readonly Role[] }) {
               );
             })}
           </CommandGroup>
+          {canCreateOpportunity(roles) ? (
+            <CommandGroup heading="Create">
+              <CommandItem value="New Opportunity" onSelect={() => go(NEW_OPPORTUNITY_HREF)}>
+                <PlusIcon aria-hidden="true" />
+                New Opportunity
+              </CommandItem>
+            </CommandGroup>
+          ) : null}
           <CommandGroup heading="Account">
             <CommandItem value="Settings" onSelect={() => go("/settings")}>
               <SettingsIcon aria-hidden="true" />

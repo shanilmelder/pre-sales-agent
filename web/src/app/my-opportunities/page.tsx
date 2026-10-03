@@ -1,18 +1,20 @@
 import type { Metadata } from "next";
 
-import { AccessGate, hasAccess } from "@/components/access-gate";
-import { AppShell, PlaceholderPage } from "@/components/shell/app-shell";
-import { getMe } from "@/lib/api/server";
+import { OpportunityListPage } from "@/app/opportunities/list-page";
 
 export const metadata: Metadata = { title: "My Opportunities · Pre-Sales Agent" };
 
-export default async function MyOpportunitiesPage() {
-  const result = await getMe();
-  if (!hasAccess(result)) return <AccessGate result={result} />;
-
-  return (
-    <AppShell me={result.me}>
-      <PlaceholderPage title="My Opportunities" />
-    </AppShell>
-  );
+/** Opportunities the user owns or collaborates on. */
+export default async function MyOpportunitiesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // Called, not rendered as an element, so the page resolves to its finished tree.
+  return OpportunityListPage({
+    title: "My Opportunities",
+    scope: "mine",
+    basePath: "/my-opportunities",
+    searchParams,
+  });
 }
