@@ -34,6 +34,10 @@ type ShellState = {
   layers: ShellLayer[];
   closeTopLayer: () => void;
   singleKeyShortcuts: boolean;
+  /** Where `1`–`9` go, in key order, while an Opportunity workspace is mounted (else null).
+   * Set through `useWorkspaceTabKeys`; the global key handler applies the single-key rules. */
+  workspaceTabs: readonly string[] | null;
+  setWorkspaceTabs: (hrefs: readonly string[] | null) => void;
 };
 
 const ShellContext = createContext<ShellState | null>(null);
@@ -71,6 +75,7 @@ export function ShellProvider({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightPaneOpen, setRightPaneOpenState] = useState(false);
   const [dialog, setDialog] = useState<ShellDialog | null>(null);
+  const [workspaceTabs, setWorkspaceTabs] = useState<readonly string[] | null>(null);
 
   const setRightPaneOpen = useCallback(
     (open: boolean) => {
@@ -108,14 +113,35 @@ export function ShellProvider({
         else if (top) setDialog(null);
       },
       singleKeyShortcuts,
+      workspaceTabs,
+      setWorkspaceTabs,
     };
-  }, [sidebarCollapsed, rightPaneOpen, setRightPaneOpen, dialog, singleKeyShortcuts]);
+  }, [
+    sidebarCollapsed,
+    rightPaneOpen,
+    setRightPaneOpen,
+    dialog,
+    singleKeyShortcuts,
+    workspaceTabs,
+  ]);
 
   return (
     <ShellContext.Provider value={value}>
       <RightPaneSlotProvider>{children}</RightPaneSlotProvider>
     </ShellContext.Provider>
   );
+}
+
+/** Registers the workspace's tab hrefs (index 0 is key `1`) with the global key handler
+ * while the calling component is mounted. */
+export function useWorkspaceTabKeys(hrefs: readonly string[]) {
+  const { setWorkspaceTabs } = useShell();
+  // A string dependency: a new array with the same hrefs doesn't re-register.
+  const key = hrefs.join("\n");
+  useEffect(() => {
+    setWorkspaceTabs(key ? key.split("\n") : []);
+    return () => setWorkspaceTabs(null);
+  }, [key, setWorkspaceTabs]);
 }
 
 // --- right-pane content slot ----------------------------------------------------------------

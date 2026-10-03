@@ -188,7 +188,13 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Opportunity
+         * @description Edit the title and/or target proposal date. Owner only. An omitted field stays
+         *     unchanged; a blank title falls back to the customer name. Changing nothing writes
+         *     nothing.
+         */
+        patch: operations["update_opportunity"];
         trace?: never;
     };
     "/api/v1/opportunities/{opportunity_id}/collaborators/{user_id}": {
@@ -310,8 +316,9 @@ export interface components {
          * @description One Opportunity as a reader sees it. `row_version` is also the `ETag`.
          *
          *     `last_changed_by` names whoever made the latest recorded change (null when unknown).
-         *     `can_manage_collaborators` says whether the caller may add or remove collaborators;
-         *     the UI only uses it to hide controls, the API decides on every write.
+         *     `can_manage_collaborators` says whether the caller may add or remove collaborators and
+         *     `can_edit` whether they may edit the title and target proposal date; the UI only uses
+         *     them to hide controls, the API decides on every write.
          */
         Opportunity: {
             /** Id */
@@ -344,6 +351,27 @@ export interface components {
             last_changed_by: string | null;
             /** Can Manage Collaborators */
             can_manage_collaborators: boolean;
+            /** Can Edit */
+            can_edit: boolean;
+        };
+        /**
+         * OpportunityChanges
+         * @description What the owner edits on an existing Opportunity (Story 1.8 Part B). An omitted (or
+         *     null) field stays unchanged. This checks shape only: the title is trimmed and at most
+         *     the title limit, and may be blank (it then falls back to the customer name). The
+         *     not-in-the-past rule for the date needs the stored value, so the command checks it.
+         */
+        OpportunityChanges: {
+            /**
+             * Title
+             * @description At most 200 characters once trimmed; blank falls back to the customer name.
+             */
+            title?: string | null;
+            /**
+             * Target Proposal Date
+             * @description A calendar date, not in the past (checked only when it changes).
+             */
+            target_proposal_date?: string | null;
         };
         /**
          * OpportunityFacets
@@ -1384,7 +1412,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`) or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1476,7 +1504,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1498,7 +1526,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`) or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1674,8 +1702,193 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`) or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    update_opportunity: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Opportunity as last read, e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpportunityChanges"];
+            };
+        };
+        responses: {
+            /** @description The Opportunity after the change */
+            200: {
+                headers: {
+                    /** @description The Opportunity's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opportunity"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity changed since it was read (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1768,7 +1981,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1834,7 +2047,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`) or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1950,7 +2163,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2016,7 +2229,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`) or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
             422: {
                 headers: {
                     [name: string]: unknown;

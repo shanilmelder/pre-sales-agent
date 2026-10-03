@@ -17,7 +17,15 @@ vi.mock("next/navigation", () => ({
 
 import { AppShell, PlaceholderPage } from "./app-shell";
 import { READ_ONLY_MESSAGE } from "./read-only-notice";
-import { ShellProviders } from "./shell-context";
+import { ShellProviders, useWorkspaceTabKeys } from "./shell-context";
+
+const TAB_HREFS = Array.from({ length: 9 }, (_, i) => `/tab-${i + 1}`);
+
+/** Stands in for the Opportunity workspace's tab strip: registers `1`–`9`. */
+function Workspace({ children }: { children?: ReactNode }) {
+  useWorkspaceTabKeys(TAB_HREFS);
+  return <>{children}</>;
+}
 
 function me(roles: Role[]): Me {
   return {
@@ -427,6 +435,8 @@ describe("every shortcut in the shared definition is implemented", () => {
   async function press(user: ReturnType<typeof userEvent.setup>, shortcut: Shortcut) {
     if (shortcut.match.kind === "sequence") {
       await user.keyboard(shortcut.match.keys.join(""));
+    } else if (shortcut.match.kind === "digit") {
+      await user.keyboard("4");
     } else if (shortcut.match.mod) {
       await user.keyboard(`{Control>}${shortcut.match.key}{/Control}`);
     } else if (shortcut.match.key === "Escape") {
@@ -438,7 +448,9 @@ describe("every shortcut in the shared definition is implemented", () => {
   }
 
   it.each(SHORTCUTS.map((s) => [s.id, s] as const))("%s", async (id, shortcut) => {
-    const { user } = renderShell();
+    const { user } = renderShell(
+      shortcut.match.kind === "digit" ? { children: <Workspace /> } : {},
+    );
     if (id === "close-layer") await user.keyboard("]");
     await act(async () => press(user, shortcut));
     if (shortcut.match.kind === "sequence") {
@@ -463,6 +475,9 @@ describe("every shortcut in the shared definition is implemented", () => {
         break;
       case "create-opportunity":
         expect(push).toHaveBeenCalledWith("/opportunities/new");
+        break;
+      case "switch-workspace-tab":
+        expect(push).toHaveBeenCalledWith("/tab-4");
         break;
       default:
         throw new Error(`No check for shortcut ${id}`);
@@ -670,6 +685,101 @@ describe("more layering", () => {
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(rightPane()).toBeTruthy();
+  });
+});
+
+describe("1–9 switch workspace tabs", () => {
+  it("each digit goes to its tab while a workspace is mounted", async () => {
+    const { user } = renderShell({ children: <Workspace /> });
+    for (let n = 1; n <= 9; n++) {
+      await user.keyboard(String(n));
+      expect(push).toHaveBeenLastCalledWith(`/tab-${n}`);
+    }
+    expect(push).toHaveBeenCalledTimes(9);
+  });
+
+  it("the digit of the tab already open adds no history entry", async () => {
+    pathname.current = "/tab-4";
+    const { user } = renderShell({ children: <Workspace /> });
+    await user.keyboard("4");
+    expect(push).not.toHaveBeenCalled();
+    await user.keyboard("5");
+    expect(push).toHaveBeenCalledWith("/tab-5");
+  });
+
+  it("digits do nothing outside a workspace, and 0 does nothing anywhere", async () => {
+    const outside = renderShell();
+    await outside.user.keyboard("14");
+    expect(push).not.toHaveBeenCalled();
+    outside.unmount();
+    const { user } = renderShell({ children: <Workspace /> });
+    await user.keyboard("0");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("unmounting the workspace unregisters the keys", async () => {
+    const { user, rerender } = renderShell({ children: <Workspace /> });
+    rerender(
+      <ShellProviders singleKeyShortcuts>
+        <AppShell me={me(["presales_engineer"])}>
+          <p>Elsewhere</p>
+        </AppShell>
+      </ShellProviders>,
+    );
+    await user.keyboard("4");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("ignored with single-key shortcuts off", async () => {
+    const { user } = renderShell({ singleKeyShortcuts: false, children: <Workspace /> });
+    await user.keyboard("4");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("ignored while typing in a text field", async () => {
+    const { user } = renderShell({
+      children: (
+        <Workspace>
+          <input aria-label="Search people" />
+        </Workspace>
+      ),
+    });
+    await user.click(screen.getByRole("textbox", { name: "Search people" }));
+    await user.keyboard("4");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("ignored with the palette or cheat sheet open", async () => {
+    const { user } = renderShell({ children: <Workspace /> });
+    await user.keyboard("{Control>}k{/Control}");
+    expect(palette()).toBeTruthy();
+    await user.keyboard("4");
+    await user.keyboard("{Escape}");
+    await user.keyboard("?");
+    await user.keyboard("4");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("ignored with Ctrl, Alt or ⌘ held", async () => {
+    const { user } = renderShell({ children: <Workspace /> });
+    await user.keyboard("{Control>}4{/Control}{Alt>}4{/Alt}{Meta>}4{/Meta}");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("ignored inside an open menu", async () => {
+    const { user } = renderShell({ children: <Workspace /> });
+    await user.click(within(sidebar()).getByRole("button", { name: "Account menu for [USER]" }));
+    const menu = await screen.findByRole("menu");
+    await expectFocusIn(menu);
+    await user.keyboard("4");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("the cheat sheet lists Switch workspace tab with 1–9", async () => {
+    const { user } = renderShell();
+    await user.keyboard("?");
+    const term = within(cheatSheet()!).getByText("Switch workspace tab");
+    expect(term.nextElementSibling?.textContent).toBe("1–9");
   });
 });
 

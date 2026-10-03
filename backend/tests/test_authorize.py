@@ -54,6 +54,10 @@ def test_story_1_7_actions_are_catalogued() -> None:
     }
 
 
+def test_story_1_8_update_action_is_catalogued() -> None:
+    assert Action.OPPORTUNITY_UPDATE.value == "opportunities.opportunity.update"
+
+
 @pytest.mark.parametrize("bad", ["identity.user", "Identity.user.assign", "a.b.c.d", "a.b.c-d"])
 def test_action_regex_rejects_bad_names(bad: str) -> None:
     assert not ACTION_NAME_RE.match(bad)
@@ -72,6 +76,7 @@ def test_every_action_has_a_policy_entry() -> None:
         Role.HEAD_OF_DELIVERY,
         Role.PLATFORM_ADMINISTRATOR,
     }
+    assert POLICY[Action.OPPORTUNITY_UPDATE] == frozenset()
     assert POLICY[Action.COLLABORATOR_ADD] == frozenset()
     assert POLICY[Action.COLLABORATOR_REMOVE] == frozenset()
     assert POLICY[Action.USER_SEARCH] == {Role.PRESALES_ENGINEER}
@@ -80,6 +85,7 @@ def test_every_action_has_a_policy_entry() -> None:
 def test_resource_scoped_grants() -> None:
     assert OWNER_GRANTS == {
         Action.OPPORTUNITY_READ,
+        Action.OPPORTUNITY_UPDATE,
         Action.COLLABORATOR_ADD,
         Action.COLLABORATOR_REMOVE,
     }
@@ -120,10 +126,13 @@ def test_only_presales_engineers_create(role: Role) -> None:
     assert can(principal, Action.OPPORTUNITY_CREATE) is (role is Role.PRESALES_ENGINEER)
 
 
-def test_owner_reads_and_manages_collaborators() -> None:
+OWNER_ONLY = (Action.OPPORTUNITY_UPDATE, Action.COLLABORATOR_ADD, Action.COLLABORATOR_REMOVE)
+
+
+def test_owner_reads_edits_and_manages_collaborators() -> None:
     owner, owner_id = _user({Role.PRESALES_ENGINEER})
     resource = _opportunity(owner_id)
-    for action in (Action.OPPORTUNITY_READ, Action.COLLABORATOR_ADD, Action.COLLABORATOR_REMOVE):
+    for action in (Action.OPPORTUNITY_READ, *OWNER_ONLY):
         authorize(owner, action, resource)
 
 
@@ -132,7 +141,7 @@ def test_owner_and_members_without_roles_are_denied() -> None:
     owner, owner_id = _user()
     member, member_id = _user()
     resource = _opportunity(owner_id, member_id)
-    for action in (Action.OPPORTUNITY_READ, Action.COLLABORATOR_ADD, Action.COLLABORATOR_REMOVE):
+    for action in (Action.OPPORTUNITY_READ, *OWNER_ONLY):
         assert not can(owner, action, resource)
         assert not can(member, action, resource)
 
@@ -143,29 +152,30 @@ def test_owner_and_member_rules_apply_only_to_opportunities() -> None:
     other = Resource(
         type="knowledge.document", id=uuid4(), owner_id=owner_id, member_ids=frozenset({member_id})
     )
-    for action in (Action.OPPORTUNITY_READ, Action.COLLABORATOR_ADD, Action.COLLABORATOR_REMOVE):
+    for action in (Action.OPPORTUNITY_READ, *OWNER_ONLY):
         assert not can(owner, action, other)
         assert not can(member, action, other)
 
 
-def test_collaborator_reads_but_does_not_manage() -> None:
+def test_collaborator_reads_but_does_not_edit_or_manage() -> None:
     _, owner_id = _user({Role.PRESALES_ENGINEER})
     member, member_id = _user({Role.ENGINEERING_REVIEWER})
     resource = _opportunity(owner_id, member_id)
     assert can(member, Action.OPPORTUNITY_READ, resource)
-    for action in (Action.COLLABORATOR_ADD, Action.COLLABORATOR_REMOVE):
+    for action in OWNER_ONLY:
         with pytest.raises(ForbiddenError):
             authorize(member, action, resource)
 
 
 @pytest.mark.parametrize("role", [Role.HEAD_OF_DELIVERY, Role.PLATFORM_ADMINISTRATOR])
-def test_hod_and_admin_read_every_opportunity_but_do_not_manage(role: Role) -> None:
+def test_hod_and_admin_read_every_opportunity_but_do_not_edit_or_manage(role: Role) -> None:
     principal, _ = _user({role})
     resource = _opportunity(uuid4())
     assert can(principal, Action.OPPORTUNITY_READ, resource)
     assert can(principal, Action.OPPORTUNITY_READ)  # role grant: no resource needed
-    assert not can(principal, Action.COLLABORATOR_ADD, resource)
-    assert not can(principal, Action.COLLABORATOR_REMOVE, resource)
+    for action in OWNER_ONLY:
+        assert not can(principal, action, resource)
+        assert not can(principal, action)
 
 
 @pytest.mark.parametrize(
@@ -174,7 +184,7 @@ def test_hod_and_admin_read_every_opportunity_but_do_not_manage(role: Role) -> N
 def test_other_roles_cannot_read_someone_elses_opportunity(role: Role) -> None:
     principal, _ = _user({role})
     resource = _opportunity(uuid4(), uuid4())
-    for action in (Action.OPPORTUNITY_READ, Action.COLLABORATOR_ADD, Action.COLLABORATOR_REMOVE):
+    for action in (Action.OPPORTUNITY_READ, *OWNER_ONLY):
         assert not can(principal, action, resource)
     assert not can(principal, Action.OPPORTUNITY_READ)
 

@@ -1,4 +1,4 @@
-"""Opportunity commands and queries (Story 1.7).
+"""Opportunity commands and queries (Stories 1.7 and 1.8).
 
 Every command follows the AD-3 path inside the caller's Unit of Work: authorize, domain
 rules, `row_version` (`If-Match`), write, then trace. Access goes through `identity`'s
@@ -6,13 +6,16 @@ policy with a `Resource` carrying the owner and collaborator ids:
 
 - reading: the owner, collaborators, and roles that grant `opportunities.opportunity.read`;
   anyone else gets the same 404 `not_found` as for an id that doesn't exist;
-- managing collaborators: the owner only (403 `forbidden` for other readers).
+- managing collaborators and editing the title and target proposal date: the owner only
+  (403 `forbidden` for other readers).
 
-Adding a collaborator who already is one, or removing one who isn't, is a no-op that
-writes nothing and appends no event. Trace payloads and logs carry ids only, never
-customer content.
+Adding a collaborator who already is one, removing one who isn't, or an edit that changes
+no field, is a no-op that writes nothing and appends no event. Trace payloads and logs carry
+ids only, never customer content.
 """
 
+from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID
 
 from app.modules.identity.application import public as identity
@@ -22,13 +25,14 @@ from app.modules.opportunities.adapters.repository import OpportunityRecord, Whe
 from app.modules.opportunities.application.models import (
     NewOpportunity,
     Opportunity,
+    OpportunityChanges,
     OpportunityFacets,
     OpportunityFilters,
     OpportunityPage,
     OpportunitySummary,
     UserRef,
 )
-from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE
+from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE, check_target_date
 from app.platform import trace
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
@@ -36,6 +40,7 @@ from app.platform.errors import (
     InvalidCollaboratorError,
     NotFoundError,
     RowVersionMismatchError,
+    UnprocessableError,
 )
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
@@ -43,6 +48,7 @@ from app.platform.trace.catalogue import (
     OpportunitiesCollaboratorAdded,
     OpportunitiesCollaboratorRemoved,
     OpportunitiesOpportunityCreated,
+    OpportunitiesOpportunityUpdated,
 )
 from app.platform.uow import UnitOfWork
 
@@ -52,6 +58,7 @@ MAX_PAGE = 1_000_000
 MAX_ROW_VERSION = 2**31 - 1
 NOT_FOUND_DETAIL = "No Opportunity with this id."
 UNKNOWN_USER = "Unknown user"
+PAST_DATE_DETAIL = "The target proposal date can't be in the past."
 _log = get_logger(__name__)
 
 
@@ -114,6 +121,7 @@ async def _detail(
         last_changed_by=names.get(changer) if changer else None,
         can_manage_collaborators=identity.can(actor, Action.COLLABORATOR_ADD, resource)
         and identity.can(actor, Action.COLLABORATOR_REMOVE, resource),
+        can_edit=identity.can(actor, Action.OPPORTUNITY_UPDATE, resource),
     )
 
 
@@ -255,6 +263,78 @@ async def create(uow: UnitOfWork, actor: Principal, new: NewOpportunity) -> Oppo
     _log.info(
         "opportunities.opportunity_created",
         extra={"opportunity_id": str(opportunity_id), "actor_id": actor.actor.id},
+    )
+    return await get(uow, actor, opportunity_id)
+
+
+async def update(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    changes: OpportunityChanges,
+    if_match: str | None,
+) -> Opportunity:
+    """Edit the title and/or target proposal date. Owner only. `if_match` is the raw
+    `If-Match` header (428/412).
+
+    A blank title falls back to the customer name. The date may not be in the past (UTC),
+    checked only when it differs from the stored one, so an already-past date can be resent
+    unchanged. When nothing actually changes nothing is written or traced (a stale
+    `If-Match` is still 412); otherwise the version is bumped once and one
+    `opportunities.opportunity.updated` event names the changed fields."""
+    record, members, resource = await _load_readable(uow, actor, opportunity_id)
+    identity.authorize(actor, Action.OPPORTUNITY_UPDATE, resource)
+
+    changed: list[Literal["title", "target_proposal_date"]] = []
+    title: str | None = None
+    if changes.title is not None:
+        title = changes.title or record.customer_name
+        if title != record.title:
+            changed.append("title")
+    target_date = changes.target_proposal_date
+    if target_date is not None and target_date != record.target_proposal_date:
+        try:
+            check_target_date(target_date, today=datetime.now(UTC).date())
+        except ValueError:
+            raise UnprocessableError(PAST_DATE_DETAIL) from None
+        changed.append("target_proposal_date")
+
+    expected = parse_if_match(if_match)
+    if expected >= MAX_ROW_VERSION:
+        # The stored version can't be this large, or bumping it would overflow int4.
+        raise _stale()
+
+    if not changed:
+        # Nothing to change, but a stale view must still be told to reload.
+        if record.row_version != expected:
+            raise _stale()
+        return await _detail(uow, actor, record, members, resource)
+
+    new_version = await repository.bump_row_version(uow, opportunity_id, expected)
+    if new_version is None:
+        raise _stale()
+    await repository.update_fields(
+        uow,
+        opportunity_id,
+        title=title if "title" in changed else None,
+        target_proposal_date=target_date if "target_proposal_date" in changed else None,
+    )
+    await trace.append(
+        uow,
+        actor=actor.actor,
+        payload=OpportunitiesOpportunityUpdated(fields=changed),
+        subject_type=SUBJECT_TYPE,
+        subject_id=opportunity_id,
+        opportunity_id=opportunity_id,
+        subject_version=new_version,
+    )
+    _log.info(
+        "opportunities.opportunity_updated",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "actor_id": actor.actor.id,
+            "fields": list(changed),
+        },
     )
     return await get(uow, actor, opportunity_id)
 

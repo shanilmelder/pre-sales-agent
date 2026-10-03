@@ -55,6 +55,30 @@ class NewOpportunity(BaseModel):
         return rules.check_target_date(value, today=datetime.now(UTC).date())
 
 
+class OpportunityChanges(BaseModel):
+    """What the owner edits on an existing Opportunity (Story 1.8 Part B). An omitted (or
+    null) field stays unchanged. This checks shape only: the title is trimmed and at most
+    the title limit, and may be blank (it then falls back to the customer name). The
+    not-in-the-past rule for the date needs the stored value, so the command checks it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(
+        default=None,
+        description=f"At most {rules.TITLE_MAX} characters once trimmed; blank falls back to "
+        "the customer name.",
+    )
+    target_proposal_date: date | None = Field(
+        default=None,
+        description="A calendar date, not in the past (checked only when it changes).",
+    )
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, value: str | None) -> str | None:
+        return None if value is None else rules.edited_title(value)
+
+
 class UserRef(BaseModel):
     """A user shown by name."""
 
@@ -123,8 +147,9 @@ class Opportunity(BaseModel):
     """One Opportunity as a reader sees it. `row_version` is also the `ETag`.
 
     `last_changed_by` names whoever made the latest recorded change (null when unknown).
-    `can_manage_collaborators` says whether the caller may add or remove collaborators;
-    the UI only uses it to hide controls, the API decides on every write."""
+    `can_manage_collaborators` says whether the caller may add or remove collaborators and
+    `can_edit` whether they may edit the title and target proposal date; the UI only uses
+    them to hide controls, the API decides on every write."""
 
     id: str
     title: str
@@ -139,3 +164,4 @@ class Opportunity(BaseModel):
     created_at: datetime
     last_changed_by: str | None
     can_manage_collaborators: bool
+    can_edit: bool

@@ -55,6 +55,15 @@ def optional_title(value: str | None) -> str | None:
     return required_text(value, max_length=TITLE_MAX)
 
 
+def edited_title(value: str) -> str:
+    """An edited title, trimmed, at most TITLE_MAX characters. Blank is allowed and comes
+    back empty: the caller then falls back to the customer name, as on create."""
+    trimmed = value.strip()
+    if len(trimmed) > TITLE_MAX:
+        raise ValueError(f"must be at most {TITLE_MAX} characters")
+    return trimmed
+
+
 def normalize_products(values: Iterable[str]) -> list[str]:
     """Trim each name (1..100 characters) and drop case-insensitive duplicates, keeping the
     first spelling. 1..20 names are required (counted as given)."""

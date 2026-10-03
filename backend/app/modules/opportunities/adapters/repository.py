@@ -250,6 +250,30 @@ async def bump_row_version(uow: UnitOfWork, opportunity_id: UUID, expected: int)
     ).scalar_one_or_none()
 
 
+async def update_fields(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    title: str | None = None,
+    target_proposal_date: date | None = None,
+) -> None:
+    """Write the given fields (None: leave unchanged). Call after `bump_row_version`, which
+    holds the row lock and moves the version; this never touches `row_version`."""
+    values: dict[str, Any] = {}
+    if title is not None:
+        values["title"] = title
+    if target_proposal_date is not None:
+        values["target_proposal_date"] = target_proposal_date
+    if not values:
+        return
+    await uow.session.execute(
+        update(OpportunityRow)
+        .where(OpportunityRow.id == opportunity_id)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+
+
 async def add_collaborator(uow: UnitOfWork, opportunity_id: UUID, user_id: UUID) -> bool:
     """True if this call added the collaborator (False if they already were one)."""
     inserted = (

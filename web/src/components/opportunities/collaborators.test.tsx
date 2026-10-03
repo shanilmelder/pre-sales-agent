@@ -8,6 +8,10 @@ import { axeViolations } from "@/test/axe";
 const changeCollaborator = vi.hoisted(() => vi.fn());
 const loadOpportunity = vi.hoisted(() => vi.fn());
 const searchUsers = vi.hoisted(() => vi.fn());
+const refresh = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), refresh }),
+}));
 vi.mock("@/app/opportunities/actions", () => ({
   changeCollaborator,
   loadOpportunity,
@@ -40,6 +44,7 @@ function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     created_at: "2026-10-04T10:00:00Z",
     last_changed_by: "[OWNER]",
     can_manage_collaborators: true,
+    can_edit: true,
     ...overrides,
   };
 }
@@ -57,6 +62,7 @@ beforeEach(() => {
   changeCollaborator.mockReset();
   loadOpportunity.mockReset();
   searchUsers.mockReset();
+  refresh.mockReset();
   searchUsers.mockResolvedValue({ kind: "ok", users: [CANDIDATE, { ...OWNER, email: "o@x" }] });
 });
 
@@ -98,6 +104,7 @@ describe("Collaborators", () => {
     });
     expect(await screen.findByRole("button", { name: "Remove [CANDIDATE]" })).toBeTruthy();
     expect((screen.getByLabelText("Add collaborator") as HTMLInputElement).value).toBe("");
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it("the owner removes a collaborator", async () => {
@@ -111,6 +118,8 @@ describe("Collaborators", () => {
       expect.objectContaining({ userId: MEMBER.id, add: false, rowVersion: 2 }),
     );
     expect(await screen.findByText("No collaborators yet.")).toBeTruthy();
+    // The workspace header lists collaborators too.
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it("412: says who changed it, locks changes, and Reload brings the current state", async () => {
@@ -152,6 +161,22 @@ describe("Collaborators", () => {
     expect(await screen.findByText("You don't have access to this Opportunity")).toBeTruthy();
   });
 
+  it.each([
+    ["412", { kind: "stale", changedBy: "[OTHER]" }, "Changed by [OTHER] since you opened it."],
+    [
+      "422",
+      { kind: "invalid", detail: "Only users who hold a role can be collaborators." },
+      "Only users who hold a role can be collaborators.",
+    ],
+    ["error", { kind: "error" }, "The change could not be saved. Try again."],
+  ])("no workspace refresh after %s", async (_label, result, message) => {
+    changeCollaborator.mockResolvedValueOnce(result);
+    const { user } = renderPanel();
+    await user.click(screen.getByRole("button", { name: "Remove [MEMBER]" }));
+    expect(await screen.findByText(message, { selector: "p" })).toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it("never shows or adds the previous query's people while a new search is pending", async () => {
     const { user } = renderPanel();
     const input = screen.getByLabelText("Add collaborator");
@@ -183,6 +208,53 @@ describe("Collaborators", () => {
     await user.type(screen.getByLabelText("Add collaborator"), "c");
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(searchUsers).not.toHaveBeenCalled();
+  });
+
+  it("follows a newer row version after a refresh (an edit, then sharing: no false 412)", async () => {
+    changeCollaborator.mockResolvedValue({
+      kind: "ok",
+      opportunity: opportunity({ collaborators: [], row_version: 4 }),
+    });
+    const { user, rerender } = renderPanel();
+    // The header saved a title (version 3) and refreshed the server data.
+    rerender(
+      <LiveRegionProvider>
+        <Collaborators initial={opportunity({ title: "[NEW TITLE]", row_version: 3 })} />
+      </LiveRegionProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Remove [MEMBER]" }));
+    expect(changeCollaborator).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: MEMBER.id, rowVersion: 3 }),
+    );
+    expect(await screen.findByText("No collaborators yet.")).toBeTruthy();
+  });
+
+  it("ignores an older row version from a refresh after its own change", async () => {
+    const added = { id: CANDIDATE.id, name: CANDIDATE.name };
+    changeCollaborator.mockResolvedValueOnce({
+      kind: "ok",
+      opportunity: opportunity({ collaborators: [MEMBER, added], row_version: 3 }),
+    });
+    const { user, rerender } = renderPanel();
+    await user.type(screen.getByLabelText("Add collaborator"), "cand");
+    await user.click(await screen.findByRole("button", { name: "Add [CANDIDATE]" }));
+    expect(await screen.findByRole("button", { name: "Remove [CANDIDATE]" })).toBeTruthy();
+
+    // A refresh that raced the change brings the older version: it is ignored.
+    rerender(
+      <LiveRegionProvider>
+        <Collaborators initial={opportunity({ row_version: 2 })} />
+      </LiveRegionProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Remove [CANDIDATE]" })).toBeTruthy();
+    changeCollaborator.mockResolvedValueOnce({
+      kind: "ok",
+      opportunity: opportunity({ collaborators: [added], row_version: 4 }),
+    });
+    await user.click(screen.getByRole("button", { name: "Remove [MEMBER]" }));
+    expect(changeCollaborator).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: MEMBER.id, add: false, rowVersion: 3 }),
+    );
   });
 
   it("has no WCAG 2.1 AA violations, with results and with a stale notice", async () => {

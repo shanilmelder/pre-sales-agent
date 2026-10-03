@@ -5,6 +5,7 @@ import { createServerApiClient } from "@/lib/api/server";
 import {
   codePointLength,
   sliceCodePoints,
+  TITLE_MAX,
   UUID_RE,
   type Opportunity,
   type UserSummary,
@@ -55,6 +56,26 @@ export type CollaboratorResult =
   /** 412: someone changed the Opportunity first. `changedBy` is null when unknown. */
   | { kind: "stale"; changedBy: string | null }
   /** 422 `invalid_collaborator`, with the API's detail text. */
+  | { kind: "invalid"; detail: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type UpdateInput = {
+  opportunityId: string;
+  /** The `row_version` the header last saw; sent as `If-Match`. */
+  rowVersion: number;
+  /** The new title (blank falls back to the customer name). Omit to leave it unchanged. */
+  title?: string;
+  /** The new target proposal date (`YYYY-MM-DD`). Omit to leave it unchanged. */
+  target_proposal_date?: string;
+};
+
+export type UpdateResult =
+  | { kind: "ok"; opportunity: Opportunity }
+  /** 412: someone changed the Opportunity first. `changedBy` is null when unknown. */
+  | { kind: "stale"; changedBy: string | null }
+  /** 422: a readable reason. */
   | { kind: "invalid"; detail: string }
   | { kind: "forbidden" }
   | { kind: "not-found" }
@@ -190,6 +211,83 @@ export async function changeCollaborator(input: unknown): Promise<CollaboratorRe
   } catch (thrown) {
     console.error(
       `change collaborator failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isUpdateInput(input: unknown): input is UpdateInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, rowVersion, title, target_proposal_date } = input as Record<
+    string,
+    unknown
+  >;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0 &&
+    (title === undefined || typeof title === "string") &&
+    (target_proposal_date === undefined ||
+      (typeof target_proposal_date === "string" && DATE_RE.test(target_proposal_date))) &&
+    (title !== undefined || target_proposal_date !== undefined)
+  );
+}
+
+/** A readable reason for a 422 on an edit. The API's own sentence (e.g. a past date) is
+ * kept; its "Invalid fields: body.x" format is turned into words. */
+function updateReason(detail: string | undefined): string {
+  if (!detail) return "The change was not accepted.";
+  if (!detail.startsWith("Invalid fields:")) return detail;
+  if (/body\.title\b/.test(detail)) return `The title can be at most ${TITLE_MAX} characters.`;
+  if (/body\.target_proposal_date\b/.test(detail)) return "Enter a valid date.";
+  return "The change was not accepted.";
+}
+
+/** `PATCH /api/v1/opportunities/{id}` with `If-Match`: the title and/or target proposal date.
+ * Never retries or overwrites on 412. */
+export async function updateOpportunity(input: unknown): Promise<UpdateResult> {
+  if (!isUpdateInput(input)) return { kind: "error" };
+  const { opportunityId, rowVersion, title, target_proposal_date } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH("/api/v1/opportunities/{opportunity_id}", {
+      params: {
+        path: { opportunity_id: opportunityId },
+        header: { "If-Match": `"${rowVersion}"` },
+      },
+      body: {
+        ...(title !== undefined ? { title } : {}),
+        ...(target_proposal_date !== undefined ? { target_proposal_date } : {}),
+      },
+    });
+    if (data) return { kind: "ok", opportunity: data };
+    switch (response.status) {
+      case 412: {
+        const current = await getOpportunity(opportunityId);
+        return {
+          kind: "stale",
+          changedBy: current.kind === "ok" ? current.opportunity.last_changed_by : null,
+        };
+      }
+      case 422:
+        return { kind: "invalid", detail: updateReason(problem(error).detail) };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `update opportunity failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `update opportunity failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }
