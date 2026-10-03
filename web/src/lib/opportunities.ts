@@ -1,10 +1,10 @@
 // Opportunity display helpers. Safe on server and client.
 import {
+  AnchorIcon,
   CircleDashedIcon,
   CircleDotIcon,
   CircleHelpIcon,
   CircleXIcon,
-  ClipboardCheckIcon,
   FlagIcon,
   type LucideIcon,
   SearchCheckIcon,
@@ -33,16 +33,23 @@ export const NO_ACCESS_TO_OPPORTUNITY = "You don't have access to this Opportuni
 /** Skeleton rows stay up at least this long on a list's first load. */
 export const SKELETON_MIN_MS = 150;
 
-/** Every status with its label and icon (the pill always shows both). */
-export const STATUSES: Record<OpportunityStatus, { label: string; icon: LucideIcon }> = {
-  intake: { label: "Intake", icon: CircleDashedIcon },
-  gaps_open: { label: "Gaps open", icon: CircleHelpIcon },
-  assessing: { label: "Assessing", icon: SearchCheckIcon },
-  estimating: { label: "Estimating", icon: SigmaIcon },
-  in_review: { label: "In review", icon: CircleDotIcon },
-  baselined: { label: "Baselined", icon: ClipboardCheckIcon },
-  delivered: { label: "Delivered", icon: FlagIcon },
-  closed: { label: "Closed", icon: CircleXIcon },
+/** The pill icon's colour token (EXPERIENCE.md Status Vocabulary). The label stays in the
+ * foreground colour; only the icon carries the tone. */
+export type StatusTone = "text-gap" | "text-agent" | "text-resolved" | "text-muted-foreground";
+
+/** Every status with its label, icon and icon tone (the pill always shows icon and label). */
+export const STATUSES: Record<
+  OpportunityStatus,
+  { label: string; icon: LucideIcon; tone: StatusTone }
+> = {
+  intake: { label: "Intake", icon: CircleDashedIcon, tone: "text-muted-foreground" },
+  gaps_open: { label: "Gaps open", icon: CircleHelpIcon, tone: "text-gap" },
+  assessing: { label: "Assessing", icon: SearchCheckIcon, tone: "text-agent" },
+  estimating: { label: "Estimating", icon: SigmaIcon, tone: "text-muted-foreground" },
+  in_review: { label: "In review", icon: CircleDotIcon, tone: "text-muted-foreground" },
+  baselined: { label: "Baselined", icon: AnchorIcon, tone: "text-resolved" },
+  delivered: { label: "Delivered", icon: FlagIcon, tone: "text-muted-foreground" },
+  closed: { label: "Closed", icon: CircleXIcon, tone: "text-muted-foreground" },
 };
 
 export function statusLabel(status: OpportunityStatus): string {

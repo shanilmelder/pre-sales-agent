@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { useShell } from "@/components/shell/shell-context";
@@ -85,6 +85,7 @@ const SEQUENCES = SHORTCUTS.filter(
  * minus those needing a permission they lack). */
 export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
   const router = useRouter();
+  const pathname = usePathname();
   const shell = useShell();
   const pending = useRef<{ key: string; at: number } | null>(null);
   const rolesKey = roles.join(",");
@@ -112,6 +113,9 @@ export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
           return;
         case "create-opportunity":
           router.push(NEW_OPPORTUNITY_HREF);
+          return;
+        case "switch-workspace-tab":
+          // Handled with the digit in `onKeyDown`.
           return;
         default: {
           const item = NAV_ITEMS.find((nav) => `go-${nav.id}` === id);
@@ -189,6 +193,17 @@ export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
         return;
       }
 
+      // `1`–`9`: the workspace tab with that number, while a workspace is open.
+      if (/^[1-9]$/.test(event.key)) {
+        const href = shell.workspaceTabs?.[Number(event.key) - 1];
+        if (href) {
+          event.preventDefault();
+          // The tab already open: no duplicate history entry.
+          if (href !== pathname) router.push(href);
+        }
+        return;
+      }
+
       if (SEQUENCES.some((s) => s.match.keys[0] === key)) {
         pending.current = { key, at: Date.now() };
         return;
@@ -203,7 +218,7 @@ export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
     // Capture phase: runs before dialogs see the key, so Esc closes only the top layer.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [router, shell, rolesKey]);
+  }, [router, pathname, shell, rolesKey]);
 
   return null;
 }

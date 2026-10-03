@@ -9,6 +9,7 @@ export type ShortcutId =
   | "toggle-sidebar"
   | "close-layer"
   | "create-opportunity"
+  | "switch-workspace-tab"
   | `go-${NavItem["id"]}`;
 
 export type Shortcut = {
@@ -16,10 +17,12 @@ export type Shortcut = {
   description: string;
   /** Keys as shown in the cheat sheet. `Mod` renders as ⌘ or Ctrl. */
   keys: readonly string[];
-  /** What the handler matches: one key (with ⌘/Ctrl when `mod`), or a `g` sequence. */
+  /** What the handler matches: one key (with ⌘/Ctrl when `mod`), a `g` sequence, or a digit
+   * `1`–`9` (workspace tabs, only while a workspace is open). */
   match:
     | { kind: "key"; key: string; mod?: boolean }
-    | { kind: "sequence"; keys: readonly [string, string] };
+    | { kind: "sequence"; keys: readonly [string, string] }
+    | { kind: "digit" };
   /** Single-key shortcuts are switched off by the preference. */
   singleKey: boolean;
   /** Only for users who may do what it does (display only: the API still decides). */
@@ -67,6 +70,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
     match: { kind: "key", key: "c" },
     singleKey: true,
     requires: "create-opportunity",
+  },
+  {
+    id: "switch-workspace-tab",
+    description: "Switch workspace tab",
+    keys: ["1–9"],
+    match: { kind: "digit" },
+    singleKey: true,
   },
   {
     id: "toggle-right-pane",

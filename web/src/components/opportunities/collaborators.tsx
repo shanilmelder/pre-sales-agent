@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import {
@@ -44,6 +45,7 @@ const buttonClass =
  * A 412 shows who changed the Opportunity with a Reload button and overwrites nothing. */
 export function Collaborators({ initial }: { initial: Opportunity }) {
   const announce = useAnnounce();
+  const router = useRouter();
   const [opportunity, setOpportunity] = useState(initial);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [pending, startTransition] = useTransition();
@@ -113,6 +115,8 @@ export function Collaborators({ initial }: { initial: Opportunity }) {
       switch (result.kind) {
         case "ok":
           setOpportunity(result.opportunity);
+          // The workspace header (in the persistent layout) lists collaborators too.
+          router.refresh();
           announce(`${name} ${add ? "added as a collaborator" : "removed as a collaborator"}`);
           if (add) {
             setQuery("");

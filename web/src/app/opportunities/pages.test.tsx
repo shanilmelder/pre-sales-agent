@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,12 +25,22 @@ const redirect = vi.hoisted(() =>
     throw new Error(`NEXT_REDIRECT ${href}`);
   }),
 );
+const notFound = vi.hoisted(() =>
+  vi.fn(() => {
+    throw new Error("NEXT_NOT_FOUND");
+  }),
+);
+const segment = vi.hoisted(() => ({ current: null as string | null }));
 vi.mock("next/navigation", () => ({
   redirect,
+  notFound,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => "/my-opportunities",
+  useSelectedLayoutSegment: () => segment.current,
 }));
 
+import WorkspaceTabPage from "@/app/opportunities/[id]/[tab]/page";
+import OpportunityLayout from "@/app/opportunities/[id]/layout";
 import OpportunityPage from "@/app/opportunities/[id]/page";
 import NewOpportunityPage from "@/app/opportunities/new/page";
 import OpportunitiesPage from "@/app/opportunities/page";
@@ -93,6 +103,8 @@ beforeEach(() => {
   getMe.mockReset();
   apiGet.mockReset();
   redirect.mockClear();
+  notFound.mockClear();
+  segment.current = null;
 });
 
 const LISTS = [
@@ -284,40 +296,150 @@ describe("/opportunities/new", () => {
   });
 });
 
-describe("/opportunities/[id]", () => {
-  const idParams = (id = OPP_ID) => Promise.resolve({ id });
+describe("/opportunities/[id] workspace", () => {
+  const PLATFORM_DOWN = "The platform is not reachable right now. Try again in a moment.";
+  const NOT_AVAILABLE = "Not available yet.";
+  const NO_ACCESS_TO_OPP = "You don't have access to this Opportunity";
 
-  it("shows the fields, status, owner and collaborators", async () => {
+  /** Renders the workspace layout around a tab page, as Next.js would for `tab` (none is
+   * `/opportunities/{id}`). */
+  async function renderWorkspace(tab?: string, id = OPP_ID) {
+    segment.current = tab ?? null;
+    const page = tab
+      ? await WorkspaceTabPage({ params: Promise.resolve({ id, tab }) })
+      : await OpportunityPage({ params: Promise.resolve({ id }) });
+    return renderPage(
+      await OpportunityLayout({ children: page, params: Promise.resolve({ id }) }),
+    );
+  }
+
+  function found(opportunity: Opportunity = OPPORTUNITY) {
+    apiGet.mockResolvedValue({ data: opportunity, response: new Response(null, { status: 200 }) });
+  }
+
+  function hidden() {
+    apiGet.mockResolvedValue({
+      error: { code: "not_found" },
+      response: new Response(null, { status: 404 }),
+    });
+  }
+
+  const selectedTabs = () =>
+    screen
+      .getAllByRole("tab")
+      .filter((t) => t.getAttribute("aria-selected") === "true")
+      .map((t) => t.textContent);
+
+  it("Open: header and Overview, tab 1 selected", async () => {
     signedIn(["head_of_delivery"]);
-    apiGet.mockResolvedValue({ data: OPPORTUNITY, response: new Response(null, { status: 200 }) });
-    const { container } = renderPage(await OpportunityPage({ params: idParams() }));
+    found();
+    const { container } = await renderWorkspace();
 
     expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
-    expect(screen.getByText("Intake")).toBeTruthy();
-    expect(screen.getByText("[CUSTOMER]")).toBeTruthy();
-    expect(screen.getByText("Pick station")).toBeTruthy();
-    expect(screen.getByText("Retail")).toBeTruthy();
+    expect(screen.getAllByRole("tab")).toHaveLength(9);
+    expect(selectedTabs()).toEqual(["1Overview"]);
+    const panel = screen.getByRole("tabpanel", { name: "Overview" });
+    // Overview: status, owner, collaborators, created date, customer, products, industry.
+    expect(within(panel).getByText("Intake")).toBeTruthy();
+    expect(within(panel).getByText("[OWNER]")).toBeTruthy();
+    expect(within(panel).getByText("[MEMBER]")).toBeTruthy();
+    expect(within(panel).getByText("4 Oct 2026")).toBeTruthy();
+    expect(within(panel).getByText("[CUSTOMER]")).toBeTruthy();
+    expect(within(panel).getByText("Pick station")).toBeTruthy();
+    expect(within(panel).getByText("Retail")).toBeTruthy();
+    // Header: the target proposal date.
     expect(screen.getByText("1 Nov 2026")).toBeTruthy();
-    expect(screen.getAllByText("[OWNER]").length).toBeGreaterThan(0);
-    expect(screen.getByText("[MEMBER]")).toBeTruthy();
     // Not the owner: no collaborator controls.
     expect(screen.queryByLabelText("Add collaborator")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("404 (hidden or unknown) and a malformed id say 'You don't have access to this Opportunity'", async () => {
-    signedIn(["sales_representative"]);
-    apiGet.mockResolvedValue({
-      error: { code: "not_found" },
-      response: new Response(null, { status: 404 }),
-    });
-    const hidden = renderPage(await OpportunityPage({ params: idParams() }));
-    expect(screen.getByText("You don't have access to this Opportunity")).toBeTruthy();
+  it("/overview is the Overview tab too", async () => {
+    signedIn(["head_of_delivery"]);
+    found();
+    await renderWorkspace("overview");
+    expect(selectedTabs()).toEqual(["1Overview"]);
+    expect(within(screen.getByRole("tabpanel")).getByText("Retail")).toBeTruthy();
+  });
+
+  it("Overview keeps the owner's collaborator controls", async () => {
+    signedIn(["presales_engineer"]);
+    found({ ...OPPORTUNITY, can_manage_collaborators: true });
+    await renderWorkspace();
+    expect(screen.getByLabelText("Add collaborator")).toBeTruthy();
+  });
+
+  it.each([
+    ["sources", "2Sources"],
+    ["requirements", "3Requirements"],
+    ["gaps", "4Gaps"],
+    ["assessments", "5Assessments"],
+    ["conflicts", "6Conflicts"],
+    ["estimate", "7Estimate"],
+    ["trace", "8Trace"],
+    ["actuals", "9Actuals"],
+  ])("tab URL /%s: header, that tab selected, 'Not available yet.'", async (tab, label) => {
+    signedIn(["head_of_delivery"]);
+    found();
+    const { container } = await renderWorkspace(tab);
+    expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
+    expect(selectedTabs()).toEqual([label]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByText(NOT_AVAILABLE)).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 2, name: label.slice(1) })).toBeTruthy();
     expect(screen.queryByText("[CUSTOMER]")).toBeNull();
-    hidden.unmount();
-    apiGet.mockClear();
-    renderPage(await OpportunityPage({ params: idParams("not-a-uuid") }));
-    expect(screen.getByText("You don't have access to this Opportunity")).toBeTruthy();
+    if (tab === "gaps") expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("an unknown slug is the not-found page", async () => {
+    signedIn(["head_of_delivery"]);
+    found();
+    for (const tab of ["bogus", "Gaps", "proposal"]) {
+      await expect(
+        WorkspaceTabPage({ params: Promise.resolve({ id: OPP_ID, tab }) }),
+      ).rejects.toThrow("NEXT_NOT_FOUND");
+    }
+    expect(notFound).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([undefined, "overview", "gaps", "actuals"])(
+    "no access on %s: the no-access sentence and no tabs",
+    async (tab) => {
+      signedIn(["sales_representative"]);
+      hidden();
+      await renderWorkspace(tab);
+      expect(screen.getByText(NO_ACCESS_TO_OPP)).toBeTruthy();
+      expect(screen.queryByRole("tablist")).toBeNull();
+      expect(screen.queryByText(NOT_AVAILABLE)).toBeNull();
+      expect(screen.queryByText("[CUSTOMER]")).toBeNull();
+    },
+  );
+
+  it("a malformed id is no access too, without calling the API", async () => {
+    signedIn(["sales_representative"]);
+    await renderWorkspace(undefined, "not-a-uuid");
+    expect(screen.getByText(NO_ACCESS_TO_OPP)).toBeTruthy();
+    expect(screen.queryByRole("tablist")).toBeNull();
     await waitFor(() => expect(apiGet).not.toHaveBeenCalled());
+  });
+
+  it("API down: the platform message and no tabs", async () => {
+    signedIn(["head_of_delivery"]);
+    apiGet.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace();
+    expect(screen.getByText(PLATFORM_DOWN)).toBeTruthy();
+    expect(screen.queryByRole("tablist")).toBeNull();
+  });
+
+  it("no roles: only the no-access message on every tab URL", async () => {
+    signedIn([]);
+    for (const tab of [undefined, "gaps"]) {
+      const view = await renderWorkspace(tab);
+      expect(screen.getByText(NO_ACCESS)).toBeTruthy();
+      expect(screen.queryByRole("tablist")).toBeNull();
+      view.unmount();
+    }
+    expect(apiGet).not.toHaveBeenCalled();
   });
 });

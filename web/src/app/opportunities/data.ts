@@ -1,6 +1,8 @@
 // Server-only reads for the Opportunity lists and page. Authorization is decided by the API.
 import "server-only";
 
+import { cache } from "react";
+
 import type { Filters } from "@/app/opportunities/filters";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
@@ -59,8 +61,9 @@ export async function getFacets(): Promise<FacetsResult> {
   }
 }
 
-/** `GET /api/v1/opportunities/{id}`. A 404 means "doesn't exist or you may not see it". */
-export async function getOpportunity(id: unknown): Promise<GetResult> {
+/** `GET /api/v1/opportunities/{id}`. A 404 means "doesn't exist or you may not see it".
+ * Cached per request, so the workspace layout and its tab page share one fetch. */
+export const getOpportunity = cache(async (id: unknown): Promise<GetResult> => {
   if (typeof id !== "string" || !UUID_RE.test(id)) return { kind: "not-found" };
   try {
     const api = await createServerApiClient();
@@ -75,4 +78,4 @@ export async function getOpportunity(id: unknown): Promise<GetResult> {
     console.error(`GET opportunity failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
-}
+});

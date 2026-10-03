@@ -12,3 +12,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7a-create-and-share-opportunities.md`
   summary: Story 1.7 Part B — All Opportunities filters (status, owner, product, target-proposal-date range) on the list API and the All Opportunities page.
   evidence: Split from Story 1.7 at user request because the full story was well over the size target; Part A ships create, access, collaborators and the two unfiltered lists.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-8a-opportunity-workspace.md`
+  summary: Story 1.8 Part B — owner edits the title and target proposal date inline in the workspace header (PATCH `/api/v1/opportunities/{id}` with `If-Match`, new owner-only action `opportunities.opportunity.update`, `opportunities.opportunity.updated` trace event naming changed fields only, create's field rules with blank title → customer name and past date checked only when the date changes, no-op writes nothing; web saves on blur/Enter, Esc reverts, optimistic with 422 rollback, 412 "Changed by X since you opened it." with Reload).
+  evidence: Split from Story 1.8 at user request because the full spec was about 2,400 tokens; Part A ships the workspace header, tabs, keys, Overview and status pill colours.
