@@ -67,7 +67,6 @@ const SHELL_PAGES: [string, () => Promise<ReactElement>, string, string][] = [
   ["/opportunities", OpportunitiesPage, "All Opportunities", "Not available yet."],
   ["/knowledge", KnowledgePage, "Knowledge", "Not available yet."],
   ["/reports", ReportsPage, "Reports", "Not available yet."],
-  ["/admin", AdminPage, "Admin", "Not available yet."],
   ["/settings", SettingsPage, "Settings", "Saved in this browser."],
 ];
 
@@ -140,10 +139,16 @@ describe("/admin", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("admins see the Admin nav item", async () => {
+  it("sends admins to Users & roles", async () => {
     signedIn(["platform_administrator"]);
+    await expect(AdminPage()).rejects.toThrow("NEXT_REDIRECT /admin/users");
+  });
+
+  it("no roles: only the no-access message, no redirect", async () => {
+    signedIn([]);
     renderPage(await AdminPage());
-    expect(screen.getByRole("link", { name: "Admin" })).toBeTruthy();
+    expect(screen.getByText(NO_ACCESS)).toBeTruthy();
+    expect(redirect).not.toHaveBeenCalled();
   });
 });
 

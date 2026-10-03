@@ -34,6 +34,7 @@ class Resource:
 
 POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
     {
+        Action.USER_LIST: frozenset({Role.PLATFORM_ADMINISTRATOR}),
         Action.USER_ASSIGN_ROLE: frozenset({Role.PLATFORM_ADMINISTRATOR}),
         Action.USER_REMOVE_ROLE: frozenset({Role.PLATFORM_ADMINISTRATOR}),
     }

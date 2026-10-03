@@ -7,13 +7,16 @@ from fastapi import APIRouter
 from app.modules.identity.application.public import CurrentUserDep, UserProfile
 from app.platform.errors import PROBLEM_JSON, Problem
 
-_PROBLEM = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
+PROBLEM_CONTENT = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
 AUTH_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: {
         "description": "No valid access token (`token_missing`, `token_expired`, `token_invalid`)",
-        "content": _PROBLEM,
+        "content": PROBLEM_CONTENT,
     },
-    503: {"description": "Sign-in service unavailable (`auth_unavailable`)", "content": _PROBLEM},
+    503: {
+        "description": "Sign-in service unavailable (`auth_unavailable`)",
+        "content": PROBLEM_CONTENT,
+    },
 }
 
 router = APIRouter(tags=["identity"])

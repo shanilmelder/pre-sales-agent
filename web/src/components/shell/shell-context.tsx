@@ -1,6 +1,15 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { LiveRegionProvider, useAnnounce } from "@/components/shell/live-region";
 
@@ -102,5 +111,51 @@ export function ShellProvider({
     };
   }, [sidebarCollapsed, rightPaneOpen, setRightPaneOpen, dialog, singleKeyShortcuts]);
 
-  return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
+  return (
+    <ShellContext.Provider value={value}>
+      <RightPaneSlotProvider>{children}</RightPaneSlotProvider>
+    </ShellContext.Provider>
+  );
+}
+
+// --- right-pane content slot ----------------------------------------------------------------
+
+type RightPaneSlot = {
+  /** The element the right pane renders page content into (null while it is closed). */
+  target: HTMLElement | null;
+  setTarget: (element: HTMLElement | null) => void;
+  /** How many `RightPaneContent`s are mounted; the pane shows "Nothing selected." at 0. */
+  contentCount: number;
+  register: () => () => void;
+};
+
+const RightPaneSlotContext = createContext<RightPaneSlot | null>(null);
+
+function RightPaneSlotProvider({ children }: { children: ReactNode }) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const [contentCount, setContentCount] = useState(0);
+  const register = useCallback(() => {
+    setContentCount((count) => count + 1);
+    return () => setContentCount((count) => count - 1);
+  }, []);
+  const value = useMemo(
+    () => ({ target, setTarget, contentCount, register }),
+    [target, contentCount, register],
+  );
+  return <RightPaneSlotContext.Provider value={value}>{children}</RightPaneSlotContext.Provider>;
+}
+
+export function useRightPaneSlot(): RightPaneSlot {
+  const slot = useContext(RightPaneSlotContext);
+  if (!slot) throw new Error("useRightPaneSlot must be used inside <ShellProvider>");
+  return slot;
+}
+
+/** Renders `children` inside the right pane (e.g. a list's inspector) while the pane is
+ * open. The content stays part of the page's React tree, so its state lives with the page;
+ * while it is mounted the pane no longer says "Nothing selected." */
+export function RightPaneContent({ children }: { children: ReactNode }) {
+  const { target, register } = useRightPaneSlot();
+  useEffect(() => register(), [register]);
+  return target ? createPortal(children, target) : null;
 }

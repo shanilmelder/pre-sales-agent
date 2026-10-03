@@ -108,6 +108,29 @@ class ForbiddenError(ProblemError):
     title = "Forbidden"
 
 
+class NotFoundError(ProblemError):
+    """The resource does not exist (or the caller may not know that it does)."""
+
+    status = 404
+    code = "not_found"
+    title = "Not found"
+
+
+class ConflictError(ProblemError):
+    """The request conflicts with a domain rule. Subclasses set a stable `code`."""
+
+    status = 409
+    code = "conflict"
+    title = "Conflict"
+
+
+class LastAdministratorError(ConflictError):
+    """Removing the role would leave the platform without a platform administrator."""
+
+    code = "last_administrator"
+    title = "Last administrator"
+
+
 class IfMatchRequiredError(ProblemError):
     """A write arrived without an `If-Match` header (AD-11)."""
 

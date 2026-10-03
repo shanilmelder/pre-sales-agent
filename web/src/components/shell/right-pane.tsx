@@ -2,12 +2,14 @@
 
 import { XIcon } from "lucide-react";
 
-import { RIGHT_PANE_ID, useShell } from "@/components/shell/shell-context";
+import { RIGHT_PANE_ID, useRightPaneSlot, useShell } from "@/components/shell/shell-context";
 
-/** The right-pane container (inspector or activity rail in later stories). Docked at
- * 1440px and wider; below that it overlays the main pane. */
+/** The right-pane container (an inspector, or the activity rail in later stories). Pages
+ * put content in it with `RightPaneContent`. Docked at 1440px and wider; below that it
+ * overlays the main pane. */
 export function RightPane() {
   const { rightPaneOpen, setRightPaneOpen } = useShell();
+  const { setTarget, contentCount } = useRightPaneSlot();
   if (!rightPaneOpen) return null;
   return (
     <aside
@@ -26,7 +28,10 @@ export function RightPane() {
           <XIcon className="size-4" aria-hidden="true" />
         </button>
       </div>
-      <p className="p-gutter text-muted-foreground">Nothing selected.</p>
+      {contentCount === 0 ? (
+        <p className="p-gutter text-muted-foreground">Nothing selected.</p>
+      ) : null}
+      <div ref={setTarget} className="flex min-h-0 flex-1 flex-col overflow-auto" />
     </aside>
   );
 }

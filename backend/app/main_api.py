@@ -11,6 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, FastAPI, Request, Response
 from pydantic import BaseModel
 
+from app.modules.identity.api.admin_routes import router as identity_admin_router
 from app.modules.identity.api.routes import router as identity_router
 from app.modules.identity.application.public import TokenValidator
 from app.platform.config import Settings, get_settings
@@ -104,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(_health_router(), prefix=API_PREFIX)
     app.include_router(identity_router, prefix=API_PREFIX)
+    app.include_router(identity_admin_router, prefix=API_PREFIX)
     return app
 
 

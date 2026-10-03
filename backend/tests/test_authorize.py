@@ -34,6 +34,7 @@ def test_nine_roles() -> None:
 
 def test_every_action_has_a_policy_entry() -> None:
     assert set(POLICY) == set(Action)
+    assert POLICY[Action.USER_LIST] == {Role.PLATFORM_ADMINISTRATOR}
     assert POLICY[Action.USER_ASSIGN_ROLE] == {Role.PLATFORM_ADMINISTRATOR}
     assert POLICY[Action.USER_REMOVE_ROLE] == {Role.PLATFORM_ADMINISTRATOR}
 
