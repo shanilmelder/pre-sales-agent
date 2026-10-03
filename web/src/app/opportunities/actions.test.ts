@@ -2,11 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Opportunity } from "@/lib/opportunities";
 
-const api = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() }));
+const api = vi.hoisted(() => ({
+  GET: vi.fn(),
+  POST: vi.fn(),
+  PUT: vi.fn(),
+  PATCH: vi.fn(),
+  DELETE: vi.fn(),
+}));
 vi.mock("@/lib/api/server", () => ({ createServerApiClient: async () => api }));
 vi.mock("server-only", () => ({}));
 
-import { changeCollaborator, createOpportunity, searchUsers } from "./actions";
+import { changeCollaborator, createOpportunity, searchUsers, updateOpportunity } from "./actions";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
 const USER_ID = "00000000-0000-7000-8000-000000000002";
@@ -24,6 +30,7 @@ const OPPORTUNITY: Opportunity = {
   created_at: "2026-10-04T10:00:00Z",
   last_changed_by: "[OTHER]",
   can_manage_collaborators: true,
+  can_edit: true,
 };
 const INPUT = {
   title: "  ",
@@ -119,6 +126,79 @@ describe("changeCollaborator", () => {
     expect(await changeCollaborator({ ...input, userId: "x" })).toEqual({ kind: "error" });
     expect(await changeCollaborator({ ...input, rowVersion: -1 })).toEqual({ kind: "error" });
     expect(api.PUT).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateOpportunity", () => {
+  const path = "/api/v1/opportunities/{opportunity_id}";
+  const params = { path: { opportunity_id: OPP_ID }, header: { "If-Match": '"4"' } };
+  const input = { opportunityId: OPP_ID, rowVersion: 4, title: "New" };
+
+  it("patches only the given fields with the row version as If-Match", async () => {
+    api.PATCH.mockResolvedValue({ data: OPPORTUNITY, response: status(200) });
+    expect(await updateOpportunity(input)).toEqual({ kind: "ok", opportunity: OPPORTUNITY });
+    expect(api.PATCH).toHaveBeenLastCalledWith(path, { params, body: { title: "New" } });
+    await updateOpportunity({
+      opportunityId: OPP_ID,
+      rowVersion: 4,
+      target_proposal_date: "2026-12-24",
+    });
+    expect(api.PATCH).toHaveBeenLastCalledWith(path, {
+      params,
+      body: { target_proposal_date: "2026-12-24" },
+    });
+  });
+
+  it("on 412 reports who changed it last and does not retry", async () => {
+    api.PATCH.mockResolvedValue({ error: { code: "row_version_mismatch" }, response: status(412) });
+    api.GET.mockResolvedValue({ data: OPPORTUNITY, response: status(200) });
+    expect(await updateOpportunity(input)).toEqual({ kind: "stale", changedBy: "[OTHER]" });
+    expect(api.PATCH).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps 422 to a readable reason, and 403, 404 and failures", async () => {
+    const invalid = (detail: string) => ({
+      error: { code: "validation_error", detail },
+      response: status(422),
+    });
+    api.PATCH.mockResolvedValueOnce(invalid("The target proposal date can't be in the past."));
+    expect(await updateOpportunity(input)).toEqual({
+      kind: "invalid",
+      detail: "The target proposal date can't be in the past.",
+    });
+    api.PATCH.mockResolvedValueOnce(invalid("Invalid fields: body.title"));
+    expect(await updateOpportunity(input)).toEqual({
+      kind: "invalid",
+      detail: "The title can be at most 200 characters.",
+    });
+    api.PATCH.mockResolvedValueOnce(invalid("Invalid fields: body.target_proposal_date"));
+    expect(await updateOpportunity(input)).toEqual({
+      kind: "invalid",
+      detail: "Enter a valid date.",
+    });
+    api.PATCH.mockResolvedValueOnce({ error: {}, response: status(403) });
+    expect(await updateOpportunity(input)).toEqual({ kind: "forbidden" });
+    api.PATCH.mockResolvedValueOnce({ error: {}, response: status(404) });
+    expect(await updateOpportunity(input)).toEqual({ kind: "not-found" });
+    api.PATCH.mockRejectedValueOnce(new Error("network"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await updateOpportunity(input)).toEqual({ kind: "error" });
+  });
+
+  it("rejects malformed input without calling the API", async () => {
+    const base = { opportunityId: OPP_ID, rowVersion: 4 };
+    for (const bad of [
+      base, // nothing to change
+      { ...base, opportunityId: "x", title: "t" },
+      { ...base, rowVersion: -1, title: "t" },
+      { ...base, rowVersion: 1.5, title: "t" },
+      { ...base, title: 3 },
+      { ...base, target_proposal_date: "24/12/2026" },
+      null,
+    ]) {
+      expect(await updateOpportunity(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.PATCH).not.toHaveBeenCalled();
   });
 });
 

@@ -12,6 +12,7 @@ import { useAnnounce } from "@/components/shell/live-region";
 import {
   codePointLength,
   NO_ACCESS_TO_OPPORTUNITY,
+  staleMessage,
   type Opportunity,
   type UserSummary,
 } from "@/lib/opportunities";
@@ -33,20 +34,25 @@ const NOT_OWNER = "Only the owner can change collaborators.";
 const RELOAD_FAILED = "The Opportunity could not be reloaded. Try again.";
 const SEARCH_FAILED = "People search is not available right now.";
 
-export function staleMessage(changedBy: string | null): string {
-  return `Changed by ${changedBy ?? "someone else"} since you opened it.`;
-}
-
 const buttonClass =
   "h-7 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary aria-disabled:opacity-60";
 
 /** The Opportunity's owner and collaborators. The owner also gets a people search to add
  * collaborators and a Remove button per collaborator; each change saves with `If-Match`.
- * A 412 shows who changed the Opportunity with a Reload button and overwrites nothing. */
+ * A 412 shows who changed the Opportunity with a Reload button and overwrites nothing.
+ *
+ * When the server data refreshes with a newer `row_version` (e.g. after a header edit), the
+ * panel follows it, so its next change sends the current version instead of a stale one. */
 export function Collaborators({ initial }: { initial: Opportunity }) {
   const announce = useAnnounce();
   const router = useRouter();
   const [opportunity, setOpportunity] = useState(initial);
+  const [seen, setSeen] = useState(initial);
+  if (seen !== initial) {
+    // Adjusting state while rendering (React's pattern for following a prop).
+    setSeen(initial);
+    if (initial.row_version > opportunity.row_version) setOpportunity(initial);
+  }
   const [notice, setNotice] = useState<Notice | null>(null);
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState("");

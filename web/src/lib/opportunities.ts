@@ -30,6 +30,14 @@ export const EMPTY_FILTERED = "No Opportunities match these filters.";
 /** What anyone sees for an Opportunity they may not read, or one that doesn't exist. */
 export const NO_ACCESS_TO_OPPORTUNITY = "You don't have access to this Opportunity";
 
+/** The API's longest title, in code points. */
+export const TITLE_MAX = 200;
+
+/** What a 412 says: someone else changed the Opportunity since it was opened. */
+export function staleMessage(changedBy: string | null): string {
+  return `Changed by ${changedBy ?? "someone else"} since you opened it.`;
+}
+
 /** Skeleton rows stay up at least this long on a list's first load. */
 export const SKELETON_MIN_MS = 150;
 

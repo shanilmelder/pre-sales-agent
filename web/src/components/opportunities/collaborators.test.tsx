@@ -44,6 +44,7 @@ function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     created_at: "2026-10-04T10:00:00Z",
     last_changed_by: "[OWNER]",
     can_manage_collaborators: true,
+    can_edit: true,
     ...overrides,
   };
 }
@@ -207,6 +208,53 @@ describe("Collaborators", () => {
     await user.type(screen.getByLabelText("Add collaborator"), "c");
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(searchUsers).not.toHaveBeenCalled();
+  });
+
+  it("follows a newer row version after a refresh (an edit, then sharing: no false 412)", async () => {
+    changeCollaborator.mockResolvedValue({
+      kind: "ok",
+      opportunity: opportunity({ collaborators: [], row_version: 4 }),
+    });
+    const { user, rerender } = renderPanel();
+    // The header saved a title (version 3) and refreshed the server data.
+    rerender(
+      <LiveRegionProvider>
+        <Collaborators initial={opportunity({ title: "[NEW TITLE]", row_version: 3 })} />
+      </LiveRegionProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Remove [MEMBER]" }));
+    expect(changeCollaborator).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: MEMBER.id, rowVersion: 3 }),
+    );
+    expect(await screen.findByText("No collaborators yet.")).toBeTruthy();
+  });
+
+  it("ignores an older row version from a refresh after its own change", async () => {
+    const added = { id: CANDIDATE.id, name: CANDIDATE.name };
+    changeCollaborator.mockResolvedValueOnce({
+      kind: "ok",
+      opportunity: opportunity({ collaborators: [MEMBER, added], row_version: 3 }),
+    });
+    const { user, rerender } = renderPanel();
+    await user.type(screen.getByLabelText("Add collaborator"), "cand");
+    await user.click(await screen.findByRole("button", { name: "Add [CANDIDATE]" }));
+    expect(await screen.findByRole("button", { name: "Remove [CANDIDATE]" })).toBeTruthy();
+
+    // A refresh that raced the change brings the older version: it is ignored.
+    rerender(
+      <LiveRegionProvider>
+        <Collaborators initial={opportunity({ row_version: 2 })} />
+      </LiveRegionProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Remove [CANDIDATE]" })).toBeTruthy();
+    changeCollaborator.mockResolvedValueOnce({
+      kind: "ok",
+      opportunity: opportunity({ collaborators: [added], row_version: 4 }),
+    });
+    await user.click(screen.getByRole("button", { name: "Remove [MEMBER]" }));
+    expect(changeCollaborator).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: MEMBER.id, add: false, rowVersion: 3 }),
+    );
   });
 
   it("has no WCAG 2.1 AA violations, with results and with a stale notice", async () => {

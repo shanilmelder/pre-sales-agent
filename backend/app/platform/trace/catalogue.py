@@ -8,7 +8,7 @@ Register a new event by subclassing `TracePayload` and decorating it with `@regi
 import re
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -90,6 +90,16 @@ class OpportunitiesOpportunityCreated(TracePayload):
     """A presales engineer created an Opportunity. Actor: the creator (its owner)."""
 
     event_type: ClassVar[str] = "opportunities.opportunity.created"
+
+
+@register
+class OpportunitiesOpportunityUpdated(TracePayload):
+    """The owner edited the Opportunity. `fields`: the names of the fields that changed,
+    never their values."""
+
+    event_type: ClassVar[str] = "opportunities.opportunity.updated"
+
+    fields: list[Literal["title", "target_proposal_date"]]
 
 
 @register

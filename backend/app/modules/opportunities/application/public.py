@@ -3,6 +3,7 @@
 from app.modules.opportunities.application.models import (
     NewOpportunity,
     Opportunity,
+    OpportunityChanges,
     OpportunityFacets,
     OpportunityFilters,
     OpportunityPage,
@@ -21,6 +22,7 @@ from app.modules.opportunities.application.opportunities import (
     list_all,
     list_mine,
     remove_collaborator,
+    update,
 )
 from app.modules.opportunities.domain.opportunity import OpportunityStatus, derived_status
 
@@ -31,6 +33,7 @@ __all__ = [
     "NOT_FOUND_DETAIL",
     "NewOpportunity",
     "Opportunity",
+    "OpportunityChanges",
     "OpportunityFacets",
     "OpportunityFilters",
     "OpportunityPage",
@@ -45,4 +48,5 @@ __all__ = [
     "list_all",
     "list_mine",
     "remove_collaborator",
+    "update",
 ]

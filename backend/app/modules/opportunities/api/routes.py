@@ -1,8 +1,8 @@
-"""Opportunity routes (Story 1.7), under `/api/v1/opportunities`.
+"""Opportunity routes (Stories 1.7 and 1.8), under `/api/v1/opportunities`.
 
 Every endpoint authorizes inside its command or query. An Opportunity the caller may not
 read answers 404 `not_found`, exactly like one that doesn't exist. Single-Opportunity
-responses carry its `ETag`; collaborator changes need it back in `If-Match`.
+responses carry its `ETag`; edits and collaborator changes need it back in `If-Match`.
 """
 
 import re
@@ -18,6 +18,7 @@ from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import (
     NewOpportunity,
     Opportunity,
+    OpportunityChanges,
     OpportunityFacets,
     OpportunityFilters,
     OpportunityPage,
@@ -32,10 +33,11 @@ PROBLEM_CONTENT = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
 _DESCRIBED: dict[int, str] = {
     401: "No valid access token (`token_missing`, `token_expired`, `token_invalid`)",
     403: "Not allowed (`forbidden`): creating without the presales engineer role, or "
-    "changing collaborators without being the owner",
+    "editing the Opportunity or changing collaborators without being the owner",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
     412: "The Opportunity changed since it was read (`row_version_mismatch`)",
-    422: "Invalid fields (`validation_error`) or collaborator (`invalid_collaborator`)",
+    422: "Invalid fields (`validation_error`), e.g. a target proposal date in the past, "
+    "or collaborator (`invalid_collaborator`)",
     428: "The write has no `If-Match` header (`if_match_required`)",
     503: "Sign-in service unavailable (`auth_unavailable`)",
 }
@@ -236,6 +238,26 @@ async def get_opportunity(
 ) -> Opportunity:
     """One Opportunity with its derived status, owner and collaborators."""
     return _with_etag(response, await opportunities.get(uow, actor, opportunity_id))
+
+
+@router.patch(
+    "/{opportunity_id}",
+    operation_id="update_opportunity",
+    responses=_WRITE_RESPONSES,
+)
+async def update_opportunity(
+    opportunity_id: UUID,
+    body: OpportunityChanges,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: IfMatchHeader = None,
+) -> Opportunity:
+    """Edit the title and/or target proposal date. Owner only. An omitted field stays
+    unchanged; a blank title falls back to the customer name. Changing nothing writes
+    nothing."""
+    changed = await opportunities.update(uow, actor, opportunity_id, body, if_match)
+    return _with_etag(response, changed)
 
 
 @router.put(
