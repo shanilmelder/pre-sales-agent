@@ -9,3 +9,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-5a-design-tokens-and-settings.md`
   summary: Story 1.5 Part B — app shell: sidebar (Inbox, My Opportunities, All Opportunities, Knowledge, Reports, Admin for platform_administrator only), right-pane container toggled with `]`, `⌘K` palette, `g`+letter navigation, `?` cheat sheet, `Esc` layering, single-key toggle honoured, EXPERIENCE.md responsive tiers and the <1024px read-only notice, placeholder pages, landmarks/tab order/polite live region, and axe checks in CI.
   evidence: Split from Story 1.5 at user request because the full spec was about 2,200 tokens. Decided already: landing — presales_engineer → My Opportunities, everyone else (all reviewer and other roles) → Inbox; axe runs component-level with Vitest + jsdom + axe-core (the runner arrives in Part A), not Playwright with an auth bypass.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-7a-create-and-share-opportunities.md`
+  summary: Story 1.7 Part B — All Opportunities filters (status, owner, product, target-proposal-date range) on the list API and the All Opportunities page.
+  evidence: Split from Story 1.7 at user request because the full story was well over the size target; Part A ships create, access, collaborators and the two unfiltered lists.

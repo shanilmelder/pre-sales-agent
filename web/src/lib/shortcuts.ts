@@ -1,6 +1,6 @@
 // The one definition of the shell's keyboard shortcuts. The key handler matches events
 // against it and the cheat sheet lists it, so the two cannot drift apart.
-import { NAV_ITEMS, type NavItem } from "@/lib/navigation";
+import { NAV_ITEMS, type NavItem, type Role } from "@/lib/navigation";
 
 export type ShortcutId =
   | "open-palette"
@@ -8,6 +8,7 @@ export type ShortcutId =
   | "toggle-right-pane"
   | "toggle-sidebar"
   | "close-layer"
+  | "create-opportunity"
   | `go-${NavItem["id"]}`;
 
 export type Shortcut = {
@@ -21,7 +22,17 @@ export type Shortcut = {
     | { kind: "sequence"; keys: readonly [string, string] };
   /** Single-key shortcuts are switched off by the preference. */
   singleKey: boolean;
+  /** Only for users who may do what it does (display only: the API still decides). */
+  requires?: "create-opportunity";
 };
+
+/** Where `c` (and New Opportunity) goes. */
+export const NEW_OPPORTUNITY_HREF = "/opportunities/new";
+
+/** Presales engineers create Opportunities. Display only: the API decides. */
+export function canCreateOpportunity(roles: readonly Role[]): boolean {
+  return roles.includes("presales_engineer");
+}
 
 /** How long the second key of a `g` sequence may take. */
 export const SEQUENCE_TIMEOUT_MS = 1000;
@@ -49,6 +60,14 @@ export const SHORTCUTS: readonly Shortcut[] = [
     singleKey: false,
   },
   ...goShortcuts,
+  {
+    id: "create-opportunity",
+    description: "Create an Opportunity",
+    keys: ["C"],
+    match: { kind: "key", key: "c" },
+    singleKey: true,
+    requires: "create-opportunity",
+  },
   {
     id: "toggle-right-pane",
     description: "Show or hide the right pane",
@@ -78,3 +97,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
     singleKey: false,
   },
 ];
+
+/** The shortcuts this user has: those that need a permission only when they hold it. */
+export function shortcutsFor(roles: readonly Role[]): readonly Shortcut[] {
+  const canCreate = canCreateOpportunity(roles);
+  return SHORTCUTS.filter((s) => s.requires !== "create-opportunity" || canCreate);
+}

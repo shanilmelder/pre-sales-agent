@@ -15,3 +15,8 @@ class Action(StrEnum):
     USER_LIST = "identity.user.list"
     USER_ASSIGN_ROLE = "identity.user.assign_role"
     USER_REMOVE_ROLE = "identity.user.remove_role"
+    USER_SEARCH = "identity.user.search"
+    OPPORTUNITY_CREATE = "opportunities.opportunity.create"
+    OPPORTUNITY_READ = "opportunities.opportunity.read"
+    COLLABORATOR_ADD = "opportunities.collaborator.add"
+    COLLABORATOR_REMOVE = "opportunities.collaborator.remove"

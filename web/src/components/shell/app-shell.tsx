@@ -50,8 +50,8 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
         </div>
       </div>
       <CommandPalette roles={me.roles} />
-      <CheatSheet />
-      <KeyboardShortcuts />
+      <CheatSheet roles={me.roles} />
+      <KeyboardShortcuts roles={me.roles} />
     </>
   );
 }

@@ -66,3 +66,10 @@ name = "Platform does not depend on business modules, orchestration or agents"
 type = "forbidden"
 source_modules = ["app.platform"]
 forbidden_modules = ["app.modules", "app.orchestration", "app.agents"]
+
+[[tool.importlinter.contracts]]
+name = "opportunities uses identity only through its public API (AD-2)"
+type = "forbidden"
+source_modules = ["app.modules.opportunities"]
+forbidden_modules = ["app.modules.identity.domain", "app.modules.identity.adapters"]
+allow_indirect_imports = true

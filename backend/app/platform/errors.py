@@ -131,6 +131,22 @@ class LastAdministratorError(ConflictError):
     title = "Last administrator"
 
 
+class UnprocessableError(ProblemError):
+    """The request is well-formed but breaks a domain rule checked after parsing (422).
+    Subclasses set a stable `code`."""
+
+    status = 422
+    code = "validation_error"
+    title = "Unprocessable content"
+
+
+class InvalidCollaboratorError(UnprocessableError):
+    """The user can't be a collaborator: the owner, an unknown user or one with no role."""
+
+    code = "invalid_collaborator"
+    title = "Invalid collaborator"
+
+
 class IfMatchRequiredError(ProblemError):
     """A write arrived without an `If-Match` header (AD-11)."""
 

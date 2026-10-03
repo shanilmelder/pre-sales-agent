@@ -4,8 +4,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { useShell } from "@/components/shell/shell-context";
-import { NAV_ITEMS } from "@/lib/navigation";
-import { SEQUENCE_TIMEOUT_MS, SHORTCUTS, type Shortcut, type ShortcutId } from "@/lib/shortcuts";
+import { NAV_ITEMS, type Role } from "@/lib/navigation";
+import {
+  NEW_OPPORTUNITY_HREF,
+  SEQUENCE_TIMEOUT_MS,
+  SHORTCUTS,
+  shortcutsFor,
+  type Shortcut,
+  type ShortcutId,
+} from "@/lib/shortcuts";
 
 /** Input types that don't take typed text: shortcuts still work while they have focus. */
 const NON_TEXT_INPUT_TYPES = new Set([
@@ -74,13 +81,17 @@ const SEQUENCES = SHORTCUTS.filter(
   (s): s is Shortcut & { match: { kind: "sequence" } } => s.match.kind === "sequence",
 );
 
-/** The shell's global key handler. Matches events against `SHORTCUTS`. */
-export function KeyboardShortcuts() {
+/** The shell's global key handler. Matches events against the user's shortcuts (`SHORTCUTS`
+ * minus those needing a permission they lack). */
+export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
   const router = useRouter();
   const shell = useShell();
   const pending = useRef<{ key: string; at: number } | null>(null);
+  const rolesKey = roles.join(",");
 
   useEffect(() => {
+    const shortcuts = shortcutsFor(rolesKey ? (rolesKey.split(",") as Role[]) : []);
+
     function run(id: ShortcutId) {
       switch (id) {
         case "open-palette":
@@ -99,6 +110,9 @@ export function KeyboardShortcuts() {
         case "close-layer":
           shell.closeTopLayer();
           return;
+        case "create-opportunity":
+          router.push(NEW_OPPORTUNITY_HREF);
+          return;
         default: {
           const item = NAV_ITEMS.find((nav) => `go-${nav.id}` === id);
           if (item) router.push(item.href);
@@ -110,7 +124,7 @@ export function KeyboardShortcuts() {
       if (event.isComposing) return;
       // Held keys don't repeat shortcuts; a held Esc may keep closing layers.
       if (event.repeat && event.key !== "Escape") return;
-      const shortcut = SHORTCUTS.find((s) => matchesKey(s, event));
+      const shortcut = shortcuts.find((s) => matchesKey(s, event));
       const editable = isEditableTarget(event.target);
       const inMenu =
         event.target instanceof Element && event.target.closest('[role="menu"]') !== null;
@@ -189,7 +203,7 @@ export function KeyboardShortcuts() {
     // Capture phase: runs before dialogs see the key, so Esc closes only the top layer.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [router, shell]);
+  }, [router, shell, rolesKey]);
 
   return null;
 }

@@ -11,10 +11,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SHORTCUTS } from "@/lib/shortcuts";
+import type { Role } from "@/lib/navigation";
+import { shortcutsFor } from "@/lib/shortcuts";
 
-/** `?`: every shortcut the key handler implements, from the shared definition. */
-export function CheatSheet() {
+/** `?`: every shortcut the key handler implements for this user, from the shared
+ * definition. */
+export function CheatSheet({ roles }: { roles: readonly Role[] }) {
   const { dialog, openDialog, closeDialog, singleKeyShortcuts } = useShell();
   const modKey = useModKeyLabel();
 
@@ -33,7 +35,7 @@ export function CheatSheet() {
           </DialogDescription>
         </DialogHeader>
         <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5">
-          {SHORTCUTS.map((shortcut) => (
+          {shortcutsFor(roles).map((shortcut) => (
             <Fragment key={shortcut.id}>
               <dt
                 className={

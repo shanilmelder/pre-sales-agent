@@ -215,3 +215,44 @@ async def last_role_changers(uow: UnitOfWork, user_ids: list[UUID]) -> dict[UUID
         )
     )
     return {row.subject_id: row.name for row in rows}
+
+
+# --- user search and names (Story 1.7) ------------------------------------------------------
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+
+
+_HAS_ROLE = (
+    select(IdentityUserRole.user_id).where(IdentityUserRole.user_id == IdentityUser.id).exists()
+)
+
+
+async def search_users(uow: UnitOfWork, q: str, *, limit: int) -> list[UserRecord]:
+    """Users holding at least one role whose name or email contains `q` (case-insensitive),
+    ordered by name then id."""
+    pattern = f"%{_escape_like(q)}%"
+    rows = await uow.session.execute(
+        select(IdentityUser.id, IdentityUser.name, IdentityUser.email)
+        .where(
+            _HAS_ROLE,
+            IdentityUser.name.ilike(pattern, escape="\\")
+            | IdentityUser.email.ilike(pattern, escape="\\"),
+        )
+        .order_by(func.lower(IdentityUser.name), IdentityUser.id)
+        .limit(limit)
+    )
+    return [UserRecord(id=row.id, name=row.name, email=row.email) for row in rows]
+
+
+async def user_names(
+    uow: UnitOfWork, user_ids: list[UUID], *, with_roles_only: bool = False
+) -> dict[UUID, str]:
+    """Names of the given users that exist (and, if asked, hold at least one role)."""
+    if not user_ids:
+        return {}
+    query = select(IdentityUser.id, IdentityUser.name).where(IdentityUser.id.in_(user_ids))
+    if with_roles_only:
+        query = query.where(_HAS_ROLE)
+    return {row.id: row.name for row in await uow.session.execute(query)}

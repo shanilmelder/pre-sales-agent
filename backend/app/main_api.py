@@ -13,7 +13,9 @@ from pydantic import BaseModel
 
 from app.modules.identity.api.admin_routes import router as identity_admin_router
 from app.modules.identity.api.routes import router as identity_router
+from app.modules.identity.api.user_routes import router as identity_user_router
 from app.modules.identity.application.public import TokenValidator
+from app.modules.opportunities.api.routes import router as opportunities_router
 from app.platform.config import Settings, get_settings
 from app.platform.db import create_engine, ping
 from app.platform.errors import (
@@ -106,6 +108,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(_health_router(), prefix=API_PREFIX)
     app.include_router(identity_router, prefix=API_PREFIX)
     app.include_router(identity_admin_router, prefix=API_PREFIX)
+    app.include_router(identity_user_router, prefix=API_PREFIX)
+    app.include_router(opportunities_router, prefix=API_PREFIX)
     return app
 
 
