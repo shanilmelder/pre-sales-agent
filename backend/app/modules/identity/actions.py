@@ -12,5 +12,6 @@ ACTION_NAME_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 
 
 class Action(StrEnum):
+    USER_LIST = "identity.user.list"
     USER_ASSIGN_ROLE = "identity.user.assign_role"
     USER_REMOVE_ROLE = "identity.user.remove_role"

@@ -60,3 +60,21 @@ class IdentityUserProvisioned(TracePayload):
     """A platform user was created from a first valid sign-in (Story 1.4 Part B may extend)."""
 
     event_type: ClassVar[str] = "identity.user.provisioned"
+
+
+@register
+class IdentityUserRoleAssigned(TracePayload):
+    """An administrator assigned a role. Actor: the administrator; subject: the user."""
+
+    event_type: ClassVar[str] = "identity.user.role_assigned"
+
+    role: str
+
+
+@register
+class IdentityUserRoleRemoved(TracePayload):
+    """An administrator removed a role. Actor: the administrator; subject: the user."""
+
+    event_type: ClassVar[str] = "identity.user.role_removed"
+
+    role: str
