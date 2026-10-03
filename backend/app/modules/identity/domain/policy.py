@@ -63,14 +63,20 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.USER_SEARCH: frozenset({Role.PRESALES_ENGINEER}),
         Action.OPPORTUNITY_CREATE: frozenset({Role.PRESALES_ENGINEER}),
         Action.OPPORTUNITY_READ: frozenset({Role.HEAD_OF_DELIVERY, Role.PLATFORM_ADMINISTRATOR}),
-        # Only the owner manages collaborators: no role grants it.
+        # Only the owner edits the Opportunity or manages collaborators: no role grants it.
+        Action.OPPORTUNITY_UPDATE: frozenset(),
         Action.COLLABORATOR_ADD: frozenset(),
         Action.COLLABORATOR_REMOVE: frozenset(),
     }
 )
 
 OWNER_GRANTS: frozenset[Action] = frozenset(
-    {Action.OPPORTUNITY_READ, Action.COLLABORATOR_ADD, Action.COLLABORATOR_REMOVE}
+    {
+        Action.OPPORTUNITY_READ,
+        Action.OPPORTUNITY_UPDATE,
+        Action.COLLABORATOR_ADD,
+        Action.COLLABORATOR_REMOVE,
+    }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset({Action.OPPORTUNITY_READ})
 

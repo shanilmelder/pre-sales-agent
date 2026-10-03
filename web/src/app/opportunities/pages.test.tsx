@@ -17,6 +17,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/app/opportunities/actions", () => ({
   createOpportunity: vi.fn(),
   changeCollaborator: vi.fn(),
+  updateOpportunity: vi.fn(),
   loadOpportunity: vi.fn(),
   searchUsers: vi.fn(),
 }));
@@ -34,7 +35,13 @@ const segment = vi.hoisted(() => ({ current: null as string | null }));
 vi.mock("next/navigation", () => ({
   redirect,
   notFound,
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    refresh: vi.fn(),
+  }),
   usePathname: () => "/my-opportunities",
   useSelectedLayoutSegment: () => segment.current,
 }));
@@ -80,6 +87,7 @@ const OPPORTUNITY: Opportunity = {
   row_version: 2,
   last_changed_by: null,
   can_manage_collaborators: false,
+  can_edit: false,
 };
 
 const FACETS = {
@@ -349,8 +357,10 @@ describe("/opportunities/[id] workspace", () => {
     expect(within(panel).getByText("Retail")).toBeTruthy();
     // Header: the target proposal date.
     expect(screen.getByText("1 Nov 2026")).toBeTruthy();
-    // Not the owner: no collaborator controls.
+    // Not the owner: no collaborator or edit controls.
     expect(screen.queryByLabelText("Add collaborator")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit title" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit target proposal date" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -367,6 +377,16 @@ describe("/opportunities/[id] workspace", () => {
     found({ ...OPPORTUNITY, can_manage_collaborators: true });
     await renderWorkspace();
     expect(screen.getByLabelText("Add collaborator")).toBeTruthy();
+  });
+
+  it("the owner gets the inline title and date editors in the header", async () => {
+    signedIn(["presales_engineer"]);
+    found({ ...OPPORTUNITY, can_manage_collaborators: true, can_edit: true });
+    const { container } = await renderWorkspace();
+    expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit title" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit target proposal date" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
   });
 
   it.each([

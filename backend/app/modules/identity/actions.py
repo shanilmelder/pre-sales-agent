@@ -18,5 +18,6 @@ class Action(StrEnum):
     USER_SEARCH = "identity.user.search"
     OPPORTUNITY_CREATE = "opportunities.opportunity.create"
     OPPORTUNITY_READ = "opportunities.opportunity.read"
+    OPPORTUNITY_UPDATE = "opportunities.opportunity.update"
     COLLABORATOR_ADD = "opportunities.collaborator.add"
     COLLABORATOR_REMOVE = "opportunities.collaborator.remove"
