@@ -15,6 +15,7 @@ import app.modules.identity.adapters.models
 import app.modules.intake.adapters.models
 import app.modules.opportunities.adapters.models
 import app.platform.files
+import app.platform.jobs.models
 import app.platform.trace.models  # noqa: F401
 from app.platform.config import get_settings
 from app.platform.db import Base

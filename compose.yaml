@@ -1,7 +1,10 @@
-# Local stack (Story 1.1): postgres + api + web.
+# Local stack: postgres + api + worker + web.
 #   cp .env.example .env
 #   docker compose --profile local up --build --wait -d
-# The prod topology (proxy, worker, ollama, otel-collector, migrate) is added in Story 1.2+.
+# `worker` (Story 2.2) runs the same backend image as `api` with `python -m app.main_worker`:
+# it claims and runs background jobs from the Postgres queue (`platform_jobs`). It needs the
+# schema migrated (README) and shares the `files` volume with the api.
+# The prod topology (ollama, otel-collector, migrate) is added in later stories.
 name: pre-sales-agent
 
 x-restart: &restart
@@ -69,6 +72,33 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  worker:
+    <<: *restart
+    profiles: ["local"]
+    build:
+      context: ./backend
+      args:
+        PSA_VERSION: ${PSA_VERSION:-0.0.0-dev}
+    command: ["python", "-m", "app.main_worker"]
+    environment:
+      PSA_ENV: local
+      # Same least-privileged `psa_app` role as the api.
+      PSA_DATABASE_URL: postgresql+psycopg://psa_app:${PSA_APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PSA_LOG_LEVEL: ${PSA_LOG_LEVEL:-INFO}
+      PSA_STORAGE_DIR: /var/lib/psa/files
+      PSA_WORKER_POLL_S: ${PSA_WORKER_POLL_S:-1}
+      PSA_WORKER_CONCURRENCY: ${PSA_WORKER_CONCURRENCY:-1}
+      PSA_JOB_LEASE_S: ${PSA_JOB_LEASE_S:-30}
+      PSA_JOB_HEARTBEAT_S: ${PSA_JOB_HEARTBEAT_S:-10}
+    volumes:
+      - files:/var/lib/psa/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # The image's HEALTHCHECK probes the api's HTTP port; the worker serves no HTTP.
+    healthcheck:
+      disable: true
 
   web:
     <<: *restart
