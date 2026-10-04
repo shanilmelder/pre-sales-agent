@@ -31,7 +31,7 @@ from app.platform.logging import configure_logging, get_logger
 _log = get_logger("app.worker")
 
 # Modules whose import registers job types (e.g. `app.modules.intake.application.jobs`).
-_JOB_MODULES: tuple[str, ...] = ()
+_JOB_MODULES: tuple[str, ...] = ("app.modules.intake.application.jobs",)
 _JITTER = 0.2
 
 

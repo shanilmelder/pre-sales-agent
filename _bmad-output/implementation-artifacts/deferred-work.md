@@ -48,3 +48,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-job-queue-and-worker.md`
   summary: Job `last_error` stores the first line of any handler exception message; store the exception class only by default and let handlers raise a dedicated safe-message error (e.g. `JobError(code)`) for a vetted reason.
   evidence: Review finding #12 (medium): driver, HTTP and KeyError messages can echo data, conflicting with "never customer content"; the fix adds public surface, so it was deferred rather than patched. Until then, handlers must map known failures to codes themselves.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2b-parse-sources.md`
+  summary: [post-demo] Parse Outlook `.msg` Sources (currently `failed` with `not_supported`) and reconsider the PDF parser; any copyleft library (`extract-msg` GPL-3.0, `pymupdf` AGPL-3.0) needs a licence decision first, or use a permissive alternative.
+  evidence: User chose permissive parsers only for the 2026-10-07 demo (pypdf for PDF, .msg postponed) on 2026-10-04.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2b-parse-sources.md`
+  summary: A Source version whose parse job dies without its handler running (worker killed or lease lost on the final attempt) stays `parsing` forever; add a dead-job hook or a stale-row sweep that marks it `failed`, so Retry is offered and polling stops.
+  evidence: Review finding #19 (medium): the job runner marks such jobs `dead` without calling the handler; fixing it needs new public surface in the job layer.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-6-edit-and-confirm-requirements.md`
+  summary: [post-demo] Story 2.6 remainder — split, merge, delete-with-reason and manual create (`c`) of Requirements with lineage trace events, and **View diff** on the 412 concurrent-edit message.
+  evidence: Cut for the 2026-10-07 stakeholder demo; the demo ships inline edit, Confirm and Confirm all.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-detect-gaps.md`
+  summary: [post-demo] Epic 4 remainder after the demo slice — Checklist- and Knowledge-grounded triggers (Stories 3.x, 4.1, 4.2: mandatory deterministic Gaps), "Possibly answered", dismiss/reopen/impact change (4.4), question edit/merge/drop/approve (4.5), export and mark sent (4.6), answers (4.7), live Overview count and tab badge, command-palette Gap search, and the `make eval-gaps` gate (≥80% recall, ≤20% irrelevant). Re-detection must stop superseding Gaps once humans can act on them.
+  evidence: Cut for the 2026-10-07 stakeholder demo; user chose agent+Requirements grounding, automatic detection after extraction, and ranked cards with an inspector (2026-10-04).

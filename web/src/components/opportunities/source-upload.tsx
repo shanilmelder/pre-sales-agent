@@ -4,10 +4,12 @@ import { UploadIcon } from "lucide-react";
 import {
   useEffect,
   useId,
+  useImperativeHandle,
   useRef,
   useState,
   type DragEvent,
   type KeyboardEvent,
+  type Ref,
 } from "react";
 
 import { addSource, addTextSource, type AddSourceResult } from "@/app/opportunities/actions";
@@ -47,6 +49,12 @@ function outcome(result: AddSourceResult): { state: RowState; message: string } 
   }
 }
 
+/** What the Sources list can ask of the upload area. */
+export type SourceUploadHandle = {
+  /** Opens the paste area (if closed) and focuses its text box ("Paste text instead"). */
+  openPaste: () => void;
+};
+
 /** Drop files, choose them, or paste text to add them as Sources. Files and pastes go up one
  * at a time, in order; each gets a row that shows Uploading, then Added ("Added as version
  * N" when the bytes match an existing Source) or the API's reason ("Rejected: .exe files
@@ -54,9 +62,11 @@ function outcome(result: AddSourceResult): { state: RowState; message: string } 
 export function SourceUpload({
   opportunityId,
   onAdded,
+  ref,
 }: {
   opportunityId: string;
   onAdded: (source: Source) => void;
+  ref?: Ref<SourceUploadHandle>;
 }) {
   const announce = useAnnounce();
   const [rows, setRows] = useState<Row[]>([]);
@@ -77,6 +87,18 @@ export function SourceUpload({
   const textareaId = useId();
   const pasteHintId = useId();
   const pasteAreaId = useId();
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openPaste() {
+        // Opening focuses the text box (the effect below); an open one is focused here.
+        if (pasting) textareaRef.current?.focus();
+        else setPasting(true);
+      },
+    }),
+    [pasting],
+  );
 
   useEffect(() => {
     if (pasting) {

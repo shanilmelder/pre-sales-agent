@@ -1,2 +1,4 @@
 # Shell scripts run inside Linux containers and CI; keep LF even on Windows checkouts.
 *.sh text eol=lf
+# Parser fixtures are compared byte for byte (CRLF on purpose in some): never convert them.
+backend/tests/fixtures/sources/** -text

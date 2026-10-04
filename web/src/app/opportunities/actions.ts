@@ -1,6 +1,6 @@
 "use server";
 
-import { getOpportunity } from "@/app/opportunities/data";
+import { getOpportunity, listSources, type SourcesResult } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import {
   codePointLength,
@@ -86,6 +86,14 @@ export type AddSourceResult =
   | { kind: "ok"; source: Source }
   /** 422: the API's sentence for the UI ("Rejected: .exe files aren't allowed"). */
   | { kind: "rejected"; reason: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type RetryParseResult =
+  | { kind: "ok"; source: Source }
+  /** 409: the latest version's parse has not failed (any more). */
+  | { kind: "conflict" }
   | { kind: "forbidden" }
   | { kind: "not-found" }
   | { kind: "error" };
@@ -402,4 +410,45 @@ export async function addTextSource(
     console.error(`add text source failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
+}
+
+/** `POST /api/v1/opportunities/{id}/sources/{source_id}/parse`: parse a Source's failed
+ * latest version again. The API checks who may retry and that the parse failed. */
+export async function retryParse(
+  opportunityId: unknown,
+  sourceId: unknown,
+): Promise<RetryParseResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof sourceId !== "string" || !UUID_RE.test(sourceId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/sources/{source_id}/parse",
+      { params: { path: { opportunity_id: opportunityId, source_id: sourceId } } },
+    );
+    if (data) return { kind: "ok", source: data };
+    switch (response.status) {
+      case 409:
+        return { kind: "conflict" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `retry parse failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`retry parse failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** The Opportunity's Sources as stored now (the Sources tab polls this while a parse is
+ * pending). */
+export async function loadSources(opportunityId: unknown): Promise<SourcesResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return listSources(opportunityId);
 }

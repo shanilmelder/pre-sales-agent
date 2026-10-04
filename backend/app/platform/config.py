@@ -74,6 +74,20 @@ class Settings(BaseSettings):
         gt=0,
         description="How often a running job's lease is extended; at most job_lease_s / 2.",
     )
+    parse_timeout_s: float = Field(
+        default=120.0,
+        gt=0,
+        le=600,
+        description=(
+            "Wall-clock limit for parsing one Source file in its child process; past it the "
+            "child is killed and the job retried. On Linux it also sets the CPU-time limit."
+        ),
+    )
+    parse_max_memory_mb: int = Field(
+        default=1024,
+        ge=64,
+        description="Address-space limit (RLIMIT_AS) for the parse child process, Linux only.",
+    )
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], BeforeValidator(str.upper)
     ] = "INFO"

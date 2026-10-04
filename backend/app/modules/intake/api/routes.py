@@ -31,6 +31,7 @@ _DESCRIBED: dict[int, str] = {
     403: "Not allowed (`forbidden`): the caller can read the Opportunity but is neither "
     "its owner nor a collaborator",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
+    409: "The Source's latest version has not failed to parse (`parse_not_failed`)",
     422: "Rejected file: `file_too_large`, `file_type_not_allowed`, "
     "`file_content_mismatch`, `file_empty` (the `detail` is the sentence to show), or "
     "`validation_error` (no `file` part, or an unusable file name)",
@@ -193,3 +194,29 @@ async def list_sources(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) 
     """The Opportunity's Sources, newest first, each with its latest version. Anyone who
     can read the Opportunity."""
     return await intake.list_sources(uow, actor, opportunity_id)
+
+
+_RETRY_RESPONSES = _responses(403, 404, 409)
+_RETRY_RESPONSES[404] = {
+    "description": "No Opportunity with this id, or the caller may not see it, or no Source "
+    "with this id in it (`not_found`)",
+    "content": PROBLEM_CONTENT,
+}
+_RETRY_RESPONSES[422] = {
+    "description": "An id is not a UUID (`validation_error`)",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@router.post(
+    "/{source_id}/parse",
+    operation_id="retry_source_parse",
+    status_code=202,
+    responses={**_RETRY_RESPONSES, 202: {"description": "The Source, its parse `queued`"}},
+)
+async def retry_source_parse(
+    opportunity_id: UUID, source_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> Source:
+    """Parse the Source's latest version again after it failed: sets it back to `queued` and
+    enqueues a new parse job. The Opportunity's owner and collaborators only."""
+    return await intake.retry_parse(uow, actor, opportunity_id, source_id)

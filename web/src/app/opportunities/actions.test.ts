@@ -17,6 +17,8 @@ import {
   addTextSource,
   changeCollaborator,
   createOpportunity,
+  loadSources,
+  retryParse,
   searchUsers,
   updateOpportunity,
 } from "./actions";
@@ -244,6 +246,7 @@ describe("addSource", () => {
     uploaded_by: { id: USER_ID, name: "[OWNER]" },
     uploaded_at: "2026-10-04T10:00:00Z",
     created_at: "2026-10-04T10:00:00Z",
+    parse: { status: "queued", error_code: null },
   };
 
   function form(file: File | string | null = new File(["WEBVTT"], "call.vtt")) {
@@ -331,6 +334,7 @@ describe("addTextSource", () => {
     uploaded_by: { id: USER_ID, name: "[OWNER]" },
     uploaded_at: "2026-10-04T10:00:00Z",
     created_at: "2026-10-04T10:00:00Z",
+    parse: { status: "queued", error_code: null },
   };
 
   it("posts the text as JSON to the Opportunity's text sources", async () => {
@@ -384,5 +388,66 @@ describe("addTextSource", () => {
       expect(await addTextSource(id, text)).toEqual({ kind: "error" });
     }
     expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("retryParse", () => {
+  const SOURCE_ID = "00000000-0000-7000-8000-0000000000d6";
+  const SOURCE = {
+    id: SOURCE_ID,
+    kind: "document",
+    filename: "rfp.pdf",
+    version: 1,
+    version_count: 1,
+    size_bytes: 6,
+    uploaded_by: { id: USER_ID, name: "[OWNER]" },
+    uploaded_at: "2026-10-04T10:00:00Z",
+    created_at: "2026-10-04T10:00:00Z",
+    parse: { status: "queued", error_code: null },
+  };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts to the parse route and returns the requeued Source", async () => {
+    api.POST.mockResolvedValue({ data: SOURCE, response: new Response(null, { status: 202 }) });
+    expect(await retryParse(OPP_ID, SOURCE_ID)).toEqual({ kind: "ok", source: SOURCE });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/sources/{source_id}/parse",
+      { params: { path: { opportunity_id: OPP_ID, source_id: SOURCE_ID } } },
+    );
+  });
+
+  it.each([
+    [409, "conflict"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({
+      error: { code: "x" },
+      response: new Response(null, { status }),
+    });
+    expect(await retryParse(OPP_ID, SOURCE_ID)).toEqual({ kind });
+  });
+
+  it("refuses ids that aren't UUIDs without calling the API", async () => {
+    expect(await retryParse("nope", SOURCE_ID)).toEqual({ kind: "error" });
+    expect(await retryParse(OPP_ID, 42)).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadSources", () => {
+  it("reads the Opportunity's Sources", async () => {
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({
+      data: { items: [] },
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await loadSources(OPP_ID)).toEqual({ kind: "ok", sources: [] });
+    expect(await loadSources(7)).toEqual({ kind: "error" });
+    expect(await loadSources("../../users")).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
   });
 });

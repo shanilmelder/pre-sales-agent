@@ -91,6 +91,8 @@ services:
       PSA_WORKER_CONCURRENCY: ${PSA_WORKER_CONCURRENCY:-1}
       PSA_JOB_LEASE_S: ${PSA_JOB_LEASE_S:-30}
       PSA_JOB_HEARTBEAT_S: ${PSA_JOB_HEARTBEAT_S:-10}
+      PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
+      PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
     volumes:
       - files:/var/lib/psa/files
     depends_on:

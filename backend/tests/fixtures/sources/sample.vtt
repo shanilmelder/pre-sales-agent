@@ -1,0 +1,20 @@
+﻿WEBVTT - sample call
+Kind: captions
+
+NOTE This note
+spans two lines
+
+STYLE
+::cue { color: lime }
+
+1
+00:00:00.000 --> 00:00:02.000
+<v Ana>Hello, can you hear me?</v>
+
+intro-2
+00:00:02.500 --> 00:00:05.000 align:start
+<v.loud [CUSTOMER]>We need <b>40</b> ports &amp; SSO.
+
+00:00:05.000 --> 00:00:07.000
+<c.yellow>No speaker</c> here
+second line

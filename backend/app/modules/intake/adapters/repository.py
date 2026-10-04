@@ -1,5 +1,5 @@
-"""Persistence for Opportunity Sources and their versions. Runs inside the caller's Unit of
-Work."""
+"""Persistence for Opportunity Sources, their versions and their parse state. Runs inside the
+caller's Unit of Work."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,7 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import Row, Select, func, insert, select, text, update
 
-from app.modules.intake.adapters.models import SourceRow, SourceVersionRow
+from app.modules.intake.adapters.models import SourceParseRow, SourceRow, SourceVersionRow
 from app.platform.uow import UnitOfWork
 
 
@@ -26,6 +26,8 @@ class SourceRecord:
     size_bytes: int
     uploaded_by: UUID
     uploaded_at: datetime
+    parse_status: str | None
+    parse_error_code: str | None
 
 
 async def lock_content(uow: UnitOfWork, opportunity_id: UUID, sha256: str) -> None:
@@ -132,12 +134,19 @@ def _latest_query() -> Select[Any]:
             SourceVersionRow.size_bytes,
             SourceVersionRow.uploaded_by,
             SourceVersionRow.uploaded_at,
+            SourceParseRow.status.label("parse_status"),
+            SourceParseRow.error_code.label("parse_error_code"),
         )
         .join(counts, counts.c.source_id == SourceRow.id)
         .join(
             SourceVersionRow,
             (SourceVersionRow.source_id == SourceRow.id)
             & (SourceVersionRow.version == counts.c.latest),
+        )
+        .outerjoin(
+            SourceParseRow,
+            (SourceParseRow.source_id == SourceVersionRow.source_id)
+            & (SourceParseRow.version == SourceVersionRow.version),
         )
     )
 
@@ -154,6 +163,8 @@ def _record(row: Row[Any]) -> SourceRecord:
         size_bytes=row.size_bytes,
         uploaded_by=row.uploaded_by,
         uploaded_at=row.uploaded_at,
+        parse_status=row.parse_status,
+        parse_error_code=row.parse_error_code,
     )
 
 
@@ -172,3 +183,125 @@ async def list_for(uow: UnitOfWork, opportunity_id: UUID) -> list[SourceRecord]:
         .order_by(SourceRow.created_at.desc(), SourceRow.id.desc())
     )
     return [_record(row) for row in rows]
+
+
+# --- parse state (Story 2.2 Part B) ---------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ParseTarget:
+    """What the parse job needs about one Source version."""
+
+    source_id: UUID
+    version: int
+    opportunity_id: UUID
+    file_sha256: str
+    filename: str
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class ParseState:
+    status: str
+    error_code: str | None
+    text_sha256: str | None
+    char_count: int | None
+
+
+async def insert_parse(uow: UnitOfWork, *, source_id: UUID, version: int) -> None:
+    """The version's parse row, `queued`."""
+    await uow.session.execute(
+        insert(SourceParseRow).values(
+            source_id=source_id, version=version, status="queued", row_version=1
+        )
+    )
+
+
+async def parse_target(uow: UnitOfWork, source_id: UUID, version: int) -> ParseTarget | None:
+    row = (
+        await uow.session.execute(
+            select(
+                SourceVersionRow.source_id,
+                SourceVersionRow.version,
+                SourceRow.opportunity_id,
+                SourceVersionRow.file_sha256,
+                SourceVersionRow.filename,
+                SourceParseRow.status,
+            )
+            .join(SourceRow, SourceRow.id == SourceVersionRow.source_id)
+            .join(
+                SourceParseRow,
+                (SourceParseRow.source_id == SourceVersionRow.source_id)
+                & (SourceParseRow.version == SourceVersionRow.version),
+            )
+            .where(SourceVersionRow.source_id == source_id, SourceVersionRow.version == version)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return ParseTarget(
+        source_id=row.source_id,
+        version=row.version,
+        opportunity_id=row.opportunity_id,
+        file_sha256=row.file_sha256,
+        filename=row.filename,
+        status=row.status,
+    )
+
+
+async def parse_state(
+    uow: UnitOfWork, source_id: UUID, version: int, *, for_update: bool = False
+) -> ParseState | None:
+    statement = select(
+        SourceParseRow.status,
+        SourceParseRow.error_code,
+        SourceParseRow.text_sha256,
+        SourceParseRow.char_count,
+    ).where(SourceParseRow.source_id == source_id, SourceParseRow.version == version)
+    if for_update:
+        statement = statement.with_for_update()
+    row = (await uow.session.execute(statement)).one_or_none()
+    if row is None:
+        return None
+    return ParseState(
+        status=row.status,
+        error_code=row.error_code,
+        text_sha256=row.text_sha256,
+        char_count=row.char_count,
+    )
+
+
+async def update_parse(
+    uow: UnitOfWork,
+    source_id: UUID,
+    version: int,
+    *,
+    from_statuses: tuple[str, ...],
+    status: str,
+    error_code: str | None = None,
+    text_sha256: str | None = None,
+    char_count: int | None = None,
+    parser: str | None = None,
+) -> bool:
+    """Move the parse row to `status` if it is in one of `from_statuses`, bumping its
+    `row_version`. False (and no change) otherwise."""
+    result = await uow.session.execute(
+        update(SourceParseRow)
+        .where(
+            SourceParseRow.source_id == source_id,
+            SourceParseRow.version == version,
+            SourceParseRow.status.in_(from_statuses),
+        )
+        .values(
+            status=status,
+            error_code=error_code,
+            text_sha256=text_sha256,
+            char_count=char_count,
+            parser=parser,
+            updated_at=func.now(),
+            row_version=SourceParseRow.row_version + 1,
+        )
+        .returning(SourceParseRow.version)
+        .execution_options(synchronize_session=False)
+    )
+    return result.one_or_none() is not None

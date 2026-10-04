@@ -21,6 +21,9 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadOpportunity: vi.fn(),
   searchUsers: vi.fn(),
   addSource: vi.fn(),
+  addTextSource: vi.fn(),
+  retryParse: vi.fn(),
+  loadSources: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -401,6 +404,7 @@ describe("/opportunities/[id] workspace", () => {
     uploaded_by: { id: "00000000-0000-7000-8000-0000000000b2", name: "[MEMBER]" },
     uploaded_at: "2026-10-04T13:05:00Z",
     created_at: "2026-10-04T12:00:00Z",
+    parse: { status: "parsed" as const, error_code: null },
   };
 
   /** The Opportunity, and its Sources (`null`: the Sources request fails). */

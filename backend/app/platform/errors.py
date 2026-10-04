@@ -131,6 +131,13 @@ class LastAdministratorError(ConflictError):
     title = "Last administrator"
 
 
+class ParseNotFailedError(ConflictError):
+    """A Source parse retry asked for a version whose parse has not failed."""
+
+    code = "parse_not_failed"
+    title = "Parse not failed"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

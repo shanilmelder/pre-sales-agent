@@ -53,3 +53,52 @@ export function formatDateTime(value: string): string {
   if (Number.isNaN(date.getTime())) return value;
   return `${DATE_TIME_FORMAT.format(date)} UTC`;
 }
+
+export type SourceParse = components["schemas"]["SourceParse"];
+export type ParseStatus = components["schemas"]["ParseStatus"];
+export type ParseErrorCode = components["schemas"]["ParseErrorCode"];
+
+/** The parse status pill labels. */
+export const PARSE_STATUS_LABELS: Record<ParseStatus, string> = {
+  queued: "Queued",
+  parsing: "Parsing",
+  parsed: "Parsed",
+  failed: "Parse failed",
+};
+
+/** Why a parse failed, as the Sources tab says it. */
+export const PARSE_FAILURE_REASONS: Record<ParseErrorCode, string> = {
+  unreadable: "The file couldn't be read",
+  no_text: "No text found — scanned PDF?",
+  timeout: "Parsing took too long",
+  too_large_output: "Too much text to process",
+  not_supported: "Outlook .msg files aren't supported yet — paste the text instead",
+};
+
+/** The reason sentence for a failed parse (a general one for a code this build doesn't know). */
+export function parseFailureReason(code: ParseErrorCode | null | undefined): string {
+  return (code ? PARSE_FAILURE_REASONS[code] : undefined) ?? PARSE_FAILURE_REASONS.unreadable;
+}
+
+/** True while the Source's latest version is still waiting for or being parsed. */
+export function isParsePending(source: Source): boolean {
+  const status = source.parse?.status;
+  return status === "queued" || status === "parsing";
+}
+
+/** How often the Sources tab re-reads the list while a parse is pending. */
+export const PARSE_POLL_MS = 2000;
+
+/** The list as re-read from the API (`server`), keeping what this page added since that
+ * read began: a Source it doesn't have yet, or a newer version than it shows. */
+export function mergeSources(server: readonly Source[], local: readonly Source[]): Source[] {
+  let merged = [...server];
+  for (const source of [...local].reverse()) {
+    const known = merged.find((s) => s.id === source.id);
+    if (!known || known.version < source.version) merged = withSource(merged, source);
+  }
+  return merged;
+}
+
+/** Polling stops after this long with a parse continuously pending (a reload resumes it). */
+export const PARSE_POLL_LIMIT_MS = 15 * 60 * 1000;
