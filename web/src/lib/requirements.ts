@@ -8,6 +8,8 @@ export type Classification = components["schemas"]["Classification"];
 export type Extraction = components["schemas"]["Extraction"];
 export type ExtractionStatus = components["schemas"]["ExtractionStatus"];
 export type ExtractionErrorCode = components["schemas"]["ExtractionErrorCode"];
+export type Passage = components["schemas"]["Passage"];
+export type RequirementOrigin = components["schemas"]["RequirementOrigin"];
 
 /** The classifications in the order the Requirements tab groups them, with their labels. */
 export const CLASSIFICATIONS: readonly { value: Classification; label: string }[] = [
@@ -18,6 +20,21 @@ export const CLASSIFICATIONS: readonly { value: Classification; label: string }[
   { value: "non_functional", label: "Non-functional" },
   { value: "commercial", label: "Commercial" },
 ];
+
+/** A classification's label (its own name for one this build doesn't know). */
+export function classificationLabel(value: Classification): string {
+  return CLASSIFICATIONS.find((c) => c.value === value)?.label ?? value;
+}
+
+/** A Requirement's origin as the inspector shows it. */
+export function originLabel(origin: RequirementOrigin): string {
+  return origin === "extracted" ? "Extracted" : "Human";
+}
+
+/** The Evidence inspector's passage states (Story 2.5 Part B). */
+export const LOADING_PASSAGE = "Loading passage…";
+export const PASSAGE_FAILED = "The passage couldn't be loaded.";
+export const PASSAGE_GONE = "This passage is no longer available.";
 
 export type RequirementGroup = {
   classification: Classification;

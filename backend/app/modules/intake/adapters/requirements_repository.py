@@ -391,3 +391,49 @@ async def evidence_for(uow: UnitOfWork, requirement_ids: list[UUID]) -> list[Evi
         )
         for row in rows
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class PassageRecord:
+    id: UUID
+    source_id: UUID
+    source_version: int
+    start: int
+    end: int
+    filename: str
+
+
+async def passage_in(
+    uow: UnitOfWork, opportunity_id: UUID, passage_id: UUID
+) -> PassageRecord | None:
+    """The passage with this id, with its Source version's file name, if its Source belongs
+    to the Opportunity (Story 2.5 Part B)."""
+    row = (
+        await uow.session.execute(
+            select(
+                SourcePassageRow.id,
+                SourcePassageRow.source_id,
+                SourcePassageRow.source_version,
+                SourcePassageRow.start,
+                SourcePassageRow.end,
+                SourceVersionRow.filename,
+            )
+            .join(SourceRow, SourceRow.id == SourcePassageRow.source_id)
+            .join(
+                SourceVersionRow,
+                (SourceVersionRow.source_id == SourcePassageRow.source_id)
+                & (SourceVersionRow.version == SourcePassageRow.source_version),
+            )
+            .where(SourcePassageRow.id == passage_id, SourceRow.opportunity_id == opportunity_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return PassageRecord(
+        id=row.id,
+        source_id=row.source_id,
+        source_version=row.source_version,
+        start=row.start,
+        end=row.end,
+        filename=row.filename,
+    )

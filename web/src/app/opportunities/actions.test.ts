@@ -17,6 +17,7 @@ import {
   addTextSource,
   changeCollaborator,
   createOpportunity,
+  getPassage,
   loadRequirements,
   loadSources,
   retryParse,
@@ -510,5 +511,51 @@ describe("loadRequirements", () => {
     api.GET.mockReset();
     api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
     expect(await loadRequirements(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
+describe("getPassage", () => {
+  const PASSAGE_ID = "00000000-0000-7000-8000-0000000000a1";
+  const PASSAGE = {
+    passage_id: PASSAGE_ID,
+    source_id: "00000000-0000-7000-8000-0000000000b1",
+    source_version: 2,
+    filename: "call.vtt",
+    label: "S1 · call.vtt",
+    before: "[BEFORE] ",
+    text: "[QUOTE]",
+    after: " [AFTER]…",
+  };
+
+  it("reads the passage route", async () => {
+    api.GET.mockResolvedValue({ data: PASSAGE, response: status(200) });
+    expect(await getPassage(OPP_ID, PASSAGE_ID)).toEqual({ kind: "ok", passage: PASSAGE });
+    expect(api.GET).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/passages/{passage_id}",
+      { params: { path: { opportunity_id: OPP_ID, passage_id: PASSAGE_ID } } },
+    );
+  });
+
+  it.each([
+    [404, "not-found"],
+    [500, "error"],
+    [401, "error"],
+  ])("maps %i to %s", async (code, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockResolvedValue({ error: { code: "x" }, response: status(code) });
+    expect(await getPassage(OPP_ID, PASSAGE_ID)).toEqual({ kind });
+  });
+
+  it("is an error when the call throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockRejectedValueOnce(new Error("network"));
+    expect(await getPassage(OPP_ID, PASSAGE_ID)).toEqual({ kind: "error" });
+  });
+
+  it("refuses ids that aren't UUIDs without calling the API", async () => {
+    expect(await getPassage("nope", PASSAGE_ID)).toEqual({ kind: "error" });
+    expect(await getPassage(OPP_ID, "../x")).toEqual({ kind: "error" });
+    expect(await getPassage(OPP_ID, undefined)).toEqual({ kind: "error" });
+    expect(api.GET).not.toHaveBeenCalled();
   });
 });

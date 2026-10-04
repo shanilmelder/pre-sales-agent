@@ -1,6 +1,7 @@
 """Opportunity Source routes (Story 2.1), under
 `/api/v1/opportunities/{opportunity_id}/sources`, and Requirement routes (Story 2.5 Part A):
-`…/{opportunity_id}/requirements` and `…/{opportunity_id}/extractions`.
+`…/{opportunity_id}/requirements` and `…/{opportunity_id}/extractions`, and the cited-passage
+route (Story 2.5 Part B): `…/{opportunity_id}/passages/{passage_id}`.
 
 Uploads are `multipart/form-data` with the file in the `file` field. The body is read as a
 stream (`app.platform.multipart`), never parsed up front, so a rejected type is answered
@@ -22,6 +23,7 @@ from app.modules.intake.application import public as intake
 from app.modules.intake.application.public import (
     AddTextSource,
     Extraction,
+    Passage,
     RequirementList,
     Source,
     SourceList,
@@ -264,3 +266,30 @@ async def start_extraction(opportunity_id: UUID, actor: CurrentPrincipal, uow: U
     """Queue a new Requirement extraction over the Opportunity's parsed Sources, e.g. to
     retry a failed one. The Opportunity's owner and collaborators only."""
     return await intake.start_extraction(uow, actor, opportunity_id)
+
+
+_PASSAGE_RESPONSES = _responses(404)
+_PASSAGE_RESPONSES[404] = {
+    "description": "No Opportunity with this id, or the caller may not see it, or no passage "
+    "with this id in it (`not_found`)",
+    "content": PROBLEM_CONTENT,
+}
+_PASSAGE_RESPONSES[422] = {
+    "description": "An id is not a UUID (`validation_error`)",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@requirements_router.get(
+    "/passages/{passage_id}", operation_id="get_passage", responses=_PASSAGE_RESPONSES
+)
+async def get_passage(
+    opportunity_id: UUID, passage_id: UUID, request: Request, actor: CurrentPrincipal, uow: UoW
+) -> Passage:
+    """A cited Source passage in its surrounding text: `text` is the span exactly, `before`
+    and `after` up to 300 code points of context each, cut at whitespace, with `…` on a side
+    that was cut. Anyone who can read the Opportunity."""
+    settings: Settings = request.app.state.settings
+    return await intake.get_passage(
+        uow, actor, opportunity_id, passage_id, store=BlobStore(settings.storage_dir)
+    )

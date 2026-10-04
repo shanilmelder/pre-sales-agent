@@ -18,9 +18,10 @@ const startExtraction = vi.hoisted(() =>
 const loadRequirements = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<RequirementsResult>>(),
 );
-vi.mock("@/app/opportunities/actions", () => ({ startExtraction, loadRequirements }));
+const getPassage = vi.hoisted(() => vi.fn());
+vi.mock("@/app/opportunities/actions", () => ({ startExtraction, loadRequirements, getPassage }));
 
-import { LiveRegionProvider } from "../shell/live-region";
+import { ShellProviders } from "../shell/shell-context";
 import { ExtractionStatus, RequirementsList, RequirementsSection } from "./requirements-list";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
@@ -60,9 +61,9 @@ function list(
 
 function renderSection(initial: RequirementList) {
   return render(
-    <LiveRegionProvider>
+    <ShellProviders singleKeyShortcuts>
       <RequirementsSection opportunityId={OPP_ID} initial={initial} />
-    </LiveRegionProvider>,
+    </ShellProviders>,
   );
 }
 
@@ -78,30 +79,52 @@ afterEach(() => {
 describe("RequirementsList", () => {
   it("groups by classification in order with label and count, hiding empty groups", async () => {
     const { container } = render(
-      <RequirementsList
-        items={[
-          requirement(1, "commercial", "S2 · mail.eml"),
-          requirement(2, "functional", "S1 · call.vtt", "S2 · mail.eml"),
-          requirement(3, "non_functional", "S1 · call.vtt"),
-          requirement(4, "functional", "S1 · call.vtt"),
-        ]}
-      />,
+      <ShellProviders singleKeyShortcuts>
+        <RequirementsList
+          items={[
+            requirement(1, "commercial", "S2 · mail.eml"),
+            requirement(2, "functional", "S1 · call.vtt", "S2 · mail.eml"),
+            requirement(3, "non_functional", "S1 · call.vtt"),
+            requirement(4, "functional", "S1 · call.vtt"),
+          ]}
+        />
+      </ShellProviders>,
     );
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
     expect(headings).toEqual(["Functional 2", "Non-functional 1", "Commercial 1"]);
     expect(screen.queryByRole("heading", { name: /Integration|Data|Security/ })).toBeNull();
 
     const functional = screen.getByRole("region", { name: "Functional 2" });
-    const rows = within(functional).getAllByRole("listitem");
+    const rows = within(functional).getAllByRole("row");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("[REQUIREMENT 2]")).toBeTruthy();
     expect(within(rows[1]).getByText("[REQUIREMENT 4]")).toBeTruthy();
     expect(within(rows[0]).getByText("S1 · call.vtt")).toBeTruthy();
     expect(within(rows[0]).getByText("S2 · mail.eml")).toBeTruthy();
-    // Static labels in Part A: nothing to click.
-    expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.queryByRole("link")).toBeNull();
+    // Part B: each row and each Evidence chip is a button; the list is one Tab stop.
+    expect(within(rows[0]).getByRole("button", { name: "S1 · call.vtt" })).toBeTruthy();
+    const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
+    expect(tabStops.map((b) => b.textContent)).toEqual(["[REQUIREMENT 2]"]);
+    expect(rows.map((row) => row.getAttribute("aria-selected"))).toEqual(["false", "false"]);
     expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("RequirementsList keys", () => {
+  it("j/k are off with single-key shortcuts off; arrows still work", async () => {
+    const user = userEvent.setup();
+    render(
+      <ShellProviders singleKeyShortcuts={false}>
+        <RequirementsList items={[requirement(1, "functional"), requirement(2, "data")]} />
+      </ShellProviders>,
+    );
+    const row = (n: number) => screen.getByRole("button", { name: `[REQUIREMENT ${n}]` });
+    await user.tab();
+    expect(document.activeElement).toBe(row(1));
+    await user.keyboard("j");
+    expect(document.activeElement).toBe(row(1));
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(row(2));
   });
 });
 
@@ -355,12 +378,12 @@ describe("RequirementsSection after review", () => {
     const { rerender } = renderSection(list([], failed));
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     rerender(
-      <LiveRegionProvider>
+      <ShellProviders singleKeyShortcuts>
         <RequirementsSection
           opportunityId={OPP_ID}
           initial={list([requirement(7, "commercial")], succeeded)}
         />
-      </LiveRegionProvider>,
+      </ShellProviders>,
     );
     expect(screen.getByText("[REQUIREMENT 7]")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();

@@ -335,6 +335,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/passages/{passage_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Passage
+         * @description A cited Source passage in its surrounding text: `text` is the span exactly, `before`
+         *     and `after` up to 300 code points of context each, cut at whitespace, with `…` on a side
+         *     that was cut. Anyone who can read the Opportunity.
+         */
+        get: operations["get_passage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -581,6 +603,31 @@ export interface components {
          * @enum {string}
          */
         ParseStatus: "queued" | "parsing" | "parsed" | "failed";
+        /**
+         * Passage
+         * @description A cited Source passage in its surrounding text (Story 2.5 Part B). `text` is the
+         *     cited span exactly; `before` and `after` hold up to 300 code points of context each,
+         *     cut at whitespace, with `…` on a side that was cut (none at the start or end of the
+         *     text). `label` is `S<n> · <file name>`, as in a Requirement's evidence.
+         */
+        Passage: {
+            /** Passage Id */
+            passage_id: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Version */
+            source_version: number;
+            /** Filename */
+            filename: string;
+            /** Label */
+            label: string;
+            /** Before */
+            before: string;
+            /** Text */
+            text: string;
+            /** After */
+            after: string;
+        };
         /**
          * Requirement
          * @description An active Requirement of the Opportunity with the passages it cites.
@@ -3330,6 +3377,117 @@ export interface operations {
                 };
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_passage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                passage_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passage"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no passage with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;
