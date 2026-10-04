@@ -21,3 +21,4 @@ class Action(StrEnum):
     OPPORTUNITY_UPDATE = "opportunities.opportunity.update"
     COLLABORATOR_ADD = "opportunities.collaborator.add"
     COLLABORATOR_REMOVE = "opportunities.collaborator.remove"
+    SOURCE_ADD = "intake.source.add"

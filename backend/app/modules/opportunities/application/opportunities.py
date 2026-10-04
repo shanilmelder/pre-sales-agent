@@ -122,6 +122,7 @@ async def _detail(
         can_manage_collaborators=identity.can(actor, Action.COLLABORATOR_ADD, resource)
         and identity.can(actor, Action.COLLABORATOR_REMOVE, resource),
         can_edit=identity.can(actor, Action.OPPORTUNITY_UPDATE, resource),
+        can_add_sources=identity.can(actor, Action.SOURCE_ADD, resource),
     )
 
 
@@ -131,6 +132,14 @@ async def _detail(
 async def get(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> Opportunity:
     record, members, resource = await _load_readable(uow, actor, opportunity_id)
     return await _detail(uow, actor, record, members, resource)
+
+
+async def readable_resource(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> Resource:
+    """The Opportunity as an authorization `Resource` (its owner and collaborators), for
+    other modules that act on things inside it. Raises the same 404 `not_found` as `get`
+    when it doesn't exist or the caller may not read it."""
+    _, _, resource = await _load_readable(uow, actor, opportunity_id)
+    return resource
 
 
 def _visibility(actor: Principal, *, everything: bool) -> tuple[bool, Where | None]:

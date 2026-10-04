@@ -1,0 +1,200 @@
+"""Opportunity Source commands and queries (Story 2.1 Part A).
+
+`add_file` follows the AD-3 path in the caller's Unit of Work: authorize, validate, write,
+trace. Access goes through the Opportunity (`opportunities.readable_resource`):
+
+- listing: anyone who can read the Opportunity;
+- adding: its owner and collaborators (`intake.source.add`, any role); other readers get
+  403 `forbidden`, everyone else the Opportunity's 404 `not_found`.
+
+A rejected upload stores nothing: the type is checked from the filename before any bytes
+are read, the size while they stream, and the content before the blob is stored.
+
+Identical bytes uploaded again to the same Opportunity (any filename) become the next
+version of the Source that already holds them; different bytes are always a new Source.
+Every added version appends one `intake.source.added` event. Adding a Source never changes
+the Opportunity's `row_version`. Logs and trace payloads hold ids, kinds and sizes only.
+"""
+
+from collections.abc import AsyncIterator, Iterable
+from typing import BinaryIO, Protocol
+from uuid import UUID
+
+from app.modules.identity.application import public as identity
+from app.modules.identity.application.public import Action, Principal
+from app.modules.intake.adapters import repository
+from app.modules.intake.adapters.repository import SourceRecord
+from app.modules.intake.application.models import Source, SourceList
+from app.modules.intake.domain.sources import (
+    EMPTY_MESSAGE,
+    SUBJECT_TYPE,
+    InvalidFilenameError,
+    SourceKind,
+    clean_filename,
+    content_matches,
+    extension,
+    kind_for,
+    mismatch_message,
+    too_large_message,
+    type_rejected_message,
+)
+from app.modules.opportunities.application import public as opportunities
+from app.modules.opportunities.application.public import UserRef
+from app.platform import files, trace
+from app.platform.errors import (
+    FileContentMismatchError,
+    FileEmptyError,
+    FileTooLargeError,
+    FileTypeNotAllowedError,
+    ForbiddenError,
+    UnprocessableError,
+)
+from app.platform.ids import new_id
+from app.platform.logging import get_logger
+from app.platform.multipart import BodyTooLargeError, MultipartError
+from app.platform.storage import BlobStore, BlobTooLargeError
+from app.platform.trace.catalogue import IntakeSourceAdded
+from app.platform.uow import UnitOfWork
+
+MULTIPART_OVERHEAD = 64 * 1024
+"""Room on top of the file size for the multipart framing (boundaries, part headers)."""
+MISSING_FILE_DETAIL = "Invalid fields: body.file"
+UNKNOWN_USER = "Unknown user"
+_log = get_logger(__name__)
+
+
+class IncomingFile(Protocol):
+    """An uploaded file read as it arrives (`app.platform.multipart.MultipartFile`)."""
+
+    async def filename(self) -> str: ...
+
+    def chunks(self) -> AsyncIterator[bytes]: ...
+
+
+def max_body_bytes(max_bytes: int) -> int:
+    """The largest request body an upload of at most `max_bytes` may need."""
+    return max_bytes + MULTIPART_OVERHEAD
+
+
+# --- queries --------------------------------------------------------------------------------
+
+
+async def _sources(uow: UnitOfWork, records: Iterable[SourceRecord]) -> list[Source]:
+    records = list(records)
+    names = await identity.user_names(uow, {r.uploaded_by for r in records})
+    return [
+        Source(
+            id=str(r.id),
+            kind=SourceKind(r.kind),
+            filename=r.filename,
+            version=r.version,
+            version_count=r.version_count,
+            size_bytes=r.size_bytes,
+            uploaded_by=UserRef(id=str(r.uploaded_by), name=names.get(r.uploaded_by, UNKNOWN_USER)),
+            uploaded_at=r.uploaded_at,
+            created_at=r.created_at,
+        )
+        for r in records
+    ]
+
+
+async def list_sources(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> SourceList:
+    """The Opportunity's Sources, newest first, each with its latest version."""
+    await opportunities.readable_resource(uow, actor, opportunity_id)
+    return SourceList(items=await _sources(uow, await repository.list_for(uow, opportunity_id)))
+
+
+# --- commands -------------------------------------------------------------------------------
+
+
+async def add_file(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    incoming: IncomingFile,
+    *,
+    store: BlobStore,
+    max_bytes: int,
+    content_length: int | None = None,
+) -> Source:
+    """Add an uploaded file as a Source (or as the next version of the Source that already
+    holds the same bytes). `content_length` is the request's, checked before any byte is
+    read; the file itself is counted as it streams."""
+    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
+    identity.authorize(actor, Action.SOURCE_ADD, resource)
+    uploader = actor.user_id
+    if uploader is None:
+        raise ForbiddenError("Only a signed-in user can add Sources.")
+    if content_length is not None and content_length > max_body_bytes(max_bytes):
+        raise FileTooLargeError(too_large_message(max_bytes))
+
+    try:
+        filename = clean_filename(await incoming.filename())
+        kind = kind_for(filename)
+        if kind is None:
+            raise FileTypeNotAllowedError(type_rejected_message(filename))
+        ext = extension(filename)
+
+        def check(stream: BinaryIO, size: int) -> None:
+            if size == 0:
+                raise FileEmptyError(EMPTY_MESSAGE)
+            if not content_matches(ext, stream):
+                raise FileContentMismatchError(mismatch_message(ext))
+
+        blob = await store.put_stream(incoming.chunks(), max_bytes, check=check)
+    except (BlobTooLargeError, BodyTooLargeError):
+        raise FileTooLargeError(too_large_message(max_bytes)) from None
+    except InvalidFilenameError as exc:
+        raise UnprocessableError(exc.message) from None
+    except MultipartError:
+        raise UnprocessableError(MISSING_FILE_DETAIL) from None
+
+    await repository.lock_content(uow, opportunity_id, blob.sha256)
+    source_id = await repository.source_with_content(uow, opportunity_id, blob.sha256)
+    if source_id is None:
+        source_id = new_id()
+        await repository.insert_source(
+            uow,
+            source_id=source_id,
+            opportunity_id=opportunity_id,
+            kind=kind.value,
+            created_by=uploader,
+        )
+        version, source_kind = 1, kind.value
+    else:
+        version, source_kind = await repository.next_version(uow, source_id)
+    await files.add_reference(uow, blob.sha256, blob.size)
+    await repository.insert_version(
+        uow,
+        source_id=source_id,
+        version=version,
+        file_sha256=blob.sha256,
+        filename=filename,
+        size_bytes=blob.size,
+        uploaded_by=uploader,
+    )
+    await trace.append(
+        uow,
+        actor=actor.actor,
+        payload=IntakeSourceAdded(version=version, kind=source_kind, size_bytes=blob.size),
+        subject_type=SUBJECT_TYPE,
+        subject_id=source_id,
+        opportunity_id=opportunity_id,
+        subject_version=version,
+    )
+    _log.info(
+        "intake.source_added",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "source_id": str(source_id),
+            "version": version,
+            "kind": source_kind,
+            "size_bytes": blob.size,
+            "actor_id": actor.actor.id,
+        },
+    )
+    record = await repository.get(uow, source_id)
+    if record is None:
+        raise RuntimeError("added source not found")
+    (source,) = await _sources(uow, [record])
+    return source

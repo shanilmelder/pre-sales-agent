@@ -13,6 +13,10 @@ FROM python:3.13-slim
 ARG PSA_VERSION=0.0.0-dev
 ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PSA_VERSION=${PSA_VERSION}
 RUN groupadd --system app && useradd --system --gid app --no-create-home app
+# The file store (PSA_STORAGE_DIR). Created here owned by `app`, so a fresh named volume
+# mounted on it inherits that ownership and the non-root process can write to it.
+ENV PSA_STORAGE_DIR=/var/lib/psa/files
+RUN mkdir -p /var/lib/psa/files && chown app:app /var/lib/psa/files
 WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY alembic.ini ./

@@ -13,6 +13,7 @@ dependencies = [
     "psycopg[binary]==3.3.6",
     "uvicorn==0.54.0",
     "pyjwt[crypto]==2.15.1",
+    "python-multipart==0.0.32",
 ]
 
 [dependency-groups]
@@ -72,4 +73,16 @@ name = "opportunities uses identity only through its public API (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.opportunities"]
 forbidden_modules = ["app.modules.identity.domain", "app.modules.identity.adapters"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "intake uses identity and opportunities only through their public APIs (AD-2)"
+type = "forbidden"
+source_modules = ["app.modules.intake"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+]
 allow_indirect_imports = true

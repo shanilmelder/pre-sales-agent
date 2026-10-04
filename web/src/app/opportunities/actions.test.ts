@@ -12,7 +12,13 @@ const api = vi.hoisted(() => ({
 vi.mock("@/lib/api/server", () => ({ createServerApiClient: async () => api }));
 vi.mock("server-only", () => ({}));
 
-import { changeCollaborator, createOpportunity, searchUsers, updateOpportunity } from "./actions";
+import {
+  addSource,
+  changeCollaborator,
+  createOpportunity,
+  searchUsers,
+  updateOpportunity,
+} from "./actions";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
 const USER_ID = "00000000-0000-7000-8000-000000000002";
@@ -31,6 +37,7 @@ const OPPORTUNITY: Opportunity = {
   last_changed_by: "[OTHER]",
   can_manage_collaborators: true,
   can_edit: true,
+  can_add_sources: true,
 };
 const INPUT = {
   title: "  ",
@@ -222,5 +229,92 @@ describe("searchUsers", () => {
     expect(api.GET).toHaveBeenCalledWith("/api/v1/users/search", {
       params: { query: { q: "ann", limit: 10 } },
     });
+  });
+});
+
+describe("addSource", () => {
+  const SOURCE = {
+    id: "00000000-0000-7000-8000-0000000000d4",
+    kind: "transcript",
+    filename: "call.vtt",
+    version: 1,
+    version_count: 1,
+    size_bytes: 6,
+    uploaded_by: { id: USER_ID, name: "[OWNER]" },
+    uploaded_at: "2026-10-04T10:00:00Z",
+    created_at: "2026-10-04T10:00:00Z",
+  };
+
+  function form(file: File | string | null = new File(["WEBVTT"], "call.vtt")) {
+    const data = new FormData();
+    data.append("opportunityId", OPP_ID);
+    if (file !== null) data.append("file", file);
+    return data;
+  }
+
+  /** The FormData the action hands to openapi-fetch (through its bodySerializer). */
+  function sentForm(): FormData {
+    const init = api.POST.mock.calls[0][1];
+    return init.bodySerializer(init.body);
+  }
+
+  it("posts the file as multipart to the Opportunity's sources", async () => {
+    api.POST.mockResolvedValue({ data: SOURCE, response: status(201) });
+    expect(await addSource(form())).toEqual({ kind: "ok", source: SOURCE });
+    const [path, init] = api.POST.mock.calls[0];
+    expect(path).toBe("/api/v1/opportunities/{opportunity_id}/sources");
+    expect(init.params).toEqual({ path: { opportunity_id: OPP_ID } });
+    const file = sentForm().get("file");
+    expect(file).toBeInstanceOf(File);
+    expect((file as File).name).toBe("call.vtt");
+    expect(await (file as File).text()).toBe("WEBVTT");
+  });
+
+  it("forwards a 50 MB file whole", async () => {
+    api.POST.mockResolvedValue({ data: SOURCE, response: status(201) });
+    const big = new File([new Uint8Array(50 * 1024 * 1024)], "big.pdf");
+    expect((await addSource(form(big))).kind).toBe("ok");
+    expect((sentForm().get("file") as File).size).toBe(50 * 1024 * 1024);
+  });
+
+  it("a 422 keeps the API's 'Rejected: ...' sentence", async () => {
+    api.POST.mockResolvedValueOnce({
+      error: { code: "file_type_not_allowed", detail: "Rejected: .exe files aren't allowed" },
+      response: status(422),
+    });
+    expect(await addSource(form(new File(["MZ"], "setup.exe")))).toEqual({
+      kind: "rejected",
+      reason: "Rejected: .exe files aren't allowed",
+    });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "validation_error", detail: "Invalid fields: body.file" },
+      response: status(422),
+    });
+    expect(await addSource(form())).toEqual({
+      kind: "rejected",
+      reason: "Rejected: the file couldn't be read",
+    });
+  });
+
+  it("maps 403, 404 and failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValueOnce({ error: { code: "forbidden" }, response: status(403) });
+    expect(await addSource(form())).toEqual({ kind: "forbidden" });
+    api.POST.mockResolvedValueOnce({ error: { code: "not_found" }, response: status(404) });
+    expect(await addSource(form())).toEqual({ kind: "not-found" });
+    api.POST.mockResolvedValueOnce({ error: { code: "internal_error" }, response: status(500) });
+    expect(await addSource(form())).toEqual({ kind: "error" });
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await addSource(form())).toEqual({ kind: "error" });
+  });
+
+  it("rejects malformed input without calling the API", async () => {
+    const badId = new FormData();
+    badId.append("opportunityId", "not-a-uuid");
+    badId.append("file", new File(["x"], "a.txt"));
+    for (const bad of [badId, form(null), form("not a file"), { file: "x" }, null]) {
+      expect(await addSource(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.POST).not.toHaveBeenCalled();
   });
 });

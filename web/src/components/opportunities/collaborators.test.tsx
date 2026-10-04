@@ -45,6 +45,7 @@ function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     last_changed_by: "[OWNER]",
     can_manage_collaborators: true,
     can_edit: true,
+    can_add_sources: true,
     ...overrides,
   };
 }

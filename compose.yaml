@@ -49,6 +49,11 @@ services:
       # Access tokens are validated against this tenant's JWKS and this API audience.
       PSA_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env}
       PSA_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:?set AUTH0_AUDIENCE in .env}
+      # Uploaded files (content-addressed blobs) live on the `files` volume.
+      PSA_STORAGE_DIR: /var/lib/psa/files
+      PSA_UPLOAD_MAX_BYTES: ${PSA_UPLOAD_MAX_BYTES:-52428800}
+    volumes:
+      - files:/var/lib/psa/files
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,3 +104,5 @@ services:
 
 volumes:
   pgdata:
+  # Uploaded Source files (platform.storage, AD-18). `down -v` deletes them.
+  files:

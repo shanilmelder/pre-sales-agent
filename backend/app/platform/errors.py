@@ -147,6 +147,34 @@ class InvalidCollaboratorError(UnprocessableError):
     title = "Invalid collaborator"
 
 
+class FileTooLargeError(UnprocessableError):
+    """An upload is larger than `upload_max_bytes`."""
+
+    code = "file_too_large"
+    title = "File too large"
+
+
+class FileTypeNotAllowedError(UnprocessableError):
+    """An upload's extension is not on the allowlist."""
+
+    code = "file_type_not_allowed"
+    title = "File type not allowed"
+
+
+class FileContentMismatchError(UnprocessableError):
+    """An upload's bytes don't match its extension (magic bytes, UTF-8 text)."""
+
+    code = "file_content_mismatch"
+    title = "File content mismatch"
+
+
+class FileEmptyError(UnprocessableError):
+    """An upload has no bytes."""
+
+    code = "file_empty"
+    title = "File empty"
+
+
 class IfMatchRequiredError(ProblemError):
     """A write arrived without an `If-Match` header (AD-11)."""
 

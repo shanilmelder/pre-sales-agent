@@ -10,6 +10,7 @@ import {
   type Opportunity,
   type UserSummary,
 } from "@/lib/opportunities";
+import type { Source } from "@/lib/sources";
 
 /** The API's query bounds for people search (in code points). */
 const SEARCH_MIN = 2;
@@ -77,6 +78,14 @@ export type UpdateResult =
   | { kind: "stale"; changedBy: string | null }
   /** 422: a readable reason. */
   | { kind: "invalid"; detail: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type AddSourceResult =
+  | { kind: "ok"; source: Source }
+  /** 422: the API's sentence for the UI ("Rejected: .exe files aren't allowed"). */
+  | { kind: "rejected"; reason: string }
   | { kind: "forbidden" }
   | { kind: "not-found" }
   | { kind: "error" };
@@ -309,6 +318,54 @@ export async function searchUsers(q: unknown): Promise<SearchResult> {
     return { kind: "error" };
   } catch (thrown) {
     console.error(`search users failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** A 422's sentence: the API's own "Rejected: ..." detail, or a general one. */
+function rejectionReason(detail: string | undefined): string {
+  if (detail?.startsWith("Rejected:")) return detail;
+  return "Rejected: the file couldn't be read";
+}
+
+/** `POST /api/v1/opportunities/{id}/sources` with the `file` from `formData` (its
+ * `opportunityId` names the Opportunity). The API checks who may add, the type, the size and
+ * the content; this only forwards the file. */
+export async function addSource(formData: unknown): Promise<AddSourceResult> {
+  if (!(formData instanceof FormData)) return { kind: "error" };
+  const opportunityId = formData.get("opportunityId");
+  const file = formData.get("file");
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (!(file instanceof File)) return { kind: "error" };
+  const upload = new FormData();
+  upload.append("file", file, file.name);
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/sources",
+      {
+        params: { path: { opportunity_id: opportunityId } },
+        // The generated type describes the multipart field; the body sent is the FormData.
+        body: { file: "" },
+        bodySerializer: () => upload,
+      },
+    );
+    if (data) return { kind: "ok", source: data };
+    switch (response.status) {
+      case 422:
+        return { kind: "rejected", reason: rejectionReason(problem(error).detail) };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `add source failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`add source failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

@@ -15,6 +15,7 @@ from app.modules.identity.api.admin_routes import router as identity_admin_route
 from app.modules.identity.api.routes import router as identity_router
 from app.modules.identity.api.user_routes import router as identity_user_router
 from app.modules.identity.application.public import TokenValidator
+from app.modules.intake.api.routes import router as intake_router
 from app.modules.opportunities.api.routes import router as opportunities_router
 from app.platform.config import Settings, get_settings
 from app.platform.db import create_engine, ping
@@ -110,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(identity_admin_router, prefix=API_PREFIX)
     app.include_router(identity_user_router, prefix=API_PREFIX)
     app.include_router(opportunities_router, prefix=API_PREFIX)
+    app.include_router(intake_router, prefix=API_PREFIX)
     return app
 
 
