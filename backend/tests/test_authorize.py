@@ -25,7 +25,7 @@ from app.platform.errors import ForbiddenError
 ADMIN = Principal(Actor("user", "u-admin"), frozenset({Role.PLATFORM_ADMINISTRATOR}))
 ENGINEER = Principal(Actor("user", "u-pse"), frozenset({Role.PRESALES_ENGINEER}))
 ADMIN_ONLY = (Action.USER_LIST, Action.USER_ASSIGN_ROLE, Action.USER_REMOVE_ROLE)
-MODULES = {"identity", "opportunities", "intake", "gaps"}
+MODULES = {"identity", "opportunities", "intake", "gaps", "estimates"}
 
 
 def _user(roles: set[Role] | None = None) -> tuple[Principal, UUID]:
@@ -85,6 +85,7 @@ def test_every_action_has_a_policy_entry() -> None:
     assert POLICY[Action.EXTRACTION_START] == frozenset()
     assert POLICY[Action.REQUIREMENT_EDIT] == frozenset()
     assert POLICY[Action.GAP_DETECTION_START] == frozenset()
+    assert POLICY[Action.ESTIMATE_DRAFT_START] == frozenset()
 
 
 def test_resource_scoped_grants() -> None:
@@ -97,6 +98,7 @@ def test_resource_scoped_grants() -> None:
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
         Action.GAP_DETECTION_START,
+        Action.ESTIMATE_DRAFT_START,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -104,10 +106,12 @@ def test_resource_scoped_grants() -> None:
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
         Action.GAP_DETECTION_START,
+        Action.ESTIMATE_DRAFT_START,
     }
     assert RELATION_EXCLUDED_ROLES == {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ESTIMATE_DRAFT_START: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -125,6 +129,8 @@ def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) ->
     assert can(member, Action.REQUIREMENT_EDIT, opportunity) is allowed
     assert can(owner, Action.GAP_DETECTION_START, opportunity) is allowed
     assert can(member, Action.GAP_DETECTION_START, opportunity) is allowed
+    assert can(owner, Action.ESTIMATE_DRAFT_START, opportunity) is allowed
+    assert can(member, Action.ESTIMATE_DRAFT_START, opportunity) is allowed
     assert can(member, Action.SOURCE_ADD, opportunity) is True
 
 

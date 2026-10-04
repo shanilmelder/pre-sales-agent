@@ -1,15 +1,18 @@
 "use server";
 
 import {
+  getEstimate,
   getOpportunity,
   listGaps,
   listRequirements,
   listSources,
+  type EstimateResult,
   type GapsResult,
   type RequirementsResult,
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
+import type { EstimateDraft } from "@/lib/estimates";
 import type { Detection } from "@/lib/gaps";
 import {
   codePointLength,
@@ -117,6 +120,14 @@ export type RetryParseResult =
 export type StartExtractionResult =
   | { kind: "ok"; extraction: Extraction }
   /** 409: an extraction is already queued or running. */
+  | { kind: "conflict" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type StartEstimateDraftResult =
+  | { kind: "ok"; draft: EstimateDraft }
+  /** 409: a draft is already queued or running. */
   | { kind: "conflict" }
   | { kind: "forbidden" }
   | { kind: "not-found" }
@@ -564,6 +575,47 @@ export async function startGapDetection(opportunityId: unknown): Promise<StartGa
   } catch (thrown) {
     console.error(
       `start gap detection failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** The Opportunity's Estimate and latest draft as stored now (the Estimate tab polls this
+ * while a draft runs). */
+export async function loadEstimate(opportunityId: unknown): Promise<EstimateResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return getEstimate(opportunityId);
+}
+
+/** `POST /api/v1/opportunities/{id}/estimate-drafts`: draft the Estimate again (the Retry of
+ * a failed draft). The API checks who may start one and that none is running. */
+export async function startEstimateDraft(
+  opportunityId: unknown,
+): Promise<StartEstimateDraftResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/estimate-drafts",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", draft: data };
+    switch (response.status) {
+      case 409:
+        return { kind: "conflict" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `start estimate draft failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `start estimate draft failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

@@ -468,6 +468,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Estimate
+         * @description The Opportunity's current draft Estimate Version (null before the first) with its
+         *     sections, lines, covered Requirements and server-calculated per-role hours, subtotals and
+         *     totals; and its latest Estimate draft run (null before the first). Anyone who can read
+         *     the Opportunity.
+         */
+        get: operations["get_estimate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/estimate-drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Estimate Draft
+         * @description Queue a new Estimate draft over the Opportunity's active Requirements, e.g. to retry a
+         *     failed one. The owner and collaborators, except sales representatives.
+         */
+        post: operations["start_estimate_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -556,6 +600,111 @@ export interface components {
          * @enum {string}
          */
         DetectionStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * DraftErrorCode
+         * @enum {string}
+         */
+        DraftErrorCode: "model_unavailable" | "model_timeout" | "output_invalid";
+        /**
+         * DraftStatus
+         * @enum {string}
+         */
+        DraftStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * EstimateDraft
+         * @description The Opportunity's latest Estimate draft. `error_code` is set only when `failed`.
+         */
+        EstimateDraft: {
+            status: components["schemas"]["DraftStatus"];
+            error_code: components["schemas"]["DraftErrorCode"] | null;
+        };
+        /**
+         * EstimateLine
+         * @description A work item: its effort and role mix as drafted, and its server-calculated role
+         *     hours, Contingency (the sum of its linked Contingency amounts; 0 until any are linked)
+         *     and total (effort plus Contingency).
+         */
+        EstimateLine: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            section: components["schemas"]["Section"];
+            /** Title */
+            title: string;
+            /** Basis */
+            basis: string;
+            role_mix: components["schemas"]["RoleMix"];
+            /** Effort Hours */
+            effort_hours: number;
+            /** Contingency Hours */
+            contingency_hours: number;
+            /** Total Hours */
+            total_hours: number;
+            role_hours: components["schemas"]["RoleHours"];
+            /** Requirements */
+            requirements: components["schemas"]["LineRequirement"][];
+        };
+        /**
+         * EstimateRole
+         * @description The template's roles, in column order.
+         * @enum {string}
+         */
+        EstimateRole: "engineer" | "project_manager" | "qa";
+        /**
+         * EstimateSection
+         * @description A template section with its lines (in position order) and their subtotal.
+         */
+        EstimateSection: {
+            section: components["schemas"]["Section"];
+            /** Lines */
+            lines: components["schemas"]["EstimateLine"][];
+            subtotal: components["schemas"]["Totals"];
+        };
+        /**
+         * EstimateVersion
+         * @description An Estimate Version. `sections`: only those with lines, in template order.
+         *     `totals`: the overall effort, Contingency and total, with the per-role totals.
+         *     `uncovered_count`: active Requirements no line covered when it was drafted;
+         *     `dropped_count`: proposed lines that broke a rule.
+         */
+        EstimateVersion: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["VersionStatus"];
+            /** Template Version */
+            template_version: string;
+            /** Roles */
+            roles: components["schemas"]["EstimateRole"][];
+            /** Uncovered Count */
+            uncovered_count: number;
+            /** Dropped Count */
+            dropped_count: number;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Sections */
+            sections: components["schemas"]["EstimateSection"][];
+            totals: components["schemas"]["Totals"];
+        };
+        /**
+         * EstimateView
+         * @description The Opportunity's current (draft) Estimate Version, null before the first, and its
+         *     latest draft run, null before the first. `can_start_draft`: whether the caller may start
+         *     (retry) a draft. The UI only uses it to hide controls; the API decides.
+         */
+        EstimateView: {
+            version: components["schemas"]["EstimateVersion"] | null;
+            draft: components["schemas"]["EstimateDraft"] | null;
+            /** Can Start Draft */
+            can_start_draft: boolean;
+        };
         /**
          * Extraction
          * @description The Opportunity's latest Requirement extraction. `error_code` is set only when
@@ -684,6 +833,23 @@ export interface components {
          * @enum {string}
          */
         Impact: "high" | "medium" | "low";
+        /**
+         * LineRequirement
+         * @description A Requirement the line covers, at the version it was drafted against. `label` is
+         *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
+         *     first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
+         *     that version's text, with `…` when cut.
+         */
+        LineRequirement: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+            /** Excerpt */
+            excerpt: string;
+        };
         /**
          * NewOpportunity
          * @description What a presales engineer enters to create an Opportunity. Text is trimmed; a blank
@@ -967,6 +1133,37 @@ export interface components {
          */
         Role: "presales_engineer" | "sales_representative" | "engineering_reviewer" | "pm_reviewer" | "security_reviewer" | "commercial" | "delivery_manager" | "head_of_delivery" | "platform_administrator";
         /**
+         * RoleHours
+         * @description Hours per role (0.1 h), summing exactly to the effort they split.
+         */
+        RoleHours: {
+            /** Engineer */
+            engineer: number;
+            /** Project Manager */
+            project_manager: number;
+            /** Qa */
+            qa: number;
+        };
+        /**
+         * RoleMix
+         * @description Each role's share of a line's effort, in whole percent, summing to 100.
+         */
+        RoleMix: {
+            /** Engineer */
+            engineer: number;
+            /** Project Manager */
+            project_manager: number;
+            /** Qa */
+            qa: number;
+        };
+        /**
+         * Section
+         * @description The template's sections: the Requirement classifications, in the Requirements tab's
+         *     order.
+         * @enum {string}
+         */
+        Section: "functional" | "integration" | "data" | "security" | "non_functional" | "commercial";
+        /**
          * Source
          * @description An Opportunity Source with its latest version. `filename`, `size_bytes`,
          *     `uploaded_by`, `uploaded_at` and `parse` describe that version; `version_count` counts
@@ -1020,6 +1217,19 @@ export interface components {
             error_code: components["schemas"]["ParseErrorCode"] | null;
         };
         /**
+         * Totals
+         * @description Effort, Contingency and total hours, and the effort per role.
+         */
+        Totals: {
+            /** Effort Hours */
+            effort_hours: number;
+            /** Contingency Hours */
+            contingency_hours: number;
+            /** Total Hours */
+            total_hours: number;
+            role_hours: components["schemas"]["RoleHours"];
+        };
+        /**
          * UserProfile
          * @description The signed-in user. `roles` is empty until an administrator assigns one.
          */
@@ -1063,6 +1273,11 @@ export interface components {
             /** Email */
             email: string;
         };
+        /**
+         * VersionStatus
+         * @enum {string}
+         */
+        VersionStatus: "draft" | "superseded";
     };
     responses: never;
     parameters: never;
@@ -4503,6 +4718,270 @@ export interface operations {
                 };
             };
             /** @description A Gap detection is already queued or running (`gap_detection_in_progress`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_estimate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    start_estimate_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new draft, `queued` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateDraft"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An Estimate draft is already queued or running (`estimate_draft_in_progress`) */
             409: {
                 headers: {
                     [name: string]: unknown;

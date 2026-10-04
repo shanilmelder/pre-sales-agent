@@ -72,3 +72,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-3-detect-gaps.md`
   summary: [post-demo] Cap the size of `clarification_agent`'s prompt (number or length of Requirements) and the number of Gaps it may return, with a clear failure when an Opportunity is too large.
   evidence: Review finding (triage row 12), unverified: settle by running detection on an Opportunity with a few hundred Requirements against the target model and checking for context overflow or an oversized reply.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-1-draft-estimate.md`
+  summary: [post-demo] Flag an Estimate Version as out of date when its covered Requirements are edited or deactivated (the chip shows the current `R<n>` beside the drafted version's excerpt), and offer Re-draft after a successful draft, not only Retry after a failure.
+  evidence: Review triage row 7: `_requirements` labels by the current number but takes the excerpt at the linked version; drafts are queued only after Gap detection.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-1-draft-estimate.md`
+  summary: [post-demo] Gaps tab (and the other polling lists) never shows "Still drafting/detecting — reload" when the tab was hidden past the poll limit and then shown again: the effect returns before setting `stalled`.
+  evidence: gaps-list.tsx:269 has the same early return fixed for the Estimate tab in triage row 4.

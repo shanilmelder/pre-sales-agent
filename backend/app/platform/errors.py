@@ -152,6 +152,13 @@ class GapDetectionInProgressError(ConflictError):
     title = "Gap detection in progress"
 
 
+class EstimateDraftInProgressError(ConflictError):
+    """An Estimate draft was asked for while one is queued or running."""
+
+    code = "estimate_draft_in_progress"
+    title = "Estimate draft in progress"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

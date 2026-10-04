@@ -28,6 +28,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   startExtraction: vi.fn(),
   loadGaps: vi.fn(),
   startGapDetection: vi.fn(),
+  loadEstimate: vi.fn(),
+  startEstimateDraft: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -538,6 +540,104 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
+  function foundWithEstimate(body: unknown) {
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/estimate")
+        ? body
+          ? { data: body, response: new Response(null, { status: 200 }) }
+          : { response: new Response(null, { status: 500 }) }
+        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+  }
+
+  it("tab URL /estimate: the grid with its version and server totals", async () => {
+    signedIn(["sales_representative"]);
+    const totals = {
+      effort_hours: 10,
+      contingency_hours: 0,
+      total_hours: 10,
+      role_hours: { engineer: 6, project_manager: 2, qa: 2 },
+    };
+    foundWithEstimate({
+      version: {
+        id: "00000000-0000-7000-8000-0000000000d1",
+        version: 1,
+        status: "draft",
+        template_version: "demo-1",
+        roles: ["engineer", "project_manager", "qa"],
+        uncovered_count: 0,
+        dropped_count: 0,
+        row_version: 1,
+        created_at: "2026-10-05T09:00:00Z",
+        sections: [
+          {
+            section: "integration",
+            lines: [
+              {
+                id: "00000000-0000-7000-8000-0000000000d2",
+                position: 1,
+                section: "integration",
+                title: "[LINE]",
+                basis: "[BASIS]",
+                role_mix: { engineer: 60, project_manager: 20, qa: 20 },
+                effort_hours: 10,
+                contingency_hours: 0,
+                total_hours: 10,
+                role_hours: { engineer: 6, project_manager: 2, qa: 2 },
+                requirements: [
+                  {
+                    id: "00000000-0000-7000-8000-0000000000f1",
+                    version: 1,
+                    label: "R1",
+                    excerpt: "[EXCERPT]",
+                  },
+                ],
+              },
+            ],
+            subtotal: totals,
+          },
+        ],
+        totals,
+      },
+      draft: { status: "succeeded", error_code: null },
+      can_start_draft: false,
+    });
+    const { container } = await renderWorkspace("estimate");
+    expect(selectedTabs()).toEqual(["7Estimate"]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { level: 2, name: "Estimate" })).toBeTruthy();
+    expect(within(panel).getByText("Draft v1")).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "[LINE]" })).toBeTruthy();
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/estimate", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /estimate: the empty state", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithEstimate({ version: null, draft: null, can_start_draft: true });
+    await renderWorkspace("estimate");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Estimate is drafted after Gaps are detected.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("tab URL /estimate: a failed read says so", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithEstimate(null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("estimate");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Estimate could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
+
   function foundWithGaps(body: unknown) {
     apiGet.mockImplementation(async (path: string) =>
       path.endsWith("/gaps")
@@ -623,7 +723,6 @@ describe("/opportunities/[id] workspace", () => {
   it.each([
     ["assessments", "5Assessments"],
     ["conflicts", "6Conflicts"],
-    ["estimate", "7Estimate"],
     ["trace", "8Trace"],
     ["actuals", "9Actuals"],
   ])("tab URL /%s: header, that tab selected, 'Not available yet.'", async (tab, label) => {
@@ -650,7 +749,7 @@ describe("/opportunities/[id] workspace", () => {
     expect(notFound).toHaveBeenCalledTimes(3);
   });
 
-  it.each([undefined, "overview", "sources", "requirements", "gaps", "actuals"])(
+  it.each([undefined, "overview", "sources", "requirements", "gaps", "estimate", "actuals"])(
     "no access on %s: the no-access sentence and no tabs",
     async (tab) => {
       signedIn(["sales_representative"]);

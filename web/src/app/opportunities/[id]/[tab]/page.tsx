@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 
+import { EstimateTab } from "@/app/opportunities/[id]/estimate";
 import { GapsTab } from "@/app/opportunities/[id]/gaps";
 import { OverviewTab } from "@/app/opportunities/[id]/overview";
 import { RequirementsTab } from "@/app/opportunities/[id]/requirements";
 import { SourcesTab } from "@/app/opportunities/[id]/sources";
 import { isWorkspaceTab, TAB_NOT_AVAILABLE, WORKSPACE_TABS } from "@/lib/workspace";
 
-/** `/opportunities/{id}/{tab}`: Overview, Sources, Requirements, Gaps, or "Not available yet." for
- * a tab later epics build. An unknown slug is the not-found page. */
+/** `/opportunities/{id}/{tab}`: Overview, Sources, Requirements, Gaps, Estimate, or "Not available
+ * yet." for a tab later epics build. An unknown slug is the not-found page. */
 export default async function WorkspaceTabPage({
   params,
 }: {
@@ -19,6 +20,7 @@ export default async function WorkspaceTabPage({
   if (tab === "sources") return await SourcesTab({ id });
   if (tab === "requirements") return await RequirementsTab({ id });
   if (tab === "gaps") return await GapsTab({ id });
+  if (tab === "estimate") return await EstimateTab({ id });
   return (
     <div className="p-gutter">
       <h2 className="sr-only">{WORKSPACE_TABS.find((t) => t.slug === tab)?.label}</h2>
