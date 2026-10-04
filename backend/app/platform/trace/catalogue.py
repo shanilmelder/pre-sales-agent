@@ -234,3 +234,26 @@ class GapsDetectionCompleted(TracePayload):
     dropped_count: int
     requirement_count: int
     superseded_count: int
+
+
+# --- estimates ----------------------------------------------------------------------------
+# Story 8.1. Payloads hold the version number and counts only, never line or Requirement
+# text.
+
+
+@register
+class EstimatesEstimateVersionCreated(TracePayload):
+    """An accepted draft created an Estimate Version. Subject: the version
+    (`estimates.estimate_version`). Actor: the agent (`estimating_agent@<semver>`). Counts
+    only: lines stored, lines dropped, active Requirements no line covers, Requirements read,
+    and earlier draft versions superseded."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.created"
+
+    version: int
+    template_version: str
+    line_count: int
+    dropped_count: int
+    uncovered_count: int
+    requirement_count: int
+    superseded_count: int

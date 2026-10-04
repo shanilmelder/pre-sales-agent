@@ -7,6 +7,7 @@ import type { Filters } from "@/app/opportunities/filters";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
 import { UUID_RE } from "@/lib/opportunities";
+import type { EstimateView } from "@/lib/estimates";
 import type { GapList } from "@/lib/gaps";
 import type { RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
@@ -19,6 +20,7 @@ export type FacetsResult = { kind: "ok"; facets: OpportunityFacets } | { kind: "
 export type SourcesResult = { kind: "ok"; sources: Source[] } | { kind: "error" };
 export type RequirementsResult = { kind: "ok"; list: RequirementList } | { kind: "error" };
 export type GapsResult = { kind: "ok"; list: GapList } | { kind: "error" };
+export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
 export type GetResult =
   | { kind: "ok"; opportunity: Opportunity }
   | { kind: "not-found" }
@@ -136,6 +138,24 @@ export async function listGaps(id: string): Promise<GapsResult> {
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET gaps failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/estimate`: the current draft Estimate Version with its
+ * server-calculated totals, and the latest draft run (Story 8.1). */
+export async function getEstimate(id: string): Promise<EstimateResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/estimate", {
+      params: { path: { opportunity_id: id } },
+    });
+    if (data) return { kind: "ok", estimate: data };
+    console.error(`GET estimate failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET estimate failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

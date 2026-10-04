@@ -10,6 +10,6 @@ Each module lives in `app/modules/<module>/` with four layers (architecture spin
 A module never imports another module's `domain` or `adapters` (AD-2), and never imports
 `langgraph` (AD-5). Both rules are enforced by `tests/test_architecture.py`.
 Modules: `identity` (users, roles, the action catalogue and policy), `opportunities`
-(Opportunities and collaborators), `intake` (Opportunity Sources and Requirements) and `gaps`
-(Gaps and Clarification Questions).
+(Opportunities and collaborators), `intake` (Opportunity Sources and Requirements), `gaps`
+(Gaps and Clarification Questions) and `estimates` (Estimate Versions and their lines).
 """

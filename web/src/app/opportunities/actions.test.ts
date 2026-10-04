@@ -21,11 +21,13 @@ import {
   createOpportunity,
   editRequirement,
   getPassage,
+  loadEstimate,
   loadGaps,
   loadRequirements,
   loadSources,
   retryParse,
   searchUsers,
+  startEstimateDraft,
   startExtraction,
   startGapDetection,
   updateOpportunity,
@@ -576,6 +578,68 @@ describe("loadGaps", () => {
     api.GET.mockReset();
     api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
     expect(await loadGaps(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
+describe("startEstimateDraft", () => {
+  const QUEUED = { status: "queued", error_code: null };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts to the estimate-drafts route and returns the queued draft", async () => {
+    api.POST.mockResolvedValue({ data: QUEUED, response: new Response(null, { status: 201 }) });
+    expect(await startEstimateDraft(OPP_ID)).toEqual({ kind: "ok", draft: QUEUED });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/estimate-drafts",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
+  });
+
+  it.each([
+    [409, "conflict"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: new Response(null, { status }) });
+    expect(await startEstimateDraft(OPP_ID)).toEqual({ kind });
+  });
+
+  it("is an error when the call throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await startEstimateDraft(OPP_ID)).toEqual({ kind: "error" });
+  });
+
+  it("refuses an id that isn't a UUID without calling the API", async () => {
+    expect(await startEstimateDraft("nope")).toEqual({ kind: "error" });
+    expect(await startEstimateDraft(undefined)).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadEstimate", () => {
+  it("reads the Opportunity's Estimate and latest draft", async () => {
+    const VIEW = { version: null, draft: null, can_start_draft: false };
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ data: VIEW, response: new Response(null, { status: 200 }) });
+    expect(await loadEstimate(OPP_ID)).toEqual({ kind: "ok", estimate: VIEW });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/estimate", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await loadEstimate(7)).toEqual({ kind: "error" });
+    expect(await loadEstimate("../../users")).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("is an error when the API fails or throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    expect(await loadEstimate(OPP_ID)).toEqual({ kind: "error" });
+    api.GET.mockRejectedValueOnce(new Error("network"));
+    expect(await loadEstimate(OPP_ID)).toEqual({ kind: "error" });
   });
 });
 

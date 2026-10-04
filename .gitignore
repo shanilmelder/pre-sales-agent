@@ -13,6 +13,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.hypothesis/
 .import_linter_cache/
 .coverage
 htmlcov/

@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from app.modules.gaps.application import detection
+from app.modules.gaps.application.gap_refs import GapSummary, open_gap_summaries
 from app.modules.gaps.application.gaps import list_gaps, start_detection
 from app.modules.gaps.application.models import (
     ClarificationQuestion,
@@ -28,8 +29,10 @@ __all__ = [
     "Gap",
     "GapList",
     "GapRequirement",
+    "GapSummary",
     "GapTrigger",
     "enqueue_detection",
     "list_gaps",
+    "open_gap_summaries",
     "start_detection",
 ]
