@@ -21,3 +21,30 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-1a-upload-opportunity-sources.md`
   summary: Verify that an API rejection sent before the body is read (disallowed type from the part headers, 403/404, oversized Content-Length) reaches the Sources tab as its "Rejected: …" sentence for a multi-MB file, not as "The upload failed" from a connection reset; if not, drain the body up to the cap before answering or pre-check the extension and size in the browser.
   evidence: Review finding #10 (maybe-false, medium if true). uvicorn may close the connection after an early response while undici is still sending the body; TestClient and the mocked fetch can't show it. Settle with a real uvicorn + Next (undici) test uploading a multi-MB `.exe`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-1b-paste-text.md`
+  summary: [post-demo] Story 2.1 Part C — per-user upload rate limit (30 adds per rolling minute via `PSA_UPLOAD_RATE_PER_MINUTE`, counted in Postgres, 429 `rate_limited` problem+json with `Retry-After`, UI "Too many uploads — try again in a minute"), covering both file uploads and pasted text.
+  evidence: Cut from Part B for the 2026-10-07 stakeholder demo; Part B ships paste text alone. Supersedes the rate-limit half of the Part B entry above.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-job-queue-and-worker.md`
+  summary: Story 2.2 Part B — `intake.parse_source` job: parse each new Source version in a subprocess with CPU, memory and time limits (pymupdf for PDF, DOCX text from its XML, extract-msg, stdlib `email`, in-house `.vtt`), store the extracted text as an immutable artifact linked to the Source version, and show Queued/Parsing/Parsed/Parse failed with the reason, **Retry** and **Paste text instead** on the Sources tab.
+  evidence: Split from Story 2.2 at user request; Part A ships the job queue and worker that Part B's job runs on.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-job-queue-and-worker.md`
+  summary: [post-demo] AD-29 remainder — `platform_idempotency` (unique key, result reference, `run:`/`node:`/`out:` grammar) and `platform_schedules` for recurring jobs, plus the real alert on `dead` jobs once Story 1.3 alerting exists (Part A only logs `jobs.dead` at ERROR).
+  evidence: Cut for the 2026-10-07 stakeholder demo; nothing uses idempotency or schedules before Epic 5, and Story 1.3 is not built.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-job-queue-and-worker.md`
+  summary: [post-demo] Switch PDF and DOCX parsing to docling (pymupdf kept as the PDF fallback) as the architecture specifies; Story 2.2 Part B uses pymupdf and DOCX XML text only.
+  evidence: User chose light parsers for the 2026-10-07 demo: docling pulls in torch and model downloads (multi-GB image, slow CPU parsing), a timeline risk.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-model-gateway.md`
+  summary: [post-demo] Story 2.4 remainder — OpenAI-compatible adapter passing the same contract tests; `ollama` compose service (0.35.0) with NVIDIA GPU on the internal network; `ops/models/*.Modelfile` profiles built at deploy and pinned by digest; `/api/embed`; DB-owned Agent Registry seeded from code (`registry_agent_config_versions`); run budgets (Story 5.6); structured-output spike across every planned agent schema in `evals/spikes/structured-output.md`.
+  evidence: Cut for the 2026-10-07 stakeholder demo; the demo uses host Ollama with code-defined profiles and agent configs.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-model-gateway.md`
+  summary: [post-demo] Replace the demo model `gpt-oss:120b-cloud` (prompts leave the machine to Ollama's cloud) with an on-server model that fits the target GPU, after IT data-handling approval and an eval pass; until then only sample or anonymised Opportunities may use the cloud profile.
+  evidence: Dev laptop GPU is 8 GB (RTX PRO 1000), too small for `gpt-oss:20b`; user chose the cloud model for demo quality on 2026-10-04.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-5a-extract-requirements.md`
+  summary: [post-demo] Story 2.5 remainder — `make eval-intake` with at least 3 annotated Opportunities in `evals/intake/` and the ≥90% recall / 100% valid citation gate; chunked extraction for inputs larger than one model call with a cross-chunk merge step; `intake.requirement.merged` lineage trace events; Requirements streaming in over SSE (Story 2.3) and the tab badge counting up; incremental re-extraction that proposes changes to human-locked Requirements instead of adding duplicates (Story 2.7).
+  evidence: Cut for the 2026-10-07 stakeholder demo; the demo extracts all Sources in one call, supersedes earlier extracted Requirements on each run, and polls for completion.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-5a-extract-requirements.md`
+  summary: Story 2.5 Part B — Evidence inspector: `GET /opportunities/{id}/passages/{passage_id}` (readers; `{before, text, after, filename, source_version}` with up to 300 characters of context, 404 across Opportunities), clickable Evidence chips, and Enter or a click on a Requirement opening the right-pane inspector with text, classification, origin `Extracted` and the cited passage highlighted (`mark`, token colour).
+  evidence: Split from Story 2.5 at user request because the full spec was about 2,700 tokens; Part A ships extraction, the grouped list and polling. Needed for the 2026-10-07 demo.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-job-queue-and-worker.md`
+  summary: Job `last_error` stores the first line of any handler exception message; store the exception class only by default and let handlers raise a dedicated safe-message error (e.g. `JobError(code)`) for a vetted reason.
+  evidence: Review finding #12 (medium): driver, HTTP and KeyError messages can echo data, conflicting with "never customer content"; the fix adds public surface, so it was deferred rather than patched. Until then, handlers must map known failures to codes themselves.

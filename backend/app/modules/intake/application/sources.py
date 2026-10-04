@@ -1,16 +1,21 @@
-"""Opportunity Source commands and queries (Story 2.1 Part A).
+"""Opportunity Source commands and queries (Story 2.1).
 
-`add_file` follows the AD-3 path in the caller's Unit of Work: authorize, validate, write,
-trace. Access goes through the Opportunity (`opportunities.readable_resource`):
+`add_file` (Part A) and `add_text` (Part B, pasted text) follow the AD-3 path in the
+caller's Unit of Work: authorize, validate, write, trace. Access goes through the
+Opportunity (`opportunities.readable_resource`):
 
 - listing: anyone who can read the Opportunity;
 - adding: its owner and collaborators (`intake.source.add`, any role); other readers get
   403 `forbidden`, everyone else the Opportunity's 404 `not_found`.
 
-A rejected upload stores nothing: the type is checked from the filename before any bytes
-are read, the size while they stream, and the content before the blob is stored.
+Pasted text is trimmed, checked (`clean_pasted_text`) and stored UTF-8 encoded as a
+`note` Source named `Pasted text`, through the same write path as an upload.
 
-Identical bytes uploaded again to the same Opportunity (any filename) become the next
+A rejected upload or paste stores nothing: an upload's type is checked from the filename
+before any bytes are read, its size while they stream, and its content before the blob is
+stored; pasted text is checked in full before it is stored.
+
+Identical bytes added again to the same Opportunity (any filename, pasted or not) become the next
 version of the Source that already holds them; different bytes are always a new Source.
 Every added version appends one `intake.source.added` event. Adding a Source never changes
 the Opportunity's `row_version`. Logs and trace payloads hold ids, kinds and sizes only.
@@ -27,10 +32,17 @@ from app.modules.intake.adapters.repository import SourceRecord
 from app.modules.intake.application.models import Source, SourceList
 from app.modules.intake.domain.sources import (
     EMPTY_MESSAGE,
+    PASTED_TEXT_FILENAME,
+    PASTED_TEXT_KIND,
     SUBJECT_TYPE,
+    TEXT_MAX_CHARS,
     InvalidFilenameError,
+    PastedTextEmptyError,
+    PastedTextTooLongError,
+    PastedTextUnsupportedError,
     SourceKind,
     clean_filename,
+    clean_pasted_text,
     content_matches,
     extension,
     kind_for,
@@ -52,12 +64,15 @@ from app.platform.errors import (
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
 from app.platform.multipart import BodyTooLargeError, MultipartError
-from app.platform.storage import BlobStore, BlobTooLargeError
+from app.platform.storage import BlobStore, BlobTooLargeError, StoredBlob
 from app.platform.trace.catalogue import IntakeSourceAdded
 from app.platform.uow import UnitOfWork
 
 MULTIPART_OVERHEAD = 64 * 1024
 """Room on top of the file size for the multipart framing (boundaries, part headers)."""
+TEXT_BODY_MAX_BYTES = TEXT_MAX_CHARS * 12 + 64 * 1024
+"""The largest pasted-text JSON body read: every character as a 12-byte surrogate-pair
+escape, plus room for whitespace and the surrounding JSON."""
 MISSING_FILE_DETAIL = "Invalid fields: body.file"
 UNKNOWN_USER = "Unknown user"
 _log = get_logger(__name__)
@@ -107,6 +122,16 @@ async def list_sources(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
 # --- commands -------------------------------------------------------------------------------
 
 
+async def _authorized_uploader(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> UUID:
+    """The signed-in user allowed to add Sources to the Opportunity (404, then 403)."""
+    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
+    identity.authorize(actor, Action.SOURCE_ADD, resource)
+    uploader = actor.user_id
+    if uploader is None:
+        raise ForbiddenError("Only a signed-in user can add Sources.")
+    return uploader
+
+
 async def add_file(
     uow: UnitOfWork,
     actor: Principal,
@@ -120,11 +145,7 @@ async def add_file(
     """Add an uploaded file as a Source (or as the next version of the Source that already
     holds the same bytes). `content_length` is the request's, checked before any byte is
     read; the file itself is counted as it streams."""
-    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    identity.authorize(actor, Action.SOURCE_ADD, resource)
-    uploader = actor.user_id
-    if uploader is None:
-        raise ForbiddenError("Only a signed-in user can add Sources.")
+    uploader = await _authorized_uploader(uow, actor, opportunity_id)
     if content_length is not None and content_length > max_body_bytes(max_bytes):
         raise FileTooLargeError(too_large_message(max_bytes))
 
@@ -149,6 +170,61 @@ async def add_file(
     except MultipartError:
         raise UnprocessableError(MISSING_FILE_DETAIL) from None
 
+    return await _record(
+        uow, actor, opportunity_id, uploader, blob=blob, kind=kind, filename=filename
+    )
+
+
+async def add_text(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    text: str,
+    *,
+    store: BlobStore,
+) -> Source:
+    """Add pasted text as a `note` Source named `Pasted text` (Story 2.1 Part B). The
+    trimmed text is stored UTF-8 encoded exactly like a `.txt` upload, so identical bytes
+    become the next version of the Source already holding them, pasted or uploaded."""
+    uploader = await _authorized_uploader(uow, actor, opportunity_id)
+    try:
+        cleaned = clean_pasted_text(text)
+    except PastedTextEmptyError as exc:
+        raise FileEmptyError(exc.message) from None
+    except PastedTextTooLongError as exc:
+        raise FileTooLargeError(exc.message) from None
+    except PastedTextUnsupportedError as exc:
+        raise FileContentMismatchError(exc.message) from None
+    data = cleaned.encode("utf-8")
+
+    async def single_chunk() -> AsyncIterator[bytes]:
+        yield data
+
+    blob = await store.put_stream(single_chunk(), len(data))
+    return await _record(
+        uow,
+        actor,
+        opportunity_id,
+        uploader,
+        blob=blob,
+        kind=PASTED_TEXT_KIND,
+        filename=PASTED_TEXT_FILENAME,
+    )
+
+
+async def _record(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    uploader: UUID,
+    *,
+    blob: StoredBlob,
+    kind: SourceKind,
+    filename: str,
+) -> Source:
+    """Write a stored blob as a new Source, or as the next version of the Source in this
+    Opportunity that already holds the same bytes; reference the blob, trace it, and
+    return the Source as read back."""
     await repository.lock_content(uow, opportunity_id, blob.sha256)
     source_id = await repository.source_with_content(uow, opportunity_id, blob.sha256)
     if source_id is None:

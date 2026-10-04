@@ -1,4 +1,4 @@
-"""Opportunity Sources (Story 2.1 Part A) against a real, migrated Postgres as psa_app.
+"""Opportunity Sources (Story 2.1 Parts A and B) against a real, migrated Postgres as psa_app.
 
 Covers the spec's I/O matrix: upload, sales representative, reader only, non-reader, bad
 type, spoofed content, too large, empty, same bytes (next version), same name (new
@@ -604,3 +604,296 @@ def test_concurrent_identical_uploads_become_versions_of_one_source(
     assert _source_count(sync_engine, str(opp_id)) == 1
     assert _ref_count(sync_engine, _sha(data)) == 2
     assert [e["payload"]["version"] for e in _events(sync_engine, str(opp_id))] == [1, 2]
+
+
+# --- pasted text (Part B) -------------------------------------------------------------------
+
+
+def _text_url(opportunity_id: str) -> str:
+    return f"{_sources_url(opportunity_id)}/text"
+
+
+def _paste(client: TestClient, headers: dict[str, str], opportunity_id: str, text: Any) -> Any:
+    return client.post(_text_url(opportunity_id), headers=headers, json={"text": text})
+
+
+def test_collaborator_pastes_text_as_a_note(
+    client: TestClient, sync_engine: Engine, storage_dir: Path
+) -> None:
+    owner_headers, opp = _owner_and_opportunity(client, sync_engine)
+    member_headers, member_id = _user(client, sync_engine, "Member Person", "pm_reviewer")
+    opp = _add(client, owner_headers, opp, member_id).json()
+    note = f"Customer needs SAP sync {uuid4()}"
+
+    resp = _paste(client, member_headers, opp["id"], f"  {note}\n")
+
+    assert resp.status_code == 201, resp.text
+    source = resp.json()
+    assert (source["kind"], source["filename"]) == ("note", "Pasted text")
+    assert (source["version"], source["version_count"]) == (1, 1)
+    data = note.encode()
+    assert source["size_bytes"] == len(data)
+    assert source["uploaded_by"] == {"id": str(member_id), "name": "Member Person"}
+
+    sha = _sha(data)
+    assert BlobStore(storage_dir).path_for(sha).read_bytes() == data
+    assert _ref_count(sync_engine, sha) == 1
+    assert not list((storage_dir / "tmp").iterdir())
+
+    (event,) = _events(sync_engine, opp["id"])
+    assert event["event_type"] == "intake.source.added"
+    assert event["payload"] == {"version": 1, "kind": "note", "size_bytes": len(data)}
+    assert (event["subject_type"], str(event["subject_id"])) == ("intake.source", source["id"])
+    assert "SAP" not in str(event)
+
+    after = client.get(f"{BASE}/{opp['id']}", headers=owner_headers)
+    assert after.json()["row_version"] == opp["row_version"]
+    listed = client.get(_sources_url(opp["id"]), headers=owner_headers).json()["items"]
+    assert [i["id"] for i in listed] == [source["id"]]
+
+
+def test_sales_representative_collaborator_pastes_text(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    owner_headers, opp = _owner_and_opportunity(client, sync_engine)
+    rep_headers, rep_id = _user(client, sync_engine, "Sales Rep", "sales_representative")
+    _add(client, owner_headers, opp, rep_id)
+
+    resp = _paste(client, rep_headers, opp["id"], f"call note {uuid4()}")
+
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.parametrize("role", ["head_of_delivery", "platform_administrator"])
+def test_reader_who_is_not_a_collaborator_cannot_paste(
+    client: TestClient, sync_engine: Engine, storage_dir: Path, role: str
+) -> None:
+    _, opp = _owner_and_opportunity(client, sync_engine)
+    reader, _ = _user(client, sync_engine, "Reader", role)
+
+    resp = _paste(client, reader, opp["id"], f"note {uuid4()}")
+
+    assert resp.status_code == 403, resp.text
+    assert_problem(resp.json(), 403, "forbidden")
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+@pytest.mark.parametrize("role", ["presales_engineer", "sales_representative", None])
+def test_non_reader_and_unknown_opportunity_paste_get_404(
+    client: TestClient, sync_engine: Engine, storage_dir: Path, role: str | None
+) -> None:
+    _, opp = _owner_and_opportunity(client, sync_engine)
+    other, _ = _user(client, sync_engine, "Outsider", *([role] if role else []))
+
+    hidden = _paste(client, other, opp["id"], f"note {uuid4()}")
+    unknown = _paste(client, other, str(uuid4()), f"note {uuid4()}")
+
+    for resp in (hidden, unknown):
+        assert resp.status_code == 404, resp.text
+        assert_problem(resp.json(), 404, "not_found")
+    assert hidden.json()["detail"] == unknown.json()["detail"]
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+@pytest.mark.parametrize(
+    ("text", "code", "detail"),
+    [
+        ("   \n\t", "file_empty", "Rejected: the text is empty"),
+        ("", "file_empty", "Rejected: the text is empty"),
+        ("x" * 1_000_001, "file_too_large", "Rejected: longer than 1,000,000 characters"),
+        (
+            "  " + "x" * 1_000_001 + "  ",
+            "file_too_large",
+            "Rejected: longer than 1,000,000 characters",
+        ),
+        (
+            "bad\x00text",
+            "file_content_mismatch",
+            "Rejected: the text contains unsupported characters",
+        ),
+    ],
+    ids=["blank", "empty", "too-long", "too-long-padded", "nul"],
+)
+def test_rejected_text_stores_nothing(
+    client: TestClient,
+    sync_engine: Engine,
+    storage_dir: Path,
+    text: str,
+    code: str,
+    detail: str,
+) -> None:
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+
+    resp = _paste(client, headers, opp["id"], text)
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, code)
+    assert resp.json()["detail"] == detail
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+@pytest.mark.parametrize("escaped", ["\\ud800", "a\\udfffb", "\\u0000"])
+def test_lone_surrogate_or_nul_in_json_is_rejected(
+    client: TestClient, sync_engine: Engine, storage_dir: Path, escaped: str
+) -> None:
+    """Sent as raw JSON: a JSON string may escape a lone surrogate that UTF-8 can't hold."""
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+    body = '{"text": "note ' + escaped + ' here"}'
+
+    resp = client.post(
+        _text_url(opp["id"]),
+        headers={**headers, "Content-Type": "application/json"},
+        content=body.encode(),
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, "file_content_mismatch")
+    assert resp.json()["detail"] == "Rejected: the text contains unsupported characters"
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+def test_text_at_the_limit_with_multi_byte_characters_is_accepted(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+    prefix = f"{uuid4()} "
+    text = prefix + "é😀" * ((1_000_000 - len(prefix)) // 2)
+    text += "x" * (1_000_000 - len(text))
+    assert len(text) == 1_000_000
+
+    resp = _paste(client, headers, opp["id"], f"\n{text}\n")
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["size_bytes"] == len(text.encode())
+
+
+def test_same_text_pasted_again_is_the_next_version(
+    client: TestClient, sync_engine: Engine, storage_dir: Path
+) -> None:
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+    note = f"Customer needs SAP sync {uuid4()}"
+    first = _paste(client, headers, opp["id"], note).json()
+
+    resp = _paste(client, headers, opp["id"], f"\t{note}  ")
+
+    assert resp.status_code == 201, resp.text
+    second = resp.json()
+    assert second["id"] == first["id"]
+    assert (second["version"], second["version_count"]) == (2, 2)
+    assert _source_count(sync_engine, opp["id"]) == 1
+    assert _ref_count(sync_engine, _sha(note.encode())) == 2
+    assert [e["payload"]["version"] for e in _events(sync_engine, opp["id"])] == [1, 2]
+
+
+def test_text_matching_an_uploaded_txt_is_its_next_version(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+    note = f"Größe {uuid4()}"
+    uploaded = _upload(client, headers, opp["id"], "notes.txt", note.encode()).json()
+
+    resp = _paste(client, headers, opp["id"], note)
+
+    assert resp.status_code == 201, resp.text
+    pasted = resp.json()
+    assert pasted["id"] == uploaded["id"]
+    assert (pasted["version"], pasted["filename"], pasted["kind"]) == (2, "Pasted text", "note")
+    assert _ref_count(sync_engine, _sha(note.encode())) == 2
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{}, {"text": 123}, {"text": None}, {"text": ["a"]}, {"text": "a", "title": "x"}],
+)
+def test_bad_text_body_is_a_validation_error(
+    client: TestClient, sync_engine: Engine, storage_dir: Path, body: dict[str, Any]
+) -> None:
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+
+    resp = client.post(_text_url(opp["id"]), headers=headers, json=body)
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, "validation_error")
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+@pytest.mark.parametrize("raw", [b"{not json", b"", b"\xff\xfe", b'"just a string"'])
+def test_malformed_text_body_is_a_validation_error(
+    client: TestClient, sync_engine: Engine, storage_dir: Path, raw: bytes
+) -> None:
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+
+    resp = client.post(
+        _text_url(opp["id"]),
+        headers={**headers, "Content-Type": "application/json"},
+        content=raw,
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, "validation_error")
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+def test_text_body_cap_covers_the_worst_case_escapes() -> None:
+    assert intake.TEXT_BODY_MAX_BYTES >= 1_000_000 * len("\\ud83d\\ude00") + len('{"text":""}')
+
+
+def test_oversized_text_content_length_is_rejected_before_reading(
+    client: TestClient, sync_engine: Engine, storage_dir: Path
+) -> None:
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+
+    def body() -> Iterator[bytes]:
+        yield b'{"text": "x"}'
+
+    resp = client.post(
+        _text_url(opp["id"]),
+        headers={
+            **headers,
+            "Content-Type": "application/json",
+            "Content-Length": str(intake.TEXT_BODY_MAX_BYTES + 1),
+        },
+        content=body(),
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, "file_too_large")
+    assert resp.json()["detail"] == "Rejected: longer than 1,000,000 characters"
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+def test_oversized_streamed_text_body_stops_at_the_cap(
+    client: TestClient, sync_engine: Engine, storage_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chunked, so there is no Content-Length; reading stops once the cap is passed."""
+    monkeypatch.setattr(intake, "TEXT_BODY_MAX_BYTES", 1024)
+    headers, opp = _owner_and_opportunity(client, sync_engine)
+
+    def chunked() -> Iterator[bytes]:
+        yield b'{"text": "'
+        for _ in range(100):
+            yield b"x" * 512
+        yield b'"}'
+
+    resp = client.post(
+        _text_url(opp["id"]),
+        headers={**headers, "Content-Type": "application/json"},
+        content=chunked(),
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, "file_too_large")
+    assert resp.json()["detail"] == "Rejected: longer than 1,000,000 characters"
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
+
+
+def test_paste_without_a_token_is_401_and_stores_nothing(
+    client: TestClient, sync_engine: Engine, storage_dir: Path
+) -> None:
+    _, opp = _owner_and_opportunity(client, sync_engine)
+
+    resp = client.post(_text_url(opp["id"]), json={"text": f"note {uuid4()}"})
+
+    assert resp.status_code == 401, resp.text
+    assert_problem(resp.json(), 401, "token_missing")
+    _assert_nothing_stored(sync_engine, storage_dir, opp["id"])
