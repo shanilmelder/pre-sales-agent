@@ -148,8 +148,9 @@ class Opportunity(BaseModel):
 
     `last_changed_by` names whoever made the latest recorded change (null when unknown).
     `can_manage_collaborators` says whether the caller may add or remove collaborators and
-    `can_edit` whether they may edit the title and target proposal date; the UI only uses
-    them to hide controls, the API decides on every write."""
+    `can_edit` whether they may edit the title and target proposal date, and
+    `can_add_sources` whether they may add Sources; the UI only uses them to hide controls,
+    the API decides on every write."""
 
     id: str
     title: str
@@ -165,3 +166,4 @@ class Opportunity(BaseModel):
     last_changed_by: str | None
     can_manage_collaborators: bool
     can_edit: bool
+    can_add_sources: bool

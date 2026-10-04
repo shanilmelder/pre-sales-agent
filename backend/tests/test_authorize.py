@@ -24,7 +24,7 @@ from app.platform.errors import ForbiddenError
 ADMIN = Principal(Actor("user", "u-admin"), frozenset({Role.PLATFORM_ADMINISTRATOR}))
 ENGINEER = Principal(Actor("user", "u-pse"), frozenset({Role.PRESALES_ENGINEER}))
 ADMIN_ONLY = (Action.USER_LIST, Action.USER_ASSIGN_ROLE, Action.USER_REMOVE_ROLE)
-MODULES = {"identity", "opportunities"}
+MODULES = {"identity", "opportunities", "intake"}
 
 
 def _user(roles: set[Role] | None = None) -> tuple[Principal, UUID]:
@@ -80,6 +80,7 @@ def test_every_action_has_a_policy_entry() -> None:
     assert POLICY[Action.COLLABORATOR_ADD] == frozenset()
     assert POLICY[Action.COLLABORATOR_REMOVE] == frozenset()
     assert POLICY[Action.USER_SEARCH] == {Role.PRESALES_ENGINEER}
+    assert POLICY[Action.SOURCE_ADD] == frozenset()
 
 
 def test_resource_scoped_grants() -> None:
@@ -88,8 +89,9 @@ def test_resource_scoped_grants() -> None:
         Action.OPPORTUNITY_UPDATE,
         Action.COLLABORATOR_ADD,
         Action.COLLABORATOR_REMOVE,
+        Action.SOURCE_ADD,
     }
-    assert MEMBER_GRANTS == {Action.OPPORTUNITY_READ}
+    assert MEMBER_GRANTS == {Action.OPPORTUNITY_READ, Action.SOURCE_ADD}
 
 
 @pytest.mark.parametrize("action", ADMIN_ONLY)
@@ -220,3 +222,34 @@ def test_user_search_is_for_presales_engineers_only() -> None:
         principal, _ = _user(roles)
         with pytest.raises(ForbiddenError):
             authorize(principal, Action.USER_SEARCH)
+
+
+# --- Sources (Story 2.1) --------------------------------------------------------------------
+
+
+def test_story_2_1_source_add_action_is_catalogued() -> None:
+    assert Action.SOURCE_ADD.value == "intake.source.add"
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_owner_and_collaborators_add_sources_whatever_their_role(role: Role) -> None:
+    owner, owner_id = _user({role})
+    member, member_id = _user({role})
+    resource = _opportunity(owner_id, member_id)
+    authorize(owner, Action.SOURCE_ADD, resource)
+    authorize(member, Action.SOURCE_ADD, resource)
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_no_role_grants_adding_sources_on_its_own(role: Role) -> None:
+    """HoD and admin read every Opportunity but add Sources only as owner or collaborator."""
+    principal, _ = _user({role})
+    assert not can(principal, Action.SOURCE_ADD)
+    with pytest.raises(ForbiddenError):
+        authorize(principal, Action.SOURCE_ADD, _opportunity(uuid4(), uuid4()))
+
+
+def test_roleless_collaborator_cannot_add_sources() -> None:
+    _, owner_id = _user({Role.PRESALES_ENGINEER})
+    member, member_id = _user()
+    assert not can(member, Action.SOURCE_ADD, _opportunity(owner_id, member_id))

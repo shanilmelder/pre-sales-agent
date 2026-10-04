@@ -16,6 +16,8 @@ __pycache__/
 .import_linter_cache/
 .coverage
 htmlcov/
+# Local file store (PSA_STORAGE_DIR default for host-side runs)
+/backend/var/
 
 # Node / Next.js
 node_modules/

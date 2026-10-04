@@ -32,6 +32,7 @@ const OPPORTUNITY: Opportunity = {
   last_changed_by: null,
   can_manage_collaborators: false,
   can_edit: false,
+  can_add_sources: false,
 };
 
 describe("WorkspaceHeader", () => {

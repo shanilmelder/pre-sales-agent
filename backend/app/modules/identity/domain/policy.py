@@ -67,6 +67,9 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.OPPORTUNITY_UPDATE: frozenset(),
         Action.COLLABORATOR_ADD: frozenset(),
         Action.COLLABORATOR_REMOVE: frozenset(),
+        # The owner and collaborators add Sources, whatever their role (so sales
+        # representatives on the Opportunity can); no role grants it on its own.
+        Action.SOURCE_ADD: frozenset(),
     }
 )
 
@@ -76,9 +79,10 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.OPPORTUNITY_UPDATE,
         Action.COLLABORATOR_ADD,
         Action.COLLABORATOR_REMOVE,
+        Action.SOURCE_ADD,
     }
 )
-MEMBER_GRANTS: frozenset[Action] = frozenset({Action.OPPORTUNITY_READ})
+MEMBER_GRANTS: frozenset[Action] = frozenset({Action.OPPORTUNITY_READ, Action.SOURCE_ADD})
 
 
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:

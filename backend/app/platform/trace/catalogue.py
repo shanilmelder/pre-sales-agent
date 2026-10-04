@@ -118,3 +118,20 @@ class OpportunitiesCollaboratorRemoved(TracePayload):
     event_type: ClassVar[str] = "opportunities.collaborator.removed"
 
     user_id: str
+
+
+# --- intake -------------------------------------------------------------------------------
+# Subject: the Source (`intake.source`), and `opportunity_id` is set. Payloads hold ids,
+# kinds and sizes only, never filenames or content.
+
+
+@register
+class IntakeSourceAdded(TracePayload):
+    """A version of a Source was added (a new Source is version 1; the same bytes uploaded
+    again to the Opportunity are its next version). Actor: the uploader."""
+
+    event_type: ClassVar[str] = "intake.source.added"
+
+    version: int
+    kind: str
+    size_bytes: int

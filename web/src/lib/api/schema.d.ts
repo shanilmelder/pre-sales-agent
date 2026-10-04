@@ -223,6 +223,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sources
+         * @description The Opportunity's Sources, newest first, each with its latest version. Anyone who
+         *     can read the Opportunity.
+         */
+        get: operations["list_sources"];
+        put?: never;
+        /**
+         * Add Source
+         * @description Upload a file as a Source of the Opportunity. Its owner and collaborators only.
+         *     The same bytes uploaded again become the next version of the Source holding them.
+         */
+        post: operations["add_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -317,8 +343,9 @@ export interface components {
          *
          *     `last_changed_by` names whoever made the latest recorded change (null when unknown).
          *     `can_manage_collaborators` says whether the caller may add or remove collaborators and
-         *     `can_edit` whether they may edit the title and target proposal date; the UI only uses
-         *     them to hide controls, the API decides on every write.
+         *     `can_edit` whether they may edit the title and target proposal date, and
+         *     `can_add_sources` whether they may add Sources; the UI only uses them to hide controls,
+         *     the API decides on every write.
          */
         Opportunity: {
             /** Id */
@@ -353,6 +380,8 @@ export interface components {
             can_manage_collaborators: boolean;
             /** Can Edit */
             can_edit: boolean;
+            /** Can Add Sources */
+            can_add_sources: boolean;
         };
         /**
          * OpportunityChanges
@@ -434,6 +463,49 @@ export interface components {
          * @enum {string}
          */
         Role: "presales_engineer" | "sales_representative" | "engineering_reviewer" | "pm_reviewer" | "security_reviewer" | "commercial" | "delivery_manager" | "head_of_delivery" | "platform_administrator";
+        /**
+         * Source
+         * @description An Opportunity Source with its latest version. `filename`, `size_bytes`,
+         *     `uploaded_by` and `uploaded_at` describe that version; `version_count` counts them
+         *     all.
+         */
+        Source: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["SourceKind"];
+            /** Filename */
+            filename: string;
+            /** Version */
+            version: number;
+            /** Version Count */
+            version_count: number;
+            /** Size Bytes */
+            size_bytes: number;
+            uploaded_by: components["schemas"]["UserRef"];
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * SourceKind
+         * @enum {string}
+         */
+        SourceKind: "email" | "note" | "transcript" | "document";
+        /**
+         * SourceList
+         * @description An Opportunity's Sources, newest first.
+         */
+        SourceList: {
+            /** Items */
+            items: components["schemas"]["Source"][];
+        };
         /**
          * UserProfile
          * @description The signed-in user. `roles` is empty until an administrator assigns one.
@@ -2253,6 +2325,258 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_sources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    add_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description One file: .eml, .msg, .txt, .vtt, .docx or .pdf, at most `PSA_UPLOAD_MAX_BYTES` (50 MB).
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The added Source */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is neither its owner nor a collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: `file_too_large`, `file_type_not_allowed`, `file_content_mismatch`, `file_empty` (the `detail` is the sentence to show), or `validation_error` (no `file` part, or an unusable file name) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

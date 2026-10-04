@@ -1,6 +1,7 @@
 """Application settings. The only place that reads configuration (env vars prefixed `PSA_`)."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field
@@ -39,6 +40,18 @@ class Settings(BaseSettings):
     )
     auth0_jwks_timeout_s: float = Field(
         default=5, gt=0, description="Timeout for one JWKS fetch from Auth0."
+    )
+    storage_dir: Path = Field(
+        default=Path("var/files"),
+        description=(
+            "Root of the content-addressed file store (`platform.storage`): blobs live under "
+            "`sha256/ab/cd/<sha256>`, upload temp files under `tmp/`. A volume in R1."
+        ),
+    )
+    upload_max_bytes: int = Field(
+        default=50 * 1024 * 1024,
+        gt=0,
+        description="Largest accepted upload in bytes (50 MB). Enforced by the API only.",
     )
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], BeforeValidator(str.upper)

@@ -21,6 +21,7 @@ from app.modules.opportunities.application.opportunities import (
     get,
     list_all,
     list_mine,
+    readable_resource,
     remove_collaborator,
     update,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "get",
     "list_all",
     "list_mine",
+    "readable_resource",
     "remove_collaborator",
     "update",
 ]

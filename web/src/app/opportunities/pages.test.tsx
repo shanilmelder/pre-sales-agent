@@ -20,6 +20,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   updateOpportunity: vi.fn(),
   loadOpportunity: vi.fn(),
   searchUsers: vi.fn(),
+  addSource: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -88,6 +89,7 @@ const OPPORTUNITY: Opportunity = {
   last_changed_by: null,
   can_manage_collaborators: false,
   can_edit: false,
+  can_add_sources: false,
 };
 
 const FACETS = {
@@ -389,8 +391,72 @@ describe("/opportunities/[id] workspace", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
+  const SOURCE = {
+    id: "00000000-0000-7000-8000-0000000000d4",
+    kind: "transcript" as const,
+    filename: "call.vtt",
+    version: 2,
+    version_count: 2,
+    size_bytes: 61,
+    uploaded_by: { id: "00000000-0000-7000-8000-0000000000b2", name: "[MEMBER]" },
+    uploaded_at: "2026-10-04T13:05:00Z",
+    created_at: "2026-10-04T12:00:00Z",
+  };
+
+  /** The Opportunity, and its Sources (`null`: the Sources request fails). */
+  function foundWithSources(
+    opportunity: Opportunity = OPPORTUNITY,
+    sources: (typeof SOURCE)[] | null = [SOURCE],
+  ) {
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/sources")
+        ? sources
+          ? { data: { items: sources }, response: new Response(null, { status: 200 }) }
+          : { response: new Response(null, { status: 500 }) }
+        : { data: opportunity, response: new Response(null, { status: 200 }) },
+    );
+  }
+
+  it("tab URL /sources: the list for readers who can't add, without the upload area", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithSources();
+    const { container } = await renderWorkspace("sources");
+    expect(selectedTabs()).toEqual(["2Sources"]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { level: 2, name: "Sources" })).toBeTruthy();
+    expect(within(panel).getByText("call.vtt")).toBeTruthy();
+    expect(within(panel).getByText("v2")).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: "Choose files" })).toBeNull();
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/sources", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /sources: owners and collaborators get the upload area", async () => {
+    signedIn(["sales_representative"]);
+    foundWithSources({ ...OPPORTUNITY, can_add_sources: true }, []);
+    const { container } = await renderWorkspace("sources");
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("button", { name: "Choose files" })).toBeTruthy();
+    expect(within(panel).getByText("No Sources yet.")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /sources: a failed list says so", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithSources(OPPORTUNITY, null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("sources");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Sources could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
+
   it.each([
-    ["sources", "2Sources"],
     ["requirements", "3Requirements"],
     ["gaps", "4Gaps"],
     ["assessments", "5Assessments"],
@@ -422,7 +488,7 @@ describe("/opportunities/[id] workspace", () => {
     expect(notFound).toHaveBeenCalledTimes(3);
   });
 
-  it.each([undefined, "overview", "gaps", "actuals"])(
+  it.each([undefined, "overview", "sources", "gaps", "actuals"])(
     "no access on %s: the no-access sentence and no tabs",
     async (tab) => {
       signedIn(["sales_representative"]);

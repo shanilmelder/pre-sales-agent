@@ -7,12 +7,14 @@ import type { Filters } from "@/app/opportunities/filters";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
 import { UUID_RE } from "@/lib/opportunities";
+import type { Source } from "@/lib/sources";
 
 export const PAGE_SIZE = 50;
 
 export type ListScope = "mine" | "all";
 export type ListResult = { kind: "ok"; page: OpportunityPage } | { kind: "error" };
 export type FacetsResult = { kind: "ok"; facets: OpportunityFacets } | { kind: "error" };
+export type SourcesResult = { kind: "ok"; sources: Source[] } | { kind: "error" };
 export type GetResult =
   | { kind: "ok"; opportunity: Opportunity }
   | { kind: "not-found" }
@@ -79,3 +81,20 @@ export const getOpportunity = cache(async (id: unknown): Promise<GetResult> => {
     return { kind: "error" };
   }
 });
+
+/** `GET /api/v1/opportunities/{id}/sources`: the Opportunity's Sources, newest first. */
+export async function listSources(id: string): Promise<SourcesResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/sources", {
+      params: { path: { opportunity_id: id } },
+    });
+    if (data) return { kind: "ok", sources: data.items };
+    console.error(`GET sources failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET sources failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
