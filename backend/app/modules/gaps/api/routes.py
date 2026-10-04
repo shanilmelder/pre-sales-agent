@@ -37,9 +37,9 @@ router = APIRouter(prefix="/opportunities/{opportunity_id}", tags=["gaps"])
 @router.get("/gaps", operation_id="list_gaps", responses=_responses(404, 422))
 async def list_gaps(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) -> GapList:
     """The Opportunity's open Gaps, high impact first, then medium, then low (oldest first
-    within an impact), each with the Requirements it relates to and its drafted Clarification
-    Question; and its latest Gap detection (null before the first). Anyone who can read the
-    Opportunity."""
+    within an impact), then its converted Gaps in the same order, each with the Requirements
+    it relates to and its drafted Clarification Question; and its latest Gap detection (null
+    before the first). Anyone who can read the Opportunity."""
     return await gaps.list_gaps(uow, actor, opportunity_id)
 
 

@@ -53,7 +53,8 @@ class DetectionRow(Base):
 
 class GapRow(RowVersioned, Base):
     """A Gap of an Opportunity. Detection inserts `open`, `detected` Gaps, and a later
-    detection marks them `superseded`."""
+    detection marks them `superseded`. Accepting an Assumption made from an `open` Gap marks it
+    `converted`, recording the Assumption's kind in `converted_to` (Story 8.4)."""
 
     __tablename__ = "gaps_gaps"
     __table_args__ = (
@@ -66,7 +67,14 @@ class GapRow(RowVersioned, Base):
         ),
         CheckConstraint("impact IN ('high', 'medium', 'low')", name="impact"),
         CheckConstraint("origin IN ('detected')", name="origin"),
-        CheckConstraint("status IN ('open', 'superseded')", name="status"),
+        CheckConstraint("status IN ('open', 'superseded', 'converted')", name="status"),
+        CheckConstraint(
+            "converted_to IS NULL OR converted_to IN ('condition', 'contingency')",
+            name="converted_to",
+        ),
+        CheckConstraint(
+            "(status = 'converted') = (converted_to IS NOT NULL)", name="converted_has_kind"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -80,6 +88,7 @@ class GapRow(RowVersioned, Base):
     origin: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
     detection_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("gaps_detections.id"))
+    converted_to: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 
 

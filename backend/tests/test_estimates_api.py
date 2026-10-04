@@ -44,8 +44,18 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
     theirs = _get(client, reader, opp["id"])
 
     assert mine.status_code == 200, mine.text
-    assert mine.json() == {"version": None, "draft": None, "can_start_draft": True}
-    assert theirs.json() == {"version": None, "draft": None, "can_start_draft": False}
+    assert mine.json() == {
+        "version": None,
+        "draft": None,
+        "can_start_draft": True,
+        "can_accept_assumptions": True,
+    }
+    assert theirs.json() == {
+        "version": None,
+        "draft": None,
+        "can_start_draft": False,
+        "can_accept_assumptions": False,
+    }
 
 
 def test_the_estimate_has_sections_lines_and_server_totals(

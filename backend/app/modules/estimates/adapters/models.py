@@ -1,5 +1,6 @@
-"""The estimates module's tables (Story 8.1). `opportunity_id` and `requirement_id` hold ids
-owned by other modules without foreign keys (AD-2)."""
+"""The estimates module's tables (Stories 8.1 and 8.4). `opportunity_id`, `requirement_id`
+and an Assumption's origin Gap and `accepted_by` hold ids owned by other modules without
+foreign keys (AD-2)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -54,7 +55,8 @@ class DraftRow(Base):
 class EstimateVersionRow(RowVersioned, Base):
     """An Estimate Version of an Opportunity. An accepted draft inserts a `draft` version
     numbered one past the latest, and marks the earlier `draft` `superseded`. At most one
-    `draft` per Opportunity."""
+    `draft` per Opportunity. `proposal_status` is the state of its Assumption proposals
+    (Story 8.4); null for a version that never had them queued."""
 
     __tablename__ = "estimates_estimate_versions"
     __table_args__ = (
@@ -68,6 +70,11 @@ class EstimateVersionRow(RowVersioned, Base):
         CheckConstraint("status IN ('draft', 'superseded')", name="status"),
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint("uncovered_count >= 0 AND dropped_count >= 0", name="counts"),
+        CheckConstraint(
+            "proposal_status IS NULL OR proposal_status IN "
+            "('queued', 'running', 'succeeded', 'failed')",
+            name="proposal_status",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -77,6 +84,7 @@ class EstimateVersionRow(RowVersioned, Base):
     template_version: Mapped[str] = mapped_column(Text)
     uncovered_count: Mapped[int] = mapped_column(Integer)
     dropped_count: Mapped[int] = mapped_column(Integer)
+    proposal_status: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 
 
@@ -129,3 +137,50 @@ class LineRequirementRow(Base):
     )
     requirement_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     requirement_version: Mapped[int] = mapped_column(Integer)
+
+
+class AssumptionRow(RowVersioned, Base):
+    """An Assumption of an Estimate Version (Story 8.4): a `condition` (no hours) or a
+    `contingency` (hours, optionally linked to one of the version's lines), made from one
+    origin (`origin_ref`: `{kind: "gap", id, row_version}`). Inserted unaccepted; accepting
+    sets `accepted_by` and `accepted_at` together. `position` keeps the proposal order."""
+
+    __tablename__ = "estimates_assumptions"
+    __table_args__ = (
+        UniqueConstraint("version_id", "position"),
+        CheckConstraint("kind IN ('condition', 'contingency')", name="kind"),
+        CheckConstraint(
+            "(kind = 'contingency') = (amount_hours IS NOT NULL)", name="contingency_has_hours"
+        ),
+        CheckConstraint("amount_hours IS NULL OR amount_hours > 0", name="amount_hours"),
+        CheckConstraint("kind = 'contingency' OR line_id IS NULL", name="condition_has_no_line"),
+        CheckConstraint("(accepted_by IS NULL) = (accepted_at IS NULL)", name="accepted_has_by"),
+        CheckConstraint("position >= 1", name="position"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    version_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "estimates_estimate_versions.id",
+            ondelete="CASCADE",
+            name="fk_estimates_assumptions_version_id",
+        ),
+        index=True,
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(Text)
+    wording: Mapped[str] = mapped_column(Text)
+    amount_hours: Mapped[Decimal | None] = mapped_column(Numeric(10, 1))
+    line_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "estimates_estimate_lines.id",
+            ondelete="CASCADE",
+            name="fk_estimates_assumptions_line_id",
+        ),
+    )
+    origin_ref: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    accepted_by: Mapped[UUID | None] = mapped_column(Uuid)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

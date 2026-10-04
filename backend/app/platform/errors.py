@@ -159,6 +159,13 @@ class EstimateDraftInProgressError(ConflictError):
     title = "Estimate draft in progress"
 
 
+class GapNotOpenError(ConflictError):
+    """An Assumption was accepted whose origin Gap is no longer `open` (Story 8.4)."""
+
+    code = "gap_not_open"
+    title = "Gap not open"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

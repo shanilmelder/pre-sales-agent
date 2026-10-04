@@ -35,6 +35,7 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
     impact_basis: `[BASIS ${n}]`,
     origin: "detected",
     status: "open",
+    converted_to: null,
     row_version: 1,
     created_at: "2026-10-05T09:00:00Z",
     requirements: [
@@ -118,6 +119,28 @@ describe("GapsList", () => {
     expect(within(rows[0]).getByRole("button").className).toContain("min-h-row");
     const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
     expect(tabStops).toEqual([row(1)]);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("greys out converted Gaps at the bottom, labelled by what they became", async () => {
+    const condition: Gap = { ...gap(2, "high"), status: "converted", converted_to: "condition" };
+    const contingency: Gap = {
+      ...gap(3, "low", "commercial"),
+      status: "converted",
+      converted_to: "contingency",
+    };
+    const { container } = render(
+      <ShellProviders singleKeyShortcuts>
+        <GapsList items={[gap(1, "medium"), condition, contingency]} />
+      </ShellProviders>,
+    );
+    const rows = screen.getAllByRole("row");
+    expect(rows[0].textContent).toBe("MediumIntegration details[GAP 1]Draft");
+    expect(rows[0].hasAttribute("data-converted")).toBe(false);
+    expect(rows[1].textContent).toBe("HighIntegration details[GAP 2]Converted to Condition");
+    expect(rows[2].textContent).toBe("LowCommercial[GAP 3]Converted to Contingency");
+    expect(rows[1].hasAttribute("data-converted")).toBe(true);
+    expect(rows[1].className).toContain("text-muted-foreground");
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -401,11 +424,12 @@ describe("GapsSection", () => {
     expect(within(pane()).getByText("Nothing selected.")).toBeTruthy();
   });
 
-  it("announces the Gap count when a detection finishes", async () => {
+  it("announces the open Gap count when a detection finishes", async () => {
     vi.useFakeTimers();
+    const converted: Gap = { ...gap(3, "high"), status: "converted", converted_to: "condition" };
     loadGaps.mockResolvedValue({
       kind: "ok",
-      list: list([gap(1, "high"), gap(2, "low")], succeeded),
+      list: list([gap(1, "high"), gap(2, "low"), converted], succeeded),
     });
     renderSection(list([], running));
     await act(async () => {

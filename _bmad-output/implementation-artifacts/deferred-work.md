@@ -78,3 +78,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-1-draft-estimate.md`
   summary: [post-demo] Gaps tab (and the other polling lists) never shows "Still drafting/detecting — reload" when the tab was hidden past the poll limit and then shown again: the effect returns before setting `stalled`.
   evidence: gaps-list.tsx:269 has the same early return fixed for the Estimate tab in triage row 4.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-4-gaps-to-assumptions.md`
+  summary: [post-demo] After a Gap re-detection, Accept all returns 409 (all or nothing) while the current draft still holds Assumptions whose Gap was superseded, until the new draft lands; decide whether to skip those, retire them, or hide Accept on rows whose Gap is no longer open.
+  evidence: Review triage row 7; transient because re-detection queues a new draft with fresh proposals.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-4-gaps-to-assumptions.md`
+  summary: [post-demo] Recover Assumption proposals stuck `queued`/`running` when the worker dies on the final attempt (a `fail_stale` counterpart for `proposal_status`).
+  evidence: Review triage row 8, unverified: settle by killing the worker mid-proposal on attempt 2 and checking whether the job runner re-invokes the handler after the lease expires.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-4-gaps-to-assumptions.md`
+  summary: [post-demo] Add a downgrade/upgrade round-trip test for migration 0013 with a converted Gap.
+  evidence: Review triage row 9; the repo has the pattern in test_intake_requirement_edits.py:613.

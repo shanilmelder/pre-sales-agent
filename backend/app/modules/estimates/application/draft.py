@@ -18,8 +18,9 @@ Opportunity's draft lock until commit.
 4. `accept_draft`, one Unit of Work: validates every line (its covers labels must resolve to
    Requirements still active at the version read), supersedes the Opportunity's `draft`
    Estimate Version, stores the new `draft` version (numbered one past the latest, template
-   `demo-1`) with its lines and their Requirement links, marks the draft `succeeded`, and
-   traces `estimates.estimate_version.created`.
+   `demo-1`) with its lines and their Requirement links, marks the draft `succeeded`,
+   traces `estimates.estimate_version.created`, and queues the version's Assumption
+   proposals (`estimates.propose_assumptions`, Story 8.4).
 
 When no line is valid, acceptance writes nothing and raises `ModelOutputInvalidError`, so
 the queue runs the job once more (`max_attempts` 2); on the final attempt the handler marks
@@ -48,6 +49,8 @@ from app.agents.estimating_agent.agent import (
 from app.agents.estimating_agent.agent import config as agent_config
 from app.agents.estimating_agent.schema import EstimatingOutput
 from app.modules.estimates.adapters import repository as repo
+from app.modules.estimates.application.assumptions import enqueue_proposals
+from app.modules.estimates.domain.assumptions import ProposalStatus
 from app.modules.estimates.domain.estimates import (
     IN_PROGRESS,
     TEMPLATE_VERSION,
@@ -237,6 +240,7 @@ async def accept_draft(
         template_version=TEMPLATE_VERSION,
         uncovered_count=missing,
         dropped_count=validation.dropped,
+        proposal_status=ProposalStatus.QUEUED.value,
         lines=[
             repo.NewLine(
                 line_id=new_id(),
@@ -268,6 +272,7 @@ async def accept_draft(
         subject_id=version_id,
         opportunity_id=record.opportunity_id,
     )
+    await enqueue_proposals(uow, version_id=version_id, opportunity_id=record.opportunity_id)
     await _succeed(uow, record.id)
     _log.info(
         "estimates.draft_accepted",

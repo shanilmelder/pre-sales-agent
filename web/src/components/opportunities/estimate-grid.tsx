@@ -8,6 +8,10 @@ import {
   startEstimateDraft,
   type StartEstimateDraftResult,
 } from "@/app/opportunities/actions";
+import {
+  AssumptionsRegister,
+  OriginGapInspector,
+} from "@/components/opportunities/assumptions-register";
 import { EstimateInspector } from "@/components/opportunities/estimate-inspector";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -23,14 +27,18 @@ import {
   draftFailure,
   hours,
   isDrafting,
+  isProposing,
   NO_ESTIMATE,
   NOTHING_TO_ESTIMATE,
   roleMixLabel,
   ROLES,
   sectionLabel,
   STILL_DRAFTING,
+  UNALLOCATED_CONTINGENCY,
   uncoveredLabel,
+  registerSummary,
   versionLabel,
+  type Assumption,
   type EstimateDraft,
   type EstimateLine,
   type EstimateVersion,
@@ -229,6 +237,29 @@ export function EstimateGrid({
             </tr>
           </tbody>
         ))}
+        {version.unallocated_contingency_hours > 0 ? (
+          <tbody data-unallocated="">
+            <tr className="h-row">
+              <th
+                scope="row"
+                colSpan={3}
+                className="border-b border-border px-2.5 text-left text-body font-normal"
+              >
+                {UNALLOCATED_CONTINGENCY}
+              </th>
+              <td className={cn(num, "border-b border-border text-muted-foreground")}>
+                <span aria-hidden="true">–</span>
+                <span className="sr-only">None</span>
+              </td>
+              <td className={cn(num, cont, "border-b border-border")}>
+                {hours(version.unallocated_contingency_hours)}
+              </td>
+              <td className={cn(num, "border-b border-border")}>
+                {hours(version.unallocated_contingency_hours)}
+              </td>
+            </tr>
+          </tbody>
+        ) : null}
         <tfoot className="sticky bottom-0 z-10 bg-muted">
           <tr data-totals="" className="h-row">
             <th
@@ -349,11 +380,16 @@ function retryMessage(result: StartEstimateDraftResult): string {
   }
 }
 
-/** The Estimate tab's content: the header and the grid in the main pane, and the selected
- * line's inspector in the right pane (opened if closed). While a draft is queued or running
- * the Estimate is re-read every 2 s: paused while the tab is hidden, and stopped after 15
+/** What the right pane shows: a line, or the Gap an Assumption was made from. */
+type Selection = { kind: "line"; id: string } | { kind: "gap"; assumptionId: string };
+
+/** The Estimate tab's content: the header, the grid and the Assumptions Register below it in
+ * the main pane, and the selected line's (or Assumption's Gap's) inspector in the right pane
+ * (opened if closed). While a draft or the Assumption proposals are queued or running the
+ * Estimate is re-read every 2 s: paused while the tab is hidden, and stopped after 15
  * minutes. A selected line that a new version replaced leaves the pane showing "Nothing
- * selected." Read-only for everyone; Retry only for those who may start a draft. */
+ * selected." The grid is read-only; Retry only for those who may start a draft, Accept for
+ * those who may accept Assumptions. */
 export function EstimateSection({
   opportunityId,
   initial,
@@ -364,8 +400,9 @@ export function EstimateSection({
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<EstimateView>(initial);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
+  /** The element to focus when the pane closes after a keyboard open. */
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
   const [stalled, setStalled] = useState(false);
@@ -378,6 +415,13 @@ export function EstimateSection({
   const draftingSince = useRef<number | null>(null);
   const [visible, setVisible] = useState(true);
   const drafting = isDrafting(view.draft);
+  const proposing = isProposing(view.version);
+  const working = drafting || proposing;
+  /** The view as last rendered, for the poll to tell what finished. */
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
   // New data from the server (e.g. a navigation refresh) replaces the local copy.
   if (initial !== syncedFrom) {
@@ -387,8 +431,15 @@ export function EstimateSection({
   }
 
   const lines = view.version?.sections.flatMap((section) => section.lines) ?? [];
+  const register = view.version
+    ? [...view.version.assumptions.conditions, ...view.version.assumptions.contingencies]
+    : [];
   const selected =
-    selectedId === null ? null : (lines.find((line) => line.id === selectedId) ?? null);
+    selection?.kind === "line" ? (lines.find((line) => line.id === selection.id) ?? null) : null;
+  const selectedAssumption =
+    selection?.kind === "gap"
+      ? (register.find((a) => a.id === selection.assumptionId) ?? null)
+      : null;
 
   // The pane's content unmounts on close: reopening it must not take focus again.
   const [paneWasOpen, setPaneWasOpen] = useState(rightPaneOpen);
@@ -404,13 +455,22 @@ export function EstimateSection({
     returnFocusTo.current = null;
     const active = document.activeElement;
     if (id && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
-      document.querySelector<HTMLElement>(`[data-line-id="${id}"]`)?.focus();
+      document.querySelector<HTMLElement>(id)?.focus();
     }
   }, [rightPaneOpen]);
 
   function open(line: EstimateLine, viaKeyboard: boolean) {
-    setSelectedId(line.id);
-    returnFocusTo.current = viaKeyboard ? line.id : null;
+    setSelection({ kind: "line", id: line.id });
+    returnFocusTo.current = viaKeyboard ? `[data-line-id="${line.id}"]` : null;
+    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
+
+  function openGap(assumption: Assumption, viaKeyboard: boolean) {
+    setSelection({ kind: "gap", assumptionId: assumption.id });
+    returnFocusTo.current = viaKeyboard
+      ? `[data-assumption-id="${assumption.id}"] [data-gap-chip]`
+      : null;
     setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
@@ -423,7 +483,7 @@ export function EstimateSection({
   }, []);
 
   useEffect(() => {
-    if (!drafting) {
+    if (!working) {
       draftingSince.current = null;
       return;
     }
@@ -440,9 +500,10 @@ export function EstimateSection({
       try {
         const result = await loadEstimate(opportunityId);
         if (!cancelled && result.kind === "ok" && mutation.current === startedAt) {
+          const before = viewRef.current;
           setView(result.estimate);
           const { draft, version } = result.estimate;
-          if (!isDrafting(draft)) {
+          if (isDrafting(before.draft) && !isDrafting(draft)) {
             announce(
               draft?.status === "failed"
                 ? draftFailure(draft.error_code)
@@ -450,6 +511,8 @@ export function EstimateSection({
                   ? versionLabel(version)
                   : NOTHING_TO_ESTIMATE,
             );
+          } else if (isProposing(before.version) && version && !isProposing(version)) {
+            announce(`Assumptions Register: ${registerSummary(version.counts)}`);
           }
         }
       } catch {
@@ -464,7 +527,7 @@ export function EstimateSection({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [drafting, visible, opportunityId, pollTick, announce]);
+  }, [working, visible, opportunityId, pollTick, announce]);
 
   async function retry() {
     if (busy) return;
@@ -516,7 +579,23 @@ export function EstimateSection({
         onRetry={() => void retry()}
       />
       {version ? (
-        <EstimateGrid version={version} selectedId={selected?.id ?? null} onOpen={open} />
+        <>
+          <EstimateGrid version={version} selectedId={selected?.id ?? null} onOpen={open} />
+          <AssumptionsRegister
+            opportunityId={opportunityId}
+            version={version}
+            canAccept={view.can_accept_assumptions}
+            selectedId={selectedAssumption?.id ?? null}
+            onChanged={(estimate) => {
+              mutation.current += 1;
+              setView(estimate);
+            }}
+            onOpenGap={openGap}
+            canRetry={view.can_start_draft && !drafting}
+            retryBusy={busy}
+            onRetry={() => void retry()}
+          />
+        </>
       ) : succeeded ? (
         <p className="text-muted-foreground">{NOTHING_TO_ESTIMATE}</p>
       ) : !drafting && draft?.status !== "failed" ? (
@@ -525,6 +604,14 @@ export function EstimateSection({
       {selected ? (
         <RightPaneContent>
           <EstimateInspector key={selected.id} line={selected} focusRequest={focusRequest} />
+        </RightPaneContent>
+      ) : selectedAssumption ? (
+        <RightPaneContent>
+          <OriginGapInspector
+            key={selectedAssumption.id}
+            gap={selectedAssumption.origin}
+            focusRequest={focusRequest}
+          />
         </RightPaneContent>
       ) : null}
     </div>

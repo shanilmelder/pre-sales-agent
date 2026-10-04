@@ -1,8 +1,8 @@
 """Gap queries and the detection start command (Story 4.3).
 
-- `list_gaps`: the Opportunity's open Gaps, ranked by impact, each with the Requirements it
-  relates to and its drafted question, and its latest detection (anyone who can read the
-  Opportunity).
+- `list_gaps`: the Opportunity's open Gaps, ranked by impact, then its converted Gaps (Story
+  8.4) in the same order, each with the Requirements it relates to and its drafted question,
+  and its latest detection (anyone who can read the Opportunity).
 - `start_detection`: queue a new detection, e.g. to retry a failed one
   (`gaps.detection.start`: the owner and collaborators except sales representatives; other
   readers 403, everyone else the Opportunity's 404). 409 `gap_detection_in_progress` while
@@ -27,6 +27,7 @@ from app.modules.gaps.application.models import (
 )
 from app.modules.gaps.domain.gaps import (
     IN_PROGRESS,
+    ConvertedTo,
     DetectionErrorCode,
     DetectionStatus,
     GapCategory,
@@ -127,6 +128,7 @@ async def gap_views(uow: UnitOfWork, opportunity_id: UUID, records: list[GapReco
                 impact_basis=g.impact_basis,
                 origin=GapOrigin(g.origin),
                 status=GapStatus(g.status),
+                converted_to=None if g.converted_to is None else ConvertedTo(g.converted_to),
                 row_version=g.row_version,
                 created_at=g.created_at,
                 requirements=[
@@ -149,7 +151,9 @@ async def gap_views(uow: UnitOfWork, opportunity_id: UUID, records: list[GapReco
 
 async def list_gaps(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> GapList:
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    records = _ranked(await repo.open_gaps(uow, opportunity_id))
+    records = _ranked(await repo.open_gaps(uow, opportunity_id)) + _ranked(
+        await repo.gaps_in(uow, opportunity_id, GapStatus.CONVERTED.value)
+    )
     return GapList(
         items=await gap_views(uow, opportunity_id, records),
         detection=_detection(await repo.latest_detection(uow, opportunity_id)),

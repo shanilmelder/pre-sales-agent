@@ -1,6 +1,6 @@
-"""Estimate rules and arithmetic (Story 8.1): the demo template, line validation, and the
-pure totals, with property-based tests (`hypothesis`) that every total is the sum of its
-parts."""
+"""Estimate rules and arithmetic (Stories 8.1 and 8.4): the demo template, line validation,
+and the pure totals (with linked and unallocated Contingency), with property-based tests
+(`hypothesis`) that every total is the sum of its parts."""
 
 from decimal import Decimal
 from typing import Any
@@ -234,6 +234,27 @@ def test_estimate_totals_per_section_role_and_overall() -> None:
     empty = ar.estimate_totals([])
     assert empty.sections == {}
     assert (empty.overall.effort, empty.overall.total) == (D("0.0"), D("0.0"))
+    assert empty.unallocated == D("0.0")
+
+
+def test_unallocated_contingency_counts_in_the_overall_totals_only() -> None:
+    lines = [
+        ar.LineInput(Section.INTEGRATION, D("40.0"), {E: 70, PM: 10, QA: 20}, (D("8.0"),)),
+        ar.LineInput(Section.FUNCTIONAL, D("10.0"), {E: 33, PM: 33, QA: 34}),
+    ]
+    totals = ar.estimate_totals(lines, [D("12.0"), D("0.5")])
+    assert totals.unallocated == D("12.5")
+    assert totals.sections[Section.INTEGRATION].contingency == D("8.0")
+    assert totals.sections[Section.FUNCTIONAL].contingency == D("0.0")
+    overall = totals.overall
+    assert (overall.effort, overall.contingency, overall.total) == (
+        D("50.0"),
+        D("20.5"),
+        D("70.5"),
+    )
+    assert sum(overall.role_hours.values(), D(0)) == overall.effort  # not split by role
+    only = ar.estimate_totals([], [D("3.0")])
+    assert (only.overall.contingency, only.overall.total) == (D("3.0"), D("3.0"))
 
 
 # --- properties -----------------------------------------------------------------------------
@@ -269,9 +290,11 @@ def test_role_hours_always_sum_to_the_effort(effort: Decimal, mix: dict[Estimate
         assert hours[role] == hours[role].quantize(D("0.1"))
 
 
-@given(lines=st.lists(line_inputs, max_size=25))
-def test_totals_equal_the_sum_of_their_parts(lines: list[ar.LineInput]) -> None:
-    totals = ar.estimate_totals(lines)
+@given(lines=st.lists(line_inputs, max_size=25), unallocated=st.lists(amounts, max_size=5))
+def test_totals_equal_the_sum_of_their_parts(
+    lines: list[ar.LineInput], unallocated: list[Decimal]
+) -> None:
+    totals = ar.estimate_totals(lines, unallocated)
 
     for given_line, line_total in zip(lines, totals.lines, strict=True):
         assert line_total.contingency == sum(given_line.contingencies, D(0))
@@ -289,11 +312,19 @@ def test_totals_equal_the_sum_of_their_parts(lines: list[ar.LineInput]) -> None:
     assert set(totals.sections) == {g.section for g in lines}
     assert list(totals.sections) == sorted(totals.sections, key=SECTIONS.index)
 
+    assert totals.unallocated == sum(unallocated, D(0))
     overall = totals.overall
     assert overall.effort == sum((g.effort for g in lines), D(0))
     assert overall.effort == sum((s.effort for s in totals.sections.values()), D(0))
-    assert overall.contingency == sum((s.contingency for s in totals.sections.values()), D(0))
-    assert overall.total == sum((s.total for s in totals.sections.values()), D(0))
+    assert overall.contingency == (
+        sum((s.contingency for s in totals.sections.values()), D(0)) + totals.unallocated
+    )
+    assert overall.contingency == (
+        sum((c for g in lines for c in g.contingencies), D(0)) + sum(unallocated, D(0))
+    )
+    assert overall.total == (
+        sum((s.total for s in totals.sections.values()), D(0)) + totals.unallocated
+    )
     assert overall.total == overall.effort + overall.contingency
     assert sum(overall.role_hours.values(), D(0)) == overall.effort
     for role in ROLES:
