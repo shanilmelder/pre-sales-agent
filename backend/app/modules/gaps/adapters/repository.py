@@ -32,6 +32,7 @@ class DetectionRecord:
 @dataclass(frozen=True, slots=True)
 class GapRecord:
     id: UUID
+    opportunity_id: UUID
     title: str
     category: str
     trigger: dict[str, Any]
@@ -40,6 +41,7 @@ class GapRecord:
     impact_basis: str
     origin: str
     status: str
+    converted_to: str | None
     row_version: int
     created_at: datetime
 
@@ -284,29 +286,77 @@ async def insert_gap(
     )
 
 
-async def open_gaps(uow: UnitOfWork, opportunity_id: UUID) -> list[GapRecord]:
-    """The Opportunity's `open` Gaps, oldest first (the caller ranks them)."""
+def _gap(row: GapRow) -> GapRecord:
+    return GapRecord(
+        id=row.id,
+        opportunity_id=row.opportunity_id,
+        title=row.title,
+        category=row.category,
+        trigger=row.trigger,
+        why_it_matters=row.why_it_matters,
+        impact=row.impact,
+        impact_basis=row.impact_basis,
+        origin=row.origin,
+        status=row.status,
+        converted_to=row.converted_to,
+        row_version=row.row_version,
+        created_at=row.created_at,
+    )
+
+
+async def gaps_in(uow: UnitOfWork, opportunity_id: UUID, status: str) -> list[GapRecord]:
+    """The Opportunity's Gaps in `status`, oldest first (the caller ranks them)."""
     rows = await uow.session.execute(
         select(GapRow)
-        .where(GapRow.opportunity_id == opportunity_id, GapRow.status == "open")
+        .where(GapRow.opportunity_id == opportunity_id, GapRow.status == status)
         .order_by(GapRow.created_at, GapRow.id)
     )
-    return [
-        GapRecord(
-            id=row.id,
-            title=row.title,
-            category=row.category,
-            trigger=row.trigger,
-            why_it_matters=row.why_it_matters,
-            impact=row.impact,
-            impact_basis=row.impact_basis,
-            origin=row.origin,
-            status=row.status,
-            row_version=row.row_version,
-            created_at=row.created_at,
+    return [_gap(row) for row in rows.scalars()]
+
+
+async def open_gaps(uow: UnitOfWork, opportunity_id: UUID) -> list[GapRecord]:
+    """The Opportunity's `open` Gaps, oldest first (the caller ranks them)."""
+    return await gaps_in(uow, opportunity_id, "open")
+
+
+async def gaps_by_id(
+    uow: UnitOfWork, opportunity_id: UUID, gap_ids: list[UUID]
+) -> dict[UUID, GapRecord]:
+    """These Gaps of the Opportunity, whatever their status."""
+    if not gap_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(GapRow).where(GapRow.opportunity_id == opportunity_id, GapRow.id.in_(gap_ids))
+    )
+    return {row.id: _gap(row) for row in rows.scalars()}
+
+
+async def get_gap(uow: UnitOfWork, gap_id: UUID) -> GapRecord | None:
+    row = (
+        await uow.session.execute(
+            select(GapRow).where(GapRow.id == gap_id).execution_options(populate_existing=True)
         )
-        for row in rows.scalars()
-    ]
+    ).scalar_one_or_none()
+    return None if row is None else _gap(row)
+
+
+async def convert_gap(uow: UnitOfWork, gap_id: UUID, *, converted_to: str) -> GapRecord | None:
+    """Mark the Gap `converted` to `converted_to` if it is `open`; None (and no change)
+    otherwise."""
+    changed = (
+        await uow.session.execute(
+            update(GapRow)
+            .where(GapRow.id == gap_id, GapRow.status == "open")
+            .values(
+                status="converted",
+                converted_to=converted_to,
+                row_version=GapRow.row_version + 1,
+            )
+            .returning(GapRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_gap(uow, gap_id)
 
 
 async def links_for(uow: UnitOfWork, gap_ids: list[UUID]) -> list[GapLinkRecord]:

@@ -31,6 +31,7 @@ import {
   type Gap,
   type GapList,
 } from "@/lib/gaps";
+import { convertedLabel } from "@/lib/estimates";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 
 export const RETRY = "Retry";
@@ -41,9 +42,11 @@ const RETRY_NOT_ALLOWED =
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
-/** The open Gaps as 32px card rows, in the order given (the API ranks them: high, medium,
- * low). Each row shows the impact label with its 3-segment bar, the category in meta type,
- * the title and the question's "Draft" pill.
+/** The Gaps as 32px card rows, in the order given (the API ranks the open ones high, medium,
+ * low, and lists converted ones after them). Each row shows the impact label with its
+ * 3-segment bar, the category in meta type, the title and the question's "Draft" pill. A
+ * converted Gap's row is greyed out and labelled "Converted to Condition" or "Converted to
+ * Contingency" (Story 8.4) instead of the pill.
  *
  * The list is one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows, and
@@ -90,12 +93,16 @@ export function GapsList({
     >
       {items.map((item) => {
         const selected = item.id === selectedId;
+        const converted = item.status === "converted";
         return (
           <div
             key={item.id}
             role="row"
             aria-selected={selected}
-            className={`border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
+            data-converted={converted ? "" : undefined}
+            className={`border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"} ${
+              converted ? "text-muted-foreground" : ""
+            }`}
           >
             <div role="gridcell">
               <button
@@ -108,12 +115,24 @@ export function GapsList({
                 onClick={(event) => onOpen?.(item, event.detail === 0)}
                 className="flex min-h-row w-full items-center gap-3 rounded-sm px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
-                <ImpactBar impact={item.impact} />
+                <span className={converted ? "opacity-60" : undefined}>
+                  <ImpactBar impact={item.impact} />
+                </span>
                 <span className="w-40 shrink-0 truncate text-meta text-muted-foreground">
                   {categoryLabel(item.category)}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-body">{item.title}</span>
-                {item.question ? <QuestionPill /> : null}
+                <span
+                  className={`min-w-0 flex-1 truncate text-body ${converted ? "text-muted-foreground" : ""}`}
+                >
+                  {item.title}
+                </span>
+                {converted ? (
+                  <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full border border-border px-2 text-label text-muted-foreground">
+                    {convertedLabel(item.converted_to)}
+                  </span>
+                ) : item.question ? (
+                  <QuestionPill />
+                ) : null}
               </button>
             </div>
           </div>
@@ -278,7 +297,7 @@ export function GapsSection({
             announce(
               result.list.detection?.status === "failed"
                 ? detectionFailure(result.list.detection.error_code)
-                : gapCount(result.list.items.length),
+                : gapCount(result.list.items.filter((g) => g.status === "open").length),
             );
           }
         }

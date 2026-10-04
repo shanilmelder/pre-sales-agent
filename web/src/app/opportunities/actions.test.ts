@@ -13,6 +13,8 @@ vi.mock("@/lib/api/server", () => ({ createServerApiClient: async () => api }));
 vi.mock("server-only", () => ({}));
 
 import {
+  acceptAllAssumptions,
+  acceptAssumption,
   addSource,
   addTextSource,
   changeCollaborator,
@@ -824,5 +826,133 @@ describe("editRequirement / confirmRequirement / confirmAllRequirements", () => 
         { params: { path: { opportunity_id: OPP_ID } } },
       ],
     ]);
+  });
+});
+
+describe("acceptAssumption", () => {
+  const AID = "00000000-0000-7000-8000-0000000000a1";
+  const INPUT = { opportunityId: OPP_ID, assumptionId: AID, rowVersion: 1 };
+  const ACCEPTED = {
+    id: AID,
+    accepted_by: { id: USER_ID, name: "[OWNER]" },
+    row_version: 2,
+  };
+
+  beforeEach(() => {
+    api.POST.mockReset();
+    api.GET.mockReset();
+  });
+
+  it("posts with If-Match and returns the accepted Assumption", async () => {
+    api.POST.mockResolvedValue({
+      data: ACCEPTED,
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await acceptAssumption(INPUT)).toEqual({
+      kind: "ok",
+      assumption: ACCEPTED,
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}/accept",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, assumption_id: AID },
+          header: { "If-Match": '"1"' },
+        },
+      },
+    );
+  });
+
+  it("on 412 names who accepted it, read again", async () => {
+    api.POST.mockResolvedValue({
+      error: { code: "row_version_mismatch" },
+      response: new Response(null, { status: 412 }),
+    });
+    api.GET.mockResolvedValue({
+      data: {
+        version: {
+          assumptions: {
+            conditions: [
+              { id: AID, accepted_by: { id: USER_ID, name: "[OTHER]" } },
+            ],
+            contingencies: [],
+          },
+        },
+      },
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await acceptAssumption(INPUT)).toEqual({
+      kind: "stale",
+      changedBy: "[OTHER]",
+    });
+  });
+
+  it.each([
+    [409, "gap-not-open"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({
+      error: { code: "x" },
+      response: new Response(null, { status }),
+    });
+    expect(await acceptAssumption(INPUT)).toEqual({ kind });
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await acceptAssumption({ ...INPUT, assumptionId: "nope" })).toEqual({
+      kind: "error",
+    });
+    expect(await acceptAssumption({ ...INPUT, rowVersion: 1.5 })).toEqual({
+      kind: "error",
+    });
+    expect(await acceptAssumption(null)).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it("is an error when the call throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await acceptAssumption(INPUT)).toEqual({ kind: "error" });
+  });
+});
+
+describe("acceptAllAssumptions", () => {
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts to accept-all and returns the count", async () => {
+    api.POST.mockResolvedValue({
+      data: { count: 3 },
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await acceptAllAssumptions(OPP_ID)).toEqual({
+      kind: "ok",
+      count: 3,
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/accept-all",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
+  });
+
+  it.each([
+    [409, "gap-not-open"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({
+      error: { code: "x" },
+      response: new Response(null, { status }),
+    });
+    expect(await acceptAllAssumptions(OPP_ID)).toEqual({ kind });
+  });
+
+  it("refuses an id that isn't a UUID", async () => {
+    expect(await acceptAllAssumptions("nope")).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
   });
 });

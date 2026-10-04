@@ -434,9 +434,9 @@ export interface paths {
         /**
          * List Gaps
          * @description The Opportunity's open Gaps, high impact first, then medium, then low (oldest first
-         *     within an impact), each with the Requirements it relates to and its drafted Clarification
-         *     Question; and its latest Gap detection (null before the first). Anyone who can read the
-         *     Opportunity.
+         *     within an impact), then its converted Gaps in the same order, each with the Requirements
+         *     it relates to and its drafted Clarification Question; and its latest Gap detection (null
+         *     before the first). Anyone who can read the Opportunity.
          */
         get: operations["list_gaps"];
         put?: never;
@@ -512,10 +512,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/assumptions/accept-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept All Assumptions
+         * @description Accept, as the caller, every Assumption of the current draft Estimate not accepted yet,
+         *     converting each one's Gap. All or nothing: if any Gap is no longer open, nothing changes
+         *     (409). No `If-Match`: only unaccepted Assumptions change. The owner and collaborators,
+         *     except sales representatives.
+         */
+        post: operations["accept_all_assumptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Assumption
+         * @description Accept an Assumption of the current draft Estimate as the caller, recording who and
+         *     when, and convert its Gap in the same transaction (409 `gap_not_open` and nothing changes
+         *     if the Gap is no longer open). Already accepted: nothing changes. The owner and
+         *     collaborators, except sales representatives.
+         */
+        post: operations["accept_assumption"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AcceptAllResult
+         * @description How many Assumptions were accepted.
+         */
+        AcceptAllResult: {
+            /** Count */
+            count: number;
+        };
         /**
          * AdminUser
          * @description A platform user as administrators see it. `row_version` is also the `ETag`.
@@ -551,6 +605,71 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * Assumption
+         * @description An Assumption of the version: a `condition` (proposal-ready wording, no hours) or a
+         *     `contingency` (`amount_hours`, and the line it is linked to, if any), made from one Gap
+         *     (`origin`). `accepted_by` and `accepted_at` are null until someone accepts it.
+         *     `row_version` goes back in `If-Match` to accept it.
+         */
+        Assumption: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["AssumptionKind"];
+            /** Wording */
+            wording: string;
+            /** Amount Hours */
+            amount_hours: number | null;
+            line: components["schemas"]["AssumptionLine"] | null;
+            /**
+             * Origin Kind
+             * @constant
+             */
+            origin_kind: "gap";
+            origin: components["schemas"]["OriginGap"];
+            accepted_by: components["schemas"]["UserRef"] | null;
+            /** Accepted At */
+            accepted_at: string | null;
+            /** Row Version */
+            row_version: number;
+        };
+        /** AssumptionCounts */
+        AssumptionCounts: {
+            /** Total */
+            total: number;
+            /** Accepted */
+            accepted: number;
+            /** Not Accepted */
+            not_accepted: number;
+        };
+        /**
+         * AssumptionGroups
+         * @description The version's Assumptions in proposal order, grouped by kind. `contingency_hours`: the
+         *     Contingencies' total, accepted or not.
+         */
+        AssumptionGroups: {
+            /** Conditions */
+            conditions: components["schemas"]["Assumption"][];
+            /** Contingencies */
+            contingencies: components["schemas"]["Assumption"][];
+            /** Contingency Hours */
+            contingency_hours: number;
+        };
+        /**
+         * AssumptionKind
+         * @enum {string}
+         */
+        AssumptionKind: "condition" | "contingency";
+        /**
+         * AssumptionLine
+         * @description The Estimate line a Contingency is linked to.
+         */
+        AssumptionLine: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+        };
         /** ClarificationQuestion */
         ClarificationQuestion: {
             /** Id */
@@ -582,6 +701,12 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * ConvertedTo
+         * @description The kind of Assumption a converted Gap became.
+         * @enum {string}
+         */
+        ConvertedTo: "condition" | "contingency";
         /**
          * Detection
          * @description The Opportunity's latest Gap detection. `error_code` is set only when `failed`.
@@ -621,8 +746,8 @@ export interface components {
         /**
          * EstimateLine
          * @description A work item: its effort and role mix as drafted, and its server-calculated role
-         *     hours, Contingency (the sum of its linked Contingency amounts; 0 until any are linked)
-         *     and total (effort plus Contingency).
+         *     hours, Contingency (the sum of its linked Contingency Assumptions' hours, accepted or
+         *     not) and total (effort plus Contingency).
          */
         EstimateLine: {
             /** Id */
@@ -664,9 +789,15 @@ export interface components {
         /**
          * EstimateVersion
          * @description An Estimate Version. `sections`: only those with lines, in template order.
-         *     `totals`: the overall effort, Contingency and total, with the per-role totals.
+         *     `totals`: the overall effort, Contingency and total, with the per-role totals; the
+         *     Contingency includes every Contingency Assumption, accepted or not, and
+         *     `unallocated_contingency_hours` (those linked to no line, in no section).
          *     `uncovered_count`: active Requirements no line covered when it was drafted;
          *     `dropped_count`: proposed lines that broke a rule.
+         *
+         *     Story 8.4: `proposal_status` is the state of the version's Assumption proposals (null
+         *     when none were queued); `assumptions` and `counts` its Assumptions; `unconverted_gaps`
+         *     the open Gaps without an Assumption in it, once proposals have finished (empty before).
          */
         EstimateVersion: {
             /** Id */
@@ -692,18 +823,28 @@ export interface components {
             /** Sections */
             sections: components["schemas"]["EstimateSection"][];
             totals: components["schemas"]["Totals"];
+            proposal_status: components["schemas"]["ProposalStatus"] | null;
+            assumptions: components["schemas"]["AssumptionGroups"];
+            counts: components["schemas"]["AssumptionCounts"];
+            /** Unconverted Gaps */
+            unconverted_gaps: components["schemas"]["UnconvertedGap"][];
+            /** Unallocated Contingency Hours */
+            unallocated_contingency_hours: number;
         };
         /**
          * EstimateView
          * @description The Opportunity's current (draft) Estimate Version, null before the first, and its
          *     latest draft run, null before the first. `can_start_draft`: whether the caller may start
-         *     (retry) a draft. The UI only uses it to hide controls; the API decides.
+         *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions. The
+         *     UI only uses them to hide controls; the API decides.
          */
         EstimateView: {
             version: components["schemas"]["EstimateVersion"] | null;
             draft: components["schemas"]["EstimateDraft"] | null;
             /** Can Start Draft */
             can_start_draft: boolean;
+            /** Can Accept Assumptions */
+            can_accept_assumptions: boolean;
         };
         /**
          * Extraction
@@ -728,7 +869,9 @@ export interface components {
         ExtractionStatus: "queued" | "running" | "succeeded" | "failed";
         /**
          * Gap
-         * @description An open Gap with the Requirements it relates to and its drafted question.
+         * @description A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
+         *     or `converted` once an Assumption made from it was accepted (Story 8.4); `converted_to`
+         *     then names the Assumption's kind (`condition` or `contingency`), and is null otherwise.
          */
         Gap: {
             /** Id */
@@ -744,6 +887,7 @@ export interface components {
             impact_basis: string;
             origin: components["schemas"]["GapOrigin"];
             status: components["schemas"]["GapStatus"];
+            converted_to: components["schemas"]["ConvertedTo"] | null;
             /** Row Version */
             row_version: number;
             /**
@@ -763,7 +907,8 @@ export interface components {
         /**
          * GapList
          * @description The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
-         *     within an impact; and its latest detection (null when none has been queued yet).
+         *     within an impact, followed by its converted Gaps in the same order (Story 8.4); and its
+         *     latest detection (null when none has been queued yet).
          *     `can_start_detection`: whether the caller may start (retry) a detection. The UI only
          *     uses it to hide controls; the API decides.
          */
@@ -800,7 +945,7 @@ export interface components {
          * GapStatus
          * @enum {string}
          */
-        GapStatus: "open" | "superseded";
+        GapStatus: "open" | "superseded" | "converted";
         /**
          * GapTrigger
          * @description What raised the Gap. In the demo, always the agent, by category.
@@ -1006,6 +1151,26 @@ export interface components {
             created_at: string;
         };
         /**
+         * OriginGap
+         * @description The Gap an Assumption was made from, as it is now. `status` is `open`, `converted`
+         *     (once an Assumption made from it was accepted) or `superseded`.
+         */
+        OriginGap: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            category: components["schemas"]["GapCategory"];
+            impact: components["schemas"]["Impact"];
+            /** Why It Matters */
+            why_it_matters: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "superseded" | "converted";
+        };
+        /**
          * ParseErrorCode
          * @enum {string}
          */
@@ -1040,6 +1205,12 @@ export interface components {
             /** After */
             after: string;
         };
+        /**
+         * ProposalStatus
+         * @description The state of an Estimate Version's `estimates.propose_assumptions` job.
+         * @enum {string}
+         */
+        ProposalStatus: "queued" | "running" | "succeeded" | "failed";
         /**
          * QuestionStatus
          * @enum {string}
@@ -1228,6 +1399,18 @@ export interface components {
             /** Total Hours */
             total_hours: number;
             role_hours: components["schemas"]["RoleHours"];
+        };
+        /**
+         * UnconvertedGap
+         * @description An open Gap that has no Assumption in this version.
+         */
+        UnconvertedGap: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            category: components["schemas"]["GapCategory"];
+            impact: components["schemas"]["Impact"];
         };
         /**
          * UserProfile
@@ -5005,6 +5188,364 @@ export interface operations {
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    accept_all_assumptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many Assumptions were accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptAllResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Assumption with this id in its current draft Estimate (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Assumption's Gap is no longer open (`gap_not_open`): it was converted or superseded; nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    accept_assumption: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Assumption as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                assumption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Assumption */
+            200: {
+                headers: {
+                    /** @description The Assumption's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Assumption"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Assumption with this id in its current draft Estimate (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Assumption's Gap is no longer open (`gap_not_open`): it was converted or superseded; nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Assumption changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

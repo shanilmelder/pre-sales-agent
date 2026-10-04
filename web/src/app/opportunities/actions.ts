@@ -12,7 +12,7 @@ import {
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
-import type { EstimateDraft } from "@/lib/estimates";
+import type { Assumption, EstimateDraft } from "@/lib/estimates";
 import type { Detection } from "@/lib/gaps";
 import {
   codePointLength,
@@ -829,6 +829,145 @@ export async function confirmAllRequirements(opportunityId: unknown): Promise<Co
   } catch (thrown) {
     console.error(
       `confirm all requirements failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- accepting Assumptions (Story 8.4 + 8.5) -------------------------------------------------
+
+export type AssumptionAcceptInput = {
+  opportunityId: string;
+  assumptionId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+};
+
+export type AssumptionAcceptResult =
+  | { kind: "ok"; assumption: Assumption }
+  /** 412: someone changed the Assumption first. `changedBy` is null when unknown. */
+  | { kind: "stale"; changedBy: string | null }
+  /** 409 `gap_not_open`: the Gap was converted or replaced; nothing changed. */
+  | { kind: "gap-not-open" }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the Assumption isn't in the current draft. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type AcceptAllAssumptionsResult =
+  | { kind: "ok"; count: number }
+  | { kind: "gap-not-open" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isAcceptInput(input: unknown): input is AssumptionAcceptInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, assumptionId, rowVersion } = input as Record<
+    string,
+    unknown
+  >;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof assumptionId === "string" &&
+    UUID_RE.test(assumptionId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0
+  );
+}
+
+/** Who accepted the Assumption, read again after a 412 (null when unknown). */
+async function assumptionChanger(
+  opportunityId: string,
+  assumptionId: string,
+): Promise<string | null> {
+  const current = await getEstimate(opportunityId);
+  if (current.kind !== "ok" || !current.estimate.version) return null;
+  const { conditions, contingencies } = current.estimate.version.assumptions;
+  return (
+    [...conditions, ...contingencies].find((a) => a.id === assumptionId)
+      ?.accepted_by?.name ?? null
+  );
+}
+
+/** `POST /api/v1/opportunities/{id}/assumptions/{aid}/accept` with `If-Match`: accept one
+ * Assumption as the signed-in user. Never retries or overwrites on 412. Logs ids and statuses
+ * only. */
+export async function acceptAssumption(
+  input: unknown,
+): Promise<AssumptionAcceptResult> {
+  if (!isAcceptInput(input)) return { kind: "error" };
+  const { opportunityId, assumptionId, rowVersion } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}/accept",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, assumption_id: assumptionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+      },
+    );
+    if (data) return { kind: "ok", assumption: data };
+    switch (response.status) {
+      case 412:
+        return {
+          kind: "stale",
+          changedBy: await assumptionChanger(opportunityId, assumptionId),
+        };
+      case 409:
+        return { kind: "gap-not-open" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `accept assumption failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `accept assumption failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/assumptions/accept-all`: accept every Assumption of the
+ * current draft not accepted yet, as the signed-in user. All or nothing on the API. */
+export async function acceptAllAssumptions(
+  opportunityId: unknown,
+): Promise<AcceptAllAssumptionsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId))
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/accept-all",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", count: data.count };
+    switch (response.status) {
+      case 409:
+        return { kind: "gap-not-open" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `accept all assumptions failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `accept all assumptions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

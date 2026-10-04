@@ -236,6 +236,18 @@ class GapsDetectionCompleted(TracePayload):
     superseded_count: int
 
 
+@register
+class GapsGapConverted(TracePayload):
+    """An open Gap was converted into an Assumption (Story 8.4): the Assumption was accepted.
+    Subject: the Gap (`gaps.gap`). Actor: the accepting person. `assumption_kind`:
+    `condition` or `contingency`."""
+
+    event_type: ClassVar[str] = "gaps.gap.converted"
+
+    assumption_kind: Literal["condition", "contingency"]
+    row_version: int
+
+
 # --- estimates ----------------------------------------------------------------------------
 # Story 8.1. Payloads hold the version number and counts only, never line or Requirement
 # text.
@@ -257,3 +269,38 @@ class EstimatesEstimateVersionCreated(TracePayload):
     uncovered_count: int
     requirement_count: int
     superseded_count: int
+
+
+# Story 8.4. Payloads hold ids, kinds and hours only, never Assumption wording or Gap text.
+
+
+@register
+class EstimatesAssumptionProposed(TracePayload):
+    """`estimating_agent`'s Assumption proposals for an Estimate Version were stored, all
+    unaccepted. Subject: the version (`estimates.estimate_version`). Actor: the agent. Counts
+    only: proposals stored (by kind), proposals dropped (invalid or a second one for a Gap),
+    and open Gaps left without a proposal."""
+
+    event_type: ClassVar[str] = "estimates.assumption.proposed"
+
+    count: int
+    condition_count: int
+    contingency_count: int
+    dropped_count: int
+    duplicate_count: int
+    unconverted_count: int
+
+
+@register
+class EstimatesAssumptionAccepted(TracePayload):
+    """An Assumption was accepted. Subject: the Assumption (`estimates.assumption`). Actor: the
+    accepting person, also named in `accepted_by`. `amount_hours` is null for a Condition."""
+
+    event_type: ClassVar[str] = "estimates.assumption.accepted"
+
+    version_id: str
+    kind: Literal["condition", "contingency"]
+    amount_hours: float | None
+    line_id: str | None
+    gap_id: str
+    accepted_by: str

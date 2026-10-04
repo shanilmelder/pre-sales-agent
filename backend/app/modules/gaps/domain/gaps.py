@@ -54,6 +54,16 @@ class GapOrigin(StrEnum):
 class GapStatus(StrEnum):
     OPEN = "open"
     SUPERSEDED = "superseded"
+    CONVERTED = "converted"
+    """Story 8.4: an Assumption made from it was accepted. Only an `open` Gap converts, and a
+    converted Gap is final: a later detection never supersedes it."""
+
+
+class ConvertedTo(StrEnum):
+    """The kind of Assumption a converted Gap became."""
+
+    CONDITION = "condition"
+    CONTINGENCY = "contingency"
 
 
 class QuestionStatus(StrEnum):

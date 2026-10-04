@@ -3,7 +3,8 @@
 from uuid import UUID
 
 from app.modules.gaps.application import detection
-from app.modules.gaps.application.gap_refs import GapSummary, open_gap_summaries
+from app.modules.gaps.application.conversion import mark_converted
+from app.modules.gaps.application.gap_refs import GapSummary, gap_summaries, open_gap_summaries
 from app.modules.gaps.application.gaps import list_gaps, start_detection
 from app.modules.gaps.application.models import (
     ClarificationQuestion,
@@ -13,6 +14,7 @@ from app.modules.gaps.application.models import (
     GapRequirement,
     GapTrigger,
 )
+from app.modules.gaps.domain.gaps import GapCategory, Impact
 from app.platform.uow import UnitOfWork
 
 
@@ -27,12 +29,16 @@ __all__ = [
     "ClarificationQuestion",
     "Detection",
     "Gap",
+    "GapCategory",
     "GapList",
     "GapRequirement",
     "GapSummary",
     "GapTrigger",
+    "Impact",
     "enqueue_detection",
+    "gap_summaries",
     "list_gaps",
+    "mark_converted",
     "open_gap_summaries",
     "start_detection",
 ]

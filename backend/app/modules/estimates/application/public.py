@@ -3,17 +3,29 @@
 from uuid import UUID
 
 from app.modules.estimates.application import draft
-from app.modules.estimates.application.estimates import get_estimate, start_draft
+from app.modules.estimates.application.estimates import (
+    accept_all_assumptions,
+    accept_assumption,
+    get_estimate,
+    start_draft,
+)
 from app.modules.estimates.application.models import (
+    AcceptAllResult,
+    Assumption,
+    AssumptionCounts,
+    AssumptionGroups,
+    AssumptionLine,
     EstimateDraft,
     EstimateLine,
     EstimateSection,
     EstimateVersion,
     EstimateView,
     LineRequirement,
+    OriginGap,
     RoleHours,
     RoleMix,
     Totals,
+    UnconvertedGap,
 )
 from app.platform.uow import UnitOfWork
 
@@ -26,15 +38,24 @@ async def enqueue_draft(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 
 __all__ = [
+    "AcceptAllResult",
+    "Assumption",
+    "AssumptionCounts",
+    "AssumptionGroups",
+    "AssumptionLine",
     "EstimateDraft",
     "EstimateLine",
     "EstimateSection",
     "EstimateVersion",
     "EstimateView",
     "LineRequirement",
+    "OriginGap",
     "RoleHours",
     "RoleMix",
     "Totals",
+    "UnconvertedGap",
+    "accept_all_assumptions",
+    "accept_assumption",
     "enqueue_draft",
     "get_estimate",
     "start_draft",

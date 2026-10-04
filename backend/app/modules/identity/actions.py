@@ -26,3 +26,4 @@ class Action(StrEnum):
     REQUIREMENT_EDIT = "intake.requirement.edit"
     GAP_DETECTION_START = "gaps.detection.start"
     ESTIMATE_DRAFT_START = "estimates.draft.start"
+    ASSUMPTION_ACCEPT = "estimates.assumption.accept"

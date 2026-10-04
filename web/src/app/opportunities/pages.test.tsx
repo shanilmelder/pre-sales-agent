@@ -598,9 +598,15 @@ describe("/opportunities/[id] workspace", () => {
           },
         ],
         totals,
+        proposal_status: "succeeded",
+        assumptions: { conditions: [], contingencies: [], contingency_hours: 0 },
+        counts: { total: 0, accepted: 0, not_accepted: 0 },
+        unconverted_gaps: [],
+        unallocated_contingency_hours: 0,
       },
       draft: { status: "succeeded", error_code: null },
       can_start_draft: false,
+      can_accept_assumptions: false,
     });
     const { container } = await renderWorkspace("estimate");
     expect(selectedTabs()).toEqual(["7Estimate"]);
@@ -617,7 +623,12 @@ describe("/opportunities/[id] workspace", () => {
 
   it("tab URL /estimate: the empty state", async () => {
     signedIn(["presales_engineer"]);
-    foundWithEstimate({ version: null, draft: null, can_start_draft: true });
+    foundWithEstimate({
+      version: null,
+      draft: null,
+      can_start_draft: true,
+      can_accept_assumptions: true,
+    });
     await renderWorkspace("estimate");
     expect(
       within(screen.getByRole("tabpanel")).getByText(
@@ -662,6 +673,7 @@ describe("/opportunities/[id] workspace", () => {
           impact_basis: "[BASIS]",
           origin: "detected",
           status: "open",
+          converted_to: null,
           row_version: 1,
           created_at: "2026-10-05T09:00:00Z",
           requirements: [

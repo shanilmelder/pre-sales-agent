@@ -1,10 +1,12 @@
-"""Read models for the Estimate (Story 8.1). Every number is calculated on the server by
-`domain/arithmetic.py`; hours are person-hours with one decimal place."""
+"""Read models for the Estimate (Stories 8.1 and 8.4). Every number is calculated on the
+server by `domain/arithmetic.py`; hours are person-hours with one decimal place."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.modules.estimates.domain.assumptions import AssumptionKind, ProposalStatus
 from app.modules.estimates.domain.estimates import (
     DraftErrorCode,
     DraftStatus,
@@ -12,6 +14,8 @@ from app.modules.estimates.domain.estimates import (
     Section,
     VersionStatus,
 )
+from app.modules.gaps.application.public import GapCategory, Impact
+from app.modules.opportunities.application.public import UserRef
 
 
 class RoleMix(BaseModel):
@@ -53,8 +57,8 @@ class LineRequirement(BaseModel):
 
 class EstimateLine(BaseModel):
     """A work item: its effort and role mix as drafted, and its server-calculated role
-    hours, Contingency (the sum of its linked Contingency amounts; 0 until any are linked)
-    and total (effort plus Contingency)."""
+    hours, Contingency (the sum of its linked Contingency Assumptions' hours, accepted or
+    not) and total (effort plus Contingency)."""
 
     id: str
     position: int = Field(ge=1)
@@ -77,11 +81,78 @@ class EstimateSection(BaseModel):
     subtotal: Totals
 
 
+class OriginGap(BaseModel):
+    """The Gap an Assumption was made from, as it is now. `status` is `open`, `converted`
+    (once an Assumption made from it was accepted) or `superseded`."""
+
+    id: str
+    title: str
+    category: GapCategory
+    impact: Impact
+    why_it_matters: str
+    status: Literal["open", "superseded", "converted"]
+
+
+class AssumptionLine(BaseModel):
+    """The Estimate line a Contingency is linked to."""
+
+    id: str
+    title: str
+
+
+class Assumption(BaseModel):
+    """An Assumption of the version: a `condition` (proposal-ready wording, no hours) or a
+    `contingency` (`amount_hours`, and the line it is linked to, if any), made from one Gap
+    (`origin`). `accepted_by` and `accepted_at` are null until someone accepts it.
+    `row_version` goes back in `If-Match` to accept it."""
+
+    id: str
+    kind: AssumptionKind
+    wording: str
+    amount_hours: float | None
+    line: AssumptionLine | None
+    origin_kind: Literal["gap"]
+    origin: OriginGap
+    accepted_by: UserRef | None
+    accepted_at: datetime | None
+    row_version: int = Field(ge=1)
+
+
+class AssumptionGroups(BaseModel):
+    """The version's Assumptions in proposal order, grouped by kind. `contingency_hours`: the
+    Contingencies' total, accepted or not."""
+
+    conditions: list[Assumption]
+    contingencies: list[Assumption]
+    contingency_hours: float
+
+
+class AssumptionCounts(BaseModel):
+    total: int = Field(ge=0)
+    accepted: int = Field(ge=0)
+    not_accepted: int = Field(ge=0)
+
+
+class UnconvertedGap(BaseModel):
+    """An open Gap that has no Assumption in this version."""
+
+    id: str
+    title: str
+    category: GapCategory
+    impact: Impact
+
+
 class EstimateVersion(BaseModel):
     """An Estimate Version. `sections`: only those with lines, in template order.
-    `totals`: the overall effort, Contingency and total, with the per-role totals.
+    `totals`: the overall effort, Contingency and total, with the per-role totals; the
+    Contingency includes every Contingency Assumption, accepted or not, and
+    `unallocated_contingency_hours` (those linked to no line, in no section).
     `uncovered_count`: active Requirements no line covered when it was drafted;
-    `dropped_count`: proposed lines that broke a rule."""
+    `dropped_count`: proposed lines that broke a rule.
+
+    Story 8.4: `proposal_status` is the state of the version's Assumption proposals (null
+    when none were queued); `assumptions` and `counts` its Assumptions; `unconverted_gaps`
+    the open Gaps without an Assumption in it, once proposals have finished (empty before)."""
 
     id: str
     version: int = Field(ge=1)
@@ -94,6 +165,11 @@ class EstimateVersion(BaseModel):
     created_at: datetime
     sections: list[EstimateSection]
     totals: Totals
+    proposal_status: ProposalStatus | None
+    assumptions: AssumptionGroups
+    counts: AssumptionCounts
+    unconverted_gaps: list[UnconvertedGap]
+    unallocated_contingency_hours: float
 
 
 class EstimateDraft(BaseModel):
@@ -106,8 +182,16 @@ class EstimateDraft(BaseModel):
 class EstimateView(BaseModel):
     """The Opportunity's current (draft) Estimate Version, null before the first, and its
     latest draft run, null before the first. `can_start_draft`: whether the caller may start
-    (retry) a draft. The UI only uses it to hide controls; the API decides."""
+    (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions. The
+    UI only uses them to hide controls; the API decides."""
 
     version: EstimateVersion | None
     draft: EstimateDraft | None
     can_start_draft: bool
+    can_accept_assumptions: bool
+
+
+class AcceptAllResult(BaseModel):
+    """How many Assumptions were accepted."""
+
+    count: int = Field(ge=0)

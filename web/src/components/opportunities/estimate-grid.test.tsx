@@ -108,6 +108,11 @@ function version(n = 2, uncovered = 1): EstimateVersion {
       total_hours: 41,
       role_hours: { engineer: 24.5, project_manager: 8.2, qa: 8.3 },
     },
+    proposal_status: "succeeded",
+    assumptions: { conditions: [], contingencies: [], contingency_hours: 0 },
+    counts: { total: 0, accepted: 0, not_accepted: 0 },
+    unconverted_gaps: [],
+    unallocated_contingency_hours: 0,
   };
 }
 
@@ -117,7 +122,12 @@ const succeeded: EstimateDraft = { status: "succeeded", error_code: null };
 const failed: EstimateDraft = { status: "failed", error_code: "model_unavailable" };
 
 function view(v: EstimateVersion | null, draft: EstimateDraft | null, canStart = true) {
-  return { version: v, draft, can_start_draft: canStart } satisfies EstimateView;
+  return {
+    version: v,
+    draft,
+    can_start_draft: canStart,
+    can_accept_assumptions: canStart,
+  } satisfies EstimateView;
 }
 
 function renderSection(initial: EstimateView, singleKeyShortcuts = true) {
@@ -343,6 +353,61 @@ describe("EstimateSection", () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
     expect(loadEstimate).toHaveBeenCalledTimes(2);
+  });
+
+  it("polls while the Assumption proposals run after the draft succeeded", async () => {
+    vi.useFakeTimers();
+    const proposed: EstimateVersion = {
+      ...version(1),
+      proposal_status: "succeeded",
+      assumptions: {
+        conditions: [
+          {
+            id: "00000000-0000-7000-8000-0000000000a1",
+            kind: "condition",
+            wording: "[WORDING 1]",
+            amount_hours: null,
+            line: null,
+            origin_kind: "gap",
+            origin: {
+              id: "00000000-0000-7000-8000-0000000000e1",
+              title: "[GAP 1]",
+              category: "integration_details",
+              impact: "high",
+              why_it_matters: "[WHY 1]",
+              status: "open",
+            },
+            accepted_by: null,
+            accepted_at: null,
+            row_version: 1,
+          },
+        ],
+        contingencies: [],
+        contingency_hours: 0,
+      },
+      counts: { total: 1, accepted: 0, not_accepted: 1 },
+    };
+    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(proposed, succeeded) });
+    renderSection(view({ ...version(1), proposal_status: "queued" }, succeeded));
+    expect(screen.getByText("Proposing Assumptions")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
+    expect(screen.queryByText("Proposing Assumptions")).toBeNull();
+    expect(screen.getByText("[WORDING 1]")).toBeTruthy();
+    expect(screen.getByText("Not accepted")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(screen.getByRole("status").textContent).toBe(
+      "Assumptions Register: 1 · 0 accepted · 1 not accepted",
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(loadEstimate).toHaveBeenCalledTimes(1);
   });
 
   it("keeps showing the current version while a re-draft runs", () => {

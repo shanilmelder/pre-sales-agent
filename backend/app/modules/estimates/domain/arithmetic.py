@@ -6,8 +6,12 @@ functions work in whole tenths of an hour, so every sum is exact.
 
 - **Per-role hours:** a line's effort times each role's share of the mix, rounded to 0.1 h by
   the largest-remainder method, so the role hours sum exactly to the line's effort.
-- **Contingency:** a line's Contingency is the sum of its linked Contingency amounts (none
-  until Story 8.4 links any). A line's total is its effort plus its Contingency.
+- **Contingency:** a line's Contingency is the sum of its linked Contingency amounts,
+  accepted or not (Story 8.4: the grid shows what the Estimate would be). A line's total is
+  its effort plus its Contingency.
+- **Unallocated contingency:** Contingency amounts linked to no line add up in a
+  version-level "Unallocated contingency", which counts in the overall Contingency and total
+  (not in any section, and not split by role).
 - **Totals:** per section (effort, Contingency, total and per-role hours), per role, and
   overall (effort, Contingency, total). Each is the sum of its parts.
 """
@@ -96,7 +100,10 @@ class EstimateTotals:
     """In the order given."""
     sections: Mapping[Section, Totals]
     """Only the sections that have lines, in template order."""
+    unallocated: Decimal
+    """The sum of the Contingency amounts linked to no line."""
     overall: Totals
+    """The sections' sums plus the unallocated Contingency."""
 
 
 def line_totals(line: LineInput) -> LineTotals:
@@ -127,12 +134,23 @@ def sum_totals(parts: Iterable[LineTotals | Totals]) -> Totals:
     )
 
 
-def estimate_totals(lines: Sequence[LineInput]) -> EstimateTotals:
-    """Every line's totals, the section subtotals and the overall totals."""
+def estimate_totals(
+    lines: Sequence[LineInput], unallocated: Iterable[Decimal] = ()
+) -> EstimateTotals:
+    """Every line's totals, the section subtotals, the unallocated Contingency (the sum of
+    `unallocated`, the amounts linked to no line) and the overall totals, which include it."""
     per_line = tuple(line_totals(line) for line in lines)
     sections: dict[Section, Totals] = {}
     for section in SECTIONS:
         members = [t for line, t in zip(lines, per_line, strict=True) if line.section == section]
         if members:
             sections[section] = sum_totals(members)
-    return EstimateTotals(lines=per_line, sections=sections, overall=sum_totals(per_line))
+    loose = line_contingency(unallocated)
+    lines_only = sum_totals(per_line)
+    overall = Totals(
+        effort=lines_only.effort,
+        contingency=from_tenths(to_tenths(lines_only.contingency) + to_tenths(loose)),
+        total=from_tenths(to_tenths(lines_only.total) + to_tenths(loose)),
+        role_hours=lines_only.role_hours,
+    )
+    return EstimateTotals(lines=per_line, sections=sections, unallocated=loose, overall=overall)

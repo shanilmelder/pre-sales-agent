@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.modules.gaps.domain.gaps import (
+    ConvertedTo,
     DetectionErrorCode,
     DetectionStatus,
     GapCategory,
@@ -45,7 +46,9 @@ class ClarificationQuestion(BaseModel):
 
 
 class Gap(BaseModel):
-    """An open Gap with the Requirements it relates to and its drafted question."""
+    """A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
+    or `converted` once an Assumption made from it was accepted (Story 8.4); `converted_to`
+    then names the Assumption's kind (`condition` or `contingency`), and is null otherwise."""
 
     id: str
     title: str
@@ -56,6 +59,7 @@ class Gap(BaseModel):
     impact_basis: str
     origin: GapOrigin
     status: GapStatus
+    converted_to: ConvertedTo | None
     row_version: int = Field(ge=1)
     created_at: datetime
     requirements: list[GapRequirement]
@@ -71,7 +75,8 @@ class Detection(BaseModel):
 
 class GapList(BaseModel):
     """The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
-    within an impact; and its latest detection (null when none has been queued yet).
+    within an impact, followed by its converted Gaps in the same order (Story 8.4); and its
+    latest detection (null when none has been queued yet).
     `can_start_detection`: whether the caller may start (retry) a detection. The UI only
     uses it to hide controls; the API decides."""
 
