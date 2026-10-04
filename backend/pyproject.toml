@@ -69,6 +69,12 @@ source_modules = ["app.platform"]
 forbidden_modules = ["app.modules", "app.orchestration", "app.agents"]
 
 [[tool.importlinter.contracts]]
+name = "The api process never imports the job claim loop (AD-1, AD-29)"
+type = "forbidden"
+source_modules = ["app.main_api"]
+forbidden_modules = ["app.platform.jobs.runner", "app.main_worker"]
+
+[[tool.importlinter.contracts]]
 name = "opportunities uses identity only through its public API (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.opportunities"]

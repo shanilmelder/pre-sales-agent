@@ -106,6 +106,26 @@ Work (`app/platform/uow.py`, handler parameter `uow: UoW`): `authorize` (identit
 `app.platform.trace.append(uow, ...)`. Commands never commit; only the edge does. Logs are
 JSON lines and carry IDs only, never customer content.
 
+### Worker
+
+The `worker` process (`app/main_worker.py`, AD-29) claims background jobs from the Postgres
+queue table `platform_jobs` one at a time and runs them; the api only enqueues. It needs the
+schema migrated (`alembic upgrade head`, see above) and connects as `psa_app`. In compose it
+is the `worker` service (same backend image, `python -m app.main_worker`) and logs
+`worker.started` when up: `docker compose --profile local logs -f worker`. Outside Docker:
+
+```sh
+cd backend
+PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
+  uv run python -m app.main_worker     # Ctrl+C to stop
+```
+
+On Windows it runs on the selector event loop (psycopg's async driver cannot use the
+Proactor loop). On SIGTERM/SIGINT it cancels the current job and returns it to the queue.
+Settings: `PSA_WORKER_POLL_S` (idle poll, default 1 s, jittered), `PSA_WORKER_CONCURRENCY`
+(reserved, must be 1), `PSA_JOB_LEASE_S` (default 30 s; a dead worker's job is reclaimed
+after it expires) and `PSA_JOB_HEARTBEAT_S` (default 10 s, at most half the lease).
+
 ## Authentication (Auth0)
 
 Auth0 (EU tenant) handles authentication only; roles live in `identity`, not in Auth0

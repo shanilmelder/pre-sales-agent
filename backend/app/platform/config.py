@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,9 +53,36 @@ class Settings(BaseSettings):
         gt=0,
         description="Largest accepted upload in bytes (50 MB). Enforced by the API only.",
     )
+    worker_poll_s: float = Field(
+        default=1.0,
+        gt=0,
+        description="How long the worker sleeps (jittered ±20%) when no job is ready.",
+    )
+    worker_concurrency: int = Field(
+        default=1,
+        ge=1,
+        le=1,
+        description="Jobs one worker process runs at a time. Reserved: only 1 is supported.",
+    )
+    job_lease_s: float = Field(
+        default=30.0,
+        gt=0,
+        description="How long a claim holds a job before another worker may reclaim it.",
+    )
+    job_heartbeat_s: float = Field(
+        default=10.0,
+        gt=0,
+        description="How often a running job's lease is extended; at most job_lease_s / 2.",
+    )
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], BeforeValidator(str.upper)
     ] = "INFO"
+
+    @model_validator(mode="after")
+    def _heartbeat_inside_lease(self) -> "Settings":
+        if self.job_heartbeat_s > self.job_lease_s / 2:
+            raise ValueError("job_heartbeat_s must be at most half of job_lease_s")
+        return self
 
 
 @lru_cache
