@@ -357,6 +357,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit Requirement
+         * @description Change a Requirement's text and/or classification. A change makes its next version,
+         *     marks it `human` and locks it against re-extraction; its Evidence stays. Nothing
+         *     changed: nothing is written. The owner and collaborators, except sales
+         *     representatives.
+         */
+        patch: operations["edit_requirement"];
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/requirements/confirm-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm All Requirements
+         * @description Confirm every active Requirement not confirmed yet, locking them against
+         *     re-extraction. No `If-Match`: only unconfirmed Requirements change. The owner and
+         *     collaborators, except sales representatives.
+         */
+        post: operations["confirm_all_requirements"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Requirement
+         * @description Confirm a Requirement, locking it against re-extraction; its version stays. Already
+         *     confirmed: nothing changes. The owner and collaborators, except sales
+         *     representatives.
+         */
+        post: operations["confirm_requirement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -402,6 +469,14 @@ export interface components {
          * @enum {string}
          */
         Classification: "functional" | "integration" | "data" | "security" | "non_functional" | "commercial";
+        /**
+         * ConfirmAllResult
+         * @description How many Requirements **Confirm all** confirmed (those not confirmed already).
+         */
+        ConfirmAllResult: {
+            /** Count */
+            count: number;
+        };
         /**
          * Extraction
          * @description The Opportunity's latest Requirement extraction. `error_code` is set only when
@@ -630,7 +705,10 @@ export interface components {
         };
         /**
          * Requirement
-         * @description An active Requirement of the Opportunity with the passages it cites.
+         * @description An active Requirement of the Opportunity with the passages it cites. `origin` is
+         *     `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
+         *     once confirmed. `last_changed_by`: the person behind the latest edit or confirmation
+         *     (null when the latest change was extraction's). `row_version` goes back in `If-Match`.
          */
         Requirement: {
             /** Id */
@@ -650,8 +728,24 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Confirmed At */
+            confirmed_at: string | null;
+            confirmed_by: components["schemas"]["UserRef"] | null;
+            last_changed_by: components["schemas"]["UserRef"] | null;
             /** Evidence */
             evidence: components["schemas"]["RequirementEvidence"][];
+        };
+        /**
+         * RequirementChanges
+         * @description A human edit of a Requirement (Story 2.6). Fields left out stay as they are.
+         */
+        RequirementChanges: {
+            /**
+             * Text
+             * @description The new text. Trimmed, it must be 1 to 2,000 characters.
+             */
+            text?: string | null;
+            classification?: components["schemas"]["Classification"] | null;
         };
         /**
          * RequirementEvidence
@@ -674,7 +768,8 @@ export interface components {
          * RequirementList
          * @description The Opportunity's active Requirements, oldest first, and its latest extraction (null
          *     when none has been queued yet). `can_start_extraction`: whether the caller may start
-         *     (retry) an extraction; the UI only uses it to hide **Retry**, the API decides.
+         *     (retry) an extraction; `can_edit_requirements`: whether they may edit and confirm the
+         *     Requirements (Story 2.6). The UI only uses them to hide controls; the API decides.
          */
         RequirementList: {
             /** Items */
@@ -682,6 +777,8 @@ export interface components {
             extraction: components["schemas"]["Extraction"] | null;
             /** Can Start Extraction */
             can_start_extraction: boolean;
+            /** Can Edit Requirements */
+            can_edit_requirements: boolean;
         };
         /**
          * RequirementOrigin
@@ -3489,6 +3586,506 @@ export interface operations {
             };
             /** @description An id is not a UUID (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    edit_requirement: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Requirement as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementChanges"];
+            };
+        };
+        responses: {
+            /** @description The Requirement */
+            200: {
+                headers: {
+                    /** @description The Requirement's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Requirement changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: the text is blank or longer than 2,000 characters once trimmed (the `detail` is the sentence to show), an unknown classification or field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    confirm_all_requirements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many Requirements were confirmed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmAllResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    confirm_requirement: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Requirement as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Requirement */
+            200: {
+                headers: {
+                    /** @description The Requirement's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Requirement changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

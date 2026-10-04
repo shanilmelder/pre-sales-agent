@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   CLASSIFICATIONS,
+  confirmAllLabel,
   extractionFailure,
   groupRequirements,
   isExtracting,
   noneFound,
+  originLabel,
   requirementCount,
+  requirementTextProblem,
+  unconfirmed,
   type Classification,
   type Requirement,
 } from "./requirements";
@@ -21,6 +25,9 @@ function requirement(n: number, classification: Classification): Requirement {
     version: 1,
     row_version: 1,
     created_at: "2026-10-04T13:05:00Z",
+    confirmed_at: null,
+    confirmed_by: null,
+    last_changed_by: null,
     evidence: [],
   };
 }
@@ -98,5 +105,24 @@ describe("counts", () => {
     expect(noneFound(1)).toBe("No Requirements were found in 1 Source.");
     expect(noneFound(3)).toBe("No Requirements were found in 3 Sources.");
     expect(noneFound(null)).toBe("No Requirements were found in 0 Sources.");
+  });
+});
+
+describe("editing helpers (Story 2.6)", () => {
+  it("labels origins, counts and text problems", () => {
+    expect(originLabel("extracted")).toBe("Extracted");
+    expect(originLabel("human")).toBe("Edited");
+    expect(confirmAllLabel(3)).toBe("Confirm all (3)");
+    expect(requirementTextProblem(" ok ")).toBeNull();
+    expect(requirementTextProblem("  ")).toBe("The Requirement text can't be blank.");
+    expect(requirementTextProblem("😀".repeat(2000))).toBeNull();
+    expect(requirementTextProblem("x".repeat(2001))).toBe(
+      "The Requirement text can be at most 2,000 characters.",
+    );
+    const items = [
+      requirement(1, "data"),
+      { ...requirement(2, "data"), confirmed_at: "2026-10-04T14:00:00Z" },
+    ];
+    expect(unconfirmed(items).map((i) => i.id)).toEqual(["r1"]);
   });
 });

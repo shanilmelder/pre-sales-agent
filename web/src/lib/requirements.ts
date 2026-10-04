@@ -26,9 +26,38 @@ export function classificationLabel(value: Classification): string {
   return CLASSIFICATIONS.find((c) => c.value === value)?.label ?? value;
 }
 
-/** A Requirement's origin as the inspector shows it. */
+/** A Requirement's origin as the list and inspector show it: a person's edit is "Edited". */
 export function originLabel(origin: RequirementOrigin): string {
-  return origin === "extracted" ? "Extracted" : "Human";
+  return origin === "extracted" ? "Extracted" : "Edited";
+}
+
+// --- editing and confirming (Story 2.6) -------------------------------------------------------
+
+/** The most characters (code points) a Requirement's text may have once trimmed. */
+export const REQUIREMENT_TEXT_MAX = 2000;
+
+/** The label of a confirmed Requirement. */
+export const CONFIRMED = "Confirmed";
+
+/** The Requirements not confirmed yet. */
+export function unconfirmed(items: readonly Requirement[]): Requirement[] {
+  return items.filter((item) => !item.confirmed_at);
+}
+
+/** The tab header's button: "Confirm all (3)". */
+export function confirmAllLabel(n: number): string {
+  return `Confirm all (${n})`;
+}
+
+/** Why a Requirement's text can't be saved, or null when it can (trimmed, 1 to 2,000 code
+ * points; the API checks again). */
+export function requirementTextProblem(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return "The Requirement text can't be blank.";
+  if (Array.from(trimmed).length > REQUIREMENT_TEXT_MAX) {
+    return "The Requirement text can be at most 2,000 characters.";
+  }
+  return null;
 }
 
 /** The Evidence inspector's passage states (Story 2.5 Part B). */

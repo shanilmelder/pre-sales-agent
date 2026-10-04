@@ -44,6 +44,9 @@ function requirement(n: number, classification: Classification, ...files: string
     version: 1,
     row_version: 1,
     created_at: "2026-10-04T13:05:00Z",
+    confirmed_at: null,
+    confirmed_by: null,
+    last_changed_by: null,
     evidence: files.map((file, i) => ({
       passage_id: passageId(n, i),
       source_id: `00000000-0000-7000-8000-0000000000b${i}`,
@@ -80,6 +83,7 @@ function list(items: Requirement[], status: "succeeded" | "running" = "succeeded
     items,
     extraction: { status, error_code: null, source_count: 2 },
     can_start_extraction: true,
+    can_edit_requirements: false,
   };
 }
 

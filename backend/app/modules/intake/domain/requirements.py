@@ -13,6 +13,11 @@ from enum import StrEnum
 
 SUBJECT_TYPE = "intake.extraction"
 """The trace subject of an extraction run."""
+REQUIREMENT_SUBJECT_TYPE = "intake.requirement"
+"""The trace subject of a Requirement (Story 2.6)."""
+
+REQUIREMENT_TEXT_MAX = 2_000
+"""The most characters (Unicode code points) a Requirement's text may have once trimmed."""
 
 
 class Classification(StrEnum):
@@ -187,3 +192,19 @@ def resolve_requirements(
             failing.append(index)
         kept.append(ResolvedRequirement(statement, classification, tuple(spans)))
     return Resolution(tuple(kept), tuple(failing), dropped)
+
+
+# --- human edits (Story 2.6) ----------------------------------------------------------------
+
+
+def requirement_text(raw: str) -> str:
+    """A Requirement's text as a person entered it: trimmed, 1 to `REQUIREMENT_TEXT_MAX`
+    code points. Raises `ValueError` (with the sentence to show) otherwise."""
+    trimmed = raw.strip()
+    if not trimmed:
+        raise ValueError("The Requirement text can't be blank.")
+    if len(trimmed) > REQUIREMENT_TEXT_MAX:
+        raise ValueError(
+            f"The Requirement text can be at most {REQUIREMENT_TEXT_MAX:,} characters."
+        )
+    return trimmed

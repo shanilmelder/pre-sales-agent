@@ -23,3 +23,4 @@ class Action(StrEnum):
     COLLABORATOR_REMOVE = "opportunities.collaborator.remove"
     SOURCE_ADD = "intake.source.add"
     EXTRACTION_START = "intake.extraction.start"
+    REQUIREMENT_EDIT = "intake.requirement.edit"

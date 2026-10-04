@@ -49,8 +49,18 @@ def test_before_any_extraction_the_list_is_empty(client: TestClient, sync_engine
     theirs = _get(client, reader, opp["id"])
 
     assert mine.status_code == 200, mine.text
-    assert mine.json() == {"items": [], "extraction": None, "can_start_extraction": True}
-    assert theirs.json() == {"items": [], "extraction": None, "can_start_extraction": False}
+    assert mine.json() == {
+        "items": [],
+        "extraction": None,
+        "can_start_extraction": True,
+        "can_edit_requirements": True,
+    }
+    assert theirs.json() == {
+        "items": [],
+        "extraction": None,
+        "can_start_extraction": False,
+        "can_edit_requirements": False,
+    }
 
 
 def test_the_list_shows_requirements_with_evidence_labels(

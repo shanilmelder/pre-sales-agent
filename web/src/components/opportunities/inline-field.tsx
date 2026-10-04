@@ -39,6 +39,9 @@ type InlineFieldProps = {
   type: "text" | "date";
   /** The value the input starts from. */
   value: string;
+  /** Text the input starts from instead of `value` (e.g. the user's unsaved text after a
+   * failed save); saving still compares against `value`. */
+  draft?: string;
   /** How the value shows when not editing. */
   children: ReactNode;
   /** The earliest date a date input offers. */
@@ -61,6 +64,7 @@ export function InlineField({
   inputLabel,
   type,
   value,
+  draft: keptDraft,
   children,
   min,
   error,
@@ -89,7 +93,7 @@ export function InlineField({
   function start() {
     if (locked) return;
     finished.current = false;
-    setDraft(value);
+    setDraft(keptDraft ?? value);
     setEditing(true);
   }
 
@@ -147,6 +151,75 @@ export function InlineField({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** The editing half of `InlineField`, for a parent that decides when editing starts and
+ * ends (e.g. a list row opened with `e` or a double-click). Focuses itself on mount unless
+ * `autoFocus` is false. Blur or
+ * Enter calls `onCommit` with the text, Esc calls `onCancel`; `viaKey` is true for Enter and
+ * Esc, so the parent can move focus back. A blur right after Enter or Esc is ignored. */
+export function InlineInput({
+  label,
+  initial,
+  describedBy,
+  autoFocus = true,
+  onCommit,
+  onCancel,
+  className,
+}: {
+  /** The input's accessible name. */
+  label: string;
+  /** The text the input starts with. */
+  initial: string;
+  describedBy?: string;
+  autoFocus?: boolean;
+  onCommit: (text: string, viaKey: boolean) => void;
+  onCancel: (viaKey: boolean) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState(initial);
+  const finished = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+    // Only on mount: focus is the parent's once editing is under way.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finished.current = true;
+      onCommit(draft, true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      finished.current = true;
+      onCancel(true);
+    }
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      aria-label={label}
+      aria-describedby={describedBy}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onFocus={() => {
+        finished.current = false;
+      }}
+      onBlur={() => {
+        if (finished.current) return;
+        finished.current = true;
+        onCommit(draft, false);
+      }}
+      onKeyDown={onKeyDown}
+      className={className}
+    />
   );
 }
 

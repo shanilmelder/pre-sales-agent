@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.intake.domain.parsing import ParseErrorCode, ParseStatus
 from app.modules.intake.domain.requirements import (
+    REQUIREMENT_TEXT_MAX,
     Classification,
     ExtractionErrorCode,
     ExtractionStatus,
@@ -75,7 +76,10 @@ class RequirementEvidence(BaseModel):
 
 
 class Requirement(BaseModel):
-    """An active Requirement of the Opportunity with the passages it cites."""
+    """An active Requirement of the Opportunity with the passages it cites. `origin` is
+    `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
+    once confirmed. `last_changed_by`: the person behind the latest edit or confirmation
+    (null when the latest change was extraction's). `row_version` goes back in `If-Match`."""
 
     id: str
     text: str
@@ -85,6 +89,9 @@ class Requirement(BaseModel):
     version: int = Field(ge=1)
     row_version: int = Field(ge=1)
     created_at: datetime
+    confirmed_at: datetime | None
+    confirmed_by: UserRef | None
+    last_changed_by: UserRef | None
     evidence: list[RequirementEvidence]
 
 
@@ -100,11 +107,31 @@ class Extraction(BaseModel):
 class RequirementList(BaseModel):
     """The Opportunity's active Requirements, oldest first, and its latest extraction (null
     when none has been queued yet). `can_start_extraction`: whether the caller may start
-    (retry) an extraction; the UI only uses it to hide **Retry**, the API decides."""
+    (retry) an extraction; `can_edit_requirements`: whether they may edit and confirm the
+    Requirements (Story 2.6). The UI only uses them to hide controls; the API decides."""
 
     items: list[Requirement]
     extraction: Extraction | None
     can_start_extraction: bool
+    can_edit_requirements: bool
+
+
+class RequirementChanges(BaseModel):
+    """A human edit of a Requirement (Story 2.6). Fields left out stay as they are."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: StrictStr | None = Field(
+        default=None,
+        description=f"The new text. Trimmed, it must be 1 to {REQUIREMENT_TEXT_MAX:,} characters.",
+    )
+    classification: Classification | None = None
+
+
+class ConfirmAllResult(BaseModel):
+    """How many Requirements **Confirm all** confirmed (those not confirmed already)."""
+
+    count: int = Field(ge=0)
 
 
 class Passage(BaseModel):
