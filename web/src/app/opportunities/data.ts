@@ -7,6 +7,7 @@ import type { Filters } from "@/app/opportunities/filters";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
 import { UUID_RE } from "@/lib/opportunities";
+import type { RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 
 export const PAGE_SIZE = 50;
@@ -15,6 +16,7 @@ export type ListScope = "mine" | "all";
 export type ListResult = { kind: "ok"; page: OpportunityPage } | { kind: "error" };
 export type FacetsResult = { kind: "ok"; facets: OpportunityFacets } | { kind: "error" };
 export type SourcesResult = { kind: "ok"; sources: Source[] } | { kind: "error" };
+export type RequirementsResult = { kind: "ok"; list: RequirementList } | { kind: "error" };
 export type GetResult =
   | { kind: "ok"; opportunity: Opportunity }
   | { kind: "not-found" }
@@ -95,6 +97,25 @@ export async function listSources(id: string): Promise<SourcesResult> {
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET sources failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/requirements`: the active Requirements and the latest
+ * extraction. */
+export async function listRequirements(id: string): Promise<RequirementsResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/requirements",
+      { params: { path: { opportunity_id: id } } },
+    );
+    if (data) return { kind: "ok", list: data };
+    console.error(`GET requirements failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET requirements failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

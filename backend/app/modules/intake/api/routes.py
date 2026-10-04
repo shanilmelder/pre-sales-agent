@@ -1,5 +1,6 @@
 """Opportunity Source routes (Story 2.1), under
-`/api/v1/opportunities/{opportunity_id}/sources`.
+`/api/v1/opportunities/{opportunity_id}/sources`, and Requirement routes (Story 2.5 Part A):
+`…/{opportunity_id}/requirements` and `…/{opportunity_id}/extractions`.
 
 Uploads are `multipart/form-data` with the file in the `file` field. The body is read as a
 stream (`app.platform.multipart`), never parsed up front, so a rejected type is answered
@@ -18,7 +19,13 @@ from starlette.requests import ClientDisconnect
 
 from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.intake.application import public as intake
-from app.modules.intake.application.public import AddTextSource, Source, SourceList
+from app.modules.intake.application.public import (
+    AddTextSource,
+    Extraction,
+    RequirementList,
+    Source,
+    SourceList,
+)
 from app.platform.config import Settings
 from app.platform.errors import PROBLEM_JSON, FileTooLargeError, Problem
 from app.platform.multipart import MultipartFile
@@ -220,3 +227,40 @@ async def retry_source_parse(
     """Parse the Source's latest version again after it failed: sets it back to `queued` and
     enqueues a new parse job. The Opportunity's owner and collaborators only."""
     return await intake.retry_parse(uow, actor, opportunity_id, source_id)
+
+
+# --- Requirements (Story 2.5 Part A) --------------------------------------------------------
+
+requirements_router = APIRouter(prefix="/opportunities/{opportunity_id}", tags=["intake"])
+
+
+@requirements_router.get(
+    "/requirements", operation_id="list_requirements", responses=_LIST_RESPONSES
+)
+async def list_requirements(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> RequirementList:
+    """The Opportunity's active Requirements, oldest first, each with the Source passages it
+    cites, and its latest extraction (null before the first). Anyone who can read the
+    Opportunity."""
+    return await intake.list_requirements(uow, actor, opportunity_id)
+
+
+_START_RESPONSES = _responses(403, 404)
+_START_RESPONSES[409] = {
+    "description": "An extraction is already queued or running (`extraction_in_progress`)",
+    "content": PROBLEM_CONTENT,
+}
+_START_RESPONSES[422] = _LIST_RESPONSES[422]
+
+
+@requirements_router.post(
+    "/extractions",
+    operation_id="start_extraction",
+    status_code=201,
+    responses={**_START_RESPONSES, 201: {"description": "The new extraction, `queued`"}},
+)
+async def start_extraction(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) -> Extraction:
+    """Queue a new Requirement extraction over the Opportunity's parsed Sources, e.g. to
+    retry a failed one. The Opportunity's owner and collaborators only."""
+    return await intake.start_extraction(uow, actor, opportunity_id)

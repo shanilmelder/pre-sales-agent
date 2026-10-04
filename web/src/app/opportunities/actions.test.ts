@@ -17,9 +17,11 @@ import {
   addTextSource,
   changeCollaborator,
   createOpportunity,
+  loadRequirements,
   loadSources,
   retryParse,
   searchUsers,
+  startExtraction,
   updateOpportunity,
 } from "./actions";
 
@@ -449,5 +451,64 @@ describe("loadSources", () => {
     expect(await loadSources(7)).toEqual({ kind: "error" });
     expect(await loadSources("../../users")).toEqual({ kind: "error" });
     expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("startExtraction", () => {
+  const QUEUED = { status: "queued", error_code: null, source_count: null };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts to the extractions route and returns the queued extraction", async () => {
+    api.POST.mockResolvedValue({ data: QUEUED, response: new Response(null, { status: 201 }) });
+    expect(await startExtraction(OPP_ID)).toEqual({ kind: "ok", extraction: QUEUED });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/extractions", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+  });
+
+  it.each([
+    [409, "conflict"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: new Response(null, { status }) });
+    expect(await startExtraction(OPP_ID)).toEqual({ kind });
+  });
+
+  it("is an error when the call throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await startExtraction(OPP_ID)).toEqual({ kind: "error" });
+  });
+
+  it("refuses an id that isn't a UUID without calling the API", async () => {
+    expect(await startExtraction("nope")).toEqual({ kind: "error" });
+    expect(await startExtraction(undefined)).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadRequirements", () => {
+  it("reads the Opportunity's Requirements and latest extraction", async () => {
+    const LIST = { items: [], extraction: null, can_start_extraction: false };
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ data: LIST, response: new Response(null, { status: 200 }) });
+    expect(await loadRequirements(OPP_ID)).toEqual({ kind: "ok", list: LIST });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/requirements", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await loadRequirements(7)).toEqual({ kind: "error" });
+    expect(await loadRequirements("../../users")).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("is an error when the API fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    expect(await loadRequirements(OPP_ID)).toEqual({ kind: "error" });
   });
 });

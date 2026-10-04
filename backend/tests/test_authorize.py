@@ -81,6 +81,7 @@ def test_every_action_has_a_policy_entry() -> None:
     assert POLICY[Action.COLLABORATOR_REMOVE] == frozenset()
     assert POLICY[Action.USER_SEARCH] == {Role.PRESALES_ENGINEER}
     assert POLICY[Action.SOURCE_ADD] == frozenset()
+    assert POLICY[Action.EXTRACTION_START] == frozenset()
 
 
 def test_resource_scoped_grants() -> None:
@@ -90,8 +91,13 @@ def test_resource_scoped_grants() -> None:
         Action.COLLABORATOR_ADD,
         Action.COLLABORATOR_REMOVE,
         Action.SOURCE_ADD,
+        Action.EXTRACTION_START,
     }
-    assert MEMBER_GRANTS == {Action.OPPORTUNITY_READ, Action.SOURCE_ADD}
+    assert MEMBER_GRANTS == {
+        Action.OPPORTUNITY_READ,
+        Action.SOURCE_ADD,
+        Action.EXTRACTION_START,
+    }
 
 
 @pytest.mark.parametrize("action", ADMIN_ONLY)
@@ -253,3 +259,22 @@ def test_roleless_collaborator_cannot_add_sources() -> None:
     _, owner_id = _user({Role.PRESALES_ENGINEER})
     member, member_id = _user()
     assert not can(member, Action.SOURCE_ADD, _opportunity(owner_id, member_id))
+
+
+# --- Requirement extraction (Story 2.5 Part A) ----------------------------------------------
+
+
+def test_story_2_5_extraction_start_action_is_catalogued() -> None:
+    assert Action.EXTRACTION_START.value == "intake.extraction.start"
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_owner_and_collaborators_start_extraction_and_no_role_does_alone(role: Role) -> None:
+    owner, owner_id = _user({role})
+    member, member_id = _user({role})
+    resource = _opportunity(owner_id, member_id)
+    authorize(owner, Action.EXTRACTION_START, resource)
+    authorize(member, Action.EXTRACTION_START, resource)
+    reader, _ = _user({role})
+    with pytest.raises(ForbiddenError):
+        authorize(reader, Action.EXTRACTION_START, resource)

@@ -1,7 +1,17 @@
 """intake's public API. Other modules import intake only from here."""
 
-from app.modules.intake.application.models import AddTextSource, Source, SourceList, SourceParse
+from app.modules.intake.application.models import (
+    AddTextSource,
+    Extraction,
+    Requirement,
+    RequirementEvidence,
+    RequirementList,
+    Source,
+    SourceList,
+    SourceParse,
+)
 from app.modules.intake.application.parsing import extracted_text, retry_parse
+from app.modules.intake.application.requirements import list_requirements, start_extraction
 from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
     TEXT_BODY_MAX_BYTES,
@@ -23,7 +33,11 @@ __all__ = [
     "TEXT_BODY_MAX_BYTES",
     "TEXT_TOO_LONG_MESSAGE",
     "AddTextSource",
+    "Extraction",
     "IncomingFile",
+    "Requirement",
+    "RequirementEvidence",
+    "RequirementList",
     "Source",
     "SourceKind",
     "SourceList",
@@ -31,7 +45,9 @@ __all__ = [
     "add_file",
     "add_text",
     "extracted_text",
+    "list_requirements",
     "list_sources",
     "max_body_bytes",
     "retry_parse",
+    "start_extraction",
 ]

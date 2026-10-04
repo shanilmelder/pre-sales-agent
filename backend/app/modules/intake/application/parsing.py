@@ -2,11 +2,11 @@
 
 - `retry_parse`: queue a failed latest version's parse again (`intake.source.add`, so the
   Opportunity's owner and collaborators; others get 403, or 404 like adding a Source).
-- `extracted_text`: the stored text of a parsed version, for extraction (Story 2.5). Code-
-  point offsets into it are stable: the text never changes once stored.
+- `extracted_text` (re-exported from `texts`): the stored text of a parsed version, for
+  extraction (Story 2.5). Code-point offsets into it are stable: the text never changes once
+  stored.
 """
 
-import asyncio
 from uuid import UUID
 
 from app.modules.identity.application.public import Principal
@@ -14,19 +14,20 @@ from app.modules.intake.adapters import repository
 from app.modules.intake.application.jobs import enqueue_parse
 from app.modules.intake.application.models import Source
 from app.modules.intake.application.sources import _authorized_uploader, _sources
+from app.modules.intake.application.texts import extracted_text
 from app.modules.intake.domain.parsing import ParseStatus
 from app.modules.intake.domain.sources import SUBJECT_TYPE
 from app.platform import trace
-from app.platform.config import get_settings
 from app.platform.errors import NotFoundError, ParseNotFailedError
 from app.platform.logging import get_logger
-from app.platform.storage import BlobStore
 from app.platform.trace.catalogue import IntakeSourceParseRetried
 from app.platform.uow import UnitOfWork
 
 SOURCE_NOT_FOUND = "No Source with this id in this Opportunity."
 NOT_FAILED = "Only a Source whose parse failed can be retried."
 _log = get_logger(__name__)
+
+__all__ = ["extracted_text", "retry_parse"]
 
 
 async def retry_parse(
@@ -76,23 +77,3 @@ async def retry_parse(
         raise RuntimeError("retried source not found")
     (source,) = await _sources(uow, [updated])
     return source
-
-
-async def extracted_text(
-    uow: UnitOfWork, source_id: UUID, version: int, *, store: BlobStore | None = None
-) -> str | None:
-    """The extracted text of a Source version, or None unless it is `parsed` and its text
-    blob is in the store. Internal: no
-    authorization here, so callers (Story 2.5's extraction) must have checked access."""
-    state = await repository.parse_state(uow, source_id, version)
-    if state is None or state.status != ParseStatus.PARSED or state.text_sha256 is None:
-        return None
-    blobs = store if store is not None else BlobStore(get_settings().storage_dir)
-    try:
-        data = await asyncio.to_thread(blobs.path_for(state.text_sha256).read_bytes)
-    except FileNotFoundError:
-        _log.warning(
-            "intake.extracted_text_missing", extra={"source_id": str(source_id), "version": version}
-        )
-        return None
-    return data.decode("utf-8")

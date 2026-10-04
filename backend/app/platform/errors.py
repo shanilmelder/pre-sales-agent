@@ -138,6 +138,13 @@ class ParseNotFailedError(ConflictError):
     title = "Parse not failed"
 
 
+class ExtractionInProgressError(ConflictError):
+    """A Requirement extraction was asked for while one is queued or running."""
+
+    code = "extraction_in_progress"
+    title = "Extraction in progress"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

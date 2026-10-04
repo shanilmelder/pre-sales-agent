@@ -157,3 +157,16 @@ class IntakeSourceParseRetried(TracePayload):
 
     version: int
     error_code: str
+
+
+@register
+class IntakeExtractionCompleted(TracePayload):
+    """A Requirement extraction finished and its Requirements were stored (Story 2.5 Part A).
+    Subject: the extraction (`intake.extraction`). Actor: the agent (`intake_agent@<semver>`).
+    Counts only: Requirements stored, dropped (no citation resolved), and Sources read."""
+
+    event_type: ClassVar[str] = "intake.extraction.completed"
+
+    requirement_count: int
+    dropped_count: int
+    source_count: int

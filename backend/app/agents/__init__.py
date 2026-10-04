@@ -1,6 +1,6 @@
 """Proposal-only agents (AD-4, AD-5).
 
-Will hold `contract.py` (the `AgentResult` base model) and one package per agent:
-`<agent_id>/agent.py`, `schemas.py`, `prompts/v<N>.md`. Agents never import `langgraph`
-and never write business state. Empty until the agent epics.
+`contract.py` holds the agent contract (`AgentResult`, `Agent`, `AgentConfig`); each agent
+has its own package: `<agent_id>/agent.py`, `schema.py`, `prompts/v<N>.md`. Agents never
+import `langgraph` and never write business state.
 """

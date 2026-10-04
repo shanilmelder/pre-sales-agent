@@ -1,6 +1,12 @@
 "use server";
 
-import { getOpportunity, listSources, type SourcesResult } from "@/app/opportunities/data";
+import {
+  getOpportunity,
+  listRequirements,
+  listSources,
+  type RequirementsResult,
+  type SourcesResult,
+} from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import {
   codePointLength,
@@ -10,6 +16,7 @@ import {
   type Opportunity,
   type UserSummary,
 } from "@/lib/opportunities";
+import type { Extraction } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 
 /** The API's query bounds for people search (in code points). */
@@ -93,6 +100,14 @@ export type AddSourceResult =
 export type RetryParseResult =
   | { kind: "ok"; source: Source }
   /** 409: the latest version's parse has not failed (any more). */
+  | { kind: "conflict" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type StartExtractionResult =
+  | { kind: "ok"; extraction: Extraction }
+  /** 409: an extraction is already queued or running. */
   | { kind: "conflict" }
   | { kind: "forbidden" }
   | { kind: "not-found" }
@@ -451,4 +466,43 @@ export async function retryParse(
 export async function loadSources(opportunityId: unknown): Promise<SourcesResult> {
   if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
   return listSources(opportunityId);
+}
+
+/** The Opportunity's Requirements and latest extraction as stored now (the Requirements tab
+ * polls this while an extraction runs). */
+export async function loadRequirements(opportunityId: unknown): Promise<RequirementsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return listRequirements(opportunityId);
+}
+
+/** `POST /api/v1/opportunities/{id}/extractions`: extract the Requirements again (the Retry of
+ * a failed extraction). The API checks who may start one and that none is running. */
+export async function startExtraction(opportunityId: unknown): Promise<StartExtractionResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/extractions",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", extraction: data };
+    switch (response.status) {
+      case 409:
+        return { kind: "conflict" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `start extraction failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `start extraction failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
 }

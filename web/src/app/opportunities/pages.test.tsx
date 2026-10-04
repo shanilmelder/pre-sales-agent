@@ -24,6 +24,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   addTextSource: vi.fn(),
   retryParse: vi.fn(),
   loadSources: vi.fn(),
+  loadRequirements: vi.fn(),
+  startExtraction: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -460,8 +462,81 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
+  function foundWithRequirements(body: unknown) {
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/requirements")
+        ? body
+          ? { data: body, response: new Response(null, { status: 200 }) }
+          : { response: new Response(null, { status: 500 }) }
+        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+  }
+
+  it("tab URL /requirements: the grouped Requirements with Evidence labels", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithRequirements({
+      items: [
+        {
+          id: "00000000-0000-7000-8000-0000000000e1",
+          text: "[REQUIREMENT]",
+          classification: "integration",
+          origin: "extracted",
+          locked_by_human: false,
+          version: 1,
+          row_version: 1,
+          created_at: "2026-10-04T13:05:00Z",
+          evidence: [
+            {
+              passage_id: "00000000-0000-7000-8000-0000000000f1",
+              source_id: "00000000-0000-7000-8000-0000000000b1",
+              source_version: 1,
+              filename: "call.vtt",
+              label: "S1 · call.vtt",
+            },
+          ],
+        },
+      ],
+      extraction: { status: "succeeded", error_code: null, source_count: 1 },
+      can_start_extraction: false,
+    });
+    const { container } = await renderWorkspace("requirements");
+    expect(selectedTabs()).toEqual(["3Requirements"]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { level: 2, name: "Requirements" })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "Integration 1" })).toBeTruthy();
+    expect(within(panel).getByText("[REQUIREMENT]")).toBeTruthy();
+    expect(within(panel).getByText("S1 · call.vtt")).toBeTruthy();
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/requirements", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /requirements: the empty state", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithRequirements({ items: [], extraction: null, can_start_extraction: true });
+    await renderWorkspace("requirements");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "Requirements appear here after Sources are parsed.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("tab URL /requirements: a failed read says so", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithRequirements(null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("requirements");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Requirements could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
+
   it.each([
-    ["requirements", "3Requirements"],
     ["gaps", "4Gaps"],
     ["assessments", "5Assessments"],
     ["conflicts", "6Conflicts"],
@@ -492,7 +567,7 @@ describe("/opportunities/[id] workspace", () => {
     expect(notFound).toHaveBeenCalledTimes(3);
   });
 
-  it.each([undefined, "overview", "sources", "gaps", "actuals"])(
+  it.each([undefined, "overview", "sources", "requirements", "gaps", "actuals"])(
     "no access on %s: the no-access sentence and no tabs",
     async (tab) => {
       signedIn(["sales_representative"]);
