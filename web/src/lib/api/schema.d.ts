@@ -292,6 +292,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Requirements
+         * @description The Opportunity's active Requirements, oldest first, each with the Source passages it
+         *     cites, and its latest extraction (null before the first). Anyone who can read the
+         *     Opportunity.
+         */
+        get: operations["list_requirements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/extractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Extraction
+         * @description Queue a new Requirement extraction over the Opportunity's parsed Sources, e.g. to
+         *     retry a failed one. The Opportunity's owner and collaborators only.
+         */
+        post: operations["start_extraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -331,6 +374,33 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * Classification
+         * @description A Requirement's classification, in the order the Requirements tab groups them.
+         * @enum {string}
+         */
+        Classification: "functional" | "integration" | "data" | "security" | "non_functional" | "commercial";
+        /**
+         * Extraction
+         * @description The Opportunity's latest Requirement extraction. `error_code` is set only when
+         *     `failed`; `source_count` once it has read its Sources.
+         */
+        Extraction: {
+            status: components["schemas"]["ExtractionStatus"];
+            error_code: components["schemas"]["ExtractionErrorCode"] | null;
+            /** Source Count */
+            source_count: number | null;
+        };
+        /**
+         * ExtractionErrorCode
+         * @enum {string}
+         */
+        ExtractionErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "input_too_large";
+        /**
+         * ExtractionStatus
+         * @enum {string}
+         */
+        ExtractionStatus: "queued" | "running" | "succeeded" | "failed";
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -511,6 +581,66 @@ export interface components {
          * @enum {string}
          */
         ParseStatus: "queued" | "parsing" | "parsed" | "failed";
+        /**
+         * Requirement
+         * @description An active Requirement of the Opportunity with the passages it cites.
+         */
+        Requirement: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+            classification: components["schemas"]["Classification"];
+            origin: components["schemas"]["RequirementOrigin"];
+            /** Locked By Human */
+            locked_by_human: boolean;
+            /** Version */
+            version: number;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Evidence */
+            evidence: components["schemas"]["RequirementEvidence"][];
+        };
+        /**
+         * RequirementEvidence
+         * @description A Source passage a Requirement cites. `label` is `S<n> · <file name>`, where `n` is
+         *     the Source's position among the Opportunity's Sources, oldest first.
+         */
+        RequirementEvidence: {
+            /** Passage Id */
+            passage_id: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Version */
+            source_version: number;
+            /** Filename */
+            filename: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * RequirementList
+         * @description The Opportunity's active Requirements, oldest first, and its latest extraction (null
+         *     when none has been queued yet). `can_start_extraction`: whether the caller may start
+         *     (retry) an extraction; the UI only uses it to hide **Retry**, the API decides.
+         */
+        RequirementList: {
+            /** Items */
+            items: components["schemas"]["Requirement"][];
+            extraction: components["schemas"]["Extraction"] | null;
+            /** Can Start Extraction */
+            can_start_extraction: boolean;
+        };
+        /**
+         * RequirementOrigin
+         * @enum {string}
+         */
+        RequirementOrigin: "extracted" | "human";
         /**
          * Role
          * @enum {string}
@@ -2936,6 +3066,270 @@ export interface operations {
                 };
             };
             /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_requirements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequirementList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    start_extraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new extraction, `queued` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Extraction"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is neither its owner nor a collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An extraction is already queued or running (`extraction_in_progress`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;

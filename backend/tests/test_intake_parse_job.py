@@ -25,6 +25,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.modules.intake.adapters import parse_runner
+from app.modules.intake.application import extraction as intake_extraction
 from app.modules.intake.application import jobs as intake_jobs
 from app.modules.intake.application import public as intake
 from app.platform.config import Settings
@@ -37,6 +38,7 @@ from app.platform.uow import unit_of_work
 from tests.auth_tokens import auth_app
 from tests.conftest import make_client, run_async
 from tests.test_health import assert_problem
+from tests.test_intake_extraction import retire_extraction_jobs
 from tests.test_intake_parsers import expected, fixture
 from tests.test_opportunities import PSE, _add, _create, _user
 
@@ -83,8 +85,11 @@ def _own_opportunities(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         return await real_enqueue(uow, payload, **kwargs)
 
     monkeypatch.setattr(intake_jobs, "enqueue", hidden_enqueue)
+    # A successful parse also queues a Requirement extraction (Story 2.5): hide it too.
+    monkeypatch.setattr(intake_extraction, "enqueue", hidden_enqueue)
     _MINE.clear()
     yield
+    retire_extraction_jobs(_MINE)
     _MINE.clear()
 
 

@@ -68,3 +68,29 @@ def test_settings_require_the_heartbeat_at_most_half_the_lease() -> None:
     with pytest.raises(ValueError, match="job_heartbeat_s"):
         Settings(job_lease_s=10, job_heartbeat_s=5.1)
     assert Settings(job_lease_s=10, job_heartbeat_s=5).job_heartbeat_s == 5
+
+
+def test_worker_installs_its_gateway_while_running() -> None:
+    from app.platform.model_gateway import provider
+
+    class Fake:
+        async def complete_structured(self, request: object) -> object:
+            raise AssertionError("not called")
+
+    fake = Fake()
+
+    async def scenario() -> object:
+        stop = asyncio.Event()
+        settings = Settings(database_url=UNREACHABLE_DB)
+        task = asyncio.create_task(
+            run(stop, settings=settings, poll_s=0.01, job_types=(), gateway=fake)  # type: ignore[arg-type]
+        )
+        await asyncio.sleep(0.05)
+        during = provider.current()
+        stop.set()
+        await asyncio.wait_for(task, timeout=1)
+        return during
+
+    assert run_async(scenario()) is fake
+    with pytest.raises(provider.NoModelGatewayError):
+        provider.current()

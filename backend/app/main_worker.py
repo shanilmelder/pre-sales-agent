@@ -6,6 +6,8 @@ job and releases it back to the queue without counting the attempt (a worker kil
 outright has its job reclaimed by another worker once the lease expires).
 
 Job types are registered by importing the modules that define them (see `_JOB_MODULES`).
+The process's ModelGateway (one per process: its semaphore bounds concurrent model calls) is
+created here and installed for handlers (`app.platform.model_gateway.provider`).
 """
 
 import asyncio
@@ -27,11 +29,17 @@ from app.platform.jobs import REGISTRY
 from app.platform.jobs import queue as job_queue
 from app.platform.jobs.runner import LeaseSettings, run_job
 from app.platform.logging import configure_logging, get_logger
+from app.platform.model_gateway import provider as model_gateway
+from app.platform.model_gateway.gateway import ModelGateway
+from app.platform.model_gateway.port import ModelGatewayPort
 
 _log = get_logger("app.worker")
 
 # Modules whose import registers job types (e.g. `app.modules.intake.application.jobs`).
-_JOB_MODULES: tuple[str, ...] = ("app.modules.intake.application.jobs",)
+_JOB_MODULES: tuple[str, ...] = (
+    "app.modules.intake.application.jobs",
+    "app.modules.intake.application.extraction",
+)
 _JITTER = 0.2
 
 
@@ -79,11 +87,13 @@ async def run(
     engine: AsyncEngine | None = None,
     poll_s: float | None = None,
     job_types: Collection[str] | None = None,
+    gateway: ModelGatewayPort | None = None,
 ) -> None:
     """Claim and run jobs until `stop` is set.
 
     `job_types` limits what this worker claims (default: every registered type). An engine
-    passed in is left open; one created here is disposed on exit."""
+    or gateway passed in is left open; one created here is closed on exit. The gateway is
+    installed for handlers while this runs."""
     settings = settings or get_settings()
     poll = poll_s if poll_s is not None else settings.worker_poll_s
     types = frozenset(REGISTRY) if job_types is None else frozenset(job_types)
@@ -91,16 +101,21 @@ async def run(
     owner = worker_id()
     own_engine = engine is None
     db = engine if engine is not None else create_engine(settings)
-    _log.info(
-        "worker.started",
-        extra={
-            "version": settings.version,
-            "env": settings.env,
-            "worker_id": owner,
-            "job_types": sorted(types),
-        },
-    )
+    own_gateway = gateway is None
+    models: ModelGatewayPort | None = gateway
     try:
+        if models is None:
+            models = ModelGateway(settings, db)
+        model_gateway.install(models)
+        _log.info(
+            "worker.started",
+            extra={
+                "version": settings.version,
+                "env": settings.env,
+                "worker_id": owner,
+                "job_types": sorted(types),
+            },
+        )
         while not stop.is_set():
             try:
                 job = await job_queue.claim(db, owner=owner, lease_s=lease.lease_s, job_types=types)
@@ -120,6 +135,9 @@ async def run(
             jitter = random.uniform(1 - _JITTER, 1 + _JITTER)  # noqa: S311 (not crypto)
             await _sleep_or_stop(stop, poll * jitter)
     finally:
+        model_gateway.install(None)
+        if own_gateway and isinstance(models, ModelGateway):
+            await models.aclose()
         if own_engine:
             await db.dispose()
         _log.info("worker.stopped", extra={"worker_id": owner})

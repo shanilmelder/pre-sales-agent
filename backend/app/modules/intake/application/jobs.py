@@ -7,8 +7,9 @@ command's Unit of Work, next to the version's `queued` parse row). The worker's 
 2. parses the stored file in a child process with time and memory limits (`parse_runner`),
    with no Unit of Work open;
 3. stores the text UTF-8 encoded in `platform.storage`, then marks the row `parsed` with
-   `text_sha256`, `char_count` (code points) and `parser`, references the blob and appends
-   `intake.source.parsed`, in one Unit of Work.
+   `text_sha256`, `char_count` (code points) and `parser`, references the blob, appends
+   `intake.source.parsed` and queues the Opportunity's Requirement extraction
+   (`intake.extract_requirements`, Story 2.5), in one Unit of Work.
 
 A permanent failure (`PERMANENT_CODES`: `unreadable`, `not_supported`, `no_text`,
 `too_large_output`) marks the row `failed` and finishes the job: retrying the same bytes
@@ -28,6 +29,7 @@ from uuid import UUID
 
 from app.modules.intake.adapters import parse_runner, repository
 from app.modules.intake.adapters.parse_runner import ParseTimeoutError
+from app.modules.intake.application.extraction import enqueue_extraction
 from app.modules.intake.domain.parsing import (
     PERMANENT_CODES,
     ParseError,
@@ -197,6 +199,8 @@ async def _parse(ctx: JobContext, payload: ParseSource) -> None:
                 opportunity_id=target.opportunity_id,
                 subject_version=payload.version,
             )
+            # Story 2.5: every successful parse (re)queues the Opportunity's extraction.
+            await enqueue_extraction(uow, opportunity_id=target.opportunity_id)
     _log.info(
         "intake.source_parsed",
         extra={
