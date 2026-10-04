@@ -1,14 +1,23 @@
 "use client";
 
-import { CircleAlertIcon, QuoteIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { CircleAlertIcon } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
   loadRequirements,
   startExtraction,
   type StartExtractionResult,
 } from "@/app/opportunities/actions";
+import {
+  EvidenceChip,
+  RequirementInspector,
+} from "@/components/opportunities/requirement-inspector";
 import { useAnnounce } from "@/components/shell/live-region";
+import {
+  RIGHT_PANE_TOGGLE_ID,
+  RightPaneContent,
+  useShell,
+} from "@/components/shell/shell-context";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import {
   EXTRACTING,
@@ -34,24 +43,56 @@ const RETRY_NOT_ALLOWED = "Only the owner and collaborators can extract Requirem
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
-/** A cited passage as a static label (`S1 · call.vtt`) in meta type. Part B makes it open
- * the passage. */
-function EvidenceLabel({ label }: { label: string }) {
-  return (
-    <span className="inline-flex h-5 max-w-full items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground">
-      <QuoteIcon aria-hidden="true" className="size-3 shrink-0" />
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
 /** The Requirements grouped by classification (Functional, Integration, Data, Security,
  * Non-functional, Commercial), each group headed by its label and count; empty groups are
- * hidden. Each row shows the text and its Evidence labels. */
-export function RequirementsList({ items }: { items: readonly Requirement[] }) {
+ * hidden. Each row shows the text and its Evidence chips.
+ *
+ * The list is one Tab stop (roving tabindex: the last focused, else the selected, else the
+ * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows across
+ * the groups, and Enter, Space or a click opens the row. A chip opens its row with that
+ * chip's passage shown. The selected row is `aria-selected`. */
+export function RequirementsList({
+  items,
+  selectedId = null,
+  onOpen,
+}: {
+  items: readonly Requirement[];
+  selectedId?: string | null;
+  /** `passageId` is the chip clicked (null: the row itself); `viaKeyboard` is true when
+   * opened with Enter or Space, not a pointer. */
+  onOpen?: (item: Requirement, passageId: string | null, viaKeyboard: boolean) => void;
+}) {
+  const { singleKeyShortcuts } = useShell();
+  const container = useRef<HTMLDivElement>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const groups = groupRequirements(items);
+  const tabStopId =
+    [focusedId, selectedId].find((id) => id !== null && items.some((i) => i.id === id)) ??
+    groups[0]?.items[0]?.id;
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const down = event.key === "ArrowDown" || (singleKeyShortcuts && event.key === "j");
+    const up = event.key === "ArrowUp" || (singleKeyShortcuts && event.key === "k");
+    if (!down && !up) return;
+    const buttons = Array.from(
+      container.current?.querySelectorAll<HTMLButtonElement>("button[data-requirement-row]") ??
+        [],
+    );
+    // From a chip, move from its row.
+    const current =
+      event.target instanceof Element
+        ? event.target.closest('[role="row"]')?.querySelector("button[data-requirement-row]")
+        : null;
+    const index = buttons.findIndex((button) => button === current);
+    const next =
+      index === -1 ? 0 : Math.min(buttons.length - 1, Math.max(0, index + (down ? 1 : -1)));
+    event.preventDefault();
+    buttons[next]?.focus();
+  }
+
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={container} onKeyDown={onKeyDown} className="flex flex-col gap-6">
       {groups.map((group) => {
         const headingId = `requirements-${group.classification}`;
         return (
@@ -62,24 +103,49 @@ export function RequirementsList({ items }: { items: readonly Requirement[] }) {
                 {group.items.length}
               </span>
             </h3>
-            <ul className="flex flex-col">
-              {group.items.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex min-h-row flex-col gap-1 border-b border-border py-1.5"
-                >
-                  <span>{item.text}</span>
-                  {item.evidence.length > 0 ? (
-                    <span className="flex flex-wrap gap-1.5">
-                      <span className="sr-only">Evidence:</span>
-                      {item.evidence.map((evidence) => (
-                        <EvidenceLabel key={evidence.passage_id} label={evidence.label} />
-                      ))}
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <div role="grid" aria-labelledby={headingId} className="flex flex-col">
+              {group.items.map((item) => {
+                const selected = item.id === selectedId;
+                return (
+                  <div
+                    key={item.id}
+                    role="row"
+                    aria-selected={selected}
+                    className={`border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
+                  >
+                    <div role="gridcell" className="flex min-h-row flex-col gap-1 px-1 py-1.5">
+                      <button
+                        type="button"
+                        data-requirement-row=""
+                        data-requirement-id={item.id}
+                        tabIndex={item.id === tabStopId ? 0 : -1}
+                        onFocus={() => setFocusedId(item.id)}
+                        // A keyboard-activated click has no pointer clicks (detail 0).
+                        onClick={(event) => onOpen?.(item, null, event.detail === 0)}
+                        className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      >
+                        {item.text}
+                      </button>
+                      {item.evidence.length > 0 ? (
+                        <span className="flex flex-wrap gap-1.5">
+                          <span className="sr-only">Evidence:</span>
+                          {item.evidence.map((evidence) => (
+                            <EvidenceChip
+                              key={evidence.passage_id}
+                              evidence={evidence}
+                              tabIndex={-1}
+                              onSelect={(viaKeyboard) =>
+                                onOpen?.(item, evidence.passage_id, viaKeyboard)
+                              }
+                            />
+                          ))}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </section>
         );
       })}
@@ -154,8 +220,11 @@ function retryMessage(result: StartExtractionResult): string {
   }
 }
 
-/** The Requirements tab's content. While an extraction is queued or running the list is
- * re-read every 2 s: paused while the tab is hidden, and stopped after 15 minutes. */
+/** The Requirements tab's content: the list in the main pane and the selected Requirement's
+ * Evidence inspector in the right pane (opened if closed). While an extraction is queued or
+ * running the list is re-read every 2 s: paused while the tab is hidden, and stopped after
+ * 15 minutes. A selected Requirement that a re-run superseded leaves the pane showing
+ * "Nothing selected." */
 export function RequirementsSection({
   opportunityId,
   initial,
@@ -164,7 +233,13 @@ export function RequirementsSection({
   initial: RequirementList;
 }) {
   const announce = useAnnounce();
+  const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [list, setList] = useState<RequirementList>(initial);
+  const [selection, setSelection] = useState<{ id: string; passageId: string | null } | null>(
+    null,
+  );
+  const [focusRequest, setFocusRequest] = useState(0);
+  const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
   /** Polling stopped at its limit while still extracting. */
   const [stalled, setStalled] = useState(false);
@@ -183,6 +258,34 @@ export function RequirementsSection({
     setSyncedFrom(initial);
     setList(initial);
     setStalled(false);
+  }
+
+  const selected =
+    selection === null ? null : (list.items.find((item) => item.id === selection.id) ?? null);
+
+  // The pane's content unmounts on close: reopening it must not take focus again.
+  const [paneWasOpen, setPaneWasOpen] = useState(rightPaneOpen);
+  if (paneWasOpen !== rightPaneOpen) {
+    setPaneWasOpen(rightPaneOpen);
+    if (!rightPaneOpen) setFocusRequest(0);
+  }
+
+  // When the pane closes after a keyboard open, focus goes back to the row, not the toggle.
+  useEffect(() => {
+    if (rightPaneOpen) return;
+    const id = returnFocusTo.current;
+    returnFocusTo.current = null;
+    const active = document.activeElement;
+    if (id && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
+      document.querySelector<HTMLElement>(`[data-requirement-id="${id}"]`)?.focus();
+    }
+  }, [rightPaneOpen]);
+
+  function open(item: Requirement, passageId: string | null, viaKeyboard: boolean) {
+    setSelection({ id: item.id, passageId });
+    returnFocusTo.current = viaKeyboard ? item.id : null;
+    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    if (!rightPaneOpen) setRightPaneOpen(true);
   }
 
   useEffect(() => {
@@ -277,11 +380,25 @@ export function RequirementsSection({
         onRetry={() => void retry()}
       />
       {list.items.length > 0 ? (
-        <RequirementsList items={list.items} />
+        <RequirementsList items={list.items} selectedId={selected?.id ?? null} onOpen={open} />
       ) : succeeded ? (
         <p className="text-muted-foreground">{noneFound(list.extraction?.source_count)}</p>
       ) : !extracting && !failed ? (
         <p className="text-muted-foreground">{NO_REQUIREMENTS}</p>
+      ) : null}
+      {selected ? (
+        <RightPaneContent>
+          <RequirementInspector
+            key={selected.id}
+            opportunityId={opportunityId}
+            requirement={selected}
+            passageId={selection?.passageId ?? null}
+            onSelectPassage={(passageId) =>
+              setSelection((current) => (current ? { ...current, passageId } : current))
+            }
+            focusRequest={focusRequest}
+          />
+        </RightPaneContent>
       ) : null}
     </div>
   );

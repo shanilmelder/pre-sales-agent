@@ -16,7 +16,7 @@ import {
   type Opportunity,
   type UserSummary,
 } from "@/lib/opportunities";
-import type { Extraction } from "@/lib/requirements";
+import type { Extraction, Passage } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 
 /** The API's query bounds for people search (in code points). */
@@ -110,6 +110,12 @@ export type StartExtractionResult =
   /** 409: an extraction is already queued or running. */
   | { kind: "conflict" }
   | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type PassageResult =
+  | { kind: "ok"; passage: Passage }
+  /** 404: no such passage in this Opportunity, or the Opportunity can't be read. */
   | { kind: "not-found" }
   | { kind: "error" };
 
@@ -503,6 +509,27 @@ export async function startExtraction(opportunityId: unknown): Promise<StartExtr
     console.error(
       `start extraction failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/passages/{passage_id}`: a cited passage with its span and
+ * the text around it, for the Evidence inspector. Logs ids and statuses only. */
+export async function getPassage(opportunityId: unknown, passageId: unknown): Promise<PassageResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof passageId !== "string" || !UUID_RE.test(passageId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/passages/{passage_id}",
+      { params: { path: { opportunity_id: opportunityId, passage_id: passageId } } },
+    );
+    if (data) return { kind: "ok", passage: data };
+    if (response.status === 404) return { kind: "not-found" };
+    console.error(`get passage failed: status=${response.status} code=${String(problem(error).code)}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`get passage failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

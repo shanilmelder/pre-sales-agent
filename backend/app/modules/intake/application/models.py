@@ -1,5 +1,5 @@
-"""Read models for Opportunity Sources (Story 2.1), their parse state (Story 2.2) and
-Requirements (Story 2.5)."""
+"""Read models for Opportunity Sources (Story 2.1), their parse state (Story 2.2),
+Requirements (Story 2.5) and cited passages (Story 2.5 Part B)."""
 
 from datetime import datetime
 
@@ -105,3 +105,19 @@ class RequirementList(BaseModel):
     items: list[Requirement]
     extraction: Extraction | None
     can_start_extraction: bool
+
+
+class Passage(BaseModel):
+    """A cited Source passage in its surrounding text (Story 2.5 Part B). `text` is the
+    cited span exactly; `before` and `after` hold up to 300 code points of context each,
+    cut at whitespace, with `…` on a side that was cut (none at the start or end of the
+    text). `label` is `S<n> · <file name>`, as in a Requirement's evidence."""
+
+    passage_id: str
+    source_id: str
+    source_version: int = Field(ge=1)
+    filename: str
+    label: str
+    before: str
+    text: str
+    after: str

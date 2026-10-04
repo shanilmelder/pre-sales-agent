@@ -3,6 +3,7 @@
 from app.modules.intake.application.models import (
     AddTextSource,
     Extraction,
+    Passage,
     Requirement,
     RequirementEvidence,
     RequirementList,
@@ -11,6 +12,7 @@ from app.modules.intake.application.models import (
     SourceParse,
 )
 from app.modules.intake.application.parsing import extracted_text, retry_parse
+from app.modules.intake.application.passages import get_passage
 from app.modules.intake.application.requirements import list_requirements, start_extraction
 from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
@@ -35,6 +37,7 @@ __all__ = [
     "AddTextSource",
     "Extraction",
     "IncomingFile",
+    "Passage",
     "Requirement",
     "RequirementEvidence",
     "RequirementList",
@@ -45,6 +48,7 @@ __all__ = [
     "add_file",
     "add_text",
     "extracted_text",
+    "get_passage",
     "list_requirements",
     "list_sources",
     "max_body_bytes",

@@ -52,6 +52,7 @@
   --color-resolved: var(--resolved);
   --color-agent: var(--agent);
   --color-diff-tint: var(--diff-tint);
+  --color-evidence-highlight: var(--evidence-highlight);
   --color-blocker-tint: var(--blocker-tint);
   --color-surface-sidebar: var(--surface-sidebar);
   --color-surface-inspector: var(--surface-inspector);
@@ -135,6 +136,9 @@
   --agent: #4F5BD5;
   --diff-tint: #EEF0FC;
   --blocker-tint: #FEF2F2;
+  /* The cited span in an Evidence passage. No colour of its own: the primary-hue tint
+   * (DESIGN.md has no evidence-highlight token yet). Follows the dark pair of diff-tint. */
+  --evidence-highlight: var(--diff-tint);
   --surface-sidebar: #F7F7F8;
   --surface-inspector: #FBFBFC;
 
@@ -189,6 +193,7 @@
   --agent: #7C86E8;
   --diff-tint: #1E2140;
   --blocker-tint: #2A1414;
+  --evidence-highlight: var(--diff-tint);
   --surface-sidebar: #111113;
   --surface-inspector: #16161A;
 
