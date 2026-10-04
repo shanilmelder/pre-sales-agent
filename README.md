@@ -133,6 +133,30 @@ app.modules.intake.adapters.parse_cli`) with a wall-clock limit `PSA_PARSE_TIMEO
 1024) and `RLIMIT_CPU`. Parsers: stdlib for `.txt`, `.eml`, `.docx`, in-house `.vtt`, and
 `pypdf` (BSD) for `.pdf`; `.msg` is not parsed yet (`not_supported`).
 
+### ModelGateway
+
+`app/platform/model_gateway/` (AD-8) is the only path to a model: host Ollama's native
+`/api/chat` with `format` set to the output model's JSON Schema, validation and bounded
+retries, a priority-aware slot limit, and one `platform_model_calls` row per call. Settings:
+`PSA_OLLAMA_URL` (default `http://127.0.0.1:11434`), `PSA_MODEL_PROFILE_CHAT` (`demo-chat` =
+`gpt-oss:120b-cloud`, or `local-chat` = `qwen3:8b`), `PSA_MODEL_SLOTS`,
+`PSA_MODEL_MAX_RETRIES` and `PSA_MODEL_TIMEOUT_S`. `demo-chat` sends prompt text to Ollama's
+cloud: until IT approves it, use it only with sample or anonymised Opportunities.
+
+Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
+`api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama
+must listen beyond loopback for that (`OLLAMA_HOST=0.0.0.0`). Host-side commands (smoke,
+worker outside Docker) should use `PSA_OLLAMA_URL=http://127.0.0.1:11434`, not the
+`host.docker.internal` value from `.env`. Smoke check (needs `ollama serve`, `ollama signin`
+for cloud models, and a migrated database):
+
+```sh
+cd backend
+PSA_OLLAMA_URL=http://127.0.0.1:11434 \
+PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
+  uv run python -m app.platform.model_gateway.smoke   # prints `ok` with tokens and latency
+```
+
 ## Authentication (Auth0)
 
 Auth0 (EU tenant) handles authentication only; roles live in `identity`, not in Auth0
