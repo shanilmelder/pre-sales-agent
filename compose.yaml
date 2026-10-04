@@ -4,7 +4,8 @@
 # `worker` (Story 2.2) runs the same backend image as `api` with `python -m app.main_worker`:
 # it claims and runs background jobs from the Postgres queue (`platform_jobs`). It needs the
 # schema migrated (README) and shares the `files` volume with the api.
-# The prod topology (ollama, otel-collector, migrate) is added in later stories.
+# Models: api and worker reach the host's Ollama at host.docker.internal (Story 2.4); the
+# `ollama` service, otel-collector and migrate of the prod topology come in later stories.
 name: pre-sales-agent
 
 x-restart: &restart
@@ -55,6 +56,10 @@ services:
       # Uploaded files (content-addressed blobs) live on the `files` volume.
       PSA_STORAGE_DIR: /var/lib/psa/files
       PSA_UPLOAD_MAX_BYTES: ${PSA_UPLOAD_MAX_BYTES:-52428800}
+      # Host Ollama (ModelGateway, Story 2.4). The api never calls a model itself.
+      PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - files:/var/lib/psa/files
     depends_on:
@@ -93,6 +98,15 @@ services:
       PSA_JOB_HEARTBEAT_S: ${PSA_JOB_HEARTBEAT_S:-10}
       PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
       PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
+      # ModelGateway (Story 2.4): host Ollama, reached through host-gateway. `demo-chat`
+      # sends prompt text to Ollama's cloud: sample or anonymised Opportunities only.
+      PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
+      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
+      PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-1}
+      PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
+      PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - files:/var/lib/psa/files
     depends_on:
