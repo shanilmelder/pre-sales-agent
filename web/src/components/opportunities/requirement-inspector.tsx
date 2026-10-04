@@ -1,15 +1,19 @@
 "use client";
 
-import { QuoteIcon } from "lucide-react";
+import { CheckIcon, QuoteIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type Ref } from "react";
 
 import { getPassage, type PassageResult } from "@/app/opportunities/actions";
+import { InlineField } from "@/components/opportunities/inline-field";
 import {
+  CLASSIFICATIONS,
   classificationLabel,
+  CONFIRMED,
   LOADING_PASSAGE,
   originLabel,
   PASSAGE_FAILED,
   PASSAGE_GONE,
+  type Classification,
   type Passage,
   type Requirement,
   type RequirementEvidence,
@@ -78,15 +82,30 @@ export function PassageView({ passage }: { passage: Passage }) {
 
 type Loaded = { key: string; result: PassageResult };
 
+/** What the inspector needs to edit and confirm the Requirement (Story 2.6). */
+export type InspectorEditing = {
+  /** A save or confirmation of this Requirement is in flight. */
+  busy: boolean;
+  /** Nothing may be changed (a stale view, or a reload or Confirm all in flight). */
+  locked: boolean;
+  /** Why the last text save from here failed, and the user's text it kept. */
+  failure?: { text: string; error: string } | null;
+  onCommitText: (text: string) => void;
+  onClassify: (classification: Classification) => void;
+  onConfirm: () => void;
+};
+
 /** The selected Requirement in the right pane: its text, classification and origin, its
  * Evidence chips in citation order, and the shown chip's passage highlighted in its
- * surrounding text. Read-only. */
+ * surrounding text. With `edit`, the text is click-to-edit, the classification a select,
+ * and an unconfirmed Requirement has **Confirm**; without it, read-only. */
 export function RequirementInspector({
   opportunityId,
   requirement,
   passageId,
   onSelectPassage,
   focusRequest = 0,
+  edit,
 }: {
   opportunityId: string;
   requirement: Requirement;
@@ -95,8 +114,11 @@ export function RequirementInspector({
   onSelectPassage: (passageId: string) => void;
   /** Bump to move keyboard focus to the shown chip (0: leave focus alone). */
   focusRequest?: number;
+  /** Left out for those who may not edit. */
+  edit?: InspectorEditing;
 }) {
   const headingId = useId();
+  const classificationId = useId();
   const evidenceId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const pressedRef = useRef<HTMLButtonElement>(null);
@@ -134,20 +156,85 @@ export function RequirementInspector({
       className="flex flex-col gap-4 p-gutter"
     >
       <div className="flex flex-col gap-1">
-        <p className="flex items-center gap-2 text-meta text-muted-foreground">
+        <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
           <span>{classificationLabel(requirement.classification)}</span>
           <span aria-hidden="true">·</span>
           <span>{originLabel(requirement.origin)}</span>
+          {requirement.confirmed_at ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1 text-foreground">
+                <CheckIcon aria-hidden="true" className="size-3 shrink-0 text-resolved" />
+                {CONFIRMED}
+              </span>
+            </>
+          ) : null}
         </p>
-        <h3
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        >
-          {requirement.text}
-        </h3>
+        {edit ? (
+          <InlineField
+            label="Edit Requirement text"
+            inputLabel="Requirement text"
+            type="text"
+            value={requirement.text}
+            draft={edit.failure?.text}
+            error={edit.failure?.error}
+            locked={edit.locked || edit.busy}
+            onCommit={edit.onCommitText}
+            className="flex flex-col gap-0.5"
+            inputClassName="h-8 w-full rounded-md border border-input bg-transparent px-1.5 text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <h3
+              id={headingId}
+              ref={headingRef}
+              tabIndex={-1}
+              className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {requirement.text}
+            </h3>
+          </InlineField>
+        ) : (
+          <h3
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {requirement.text}
+          </h3>
+        )}
       </div>
+      {edit ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-0.5">
+            <label htmlFor={classificationId} className="text-label text-muted-foreground">
+              Classification
+            </label>
+            <select
+              id={classificationId}
+              value={requirement.classification}
+              disabled={edit.locked || edit.busy}
+              onChange={(event) => edit.onClassify(event.target.value as Classification)}
+              className="h-7 rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
+            >
+              {CLASSIFICATIONS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {requirement.confirmed_at ? null : (
+            <button
+              type="button"
+              disabled={edit.locked || edit.busy}
+              onClick={edit.onConfirm}
+              className={`${actionClass} disabled:opacity-60`}
+            >
+              Confirm
+            </button>
+          )}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-1.5">
         <h4 id={evidenceId} className="text-label text-muted-foreground">
           Evidence

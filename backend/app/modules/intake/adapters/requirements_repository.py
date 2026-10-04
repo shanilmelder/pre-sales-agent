@@ -1,5 +1,5 @@
-"""Persistence for extractions, Source passages and Requirements (Story 2.5 Part A). Runs
-inside the caller's Unit of Work."""
+"""Persistence for extractions, Source passages and Requirements (Story 2.5 Part A), and
+Requirement versions and confirmation (Story 2.6). Runs inside the caller's Unit of Work."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -12,6 +12,7 @@ from app.modules.intake.adapters.models import (
     ExtractionRow,
     RequirementEvidenceRow,
     RequirementRow,
+    RequirementVersionRow,
     SourceParseRow,
     SourcePassageRow,
     SourceRow,
@@ -63,6 +64,16 @@ class RequirementRecord:
     locked_by_human: bool
     version: int
     row_version: int
+    created_at: datetime
+    confirmed_at: datetime | None = None
+    confirmed_by: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VersionAuthor:
+    """Who wrote a Requirement's current version (an actor id), and when."""
+
+    created_by: str
     created_at: datetime
 
 
@@ -310,8 +321,10 @@ async def insert_requirement(
     classification: str,
     extraction_id: UUID,
     passage_ids: list[UUID],
+    created_by: str,
 ) -> None:
-    """An `active`, `extracted`, unlocked Requirement at version 1, citing the passages."""
+    """An `active`, `extracted`, unlocked Requirement at version 1, citing the passages, and
+    its version-1 history row (`created_by`: the agent's actor id)."""
     await uow.session.execute(
         insert(RequirementRow).values(
             id=requirement_id,
@@ -330,6 +343,50 @@ async def insert_requirement(
         insert(RequirementEvidenceRow),
         [{"requirement_id": requirement_id, "passage_id": pid} for pid in passage_ids],
     )
+    await insert_version(
+        uow,
+        requirement_id=requirement_id,
+        version=1,
+        text_=text_,
+        classification=classification,
+        created_by=created_by,
+    )
+
+
+async def insert_version(
+    uow: UnitOfWork,
+    *,
+    requirement_id: UUID,
+    version: int,
+    text_: str,
+    classification: str,
+    created_by: str,
+) -> None:
+    """One immutable history row of a Requirement (Story 2.6)."""
+    await uow.session.execute(
+        insert(RequirementVersionRow).values(
+            requirement_id=requirement_id,
+            version=version,
+            text=text_,
+            classification=classification,
+            created_by=created_by,
+        )
+    )
+
+
+def _requirement(row: RequirementRow) -> RequirementRecord:
+    return RequirementRecord(
+        id=row.id,
+        text=row.text,
+        classification=row.classification,
+        origin=row.origin,
+        locked_by_human=row.locked_by_human,
+        version=row.version,
+        row_version=row.row_version,
+        created_at=row.created_at,
+        confirmed_at=row.confirmed_at,
+        confirmed_by=row.confirmed_by,
+    )
 
 
 async def active_requirements(uow: UnitOfWork, opportunity_id: UUID) -> list[RequirementRecord]:
@@ -339,19 +396,132 @@ async def active_requirements(uow: UnitOfWork, opportunity_id: UUID) -> list[Req
         .where(RequirementRow.opportunity_id == opportunity_id, RequirementRow.status == "active")
         .order_by(RequirementRow.created_at, RequirementRow.id)
     )
-    return [
-        RequirementRecord(
-            id=row.id,
-            text=row.text,
-            classification=row.classification,
-            origin=row.origin,
-            locked_by_human=row.locked_by_human,
-            version=row.version,
-            row_version=row.row_version,
-            created_at=row.created_at,
+    return [_requirement(row) for row in rows.scalars()]
+
+
+# --- human edits (Story 2.6) ----------------------------------------------------------------
+
+
+async def active_requirement(
+    uow: UnitOfWork, opportunity_id: UUID, requirement_id: UUID
+) -> RequirementRecord | None:
+    """The Requirement with this id, if it is `active` and belongs to the Opportunity."""
+    row = (
+        await uow.session.execute(
+            select(RequirementRow).where(
+                RequirementRow.id == requirement_id,
+                RequirementRow.opportunity_id == opportunity_id,
+                RequirementRow.status == "active",
+            )
         )
-        for row in rows.scalars()
-    ]
+    ).scalar_one_or_none()
+    return None if row is None else _requirement(row)
+
+
+async def edit_requirement(
+    uow: UnitOfWork,
+    requirement_id: UUID,
+    *,
+    expected_row_version: int,
+    text_: str,
+    classification: str,
+) -> RequirementRecord | None:
+    """Store a human edit: the next version, `origin` `human`, locked. Only while the
+    Requirement is `active` at `expected_row_version`; None (and no change) otherwise."""
+    row = (
+        await uow.session.execute(
+            update(RequirementRow)
+            .where(
+                RequirementRow.id == requirement_id,
+                RequirementRow.status == "active",
+                RequirementRow.row_version == expected_row_version,
+            )
+            .values(
+                text=text_,
+                classification=classification,
+                origin="human",
+                locked_by_human=True,
+                version=RequirementRow.version + 1,
+                row_version=RequirementRow.row_version + 1,
+                updated_at=func.now(),
+            )
+            .returning(RequirementRow)
+            .execution_options(synchronize_session=False)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _requirement(row)
+
+
+_CONFIRMED = {
+    "locked_by_human": True,
+    "row_version": RequirementRow.row_version + 1,
+    "updated_at": func.now(),
+    "confirmed_at": func.now(),
+}
+
+
+async def confirm_requirement(
+    uow: UnitOfWork, requirement_id: UUID, *, expected_row_version: int, user_id: UUID
+) -> RequirementRecord | None:
+    """Confirm the Requirement and lock it. Only while it is `active`, unconfirmed and at
+    `expected_row_version`; None (and no change) otherwise."""
+    row = (
+        await uow.session.execute(
+            update(RequirementRow)
+            .where(
+                RequirementRow.id == requirement_id,
+                RequirementRow.status == "active",
+                RequirementRow.confirmed_at.is_(None),
+                RequirementRow.row_version == expected_row_version,
+            )
+            .values(**_CONFIRMED, confirmed_by=user_id)
+            .returning(RequirementRow)
+            .execution_options(synchronize_session=False)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _requirement(row)
+
+
+async def confirm_all(
+    uow: UnitOfWork, opportunity_id: UUID, *, user_id: UUID
+) -> list[RequirementRecord]:
+    """Confirm and lock every `active`, unconfirmed Requirement of the Opportunity. Returns
+    the ones confirmed, oldest first."""
+    rows = await uow.session.execute(
+        update(RequirementRow)
+        .where(
+            RequirementRow.opportunity_id == opportunity_id,
+            RequirementRow.status == "active",
+            RequirementRow.confirmed_at.is_(None),
+        )
+        .values(**_CONFIRMED, confirmed_by=user_id)
+        .returning(RequirementRow)
+        .execution_options(synchronize_session=False)
+    )
+    return sorted((_requirement(row) for row in rows.scalars()), key=lambda r: (r.created_at, r.id))
+
+
+async def current_version_authors(
+    uow: UnitOfWork, requirements: list[RequirementRecord]
+) -> dict[UUID, VersionAuthor]:
+    """Who wrote each Requirement's current version, from its history."""
+    if not requirements:
+        return {}
+    rows = await uow.session.execute(
+        select(
+            RequirementVersionRow.requirement_id,
+            RequirementVersionRow.created_by,
+            RequirementVersionRow.created_at,
+        ).where(
+            tuple_(RequirementVersionRow.requirement_id, RequirementVersionRow.version).in_(
+                [(r.id, r.version) for r in requirements]
+            )
+        )
+    )
+    return {
+        row.requirement_id: VersionAuthor(created_by=row.created_by, created_at=row.created_at)
+        for row in rows
+    }
 
 
 async def evidence_for(uow: UnitOfWork, requirement_ids: list[UUID]) -> list[EvidenceRecord]:

@@ -1,4 +1,4 @@
-"""The intake module's tables (Stories 2.1, 2.2, 2.5). `opportunity_id`, `created_by` and
+"""The intake module's tables (Stories 2.1, 2.2, 2.5, 2.6). `opportunity_id`, `created_by` and
 `uploaded_by` hold ids owned by other modules without foreign keys (AD-2); `file_sha256` and
 `text_sha256` name blobs in `platform.storage` (metadata rows in `platform_files`)."""
 
@@ -171,6 +171,7 @@ class RequirementRow(RowVersioned, Base):
         CheckConstraint("origin IN ('extracted', 'human')", name="origin"),
         CheckConstraint("status IN ('active', 'superseded')", name="status"),
         CheckConstraint("version >= 1", name="version"),
+        CheckConstraint("(confirmed_at IS NULL) = (confirmed_by IS NULL)", name="confirmed_has_by"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -184,6 +185,33 @@ class RequirementRow(RowVersioned, Base):
     extraction_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("intake_extractions.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    # Story 2.6: who confirmed the Requirement, and when (both or neither).
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_by: Mapped[UUID | None] = mapped_column(Uuid)
+
+
+class RequirementVersionRow(Base):
+    """One version of a Requirement's text and classification (Story 2.6). Immutable
+    (`psa_app` has no UPDATE or DELETE): extraction writes version 1, every human edit the
+    next. `created_by` is the actor id: `intake_agent@<semver>` or a user's id."""
+
+    __tablename__ = "intake_requirement_versions"
+    __table_args__ = (CheckConstraint("version >= 1", name="version"),)
+
+    requirement_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "intake_requirements.id",
+            ondelete="CASCADE",
+            name="fk_intake_requirement_versions_requirement_id",
+        ),
+        primary_key=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    classification: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 
 
 class RequirementEvidenceRow(Base):

@@ -16,7 +16,13 @@ import {
   type Opportunity,
   type UserSummary,
 } from "@/lib/opportunities";
-import type { Extraction, Passage } from "@/lib/requirements";
+import {
+  CLASSIFICATIONS,
+  type Classification,
+  type Extraction,
+  type Passage,
+  type Requirement,
+} from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 
 /** The API's query bounds for people search (in code points). */
@@ -530,6 +536,198 @@ export async function getPassage(opportunityId: unknown, passageId: unknown): Pr
     return { kind: "error" };
   } catch (thrown) {
     console.error(`get passage failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+// --- editing and confirming Requirements (Story 2.6) ------------------------------------------
+
+export type RequirementEditInput = {
+  opportunityId: string;
+  requirementId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  text?: string;
+  classification?: Classification;
+};
+
+export type RequirementConfirmInput = {
+  opportunityId: string;
+  requirementId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+};
+
+export type RequirementWriteResult =
+  | { kind: "ok"; requirement: Requirement }
+  /** 412: someone changed the Requirement first. `changedBy` is null when unknown. */
+  | { kind: "stale"; changedBy: string | null }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the Requirement is gone (superseded). */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type ConfirmAllResult =
+  { kind: "ok"; count: number } | { kind: "forbidden" } | { kind: "not-found" } | { kind: "error" };
+
+const KNOWN_CLASSIFICATIONS = new Set<string>(CLASSIFICATIONS.map((c) => c.value));
+
+function isRowTarget(input: unknown): input is RequirementConfirmInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, requirementId, rowVersion } = input as Record<string, unknown>;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof requirementId === "string" &&
+    UUID_RE.test(requirementId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0
+  );
+}
+
+function isEditInput(input: unknown): input is RequirementEditInput {
+  if (!isRowTarget(input)) return false;
+  const { text, classification } = input as Record<string, unknown>;
+  return (
+    (text === undefined || typeof text === "string") &&
+    (classification === undefined ||
+      (typeof classification === "string" && KNOWN_CLASSIFICATIONS.has(classification))) &&
+    (text !== undefined || classification !== undefined)
+  );
+}
+
+/** Who last changed the Requirement, read again after a 412 (null when unknown). */
+async function requirementChanger(
+  opportunityId: string,
+  requirementId: string,
+): Promise<string | null> {
+  const current = await listRequirements(opportunityId);
+  if (current.kind !== "ok") return null;
+  return (
+    current.list.items.find((item) => item.id === requirementId)?.last_changed_by?.name ?? null
+  );
+}
+
+async function requirementWriteFailure(
+  action: string,
+  input: RequirementConfirmInput,
+  status: number,
+  error: unknown,
+): Promise<RequirementWriteResult> {
+  switch (status) {
+    case 412:
+      return {
+        kind: "stale",
+        changedBy: await requirementChanger(input.opportunityId, input.requirementId),
+      };
+    case 422: {
+      const { detail } = problem(error);
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
+      };
+    }
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${action} failed: status=${status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `PATCH /api/v1/opportunities/{id}/requirements/{rid}` with `If-Match`: a Requirement's
+ * text and/or classification. Never retries or overwrites on 412. Logs ids and statuses
+ * only. */
+export async function editRequirement(input: unknown): Promise<RequirementWriteResult> {
+  if (!isEditInput(input)) return { kind: "error" };
+  const { opportunityId, requirementId, rowVersion, text, classification } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}",
+      {
+        params: {
+          path: {
+            opportunity_id: opportunityId,
+            requirement_id: requirementId,
+          },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: {
+          ...(text !== undefined ? { text } : {}),
+          ...(classification !== undefined ? { classification } : {}),
+        },
+      },
+    );
+    if (data) return { kind: "ok", requirement: data };
+    return await requirementWriteFailure("edit requirement", input, response.status, error);
+  } catch (thrown) {
+    console.error(`edit requirement failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/requirements/{rid}/confirm` with `If-Match`. Confirming
+ * one already confirmed is a no-op on the API. */
+export async function confirmRequirement(input: unknown): Promise<RequirementWriteResult> {
+  if (!isRowTarget(input)) return { kind: "error" };
+  const { opportunityId, requirementId, rowVersion } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/confirm",
+      {
+        params: {
+          path: {
+            opportunity_id: opportunityId,
+            requirement_id: requirementId,
+          },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+      },
+    );
+    if (data) return { kind: "ok", requirement: data };
+    return await requirementWriteFailure("confirm requirement", input, response.status, error);
+  } catch (thrown) {
+    console.error(
+      `confirm requirement failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/requirements/confirm-all`: confirm every Requirement not
+ * confirmed yet. */
+export async function confirmAllRequirements(opportunityId: unknown): Promise<ConfirmAllResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/requirements/confirm-all",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", count: data.count };
+    switch (response.status) {
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `confirm all requirements failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `confirm all requirements failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }

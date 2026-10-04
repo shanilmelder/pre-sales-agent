@@ -170,3 +170,25 @@ class IntakeExtractionCompleted(TracePayload):
     requirement_count: int
     dropped_count: int
     source_count: int
+
+
+@register
+class IntakeRequirementEdited(TracePayload):
+    """A person changed a Requirement's text and/or classification (Story 2.6), making a new
+    version and locking it against re-extraction. Subject: the Requirement
+    (`intake.requirement`), at its new version. Field names only, never the text."""
+
+    event_type: ClassVar[str] = "intake.requirement.edited"
+
+    fields: list[Literal["text", "classification"]]
+    version: int
+
+
+@register
+class IntakeRequirementConfirmed(TracePayload):
+    """A person confirmed a Requirement (Story 2.6), on its own or with **Confirm all**,
+    locking it against re-extraction. Subject: the Requirement (`intake.requirement`)."""
+
+    event_type: ClassVar[str] = "intake.requirement.confirmed"
+
+    version: int

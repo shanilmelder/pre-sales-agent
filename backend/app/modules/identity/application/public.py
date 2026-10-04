@@ -36,6 +36,7 @@ from app.modules.identity.domain.policy import (
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
     POLICY,
+    RELATION_EXCLUDED_ROLES,
     Principal,
     Resource,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "OPPORTUNITY_RESOURCE",
     "OWNER_GRANTS",
     "POLICY",
+    "RELATION_EXCLUDED_ROLES",
     "SEARCH_DEFAULT_LIMIT",
     "SEARCH_MAX_LIMIT",
     "SEARCH_MAX_QUERY",

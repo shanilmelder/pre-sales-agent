@@ -7,6 +7,10 @@ Two kinds of grant, either of which allows an action:
 - **Resource-scoped grants**: the principal's relation to the resource. The resource's
   owner gets `OWNER_GRANTS`, its members (e.g. Opportunity collaborators) `MEMBER_GRANTS`.
   The caller loads `owner_id` and `member_ids` into the `Resource` before asking.
+  `RELATION_EXCLUDED_ROLES` withholds a relation grant from a principal whose roles are all
+  excluded for that action (FR-64: sales representatives on an Opportunity can't edit its
+  Requirements). Roles add up, so someone who also holds a role that isn't excluded keeps
+  the grant.
 """
 
 from collections.abc import Mapping
@@ -73,8 +77,16 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         # Starting (retrying) Requirement extraction follows adding Sources: the owner and
         # collaborators, whatever their role.
         Action.EXTRACTION_START: frozenset(),
+        # Editing and confirming Requirements: the owner and collaborators, except sales
+        # representatives (`RELATION_EXCLUDED_ROLES`); no role grants it on its own.
+        Action.REQUIREMENT_EDIT: frozenset(),
     }
 )
+
+RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
+    {Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE})}
+)
+"""Per action, the roles that don't earn its owner or member grant on their own."""
 
 OWNER_GRANTS: frozenset[Action] = frozenset(
     {
@@ -84,10 +96,16 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.COLLABORATOR_REMOVE,
         Action.SOURCE_ADD,
         Action.EXTRACTION_START,
+        Action.REQUIREMENT_EDIT,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
-    {Action.OPPORTUNITY_READ, Action.SOURCE_ADD, Action.EXTRACTION_START}
+    {
+        Action.OPPORTUNITY_READ,
+        Action.SOURCE_ADD,
+        Action.EXTRACTION_START,
+        Action.REQUIREMENT_EDIT,
+    }
 )
 
 
@@ -95,14 +113,17 @@ def is_allowed(principal: Principal, action: Action, resource: Resource | None =
     """True if one of the principal's roles grants the action, or the principal is the
     resource's owner or a member and that relation grants it. Relations count only on an
     Opportunity and only for principals holding at least one role (a user whose roles were
-    all removed loses access). Agent and system actors follow the same rules: with no
-    granting role or relation they are denied."""
+    all removed loses access), and not for a principal whose roles are all excluded for the
+    action (`RELATION_EXCLUDED_ROLES`). Agent and system actors follow the same rules: with
+    no granting role or relation they are denied."""
     if not principal.roles.isdisjoint(POLICY.get(action, frozenset())):
         return True
     if resource is None or resource.type != OPPORTUNITY_RESOURCE or not principal.roles:
         return False
     user_id = principal.user_id
     if user_id is None:
+        return False
+    if principal.roles <= RELATION_EXCLUDED_ROLES.get(action, frozenset()):
         return False
     if action in OWNER_GRANTS and resource.owner_id is not None and user_id == resource.owner_id:
         return True

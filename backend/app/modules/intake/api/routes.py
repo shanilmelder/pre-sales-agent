@@ -1,7 +1,9 @@
 """Opportunity Source routes (Story 2.1), under
 `/api/v1/opportunities/{opportunity_id}/sources`, and Requirement routes (Story 2.5 Part A):
-`…/{opportunity_id}/requirements` and `…/{opportunity_id}/extractions`, and the cited-passage
-route (Story 2.5 Part B): `…/{opportunity_id}/passages/{passage_id}`.
+`…/{opportunity_id}/requirements` and `…/{opportunity_id}/extractions`, the cited-passage
+route (Story 2.5 Part B): `…/{opportunity_id}/passages/{passage_id}`, and the Requirement
+edit routes (Story 2.6): `PATCH …/requirements/{requirement_id}`,
+`POST …/requirements/{requirement_id}/confirm` and `POST …/requirements/confirm-all`.
 
 Uploads are `multipart/form-data` with the file in the `file` field. The body is read as a
 stream (`app.platform.multipart`), never parsed up front, so a rejected type is answered
@@ -10,10 +12,10 @@ text is JSON `{"text": ...}` at `…/sources/text`.
 """
 
 import json
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from starlette.requests import ClientDisconnect
@@ -22,12 +24,16 @@ from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.intake.application import public as intake
 from app.modules.intake.application.public import (
     AddTextSource,
+    ConfirmAllResult,
     Extraction,
     Passage,
+    Requirement,
+    RequirementChanges,
     RequirementList,
     Source,
     SourceList,
 )
+from app.platform.concurrency import etag
 from app.platform.config import Settings
 from app.platform.errors import PROBLEM_JSON, FileTooLargeError, Problem
 from app.platform.multipart import MultipartFile
@@ -293,3 +299,126 @@ async def get_passage(
     return await intake.get_passage(
         uow, actor, opportunity_id, passage_id, store=BlobStore(settings.storage_dir)
     )
+
+
+# --- Requirement edits (Story 2.6) ----------------------------------------------------------
+
+_EDIT_DESCRIBED: dict[int, str] = {
+    403: "Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner "
+    "or a collaborator, or is a sales representative",
+    404: "No Opportunity with this id, or the caller may not see it, or no active Requirement "
+    "with this id in it (`not_found`)",
+    412: "The Requirement changed since the caller read it (`row_version_mismatch`)",
+    428: "The write has no `If-Match` header (`if_match_required`)",
+}
+_ETAG_HEADER = {
+    "ETag": {
+        "description": "The Requirement's row version, for `If-Match`.",
+        "schema": {"type": "string"},
+    }
+}
+_IF_MATCH = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description='The ETag of the Requirement as last read (its `row_version`), e.g. `"3"`.',
+    ),
+]
+
+
+def _edit_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    responses = _responses()
+    for code in codes:
+        responses[code] = {"description": _EDIT_DESCRIBED[code], "content": PROBLEM_CONTENT}
+    return responses
+
+
+def _with_etag(response: Response, requirement: Requirement) -> Requirement:
+    response.headers["ETag"] = etag(requirement.row_version)
+    return requirement
+
+
+_PATCH_RESPONSES = _edit_responses(403, 404, 412, 428)
+_PATCH_RESPONSES[422] = {
+    "description": "`validation_error`: the text is blank or longer than 2,000 characters "
+    "once trimmed (the `detail` is the sentence to show), an unknown classification or "
+    "field, or an id that is not a UUID",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@requirements_router.patch(
+    "/requirements/{requirement_id}",
+    operation_id="edit_requirement",
+    responses={
+        **_PATCH_RESPONSES,
+        200: {"description": "The Requirement", "headers": _ETAG_HEADER},
+    },
+)
+async def edit_requirement(
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    body: RequirementChanges,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> Requirement:
+    """Change a Requirement's text and/or classification. A change makes its next version,
+    marks it `human` and locks it against re-extraction; its Evidence stays. Nothing
+    changed: nothing is written. The owner and collaborators, except sales
+    representatives."""
+    changed = await intake.edit_requirement(
+        uow, actor, opportunity_id, requirement_id, body, if_match
+    )
+    return _with_etag(response, changed)
+
+
+_CONFIRM_RESPONSES = _edit_responses(403, 404, 412, 428)
+_CONFIRM_RESPONSES[422] = {
+    "description": "An id is not a UUID (`validation_error`)",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@requirements_router.post(
+    "/requirements/confirm-all",
+    operation_id="confirm_all_requirements",
+    responses={
+        **_edit_responses(403, 404),
+        422: _LIST_RESPONSES[422],
+        200: {"description": "How many Requirements were confirmed"},
+    },
+)
+async def confirm_all_requirements(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> ConfirmAllResult:
+    """Confirm every active Requirement not confirmed yet, locking them against
+    re-extraction. No `If-Match`: only unconfirmed Requirements change. The owner and
+    collaborators, except sales representatives."""
+    return await intake.confirm_all(uow, actor, opportunity_id)
+
+
+@requirements_router.post(
+    "/requirements/{requirement_id}/confirm",
+    operation_id="confirm_requirement",
+    responses={
+        **_CONFIRM_RESPONSES,
+        200: {"description": "The Requirement", "headers": _ETAG_HEADER},
+    },
+)
+async def confirm_requirement(
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> Requirement:
+    """Confirm a Requirement, locking it against re-extraction; its version stays. Already
+    confirmed: nothing changes. The owner and collaborators, except sales
+    representatives."""
+    confirmed = await intake.confirm_requirement(
+        uow, actor, opportunity_id, requirement_id, if_match
+    )
+    return _with_etag(response, confirmed)

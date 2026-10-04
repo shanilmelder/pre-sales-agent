@@ -66,3 +66,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-4-gaps-to-assumptions.md`
   summary: [post-demo] Stories 8.4/8.5 remainder — manual Convert form, editing Assumption wording/hours/kind with versions (acceptance cleared on edit), Risks (likelihood/impact), Unknowns and Findings as origins, choosing another member as the accepting person, carrying Assumptions into new versions, and the Submission Blockers gate (8.6) over unaccepted Assumptions.
   evidence: Cut for the 2026-10-07 stakeholder demo; the demo has the agent propose one Assumption per open Gap and the engineer Accept / Accept all.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-6-edit-and-confirm-requirements.md`
+  summary: [post-demo] Decide whether editing a confirmed Requirement should clear its confirmation (or record the confirmed version), so a confirmation never vouches for text its confirmer didn't see. Today an edit keeps `confirmed_at`/`confirmed_by`.
+  evidence: Review finding (triage row 1); the spec is silent. Only matters when a different person edits after a confirmation. Raised with the user 2026-10-04.

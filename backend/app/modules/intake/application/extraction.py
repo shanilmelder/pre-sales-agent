@@ -269,6 +269,7 @@ async def accept_extraction(
             classification=requirement.classification.value,
             extraction_id=extraction_id,
             passage_ids=passage_ids,
+            created_by=actor.id,
         )
     completed = IntakeExtractionCompleted(
         requirement_count=len(resolution.requirements),

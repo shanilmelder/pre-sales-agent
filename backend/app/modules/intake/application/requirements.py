@@ -15,7 +15,10 @@ from uuid import UUID
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.intake.adapters import requirements_repository as repo
-from app.modules.intake.adapters.requirements_repository import ExtractionRecord
+from app.modules.intake.adapters.requirements_repository import (
+    ExtractionRecord,
+    RequirementRecord,
+)
 from app.modules.intake.application.extraction import fail_stale, queue_extraction, stale_after
 from app.modules.intake.application.models import (
     Extraction,
@@ -31,12 +34,14 @@ from app.modules.intake.domain.requirements import (
     RequirementOrigin,
 )
 from app.modules.opportunities.application import public as opportunities
+from app.modules.opportunities.application.public import UserRef
 from app.platform.errors import ExtractionInProgressError
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
 
 IN_PROGRESS_DETAIL = "Requirements are already being extracted for this Opportunity."
 LABEL_SEPARATOR = " · "
+UNKNOWN_USER = "Unknown user"
 _log = get_logger(__name__)
 
 
@@ -63,11 +68,19 @@ def _extraction(record: ExtractionRecord | None) -> Extraction | None:
     )
 
 
-async def list_requirements(
-    uow: UnitOfWork, actor: Principal, opportunity_id: UUID
-) -> RequirementList:
-    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    records = await repo.active_requirements(uow, opportunity_id)
+def _user_id(actor_id: str) -> UUID | None:
+    """The user behind an actor id, if it is one (agents are `<agent_id>@<semver>`)."""
+    try:
+        return UUID(actor_id)
+    except ValueError:
+        return None
+
+
+async def requirement_views(
+    uow: UnitOfWork, opportunity_id: UUID, records: list[RequirementRecord]
+) -> list[Requirement]:
+    """The read models of these Requirements of the Opportunity, in the given order, with
+    their evidence and the people who confirmed and last changed them."""
     numbers = await repo.source_numbers(uow, opportunity_id)
     evidence: dict[UUID, list[tuple[int, RequirementEvidence]]] = defaultdict(list)
     for row in await repo.evidence_for(uow, [r.id for r in records]):
@@ -84,7 +97,30 @@ async def list_requirements(
                 ),
             )
         )
-    items = [
+    authors = await repo.current_version_authors(uow, records)
+    changers: dict[UUID, UUID | None] = {}
+    for r in records:
+        author = authors.get(r.id)
+        changes: list[tuple[datetime, UUID | None]] = []
+        if author is not None:
+            changes.append((author.created_at, _user_id(author.created_by)))
+        if r.confirmed_at is not None:
+            changes.append((r.confirmed_at, r.confirmed_by))
+        # The latest change; on a tie (one transaction), the confirmation, listed last.
+        changers[r.id] = (
+            max(reversed(changes), key=lambda change: change[0])[1] if changes else None
+        )
+    wanted = {u for u in changers.values() if u is not None} | {
+        r.confirmed_by for r in records if r.confirmed_by is not None
+    }
+    names = await identity.user_names(uow, wanted)
+
+    def ref(user_id: UUID | None) -> UserRef | None:
+        if user_id is None:
+            return None
+        return UserRef(id=str(user_id), name=names.get(user_id, UNKNOWN_USER))
+
+    return [
         Requirement(
             id=str(r.id),
             text=r.text,
@@ -94,15 +130,26 @@ async def list_requirements(
             version=r.version,
             row_version=r.row_version,
             created_at=r.created_at,
+            confirmed_at=r.confirmed_at,
+            confirmed_by=ref(r.confirmed_by),
+            last_changed_by=ref(changers[r.id]),
             # Stable sort: Source order, then the span order the query returned.
             evidence=[e for _, e in sorted(evidence[r.id], key=lambda pair: pair[0])],
         )
         for r in records
     ]
+
+
+async def list_requirements(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID
+) -> RequirementList:
+    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
+    records = await repo.active_requirements(uow, opportunity_id)
     return RequirementList(
-        items=items,
+        items=await requirement_views(uow, opportunity_id, records),
         extraction=_extraction(await repo.latest_extraction(uow, opportunity_id)),
         can_start_extraction=identity.can(actor, Action.EXTRACTION_START, resource),
+        can_edit_requirements=identity.can(actor, Action.REQUIREMENT_EDIT, resource),
     )
 
 

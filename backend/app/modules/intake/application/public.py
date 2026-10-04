@@ -2,9 +2,11 @@
 
 from app.modules.intake.application.models import (
     AddTextSource,
+    ConfirmAllResult,
     Extraction,
     Passage,
     Requirement,
+    RequirementChanges,
     RequirementEvidence,
     RequirementList,
     Source,
@@ -13,6 +15,11 @@ from app.modules.intake.application.models import (
 )
 from app.modules.intake.application.parsing import extracted_text, retry_parse
 from app.modules.intake.application.passages import get_passage
+from app.modules.intake.application.requirement_edits import (
+    confirm_all,
+    confirm_requirement,
+    edit_requirement,
+)
 from app.modules.intake.application.requirements import list_requirements, start_extraction
 from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
@@ -35,10 +42,12 @@ __all__ = [
     "TEXT_BODY_MAX_BYTES",
     "TEXT_TOO_LONG_MESSAGE",
     "AddTextSource",
+    "ConfirmAllResult",
     "Extraction",
     "IncomingFile",
     "Passage",
     "Requirement",
+    "RequirementChanges",
     "RequirementEvidence",
     "RequirementList",
     "Source",
@@ -47,6 +56,9 @@ __all__ = [
     "SourceParse",
     "add_file",
     "add_text",
+    "confirm_all",
+    "confirm_requirement",
+    "edit_requirement",
     "extracted_text",
     "get_passage",
     "list_requirements",

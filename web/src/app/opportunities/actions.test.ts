@@ -16,7 +16,10 @@ import {
   addSource,
   addTextSource,
   changeCollaborator,
+  confirmAllRequirements,
+  confirmRequirement,
   createOpportunity,
+  editRequirement,
   getPassage,
   loadRequirements,
   loadSources,
@@ -557,5 +560,143 @@ describe("getPassage", () => {
     expect(await getPassage(OPP_ID, "../x")).toEqual({ kind: "error" });
     expect(await getPassage(OPP_ID, undefined)).toEqual({ kind: "error" });
     expect(api.GET).not.toHaveBeenCalled();
+  });
+});
+
+describe("editRequirement / confirmRequirement / confirmAllRequirements", () => {
+  const REQ_ID = "00000000-0000-7000-8000-0000000000c1";
+  const REQ = {
+    id: REQ_ID,
+    text: "[TEXT]",
+    row_version: 3,
+    last_changed_by: null,
+  };
+  const ok = (data: unknown) => ({
+    data,
+    response: new Response(null, { status: 200 }),
+  });
+
+  it("PATCHes the text and classification with If-Match", async () => {
+    api.PATCH.mockResolvedValue(ok(REQ));
+    const input = {
+      opportunityId: OPP_ID,
+      requirementId: REQ_ID,
+      rowVersion: 2,
+      text: "[TEXT]",
+      classification: "security",
+    };
+    expect(await editRequirement(input)).toEqual({
+      kind: "ok",
+      requirement: REQ,
+    });
+    expect(api.PATCH).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, requirement_id: REQ_ID },
+          header: { "If-Match": '"2"' },
+        },
+        body: { text: "[TEXT]", classification: "security" },
+      },
+    );
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    const base = {
+      opportunityId: OPP_ID,
+      requirementId: REQ_ID,
+      rowVersion: 1,
+    };
+    expect(await editRequirement(base)).toEqual({ kind: "error" }); // nothing to change
+    expect(await editRequirement({ ...base, classification: "nice" })).toEqual({
+      kind: "error",
+    });
+    expect(await editRequirement({ ...base, requirementId: "x", text: "a" })).toEqual({
+      kind: "error",
+    });
+    expect(await confirmRequirement({ ...base, rowVersion: -1 })).toEqual({
+      kind: "error",
+    });
+    expect(await confirmAllRequirements("nope")).toEqual({ kind: "error" });
+    expect(api.PATCH).not.toHaveBeenCalled();
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it("on 412 reads who changed the Requirement", async () => {
+    api.PATCH.mockResolvedValue({
+      error: { code: "row_version_mismatch" },
+      response: status(412),
+    });
+    api.GET.mockResolvedValue(
+      ok({
+        items: [{ ...REQ, last_changed_by: { id: USER_ID, name: "[OTHER]" } }],
+      }),
+    );
+    expect(
+      await editRequirement({
+        opportunityId: OPP_ID,
+        requirementId: REQ_ID,
+        rowVersion: 1,
+        text: "a",
+      }),
+    ).toEqual({ kind: "stale", changedBy: "[OTHER]" });
+  });
+
+  it.each([
+    [422, { kind: "invalid", detail: "The Requirement text can't be blank." }],
+    [403, { kind: "forbidden" }],
+    [404, { kind: "not-found" }],
+    [500, { kind: "error" }],
+  ])("maps %i on confirm", async (code, expected) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({
+      error: { code: "x", detail: "The Requirement text can't be blank." },
+      response: status(code),
+    });
+    expect(
+      await confirmRequirement({
+        opportunityId: OPP_ID,
+        requirementId: REQ_ID,
+        rowVersion: 1,
+      }),
+    ).toEqual(expected);
+  });
+
+  it.each([
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i on confirm all to %s", async (code, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: status(code) });
+    expect(await confirmAllRequirements(OPP_ID)).toEqual({ kind });
+  });
+
+  it("POSTs confirm with If-Match, and confirm-all without", async () => {
+    api.POST.mockResolvedValueOnce(ok(REQ)).mockResolvedValueOnce(ok({ count: 3 }));
+    await confirmRequirement({
+      opportunityId: OPP_ID,
+      requirementId: REQ_ID,
+      rowVersion: 5,
+    });
+    expect(await confirmAllRequirements(OPP_ID)).toEqual({
+      kind: "ok",
+      count: 3,
+    });
+    expect(api.POST.mock.calls).toEqual([
+      [
+        "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/confirm",
+        {
+          params: {
+            path: { opportunity_id: OPP_ID, requirement_id: REQ_ID },
+            header: { "If-Match": '"5"' },
+          },
+        },
+      ],
+      [
+        "/api/v1/opportunities/{opportunity_id}/requirements/confirm-all",
+        { params: { path: { opportunity_id: OPP_ID } } },
+      ],
+    ]);
   });
 });

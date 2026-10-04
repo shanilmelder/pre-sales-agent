@@ -11,6 +11,7 @@ from app.modules.identity.application.public import (
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
     POLICY,
+    RELATION_EXCLUDED_ROLES,
     Action,
     Principal,
     Resource,
@@ -82,6 +83,7 @@ def test_every_action_has_a_policy_entry() -> None:
     assert POLICY[Action.USER_SEARCH] == {Role.PRESALES_ENGINEER}
     assert POLICY[Action.SOURCE_ADD] == frozenset()
     assert POLICY[Action.EXTRACTION_START] == frozenset()
+    assert POLICY[Action.REQUIREMENT_EDIT] == frozenset()
 
 
 def test_resource_scoped_grants() -> None:
@@ -92,12 +94,51 @@ def test_resource_scoped_grants() -> None:
         Action.COLLABORATOR_REMOVE,
         Action.SOURCE_ADD,
         Action.EXTRACTION_START,
+        Action.REQUIREMENT_EDIT,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
         Action.SOURCE_ADD,
         Action.EXTRACTION_START,
+        Action.REQUIREMENT_EDIT,
     }
+    assert RELATION_EXCLUDED_ROLES == {
+        Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE})
+    }
+
+
+# --- Requirements (Story 2.6): owner and collaborators, except sales representatives --------
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) -> None:
+    owner, owner_id = _user({role})
+    member, member_id = _user({role})
+    opportunity = _opportunity(owner_id, member_id)
+    allowed = role is not Role.SALES_REPRESENTATIVE
+
+    assert can(owner, Action.REQUIREMENT_EDIT, opportunity) is allowed
+    assert can(member, Action.REQUIREMENT_EDIT, opportunity) is allowed
+    assert can(member, Action.SOURCE_ADD, opportunity) is True
+
+
+def test_requirement_edit_needs_a_relation() -> None:
+    outsider, _ = _user({Role.PRESALES_ENGINEER})
+    head, _ = _user({Role.HEAD_OF_DELIVERY})
+    owner, owner_id = _user({Role.PRESALES_ENGINEER})
+    opportunity = _opportunity(owner_id)
+
+    assert can(outsider, Action.REQUIREMENT_EDIT, opportunity) is False
+    assert can(head, Action.REQUIREMENT_EDIT, opportunity) is False
+    assert can(head, Action.OPPORTUNITY_READ, opportunity) is True
+    assert can(owner, Action.REQUIREMENT_EDIT) is False  # no resource, no relation
+
+
+def test_a_sales_rep_who_also_holds_another_role_keeps_requirement_edit() -> None:
+    member, member_id = _user({Role.SALES_REPRESENTATIVE, Role.PRESALES_ENGINEER})
+    _, owner_id = _user({Role.PRESALES_ENGINEER})
+
+    assert can(member, Action.REQUIREMENT_EDIT, _opportunity(owner_id, member_id)) is True
 
 
 @pytest.mark.parametrize("action", ADMIN_ONLY)
