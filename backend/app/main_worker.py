@@ -17,6 +17,7 @@ import signal
 import socket
 import sys
 from collections.abc import Collection
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -43,6 +44,21 @@ def load_job_types() -> None:
 def worker_id() -> str:
     """Unique per process start, so a restarted worker never mistakes an old claim for its own."""
     return f"{socket.gethostname()}:{os.getpid()}:{new_id().hex[-8:]}"
+
+
+ALIVE_INTERVAL_S = 10.0
+"""How often the worker touches its alive file. The compose healthcheck allows 60 s."""
+
+
+async def _keep_alive(path: Path, stop: asyncio.Event, interval_s: float) -> None:
+    """Touch `path` every `interval_s` until `stop` is set. It runs on the event loop, so a
+    blocked loop (a hung worker) stops touching it and the container turns unhealthy."""
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(path.touch)
+        except OSError as exc:
+            _log.warning("worker.alive_file_failed", extra={"exc_type": type(exc).__name__})
+        await _sleep_or_stop(stop, interval_s)
 
 
 async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:
@@ -79,6 +95,7 @@ async def run(
     engine: AsyncEngine | None = None,
     poll_s: float | None = None,
     job_types: Collection[str] | None = None,
+    alive_interval_s: float = ALIVE_INTERVAL_S,
 ) -> None:
     """Claim and run jobs until `stop` is set.
 
@@ -100,6 +117,11 @@ async def run(
             "job_types": sorted(types),
         },
     )
+    alive = (
+        asyncio.create_task(_keep_alive(settings.worker_alive_file, stop, alive_interval_s))
+        if settings.worker_alive_file is not None
+        else None
+    )
     try:
         while not stop.is_set():
             try:
@@ -120,6 +142,10 @@ async def run(
             jitter = random.uniform(1 - _JITTER, 1 + _JITTER)  # noqa: S311 (not crypto)
             await _sleep_or_stop(stop, poll * jitter)
     finally:
+        if alive is not None:
+            alive.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await alive
         if own_engine:
             await db.dispose()
         _log.info("worker.stopped", extra={"worker_id": owner})

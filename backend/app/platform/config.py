@@ -60,6 +60,13 @@ class Settings(BaseSettings):
         gt=0,
         description="How long the worker sleeps (jittered ±20%) when no job is ready.",
     )
+    worker_alive_file: Path | None = Field(
+        default=None,
+        description=(
+            "When set, the worker touches this file every few seconds while it runs; the "
+            "container healthcheck treats a stale file as a hung worker."
+        ),
+    )
     worker_concurrency: int = Field(
         default=1,
         ge=1,
