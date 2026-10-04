@@ -159,6 +159,13 @@ class EstimateDraftInProgressError(ConflictError):
     title = "Estimate draft in progress"
 
 
+class RedTeamReviewInProgressError(ConflictError):
+    """A Red Team Review was asked for while one is queued or running (Story 6.5)."""
+
+    code = "red_team_review_in_progress"
+    title = "Red Team review in progress"
+
+
 class GapNotOpenError(ConflictError):
     """An Assumption was accepted whose origin Gap is no longer `open` (Story 8.4)."""
 

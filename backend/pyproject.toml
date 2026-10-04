@@ -83,14 +83,20 @@ source_modules = ["app.main_api"]
 forbidden_modules = ["app.platform.model_gateway.gateway", "app.platform.model_gateway.ollama"]
 
 [[tool.importlinter.contracts]]
-name = "opportunities uses identity only through its public API (AD-2)"
+name = "opportunities uses identity and assessments only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.opportunities"]
-forbidden_modules = ["app.modules.identity.domain", "app.modules.identity.adapters"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.assessments.domain",
+    "app.modules.assessments.adapters",
+    "app.modules.assessments.api",
+]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "intake uses identity, opportunities and gaps only through their public APIs (AD-2)"
+name = "intake uses identity, opportunities, gaps and assessments only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.intake"]
 forbidden_modules = [
@@ -101,11 +107,14 @@ forbidden_modules = [
     "app.modules.gaps.domain",
     "app.modules.gaps.adapters",
     "app.modules.gaps.api",
+    "app.modules.assessments.domain",
+    "app.modules.assessments.adapters",
+    "app.modules.assessments.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "gaps uses identity, opportunities, intake and estimates only through their public APIs (AD-2)"
+name = "gaps uses identity, opportunities, intake, estimates and assessments only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.gaps"]
 forbidden_modules = [
@@ -121,11 +130,14 @@ forbidden_modules = [
     "app.modules.estimates.domain",
     "app.modules.estimates.adapters",
     "app.modules.estimates.api",
+    "app.modules.assessments.domain",
+    "app.modules.assessments.adapters",
+    "app.modules.assessments.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "estimates uses identity, opportunities, intake and gaps only through their public APIs (AD-2)"
+name = "estimates uses identity, opportunities, intake, gaps and assessments only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.estimates"]
 forbidden_modules = [
@@ -141,5 +153,31 @@ forbidden_modules = [
     "app.modules.gaps.domain",
     "app.modules.gaps.adapters",
     "app.modules.gaps.api",
+    "app.modules.assessments.domain",
+    "app.modules.assessments.adapters",
+    "app.modules.assessments.api",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "assessments uses identity, opportunities, intake, gaps and estimates only through their public APIs (AD-2)"
+type = "forbidden"
+source_modules = ["app.modules.assessments"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.intake.domain",
+    "app.modules.intake.adapters",
+    "app.modules.intake.api",
+    "app.modules.gaps.domain",
+    "app.modules.gaps.adapters",
+    "app.modules.gaps.api",
+    "app.modules.estimates.domain",
+    "app.modules.estimates.adapters",
+    "app.modules.estimates.api",
 ]
 allow_indirect_imports = true

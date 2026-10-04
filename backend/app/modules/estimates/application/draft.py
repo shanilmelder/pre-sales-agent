@@ -19,8 +19,9 @@ Opportunity's draft lock until commit.
    Requirements still active at the version read), supersedes the Opportunity's `draft`
    Estimate Version, stores the new `draft` version (numbered one past the latest, template
    `demo-1`) with its lines and their Requirement links, marks the draft `succeeded`,
-   traces `estimates.estimate_version.created`, and queues the version's Assumption
-   proposals (`estimates.propose_assumptions`, Story 8.4).
+   traces `estimates.estimate_version.created`, queues the version's Assumption
+   proposals (`estimates.propose_assumptions`, Story 8.4) and the Opportunity's Red Team
+   Review (`assessments.red_team_review`, Story 6.5).
 
 When no line is valid, acceptance writes nothing and raises `ModelOutputInvalidError`, so
 the queue runs the job once more (`max_attempts` 2); on the final attempt the handler marks
@@ -273,6 +274,13 @@ async def accept_draft(
         opportunity_id=record.opportunity_id,
     )
     await enqueue_proposals(uow, version_id=version_id, opportunity_id=record.opportunity_id)
+    # Story 6.5: every accepted draft is reviewed by the Red Team, queued in this Unit of
+    # Work. Imported here, not at the top: assessments reads Estimate lines through
+    # `estimates.application.public`, which imports this module, so a top-level import would
+    # be circular.
+    from app.modules.assessments.application import public as assessments
+
+    await assessments.enqueue_review(uow, record.opportunity_id)
     await _succeed(uow, record.id)
     _log.info(
         "estimates.draft_accepted",

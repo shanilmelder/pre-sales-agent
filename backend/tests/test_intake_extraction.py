@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.agents.contract import AgentResult
 from app.agents.intake_agent.agent import prompt
 from app.agents.intake_agent.schema import IntakeOutput
+from app.modules.assessments.application import review as assessments_review
 from app.modules.estimates.application import assumptions as estimates_assumptions
 from app.modules.estimates.application import draft as estimates_draft
 from app.modules.gaps.application import detection as gaps_detection
@@ -59,6 +60,7 @@ EXTRACT = "intake.extract_requirements"
 DETECT = "gaps.detect_gaps"
 DRAFT = "estimates.draft_estimate"
 PROPOSE = "estimates.propose_assumptions"
+RED_TEAM = "assessments.red_team_review"
 LEASE = LeaseSettings(lease_s=30, heartbeat_s=5)
 HIDDEN = timedelta(days=1)
 MINE: list[UUID] = []
@@ -143,6 +145,7 @@ def _hidden_jobs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(gaps_detection, "enqueue", hidden_enqueue)  # Story 4.3
     monkeypatch.setattr(estimates_draft, "enqueue", hidden_enqueue)  # Story 8.1
     monkeypatch.setattr(estimates_assumptions, "enqueue", hidden_enqueue)  # Story 8.4
+    monkeypatch.setattr(assessments_review, "enqueue", hidden_enqueue)  # Story 6.5
     MINE.clear()
     yield
     retire_extraction_jobs(MINE)
@@ -150,9 +153,9 @@ def _hidden_jobs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def retire_extraction_jobs(opportunity_ids: list[UUID]) -> None:
-    """Retire extraction, Gap detection, Estimate draft and Assumption proposal jobs a test
-    left waiting, so no worker ever runs them later (they would call the configured model with
-    test text)."""
+    """Retire extraction, Gap detection, Estimate draft, Assumption proposal and Red Team
+    review jobs a test left waiting, so no worker ever runs them later (they would call the
+    configured model with test text)."""
     url = os.environ.get("PSA_DATABASE_URL")
     if not url or not opportunity_ids:
         return
@@ -165,7 +168,7 @@ def retire_extraction_jobs(opportunity_ids: list[UUID]) -> None:
                     "WHERE job_type = ANY(:t) AND status IN ('queued', 'failed_retrying') "
                     "AND opportunity_id = ANY(:o)"
                 ),
-                {"t": [EXTRACT, DETECT, DRAFT, PROPOSE], "o": list(opportunity_ids)},
+                {"t": [EXTRACT, DETECT, DRAFT, PROPOSE, RED_TEAM], "o": list(opportunity_ids)},
             )
     finally:
         engine.dispose()

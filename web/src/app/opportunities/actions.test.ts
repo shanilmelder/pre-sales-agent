@@ -25,6 +25,7 @@ import {
   getPassage,
   loadEstimate,
   loadGaps,
+  loadRedTeam,
   loadRequirements,
   loadSources,
   retryParse,
@@ -32,6 +33,7 @@ import {
   startEstimateDraft,
   startExtraction,
   startGapDetection,
+  startRedTeamReview,
   updateOpportunity,
 } from "./actions";
 
@@ -642,6 +644,68 @@ describe("loadEstimate", () => {
     expect(await loadEstimate(OPP_ID)).toEqual({ kind: "error" });
     api.GET.mockRejectedValueOnce(new Error("network"));
     expect(await loadEstimate(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
+describe("startRedTeamReview", () => {
+  const QUEUED = { status: "queued", error_code: null };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts to the red-team-reviews route and returns the queued run", async () => {
+    api.POST.mockResolvedValue({ data: QUEUED, response: new Response(null, { status: 201 }) });
+    expect(await startRedTeamReview(OPP_ID)).toEqual({ kind: "ok", run: QUEUED });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/red-team-reviews",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
+  });
+
+  it.each([
+    [409, "conflict"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: new Response(null, { status }) });
+    expect(await startRedTeamReview(OPP_ID)).toEqual({ kind });
+  });
+
+  it("is an error when the call throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await startRedTeamReview(OPP_ID)).toEqual({ kind: "error" });
+  });
+
+  it("refuses an id that isn't a UUID without calling the API", async () => {
+    expect(await startRedTeamReview("nope")).toEqual({ kind: "error" });
+    expect(await startRedTeamReview(undefined)).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadRedTeam", () => {
+  it("reads the Opportunity's Red Team Review and latest run", async () => {
+    const VIEW = { review: null, run: null, can_start: false };
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ data: VIEW, response: new Response(null, { status: 200 }) });
+    expect(await loadRedTeam(OPP_ID)).toEqual({ kind: "ok", redTeam: VIEW });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/red-team", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await loadRedTeam(7)).toEqual({ kind: "error" });
+    expect(await loadRedTeam("../../users")).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("is an error when the API fails or throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    expect(await loadRedTeam(OPP_ID)).toEqual({ kind: "error" });
+    api.GET.mockRejectedValueOnce(new Error("network"));
+    expect(await loadRedTeam(OPP_ID)).toEqual({ kind: "error" });
   });
 });
 

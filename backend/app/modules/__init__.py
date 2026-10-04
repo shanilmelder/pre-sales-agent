@@ -11,5 +11,6 @@ A module never imports another module's `domain` or `adapters` (AD-2), and never
 `langgraph` (AD-5). Both rules are enforced by `tests/test_architecture.py`.
 Modules: `identity` (users, roles, the action catalogue and policy), `opportunities`
 (Opportunities and collaborators), `intake` (Opportunity Sources and Requirements), `gaps`
-(Gaps and Clarification Questions) and `estimates` (Estimate Versions and their lines).
+(Gaps and Clarification Questions), `estimates` (Estimate Versions and their lines) and
+`assessments` (Red Team Reviews and their Findings).
 """
