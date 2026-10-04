@@ -15,6 +15,7 @@ import { useAnnounce } from "@/components/shell/live-region";
 import {
   acceptAllLabel,
   acceptedLabel,
+  carriedLabel,
   CONDITIONS,
   CONTINGENCIES,
   hours,
@@ -79,6 +80,7 @@ function AssumptionRow({
   onOpenGap: (assumption: Assumption, viaKeyboard: boolean) => void;
 }) {
   const accepted = assumption.accepted_at !== null;
+  const carried = carriedLabel(assumption);
   return (
     <li
       data-assumption-id={assumption.id}
@@ -118,7 +120,10 @@ function AssumptionRow({
         ) : null}
         <span className="ml-auto flex items-center gap-2">
           {accepted ? (
-            <span className="text-meta text-muted-foreground">{acceptedLabel(assumption)}</span>
+            <>
+              {carried ? <span className="text-meta text-muted-foreground">{carried}</span> : null}
+              <span className="text-meta text-muted-foreground">{acceptedLabel(assumption)}</span>
+            </>
           ) : (
             <>
               <span className="flex items-center gap-1 text-label text-blocker">

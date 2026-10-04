@@ -143,7 +143,9 @@ class AssumptionRow(RowVersioned, Base):
     """An Assumption of an Estimate Version (Story 8.4): a `condition` (no hours) or a
     `contingency` (hours, optionally linked to one of the version's lines), made from one
     origin (`origin_ref`: `{kind: "gap", id, row_version}`). Inserted unaccepted; accepting
-    sets `accepted_by` and `accepted_at` together. `position` keeps the proposal order."""
+    sets `accepted_by` and `accepted_at` together. `position` keeps the proposal order.
+    `carried_from` (Story 8.7): the accepted Assumption of the superseded version this one
+    was copied from by a re-draft, null for a proposal."""
 
     __tablename__ = "estimates_assumptions"
     __table_args__ = (
@@ -183,4 +185,12 @@ class AssumptionRow(RowVersioned, Base):
     origin_ref: Mapped[dict[str, Any]] = mapped_column(JSONB)
     accepted_by: Mapped[UUID | None] = mapped_column(Uuid)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    carried_from: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "estimates_assumptions.id",
+            ondelete="SET NULL",
+            name="fk_estimates_assumptions_carried_from",
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

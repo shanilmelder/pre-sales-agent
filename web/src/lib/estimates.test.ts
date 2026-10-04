@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   acceptAllLabel,
   acceptedLabel,
+  carriedLabel,
   COLUMNS,
   convertedLabel,
   isProposing,
@@ -102,6 +103,11 @@ describe("Assumptions Register helpers", () => {
     expect(acceptedLabel({ accepted_by: null, accepted_at: null })).toBe(
       "Accepted by someone",
     );
+  });
+
+  it("says which version a carried Assumption came from", () => {
+    expect(carriedLabel({ carried_from_version: 1 })).toBe("Carried from v1");
+    expect(carriedLabel({ carried_from_version: null })).toBeNull();
   });
 
   it("names a 412's changer, or someone else", () => {

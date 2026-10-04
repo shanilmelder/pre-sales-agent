@@ -291,6 +291,7 @@ def test_a_draft_stores_version_1_with_lines_links_and_one_event(
         "uncovered_count": 0,
         "requirement_count": 5,
         "superseded_count": 0,
+        "carried_assumption_count": 0,  # a first draft carries nothing
     }
 
     # One model call: instructions as the system message, Requirements and Gaps only as
@@ -397,6 +398,7 @@ def test_a_redraft_supersedes_the_earlier_version(
     assert [r["title"] for r in line_rows(sync_engine, v2["id"])] == ["Everything"]
     created = [e["payload"] for e in events(sync_engine, opp["id"])]
     assert [(p["version"], p["superseded_count"]) for p in created] == [(1, 0), (2, 1)]
+    assert [p["carried_assumption_count"] for p in created] == [0, 0]  # nothing accepted
 
 
 def test_with_no_active_requirements_nothing_is_asked(

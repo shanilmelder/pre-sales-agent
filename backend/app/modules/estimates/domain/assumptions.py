@@ -145,3 +145,20 @@ def validate_proposals[G, L](
         kept.append(valid)
     missing = tuple(g for g in dict.fromkeys(gaps.values()) if g not in seen)
     return ProposalValidation(tuple(kept), dropped, duplicates, missing)
+
+
+# --- carrying Assumptions to a re-draft (Story 8.7, demo slice) ------------------------------
+
+
+def _line_key(section: str, title: str) -> tuple[str, str]:
+    return section, title.strip().casefold()
+
+
+def carried_line[L](section: str, title: str, candidates: Sequence[tuple[L, str, str]]) -> L | None:
+    """The line a carried Contingency links to in the new version: the one candidate
+    (`(line, section, title)`) with the same section and the same title, trimmed and
+    case-insensitive. None when no candidate or more than one matches: the Contingency is
+    then Unallocated."""
+    key = _line_key(section, title)
+    found = [line for line, s, t in candidates if _line_key(s, t) == key]
+    return found[0] if len(found) == 1 else None

@@ -1,5 +1,15 @@
 """Assumptions (Story 8.4): the `estimates.propose_assumptions` job,
-`estimates.accept_assumption_proposals`, and accepting Assumptions.
+`estimates.accept_assumption_proposals`, and accepting Assumptions; and carrying accepted
+Assumptions to a re-draft (Story 8.7, demo slice).
+
+**Carrying.** `estimates.accept_draft` calls `carry_accepted` in its Unit of Work, under the
+Opportunity's draft lock, once the new version and its lines are stored: every **accepted**
+Assumption of the superseded draft is copied into the new version (same kind, wording,
+hours, origin and acceptance; new id, `row_version` 1, positions 1…n in the source order,
+`carried_from` set). A carried Contingency links to the new version's one line with the same
+section and title (trimmed, case-insensitive), else to none (Unallocated). Unaccepted
+Assumptions are not carried: their Gaps are still open and get fresh proposals, numbered
+after the carried ones.
 
 **Queueing.** `estimates.accept_draft` stores each new draft Estimate Version with
 `proposal_status` `queued` and calls `enqueue_proposals` in its Unit of Work (background
@@ -8,9 +18,10 @@ priority, `timeout_s` 900, `max_attempts` 2).
 **The handler.**
 
 1. Short Unit of Work: skips the version unless it is still the `draft`, its proposals are
-   `queued` or `running`, and it has no Assumptions yet; reads the Opportunity's open Gaps
-   (`gaps.open_gap_summaries`, labelled `G<n>`, with their questions) and the version's lines
-   (`L<n>`), and marks the proposals `running`. No open Gap: no model call, `succeeded`.
+   `queued` or `running`, and it has no Assumptions yet other than carried ones; reads the
+   Opportunity's open Gaps (`gaps.open_gap_summaries`, labelled `G<n>`, with their
+   questions) and the version's lines (`L<n>`), and marks the proposals `running`. No open
+   Gap: no model call, `succeeded`.
 2. No Unit of Work open: `estimating_agent` proposes one Assumption per Gap (prompt
    `v1-assumptions`).
 3. `accept_assumption_proposals`, one Unit of Work: validates every proposal (a `G<n>` that
@@ -51,7 +62,11 @@ from app.agents.estimating_agent.agent import (
 from app.agents.estimating_agent.agent import config as agent_config
 from app.agents.estimating_agent.schema import AssumptionsOutput
 from app.modules.estimates.adapters import repository as repo
-from app.modules.estimates.adapters.repository import AssumptionRecord, NewAssumption
+from app.modules.estimates.adapters.repository import (
+    AssumptionRecord,
+    CarriedAssumption,
+    NewAssumption,
+)
 from app.modules.estimates.domain.assumptions import (
     ASSUMPTION_SUBJECT_TYPE,
     ORIGIN_GAP,
@@ -60,6 +75,7 @@ from app.modules.estimates.domain.assumptions import (
     ProposalCandidate,
     ProposalStatus,
     ProposalValidation,
+    carried_line,
     validate_proposals,
 )
 from app.modules.estimates.domain.estimates import VERSION_SUBJECT_TYPE, VersionStatus
@@ -108,6 +124,37 @@ async def enqueue_proposals(uow: UnitOfWork, *, version_id: UUID, opportunity_id
         "estimates.proposals_queued",
         extra={"opportunity_id": str(opportunity_id), "version_id": str(version_id)},
     )
+
+
+# --- carrying to a re-draft (Story 8.7) -----------------------------------------------------
+
+
+async def carry_accepted(
+    uow: UnitOfWork, *, source_version_id: UUID, target_version_id: UUID
+) -> int:
+    """Copy the accepted Assumptions of `source_version_id` (the draft a re-draft supersedes)
+    into `target_version_id` (the new draft, its lines stored). The caller holds the
+    Opportunity's draft lock. Returns how many were carried."""
+    accepted = await repo.assumptions_of(uow, source_version_id, accepted_only=True)
+    if not accepted:
+        return 0
+    old_lines = {line.id: line for line in await repo.lines_of(uow, source_version_id)}
+    new_lines = [
+        (line.id, line.section, line.title) for line in await repo.lines_of(uow, target_version_id)
+    ]
+    carried: list[CarriedAssumption] = []
+    for position, source in enumerate(accepted, start=1):
+        line_id: UUID | None = None
+        old = None if source.line_id is None else old_lines.get(source.line_id)
+        if source.kind == AssumptionKind.CONTINGENCY and old is not None:
+            line_id = carried_line(old.section, old.title, new_lines)
+        carried.append(
+            CarriedAssumption(
+                assumption_id=new_id(), position=position, line_id=line_id, source=source
+            )
+        )
+    await repo.insert_carried_assumptions(uow, target_version_id, carried)
+    return len(carried)
 
 
 # --- accepting the proposals ----------------------------------------------------------------
@@ -167,7 +214,7 @@ async def accept_assumption_proposals(
     """`estimates.accept_assumption_proposals`: validate the agent's proposals and store them
     as unaccepted Assumptions of the version; mark its proposals `succeeded` and trace them.
     Returns None (and writes nothing) unless the version is still the `draft`, its proposals
-    `running`, and it has no Assumptions yet.
+    `running`, and it has no Assumptions yet other than carried ones (numbered after them).
 
     Unless `final`, an open Gap left without a valid proposal writes nothing and raises
     `ModelOutputInvalidError`, so the job runs again; when `final`, what is valid is stored."""
@@ -180,7 +227,7 @@ async def accept_assumption_proposals(
         version is None
         or version.status != VersionStatus.DRAFT
         or version.proposal_status != ProposalStatus.RUNNING
-        or await repo.has_assumptions(uow, version_id)
+        or await repo.has_proposed_assumptions(uow, version_id)
     ):
         return None
     ids = {"version_id": str(version_id), "opportunity_id": str(version.opportunity_id)}
@@ -201,6 +248,7 @@ async def accept_assumption_proposals(
         )
         raise ModelOutputInvalidError("An open Gap has no valid Assumption proposal.")
 
+    after = await repo.last_assumption_position(uow, version_id)
     await repo.insert_assumptions(
         uow,
         version_id,
@@ -218,7 +266,7 @@ async def accept_assumption_proposals(
                     "row_version": still_open[p.gap].row_version,
                 },
             )
-            for position, p in enumerate(validation.proposals, start=1)
+            for position, p in enumerate(validation.proposals, start=after + 1)
         ],
     )
     await repo.set_proposal_status(
@@ -324,7 +372,7 @@ async def _start(ctx: JobContext, version_id: UUID) -> _Started | None:
             or version.proposal_status not in _PROPOSING
         ):
             return None
-        if await repo.has_assumptions(uow, version_id):
+        if await repo.has_proposed_assumptions(uow, version_id):
             await repo.set_proposal_status(
                 uow, version_id, from_statuses=_PROPOSING, status=ProposalStatus.SUCCEEDED.value
             )

@@ -64,7 +64,7 @@ function line(contingency: number): EstimateLine {
 function assumption(
   n: number,
   kind: "condition" | "contingency",
-  options: { hours?: number; line?: boolean; accepted?: boolean } = {},
+  options: { hours?: number; line?: boolean; accepted?: boolean; carriedFrom?: number } = {},
 ): Assumption {
   return {
     id: `00000000-0000-7000-8000-0000000000a${n}`,
@@ -84,6 +84,7 @@ function assumption(
     accepted_by: options.accepted ? { id: "u1", name: "[NAME]" } : null,
     accepted_at: options.accepted ? "2026-10-05T09:00:00Z" : null,
     row_version: options.accepted ? 2 : 1,
+    carried_from_version: options.carriedFrom ?? null,
   };
 }
 
@@ -219,6 +220,25 @@ describe("the Assumptions Register", () => {
     expect(within(grid).getByRole("rowheader", { name: "Total" }).closest("tr")?.textContent).toBe(
       "Total10.020.030.0",
     );
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("marks an Assumption a re-draft carried forward, next to who accepted it", async () => {
+    const carried = [
+      assumption(1, "condition", { accepted: true, carriedFrom: 1 }),
+      assumption(2, "contingency", { hours: 8, line: true, accepted: true, carriedFrom: 1 }),
+      assumption(3, "condition"),
+    ];
+    const { container } = renderSection(view(version(carried, { version: 2 }, 0)));
+
+    expect(within(row(1)).getByText("Carried from v1")).toBeTruthy();
+    expect(within(row(1)).getByText("Accepted by [NAME], 5 Oct 2026")).toBeTruthy();
+    expect(row(1).hasAttribute("data-blocker")).toBe(false);
+    expect(within(row(2)).getByText("Carried from v1")).toBeTruthy();
+    expect(within(row(2)).getByText("Line: [LINE]")).toBeTruthy();
+    // A proposal of this version isn't carried, and is still accepted the usual way.
+    expect(within(row(3)).queryByText(/^Carried from/)).toBeNull();
+    expect(within(register()).getByRole("button", { name: "Accept all (1)" })).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 

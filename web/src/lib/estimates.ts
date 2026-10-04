@@ -187,6 +187,13 @@ export function acceptedLabel(
     : `Accepted by ${name}`;
 }
 
+/** "Carried from v1" for an Assumption a re-draft carried forward; null for a proposal. */
+export function carriedLabel(assumption: Pick<Assumption, "carried_from_version">): string | null {
+  return assumption.carried_from_version == null
+    ? null
+    : `Carried from v${assumption.carried_from_version}`;
+}
+
 /** "Changed by Jane Doe since you opened it." (someone else when unknown). */
 export function staleMessage(changedBy: string | null | undefined): string {
   return `Changed by ${changedBy ?? "someone else"} since you opened it.`;
