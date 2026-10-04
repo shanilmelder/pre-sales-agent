@@ -1,17 +1,26 @@
-"""Read models for Opportunity Sources (Story 2.1)."""
+"""Read models for Opportunity Sources (Story 2.1) and their parse state (Story 2.2)."""
 
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
+from app.modules.intake.domain.parsing import ParseErrorCode, ParseStatus
 from app.modules.intake.domain.sources import TEXT_MAX_CHARS, SourceKind
 from app.modules.opportunities.application.public import UserRef
 
 
+class SourceParse(BaseModel):
+    """The parse state of a Source's latest version. `error_code` is set only when
+    `failed`."""
+
+    status: ParseStatus
+    error_code: ParseErrorCode | None
+
+
 class Source(BaseModel):
     """An Opportunity Source with its latest version. `filename`, `size_bytes`,
-    `uploaded_by` and `uploaded_at` describe that version; `version_count` counts them
-    all."""
+    `uploaded_by`, `uploaded_at` and `parse` describe that version; `version_count` counts
+    them all. `parse` is null only for a version with no parse state."""
 
     id: str
     kind: SourceKind
@@ -22,6 +31,7 @@ class Source(BaseModel):
     uploaded_by: UserRef
     uploaded_at: datetime
     created_at: datetime
+    parse: SourceParse | None
 
 
 class SourceList(BaseModel):

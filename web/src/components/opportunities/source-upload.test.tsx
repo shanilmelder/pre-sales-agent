@@ -10,7 +10,14 @@ const addSource = vi.hoisted(() => vi.fn<(form: FormData) => Promise<AddSourceRe
 const addTextSource = vi.hoisted(() =>
   vi.fn<(opportunityId: string, text: string) => Promise<AddSourceResult>>(),
 );
-vi.mock("@/app/opportunities/actions", () => ({ addSource, addTextSource }));
+const retryParse = vi.hoisted(() => vi.fn());
+const loadSources = vi.hoisted(() => vi.fn());
+vi.mock("@/app/opportunities/actions", () => ({
+  addSource,
+  addTextSource,
+  retryParse,
+  loadSources,
+}));
 
 import { LiveRegionProvider } from "../shell/live-region";
 import { SourceUpload } from "./source-upload";
@@ -30,6 +37,7 @@ function source(name: string, overrides: Partial<Source> = {}): Source {
     uploaded_by: UPLOADER,
     uploaded_at: "2026-10-04T13:05:00Z",
     created_at: "2026-10-04T13:05:00Z",
+    parse: { status: "parsed", error_code: null },
     ...overrides,
   };
 }

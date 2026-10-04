@@ -135,3 +135,25 @@ class IntakeSourceAdded(TracePayload):
     version: int
     kind: str
     size_bytes: int
+
+
+@register
+class IntakeSourceParsed(TracePayload):
+    """A Source version's text was extracted and stored (Story 2.2 Part B). Actor: the
+    worker (`system`). `char_count` is in Unicode code points."""
+
+    event_type: ClassVar[str] = "intake.source.parsed"
+
+    version: int
+    char_count: int
+
+
+@register
+class IntakeSourceParseRetried(TracePayload):
+    """A collaborator queued a failed Source version's parse again (Story 2.2 Part B).
+    `error_code`: the failure being retried."""
+
+    event_type: ClassVar[str] = "intake.source.parse_retried"
+
+    version: int
+    error_code: str

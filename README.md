@@ -126,6 +126,13 @@ Settings: `PSA_WORKER_POLL_S` (idle poll, default 1 s, jittered), `PSA_WORKER_CO
 (reserved, must be 1), `PSA_JOB_LEASE_S` (default 30 s; a dead worker's job is reclaimed
 after it expires) and `PSA_JOB_HEARTBEAT_S` (default 10 s, at most half the lease).
 
+Job types: `intake.parse_source` (Story 2.2 Part B) turns each added Source version into
+plain text. Each file is parsed in a child process (`python -m
+app.modules.intake.adapters.parse_cli`) with a wall-clock limit `PSA_PARSE_TIMEOUT_S`
+(default 120 s, at most 600) and, on Linux, `RLIMIT_AS` `PSA_PARSE_MAX_MEMORY_MB` (default
+1024) and `RLIMIT_CPU`. Parsers: stdlib for `.txt`, `.eml`, `.docx`, in-house `.vtt`, and
+`pypdf` (BSD) for `.pdf`; `.msg` is not parsed yet (`not_supported`).
+
 ## Authentication (Auth0)
 
 Auth0 (EU tenant) handles authentication only; roles live in `identity`, not in Auth0

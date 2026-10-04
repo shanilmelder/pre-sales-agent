@@ -271,6 +271,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/sources/{source_id}/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Source Parse
+         * @description Parse the Source's latest version again after it failed: sets it back to `queued` and
+         *     enqueues a new parse job. The Opportunity's owner and collaborators only.
+         */
+        post: operations["retry_source_parse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -481,6 +502,16 @@ export interface components {
             created_at: string;
         };
         /**
+         * ParseErrorCode
+         * @enum {string}
+         */
+        ParseErrorCode: "unreadable" | "not_supported" | "no_text" | "timeout" | "too_large_output";
+        /**
+         * ParseStatus
+         * @enum {string}
+         */
+        ParseStatus: "queued" | "parsing" | "parsed" | "failed";
+        /**
          * Role
          * @enum {string}
          */
@@ -488,8 +519,8 @@ export interface components {
         /**
          * Source
          * @description An Opportunity Source with its latest version. `filename`, `size_bytes`,
-         *     `uploaded_by` and `uploaded_at` describe that version; `version_count` counts them
-         *     all.
+         *     `uploaded_by`, `uploaded_at` and `parse` describe that version; `version_count` counts
+         *     them all. `parse` is null only for a version with no parse state.
          */
         Source: {
             /** Id */
@@ -514,6 +545,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            parse: components["schemas"]["SourceParse"] | null;
         };
         /**
          * SourceKind
@@ -527,6 +559,15 @@ export interface components {
         SourceList: {
             /** Items */
             items: components["schemas"]["Source"][];
+        };
+        /**
+         * SourceParse
+         * @description The parse state of a Source's latest version. `error_code` is set only when
+         *     `failed`.
+         */
+        SourceParse: {
+            status: components["schemas"]["ParseStatus"];
+            error_code: components["schemas"]["ParseErrorCode"] | null;
         };
         /**
          * UserProfile
@@ -2740,6 +2781,161 @@ export interface operations {
                 };
             };
             /** @description Rejected text: `file_empty` (blank once trimmed), `file_too_large` (longer than 1,000,000 characters once trimmed), `file_content_mismatch` (a NUL character or a lone surrogate); the `detail` is the sentence to show. Or `validation_error` (no `text` string, or an unknown field) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    retry_source_parse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Source, its parse `queued` */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is neither its owner nor a collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Source with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Source's latest version has not failed to parse (`parse_not_failed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;

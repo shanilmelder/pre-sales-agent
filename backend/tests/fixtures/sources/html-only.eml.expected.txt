@@ -1,0 +1,8 @@
+Subject: HTML only
+From: Sample Sender <sender@example.invalid>
+
+First & foremost
+
+Second bold line
+
+Write &lt;tag&gt; literally

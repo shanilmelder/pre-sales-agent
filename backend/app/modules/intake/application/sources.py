@@ -17,8 +17,10 @@ stored; pasted text is checked in full before it is stored.
 
 Identical bytes added again to the same Opportunity (any filename, pasted or not) become the next
 version of the Source that already holds them; different bytes are always a new Source.
-Every added version appends one `intake.source.added` event. Adding a Source never changes
-the Opportunity's `row_version`. Logs and trace payloads hold ids, kinds and sizes only.
+Every added version appends one `intake.source.added` event, and gets a `queued` parse row
+and an `intake.parse_source` job (Story 2.2 Part B) in the same Unit of Work. Adding a
+Source never changes the Opportunity's `row_version`. Logs and trace payloads hold ids,
+kinds and sizes only.
 """
 
 from collections.abc import AsyncIterator, Iterable
@@ -29,7 +31,9 @@ from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.intake.adapters import repository
 from app.modules.intake.adapters.repository import SourceRecord
-from app.modules.intake.application.models import Source, SourceList
+from app.modules.intake.application.jobs import enqueue_parse
+from app.modules.intake.application.models import Source, SourceList, SourceParse
+from app.modules.intake.domain.parsing import ParseErrorCode, ParseStatus
 from app.modules.intake.domain.sources import (
     EMPTY_MESSAGE,
     PASTED_TEXT_FILENAME,
@@ -94,6 +98,17 @@ def max_body_bytes(max_bytes: int) -> int:
 # --- queries --------------------------------------------------------------------------------
 
 
+def _parse(record: SourceRecord) -> SourceParse | None:
+    if record.parse_status is None:
+        return None
+    return SourceParse(
+        status=ParseStatus(record.parse_status),
+        error_code=(
+            None if record.parse_error_code is None else ParseErrorCode(record.parse_error_code)
+        ),
+    )
+
+
 async def _sources(uow: UnitOfWork, records: Iterable[SourceRecord]) -> list[Source]:
     records = list(records)
     names = await identity.user_names(uow, {r.uploaded_by for r in records})
@@ -108,6 +123,7 @@ async def _sources(uow: UnitOfWork, records: Iterable[SourceRecord]) -> list[Sou
             uploaded_by=UserRef(id=str(r.uploaded_by), name=names.get(r.uploaded_by, UNKNOWN_USER)),
             uploaded_at=r.uploaded_at,
             created_at=r.created_at,
+            parse=_parse(r),
         )
         for r in records
     ]
@@ -249,6 +265,8 @@ async def _record(
         size_bytes=blob.size,
         uploaded_by=uploader,
     )
+    await repository.insert_parse(uow, source_id=source_id, version=version)
+    await enqueue_parse(uow, source_id=source_id, version=version, opportunity_id=opportunity_id)
     await trace.append(
         uow,
         actor=actor.actor,
