@@ -558,6 +558,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/red-team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Red Team
+         * @description The Opportunity's current Red Team Review (null before the first) with its Findings,
+         *     critical first, then high, medium and low, each with the Requirements and Estimate lines it
+         *     challenges, and the counts per severity; and its latest Red Team run (null before the
+         *     first). Anyone who can read the Opportunity.
+         */
+        get: operations["get_red_team"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/red-team-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Red Team Review
+         * @description Queue a new Red Team review of the Opportunity's active Requirements, open Gaps and
+         *     draft Estimate, e.g. to retry a failed one. The owner and collaborators, except sales
+         *     representatives.
+         */
+        post: operations["start_red_team_review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -867,6 +912,42 @@ export interface components {
          * @enum {string}
          */
         ExtractionStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * FindingCategory
+         * @enum {string}
+         */
+        FindingCategory: "integration_harder" | "requirement_incomplete" | "capability_overstated" | "hidden_dependency";
+        /**
+         * FindingLine
+         * @description A line of the reviewed Estimate Version the Finding challenges.
+         */
+        FindingLine: {
+            /** Id */
+            id: string;
+            /** Section */
+            section: string;
+            /** Title */
+            title: string;
+            /** Effort Hours */
+            effort_hours: number;
+        };
+        /**
+         * FindingRequirement
+         * @description A Requirement the Finding challenges, at the version the Red Team read. `label` is
+         *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
+         *     first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
+         *     that version's text, with `…` when cut.
+         */
+        FindingRequirement: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+            /** Excerpt */
+            excerpt: string;
+        };
         /**
          * Gap
          * @description A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
@@ -1217,6 +1298,75 @@ export interface components {
          */
         QuestionStatus: "drafted" | "superseded";
         /**
+         * RedTeamFinding
+         * @description A Red Team Finding: its category, severity, specific title and argument, with the
+         *     Requirements and Estimate lines it challenges.
+         */
+        RedTeamFinding: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            category: components["schemas"]["FindingCategory"];
+            severity: components["schemas"]["Severity"];
+            /** Title */
+            title: string;
+            /** Argument */
+            argument: string;
+            /** Requirements */
+            requirements: components["schemas"]["FindingRequirement"][];
+            /** Lines */
+            lines: components["schemas"]["FindingLine"][];
+        };
+        /**
+         * RedTeamReviewView
+         * @description The Opportunity's current Red Team Review. `findings`: critical first, then high,
+         *     medium and low, then in the order the Red Team raised them. `estimate_version` is the
+         *     number of the Estimate Version reviewed (null when there was none). `dropped_count`:
+         *     proposed Findings that broke a rule.
+         */
+        RedTeamReviewView: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["ReviewStatus"];
+            /** Estimate Version Id */
+            estimate_version_id: string | null;
+            /** Estimate Version */
+            estimate_version: number | null;
+            /** Dropped Count */
+            dropped_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            counts: components["schemas"]["SeverityCounts"];
+            /** Findings */
+            findings: components["schemas"]["RedTeamFinding"][];
+        };
+        /**
+         * RedTeamRun
+         * @description The Opportunity's latest Red Team run. `error_code` is set only when `failed`.
+         */
+        RedTeamRun: {
+            status: components["schemas"]["RunStatus"];
+            error_code: components["schemas"]["RunErrorCode"] | null;
+        };
+        /**
+         * RedTeamView
+         * @description The Opportunity's current Red Team Review (null before the first) and its latest Red
+         *     Team run (null before the first). `can_start`: whether the caller may start (retry) a
+         *     review. The UI only uses it to hide controls; the API decides.
+         */
+        RedTeamView: {
+            review: components["schemas"]["RedTeamReviewView"] | null;
+            run: components["schemas"]["RedTeamRun"] | null;
+            /** Can Start */
+            can_start: boolean;
+        };
+        /**
          * Requirement
          * @description An active Requirement of the Opportunity with the passages it cites. `origin` is
          *     `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
@@ -1299,6 +1449,11 @@ export interface components {
          */
         RequirementOrigin: "extracted" | "human";
         /**
+         * ReviewStatus
+         * @enum {string}
+         */
+        ReviewStatus: "current" | "superseded";
+        /**
          * Role
          * @enum {string}
          */
@@ -1328,12 +1483,38 @@ export interface components {
             qa: number;
         };
         /**
+         * RunErrorCode
+         * @enum {string}
+         */
+        RunErrorCode: "model_unavailable" | "model_timeout" | "output_invalid";
+        /**
+         * RunStatus
+         * @enum {string}
+         */
+        RunStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
          * Section
          * @description The template's sections: the Requirement classifications, in the Requirements tab's
          *     order.
          * @enum {string}
          */
         Section: "functional" | "integration" | "data" | "security" | "non_functional" | "commercial";
+        /**
+         * Severity
+         * @enum {string}
+         */
+        Severity: "low" | "medium" | "high" | "critical";
+        /** SeverityCounts */
+        SeverityCounts: {
+            /** Critical */
+            critical: number;
+            /** High */
+            high: number;
+            /** Medium */
+            medium: number;
+            /** Low */
+            low: number;
+        };
         /**
          * Source
          * @description An Opportunity Source with its latest version. `filename`, `size_bytes`,
@@ -5546,6 +5727,270 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_red_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedTeamView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    start_red_team_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new Red Team run, `queued` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedTeamRun"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A Red Team review is already queued or running (`red_team_review_in_progress`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

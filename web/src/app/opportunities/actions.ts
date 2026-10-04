@@ -3,17 +3,20 @@
 import {
   getEstimate,
   getOpportunity,
+  getRedTeam,
   listGaps,
   listRequirements,
   listSources,
   type EstimateResult,
   type GapsResult,
+  type RedTeamResult,
   type RequirementsResult,
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Assumption, EstimateDraft } from "@/lib/estimates";
 import type { Detection } from "@/lib/gaps";
+import type { RedTeamRun } from "@/lib/red-team";
 import {
   codePointLength,
   sliceCodePoints,
@@ -128,6 +131,14 @@ export type StartExtractionResult =
 export type StartEstimateDraftResult =
   | { kind: "ok"; draft: EstimateDraft }
   /** 409: a draft is already queued or running. */
+  | { kind: "conflict" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type StartRedTeamReviewResult =
+  | { kind: "ok"; run: RedTeamRun }
+  /** 409: a Red Team review is already queued or running. */
   | { kind: "conflict" }
   | { kind: "forbidden" }
   | { kind: "not-found" }
@@ -616,6 +627,47 @@ export async function startEstimateDraft(
   } catch (thrown) {
     console.error(
       `start estimate draft failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** The Opportunity's Red Team Review and latest run as stored now (the Assessments tab polls
+ * this while a review runs). */
+export async function loadRedTeam(opportunityId: unknown): Promise<RedTeamResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return getRedTeam(opportunityId);
+}
+
+/** `POST /api/v1/opportunities/{id}/red-team-reviews`: review the Opportunity again (the Retry
+ * of a failed review). The API checks who may start one and that none is running. */
+export async function startRedTeamReview(
+  opportunityId: unknown,
+): Promise<StartRedTeamReviewResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/red-team-reviews",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", run: data };
+    switch (response.status) {
+      case 409:
+        return { kind: "conflict" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `start red team review failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `start red team review failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

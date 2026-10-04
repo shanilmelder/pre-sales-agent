@@ -30,6 +30,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   startGapDetection: vi.fn(),
   loadEstimate: vi.fn(),
   startEstimateDraft: vi.fn(),
+  loadRedTeam: vi.fn(),
+  startRedTeamReview: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -732,8 +734,89 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
+  function foundWithRedTeam(body: unknown) {
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/red-team")
+        ? body
+          ? { data: body, response: new Response(null, { status: 200 }) }
+          : { response: new Response(null, { status: 500 }) }
+        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+  }
+
+  it("tab URL /assessments: the Red Team section with its severity-ranked Findings", async () => {
+    signedIn(["sales_representative"]);
+    foundWithRedTeam({
+      review: {
+        id: "00000000-0000-7000-8000-0000000000c1",
+        version: 2,
+        status: "current",
+        estimate_version_id: "00000000-0000-7000-8000-0000000000d1",
+        estimate_version: 2,
+        dropped_count: 0,
+        created_at: "2026-10-05T09:00:00Z",
+        counts: { critical: 1, high: 0, medium: 0, low: 0 },
+        findings: [
+          {
+            id: "00000000-0000-7000-8000-0000000000c2",
+            position: 1,
+            category: "integration_harder",
+            severity: "critical",
+            title: "[FINDING]",
+            argument: "[ARGUMENT]",
+            requirements: [
+              {
+                id: "00000000-0000-7000-8000-0000000000f1",
+                version: 1,
+                label: "R1",
+                excerpt: "[EXCERPT]",
+              },
+            ],
+            lines: [],
+          },
+        ],
+      },
+      run: { status: "succeeded", error_code: null },
+      can_start: false,
+    });
+    const { container } = await renderWorkspace("assessments");
+    expect(selectedTabs()).toEqual(["5Assessments"]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { level: 2, name: "Assessments" })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "Red Team" })).toBeTruthy();
+    expect(within(panel).getByText("Red Team v2")).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: /\[FINDING\]/ })).toBeTruthy();
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/red-team", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /assessments: the empty state", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithRedTeam({ review: null, run: null, can_start: true });
+    await renderWorkspace("assessments");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Red Team reviews the Opportunity after the Estimate is drafted.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("tab URL /assessments: a failed read says so", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithRedTeam(null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("assessments");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Red Team Review could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
+
   it.each([
-    ["assessments", "5Assessments"],
     ["conflicts", "6Conflicts"],
     ["trace", "8Trace"],
     ["actuals", "9Actuals"],
@@ -747,7 +830,7 @@ describe("/opportunities/[id] workspace", () => {
     expect(within(panel).getByText(NOT_AVAILABLE)).toBeTruthy();
     expect(within(panel).getByRole("heading", { level: 2, name: label.slice(1) })).toBeTruthy();
     expect(screen.queryByText("[CUSTOMER]")).toBeNull();
-    if (tab === "assessments") expect(await axeViolations(container)).toEqual([]);
+    if (tab === "conflicts") expect(await axeViolations(container)).toEqual([]);
   });
 
   it("an unknown slug is the not-found page", async () => {
@@ -761,7 +844,16 @@ describe("/opportunities/[id] workspace", () => {
     expect(notFound).toHaveBeenCalledTimes(3);
   });
 
-  it.each([undefined, "overview", "sources", "requirements", "gaps", "estimate", "actuals"])(
+  it.each([
+    undefined,
+    "overview",
+    "sources",
+    "requirements",
+    "gaps",
+    "assessments",
+    "estimate",
+    "actuals",
+  ])(
     "no access on %s: the no-access sentence and no tabs",
     async (tab) => {
       signedIn(["sales_representative"]);

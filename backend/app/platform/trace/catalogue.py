@@ -304,3 +304,28 @@ class EstimatesAssumptionAccepted(TracePayload):
     line_id: str | None
     gap_id: str
     accepted_by: str
+
+
+# Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.
+
+
+@register
+class AssessmentsRedTeamReviewCompleted(TracePayload):
+    """An accepted Red Team run created a Red Team Review. Subject: the Review
+    (`assessments.review`). Actor: the agent (`red_team_agent@<semver>`). Counts only: Findings
+    stored (and per severity), Findings dropped, Requirements, Gaps and Estimate lines read,
+    and earlier Reviews superseded."""
+
+    event_type: ClassVar[str] = "assessments.red_team_review.completed"
+
+    version: int
+    finding_count: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    dropped_count: int
+    requirement_count: int
+    gap_count: int
+    line_count: int
+    superseded_count: int

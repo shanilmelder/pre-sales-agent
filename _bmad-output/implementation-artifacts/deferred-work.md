@@ -87,3 +87,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-4-gaps-to-assumptions.md`
   summary: [post-demo] Add a downgrade/upgrade round-trip test for migration 0013 with a converted Gap.
   evidence: Review triage row 9; the repo has the pattern in test_intake_requirement_edits.py:613.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-red-team-flags.md`
+  summary: [post-demo] Measure run staleness from when the run started (a `started_at` column, one clock) for gaps detection, Estimate drafts and Red Team runs together, and order runs by id rather than transaction-start `created_at`.
+  evidence: Review triage rows 4, 5, 15: a run queued behind a backlog for more than its stale window is failed while its job is alive, and the result is then discarded.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-red-team-flags.md`
+  summary: [post-demo] Align the UI poll cutoff (15 min) with the backend stale window (~39 min for Red Team), so Retry is never offered while the API still answers 409.
+  evidence: Review triage row 6; the same limitation exists for 8.1 Estimate drafts.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-red-team-flags.md`
+  summary: [post-demo] Add a downgrade test for migration 0014 that seeds a queued Red Team job and asserts it is retired.
+  evidence: Review triage row 18; CI's downgrade round-trip runs on empty tables.

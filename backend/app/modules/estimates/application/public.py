@@ -9,6 +9,12 @@ from app.modules.estimates.application.estimates import (
     get_estimate,
     start_draft,
 )
+from app.modules.estimates.application.line_refs import (
+    LineRef,
+    VersionLines,
+    current_version_lines,
+    version_lines,
+)
 from app.modules.estimates.application.models import (
     AcceptAllResult,
     Assumption,
@@ -48,15 +54,19 @@ __all__ = [
     "EstimateSection",
     "EstimateVersion",
     "EstimateView",
+    "LineRef",
     "LineRequirement",
     "OriginGap",
     "RoleHours",
     "RoleMix",
     "Totals",
     "UnconvertedGap",
+    "VersionLines",
     "accept_all_assumptions",
     "accept_assumption",
+    "current_version_lines",
     "enqueue_draft",
     "get_estimate",
     "start_draft",
+    "version_lines",
 ]

@@ -9,8 +9,9 @@ Two kinds of grant, either of which allows an action:
   The caller loads `owner_id` and `member_ids` into the `Resource` before asking.
   `RELATION_EXCLUDED_ROLES` withholds a relation grant from a principal whose roles are all
   excluded for that action (FR-64: sales representatives on an Opportunity can't edit its
-  Requirements, start Gap detection, draft an Estimate or accept an Assumption). Roles add
-  up, so someone who also holds a role that isn't excluded keeps the grant.
+  Requirements, start Gap detection, draft an Estimate, accept an Assumption or start a Red
+  Team Review). Roles add up, so someone who also holds a role that isn't excluded keeps the
+  grant.
 """
 
 from collections.abc import Mapping
@@ -89,6 +90,9 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         # Accepting an Assumption (Story 8.4): the owner and collaborators except sales
         # representatives; always as themselves.
         Action.ASSUMPTION_ACCEPT: frozenset(),
+        # Starting (retrying) a Red Team Review (Story 6.5): the owner and collaborators
+        # except sales representatives.
+        Action.RED_TEAM_START: frozenset(),
     }
 )
 
@@ -98,6 +102,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_DRAFT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSUMPTION_ACCEPT: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -114,6 +119,7 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.GAP_DETECTION_START,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
+        Action.RED_TEAM_START,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -125,6 +131,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.GAP_DETECTION_START,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
+        Action.RED_TEAM_START,
     }
 )
 
