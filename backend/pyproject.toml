@@ -89,7 +89,7 @@ forbidden_modules = ["app.modules.identity.domain", "app.modules.identity.adapte
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "intake uses identity and opportunities only through their public APIs (AD-2)"
+name = "intake uses identity, opportunities and gaps only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.intake"]
 forbidden_modules = [
@@ -97,5 +97,25 @@ forbidden_modules = [
     "app.modules.identity.adapters",
     "app.modules.opportunities.domain",
     "app.modules.opportunities.adapters",
+    "app.modules.gaps.domain",
+    "app.modules.gaps.adapters",
+    "app.modules.gaps.api",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "gaps uses identity, opportunities and intake only through their public APIs (AD-2)"
+type = "forbidden"
+source_modules = ["app.modules.gaps"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.intake.domain",
+    "app.modules.intake.adapters",
+    "app.modules.intake.api",
 ]
 allow_indirect_imports = true

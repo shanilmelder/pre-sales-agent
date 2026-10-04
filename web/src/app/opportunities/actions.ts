@@ -2,12 +2,15 @@
 
 import {
   getOpportunity,
+  listGaps,
   listRequirements,
   listSources,
+  type GapsResult,
   type RequirementsResult,
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
+import type { Detection } from "@/lib/gaps";
 import {
   codePointLength,
   sliceCodePoints,
@@ -114,6 +117,14 @@ export type RetryParseResult =
 export type StartExtractionResult =
   | { kind: "ok"; extraction: Extraction }
   /** 409: an extraction is already queued or running. */
+  | { kind: "conflict" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type StartGapDetectionResult =
+  | { kind: "ok"; detection: Detection }
+  /** 409: a detection is already queued or running. */
   | { kind: "conflict" }
   | { kind: "forbidden" }
   | { kind: "not-found" }
@@ -514,6 +525,45 @@ export async function startExtraction(opportunityId: unknown): Promise<StartExtr
   } catch (thrown) {
     console.error(
       `start extraction failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** The Opportunity's open Gaps and latest detection as stored now (the Gaps tab polls this
+ * while a detection runs). */
+export async function loadGaps(opportunityId: unknown): Promise<GapsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return listGaps(opportunityId);
+}
+
+/** `POST /api/v1/opportunities/{id}/gap-detections`: detect the Gaps again (the Retry of a
+ * failed detection). The API checks who may start one and that none is running. */
+export async function startGapDetection(opportunityId: unknown): Promise<StartGapDetectionResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/gap-detections",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", detection: data };
+    switch (response.status) {
+      case 409:
+        return { kind: "conflict" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `start gap detection failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `start gap detection failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

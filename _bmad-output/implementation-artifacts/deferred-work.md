@@ -69,3 +69,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-6-edit-and-confirm-requirements.md`
   summary: [post-demo] Decide whether editing a confirmed Requirement should clear its confirmation (or record the confirmed version), so a confirmation never vouches for text its confirmer didn't see. Today an edit keeps `confirmed_at`/`confirmed_by`.
   evidence: Review finding (triage row 1); the spec is silent. Only matters when a different person edits after a confirmation. Raised with the user 2026-10-04.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-detect-gaps.md`
+  summary: [post-demo] Cap the size of `clarification_agent`'s prompt (number or length of Requirements) and the number of Gaps it may return, with a clear failure when an Opportunity is too large.
+  evidence: Review finding (triage row 12), unverified: settle by running detection on an Opportunity with a few hundred Requirements against the target model and checking for context overflow or an oversized reply.

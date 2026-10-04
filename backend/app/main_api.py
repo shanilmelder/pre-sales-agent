@@ -11,6 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, FastAPI, Request, Response
 from pydantic import BaseModel
 
+from app.modules.gaps.api.routes import router as gaps_router
 from app.modules.identity.api.admin_routes import router as identity_admin_router
 from app.modules.identity.api.routes import router as identity_router
 from app.modules.identity.api.user_routes import router as identity_user_router
@@ -114,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(opportunities_router, prefix=API_PREFIX)
     app.include_router(intake_router, prefix=API_PREFIX)
     app.include_router(intake_requirements_router, prefix=API_PREFIX)
+    app.include_router(gaps_router, prefix=API_PREFIX)
     return app
 
 

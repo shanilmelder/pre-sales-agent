@@ -424,6 +424,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Gaps
+         * @description The Opportunity's open Gaps, high impact first, then medium, then low (oldest first
+         *     within an impact), each with the Requirements it relates to and its drafted Clarification
+         *     Question; and its latest Gap detection (null before the first). Anyone who can read the
+         *     Opportunity.
+         */
+        get: operations["list_gaps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/gap-detections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Gap Detection
+         * @description Queue a new Gap detection over the Opportunity's active Requirements, e.g. to retry a
+         *     failed one. The owner and collaborators, except sales representatives.
+         */
+        post: operations["start_gap_detection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -463,6 +507,23 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** ClarificationQuestion */
+        ClarificationQuestion: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+            /** Topic */
+            topic: string;
+            status: components["schemas"]["QuestionStatus"];
+            /**
+             * Status Changed At
+             * Format: date-time
+             */
+            status_changed_at: string;
+            /** Row Version */
+            row_version: number;
+        };
         /**
          * Classification
          * @description A Requirement's classification, in the order the Requirements tab groups them.
@@ -477,6 +538,24 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * Detection
+         * @description The Opportunity's latest Gap detection. `error_code` is set only when `failed`.
+         */
+        Detection: {
+            status: components["schemas"]["DetectionStatus"];
+            error_code: components["schemas"]["DetectionErrorCode"] | null;
+        };
+        /**
+         * DetectionErrorCode
+         * @enum {string}
+         */
+        DetectionErrorCode: "model_unavailable" | "model_timeout" | "output_invalid";
+        /**
+         * DetectionStatus
+         * @enum {string}
+         */
+        DetectionStatus: "queued" | "running" | "succeeded" | "failed";
         /**
          * Extraction
          * @description The Opportunity's latest Requirement extraction. `error_code` is set only when
@@ -498,6 +577,93 @@ export interface components {
          * @enum {string}
          */
         ExtractionStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * Gap
+         * @description An open Gap with the Requirements it relates to and its drafted question.
+         */
+        Gap: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            category: components["schemas"]["GapCategory"];
+            trigger: components["schemas"]["GapTrigger"];
+            /** Why It Matters */
+            why_it_matters: string;
+            impact: components["schemas"]["Impact"];
+            /** Impact Basis */
+            impact_basis: string;
+            origin: components["schemas"]["GapOrigin"];
+            status: components["schemas"]["GapStatus"];
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Requirements */
+            requirements: components["schemas"]["GapRequirement"][];
+            question: components["schemas"]["ClarificationQuestion"] | null;
+        };
+        /**
+         * GapCategory
+         * @enum {string}
+         */
+        GapCategory: "data_volumes" | "versions_and_platforms" | "integration_details" | "security_and_compliance" | "non_functional" | "scope_and_ownership" | "commercial" | "other";
+        /**
+         * GapList
+         * @description The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
+         *     within an impact; and its latest detection (null when none has been queued yet).
+         *     `can_start_detection`: whether the caller may start (retry) a detection. The UI only
+         *     uses it to hide controls; the API decides.
+         */
+        GapList: {
+            /** Items */
+            items: components["schemas"]["Gap"][];
+            detection: components["schemas"]["Detection"] | null;
+            /** Can Start Detection */
+            can_start_detection: boolean;
+        };
+        /**
+         * GapOrigin
+         * @enum {string}
+         */
+        GapOrigin: "detected";
+        /**
+         * GapRequirement
+         * @description A Requirement the Gap relates to, at the version it was raised against. `label` is
+         *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
+         *     first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
+         *     that version's text, with `…` when cut.
+         */
+        GapRequirement: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /**
+         * GapStatus
+         * @enum {string}
+         */
+        GapStatus: "open" | "superseded";
+        /**
+         * GapTrigger
+         * @description What raised the Gap. In the demo, always the agent, by category.
+         */
+        GapTrigger: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "agent_category";
+            category: components["schemas"]["GapCategory"];
+        };
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -513,6 +679,11 @@ export interface components {
              */
             db: "ok";
         };
+        /**
+         * Impact
+         * @enum {string}
+         */
+        Impact: "high" | "medium" | "low";
         /**
          * NewOpportunity
          * @description What a presales engineer enters to create an Opportunity. Text is trimmed; a blank
@@ -703,6 +874,11 @@ export interface components {
             /** After */
             after: string;
         };
+        /**
+         * QuestionStatus
+         * @enum {string}
+         */
+        QuestionStatus: "drafted" | "superseded";
         /**
          * Requirement
          * @description An active Requirement of the Opportunity with the passages it cites. `origin` is
@@ -4086,6 +4262,270 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_gaps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GapList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    start_gap_detection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new detection, `queued` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detection"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A Gap detection is already queued or running (`gap_detection_in_progress`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

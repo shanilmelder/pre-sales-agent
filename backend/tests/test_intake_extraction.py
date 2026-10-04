@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.agents.contract import AgentResult
 from app.agents.intake_agent.agent import prompt
 from app.agents.intake_agent.schema import IntakeOutput
+from app.modules.gaps.application import detection as gaps_detection
 from app.modules.intake.application import extraction as intake_extraction
 from app.modules.intake.application import jobs as intake_jobs
 from app.modules.intake.application import public as intake
@@ -53,6 +54,7 @@ from tests.test_opportunities import PSE, _create, _user
 BASE = "/api/v1/opportunities"
 PARSE = "intake.parse_source"
 EXTRACT = "intake.extract_requirements"
+DETECT = "gaps.detect_gaps"
 LEASE = LeaseSettings(lease_s=30, heartbeat_s=5)
 HIDDEN = timedelta(days=1)
 MINE: list[UUID] = []
@@ -61,7 +63,7 @@ MINE: list[UUID] = []
 
 # --- the fake gateway -----------------------------------------------------------------------
 
-Reply = IntakeOutput | Exception | Callable[[StructuredRequest[Any]], IntakeOutput]
+Reply = BaseModel | Exception | Callable[[StructuredRequest[Any]], BaseModel]
 
 
 class FakeGateway:
@@ -76,7 +78,7 @@ class FakeGateway:
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         if isinstance(reply, Exception):
             raise reply
-        value: BaseModel = reply if isinstance(reply, IntakeOutput) else reply(request)
+        value: BaseModel = reply if isinstance(reply, BaseModel) else reply(request)
         return StructuredResult(
             value=value,
             call_id=uuid4(),
@@ -134,6 +136,7 @@ def _hidden_jobs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     monkeypatch.setattr(intake_jobs, "enqueue", hidden_enqueue)
     monkeypatch.setattr(intake_extraction, "enqueue", hidden_enqueue)
+    monkeypatch.setattr(gaps_detection, "enqueue", hidden_enqueue)  # Story 4.3
     MINE.clear()
     yield
     retire_extraction_jobs(MINE)
@@ -141,8 +144,8 @@ def _hidden_jobs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def retire_extraction_jobs(opportunity_ids: list[UUID]) -> None:
-    """Retire extraction jobs a test left waiting, so no worker ever runs them later (they
-    would call the configured model with test text)."""
+    """Retire extraction and Gap detection jobs a test left waiting, so no worker ever runs
+    them later (they would call the configured model with test text)."""
     url = os.environ.get("PSA_DATABASE_URL")
     if not url or not opportunity_ids:
         return
@@ -152,10 +155,10 @@ def retire_extraction_jobs(opportunity_ids: list[UUID]) -> None:
             conn.execute(
                 sa.text(
                     "UPDATE platform_jobs SET status = 'dead', last_error = 'test: not run' "
-                    "WHERE job_type = :t AND status IN ('queued', 'failed_retrying') "
+                    "WHERE job_type = ANY(:t) AND status IN ('queued', 'failed_retrying') "
                     "AND opportunity_id = ANY(:o)"
                 ),
-                {"t": EXTRACT, "o": list(opportunity_ids)},
+                {"t": [EXTRACT, DETECT], "o": list(opportunity_ids)},
             )
     finally:
         engine.dispose()

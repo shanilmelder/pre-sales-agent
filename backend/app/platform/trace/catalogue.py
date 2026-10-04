@@ -192,3 +192,45 @@ class IntakeRequirementConfirmed(TracePayload):
     event_type: ClassVar[str] = "intake.requirement.confirmed"
 
     version: int
+
+
+# --- gaps ---------------------------------------------------------------------------------
+# Story 4.3. Payloads hold ids, categories, impacts and counts only, never Gap, question or
+# Requirement text.
+
+
+@register
+class GapsGapRaised(TracePayload):
+    """A detection raised a Gap. Subject: the Gap (`gaps.gap`). Actor: the agent
+    (`clarification_agent@<semver>`). `requirement_ids`: the Requirements it relates to."""
+
+    event_type: ClassVar[str] = "gaps.gap.raised"
+
+    detection_id: str
+    category: str
+    impact: str
+    requirement_ids: list[str]
+
+
+@register
+class GapsClarificationQuestionDrafted(TracePayload):
+    """A Clarification Question was drafted for a Gap. Subject: the question
+    (`gaps.clarification_question`). Actor: the agent."""
+
+    event_type: ClassVar[str] = "gaps.clarification_question.drafted"
+
+    gap_id: str
+
+
+@register
+class GapsDetectionCompleted(TracePayload):
+    """A Gap detection finished and its Gaps were stored. Subject: the detection
+    (`gaps.detection`). Actor: the agent. Counts only: Gaps stored, candidates dropped,
+    Requirements read, and earlier open Gaps superseded."""
+
+    event_type: ClassVar[str] = "gaps.detection.completed"
+
+    gap_count: int
+    dropped_count: int
+    requirement_count: int
+    superseded_count: int
