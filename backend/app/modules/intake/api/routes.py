@@ -1,21 +1,26 @@
-"""Opportunity Source routes (Story 2.1 Part A), under
+"""Opportunity Source routes (Story 2.1), under
 `/api/v1/opportunities/{opportunity_id}/sources`.
 
 Uploads are `multipart/form-data` with the file in the `file` field. The body is read as a
 stream (`app.platform.multipart`), never parsed up front, so a rejected type is answered
-before its bytes are read and an oversized file as soon as it passes the limit.
+before its bytes are read and an oversized file as soon as it passes the limit. Pasted
+text is JSON `{"text": ...}` at `…/sources/text`.
 """
 
+import json
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Request
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
+from starlette.requests import ClientDisconnect
 
 from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.intake.application import public as intake
-from app.modules.intake.application.public import Source, SourceList
+from app.modules.intake.application.public import AddTextSource, Source, SourceList
 from app.platform.config import Settings
-from app.platform.errors import PROBLEM_JSON, Problem
+from app.platform.errors import PROBLEM_JSON, FileTooLargeError, Problem
 from app.platform.multipart import MultipartFile
 from app.platform.storage import BlobStore
 from app.platform.uow import UoW
@@ -104,6 +109,76 @@ async def add_source(
         content_length=_content_length(request),
     )
     return source
+
+
+_TEXT_RESPONSES = _responses(403, 404, 422)
+_TEXT_RESPONSES[422] = {
+    "description": "Rejected text: `file_empty` (blank once trimmed), `file_too_large` "
+    "(longer than 1,000,000 characters once trimmed), `file_content_mismatch` (a NUL "
+    "character or a lone surrogate); the `detail` is the sentence to show. Or "
+    "`validation_error` (no `text` string, or an unknown field)",
+    "content": PROBLEM_CONTENT,
+}
+_TEXT_BODY: dict[str, Any] = {
+    "requestBody": {
+        "required": True,
+        "content": {"application/json": {"schema": AddTextSource.model_json_schema()}},
+    }
+}
+
+
+async def _text_body(request: Request) -> AddTextSource:
+    """The JSON body read as a stream and capped at `TEXT_BODY_MAX_BYTES`, so an oversized
+    body is refused before it is buffered. Parsed with `json.loads`, which keeps a lone
+    surrogate escape for the command to reject as unsupported characters."""
+    content_length = _content_length(request)
+    if content_length is not None and content_length > intake.TEXT_BODY_MAX_BYTES:
+        raise FileTooLargeError(intake.TEXT_TOO_LONG_MESSAGE)
+    body = bytearray()
+    try:
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > intake.TEXT_BODY_MAX_BYTES:
+                raise FileTooLargeError(intake.TEXT_TOO_LONG_MESSAGE)
+    except ClientDisconnect:
+        raise RequestValidationError([_invalid_json()]) from None
+    try:
+        data = json.loads(body)
+    except ValueError:
+        raise RequestValidationError([_invalid_json()]) from None
+    try:
+        return AddTextSource.model_validate(data)
+    except ValidationError as exc:
+        raise RequestValidationError(
+            [{**err, "loc": ("body", *err["loc"])} for err in exc.errors()]
+        ) from None
+
+
+def _invalid_json() -> dict[str, Any]:
+    return {"type": "json_invalid", "loc": ("body",), "msg": "Invalid JSON", "input": None}
+
+
+@router.post(
+    "/text",
+    operation_id="add_text_source",
+    status_code=201,
+    responses={**_TEXT_RESPONSES, 201: {"description": "The added Source"}},
+    openapi_extra=_TEXT_BODY,
+)
+async def add_text_source(
+    opportunity_id: UUID,
+    request: Request,
+    actor: CurrentPrincipal,
+    uow: UoW,
+) -> Source:
+    """Add pasted text as a `note` Source named `Pasted text`. Its owner and collaborators
+    only. The trimmed text is stored like a `.txt` upload, so the same bytes again become
+    the next version of the Source holding them."""
+    body = await _text_body(request)
+    settings: Settings = request.app.state.settings
+    return await intake.add_text(
+        uow, actor, opportunity_id, body.text, store=BlobStore(settings.storage_dir)
+    )
 
 
 _LIST_RESPONSES = _responses(404)

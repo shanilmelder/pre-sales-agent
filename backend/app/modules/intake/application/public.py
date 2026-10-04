@@ -1,23 +1,33 @@
 """intake's public API. Other modules import intake only from here."""
 
-from app.modules.intake.application.models import Source, SourceList
+from app.modules.intake.application.models import AddTextSource, Source, SourceList
 from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
+    TEXT_BODY_MAX_BYTES,
     IncomingFile,
     add_file,
+    add_text,
     list_sources,
     max_body_bytes,
 )
-from app.modules.intake.domain.sources import EXTENSION_KINDS, SourceKind
+from app.modules.intake.domain.sources import (
+    EXTENSION_KINDS,
+    TEXT_TOO_LONG_MESSAGE,
+    SourceKind,
+)
 
 __all__ = [
     "EXTENSION_KINDS",
     "MISSING_FILE_DETAIL",
+    "TEXT_BODY_MAX_BYTES",
+    "TEXT_TOO_LONG_MESSAGE",
+    "AddTextSource",
     "IncomingFile",
     "Source",
     "SourceKind",
     "SourceList",
     "add_file",
+    "add_text",
     "list_sources",
     "max_body_bytes",
 ]

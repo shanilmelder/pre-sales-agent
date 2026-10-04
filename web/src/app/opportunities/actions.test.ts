@@ -14,6 +14,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   addSource,
+  addTextSource,
   changeCollaborator,
   createOpportunity,
   searchUsers,
@@ -314,6 +315,73 @@ describe("addSource", () => {
     badId.append("file", new File(["x"], "a.txt"));
     for (const bad of [badId, form(null), form("not a file"), { file: "x" }, null]) {
       expect(await addSource(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("addTextSource", () => {
+  const SOURCE = {
+    id: "00000000-0000-7000-8000-0000000000d5",
+    kind: "note",
+    filename: "Pasted text",
+    version: 1,
+    version_count: 1,
+    size_bytes: 23,
+    uploaded_by: { id: USER_ID, name: "[OWNER]" },
+    uploaded_at: "2026-10-04T10:00:00Z",
+    created_at: "2026-10-04T10:00:00Z",
+  };
+
+  it("posts the text as JSON to the Opportunity's text sources", async () => {
+    api.POST.mockResolvedValue({ data: SOURCE, response: status(201) });
+    const text = "  Customer needs SAP sync\n";
+    expect(await addTextSource(OPP_ID, text)).toEqual({ kind: "ok", source: SOURCE });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/sources/text", {
+      params: { path: { opportunity_id: OPP_ID } },
+      body: { text },
+    });
+  });
+
+  it("a 422 keeps the API's 'Rejected: ...' sentence", async () => {
+    api.POST.mockResolvedValueOnce({
+      error: { code: "file_empty", detail: "Rejected: the text is empty" },
+      response: status(422),
+    });
+    expect(await addTextSource(OPP_ID, " ")).toEqual({
+      kind: "rejected",
+      reason: "Rejected: the text is empty",
+    });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "validation_error", detail: "Invalid fields: body.text" },
+      response: status(422),
+    });
+    expect(await addTextSource(OPP_ID, "x")).toEqual({
+      kind: "rejected",
+      reason: "Rejected: the text couldn't be read",
+    });
+  });
+
+  it("maps 403, 404 and failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValueOnce({ error: { code: "forbidden" }, response: status(403) });
+    expect(await addTextSource(OPP_ID, "x")).toEqual({ kind: "forbidden" });
+    api.POST.mockResolvedValueOnce({ error: { code: "not_found" }, response: status(404) });
+    expect(await addTextSource(OPP_ID, "x")).toEqual({ kind: "not-found" });
+    api.POST.mockResolvedValueOnce({ error: { code: "internal_error" }, response: status(500) });
+    expect(await addTextSource(OPP_ID, "x")).toEqual({ kind: "error" });
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await addTextSource(OPP_ID, "x")).toEqual({ kind: "error" });
+  });
+
+  it("rejects malformed input without calling the API", async () => {
+    for (const [id, text] of [
+      ["not-a-uuid", "x"],
+      [null, "x"],
+      [OPP_ID, null],
+      [OPP_ID, 42],
+    ]) {
+      expect(await addTextSource(id, text)).toEqual({ kind: "error" });
     }
     expect(api.POST).not.toHaveBeenCalled();
   });
