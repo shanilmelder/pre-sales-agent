@@ -322,10 +322,35 @@ export async function searchUsers(q: unknown): Promise<SearchResult> {
   }
 }
 
+const FILE_UNREADABLE = "Rejected: the file couldn't be read";
+const TEXT_UNREADABLE = "Rejected: the text couldn't be read";
+
 /** A 422's sentence: the API's own "Rejected: ..." detail, or a general one. */
-function rejectionReason(detail: string | undefined): string {
+function rejectionReason(detail: string | undefined, fallback: string): string {
   if (detail?.startsWith("Rejected:")) return detail;
-  return "Rejected: the file couldn't be read";
+  return fallback;
+}
+
+/** An add-Source call's outcome (a file or pasted text), by status. */
+function addSourceResult(
+  label: string,
+  data: Source | undefined,
+  error: unknown,
+  response: Response,
+  fallbackReason: string,
+): AddSourceResult {
+  if (data) return { kind: "ok", source: data };
+  switch (response.status) {
+    case 422:
+      return { kind: "rejected", reason: rejectionReason(problem(error).detail, fallbackReason) };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${response.status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
 }
 
 /** `POST /api/v1/opportunities/{id}/sources` with the `file` from `formData` (its
@@ -350,22 +375,31 @@ export async function addSource(formData: unknown): Promise<AddSourceResult> {
         bodySerializer: () => upload,
       },
     );
-    if (data) return { kind: "ok", source: data };
-    switch (response.status) {
-      case 422:
-        return { kind: "rejected", reason: rejectionReason(problem(error).detail) };
-      case 403:
-        return { kind: "forbidden" };
-      case 404:
-        return { kind: "not-found" };
-      default:
-        console.error(
-          `add source failed: status=${response.status} code=${String(problem(error).code)}`,
-        );
-        return { kind: "error" };
-    }
+    return addSourceResult("add source", data, error, response, FILE_UNREADABLE);
   } catch (thrown) {
     console.error(`add source failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/sources/text`: pasted text as a `note` Source named
+ * "Pasted text". The API trims it and checks who may add, the length and the characters;
+ * this only forwards it. Results map as for `addSource`. */
+export async function addTextSource(
+  opportunityId: unknown,
+  text: unknown,
+): Promise<AddSourceResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof text !== "string") return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/sources/text",
+      { params: { path: { opportunity_id: opportunityId } }, body: { text } },
+    );
+    return addSourceResult("add text source", data, error, response, TEXT_UNREADABLE);
+  } catch (thrown) {
+    console.error(`add text source failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,7 +7,10 @@ import type { Source } from "@/lib/sources";
 import { axeViolations } from "@/test/axe";
 
 const addSource = vi.hoisted(() => vi.fn<(form: FormData) => Promise<AddSourceResult>>());
-vi.mock("@/app/opportunities/actions", () => ({ addSource }));
+const addTextSource = vi.hoisted(() =>
+  vi.fn<(opportunityId: string, text: string) => Promise<AddSourceResult>>(),
+);
+vi.mock("@/app/opportunities/actions", () => ({ addSource, addTextSource }));
 
 import { LiveRegionProvider } from "../shell/live-region";
 import { SourceUpload } from "./source-upload";
@@ -19,7 +22,7 @@ const UPLOADER = { id: "00000000-0000-7000-8000-0000000000a1", name: "[UPLOADER]
 function source(name: string, overrides: Partial<Source> = {}): Source {
   return {
     id: `00000000-0000-7000-8000-${String(name.length).padStart(12, "0")}`,
-    kind: name.endsWith(".vtt") ? "transcript" : "document",
+    kind: name.endsWith(".vtt") ? "transcript" : name === "Pasted text" ? "note" : "document",
     filename: name,
     version: 1,
     version_count: 1,
@@ -60,6 +63,7 @@ function rowFor(name: string) {
 
 beforeEach(() => {
   addSource.mockReset();
+  addTextSource.mockReset();
 });
 
 describe("SourcesSection with uploads", () => {
@@ -228,5 +232,234 @@ describe("SourceUpload", () => {
       expect(within(rowFor("huge.pdf")).getByText("Rejected: larger than 50 MB")).toBeTruthy(),
     );
     expect(addSource).not.toHaveBeenCalled();
+  });
+});
+
+describe("Paste text", () => {
+  const NOTE = "Call with [CUSTOMER]: they need SAP sync and 40 ports.";
+
+  function renderSection(initial: Source[] = []) {
+    const view = render(
+      <LiveRegionProvider>
+        <SourcesSection opportunityId={OPP_ID} canAdd initial={initial} />
+      </LiveRegionProvider>,
+    );
+    return { ...view, user: userEvent.setup() };
+  }
+
+  const pasteButton = () => screen.getByRole("button", { name: "Paste text" });
+  const textarea = () => screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Text to add" });
+  const addButton = () => screen.getByRole<HTMLButtonElement>("button", { name: "Add" });
+
+  it("a pasted call note shows Added and tops the list as a Note named Pasted text", async () => {
+    addTextSource.mockResolvedValue({ kind: "ok", source: source("Pasted text") });
+    const { user, container } = renderSection([source("rfp.pdf")]);
+
+    await user.click(pasteButton());
+    expect(pasteButton().getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(textarea());
+    expect(await axeViolations(container)).toEqual([]);
+    await user.paste(NOTE);
+    await user.click(addButton());
+
+    await waitFor(() => expect(within(rowFor("Pasted text")).getByText("Added")).toBeTruthy());
+    expect(addTextSource).toHaveBeenCalledWith(OPP_ID, NOTE);
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText("Pasted text")).toBeTruthy();
+    expect(within(rows[0]).getByText("Note")).toBeTruthy();
+    // The area closes and clears; focus goes back to its button.
+    expect(screen.queryByRole("textbox", { name: "Text to add" })).toBeNull();
+    expect(document.activeElement).toBe(pasteButton());
+    await user.click(pasteButton());
+    expect(textarea().value).toBe("");
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Add is disabled while the trimmed text is empty", async () => {
+    const { user } = renderSection();
+    await user.click(pasteButton());
+
+    expect(addButton().disabled).toBe(true);
+    await user.type(textarea(), "   ");
+    expect(addButton().disabled).toBe(true);
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(addTextSource).not.toHaveBeenCalled();
+    await user.type(textarea(), "x");
+    expect(addButton().disabled).toBe(false);
+  });
+
+  it.each([
+    ["Ctrl+Enter", "{Control>}{Enter}{/Control}"],
+    ["Cmd+Enter", "{Meta>}{Enter}{/Meta}"],
+  ])("%s submits", async (_, keys) => {
+    addTextSource.mockResolvedValue({ kind: "ok", source: source("Pasted text") });
+    const { user } = renderSection();
+    await user.click(pasteButton());
+    await user.type(textarea(), "note");
+
+    await user.keyboard(keys);
+
+    await waitFor(() => expect(within(rowFor("Pasted text")).getByText("Added")).toBeTruthy());
+    expect(addTextSource).toHaveBeenCalledWith(OPP_ID, "note");
+  });
+
+  it("plain Enter adds a new line, not a submit", async () => {
+    const { user } = renderSection();
+    await user.click(pasteButton());
+    await user.type(textarea(), "a{Enter}b");
+    expect(textarea().value).toBe("a\nb");
+    expect(addTextSource).not.toHaveBeenCalled();
+  });
+
+  it("Esc cancels without reaching the shell, and Cancel does the same", async () => {
+    const { user } = renderSection();
+    const shell = vi.fn<(event: KeyboardEvent) => void>();
+    document.addEventListener("keydown", shell);
+    try {
+      await user.click(pasteButton());
+      await user.type(textarea(), "draft");
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("textbox", { name: "Text to add" })).toBeNull();
+      expect(document.activeElement).toBe(pasteButton());
+      expect(shell.mock.calls.some(([event]) => event.key === "Escape")).toBe(false);
+    } finally {
+      document.removeEventListener("keydown", shell);
+    }
+
+    await user.click(pasteButton());
+    expect(textarea().value).toBe("");
+    await user.type(textarea(), "draft");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox", { name: "Text to add" })).toBeNull();
+    expect(addTextSource).not.toHaveBeenCalled();
+  });
+
+  it("a rejection shows the API's sentence and keeps the text", async () => {
+    addTextSource.mockResolvedValue({
+      kind: "rejected",
+      reason: "Rejected: longer than 1,000,000 characters",
+    });
+    const { user } = renderSection();
+    await user.click(pasteButton());
+    await user.type(textarea(), "too long");
+
+    await user.click(addButton());
+
+    await waitFor(() =>
+      expect(
+        within(rowFor("Pasted text")).getByText("Rejected: longer than 1,000,000 characters"),
+      ).toBeTruthy(),
+    );
+    expect(textarea().value).toBe("too long");
+    expect(addButton().disabled).toBe(false);
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("the same text again says Added as version 2", async () => {
+    const first = source("Pasted text");
+    addTextSource.mockResolvedValue({
+      kind: "ok",
+      source: { ...first, version: 2, version_count: 2 },
+    });
+    const { user } = renderSection([first]);
+    await user.click(pasteButton());
+    await user.type(textarea(), "same");
+
+    await user.click(addButton());
+
+    await waitFor(() =>
+      expect(within(rowFor("Pasted text")).getByText("Added as version 2")).toBeTruthy(),
+    );
+    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText("v2")).toBeTruthy();
+  });
+
+  it("pastes and files share one ordered queue", async () => {
+    const pending: Array<(result: AddSourceResult) => void> = [];
+    addSource.mockImplementation(
+      () => new Promise<AddSourceResult>((resolve) => pending.push(resolve)),
+    );
+    addTextSource.mockResolvedValue({ kind: "ok", source: source("Pasted text") });
+    const { user } = renderSection();
+
+    drop([file("a.txt")]);
+    await waitFor(() => expect(addSource).toHaveBeenCalledTimes(1));
+    await user.click(pasteButton());
+    await user.type(textarea(), "note");
+    await user.click(addButton());
+
+    expect(within(rowFor("Pasted text")).getByText("Uploading")).toBeTruthy();
+    expect(addTextSource).not.toHaveBeenCalled();
+    // No second submit while one is pending.
+    expect(addButton().disabled).toBe(true);
+
+    pending[0]({ kind: "ok", source: source("a.txt") });
+    await waitFor(() => expect(within(rowFor("Pasted text")).getByText("Added")).toBeTruthy());
+    expect(addTextSource).toHaveBeenCalledTimes(1);
+    const names = within(screen.getByRole("list", { name: "Uploads" }))
+      .getAllByRole("listitem")
+      .map((li) => li.firstElementChild?.textContent);
+    expect(names).toEqual(["a.txt", "Pasted text"]);
+  });
+
+  it("a failed call says the upload failed and keeps the text", async () => {
+    addTextSource.mockRejectedValue(new Error("network"));
+    const { user } = renderSection();
+    await user.click(pasteButton());
+    await user.type(textarea(), "note");
+
+    await user.click(addButton());
+
+    await waitFor(() =>
+      expect(within(rowFor("Pasted text")).getByText("The upload failed. Try again.")).toBeTruthy(),
+    );
+    expect(textarea().value).toBe("note");
+    expect(addButton().disabled).toBe(false);
+  });
+
+  it("while a paste is pending the area is locked, and success doesn't steal focus", async () => {
+    let resolve: (result: AddSourceResult) => void = () => {};
+    addTextSource.mockImplementation(
+      () => new Promise<AddSourceResult>((done) => (resolve = done)),
+    );
+    const { user } = renderSection();
+    await user.click(pasteButton());
+    const controlled = document.getElementById(pasteButton().getAttribute("aria-controls")!);
+    expect(controlled?.contains(textarea())).toBe(true);
+    await user.type(textarea(), "note");
+
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(addTextSource).toHaveBeenCalledTimes(1));
+
+    expect(textarea().readOnly).toBe(true);
+    const cancel = screen.getByRole<HTMLButtonElement>("button", { name: "Cancel" });
+    expect(cancel.disabled).toBe(true);
+    await user.keyboard("{Escape}");
+    expect(textarea().value).toBe("note");
+
+    const elsewhere = screen.getByRole("button", { name: "Choose files" });
+    act(() => elsewhere.focus());
+    await act(async () => resolve({ kind: "ok", source: source("Pasted text") }));
+
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Text to add" })).toBeNull());
+    expect(document.activeElement).toBe(elsewhere);
+    expect(document.activeElement).not.toBe(pasteButton());
+  });
+
+  it("Esc during an IME composition keeps the area open", async () => {
+    const { user } = renderSection();
+    await user.click(pasteButton());
+    await user.type(textarea(), "draft");
+
+    fireEvent.keyDown(textarea(), { key: "Escape", isComposing: true });
+
+    expect(textarea().value).toBe("draft");
+  });
+
+  it("without can_add_sources there is no Paste text", () => {
+    render(<SourcesSection opportunityId={OPP_ID} canAdd={false} initial={[]} />);
+    expect(screen.queryByRole("button", { name: "Paste text" })).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 });
