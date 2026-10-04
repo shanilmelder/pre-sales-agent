@@ -14,6 +14,7 @@ dependencies = [
     "uvicorn==0.54.0",
     "pyjwt[crypto]==2.15.1",
     "python-multipart==0.0.32",
+    "httpx==0.28.1",
 ]
 
 [dependency-groups]
@@ -21,7 +22,6 @@ dev = [
     "pytest==9.1.1",
     "ruff==0.16.9",
     "mypy==2.3.1",
-    "httpx==0.28.1",
     "import-linter==2.15",
 ]
 
@@ -73,6 +73,12 @@ name = "The api process never imports the job claim loop (AD-1, AD-29)"
 type = "forbidden"
 source_modules = ["app.main_api"]
 forbidden_modules = ["app.platform.jobs.runner", "app.main_worker"]
+
+[[tool.importlinter.contracts]]
+name = "The api process never calls a model (AD-8)"
+type = "forbidden"
+source_modules = ["app.main_api"]
+forbidden_modules = ["app.platform.model_gateway.gateway", "app.platform.model_gateway.ollama"]
 
 [[tool.importlinter.contracts]]
 name = "opportunities uses identity only through its public API (AD-2)"

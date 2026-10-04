@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.platform.model_gateway.profiles import MODEL_PROFILES
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PSA_", extra="ignore")
@@ -74,6 +76,32 @@ class Settings(BaseSettings):
         gt=0,
         description="How often a running job's lease is extended; at most job_lease_s / 2.",
     )
+    ollama_url: str = Field(
+        default="http://127.0.0.1:11434",
+        description="Base URL of the Ollama server the ModelGateway calls (host Ollama in R1).",
+    )
+    model_profile_chat: str = Field(
+        default="demo-chat",
+        description=(
+            "Named model profile (`app.platform.model_gateway.profiles`) used for chat calls. "
+            "`demo-chat` sends prompt text to Ollama's cloud: sample or anonymised data only."
+        ),
+    )
+    model_slots: int = Field(
+        default=1,
+        ge=1,
+        description="Concurrent model calls per process; must be <= OLLAMA_NUM_PARALLEL.",
+    )
+    model_max_retries: int = Field(
+        default=2,
+        ge=0,
+        description="Extra attempts after a model reply that fails schema validation.",
+    )
+    model_timeout_s: float = Field(
+        default=120.0,
+        gt=0,
+        description="Default timeout for one model request (each attempt), in seconds.",
+    )
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], BeforeValidator(str.upper)
     ] = "INFO"
@@ -82,6 +110,16 @@ class Settings(BaseSettings):
     def _heartbeat_inside_lease(self) -> "Settings":
         if self.job_heartbeat_s > self.job_lease_s / 2:
             raise ValueError("job_heartbeat_s must be at most half of job_lease_s")
+        return self
+
+    @model_validator(mode="after")
+    def _known_model_profile(self) -> "Settings":
+        # Fails at startup rather than on the first model call.
+        if self.model_profile_chat not in MODEL_PROFILES:
+            known = ", ".join(sorted(MODEL_PROFILES))
+            raise ValueError(
+                f"model_profile_chat {self.model_profile_chat!r} is not a known profile ({known})"
+            )
         return self
 
 
