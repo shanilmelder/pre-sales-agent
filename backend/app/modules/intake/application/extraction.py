@@ -19,7 +19,8 @@ one is `queued` or `running`. Both hold the Opportunity's extraction lock until 
    failing items by index. Then what resolves is accepted.
 4. `accept_extraction`, one Unit of Work: passages, the superseding of earlier extracted
    Requirements, the new Requirements and their evidence, the extraction `succeeded` with
-   its counts, and an `intake.extraction.completed` trace event.
+   its counts, an `intake.extraction.completed` trace event, and the Opportunity's Gap
+   detection queued (`gaps.enqueue_detection`, Story 4.3).
 
 A gateway error (or any other) is retried by the queue (`max_attempts` 2); on the final
 attempt the handler first marks the extraction `failed` with `model_unavailable`,
@@ -277,6 +278,13 @@ async def accept_extraction(
         source_count=len(sources),
     )
     await _succeed(uow, record, completed, actor)
+    # Story 4.3: every accepted extraction (re)queues the Opportunity's Gap detection, in this
+    # Unit of Work. Imported here, not at the top: gaps reads Requirements through
+    # `intake.application.public`, which imports this module, so a top-level import would be
+    # circular.
+    from app.modules.gaps.application import public as gaps
+
+    await gaps.enqueue_detection(uow, record.opportunity_id)
     _log.info(
         "intake.extraction_accepted",
         extra={**ids, "superseded_count": superseded, **completed.model_dump()},

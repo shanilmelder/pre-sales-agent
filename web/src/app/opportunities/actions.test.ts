@@ -21,11 +21,13 @@ import {
   createOpportunity,
   editRequirement,
   getPassage,
+  loadGaps,
   loadRequirements,
   loadSources,
   retryParse,
   searchUsers,
   startExtraction,
+  startGapDetection,
   updateOpportunity,
 } from "./actions";
 
@@ -514,6 +516,66 @@ describe("loadRequirements", () => {
     api.GET.mockReset();
     api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
     expect(await loadRequirements(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
+describe("startGapDetection", () => {
+  const QUEUED = { status: "queued", error_code: null };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts to the gap-detections route and returns the queued detection", async () => {
+    api.POST.mockResolvedValue({ data: QUEUED, response: new Response(null, { status: 201 }) });
+    expect(await startGapDetection(OPP_ID)).toEqual({ kind: "ok", detection: QUEUED });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/gap-detections",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
+  });
+
+  it.each([
+    [409, "conflict"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: new Response(null, { status }) });
+    expect(await startGapDetection(OPP_ID)).toEqual({ kind });
+  });
+
+  it("is an error when the call throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await startGapDetection(OPP_ID)).toEqual({ kind: "error" });
+  });
+
+  it("refuses an id that isn't a UUID without calling the API", async () => {
+    expect(await startGapDetection("nope")).toEqual({ kind: "error" });
+    expect(await startGapDetection(undefined)).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadGaps", () => {
+  it("reads the Opportunity's open Gaps and latest detection", async () => {
+    const LIST = { items: [], detection: null, can_start_detection: false };
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ data: LIST, response: new Response(null, { status: 200 }) });
+    expect(await loadGaps(OPP_ID)).toEqual({ kind: "ok", list: LIST });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await loadGaps(7)).toEqual({ kind: "error" });
+    expect(await loadGaps("../../users")).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("is an error when the API fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    expect(await loadGaps(OPP_ID)).toEqual({ kind: "error" });
   });
 });
 

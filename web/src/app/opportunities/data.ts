@@ -7,6 +7,7 @@ import type { Filters } from "@/app/opportunities/filters";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
 import { UUID_RE } from "@/lib/opportunities";
+import type { GapList } from "@/lib/gaps";
 import type { RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 
@@ -17,6 +18,7 @@ export type ListResult = { kind: "ok"; page: OpportunityPage } | { kind: "error"
 export type FacetsResult = { kind: "ok"; facets: OpportunityFacets } | { kind: "error" };
 export type SourcesResult = { kind: "ok"; sources: Source[] } | { kind: "error" };
 export type RequirementsResult = { kind: "ok"; list: RequirementList } | { kind: "error" };
+export type GapsResult = { kind: "ok"; list: GapList } | { kind: "error" };
 export type GetResult =
   | { kind: "ok"; opportunity: Opportunity }
   | { kind: "not-found" }
@@ -116,6 +118,24 @@ export async function listRequirements(id: string): Promise<RequirementsResult> 
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET requirements failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/gaps`: the open Gaps, ranked, and the latest detection
+ * (Story 4.3). */
+export async function listGaps(id: string): Promise<GapsResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/gaps", {
+      params: { path: { opportunity_id: id } },
+    });
+    if (data) return { kind: "ok", list: data };
+    console.error(`GET gaps failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET gaps failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

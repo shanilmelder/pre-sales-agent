@@ -40,6 +40,7 @@ _log = get_logger("app.worker")
 _JOB_MODULES: tuple[str, ...] = (
     "app.modules.intake.application.jobs",
     "app.modules.intake.application.extraction",
+    "app.modules.gaps.application.detection",
 )
 _JITTER = 0.2
 

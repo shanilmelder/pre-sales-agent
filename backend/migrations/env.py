@@ -11,6 +11,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 # Model imports register their tables on Base.metadata.
+import app.modules.gaps.adapters.models
 import app.modules.identity.adapters.models
 import app.modules.intake.adapters.models
 import app.modules.opportunities.adapters.models

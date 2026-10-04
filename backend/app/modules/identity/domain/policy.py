@@ -9,8 +9,8 @@ Two kinds of grant, either of which allows an action:
   The caller loads `owner_id` and `member_ids` into the `Resource` before asking.
   `RELATION_EXCLUDED_ROLES` withholds a relation grant from a principal whose roles are all
   excluded for that action (FR-64: sales representatives on an Opportunity can't edit its
-  Requirements). Roles add up, so someone who also holds a role that isn't excluded keeps
-  the grant.
+  Requirements or start Gap detection). Roles add up, so someone who also holds a role that
+  isn't excluded keeps the grant.
 """
 
 from collections.abc import Mapping
@@ -80,11 +80,17 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         # Editing and confirming Requirements: the owner and collaborators, except sales
         # representatives (`RELATION_EXCLUDED_ROLES`); no role grants it on its own.
         Action.REQUIREMENT_EDIT: frozenset(),
+        # Starting (retrying) Gap detection (Story 4.3): like editing Requirements, the owner
+        # and collaborators except sales representatives.
+        Action.GAP_DETECTION_START: frozenset(),
     }
 )
 
 RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
-    {Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE})}
+    {
+        Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
+    }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
 
@@ -97,6 +103,7 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.SOURCE_ADD,
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
+        Action.GAP_DETECTION_START,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -105,6 +112,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.SOURCE_ADD,
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
+        Action.GAP_DETECTION_START,
     }
 )
 

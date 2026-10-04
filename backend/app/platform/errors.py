@@ -145,6 +145,13 @@ class ExtractionInProgressError(ConflictError):
     title = "Extraction in progress"
 
 
+class GapDetectionInProgressError(ConflictError):
+    """A Gap detection was asked for while one is queued or running."""
+
+    code = "gap_detection_in_progress"
+    title = "Gap detection in progress"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

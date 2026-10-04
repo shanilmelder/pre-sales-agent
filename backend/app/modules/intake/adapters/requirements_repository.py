@@ -607,3 +607,26 @@ async def passage_in(
         end=row.end,
         filename=row.filename,
     )
+
+
+async def version_texts(
+    uow: UnitOfWork, opportunity_id: UUID, refs: list[tuple[UUID, int]]
+) -> dict[tuple[UUID, int], tuple[str, str]]:
+    """The text and classification of these Requirement versions `(id, version)` of the
+    Opportunity, from their immutable history (Story 4.3: a Gap cites a version)."""
+    if not refs:
+        return {}
+    rows = await uow.session.execute(
+        select(
+            RequirementVersionRow.requirement_id,
+            RequirementVersionRow.version,
+            RequirementVersionRow.text,
+            RequirementVersionRow.classification,
+        )
+        .join(RequirementRow, RequirementRow.id == RequirementVersionRow.requirement_id)
+        .where(
+            RequirementRow.opportunity_id == opportunity_id,
+            tuple_(RequirementVersionRow.requirement_id, RequirementVersionRow.version).in_(refs),
+        )
+    )
+    return {(row.requirement_id, row.version): (row.text, row.classification) for row in rows}

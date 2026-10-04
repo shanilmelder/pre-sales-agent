@@ -26,6 +26,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadSources: vi.fn(),
   loadRequirements: vi.fn(),
   startExtraction: vi.fn(),
+  loadGaps: vi.fn(),
+  startGapDetection: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -536,8 +538,89 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
+  function foundWithGaps(body: unknown) {
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/gaps")
+        ? body
+          ? { data: body, response: new Response(null, { status: 200 }) }
+          : { response: new Response(null, { status: 500 }) }
+        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+  }
+
+  it("tab URL /gaps: the ranked Gaps with their category and Draft question", async () => {
+    signedIn(["sales_representative"]);
+    foundWithGaps({
+      items: [
+        {
+          id: "00000000-0000-7000-8000-0000000000e1",
+          title: "[GAP]",
+          category: "integration_details",
+          trigger: { kind: "agent_category", category: "integration_details" },
+          why_it_matters: "[WHY]",
+          impact: "high",
+          impact_basis: "[BASIS]",
+          origin: "detected",
+          status: "open",
+          row_version: 1,
+          created_at: "2026-10-05T09:00:00Z",
+          requirements: [
+            {
+              id: "00000000-0000-7000-8000-0000000000f1",
+              version: 1,
+              label: "R1",
+              excerpt: "[EXCERPT]",
+            },
+          ],
+          question: {
+            id: "00000000-0000-7000-8000-0000000000f2",
+            text: "[QUESTION]",
+            topic: "[TOPIC]",
+            status: "drafted",
+            status_changed_at: "2026-10-05T09:00:00Z",
+            row_version: 1,
+          },
+        },
+      ],
+      detection: { status: "succeeded", error_code: null },
+      can_start_detection: false,
+    });
+    const { container } = await renderWorkspace("gaps");
+    expect(selectedTabs()).toEqual(["4Gaps"]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
+    expect(within(panel).getByRole("row").textContent).toBe("HighIntegration details[GAP]Draft");
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /gaps: the empty state", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithGaps({ items: [], detection: null, can_start_detection: true });
+    await renderWorkspace("gaps");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "Gaps appear here after Requirements are extracted.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("tab URL /gaps: a failed read says so", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithGaps(null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("gaps");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Gaps could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
+
   it.each([
-    ["gaps", "4Gaps"],
     ["assessments", "5Assessments"],
     ["conflicts", "6Conflicts"],
     ["estimate", "7Estimate"],
@@ -553,7 +636,7 @@ describe("/opportunities/[id] workspace", () => {
     expect(within(panel).getByText(NOT_AVAILABLE)).toBeTruthy();
     expect(within(panel).getByRole("heading", { level: 2, name: label.slice(1) })).toBeTruthy();
     expect(screen.queryByText("[CUSTOMER]")).toBeNull();
-    if (tab === "gaps") expect(await axeViolations(container)).toEqual([]);
+    if (tab === "assessments") expect(await axeViolations(container)).toEqual([]);
   });
 
   it("an unknown slug is the not-found page", async () => {

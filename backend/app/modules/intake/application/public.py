@@ -20,6 +20,12 @@ from app.modules.intake.application.requirement_edits import (
     confirm_requirement,
     edit_requirement,
 )
+from app.modules.intake.application.requirement_refs import (
+    RequirementSnapshot,
+    RequirementVersionText,
+    active_requirement_snapshots,
+    requirement_version_texts,
+)
 from app.modules.intake.application.requirements import list_requirements, start_extraction
 from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
@@ -50,10 +56,13 @@ __all__ = [
     "RequirementChanges",
     "RequirementEvidence",
     "RequirementList",
+    "RequirementSnapshot",
+    "RequirementVersionText",
     "Source",
     "SourceKind",
     "SourceList",
     "SourceParse",
+    "active_requirement_snapshots",
     "add_file",
     "add_text",
     "confirm_all",
@@ -64,6 +73,7 @@ __all__ = [
     "list_requirements",
     "list_sources",
     "max_body_bytes",
+    "requirement_version_texts",
     "retry_parse",
     "start_extraction",
 ]

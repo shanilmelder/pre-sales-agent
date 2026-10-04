@@ -24,3 +24,4 @@ class Action(StrEnum):
     SOURCE_ADD = "intake.source.add"
     EXTRACTION_START = "intake.extraction.start"
     REQUIREMENT_EDIT = "intake.requirement.edit"
+    GAP_DETECTION_START = "gaps.detection.start"
