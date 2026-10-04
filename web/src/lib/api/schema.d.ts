@@ -655,7 +655,9 @@ export interface components {
          * @description An Assumption of the version: a `condition` (proposal-ready wording, no hours) or a
          *     `contingency` (`amount_hours`, and the line it is linked to, if any), made from one Gap
          *     (`origin`). `accepted_by` and `accepted_at` are null until someone accepts it.
-         *     `row_version` goes back in `If-Match` to accept it.
+         *     `row_version` goes back in `If-Match` to accept it. `carried_from_version`: the number of
+         *     the earlier version a re-draft carried this accepted Assumption from (Story 8.7), null
+         *     for a proposal.
          */
         Assumption: {
             /** Id */
@@ -677,6 +679,8 @@ export interface components {
             accepted_at: string | null;
             /** Row Version */
             row_version: number;
+            /** Carried From Version */
+            carried_from_version: number | null;
         };
         /** AssumptionCounts */
         AssumptionCounts: {

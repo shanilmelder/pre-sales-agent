@@ -258,7 +258,8 @@ class EstimatesEstimateVersionCreated(TracePayload):
     """An accepted draft created an Estimate Version. Subject: the version
     (`estimates.estimate_version`). Actor: the agent (`estimating_agent@<semver>`). Counts
     only: lines stored, lines dropped, active Requirements no line covers, Requirements read,
-    and earlier draft versions superseded."""
+    earlier draft versions superseded, and accepted Assumptions carried from the superseded
+    draft (Story 8.7)."""
 
     event_type: ClassVar[str] = "estimates.estimate_version.created"
 
@@ -269,6 +270,7 @@ class EstimatesEstimateVersionCreated(TracePayload):
     uncovered_count: int
     requirement_count: int
     superseded_count: int
+    carried_assumption_count: int = 0
 
 
 # Story 8.4. Payloads hold ids, kinds and hours only, never Assumption wording or Gap text.

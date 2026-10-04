@@ -1,5 +1,6 @@
 """Persistence for drafts, Estimate Versions, their lines and the lines' Requirement links
-(Story 8.1), and Assumptions (Story 8.4). Runs inside the caller's Unit of Work."""
+(Story 8.1), and Assumptions (Story 8.4; carried to a re-draft, Story 8.7). Runs inside the
+caller's Unit of Work."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -403,6 +404,7 @@ class AssumptionRecord:
     accepted_at: datetime | None
     row_version: int
     created_at: datetime
+    carried_from: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -430,14 +432,80 @@ def _assumption(row: AssumptionRow) -> AssumptionRecord:
         accepted_at=row.accepted_at,
         row_version=row.row_version,
         created_at=row.created_at,
+        carried_from=row.carried_from,
     )
 
 
-async def has_assumptions(uow: UnitOfWork, version_id: UUID) -> bool:
+async def has_proposed_assumptions(uow: UnitOfWork, version_id: UUID) -> bool:
+    """Whether the version has an Assumption that was not carried from an earlier version
+    (i.e. its proposals are stored already)."""
     found = await uow.session.execute(
-        select(AssumptionRow.id).where(AssumptionRow.version_id == version_id).limit(1)
+        select(AssumptionRow.id)
+        .where(AssumptionRow.version_id == version_id, AssumptionRow.carried_from.is_(None))
+        .limit(1)
     )
     return found.first() is not None
+
+
+async def last_assumption_position(uow: UnitOfWork, version_id: UUID) -> int:
+    """The version's highest Assumption position, 0 when it has none."""
+    found = (
+        await uow.session.execute(
+            select(func.max(AssumptionRow.position)).where(AssumptionRow.version_id == version_id)
+        )
+    ).scalar_one_or_none()
+    return found or 0
+
+
+@dataclass(frozen=True, slots=True)
+class CarriedAssumption:
+    """A copy of an accepted Assumption into a new version (Story 8.7)."""
+
+    assumption_id: UUID
+    position: int
+    line_id: UUID | None
+    source: AssumptionRecord
+
+
+async def insert_carried_assumptions(
+    uow: UnitOfWork, version_id: UUID, carried: list[CarriedAssumption]
+) -> None:
+    """Accepted copies of earlier Assumptions: same kind, wording, hours, origin and
+    acceptance, a new id, `row_version` 1, and `carried_from` the source's id."""
+    if not carried:
+        return
+    await uow.session.execute(
+        insert(AssumptionRow),
+        [
+            {
+                "id": c.assumption_id,
+                "version_id": version_id,
+                "position": c.position,
+                "kind": c.source.kind,
+                "wording": c.source.wording,
+                "amount_hours": c.source.amount_hours,
+                "line_id": c.line_id,
+                "origin_ref": c.source.origin_ref,
+                "accepted_by": c.source.accepted_by,
+                "accepted_at": c.source.accepted_at,
+                "carried_from": c.source.id,
+                "row_version": 1,
+            }
+            for c in carried
+        ],
+    )
+
+
+async def carried_from_versions(uow: UnitOfWork, source_ids: list[UUID]) -> dict[UUID, int]:
+    """`{source Assumption id: its version number}`."""
+    if not source_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(AssumptionRow.id, EstimateVersionRow.version)
+        .join(EstimateVersionRow, EstimateVersionRow.id == AssumptionRow.version_id)
+        .where(AssumptionRow.id.in_(source_ids))
+    )
+    return {row.id: row.version for row in rows}
 
 
 async def insert_assumptions(
@@ -466,9 +534,13 @@ async def insert_assumptions(
 
 
 async def assumptions_of(
-    uow: UnitOfWork, version_id: UUID, *, unaccepted_only: bool = False
+    uow: UnitOfWork,
+    version_id: UUID,
+    *,
+    unaccepted_only: bool = False,
+    accepted_only: bool = False,
 ) -> list[AssumptionRecord]:
-    """The version's Assumptions in proposal order."""
+    """The version's Assumptions in order (carried ones first, then the proposals)."""
     statement = (
         select(AssumptionRow)
         .where(AssumptionRow.version_id == version_id)
@@ -477,6 +549,8 @@ async def assumptions_of(
     )
     if unaccepted_only:
         statement = statement.where(AssumptionRow.accepted_at.is_(None))
+    if accepted_only:
+        statement = statement.where(AssumptionRow.accepted_at.is_not(None))
     rows = await uow.session.execute(statement)
     return [_assumption(row) for row in rows.scalars()]
 

@@ -18,7 +18,8 @@ Opportunity's draft lock until commit.
 4. `accept_draft`, one Unit of Work: validates every line (its covers labels must resolve to
    Requirements still active at the version read), supersedes the Opportunity's `draft`
    Estimate Version, stores the new `draft` version (numbered one past the latest, template
-   `demo-1`) with its lines and their Requirement links, marks the draft `succeeded`,
+   `demo-1`) with its lines and their Requirement links, carries the superseded draft's
+   accepted Assumptions into it (Story 8.7), marks the draft `succeeded`,
    traces `estimates.estimate_version.created`, queues the version's Assumption
    proposals (`estimates.propose_assumptions`, Story 8.4) and the Opportunity's Red Team
    Review (`assessments.red_team_review`, Story 6.5).
@@ -50,7 +51,7 @@ from app.agents.estimating_agent.agent import (
 from app.agents.estimating_agent.agent import config as agent_config
 from app.agents.estimating_agent.schema import EstimatingOutput
 from app.modules.estimates.adapters import repository as repo
-from app.modules.estimates.application.assumptions import enqueue_proposals
+from app.modules.estimates.application.assumptions import carry_accepted, enqueue_proposals
 from app.modules.estimates.domain.assumptions import ProposalStatus
 from app.modules.estimates.domain.estimates import (
     IN_PROGRESS,
@@ -229,6 +230,8 @@ async def accept_draft(
         )
         raise ModelOutputInvalidError("No proposed Estimate line was valid.")
 
+    # Story 8.7: the draft version being superseded, whose accepted Assumptions are carried.
+    previous = await repo.current_version(uow, record.opportunity_id)
     superseded = await repo.supersede_drafts(uow, record.opportunity_id)
     number = await repo.latest_version_number(uow, record.opportunity_id) + 1
     version_id = new_id()
@@ -256,6 +259,11 @@ async def accept_draft(
             for position, line in enumerate(validation.lines, start=1)
         ],
     )
+    carried = (
+        0
+        if previous is None
+        else await carry_accepted(uow, source_version_id=previous.id, target_version_id=version_id)
+    )
     created = EstimatesEstimateVersionCreated(
         version=number,
         template_version=TEMPLATE_VERSION,
@@ -264,6 +272,7 @@ async def accept_draft(
         uncovered_count=missing,
         requirement_count=len(requirements),
         superseded_count=superseded,
+        carried_assumption_count=carried,
     )
     await trace.append(
         uow,

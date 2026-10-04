@@ -104,7 +104,9 @@ class Assumption(BaseModel):
     """An Assumption of the version: a `condition` (proposal-ready wording, no hours) or a
     `contingency` (`amount_hours`, and the line it is linked to, if any), made from one Gap
     (`origin`). `accepted_by` and `accepted_at` are null until someone accepts it.
-    `row_version` goes back in `If-Match` to accept it."""
+    `row_version` goes back in `If-Match` to accept it. `carried_from_version`: the number of
+    the earlier version a re-draft carried this accepted Assumption from (Story 8.7), null
+    for a proposal."""
 
     id: str
     kind: AssumptionKind
@@ -116,6 +118,7 @@ class Assumption(BaseModel):
     accepted_by: UserRef | None
     accepted_at: datetime | None
     row_version: int = Field(ge=1)
+    carried_from_version: int | None
 
 
 class AssumptionGroups(BaseModel):

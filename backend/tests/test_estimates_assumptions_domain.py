@@ -1,5 +1,6 @@
 """Assumption proposal rules (Story 8.4): one proposal per open Gap, a Condition without
-hours, a Contingency with 0.5-1,000 h rounded to 0.1, an optional line of the version. Pure."""
+hours, a Contingency with 0.5-1,000 h rounded to 0.1, an optional line of the version; and
+the line a carried Contingency links to in a re-draft (Story 8.7). Pure."""
 
 from decimal import Decimal
 from typing import Any
@@ -9,6 +10,7 @@ import pytest
 from app.modules.estimates.domain.assumptions import (
     AssumptionKind,
     ProposalCandidate,
+    carried_line,
     valid_hours,
     validate_proposal,
     validate_proposals,
@@ -115,3 +117,29 @@ def test_one_proposal_per_gap_and_the_missing_gaps() -> None:
 
 def test_the_proposal_hides_its_wording_from_repr() -> None:
     assert "message types" not in repr(cand())
+
+
+NEW_LINES = [
+    ("a", "integration", "WMS interface"),
+    ("b", "integration", "SAP interface"),
+    ("c", "functional", "WMS interface"),
+    ("d", "commercial", "Training"),
+    ("e", "commercial", " training "),
+]
+
+
+@pytest.mark.parametrize(
+    ("section", "title", "expected"),
+    [
+        ("integration", "WMS interface", "a"),
+        ("integration", "  wms INTERFACE ", "a"),  # trimmed, case-insensitive
+        ("functional", "WMS interface", "c"),  # the section counts
+        ("security", "WMS interface", None),  # no line in that section
+        ("integration", "WMS interfaces", None),  # not the same title
+        ("commercial", "Training", None),  # two lines match
+    ],
+)
+def test_a_carried_contingency_links_to_the_one_matching_line(
+    section: str, title: str, expected: str | None
+) -> None:
+    assert carried_line(section, title, NEW_LINES) == expected

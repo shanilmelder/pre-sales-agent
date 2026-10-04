@@ -2,7 +2,8 @@
 `estimates.propose_assumptions` job with a fake ModelGateway, `accept_assumption_proposals`
 (validation, retry, Unconverted Gaps, trace), the Contingency arithmetic in the Estimate, and
 accepting one or all Assumptions (If-Match, Gap conversion in the same transaction, 409, 412,
-who may), plus Gap re-detection leaving converted Gaps alone.
+who may), plus Gap re-detection leaving converted Gaps alone; and a re-draft carrying the
+accepted Assumptions forward (Story 8.7: line matching, proposals only for open Gaps).
 
 Reuses the fixtures of `test_intake_extraction.py`: jobs are scheduled a day ahead so no other
 claimer takes them, and `drain` runs only the current test's Opportunities' jobs.
@@ -32,7 +33,7 @@ from tests import test_estimates_draft as draft_tests
 from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
-from tests.test_estimates_draft import SIX, lines_out, versions
+from tests.test_estimates_draft import SIX, est_line, lines_out, versions
 from tests.test_gaps_detection import extracted, gap, gaps_out, rows
 from tests.test_health import assert_problem
 from tests.test_intake_extraction import BASE, DETECT, DRAFT, PROPOSE, FakeGateway, drain
@@ -483,28 +484,280 @@ def test_a_model_failure_twice_marks_the_proposals_failed(
     assert {g["title"] for g in body["unconverted_gaps"]} == {t["title"] for t in FOUR}
 
 
-def test_a_redraft_gets_fresh_proposals_for_the_gaps_still_open(
-    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+def redraft(
+    client: TestClient,
+    headers: dict[str, str],
+    opp_id: str,
+    db_url: str,
+    gateway: FakeGateway,
+    lines: tuple[dict[str, Any], ...] = SIX,
+) -> None:
+    """Re-draft the Estimate (the Retry API) with `lines`, storing a new draft version."""
+    started = client.post(f"{BASE}/{opp_id}/estimate-drafts", headers=headers)
+    assert started.status_code == 201, started.text
+    gateway.replies = [lines_out(*lines)]
+    assert drain(db_url, DRAFT) == ["succeeded"]
+
+
+def _accept_two(client: TestClient, headers: dict[str, str], opp_id: str) -> dict[str, Any]:
+    """Accept WMS (a Condition) and Peak (8 h on "24/7 operations"); the v1 Register."""
+    v1 = _all(_register(client, headers, opp_id))
+    for title in ("WMS version unknown", "Peak order volume"):
+        assert _accept(client, headers, opp_id, v1[title]["id"]).status_code == 200
+    return _all(_register(client, headers, opp_id))
+
+
+def _of(engine: Engine, opp_id: str, version_id: Any) -> list[dict[str, Any]]:
+    return [a for a in assumption_rows(engine, opp_id) if a["version_id"] == version_id]
+
+
+def test_a_redraft_carries_the_accepted_assumptions_forward(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     headers, opp = proposed(client, sync_engine, db_url, gateway)
-    wms = _all(_register(client, headers, opp["id"]))["WMS version unknown"]
-    assert _accept(client, headers, opp["id"], wms["id"]).status_code == 200
-    started = client.post(f"{BASE}/{opp['id']}/estimate-drafts", headers=headers)
-    assert started.status_code == 201, started.text
-    gateway.replies = [lines_out(*SIX)]
-    assert drain(db_url, DRAFT) == ["succeeded"]
-    gateway.replies = [by_title(*HAPPY[1:])]  # type: ignore[list-item]
+    v1 = _accept_two(client, headers, opp["id"])
+    v1_rows = {str(a["id"]): a for a in assumption_rows(sync_engine, opp["id"])}
 
+    with caplog.at_level(logging.DEBUG):
+        redraft(client, headers, opp["id"], db_url, gateway)
+
+    first, second = versions(sync_engine, opp["id"])
+    stored = _of(sync_engine, opp["id"], second["id"])
+    assert len(stored) == 2  # only the accepted ones, before any proposal
+    titles = ("WMS version unknown", "Peak order volume")
+    for position, (title, copy) in enumerate(zip(titles, stored, strict=True), start=1):
+        source = v1_rows[v1[title]["id"]]
+        assert str(copy["carried_from"]) == v1[title]["id"]
+        assert copy["id"] != source["id"]
+        assert (copy["position"], copy["row_version"]) == (position, 1)
+        for column in ("kind", "wording", "amount_hours", "origin_ref", "accepted_by"):
+            assert copy[column] == source[column], column
+        assert copy["accepted_at"] == source["accepted_at"]
+    v2_lines = draft_tests.line_rows(sync_engine, second["id"])
+    v2_ops = next(r for r in v2_lines if r["title"] == "24/7 operations")
+    assert stored[1]["line_id"] == v2_ops["id"]  # matched, never the old line id
+    assert stored[1]["line_id"] != v1_rows[v1["Peak order volume"]["id"]]["line_id"]
+
+    created = events(sync_engine, opp["id"], "estimates.estimate_version.created")
+    assert [e["payload"]["carried_assumption_count"] for e in created] == [0, 2]
+
+    # The proposals then cover only the two Gaps still open, numbered after the carried.
+    calls = len(gateway.requests)
+    gateway.replies = [by_title(HAPPY[2], HAPPY[3])]  # type: ignore[list-item]
     assert drain(db_url, PROPOSE) == ["succeeded"]
+    assert len(gateway.requests) == calls + 1
+    assert set(_labels(gateway.requests[-1], "GAP")) == {"SSO provider", "Test data owner"}
+    stored = _of(sync_engine, opp["id"], second["id"])
+    assert [a["position"] for a in stored] == [1, 2, 3, 4]
+    assert [a["carried_from"] is not None for a in stored] == [True, True, False, False]
 
     body = _register(client, headers, opp["id"])
     assert body["version"] == 2
-    assert set(_all(body)) == {"Peak order volume", "SSO provider", "Test data owner"}
+    assert body["counts"] == {"total": 4, "accepted": 2, "not_accepted": 2}
     assert body["unconverted_gaps"] == []
-    assert body["counts"] == {"total": 3, "accepted": 0, "not_accepted": 3}
-    # The old version's Assumption can't be accepted any more.
-    old = assumption_rows(sync_engine, opp["id"])[1]
+    view = _all(body)
+    for title in titles:
+        assert view[title]["carried_from_version"] == 1
+        assert view[title]["accepted_by"] == v1[title]["accepted_by"]
+        assert view[title]["accepted_at"] == v1[title]["accepted_at"]
+        assert view[title]["origin"]["status"] == "converted"
+    assert view["SSO provider"]["carried_from_version"] is None
+    assert v1["WMS version unknown"]["carried_from_version"] is None
+    # The carried 8 h is on v2's matching line, and counted once.
+    lines = {line["title"]: line for s in body["sections"] for line in s["lines"]}
+    assert view["Peak order volume"]["line"] == {
+        "id": lines["24/7 operations"]["id"],
+        "title": "24/7 operations",
+    }
+    assert lines["24/7 operations"]["contingency_hours"] == 8.0
+    assert body["unallocated_contingency_hours"] == 12.0
+    assert body["totals"]["contingency_hours"] == 20.0
+    assert body["totals"]["total_hours"] == 128.5
+
+    # Accept all leaves the carried ones alone.
+    assert _accept_all(client, headers, opp["id"]).json() == {"count": 2}
+    after = _of(sync_engine, opp["id"], second["id"])
+    assert [a["row_version"] for a in after] == [1, 1, 2, 2]
+    # The old version's Assumptions can't be accepted any more.
+    old = _of(sync_engine, opp["id"], first["id"])[2]
+    assert old["accepted_at"] is None
     assert _accept(client, headers, opp["id"], str(old["id"])).status_code == 404
+
+    # Privacy: no wording in logs or the trace.
+    logged = caplog.text + str([r.__dict__ for r in caplog.records])
+    trace = str(created)
+    for leak in ("estimate assumes", "Contingency for", "WMS version", "24/7"):
+        assert leak not in logged
+        assert leak not in trace
+
+
+def test_a_second_redraft_carries_the_carried_assumptions_again(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = proposed(client, sync_engine, db_url, gateway)
+    v1 = _accept_two(client, headers, opp["id"])
+    v1_rows = {str(a["id"]): a for a in assumption_rows(sync_engine, opp["id"])}
+    redraft(client, headers, opp["id"], db_url, gateway)
+    _, second = versions(sync_engine, opp["id"])
+    v2_rows = _of(sync_engine, opp["id"], second["id"])
+
+    redraft(client, headers, opp["id"], db_url, gateway)
+
+    _, _, third = versions(sync_engine, opp["id"])
+    v3_rows = _of(sync_engine, opp["id"], third["id"])
+    assert len(v3_rows) == 2
+    titles = ("WMS version unknown", "Peak order volume")
+    for title, v2_copy, v3_copy in zip(titles, v2_rows, v3_rows, strict=True):
+        source = v1_rows[v1[title]["id"]]
+        assert v3_copy["carried_from"] == v2_copy["id"]
+        for column in ("wording", "origin_ref", "accepted_by", "accepted_at"):
+            assert v3_copy[column] == source[column], column
+    v3_ops = next(
+        r
+        for r in draft_tests.line_rows(sync_engine, third["id"])
+        if r["title"] == "24/7 operations"
+    )
+    assert v3_rows[1]["line_id"] == v3_ops["id"]
+
+    view = _all(_register(client, headers, opp["id"]))
+    assert {view[t]["carried_from_version"] for t in titles} == {2}
+    assert view["Peak order volume"]["line"]["id"] == str(v3_ops["id"])
+    created = events(sync_engine, opp["id"], "estimates.estimate_version.created")
+    assert created[2]["payload"]["carried_assumption_count"] == 2
+
+
+def test_a_redraft_with_nothing_accepted_carries_nothing(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = proposed(client, sync_engine, db_url, gateway)
+
+    redraft(client, headers, opp["id"], db_url, gateway)
+    gateway.replies = [by_title(*HAPPY)]  # type: ignore[list-item]
+    assert drain(db_url, PROPOSE) == ["succeeded"]
+
+    _, second = versions(sync_engine, opp["id"])
+    stored = _of(sync_engine, opp["id"], second["id"])
+    assert [(a["position"], a["carried_from"]) for a in stored] == [
+        (1, None),
+        (2, None),
+        (3, None),
+        (4, None),
+    ]
+    created = events(sync_engine, opp["id"], "estimates.estimate_version.created")
+    assert [e["payload"]["carried_assumption_count"] for e in created] == [0, 0]
+    body = _register(client, headers, opp["id"])
+    assert body["counts"] == {"total": 4, "accepted": 0, "not_accepted": 4}
+
+
+def test_a_carried_contingency_matches_its_line_by_section_and_title(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = proposed(client, sync_engine, db_url, gateway)
+    _accept_two(client, headers, opp["id"])
+    renamed = tuple(
+        est_line("  24/7 OPERATIONS ", ["R2"], section="non_functional", effort=20.0)
+        if line["title"] == "24/7 operations"
+        else line
+        for line in SIX
+    )
+
+    redraft(client, headers, opp["id"], db_url, gateway, renamed)
+
+    body = _register(client, headers, opp["id"])
+    lines = [line for s in body["sections"] for line in s["lines"]]
+    ops = next(line for line in lines if "OPERATIONS" in line["title"])
+    assert _all(body)["Peak order volume"]["line"]["id"] == ops["id"]
+    assert (ops["effort_hours"], ops["contingency_hours"]) == (20.0, 8.0)
+    assert body["unallocated_contingency_hours"] == 0.0  # Test data owner isn't carried
+    assert body["totals"]["contingency_hours"] == 8.0
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        # No line with that section and title (the same title in another section).
+        (est_line("24/7 operations", ["R2"], section="functional", effort=16.0),),
+        # Two lines match.
+        (
+            est_line("24/7 operations", ["R2"], section="non_functional", effort=16.0),
+            est_line("24/7 Operations", ["R2"], section="non_functional", effort=4.0),
+        ),
+    ],
+    ids=["none", "two"],
+)
+def test_a_carried_contingency_without_one_matching_line_is_unallocated(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    replacement: tuple[dict[str, Any], ...],
+) -> None:
+    headers, opp = proposed(client, sync_engine, db_url, gateway)
+    _accept_two(client, headers, opp["id"])
+    lines = tuple(line for line in SIX if line["title"] != "24/7 operations") + replacement
+
+    redraft(client, headers, opp["id"], db_url, gateway, lines)
+
+    body = _register(client, headers, opp["id"])
+    peak = _all(body)["Peak order volume"]
+    assert (peak["line"], peak["carried_from_version"]) == (None, 1)
+    assert all(line["contingency_hours"] == 0.0 for s in body["sections"] for line in s["lines"])
+    assert body["unallocated_contingency_hours"] == 8.0
+    assert body["totals"]["contingency_hours"] == 8.0  # counted once
+    assert body["assumptions"]["contingency_hours"] == 8.0
+
+
+def test_redetection_between_drafts_keeps_the_carried_origins(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = proposed(client, sync_engine, db_url, gateway)
+    v1 = _accept_two(client, headers, opp["id"])
+    detection_tests.requeue(db_url, opp["id"])
+    gateway.replies = [gaps_out(gap("Uptime target", ["R2"]))]
+    assert drain(db_url, DETECT) == ["succeeded"]
+    gateway.replies = [lines_out(*SIX)]
+
+    assert drain(db_url, DRAFT) == ["succeeded"]  # the detection queued a re-draft
+
+    gaps = gap_rows(sync_engine, opp["id"])
+    assert gaps["WMS version unknown"]["status"] == "converted"
+    assert gaps["Peak order volume"]["status"] == "converted"
+    gateway.replies = [by_title(condition("Uptime target"))]  # type: ignore[list-item]
+    assert drain(db_url, PROPOSE) == ["succeeded"]
+    assert set(_labels(gateway.requests[-1], "GAP")) == {"Uptime target"}
+    body = _register(client, headers, opp["id"])
+    view = _all(body)
+    assert set(view) == {"WMS version unknown", "Peak order volume", "Uptime target"}
+    for title in ("WMS version unknown", "Peak order volume"):
+        assert view[title]["origin"]["id"] == v1[title]["origin"]["id"]
+        assert view[title]["origin"]["status"] == "converted"
+        assert view[title]["carried_from_version"] == 1
+    assert body["counts"] == {"total": 3, "accepted": 2, "not_accepted": 1}
+    assert body["unconverted_gaps"] == []
+
+
+def test_a_failed_redraft_carries_nothing(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = proposed(client, sync_engine, db_url, gateway)
+    _accept_two(client, headers, opp["id"])
+    before = assumption_rows(sync_engine, opp["id"])
+    started = client.post(f"{BASE}/{opp['id']}/estimate-drafts", headers=headers)
+    assert started.status_code == 201, started.text
+    invalid = lines_out(est_line("Nothing real", ["R99"]))
+    gateway.replies = [invalid, invalid]
+
+    assert drain(db_url, DRAFT) == ["failed_retrying", "dead"]
+
+    (only,) = versions(sync_engine, opp["id"])
+    assert (only["version"], only["status"]) == (1, "draft")
+    assert assumption_rows(sync_engine, opp["id"]) == before
+    body = _register(client, headers, opp["id"])
+    assert (body["version"], body["counts"]["accepted"]) == (1, 2)
 
 
 # --- accepting ------------------------------------------------------------------------------

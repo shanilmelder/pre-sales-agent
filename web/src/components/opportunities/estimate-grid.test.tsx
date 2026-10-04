@@ -380,6 +380,7 @@ describe("EstimateSection", () => {
             accepted_by: null,
             accepted_at: null,
             row_version: 1,
+            carried_from_version: null,
           },
         ],
         contingencies: [],

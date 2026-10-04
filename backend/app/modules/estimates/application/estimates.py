@@ -2,7 +2,8 @@
 
 - `get_estimate`: the Opportunity's current `draft` Estimate Version, with its sections,
   lines, covered Requirements, its Assumptions Register (Conditions and Contingencies with
-  their origin Gaps, linked lines and who accepted them; the open Gaps left without one) and
+  their origin Gaps, linked lines, who accepted them and the version a carried one came
+  from; the open Gaps left without one) and
   every server-calculated total, Contingency included; and its latest draft run (anyone who
   can read the Opportunity). Superseded versions are hidden.
 - `start_draft`: queue a new draft, e.g. to retry a failed one (`estimates.draft.start`: the
@@ -213,6 +214,9 @@ async def _register(
     names = await identity.user_names(
         uow, {a.accepted_by for a in assumptions if a.accepted_by is not None}
     )
+    sources = await repo.carried_from_versions(
+        uow, [a.carried_from for a in assumptions if a.carried_from is not None]
+    )
     titles = {line.id: line.title for line in lines}
     conditions: list[Assumption] = []
     contingencies: list[Assumption] = []
@@ -233,6 +237,7 @@ async def _register(
             else UserRef(id=str(a.accepted_by), name=names.get(a.accepted_by, UNKNOWN_USER)),
             accepted_at=a.accepted_at,
             row_version=a.row_version,
+            carried_from_version=None if a.carried_from is None else sources.get(a.carried_from),
         )
         (conditions if view.kind is AssumptionKind.CONDITION else contingencies).append(view)
     accepted = sum(1 for a in assumptions if a.accepted_at is not None)
