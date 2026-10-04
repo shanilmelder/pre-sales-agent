@@ -94,6 +94,7 @@ services:
       PSA_STORAGE_DIR: /var/lib/psa/files
       PSA_WORKER_POLL_S: ${PSA_WORKER_POLL_S:-1}
       PSA_WORKER_CONCURRENCY: ${PSA_WORKER_CONCURRENCY:-1}
+      PSA_WORKER_ALIVE_FILE: /tmp/worker-alive
       PSA_JOB_LEASE_S: ${PSA_JOB_LEASE_S:-30}
       PSA_JOB_HEARTBEAT_S: ${PSA_JOB_HEARTBEAT_S:-10}
       PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
@@ -112,9 +113,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # The image's HEALTHCHECK probes the api's HTTP port; the worker serves no HTTP.
+    # The worker serves no HTTP (the image's HEALTHCHECK probes the api's port). It touches
+    # PSA_WORKER_ALIVE_FILE every 10 s from its event loop, so a stale file means a hung or
+    # stopped worker. `up --wait` needs a healthcheck on every service.
     healthcheck:
-      disable: true
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,sys,time; p='/tmp/worker-alive'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 60 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   web:
     <<: *restart

@@ -5,6 +5,7 @@ Claiming and running jobs against Postgres is covered in tests/test_jobs.py."""
 import asyncio
 import logging
 import time
+from pathlib import Path
 
 import pytest
 
@@ -26,6 +27,42 @@ def test_worker_logs_start_and_stops(caplog: pytest.LogCaptureFixture) -> None:
         run_async(scenario())
     events = [r.getMessage() for r in caplog.records if r.name == "app.worker"]
     assert events == ["worker.started", "worker.stopped"]
+
+
+def test_worker_keeps_its_alive_file_fresh_while_running(tmp_path: Path) -> None:
+    alive = tmp_path / "worker-alive"
+
+    async def scenario() -> list[float]:
+        stop = asyncio.Event()
+        settings = Settings(database_url=UNREACHABLE_DB, worker_alive_file=alive)
+        task = asyncio.create_task(
+            run(stop, settings=settings, poll_s=0.01, job_types=(), alive_interval_s=0.05)
+        )
+        await asyncio.sleep(0.1)
+        first = alive.stat().st_mtime_ns
+        await asyncio.sleep(0.2)
+        second = alive.stat().st_mtime_ns
+        stop.set()
+        await asyncio.wait_for(task, timeout=1)
+        return [first, second]
+
+    first, second = run_async(scenario())
+    assert second > first  # touched again while running
+
+
+def test_worker_without_an_alive_file_writes_nothing(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        stop = asyncio.Event()
+        settings = Settings(database_url=UNREACHABLE_DB)
+        task = asyncio.create_task(
+            run(stop, settings=settings, poll_s=0.01, job_types=(), alive_interval_s=0.01)
+        )
+        await asyncio.sleep(0.05)
+        stop.set()
+        await asyncio.wait_for(task, timeout=1)
+
+    run_async(scenario())
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_worker_stops_within_one_poll_interval_when_idle() -> None:
