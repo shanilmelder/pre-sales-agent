@@ -21,7 +21,8 @@ Opportunity's detection lock until commit.
    their drafted questions, marks the detection `succeeded` with its counts, and traces
    `gaps.gap.raised` and `gaps.clarification_question.drafted` per Gap and
    `gaps.detection.completed`; and queues the Opportunity's Estimate draft
-   (`estimates.enqueue_draft`, Story 8.1).
+   (`estimates.enqueue_draft`, Story 8.1) and its specialist assessment run
+   (`assessments.enqueue_run`, Story 5.1; coalesced with a run already queued or running).
 
 When the agent proposed candidates and every one is invalid, acceptance writes nothing and
 raises `ModelOutputInvalidError`, so the queue runs the job once more (`max_attempts` 2); on
@@ -300,6 +301,12 @@ async def accept_gap_detection(
     from app.modules.estimates.application import public as estimates
 
     await estimates.enqueue_draft(uow, record.opportunity_id)
+    # Story 5.1: and queues the specialist assessment run (coalesced with one already queued
+    # or running). Imported here for the same reason: assessments reads Gaps through
+    # `gaps.application.public`.
+    from app.modules.assessments.application import public as assessments
+
+    await assessments.enqueue_run(uow, record.opportunity_id)
     _log.info("gaps.detection_accepted", extra={**ids, **completed.model_dump()})
     return validation
 

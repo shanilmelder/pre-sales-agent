@@ -44,6 +44,8 @@ client = extraction_tests.client
 _chat_profile = detection_tests._chat_profile
 _draft_profile = draft_tests._draft_profile
 _assessment_profile = specialist_tests._assessment_profile
+_no_auto_run = specialist_tests._no_auto_run
+auto_run = specialist_tests.auto_run
 
 
 def _get(client: TestClient, headers: dict[str, str], opp_id: str) -> Any:

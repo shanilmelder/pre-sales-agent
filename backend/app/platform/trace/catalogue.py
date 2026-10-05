@@ -384,8 +384,10 @@ class AssessmentsRedTeamReviewCompleted(TracePayload):
 
 @register
 class AssessmentsAssessmentRunStarted(TracePayload):
-    """A person started an assessment run (or retried one of its tasks). Subject: the run
-    (`assessments.assessment_run`). Actor: that person. `agent_count`: the agents it runs."""
+    """An assessment run was started (or one of its tasks retried). Subject: the run
+    (`assessments.assessment_run`). Actor: the person who started it, or the system
+    (`assessments.run_assessment`) for the automatic run after a Gap detection (Story 5.1).
+    `agent_count`: the agents it runs."""
 
     event_type: ClassVar[str] = "assessments.assessment_run.started"
 

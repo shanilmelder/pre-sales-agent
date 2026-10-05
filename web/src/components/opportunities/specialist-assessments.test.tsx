@@ -286,7 +286,7 @@ describe("SpecialistAssessmentsSection", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "No assessment yet. Run assessment to have the Engineering, PM and Security Agents review this Opportunity.",
+        "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Run assessment" })).toBeTruthy();
@@ -428,6 +428,33 @@ describe("SpecialistAssessmentsSection", () => {
     );
     expect(screen.queryByTestId("running-dot")).toBeNull();
   }, 15_000);
+
+  it("opened while the automatic run is queued, shows the run panel and polls", async () => {
+    vi.useFakeTimers();
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(succeeded, FULL),
+    });
+    renderSection(view(queued));
+
+    expect(panelRows()).toEqual(
+      ["Engineering Agent", "PM Agent", "Security Agent"].map((name) => [
+        name,
+        "Queued",
+        "Waiting for the worker",
+      ]),
+    );
+    expect(
+      screen.queryByText(
+        "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.",
+      ),
+    ).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(loadAssessments).toHaveBeenCalledWith(OPP_ID);
+    expect(screen.getByText("[FINDING 3]")).toBeTruthy();
+  });
 
   it("polls every 2 s only while assessing", async () => {
     vi.useFakeTimers();
