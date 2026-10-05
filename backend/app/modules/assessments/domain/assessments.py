@@ -45,6 +45,9 @@ class AssessmentRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
     PARTIALLY_FAILED = "partially_failed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    """Stopped by a person (Story 5.5): set directly by `cancel_run`, never derived from the
+    tasks', and final (nothing moves a cancelled run again)."""
 
 
 RUN_IN_PROGRESS = frozenset({AssessmentRunStatus.QUEUED, AssessmentRunStatus.RUNNING})
@@ -55,6 +58,8 @@ class AssessmentTaskStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    SKIPPED = "skipped"
+    """Unfinished when its run was cancelled (Story 5.5)."""
 
 
 TASK_IN_PROGRESS = frozenset({AssessmentTaskStatus.QUEUED, AssessmentTaskStatus.RUNNING})
@@ -82,7 +87,7 @@ class FindingKind(StrEnum):
 def run_status(tasks: Iterable[AssessmentTaskStatus]) -> AssessmentRunStatus:
     """A run's status from its tasks': `queued` while every task is queued, `running` while
     any is still queued or running, then `succeeded` when all succeeded, `failed` when none
-    did, otherwise `partially_failed`."""
+    did, otherwise `partially_failed`. A `cancelled` run is never derived: `cancel_run` sets it."""
     statuses = list(tasks)
     if statuses and all(s == AssessmentTaskStatus.QUEUED for s in statuses):
         return AssessmentRunStatus.QUEUED

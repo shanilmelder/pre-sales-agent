@@ -11,8 +11,13 @@
   past `stale_after()` is failed (`model_timeout`) first, so it never blocks.
 - `retry_task`: re-run one `failed` task of the latest run (same action). 409
   `assessment_in_progress` while the run is queued or running, 409
-  `assessment_task_not_failed` unless that task is `failed` in the latest run; 404 for a run
-  that isn't the Opportunity's.
+  `assessment_task_not_failed` unless that task is `failed` in the latest run (never in a
+  cancelled one); 404 for a run that isn't the Opportunity's.
+- `cancel_run` (Story 5.5): cancel the Opportunity's latest run while it is queued or running
+  (same action): its unfinished tasks `skipped`, the run `cancelled`; Assessments already
+  accepted stay current. 409 `assessment_not_in_progress` otherwise (a lost run is failed
+  first, so it can't be cancelled; a run whose tasks have all finished is left for its job
+  to finish); 404 for a run that isn't the Opportunity's.
 """
 
 from collections import defaultdict
@@ -30,6 +35,7 @@ from app.modules.assessments.adapters.assessment_repository import (
     TaskRecord,
 )
 from app.modules.assessments.application.assessment import (
+    cancel,
     fail_stale,
     queue_run,
     requeue_task,
@@ -73,6 +79,7 @@ from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
 from app.platform.errors import (
     AssessmentInProgressError,
+    AssessmentNotInProgressError,
     AssessmentTaskNotFailedError,
     NotFoundError,
 )
@@ -81,6 +88,9 @@ from app.platform.uow import UnitOfWork
 
 IN_PROGRESS_DETAIL = "An assessment is already running for this Opportunity."
 NOT_FAILED_DETAIL = "Only a failed task of the latest assessment run can be retried."
+NOT_IN_PROGRESS_DETAIL = (
+    "Only the latest assessment run can be cancelled, while it is queued or running."
+)
 RUN_NOT_FOUND_DETAIL = "No such assessment run for this Opportunity."
 INACTIVE_LABEL = "Superseded"
 _log = get_logger(__name__)
@@ -286,6 +296,9 @@ async def retry_task(
     if (
         latest is None
         or latest.id != run_id
+        # A cancelled run is final: re-queueing a task that failed before the cancel would
+        # revive it.
+        or latest.status == AssessmentRunStatus.CANCELLED
         or task is None
         or task.status != AssessmentTaskStatus.FAILED
     ):
@@ -298,6 +311,43 @@ async def retry_task(
             "run_id": str(run_id),
             "agent": agent.value,
             "actor_id": actor.actor.id,
+        },
+    )
+    return await _current_run(uow, run_id)
+
+
+async def cancel_run(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID, run_id: UUID
+) -> AssessmentRun:
+    """Cancel the Opportunity's latest assessment run while it is queued or running."""
+    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
+    identity.authorize(actor, Action.ASSESSMENT_START, resource)
+    await repo.lock_runs(uow, opportunity_id)
+    record = await repo.get_run(uow, run_id)
+    if record is None or record.opportunity_id != opportunity_id:
+        raise NotFoundError(RUN_NOT_FOUND_DETAIL)
+    await fail_stale(uow, opportunity_id)
+    latest = await repo.latest_run(uow, opportunity_id)
+    if (
+        latest is None
+        or latest.id != run_id
+        or AssessmentRunStatus(latest.status) not in RUN_IN_PROGRESS
+        # Every task already finished: the job is about to record the outcome.
+        or not any(
+            AssessmentTaskStatus(t.status) in TASK_IN_PROGRESS
+            for t in await repo.tasks_of(uow, run_id)
+        )
+    ):
+        raise AssessmentNotInProgressError(NOT_IN_PROGRESS_DETAIL)
+    skipped, succeeded = await cancel(uow, latest, actor.actor)
+    _log.info(
+        "assessments.assessment_run_cancelled",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "run_id": str(run_id),
+            "actor_id": actor.actor.id,
+            "skipped_count": skipped,
+            "succeeded_count": succeeded,
         },
     )
     return await _current_run(uow, run_id)

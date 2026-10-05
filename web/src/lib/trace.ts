@@ -44,6 +44,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "assessments.assessment_run.started": "Assessment run started",
   "assessments.assessment.completed": "Assessment completed",
   "assessments.assessment_run.completed": "Assessment run completed",
+  "assessments.assessment_run.cancelled": "Assessment run cancelled",
 };
 
 /** An event type in plain words, or the raw type for one this build doesn't know. */

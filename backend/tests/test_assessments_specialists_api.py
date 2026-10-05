@@ -1,5 +1,6 @@
 """The specialist Assessments API (Epic 5 slice 5A): `GET …/assessments`,
-`POST …/assessment-runs` and `POST …/assessment-runs/{run_id}/tasks/{agent}/retry`, against
+`POST …/assessment-runs`, `POST …/assessment-runs/{run_id}/tasks/{agent}/retry` and
+`POST …/assessment-runs/{run_id}/cancel` (Story 5.5), against
 a real, migrated Postgres as psa_app, with the per-agent fake gateway and hidden jobs."""
 
 from datetime import datetime
@@ -21,6 +22,7 @@ from tests.test_assessments_specialists import (
     SECURITY,
     AgentGateway,
     assessment_out,
+    cancel,
     effort,
     finding,
     install,
@@ -364,3 +366,152 @@ def test_a_superseded_requirement_reads_as_superseded(
         (e["requirement"]["label"], e["requirement"]["excerpt"]) for e in engineering["effort"]
     ) == [("Superseded", "Connect to SAP."), ("Superseded", "Runs 24/7.")]
     assert engineering["total_hours"] == 12.0
+
+
+# --- cancelling (Story 5.5) -----------------------------------------------------------------
+
+
+def test_cancel_is_only_for_the_latest_run_while_in_progress(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    install(AgentGateway(replies()))
+    first = started(client, headers, opp["id"])
+    assert drain(db_url, ASSESS) == ["succeeded"]
+
+    finished = cancel(client, headers, opp["id"], first["id"])
+    assert finished.status_code == 409, finished.text
+    assert_problem(finished.json(), 409, "assessment_not_in_progress")
+
+    second = started(client, headers, opp["id"])
+    older = cancel(client, headers, opp["id"], first["id"])
+    assert older.status_code == 409
+    assert_problem(older.json(), 409, "assessment_not_in_progress")
+    unknown = cancel(client, headers, opp["id"], str(uuid4()))
+    assert unknown.status_code == 404
+    assert_problem(unknown.json(), 404, "not_found")
+    assert cancel(client, headers, opp["id"], "nope").status_code == 422
+    other_headers, other = owner(client, sync_engine)  # another Opportunity's run is unknown
+    assert cancel(client, other_headers, other["id"], second["id"]).status_code == 404
+    assert client.post(f"{BASE}/{opp['id']}/assessment-runs/{second['id']}/cancel").status_code == (
+        401
+    )
+
+    assert cancel(client, headers, opp["id"], second["id"]).status_code == 200
+    again = cancel(client, headers, opp["id"], second["id"])  # already cancelled
+    assert again.status_code == 409
+    assert_problem(again.json(), 409, "assessment_not_in_progress")
+    assert [r["status"] for r in run_rows(sync_engine, opp["id"])] == ["succeeded", "cancelled"]
+
+
+def test_who_may_cancel_and_who_reads_a_cancelled_run(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    opp = client.get(f"{BASE}/{opp['id']}", headers=headers).json()
+    rep, rep_id = _user(client, sync_engine, "Rep Person", "sales_representative")
+    added = _add(client, headers, opp, rep_id)
+    assert added.status_code == 200, added.text
+    colleague, colleague_id = _user(client, sync_engine, "Colleague", PSE)
+    assert _add(client, headers, added.json(), colleague_id).status_code == 200
+    reader, _ = _user(client, sync_engine, "Head Person", "head_of_delivery")
+    outsider, _ = _user(client, sync_engine, "Outsider", PSE)
+    body = started(client, headers, opp["id"])
+
+    for forbidden in (rep, reader):
+        response = cancel(client, forbidden, opp["id"], body["id"])
+        assert response.status_code == 403, response.text
+        assert_problem(response.json(), 403, "forbidden")
+    assert cancel(client, outsider, opp["id"], body["id"]).status_code == 404
+    assert run_rows(sync_engine, opp["id"])[0]["status"] == "queued"
+
+    assert cancel(client, colleague, opp["id"], body["id"]).status_code == 200
+
+    seen = _get(client, rep, opp["id"])
+    assert seen.status_code == 200
+    assert seen.json()["can_start"] is False
+    run = seen.json()["run"]
+    assert (run["id"], run["status"]) == (body["id"], "cancelled")
+    assert run["finished_at"] is not None
+    assert [(t["status"], t["started_at"], t["finished_at"]) for t in run["tasks"]] == [
+        ("skipped", None, None) for _ in AGENTS
+    ]
+
+
+def test_after_a_cancel_a_new_run_starts_and_the_cancelled_one_cant_be_retried(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    with sync_engine.begin() as conn:  # final attempt: Security already failed, the rest run
+        conn.execute(
+            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"),
+            {"r": body["id"]},
+        )
+        conn.execute(
+            sa.text(
+                "UPDATE assessments_tasks SET status = 'running', started_at = now() "
+                "WHERE run_id = :r"
+            ),
+            {"r": body["id"]},
+        )
+        conn.execute(
+            sa.text(
+                "UPDATE assessments_tasks SET status = 'failed', error_code = 'model_unavailable', "
+                "finished_at = now() WHERE run_id = :r AND agent = 'security_agent'"
+            ),
+            {"r": body["id"]},
+        )
+
+    cancelled = cancel(client, headers, opp["id"], body["id"])
+
+    assert cancelled.status_code == 200, cancelled.text
+    assert {t["agent"]: t["status"] for t in cancelled.json()["tasks"]} == {
+        "engineering_agent": "skipped",
+        "pm_agent": "skipped",
+        "security_agent": "failed",
+    }
+    refused = retry(client, headers, opp["id"], body["id"], "security_agent")
+    assert refused.status_code == 409
+    assert_problem(refused.json(), 409, "assessment_task_not_failed")
+    with sync_engine.begin() as conn:  # long ago: staleness never touches a cancelled run
+        conn.execute(
+            sa.text("UPDATE assessments_runs SET queued_at = now() - :age WHERE id = :r"),
+            {"age": specialist_tests.assessments_assessment.stale_after() * 2, "r": body["id"]},
+        )
+    assert _get(client, headers, opp["id"]).json()["run"]["status"] == "cancelled"
+
+    rerun = start(client, headers, opp["id"])
+
+    assert rerun.status_code == 201, rerun.text
+    old, new = run_rows(sync_engine, opp["id"])
+    assert (old["status"], new["status"]) == ("cancelled", "queued")
+
+
+def test_a_run_whose_tasks_all_finished_is_left_for_its_job(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    with sync_engine.begin() as conn:  # every task done; the job hasn't finished the run yet
+        conn.execute(
+            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"),
+            {"r": body["id"]},
+        )
+        conn.execute(
+            sa.text(
+                "UPDATE assessments_tasks SET status = 'succeeded', started_at = now(), "
+                "finished_at = now() WHERE run_id = :r"
+            ),
+            {"r": body["id"]},
+        )
+
+    refused = cancel(client, headers, opp["id"], body["id"])
+
+    assert refused.status_code == 409, refused.text
+    assert_problem(refused.json(), 409, "assessment_not_in_progress")
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "running"
+    assert {t["status"] for t in specialist_tests.task_rows(sync_engine, run["id"]).values()} == {
+        "succeeded"
+    }

@@ -8,6 +8,7 @@ import {
   isAssessing,
   kindLabel,
   recommendationInfo,
+  runStatusLabel,
   taskElapsed,
   taskStatusLabel,
 } from "@/lib/assessments";
@@ -47,12 +48,18 @@ describe("assessment labels", () => {
     expect(taskStatusLabel("running")).toBe("Running");
     expect(taskStatusLabel("succeeded")).toBe("Done");
     expect(taskStatusLabel("failed")).toBe("Failed");
+    expect(taskStatusLabel("skipped")).toBe("Skipped");
   });
 
   it("is assessing only while queued or running", () => {
     const run = (
       status:
-        "queued" | "running" | "succeeded" | "partially_failed" | "failed",
+        | "queued"
+        | "running"
+        | "succeeded"
+        | "partially_failed"
+        | "failed"
+        | "cancelled",
     ) => ({
       id: "x",
       status,
@@ -64,7 +71,11 @@ describe("assessment labels", () => {
     expect(isAssessing(run("queued"))).toBe(true);
     expect(isAssessing(run("running"))).toBe(true);
     expect(isAssessing(run("partially_failed"))).toBe(false);
+    expect(isAssessing(run("cancelled"))).toBe(false);
     expect(isAssessing(null)).toBe(false);
+    expect(runStatusLabel(run("cancelled"))).toBe(
+      "Cancelled — completed results kept",
+    );
   });
 });
 
@@ -91,9 +102,9 @@ describe("elapsed time", () => {
     expect(taskElapsed(task, at(66))).toBe("1:06");
   });
 
-  it("keeps the final duration once done or failed", () => {
+  it("keeps the final duration once done, failed or skipped", () => {
     const finished = "2026-10-05T09:02:10Z";
-    for (const status of ["succeeded", "failed"] as const) {
+    for (const status of ["succeeded", "failed", "skipped"] as const) {
       expect(
         taskElapsed(
           { status, started_at: START, finished_at: finished },
@@ -135,6 +146,15 @@ describe("elapsed time", () => {
     expect(
       taskElapsed(
         { status: "failed", started_at: null, finished_at: null },
+        at(5),
+      ),
+    ).toBe("");
+  });
+
+  it("is blank for a task skipped before it started", () => {
+    expect(
+      taskElapsed(
+        { status: "skipped", started_at: null, finished_at: null },
         at(5),
       ),
     ).toBe("");

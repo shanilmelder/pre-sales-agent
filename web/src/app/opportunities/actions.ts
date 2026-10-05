@@ -765,6 +765,30 @@ export async function retryAssessmentTask(
   }
 }
 
+/** `POST /api/v1/opportunities/{id}/assessment-runs/{run_id}/cancel`: cancel the latest run
+ * while it is queued or running (Story 5.5); completed Assessments are kept. 409 (`conflict`)
+ * once it is no longer in progress. */
+export async function cancelAssessmentRun(
+  opportunityId: unknown,
+  runId: unknown,
+): Promise<StartAssessmentResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof runId !== "string" || !UUID_RE.test(runId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/cancel",
+      { params: { path: { opportunity_id: opportunityId, run_id: runId } } },
+    );
+    return startResult("cancel assessment run", data, error, response.status);
+  } catch (thrown) {
+    console.error(
+      `cancel assessment run failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
 /** `GET /api/v1/opportunities/{id}/passages/{passage_id}`: a cited passage with its span and
  * the text around it, for the Evidence inspector. Logs ids and statuses only. */
 export async function getPassage(opportunityId: unknown, passageId: unknown): Promise<PassageResult> {

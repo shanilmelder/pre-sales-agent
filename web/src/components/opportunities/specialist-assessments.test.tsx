@@ -33,6 +33,11 @@ const retryAssessmentTask = vi.hoisted(() =>
     ) => Promise<StartAssessmentResult>
   >(),
 );
+const cancelAssessmentRun = vi.hoisted(() =>
+  vi.fn<
+    (opportunityId: string, runId: unknown) => Promise<StartAssessmentResult>
+  >(),
+);
 const loadAssessments = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<AssessmentsResult>>(),
 );
@@ -45,6 +50,7 @@ const loadRedTeam = vi.hoisted(() =>
 vi.mock("@/app/opportunities/actions", () => ({
   startAssessmentRun,
   retryAssessmentTask,
+  cancelAssessmentRun,
   loadAssessments,
   startRedTeamReview,
   loadRedTeam,
@@ -262,6 +268,7 @@ const pane = () => screen.getByRole("complementary", { name: "Details" });
 beforeEach(() => {
   startAssessmentRun.mockReset();
   retryAssessmentTask.mockReset();
+  cancelAssessmentRun.mockReset();
   loadAssessments.mockReset();
   startRedTeamReview.mockReset();
   loadRedTeam.mockReset();
@@ -813,5 +820,170 @@ describe("one Finding selected across the tab", () => {
       "false",
     );
     expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("cancelling a run (Story 5.5)", () => {
+  const cancelled = run("cancelled", [
+    task("engineering_agent", "succeeded"),
+    task("pm_agent", "skipped", null, { finished_at: at(65) }),
+    task("security_agent", "skipped", null, { started_at: null }),
+  ]);
+  const cancelButton = () => screen.getByRole("button", { name: "Cancel run" });
+
+  it("asks first; Keep running sends nothing and gives focus back", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSection(view(running, FULL));
+
+    await user.click(cancelButton());
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Cancel this run?",
+    });
+    expect(within(dialog).getByText("Completed results are kept.")).toBeTruthy();
+    expect(await axeViolations(container.ownerDocument.body)).toEqual([]);
+
+    await user.click(within(dialog).getByRole("button", { name: "Keep running" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(cancelAssessmentRun).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(cancelButton()));
+    expect(screen.getByText("Assessing")).toBeTruthy();
+  });
+
+  it("Confirm cancels: skipped rows, the cancelled header, an announcement and Run assessment again", async () => {
+    const user = userEvent.setup();
+    cancelAssessmentRun.mockResolvedValue({ kind: "ok", run: cancelled });
+    const { container } = renderSection(view(running, FULL));
+
+    await user.click(cancelButton());
+    const dialog = await screen.findByRole("dialog", {
+      name: "Cancel this run?",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
+
+    expect(cancelAssessmentRun).toHaveBeenCalledWith(OPP_ID, RUN_ID);
+    expect(
+      await screen.findByText("Cancelled — completed results kept"),
+    ).toBeTruthy();
+    expect(panelRows()).toEqual([
+      ["Engineering Agent", "Done", "0:40"],
+      ["PM Agent", "Skipped", "1:00"], // it had started: its duration until the cancel
+      ["Security Agent", "Skipped"], // never started: no time
+    ]);
+    expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+    const start = screen.getByRole("button", { name: "Run assessment" });
+    expect((start as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(start));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Cancelled — completed results kept",
+      ),
+    );
+    expect(screen.getByText("[FINDING 3]")).toBeTruthy(); // completed results stay
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a cancel answered 409 re-reads the section", async () => {
+    const user = userEvent.setup();
+    cancelAssessmentRun.mockResolvedValue({ kind: "conflict" });
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(succeeded, FULL),
+    });
+    renderSection(view(running, FULL));
+
+    await user.click(cancelButton());
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+
+    expect(await screen.findByText("Assessment complete")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+    const start = screen.getByRole("button", { name: "Run assessment" });
+    await waitFor(() => expect(document.activeElement).toBe(start));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Assessment complete",
+      ),
+    );
+  });
+
+  it("Cancel run is disabled while another action is in flight", async () => {
+    const user = userEvent.setup();
+    let finish: (result: StartAssessmentResult) => void = () => {};
+    cancelAssessmentRun.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderSection(view(running, FULL));
+
+    await user.click(cancelButton());
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+
+    await waitFor(() =>
+      expect((cancelButton() as HTMLButtonElement).disabled).toBe(true),
+    );
+    await user.click(cancelButton());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(cancelAssessmentRun).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ kind: "error" }));
+    expect((cancelButton() as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a failed cancel says so", async () => {
+    const user = userEvent.setup();
+    cancelAssessmentRun.mockResolvedValue({ kind: "error" });
+    renderSection(view(queued));
+
+    await user.click(cancelButton());
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Confirm",
+      }),
+    );
+
+    expect(
+      await screen.findByText("The run could not be cancelled. Try again."),
+    ).toBeTruthy();
+    expect(cancelButton()).toBeTruthy();
+  });
+
+  it("only those who may start see Cancel run, and only while queued or running", () => {
+    const { unmount } = renderSection(view(running, FULL, false));
+    expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+    unmount();
+    renderSection(view(partial, FULL));
+    expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+  });
+
+  it("a cancelled run offers no Retry, even for a task that failed before the cancel", () => {
+    render(
+      <SpecialistAssessmentsHeader
+        canStart
+        run={run("cancelled", [
+          task("engineering_agent", "skipped", null, { started_at: null }),
+          task("pm_agent", "succeeded"),
+          task("security_agent", "failed", "model_unavailable"),
+        ])}
+      />,
+    );
+    expect(screen.getByText("Cancelled — completed results kept")).toBeTruthy();
+    expect(panelRows()[2]).toEqual([
+      "Security Agent",
+      "Failed",
+      "0:40",
+      "the model service couldn't be reached",
+    ]);
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Run assessment" })).toBeTruthy();
   });
 });

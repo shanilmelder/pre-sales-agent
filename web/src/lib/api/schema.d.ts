@@ -787,6 +787,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Assessment Run
+         * @description Cancel the Opportunity's latest assessment run while it is queued or running: its
+         *     unfinished tasks are skipped and the Assessments already completed are kept. A cancelled
+         *     run can't be retried; start a new one instead. The owner and collaborators, except sales
+         *     representatives.
+         */
+        post: operations["cancel_assessment_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -915,7 +938,7 @@ export interface components {
          * AssessmentRunStatus
          * @enum {string}
          */
-        AssessmentRunStatus: "queued" | "running" | "succeeded" | "partially_failed" | "failed";
+        AssessmentRunStatus: "queued" | "running" | "succeeded" | "partially_failed" | "failed" | "cancelled";
         /**
          * AssessmentStatus
          * @enum {string}
@@ -940,7 +963,7 @@ export interface components {
          * AssessmentTaskStatus
          * @enum {string}
          */
-        AssessmentTaskStatus: "queued" | "running" | "succeeded" | "failed";
+        AssessmentTaskStatus: "queued" | "running" | "succeeded" | "failed" | "skipped";
         /**
          * AssessmentView
          * @description An agent's current Assessment. `findings`: critical first, then high, medium and low,
@@ -7732,7 +7755,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An assessment run is already queued or running (`assessment_in_progress`), or the task is not a failed task of the latest run (`assessment_task_not_failed`) */
+            /** @description An assessment run is already queued or running (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7755,6 +7778,161 @@ export interface operations {
                 };
             };
             /** @description An id is not a UUID, or the agent is unknown (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    cancel_assessment_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run, `cancelled`, with its unfinished tasks `skipped` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentRun"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no such assessment run for it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The run is not the Opportunity's latest, or is no longer queued or running (`assessment_not_in_progress`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;

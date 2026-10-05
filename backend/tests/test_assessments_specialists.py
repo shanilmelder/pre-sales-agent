@@ -1,7 +1,8 @@
 """Specialist assessment runs (Epic 5 slice 5A) against a real, migrated Postgres as psa_app:
 the `assessments.run_assessment` job with a fake ModelGateway that answers per agent and
 records each call's time window, `accept_assessment` (validation, versions, links, effort,
-trace), partial failure, task retry, re-runs, privacy and the table grants.
+trace), partial failure, task retry, re-runs, cancelling (Story 5.5), privacy and the table
+grants.
 
 Reuses the fixtures of `test_intake_extraction.py`: jobs are scheduled a day ahead so no
 other claimer takes them, and `drain` runs only the current test's Opportunities' jobs.
@@ -207,6 +208,10 @@ def retry(client: TestClient, headers: dict[str, str], opp_id: str, run_id: str,
     return client.post(
         f"{BASE}/{opp_id}/assessment-runs/{run_id}/tasks/{agent}/retry", headers=headers
     )
+
+
+def cancel(client: TestClient, headers: dict[str, str], opp_id: str, run_id: str) -> Any:
+    return client.post(f"{BASE}/{opp_id}/assessment-runs/{run_id}/cancel", headers=headers)
 
 
 def run_rows(engine: Engine, opp_id: str) -> list[dict[str, Any]]:
@@ -1016,3 +1021,292 @@ def test_findings_and_effort_are_insert_only_and_nothing_is_deletable_for_psa_ap
     for sql, value in allowed:
         with sync_engine.begin() as conn:
             conn.execute(sa.text(sql), {"i": value})
+
+
+# --- cancelling (Story 5.5) -----------------------------------------------------------------
+
+ENGINEERING_SMALL = assessment_out(finding("SAP custom fields", ["R1"]), efforts=(effort("R1", 4),))
+
+
+def _mid_run(engine: Engine, run_id: str) -> None:
+    """The run has read its inputs and every agent is mid-call."""
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"), {"r": run_id}
+        )
+        conn.execute(
+            sa.text(
+                "UPDATE assessments_tasks SET status = 'running', started_at = now() "
+                "WHERE run_id = :r"
+            ),
+            {"r": run_id},
+        )
+
+
+def test_cancelling_a_running_run_skips_the_rest_and_keeps_what_completed(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    _mid_run(sync_engine, body["id"])
+    inputs = _inputs(sync_engine, opp["id"])
+    _accept(db_url, body["id"], AssessmentAgent.ENGINEERING, ENGINEERING_SMALL, inputs)
+
+    response = cancel(client, headers, opp["id"], body["id"])
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "cancelled"
+    assert {t["agent"]: (t["status"], t["error_code"]) for t in response.json()["tasks"]} == {
+        "engineering_agent": ("succeeded", None),
+        "pm_agent": ("skipped", None),
+        "security_agent": ("skipped", None),
+    }
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "cancelled"
+    assert run["finished_at"] is not None
+    tasks = task_rows(sync_engine, run["id"])
+    for agent in ("pm_agent", "security_agent"):  # they had started: they keep a duration
+        assert tasks[agent]["started_at"] <= tasks[agent]["finished_at"]
+    engineering = current(sync_engine, opp["id"], "engineering_agent")
+    assert (engineering["version"], engineering["run_id"]) == (1, run["id"])
+    assert assessment_rows(sync_engine, opp["id"], "pm_agent") == []
+    last = events(sync_engine, opp["id"])[-1]
+    assert last["event_type"] == "assessments.assessment_run.cancelled"
+    assert last["actor_type"] == "user"
+    assert (last["subject_type"], str(last["subject_id"])) == (
+        "assessments.assessment_run",
+        body["id"],
+    )
+    assert last["payload"] == {"skipped_count": 2, "succeeded_count": 1}
+
+
+def test_a_reply_after_the_cancel_is_discarded(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    _mid_run(sync_engine, body["id"])
+    inputs = _inputs(sync_engine, opp["id"])
+    assert cancel(client, headers, opp["id"], body["id"]).status_code == 200
+
+    _accept(db_url, body["id"], AssessmentAgent.PM, assessment_out(finding("Late", ["R1"])), inputs)
+
+    assert assessment_rows(sync_engine, opp["id"]) == []
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "cancelled"
+    assert {t["status"] for t in task_rows(sync_engine, run["id"]).values()} == {"skipped"}
+    assert [
+        e for e in events(sync_engine, opp["id"]) if e["event_type"].endswith(".completed")
+    ] == []
+
+
+def test_a_cancelled_queued_run_skips_its_job(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    fake = install(AgentGateway({agent: [ModelUnavailableError("not called")] for agent in AGENTS}))
+
+    response = cancel(client, headers, opp["id"], body["id"])
+
+    assert response.status_code == 200, response.text
+    assert {t["status"] for t in response.json()["tasks"]} == {"skipped"}
+    assert drain(db_url, ASSESS) == ["succeeded"]  # the job finds nothing to do
+    assert fake.requests == []
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "cancelled"
+    tasks = task_rows(sync_engine, run["id"])
+    assert {(t["status"], t["started_at"], t["finished_at"]) for t in tasks.values()} == {
+        ("skipped", None, None)  # never started: no duration
+    }
+    assert events(sync_engine, opp["id"])[-1]["payload"] == {
+        "skipped_count": 3,
+        "succeeded_count": 0,
+    }
+
+
+class _Blocking:
+    """Blocks every call until it is cancelled; counts the calls started and cancelled."""
+
+    def __init__(self, expected: int = 3) -> None:
+        self.started = 0
+        self.cancelled = 0
+        self.expected = expected
+        self.all_started = asyncio.Event()
+
+    async def complete_structured(self, request: StructuredRequest[Any]) -> Any:
+        self.started += 1
+        if self.started >= self.expected:
+            self.all_started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+        raise AssertionError("not reached")
+
+
+def _context(engine: Any, job: dict[str, Any], opp_id: str, attempt: int) -> JobContext:
+    return JobContext(
+        job_id=job["id"],
+        job_type=ASSESS,
+        attempt=attempt,
+        max_attempts=2,
+        opportunity_id=UUID(opp_id),
+        engine=engine,
+    )
+
+
+async def _calls_started(fake: _Blocking) -> None:
+    async with asyncio.timeout(10):
+        await fake.all_started.wait()
+
+
+@pytest.mark.parametrize("attempt", [1, 2], ids=["first-attempt", "final-attempt"])
+def test_cancel_stops_the_in_flight_calls_and_the_job_ends_without_error(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    attempt: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    (job,) = assess_jobs(sync_engine, opp["id"])
+    fake = _Blocking()
+    provider.install(fake)
+    monkeypatch.setattr(assessments_assessment, "CANCEL_POLL_S", 0.2)
+
+    async def scenario() -> float:
+        engine = create_engine(Settings(database_url=db_url))
+        payload = assessments_assessment.RunAssessment.model_validate(job["payload"])
+        try:
+            handler = asyncio.create_task(
+                assessments_assessment.run_assessment(
+                    _context(engine, job, opp["id"], attempt), payload
+                )
+            )
+            await _calls_started(fake)
+            response = await asyncio.to_thread(cancel, client, headers, opp["id"], body["id"])
+            assert response.status_code == 200, response.text
+            cancelled_at = time.monotonic()
+            await asyncio.wait_for(handler, 10)  # ends without raising
+            return time.monotonic() - cancelled_at
+        finally:
+            await engine.dispose()
+
+    took = run_async(scenario())
+
+    assert took < 0.2 + 1.5  # within one poll, plus slack
+    assert (fake.started, fake.cancelled) == (3, 3)  # every in-flight call let go of its slot
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "cancelled"  # never failed, even on the final attempt
+    assert {(t["status"], t["error_code"]) for t in task_rows(sync_engine, run["id"]).values()} == {
+        ("skipped", None)
+    }
+    trail = [e["event_type"] for e in events(sync_engine, opp["id"])]
+    assert "assessments.assessment_run.completed" not in trail
+
+
+def test_a_final_attempt_timing_out_after_the_cancel_leaves_the_run_cancelled(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    (job,) = assess_jobs(sync_engine, opp["id"])
+    fake = _Blocking()
+    provider.install(fake)
+    monkeypatch.setattr(assessments_assessment, "CANCEL_POLL_S", 60.0)  # the watcher is late
+
+    async def scenario() -> None:
+        engine = create_engine(Settings(database_url=db_url))
+        payload = assessments_assessment.RunAssessment.model_validate(job["payload"])
+        try:
+            with pytest.raises(TimeoutError):  # the runner's job timeout, made short
+                async with asyncio.timeout(3):
+                    work = asyncio.ensure_future(
+                        assessments_assessment.run_assessment(
+                            _context(engine, job, opp["id"], 2), payload
+                        )
+                    )
+                    await _calls_started(fake)
+                    response = await asyncio.to_thread(
+                        cancel, client, headers, opp["id"], body["id"]
+                    )
+                    assert response.status_code == 200, response.text
+                    await work
+        finally:
+            await engine.dispose()
+
+    run_async(scenario())
+
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "cancelled"
+    assert {(t["status"], t["error_code"]) for t in task_rows(sync_engine, run["id"]).values()} == {
+        ("skipped", None)
+    }
+
+
+class _FailsOnSignal:
+    """Each call waits for `release`, then raises `ModelUnavailableError`."""
+
+    def __init__(self, expected: int = 3) -> None:
+        self.started = 0
+        self.expected = expected
+        self.all_started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def complete_structured(self, request: StructuredRequest[Any]) -> Any:
+        self.started += 1
+        if self.started >= self.expected:
+            self.all_started.set()
+        await self.release.wait()
+        raise ModelUnavailableError("down", error_code="connection")
+
+
+@pytest.mark.parametrize("attempt", [1, 2], ids=["first-attempt", "final-attempt"])
+def test_a_task_failing_after_the_cancel_neither_retries_nor_fails_the_run(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    attempt: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    body = started(client, headers, opp["id"])
+    (job,) = assess_jobs(sync_engine, opp["id"])
+    fake = _FailsOnSignal()
+    provider.install(fake)
+    monkeypatch.setattr(assessments_assessment, "CANCEL_POLL_S", 60.0)  # the watcher is late
+
+    async def scenario() -> None:
+        engine = create_engine(Settings(database_url=db_url))
+        payload = assessments_assessment.RunAssessment.model_validate(job["payload"])
+        try:
+            handler = asyncio.create_task(
+                assessments_assessment.run_assessment(
+                    _context(engine, job, opp["id"], attempt), payload
+                )
+            )
+            async with asyncio.timeout(10):
+                await fake.all_started.wait()
+            response = await asyncio.to_thread(cancel, client, headers, opp["id"], body["id"])
+            assert response.status_code == 200, response.text
+            fake.release.set()  # the calls now fail, after the cancel
+            await asyncio.wait_for(handler, 10)  # returns without raising
+        finally:
+            await engine.dispose()
+
+    run_async(scenario())
+
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "cancelled"
+    assert {(t["status"], t["error_code"]) for t in task_rows(sync_engine, run["id"]).values()} == {
+        ("skipped", None)
+    }

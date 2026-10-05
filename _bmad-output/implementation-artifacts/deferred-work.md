@@ -99,3 +99,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-5-edit-questions.md`
   summary: [post-demo] Make `tests/test_user_search.py::test_matches_email` independent of leftover users: it searches "Email Match" with limit 50, and a long-lived local DB had 53 such users, so it fails on any branch.
   evidence: Seen during 4.5 verification on 2026-10-05; a fresh DB (CI) passes. Fix with a unique name per run or a narrower query.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-cancel-run.md`
+  summary: Migration 0018's downgrade sets every cancelled run to `failed` (should derive succeeded/partially_failed/failed from its tasks) and marks never-started skipped tasks `model_timeout`; the data rewrite has no test.
+  evidence: Review pass 1 (blind-hunter, edge-case-hunter, verification-gap); rollback isn't on the demo path, so deferred `[post-demo]`.

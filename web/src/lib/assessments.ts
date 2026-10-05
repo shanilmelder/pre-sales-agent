@@ -112,6 +112,7 @@ export const RUN_STATUS_LABELS: Record<AssessmentRun["status"], string> = {
   succeeded: "Assessment complete",
   partially_failed: "Assessment partly failed",
   failed: "Assessment failed",
+  cancelled: "Cancelled — completed results kept",
 };
 
 export function runStatusLabel(run: AssessmentRun): string {
@@ -125,12 +126,13 @@ export function failureReason(code: RunErrorCode | null | undefined): string {
   );
 }
 
-/** A task's status pill label: Queued, Running, Done, Failed. */
+/** A task's status pill label: Queued, Running, Done, Failed, Skipped. */
 export const TASK_STATUS_LABELS: Record<AssessmentTask["status"], string> = {
   queued: "Queued",
   running: "Running",
   succeeded: "Done",
   failed: "Failed",
+  skipped: "Skipped",
 };
 
 export function taskStatusLabel(status: AssessmentTask["status"]): string {
@@ -149,8 +151,9 @@ export function formatElapsed(ms: number): string {
 }
 
 /** A task's elapsed time for the run panel, given the browser's clock: its final duration
- * once it succeeded or failed, the time since it started while it runs, and "" otherwise
- * (before it starts, or a failed task with no finish time, e.g. a lost run's). */
+ * once it succeeded, failed or was skipped by a cancel, the time since it started while it
+ * runs, and "" otherwise (before it starts, a task skipped before it started, or a failed
+ * task with no finish time, e.g. a lost run's). */
 export function taskElapsed(
   task: Pick<AssessmentTask, "status" | "started_at" | "finished_at">,
   now: number,
@@ -159,7 +162,7 @@ export function taskElapsed(
   const started = Date.parse(task.started_at);
   if (Number.isNaN(started)) return "";
   if (task.status === "running") return formatElapsed(now - started);
-  if (task.status !== "succeeded" && task.status !== "failed") return "";
+  if (!["succeeded", "failed", "skipped"].includes(task.status)) return "";
   if (!task.finished_at) return "";
   const finished = Date.parse(task.finished_at);
   return Number.isNaN(finished) ? "" : formatElapsed(finished - started);
@@ -179,3 +182,10 @@ export const NO_AGENT_ASSESSMENT = "No Assessment yet.";
 export const STILL_ASSESSING = "Still assessing — reload to check.";
 
 export const RUN_ASSESSMENT = "Run assessment";
+
+/** Cancelling a queued or running run (Story 5.5). */
+export const CANCEL_RUN = "Cancel run";
+export const CANCEL_RUN_TITLE = "Cancel this run?";
+export const CANCEL_RUN_DESCRIPTION = "Completed results are kept.";
+export const CANCEL_RUN_CONFIRM = "Confirm";
+export const CANCEL_RUN_KEEP = "Keep running";

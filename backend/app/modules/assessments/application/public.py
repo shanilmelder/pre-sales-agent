@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.modules.assessments.application import review
 from app.modules.assessments.application.assessments import (
+    cancel_run,
     get_assessments,
     retry_task,
     start_run,
@@ -52,6 +53,7 @@ __all__ = [
     "RedTeamRun",
     "RedTeamView",
     "SeverityCounts",
+    "cancel_run",
     "enqueue_review",
     "get_assessments",
     "get_red_team",

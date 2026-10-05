@@ -4,6 +4,7 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDotIcon,
+  CircleMinusIcon,
   ClockIcon,
   ListChecksIcon,
   type LucideIcon,
@@ -11,6 +12,7 @@ import {
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import {
+  cancelAssessmentRun,
   loadAssessments,
   retryAssessmentTask,
   startAssessmentRun,
@@ -25,8 +27,24 @@ import {
   RightPaneContent,
   useShell,
 } from "@/components/shell/shell-context";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   agentLabel,
+  CANCEL_RUN,
+  CANCEL_RUN_CONFIRM,
+  CANCEL_RUN_DESCRIPTION,
+  CANCEL_RUN_KEEP,
+  CANCEL_RUN_TITLE,
   confidenceLabel,
   failureReason,
   isAssessing,
@@ -63,6 +81,7 @@ import { cn } from "@/lib/utils";
 
 export const RETRY = "Retry";
 const START_FAILED = "The assessment could not be started. Try again.";
+const CANCEL_FAILED = "The run could not be cancelled. Try again.";
 const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can run an assessment.";
 
@@ -343,10 +362,11 @@ const TASK_PILL_ICONS: Record<
   running: { icon: CircleDotIcon, tone: "text-agent" },
   succeeded: { icon: CircleCheckIcon, tone: "text-resolved" },
   failed: { icon: CircleAlertIcon, tone: "text-blocker" },
+  skipped: { icon: CircleMinusIcon, tone: "text-muted-foreground" },
 };
 
 /** A task's status: always an icon and a label, never colour alone (Queued neutral, Running
- * agent colour, Done green, Failed red). */
+ * agent colour, Done green, Failed red, Skipped neutral). */
 function TaskStatusPill({ status }: { status: AssessmentTask["status"] }) {
   const known = TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued;
   const Icon = known.icon;
@@ -381,7 +401,8 @@ function useNow(ticking: boolean): number {
  * agent's role, a status pill, the elapsed time in tabular figures (`m:ss`, ticking each
  * second while it runs, its final duration once done or failed, blank before it starts) and a
  * running dot (static under reduced motion). Queued rows say "Waiting for the worker"; failed
- * rows give the reason and **Retry** for those who may start one. Elapsed time comes from the
+ * rows give the reason and **Retry** for those who may start one (never in a cancelled run;
+ * skipped rows keep a duration if they had started). Elapsed time comes from the
  * task's timestamps and the browser's clock, so it ticks without a fetch. */
 export function AgentRunPanel({
   run,
@@ -444,7 +465,7 @@ export function AgentRunPanel({
                 {note}
               </span>
             ) : null}
-            {failed && canStart && !assessing ? (
+            {failed && canStart && !assessing && run.status !== "cancelled" ? (
               <button
                 type="button"
                 disabled={busy}
@@ -462,17 +483,63 @@ export function AgentRunPanel({
   );
 }
 
-/** The section header: **Run assessment** (only for those who may start one), the latest
- * run's status and the agent run panel for that run ("Still assessing — reload to check."
- * once polling has stopped). */
+/** **Cancel run**, confirmed first ("Cancel this run? Completed results are kept."). Focus
+ * goes back to the button when the dialog closes. */
+function CancelRunButton({
+  busy = false,
+  onConfirm,
+}: {
+  /** A start, retry or cancel is in flight: the cancel would be dropped. */
+  busy?: boolean;
+  onConfirm?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        disabled={busy}
+        render={<button type="button" className={actionClass} />}
+      >
+        {CANCEL_RUN}
+      </DialogTrigger>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{CANCEL_RUN_TITLE}</DialogTitle>
+          <DialogDescription>{CANCEL_RUN_DESCRIPTION}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>
+            {CANCEL_RUN_KEEP}
+          </DialogClose>
+          <Button
+            variant="destructive"
+            disabled={busy}
+            onClick={() => {
+              setOpen(false);
+              onConfirm?.();
+            }}
+          >
+            {CANCEL_RUN_CONFIRM}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The section header: **Run assessment** and, while the run is queued or running, **Cancel
+ * run** (both only for those who may start one), the latest run's status and the agent run
+ * panel for that run ("Still assessing — reload to check." once polling has stopped). */
 export function SpecialistAssessmentsHeader({
   run,
   canStart = false,
   busy = false,
   message = null,
   stalled = false,
+  focusStartRequest = 0,
   onStart,
   onRetry,
+  onCancel,
 }: {
   run: AssessmentRun | null;
   canStart?: boolean;
@@ -482,15 +549,23 @@ export function SpecialistAssessmentsHeader({
   message?: string | null;
   /** Polling has stopped while still assessing. */
   stalled?: boolean;
+  /** Bumped to move focus to **Run assessment** (after a cancel removed **Cancel run**). */
+  focusStartRequest?: number;
   onStart?: () => void;
   onRetry?: (agent: AssessmentAgent) => void;
+  onCancel?: () => void;
 }) {
   const assessing = isAssessing(run);
+  const startRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (focusStartRequest > 0) startRef.current?.focus();
+  }, [focusStartRequest]);
   return (
     <div className="flex flex-col items-start gap-1.5">
       <div className="flex flex-wrap items-center gap-3">
         {canStart ? (
           <button
+            ref={startRef}
             type="button"
             disabled={busy || assessing}
             onClick={() => onStart?.()}
@@ -498,6 +573,9 @@ export function SpecialistAssessmentsHeader({
           >
             {RUN_ASSESSMENT}
           </button>
+        ) : null}
+        {canStart && assessing ? (
+          <CancelRunButton busy={busy} onConfirm={onCancel} />
         ) : null}
         {run ? (
           <p
@@ -527,14 +605,17 @@ export function SpecialistAssessmentsHeader({
   );
 }
 
-function failureMessage(result: StartAssessmentResult): string {
+function failureMessage(
+  result: StartAssessmentResult,
+  failed: string = START_FAILED,
+): string {
   switch (result.kind) {
     case "forbidden":
       return NOT_ALLOWED;
     case "not-found":
       return NO_ACCESS_TO_OPPORTUNITY;
     default:
-      return START_FAILED;
+      return failed;
   }
 }
 
@@ -543,7 +624,7 @@ function failureMessage(result: StartAssessmentResult): string {
  * run is queued or running the section is re-read every 2 s: paused while the tab is
  * hidden, and stopped after 15 minutes. Inside a `FindingSelectionProvider` its selection is
  * shared with the tab's other sections. Read-only for sales representatives (no Run
- * assessment or Retry). */
+ * assessment, Retry or Cancel run). */
 export function SpecialistAssessmentsSection({
   opportunityId,
   initial,
@@ -562,6 +643,7 @@ export function SpecialistAssessmentsSection({
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [focusStartRequest, setFocusStartRequest] = useState(0);
   /** Bumped after every poll, so the next one is scheduled. */
   const [pollTick, setPollTick] = useState(0);
   /** Bumped on every local change (a start or retry); a poll that started before is dropped. */
@@ -667,7 +749,25 @@ export function SpecialistAssessmentsSection({
     };
   }, [assessing, visible, opportunityId, pollTick, announce]);
 
-  async function act(request: () => Promise<StartAssessmentResult>) {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  /** After a cancel removed Cancel run: focus Run assessment, unless the user has moved
+   * focus out of this section. */
+  function focusStartAfterCancel() {
+    const active = document.activeElement;
+    if (
+      !active ||
+      active === document.body ||
+      sectionRef.current?.contains(active)
+    )
+      setFocusStartRequest((n) => n + 1);
+  }
+
+  async function act(
+    request: () => Promise<StartAssessmentResult>,
+    failed: string = START_FAILED,
+    cancelling = false,
+  ) {
     if (busy) return;
     setBusy(true);
     setMessage(null);
@@ -685,6 +785,8 @@ export function SpecialistAssessmentsSection({
       setStalled(false);
       setView((current) => ({ ...current, run }));
       announce(runStatusLabel(run));
+      // Cancel run is gone: keep focus in the header, on the way to a new run.
+      if (run.status === "cancelled") focusStartAfterCancel();
     } else if (result.kind === "conflict") {
       // One is already queued or running (or the task changed): show what is stored now.
       try {
@@ -692,12 +794,18 @@ export function SpecialistAssessmentsSection({
         if (loaded.kind === "ok") {
           mutation.current += 1;
           setView(loaded.assessments);
+          const { run } = loaded.assessments;
+          if (cancelling && run) {
+            // The run finished meanwhile: say how, and keep focus off <body>.
+            announce(runStatusLabel(run));
+            if (!isAssessing(run)) focusStartAfterCancel();
+          }
         }
       } catch {
         // The section stays as it is.
       }
     } else {
-      const sentence = failureMessage(result);
+      const sentence = failureMessage(result, failed);
       setMessage(sentence);
       announce(sentence);
     }
@@ -708,7 +816,11 @@ export function SpecialistAssessmentsSection({
     (slot) => slot.assessment !== null,
   );
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-4">
+    <section
+      ref={sectionRef}
+      aria-labelledby={headingId}
+      className="flex flex-col gap-4"
+    >
       <h3 id={headingId} className="text-body-strong">
         Specialist Assessments
       </h3>
@@ -719,8 +831,16 @@ export function SpecialistAssessmentsSection({
         message={message}
         stalled={stalled}
         onStart={() => void act(() => startAssessmentRun(opportunityId))}
+        focusStartRequest={focusStartRequest}
         onRetry={(agent) =>
           void act(() => retryAssessmentTask(opportunityId, runId, agent))
+        }
+        onCancel={() =>
+          void act(
+            () => cancelAssessmentRun(opportunityId, runId),
+            CANCEL_FAILED,
+            true,
+          )
         }
       />
       {anyAssessment ? (
