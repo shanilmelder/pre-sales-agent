@@ -115,12 +115,14 @@ class FindingValidation[R, L]:
     or too long, or no Requirement label that resolves."""
 
 
-def _bounded(raw: str, limit: int) -> str | None:
+def bounded(raw: str, limit: int) -> str | None:
+    """`raw` trimmed, or None when that is empty or longer than `limit` code points."""
     trimmed = raw.strip()
     return trimmed if 0 < len(trimmed) <= limit else None
 
 
-def _resolved[K](labels: Sequence[str], known: Mapping[str, K]) -> tuple[K, ...]:
+def resolve_labels[K](labels: Sequence[str], known: Mapping[str, K]) -> tuple[K, ...]:
+    """The values of the labels found in `known` (trimmed), without duplicates, in order."""
     found: list[K] = []
     for label in labels:
         value = known.get(label.strip())
@@ -143,9 +145,9 @@ def validate_finding[R, L](
         severity = Severity(candidate.severity.strip())
     except ValueError:
         return None
-    title = _bounded(candidate.title, TITLE_MAX)
-    argument = _bounded(candidate.argument, ARGUMENT_MAX)
-    cited = _resolved(candidate.requirements, requirements)
+    title = bounded(candidate.title, TITLE_MAX)
+    argument = bounded(candidate.argument, ARGUMENT_MAX)
+    cited = resolve_labels(candidate.requirements, requirements)
     if title is None or argument is None or not cited:
         return None
     return ValidFinding(
@@ -154,7 +156,7 @@ def validate_finding[R, L](
         title=title,
         argument=argument,
         requirements=cited,
-        lines=_resolved(candidate.lines, lines),
+        lines=resolve_labels(candidate.lines, lines),
     )
 
 

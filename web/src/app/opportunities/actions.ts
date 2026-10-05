@@ -1,12 +1,14 @@
 "use server";
 
 import {
+  getAssessments,
   getEstimate,
   getOpportunity,
   getRedTeam,
   listGaps,
   listRequirements,
   listSources,
+  type AssessmentsResult,
   type EstimateResult,
   type GapsResult,
   type RedTeamResult,
@@ -14,6 +16,7 @@ import {
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
+import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
 import type { Assumption, EstimateDraft } from "@/lib/estimates";
 import type { ClarificationQuestion, Detection } from "@/lib/gaps";
 import type { RedTeamRun } from "@/lib/red-team";
@@ -139,6 +142,14 @@ export type StartEstimateDraftResult =
 export type StartRedTeamReviewResult =
   | { kind: "ok"; run: RedTeamRun }
   /** 409: a Red Team review is already queued or running. */
+  | { kind: "conflict" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type StartAssessmentResult =
+  | { kind: "ok"; run: AssessmentRun }
+  /** 409: an assessment is already queued or running, or the task is no longer failed. */
   | { kind: "conflict" }
   | { kind: "forbidden" }
   | { kind: "not-found" }
@@ -668,6 +679,87 @@ export async function startRedTeamReview(
   } catch (thrown) {
     console.error(
       `start red team review failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** The Opportunity's latest assessment run and current Assessments as stored now (the
+ * Assessments tab polls this while a run is queued or running). */
+export async function loadAssessments(opportunityId: unknown): Promise<AssessmentsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return getAssessments(opportunityId);
+}
+
+const ASSESSMENT_AGENTS: readonly string[] = ["engineering_agent", "pm_agent", "security_agent"];
+
+function startResult(
+  label: string,
+  data: AssessmentRun | undefined,
+  error: unknown,
+  status: number,
+): StartAssessmentResult {
+  if (data) return { kind: "ok", run: data };
+  switch (status) {
+    case 409:
+      return { kind: "conflict" };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/assessment-runs`: the Engineering, PM and Security Agents
+ * assess the Opportunity. The API checks who may start one and that none is running. */
+export async function startAssessmentRun(opportunityId: unknown): Promise<StartAssessmentResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    return startResult("start assessment run", data, error, response.status);
+  } catch (thrown) {
+    console.error(
+      `start assessment run failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/assessment-runs/{run_id}/tasks/{agent}/retry`: re-run one
+ * failed agent task of the latest run. */
+export async function retryAssessmentTask(
+  opportunityId: unknown,
+  runId: unknown,
+  agent: unknown,
+): Promise<StartAssessmentResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof runId !== "string" || !UUID_RE.test(runId)) return { kind: "error" };
+  if (typeof agent !== "string" || !ASSESSMENT_AGENTS.includes(agent)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/tasks/{agent}/retry",
+      {
+        params: {
+          path: {
+            opportunity_id: opportunityId,
+            run_id: runId,
+            agent: agent as AssessmentAgent,
+          },
+        },
+      },
+    );
+    return startResult("retry assessment task", data, error, response.status);
+  } catch (thrown) {
+    console.error(
+      `retry assessment task failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

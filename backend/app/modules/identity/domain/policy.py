@@ -96,6 +96,9 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         # Starting (retrying) a Red Team Review (Story 6.5): the owner and collaborators
         # except sales representatives.
         Action.RED_TEAM_START: frozenset(),
+        # Starting an assessment run, or retrying one of its tasks (Epic 5 slice 5A): the
+        # owner and collaborators except sales representatives.
+        Action.ASSESSMENT_START: frozenset(),
         # Exporting the Estimate (Story 8.8): the owner and collaborators except sales
         # representatives.
         Action.ESTIMATE_EXPORT: frozenset(),
@@ -110,6 +113,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.ESTIMATE_DRAFT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSUMPTION_ACCEPT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ASSESSMENT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_EXPORT: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
@@ -129,6 +133,7 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
+        Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
     }
 )
@@ -143,6 +148,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
+        Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
     }
 )

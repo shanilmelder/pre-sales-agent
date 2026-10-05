@@ -376,3 +376,56 @@ class AssessmentsRedTeamReviewCompleted(TracePayload):
     gap_count: int
     line_count: int
     superseded_count: int
+
+
+# Epic 5 slice 5A. Payloads hold ids, enums and counts only, never Requirement, Gap or Finding
+# text.
+
+
+@register
+class AssessmentsAssessmentRunStarted(TracePayload):
+    """A person started an assessment run (or retried one of its tasks). Subject: the run
+    (`assessments.assessment_run`). Actor: that person. `agent_count`: the agents it runs."""
+
+    event_type: ClassVar[str] = "assessments.assessment_run.started"
+
+    agent_count: int
+
+
+@register
+class AssessmentsAssessmentCompleted(TracePayload):
+    """A specialist agent's task succeeded and stored a new Assessment. Subject: the
+    Assessment (`assessments.assessment`). Actor: the agent (`<agent_id>@<semver>`). Counts
+    only: Findings stored (and per severity), effort rows stored, Findings and effort rows
+    dropped, Requirements and Gaps read, and earlier Assessments superseded."""
+
+    event_type: ClassVar[str] = "assessments.assessment.completed"
+
+    run_id: str
+    agent: str
+    version: int
+    recommendation: Literal["proceed", "proceed_with_conditions", "do_not_proceed"]
+    confidence: Literal["high", "medium", "low"]
+    finding_count: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    effort_count: int
+    dropped_count: int
+    requirement_count: int
+    gap_count: int
+    superseded_count: int
+
+
+@register
+class AssessmentsAssessmentRunCompleted(TracePayload):
+    """Every task of an assessment run has finished. Subject: the run
+    (`assessments.assessment_run`). Actor: the system (`assessments.run_assessment`)."""
+
+    event_type: ClassVar[str] = "assessments.assessment_run.completed"
+
+    status: Literal["succeeded", "partially_failed", "failed"]
+    task_count: int
+    succeeded_count: int
+    failed_count: int

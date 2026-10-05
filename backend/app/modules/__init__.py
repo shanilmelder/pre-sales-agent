@@ -12,5 +12,6 @@ A module never imports another module's `domain` or `adapters` (AD-2), and never
 Modules: `identity` (users, roles, the action catalogue and policy), `opportunities`
 (Opportunities and collaborators), `intake` (Opportunity Sources and Requirements), `gaps`
 (Gaps and Clarification Questions), `estimates` (Estimate Versions and their lines) and
-`assessments` (Red Team Reviews and their Findings).
+`assessments` (Red Team Reviews, specialist assessment runs and Assessments, and their
+Findings).
 """

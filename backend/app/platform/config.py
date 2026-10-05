@@ -109,7 +109,7 @@ class Settings(BaseSettings):
         ),
     )
     model_slots: int = Field(
-        default=1,
+        default=3,
         ge=1,
         description="Concurrent model calls per process; must be <= OLLAMA_NUM_PARALLEL.",
     )

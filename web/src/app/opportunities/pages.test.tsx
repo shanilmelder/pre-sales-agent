@@ -749,13 +749,29 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
-  function foundWithRedTeam(body: unknown) {
+  const NO_ASSESSMENTS = {
+    run: null,
+    assessments: [
+      { agent: "engineering_agent", assessment: null },
+      { agent: "pm_agent", assessment: null },
+      { agent: "security_agent", assessment: null },
+    ],
+    can_start: false,
+  };
+
+  function reply(body: unknown) {
+    return body
+      ? { data: body, response: new Response(null, { status: 200 }) }
+      : { response: new Response(null, { status: 500 }) };
+  }
+
+  function foundWithRedTeam(body: unknown, assessments: unknown = NO_ASSESSMENTS) {
     apiGet.mockImplementation(async (path: string) =>
       path.endsWith("/red-team")
-        ? body
-          ? { data: body, response: new Response(null, { status: 200 }) }
-          : { response: new Response(null, { status: 500 }) }
-        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+        ? reply(body)
+        : path.endsWith("/assessments")
+          ? reply(assessments)
+          : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
     );
   }
 
@@ -798,6 +814,9 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["5Assessments"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Assessments" })).toBeTruthy();
+    expect(
+      within(panel).getByRole("heading", { level: 3, name: "Specialist Assessments" }),
+    ).toBeTruthy();
     expect(within(panel).getByRole("heading", { level: 3, name: "Red Team" })).toBeTruthy();
     expect(within(panel).getByText("Red Team v2")).toBeTruthy();
     expect(within(panel).getByRole("button", { name: /\[FINDING\]/ })).toBeTruthy();
@@ -810,23 +829,35 @@ describe("/opportunities/[id] workspace", () => {
 
   it("tab URL /assessments: the empty state", async () => {
     signedIn(["presales_engineer"]);
-    foundWithRedTeam({ review: null, run: null, can_start: true });
+    foundWithRedTeam(
+      { review: null, run: null, can_start: true },
+      { ...NO_ASSESSMENTS, can_start: true },
+    );
     await renderWorkspace("assessments");
+    const panel = screen.getByRole("tabpanel");
     expect(
-      within(screen.getByRole("tabpanel")).getByText(
-        "The Red Team reviews the Opportunity after the Estimate is drafted.",
+      within(panel).getByText("The Red Team reviews the Opportunity after the Estimate is drafted."),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        "No assessment yet. Run assessment to have the Engineering, PM and Security Agents review this Opportunity.",
       ),
     ).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Run assessment" })).toBeTruthy();
   });
 
   it("tab URL /assessments: a failed read says so", async () => {
     signedIn(["head_of_delivery"]);
-    foundWithRedTeam(null);
+    foundWithRedTeam(null, null);
     vi.spyOn(console, "error").mockImplementation(() => {});
     await renderWorkspace("assessments");
+    const panel = screen.getByRole("tabpanel");
     expect(
-      within(screen.getByRole("tabpanel")).getByText(
-        "The Red Team Review could not be loaded. Try again in a moment.",
+      within(panel).getByText("The Red Team Review could not be loaded. Try again in a moment."),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        "The Specialist Assessments could not be loaded. Try again in a moment.",
       ),
     ).toBeTruthy();
   });

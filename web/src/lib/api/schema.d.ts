@@ -720,6 +720,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Assessments
+         * @description The Opportunity's latest assessment run (null before the first) with one task per
+         *     agent, and per agent (Engineering, PM, Security) its current Assessment or null: the
+         *     recommendation, confidence with its basis, the Findings critical first (then high, medium
+         *     and low) with the Requirements they cite, and the effort per Requirement with its total.
+         *     Anyone who can read the Opportunity.
+         */
+        get: operations["get_assessments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/assessment-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Assessment Run
+         * @description Start an assessment run: the Engineering, PM and Security Agents assess the
+         *     Opportunity's active Requirements and open Gaps in parallel. The owner and
+         *     collaborators, except sales representatives.
+         */
+        post: operations["start_assessment_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/tasks/{agent}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Assessment Task
+         * @description Re-run one failed task of the Opportunity's latest assessment run; the other tasks
+         *     keep their results. The owner and collaborators, except sales representatives.
+         */
+        post: operations["retry_assessment_task"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -768,12 +835,145 @@ export interface components {
             total: number;
         };
         /**
+         * AgentAssessment
+         * @description One agent's slot: its current Assessment, null before its first.
+         */
+        AgentAssessment: {
+            agent: components["schemas"]["AssessmentAgent"];
+            assessment: components["schemas"]["AssessmentView"] | null;
+        };
+        /**
          * ApproveAllResult
          * @description How many questions **Approve all** approved (the drafted questions of open Gaps).
          */
         ApproveAllResult: {
             /** Count */
             count: number;
+        };
+        /**
+         * AssessmentAgent
+         * @description The specialist agents, in the order they are listed.
+         * @enum {string}
+         */
+        AssessmentAgent: "engineering_agent" | "pm_agent" | "security_agent";
+        /**
+         * AssessmentEffort
+         * @description The agent's effort for one Requirement, in person-hours (0.1 h precision).
+         */
+        AssessmentEffort: {
+            requirement: components["schemas"]["FindingRequirement"];
+            /** Hours */
+            hours: number;
+            /** Basis */
+            basis: string;
+        };
+        /**
+         * AssessmentFinding
+         * @description A specialist Finding: its kind, severity, specific title and detail, with the
+         *     Requirements it cites.
+         */
+        AssessmentFinding: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            kind: components["schemas"]["FindingKind"];
+            severity: components["schemas"]["Severity"];
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /** Requirements */
+            requirements: components["schemas"]["FindingRequirement"][];
+        };
+        /**
+         * AssessmentRun
+         * @description An assessment run: its status and one task per agent, in agent order.
+         */
+        AssessmentRun: {
+            /** Id */
+            id: string;
+            status: components["schemas"]["AssessmentRunStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Tasks */
+            tasks: components["schemas"]["AssessmentTask"][];
+        };
+        /**
+         * AssessmentRunStatus
+         * @enum {string}
+         */
+        AssessmentRunStatus: "queued" | "running" | "succeeded" | "partially_failed" | "failed";
+        /**
+         * AssessmentStatus
+         * @enum {string}
+         */
+        AssessmentStatus: "current" | "superseded";
+        /**
+         * AssessmentTask
+         * @description One agent's task in an assessment run. `error_code` is set only when `failed`.
+         */
+        AssessmentTask: {
+            agent: components["schemas"]["AssessmentAgent"];
+            status: components["schemas"]["AssessmentTaskStatus"];
+            error_code: components["schemas"]["RunErrorCode"] | null;
+        };
+        /**
+         * AssessmentTaskStatus
+         * @enum {string}
+         */
+        AssessmentTaskStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * AssessmentView
+         * @description An agent's current Assessment. `findings`: critical first, then high, medium and low,
+         *     then in the order the agent raised them. `effort`: in Requirement order (Requirements
+         *     no longer active last), with `total_hours` their sum, calculated here. `dropped_count`:
+         *     proposed Findings and effort rows that broke a rule.
+         */
+        AssessmentView: {
+            /** Id */
+            id: string;
+            agent: components["schemas"]["AssessmentAgent"];
+            /** Version */
+            version: number;
+            status: components["schemas"]["AssessmentStatus"];
+            /** Run Id */
+            run_id: string;
+            recommendation: components["schemas"]["Recommendation"];
+            confidence: components["schemas"]["Confidence"];
+            /** Confidence Basis */
+            confidence_basis: string;
+            /** Dropped Count */
+            dropped_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            counts: components["schemas"]["SeverityCounts"];
+            /** Findings */
+            findings: components["schemas"]["AssessmentFinding"][];
+            /** Effort */
+            effort: components["schemas"]["AssessmentEffort"][];
+            /** Total Hours */
+            total_hours: number;
+        };
+        /**
+         * AssessmentsView
+         * @description The Opportunity's latest assessment run (null before the first) with its tasks, and
+         *     one entry per agent (Engineering, PM, Security) with its current Assessment or null.
+         *     `can_start`: whether the caller may start a run or retry a task. The UI only uses it to
+         *     hide controls; the API decides.
+         */
+        AssessmentsView: {
+            run: components["schemas"]["AssessmentRun"] | null;
+            /** Assessments */
+            assessments: components["schemas"]["AgentAssessment"][];
+            /** Can Start */
+            can_start: boolean;
         };
         /**
          * Assumption
@@ -880,6 +1080,11 @@ export interface components {
          * @enum {string}
          */
         Classification: "functional" | "integration" | "data" | "security" | "non_functional" | "commercial";
+        /**
+         * Confidence
+         * @enum {string}
+         */
+        Confidence: "high" | "medium" | "low";
         /**
          * ConfirmAllResult
          * @description How many Requirements **Confirm all** confirmed (those not confirmed already).
@@ -1068,6 +1273,11 @@ export interface components {
          */
         FindingCategory: "integration_harder" | "requirement_incomplete" | "capability_overstated" | "hidden_dependency";
         /**
+         * FindingKind
+         * @enum {string}
+         */
+        FindingKind: "risk" | "constraint" | "dependency" | "opportunity";
+        /**
          * FindingLine
          * @description A line of the reviewed Estimate Version the Finding challenges.
          */
@@ -1083,7 +1293,7 @@ export interface components {
         };
         /**
          * FindingRequirement
-         * @description A Requirement the Finding challenges, at the version the Red Team read. `label` is
+         * @description A Requirement a Finding (or an effort row) cites, at the version the agent read. `label` is
          *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
          *     first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
          *     that version's text, with `…` when cut.
@@ -1481,6 +1691,11 @@ export interface components {
             /** Row Version */
             row_version: number;
         };
+        /**
+         * Recommendation
+         * @enum {string}
+         */
+        Recommendation: "proceed" | "proceed_with_conditions" | "do_not_proceed";
         /**
          * RedTeamFinding
          * @description A Red Team Finding: its category, severity, specific title and argument, with the
@@ -7105,6 +7320,426 @@ export interface operations {
                 };
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_assessments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentsView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    start_assessment_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new assessment run, `queued`, with one task per agent */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentRun"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An assessment run is already queued or running (`assessment_in_progress`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    retry_assessment_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                run_id: string;
+                agent: components["schemas"]["AssessmentAgent"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run, `queued` again, with the retried task `queued` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentRun"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no such assessment run for it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An assessment run is already queued or running (`assessment_in_progress`), or the task is not a failed task of the latest run (`assessment_task_not_failed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID, or the agent is unknown (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;
