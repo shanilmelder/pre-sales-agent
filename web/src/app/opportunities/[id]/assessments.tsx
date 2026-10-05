@@ -1,5 +1,12 @@
-import { getAssessments, getOpportunity, getRedTeam } from "@/app/opportunities/data";
+import {
+  getAssessments,
+  getEstimate,
+  getOpportunity,
+  getRedTeam,
+  listRequirements,
+} from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
+import { EffortComparisonSection } from "@/components/opportunities/effort-comparison";
 import { FindingSelectionProvider } from "@/components/opportunities/finding-selection";
 import { RedTeamSection } from "@/components/opportunities/red-team-list";
 import { SpecialistAssessmentsSection } from "@/components/opportunities/specialist-assessments";
@@ -7,7 +14,8 @@ import { getMe } from "@/lib/api/server";
 
 /** Tab 5: the Opportunity's Assessments. In the demo scope a Specialist Assessments section
  * (Epic 5 slice 5A: the Engineering, PM and Security Agents' current Assessments and the
- * latest run) above the Red Team section (Story 6.5). Only one Finding across both sections
+ * latest run), the Effort comparison (Story 5.3: the agents' hours per Requirement next to
+ * the Estimate's), then the Red Team section (Story 6.5). Only one Finding across both sections
  * is selected at a time. Renders nothing when the user may not read the Opportunity; the
  * workspace layout shows why. */
 export async function AssessmentsTab({ id }: { id: string }) {
@@ -16,9 +24,11 @@ export async function AssessmentsTab({ id }: { id: string }) {
   const loaded = await getOpportunity(id);
   if (loaded.kind !== "ok") return null;
   const { opportunity } = loaded;
-  const [assessments, redTeam] = await Promise.all([
+  const [assessments, redTeam, estimate, requirements] = await Promise.all([
     getAssessments(opportunity.id),
     getRedTeam(opportunity.id),
+    getEstimate(opportunity.id),
+    listRequirements(opportunity.id),
   ]);
 
   return (
@@ -33,6 +43,11 @@ export async function AssessmentsTab({ id }: { id: string }) {
         ) : (
           <p>The Specialist Assessments could not be loaded. Try again in a moment.</p>
         )}
+        <EffortComparisonSection
+          requirements={requirements.kind === "ok" ? requirements.list.items : null}
+          assessments={assessments.kind === "ok" ? assessments.assessments.assessments : null}
+          estimate={estimate.kind === "ok" ? estimate.estimate.version : "error"}
+        />
         {redTeam.kind === "ok" ? (
           <RedTeamSection opportunityId={opportunity.id} initial={redTeam.redTeam} />
         ) : (

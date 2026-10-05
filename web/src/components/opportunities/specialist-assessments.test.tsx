@@ -55,12 +55,14 @@ vi.mock("@/app/opportunities/actions", () => ({
   startRedTeamReview,
   loadRedTeam,
 }));
+const refresh = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
     replace: vi.fn(),
     prefetch: vi.fn(),
     back: vi.fn(),
+    refresh,
   }),
   usePathname: () => "/opportunities/x/assessments",
 }));
@@ -454,6 +456,40 @@ describe("SpecialistAssessmentsSection", () => {
     });
     expect(loadAssessments).toHaveBeenCalledWith(OPP_ID);
     expect(screen.getByText("[FINDING 3]")).toBeTruthy();
+  });
+
+  it("refreshes the tab's server reads once when the polled run finishes", async () => {
+    vi.useFakeTimers();
+    refresh.mockClear();
+    loadAssessments
+      .mockResolvedValueOnce({ kind: "ok", assessments: view(running) })
+      .mockResolvedValue({ kind: "ok", assessments: view(succeeded, FULL) });
+    renderSection(view(queued));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(refresh).not.toHaveBeenCalled(); // still running
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(screen.getByText("[FINDING 3]")).toBeTruthy();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refresh on a page load of a finished run", async () => {
+    vi.useFakeTimers();
+    refresh.mockClear();
+    renderSection(view(succeeded, FULL));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(loadAssessments).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("polls every 2 s only while assessing", async () => {
