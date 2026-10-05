@@ -89,6 +89,7 @@ def test_every_action_has_a_policy_entry() -> None:
     assert POLICY[Action.ESTIMATE_DRAFT_START] == frozenset()
     assert POLICY[Action.ASSUMPTION_ACCEPT] == frozenset()
     assert POLICY[Action.RED_TEAM_START] == frozenset()
+    assert POLICY[Action.ASSESSMENT_START] == frozenset()
     assert POLICY[Action.ESTIMATE_EXPORT] == frozenset()
 
 
@@ -106,6 +107,7 @@ def test_resource_scoped_grants() -> None:
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
+        Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
     }
     assert MEMBER_GRANTS == {
@@ -118,6 +120,7 @@ def test_resource_scoped_grants() -> None:
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
+        Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
     }
     assert RELATION_EXCLUDED_ROLES == {
@@ -127,6 +130,7 @@ def test_resource_scoped_grants() -> None:
         Action.ESTIMATE_DRAFT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSUMPTION_ACCEPT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ASSESSMENT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_EXPORT: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
@@ -153,6 +157,8 @@ def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) ->
     assert can(member, Action.ASSUMPTION_ACCEPT, opportunity) is allowed
     assert can(owner, Action.RED_TEAM_START, opportunity) is allowed
     assert can(member, Action.RED_TEAM_START, opportunity) is allowed
+    assert can(owner, Action.ASSESSMENT_START, opportunity) is allowed
+    assert can(member, Action.ASSESSMENT_START, opportunity) is allowed
     assert can(owner, Action.ESTIMATE_EXPORT, opportunity) is allowed
     assert can(member, Action.ESTIMATE_EXPORT, opportunity) is allowed
     assert can(member, Action.SOURCE_ADD, opportunity) is True

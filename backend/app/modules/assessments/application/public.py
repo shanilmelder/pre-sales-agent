@@ -3,7 +3,19 @@
 from uuid import UUID
 
 from app.modules.assessments.application import review
+from app.modules.assessments.application.assessments import (
+    get_assessments,
+    retry_task,
+    start_run,
+)
 from app.modules.assessments.application.models import (
+    AgentAssessment,
+    AssessmentEffort,
+    AssessmentFinding,
+    AssessmentRun,
+    AssessmentsView,
+    AssessmentTask,
+    AssessmentView,
     FindingLine,
     FindingRequirement,
     RedTeamFinding,
@@ -13,6 +25,7 @@ from app.modules.assessments.application.models import (
     SeverityCounts,
 )
 from app.modules.assessments.application.reviews import get_red_team, start_review
+from app.modules.assessments.domain.assessments import AssessmentAgent
 from app.platform.uow import UnitOfWork
 
 
@@ -24,6 +37,14 @@ async def enqueue_review(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 
 __all__ = [
+    "AgentAssessment",
+    "AssessmentAgent",
+    "AssessmentEffort",
+    "AssessmentFinding",
+    "AssessmentRun",
+    "AssessmentTask",
+    "AssessmentView",
+    "AssessmentsView",
     "FindingLine",
     "FindingRequirement",
     "RedTeamFinding",
@@ -32,6 +53,9 @@ __all__ = [
     "RedTeamView",
     "SeverityCounts",
     "enqueue_review",
+    "get_assessments",
     "get_red_team",
+    "retry_task",
     "start_review",
+    "start_run",
 ]

@@ -8,6 +8,7 @@ import {
   startRedTeamReview,
   type StartRedTeamReviewResult,
 } from "@/app/opportunities/actions";
+import { useFindingSelection } from "@/components/opportunities/finding-selection";
 import { RedTeamInspector } from "@/components/opportunities/red-team-inspector";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { useAnnounce } from "@/components/shell/live-region";
@@ -259,8 +260,9 @@ function retryMessage(result: StartRedTeamReviewResult): string {
  * pane, and the selected Finding's inspector in the right pane (opened if closed). While a
  * review is queued or running the section is re-read every 2 s: paused while the tab is
  * hidden, and stopped after 15 minutes. A selected Finding that a newer review replaced
- * leaves the pane showing "Nothing selected." Read-only for everyone; Retry only for those
- * who may start a review. */
+ * leaves the pane showing "Nothing selected." Inside a `FindingSelectionProvider` its
+ * selection is shared with the tab's other sections (one Finding selected at a time).
+ * Read-only for everyone; Retry only for those who may start a review. */
 export function RedTeamSection({
   opportunityId,
   initial,
@@ -272,7 +274,7 @@ export function RedTeamSection({
   const headingId = useId();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<RedTeamView>(initial);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useFindingSelection("red-team");
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);

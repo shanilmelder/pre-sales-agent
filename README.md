@@ -139,7 +139,8 @@ app.modules.intake.adapters.parse_cli`) with a wall-clock limit `PSA_PARSE_TIMEO
 `/api/chat` with `format` set to the output model's JSON Schema, validation and bounded
 retries, a priority-aware slot limit, and one `platform_model_calls` row per call. Settings:
 `PSA_OLLAMA_URL` (default `http://127.0.0.1:11434`), `PSA_MODEL_PROFILE_CHAT` (`demo-chat` =
-`gpt-oss:120b-cloud`, or `local-chat` = `qwen3:8b`), `PSA_MODEL_SLOTS`,
+`gpt-oss:120b-cloud`, or `local-chat` = `qwen3:8b`), `PSA_MODEL_SLOTS` (default 3, so an
+assessment run's three specialist agents can call at once),
 `PSA_MODEL_MAX_RETRIES` and `PSA_MODEL_TIMEOUT_S`. `demo-chat` sends prompt text to Ollama's
 cloud: until IT approves it, use it only with sample or anonymised Opportunities.
 

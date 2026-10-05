@@ -103,7 +103,7 @@ services:
       # sends prompt text to Ollama's cloud: sample or anonymised Opportunities only.
       PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
       PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
-      PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-1}
+      PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
       PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
       PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
     extra_hosts:

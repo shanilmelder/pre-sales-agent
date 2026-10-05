@@ -123,6 +123,8 @@ def _settings(db_url: str, **overrides: Any) -> Settings:
         "database_url": db_url,
         "ollama_url": "http://ollama.test",
         "model_max_retries": 2,
+        # One slot, so the slot tests can hold it (the default is 3 since Epic 5 slice 5A).
+        "model_slots": 1,
     }
     return Settings(**(fields | overrides))
 

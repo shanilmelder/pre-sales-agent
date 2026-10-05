@@ -44,6 +44,7 @@ _JOB_MODULES: tuple[str, ...] = (
     "app.modules.estimates.application.draft",
     "app.modules.estimates.application.assumptions",
     "app.modules.assessments.application.review",
+    "app.modules.assessments.application.assessment",
 )
 _JITTER = 0.2
 

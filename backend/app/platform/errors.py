@@ -166,6 +166,22 @@ class RedTeamReviewInProgressError(ConflictError):
     title = "Red Team review in progress"
 
 
+class AssessmentInProgressError(ConflictError):
+    """An assessment run (or a task retry) was asked for while one of the Opportunity's runs
+    is queued or running (Epic 5 slice 5A)."""
+
+    code = "assessment_in_progress"
+    title = "Assessment in progress"
+
+
+class AssessmentTaskNotFailedError(ConflictError):
+    """A task retry was asked for a task that is not `failed`, or not of the Opportunity's
+    latest run (Epic 5 slice 5A)."""
+
+    code = "assessment_task_not_failed"
+    title = "Assessment task not failed"
+
+
 class EstimateNotFoundError(ConflictError):
     """An Estimate export was asked for while the Opportunity has no Estimate Version yet
     (Story 8.8)."""

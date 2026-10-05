@@ -26,13 +26,16 @@ import {
   editClarificationQuestion,
   editRequirement,
   getPassage,
+  loadAssessments,
   loadEstimate,
   loadGaps,
   loadRedTeam,
   loadRequirements,
   loadSources,
+  retryAssessmentTask,
   retryParse,
   searchUsers,
+  startAssessmentRun,
   startEstimateDraft,
   startExtraction,
   startGapDetection,
@@ -714,6 +717,87 @@ describe("loadRedTeam", () => {
     expect(await loadRedTeam(OPP_ID)).toEqual({ kind: "error" });
     api.GET.mockRejectedValueOnce(new Error("network"));
     expect(await loadRedTeam(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
+describe("startAssessmentRun / retryAssessmentTask", () => {
+  const RUN_ID = "00000000-0000-7000-8000-0000000000b1";
+  const RUN = { id: RUN_ID, status: "queued", tasks: [] };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts to the assessment-runs route and returns the queued run", async () => {
+    api.POST.mockResolvedValue({ data: RUN, response: new Response(null, { status: 201 }) });
+    expect(await startAssessmentRun(OPP_ID)).toEqual({ kind: "ok", run: RUN });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
+  });
+
+  it("posts one agent's retry to the task route", async () => {
+    api.POST.mockResolvedValue({ data: RUN, response: new Response(null, { status: 200 }) });
+    expect(await retryAssessmentTask(OPP_ID, RUN_ID, "security_agent")).toEqual({
+      kind: "ok",
+      run: RUN,
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/tasks/{agent}/retry",
+      { params: { path: { opportunity_id: OPP_ID, run_id: RUN_ID, agent: "security_agent" } } },
+    );
+  });
+
+  it.each([
+    [409, "conflict"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: new Response(null, { status }) });
+    expect(await startAssessmentRun(OPP_ID)).toEqual({ kind });
+    expect(await retryAssessmentTask(OPP_ID, RUN_ID, "pm_agent")).toEqual({ kind });
+  });
+
+  it("is an error when the call throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await startAssessmentRun(OPP_ID)).toEqual({ kind: "error" });
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await retryAssessmentTask(OPP_ID, RUN_ID, "pm_agent")).toEqual({ kind: "error" });
+  });
+
+  it("refuses bad ids or an unknown agent without calling the API", async () => {
+    expect(await startAssessmentRun("nope")).toEqual({ kind: "error" });
+    expect(await retryAssessmentTask("nope", RUN_ID, "pm_agent")).toEqual({ kind: "error" });
+    expect(await retryAssessmentTask(OPP_ID, "nope", "pm_agent")).toEqual({ kind: "error" });
+    expect(await retryAssessmentTask(OPP_ID, RUN_ID, "red_team_agent")).toEqual({
+      kind: "error",
+    });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadAssessments", () => {
+  it("reads the Opportunity's latest run and current Assessments", async () => {
+    const VIEW = { run: null, assessments: [], can_start: false };
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ data: VIEW, response: new Response(null, { status: 200 }) });
+    expect(await loadAssessments(OPP_ID)).toEqual({ kind: "ok", assessments: VIEW });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/assessments", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await loadAssessments(7)).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("is an error when the API fails or throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    expect(await loadAssessments(OPP_ID)).toEqual({ kind: "error" });
+    api.GET.mockRejectedValueOnce(new Error("network"));
+    expect(await loadAssessments(OPP_ID)).toEqual({ kind: "error" });
   });
 });
 
