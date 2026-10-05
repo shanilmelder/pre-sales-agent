@@ -28,3 +28,4 @@ class Action(StrEnum):
     ESTIMATE_DRAFT_START = "estimates.draft.start"
     ASSUMPTION_ACCEPT = "estimates.assumption.accept"
     RED_TEAM_START = "assessments.red_team.start"
+    ESTIMATE_EXPORT = "estimates.estimate.export"

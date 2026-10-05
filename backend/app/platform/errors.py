@@ -166,6 +166,14 @@ class RedTeamReviewInProgressError(ConflictError):
     title = "Red Team review in progress"
 
 
+class EstimateNotFoundError(ConflictError):
+    """An Estimate export was asked for while the Opportunity has no Estimate Version yet
+    (Story 8.8)."""
+
+    code = "estimate_not_found"
+    title = "No Estimate yet"
+
+
 class GapNotOpenError(ConflictError):
     """An Assumption was accepted whose origin Gap is no longer `open` (Story 8.4)."""
 

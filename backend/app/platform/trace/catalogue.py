@@ -308,6 +308,21 @@ class EstimatesAssumptionAccepted(TracePayload):
     accepted_by: str
 
 
+# Story 8.8. The version and the format only, never any line, Assumption or question text.
+
+
+@register
+class EstimatesEstimateVersionExported(TracePayload):
+    """An Estimate Version was exported to a file. Subject: the version
+    (`estimates.estimate_version`). Actor: the person who exported it."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.exported"
+
+    version_id: str
+    version: int
+    format: Literal["xlsx", "docx"]
+
+
 # Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.
 
 

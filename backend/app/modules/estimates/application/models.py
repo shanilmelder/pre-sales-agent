@@ -185,13 +185,15 @@ class EstimateDraft(BaseModel):
 class EstimateView(BaseModel):
     """The Opportunity's current (draft) Estimate Version, null before the first, and its
     latest draft run, null before the first. `can_start_draft`: whether the caller may start
-    (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions. The
-    UI only uses them to hide controls; the API decides."""
+    (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
+    `can_export`: whether the caller may export the Estimate (Story 8.8). The UI only uses
+    them to hide controls; the API decides."""
 
     version: EstimateVersion | None
     draft: EstimateDraft | None
     can_start_draft: bool
     can_accept_assumptions: bool
+    can_export: bool
 
 
 class AcceptAllResult(BaseModel):

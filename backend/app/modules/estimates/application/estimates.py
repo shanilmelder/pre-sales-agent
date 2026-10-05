@@ -354,6 +354,7 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         draft=_draft(await repo.latest_draft(uow, opportunity_id)),
         can_start_draft=identity.can(actor, Action.ESTIMATE_DRAFT_START, resource),
         can_accept_assumptions=identity.can(actor, Action.ASSUMPTION_ACCEPT, resource),
+        can_export=identity.can(actor, Action.ESTIMATE_EXPORT, resource),
     )
 
 

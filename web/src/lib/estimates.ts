@@ -207,3 +207,44 @@ export function convertedLabel(
     ? "Converted to Contingency"
     : "Converted to Condition";
 }
+
+// --- Export (Story 8.8, demo scope) ---------------------------------------------------------
+
+export type ExportFormat = components["schemas"]["ExportFormat"];
+
+/** The Export control's choices, in menu order. */
+export const EXPORT_FORMATS: readonly { value: ExportFormat; label: string }[] = [
+  { value: "xlsx", label: "Excel (.xlsx)" },
+  { value: "docx", label: "Word (.docx)" },
+];
+
+export const EXPORT = "Export";
+export const EXPORTING = "Exporting…";
+
+/** The web route that downloads the export (it adds the user's token). */
+export function exportUrl(opportunityId: string, format: ExportFormat): string {
+  return `/api/opportunities/${encodeURIComponent(opportunityId)}/estimate-export?format=${format}`;
+}
+
+/** The file name from `Content-Disposition: attachment; filename="…"`, or null. */
+export function exportFileName(disposition: string | null | undefined): string | null {
+  const match = disposition?.match(/filename="?([^";]+)"?/i);
+  return match ? match[1] : null;
+}
+
+/** Why an export failed, by HTTP status and problem code. */
+export function exportFailureReason(status: number | null, code?: string | null): string {
+  if (status === null || status === 502) return "the export service couldn't be reached";
+  if (status === 401) return "your session has expired; reload the page";
+  if (status === 403) {
+    return "only the owner and collaborators, except sales representatives, can export the Estimate";
+  }
+  if (status === 404) return "you no longer have access to this Opportunity";
+  if (status === 409 || code === "estimate_not_found") return "there is no Estimate to export yet";
+  return "the file couldn't be created";
+}
+
+/** "Export failed: <reason>". */
+export function exportFailure(reason: string): string {
+  return `Export failed: ${reason}`;
+}
