@@ -41,6 +41,8 @@ class TaskRecord:
     agent: str
     status: str
     error_code: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +143,13 @@ def _run(row: AssessmentRunRow) -> RunRecord:
 
 def _task(row: AssessmentTaskRow) -> TaskRecord:
     return TaskRecord(
-        id=row.id, run_id=row.run_id, agent=row.agent, status=row.status, error_code=row.error_code
+        id=row.id,
+        run_id=row.run_id,
+        agent=row.agent,
+        status=row.status,
+        error_code=row.error_code,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
     )
 
 

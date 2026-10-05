@@ -888,7 +888,9 @@ export interface components {
         };
         /**
          * AssessmentRun
-         * @description An assessment run: its status and one task per agent, in agent order.
+         * @description An assessment run: its status and one task per agent, in agent order. `queued_at`:
+         *     when it was last queued (a retry re-queues it); `finished_at`: null while in progress,
+         *     or for a lost run not yet recorded.
          */
         AssessmentRun: {
             /** Id */
@@ -899,6 +901,13 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Queued At
+             * Format: date-time
+             */
+            queued_at: string;
+            /** Finished At */
+            finished_at: string | null;
             /** Tasks */
             tasks: components["schemas"]["AssessmentTask"][];
         };
@@ -915,11 +924,17 @@ export interface components {
         /**
          * AssessmentTask
          * @description One agent's task in an assessment run. `error_code` is set only when `failed`.
+         *     `started_at` / `finished_at`: when the task last started and finished (null before
+         *     either); the panel derives elapsed time from them.
          */
         AssessmentTask: {
             agent: components["schemas"]["AssessmentAgent"];
             status: components["schemas"]["AssessmentTaskStatus"];
             error_code: components["schemas"]["RunErrorCode"] | null;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
         };
         /**
          * AssessmentTaskStatus

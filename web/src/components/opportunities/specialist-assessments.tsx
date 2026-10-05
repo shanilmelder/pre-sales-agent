@@ -1,6 +1,13 @@
 "use client";
 
-import { CircleAlertIcon, ListChecksIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  CircleCheckIcon,
+  CircleDotIcon,
+  ClockIcon,
+  ListChecksIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import {
@@ -21,6 +28,7 @@ import {
 import {
   agentLabel,
   confidenceLabel,
+  failureReason,
   isAssessing,
   kindLabel,
   NO_AGENT_ASSESSMENT,
@@ -30,13 +38,16 @@ import {
   RUN_ASSESSMENT,
   runStatusLabel,
   STILL_ASSESSING,
-  taskLine,
+  taskElapsed,
+  taskStatusLabel,
+  WAITING_FOR_WORKER,
   type AgentAssessment,
   type Assessment,
   type AssessmentAgent,
   type AssessmentFinding,
   type AssessmentRun,
   type AssessmentsView,
+  type AssessmentTask,
   type Recommendation,
 } from "@/lib/assessments";
 import { hours } from "@/lib/estimates";
@@ -324,11 +335,136 @@ export function AssessmentCard({
   );
 }
 
+const TASK_PILL_ICONS: Record<
+  AssessmentTask["status"],
+  { icon: LucideIcon; tone: string }
+> = {
+  queued: { icon: ClockIcon, tone: "text-muted-foreground" },
+  running: { icon: CircleDotIcon, tone: "text-agent" },
+  succeeded: { icon: CircleCheckIcon, tone: "text-resolved" },
+  failed: { icon: CircleAlertIcon, tone: "text-blocker" },
+};
+
+/** A task's status: always an icon and a label, never colour alone (Queued neutral, Running
+ * agent colour, Done green, Failed red). */
+function TaskStatusPill({ status }: { status: AssessmentTask["status"] }) {
+  const known = TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued;
+  const Icon = known.icon;
+  return (
+    <span
+      data-task-pill={status}
+      className="inline-flex h-5 w-[5.5rem] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
+    >
+      <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
+      {taskStatusLabel(status)}
+    </span>
+  );
+}
+
+/** The browser's clock, re-read every second while `ticking`. */
+function useNow(ticking: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!ticking) return;
+    // Re-read at once (not a second later): the clock may be from long before it ticked.
+    const refresh = setTimeout(() => setNow(Date.now()), 0);
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      clearTimeout(refresh);
+      clearInterval(timer);
+    };
+  }, [ticking]);
+  return now;
+}
+
+/** The agent run panel: one 28px row per task of the latest run (in any status) with the
+ * agent's role, a status pill, the elapsed time in tabular figures (`m:ss`, ticking each
+ * second while it runs, its final duration once done or failed, blank before it starts) and a
+ * running dot (static under reduced motion). Queued rows say "Waiting for the worker"; failed
+ * rows give the reason and **Retry** for those who may start one. Elapsed time comes from the
+ * task's timestamps and the browser's clock, so it ticks without a fetch. */
+export function AgentRunPanel({
+  run,
+  canStart = false,
+  busy = false,
+  stalled = false,
+  onRetry,
+}: {
+  run: AssessmentRun;
+  canStart?: boolean;
+  busy?: boolean;
+  stalled?: boolean;
+  onRetry?: (agent: AssessmentAgent) => void;
+}) {
+  const assessing = isAssessing(run);
+  const now = useNow(assessing && !stalled);
+  return (
+    <ul aria-label="Agent progress" className="flex w-full flex-col">
+      {run.tasks.map((task) => {
+        const failed = task.status === "failed";
+        const runningDot = task.status === "running" && !stalled;
+        const note =
+          task.status === "queued"
+            ? WAITING_FOR_WORKER
+            : failed
+              ? failureReason(task.error_code)
+              : null;
+        return (
+          <li
+            key={task.agent}
+            data-task-status={task.status}
+            className="flex min-h-row-compact flex-wrap items-center gap-x-3 gap-y-1 text-label"
+          >
+            <span className="w-36 shrink-0 truncate">
+              {agentLabel(task.agent)}
+            </span>
+            <TaskStatusPill status={task.status} />
+            <span
+              data-testid="elapsed"
+              suppressHydrationWarning
+              className="w-12 shrink-0 text-right text-numeric"
+            >
+              {taskElapsed(task, now)}
+            </span>
+            <span className="flex size-1.5 shrink-0" aria-hidden="true">
+              {runningDot ? (
+                <span
+                  data-testid="running-dot"
+                  className="size-1.5 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
+                />
+              ) : null}
+            </span>
+            {note ? (
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate",
+                  failed ? "text-blocker" : "text-muted-foreground",
+                )}
+              >
+                {note}
+              </span>
+            ) : null}
+            {failed && canStart && !assessing ? (
+              <button
+                type="button"
+                disabled={busy}
+                aria-label={`${RETRY} ${agentLabel(task.agent)}`}
+                onClick={() => onRetry?.(task.agent)}
+                className={actionClass}
+              >
+                {RETRY}
+              </button>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** The section header: **Run assessment** (only for those who may start one), the latest
- * run's status and, while it is queued or running (or once a task failed), one line per agent
- * ("Engineering Agent — Assessing…", "PM Agent — Done", "Security Agent — Failed: <reason>"
- * with **Retry** for those who may start one). "Still assessing — reload to check." once
- * polling has stopped. */
+ * run's status and the agent run panel for that run ("Still assessing — reload to check."
+ * once polling has stopped). */
 export function SpecialistAssessmentsHeader({
   run,
   canStart = false,
@@ -350,9 +486,6 @@ export function SpecialistAssessmentsHeader({
   onRetry?: (agent: AssessmentAgent) => void;
 }) {
   const assessing = isAssessing(run);
-  const anyFailed = run?.tasks.some((t) => t.status === "failed") ?? false;
-  const showTasks =
-    run !== null && (assessing || anyFailed) && !(assessing && stalled);
   return (
     <div className="flex flex-col items-start gap-1.5">
       <div className="flex flex-wrap items-center gap-3">
@@ -378,53 +511,14 @@ export function SpecialistAssessmentsHeader({
       {assessing && stalled ? (
         <p className="text-label text-muted-foreground">{STILL_ASSESSING}</p>
       ) : null}
-      {showTasks && run ? (
-        <ul aria-label="Agent progress" className="flex flex-col gap-1">
-          {run.tasks.map((task) => {
-            const working =
-              task.status === "queued" || task.status === "running";
-            const failed = task.status === "failed";
-            return (
-              <li
-                key={task.agent}
-                data-task-status={task.status}
-                className="flex flex-wrap items-center gap-2 text-label"
-              >
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-2",
-                    failed && "text-blocker",
-                  )}
-                >
-                  {working ? (
-                    <span
-                      aria-hidden="true"
-                      data-testid="running-dot"
-                      className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-                    />
-                  ) : failed ? (
-                    <CircleAlertIcon
-                      aria-hidden="true"
-                      className="size-3 shrink-0"
-                    />
-                  ) : null}
-                  {taskLine(task)}
-                </span>
-                {failed && canStart && !assessing ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    aria-label={`${RETRY} ${agentLabel(task.agent)}`}
-                    onClick={() => onRetry?.(task.agent)}
-                    className={actionClass}
-                  >
-                    {RETRY}
-                  </button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+      {run ? (
+        <AgentRunPanel
+          run={run}
+          canStart={canStart}
+          busy={busy}
+          stalled={assessing && stalled}
+          onRetry={onRetry}
+        />
       ) : null}
       {message ? (
         <span className="text-meta text-destructive">{message}</span>
