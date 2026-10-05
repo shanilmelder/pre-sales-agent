@@ -155,14 +155,16 @@ _SEVERITIES = "('low', 'medium', 'high', 'critical')"
 
 class AssessmentRunRow(Base):
     """One assessment run of an Opportunity: one task per specialist agent. Inserted
-    `queued` with its job; its status follows its tasks'. `queued_at`: when it was last
-    queued (a task retry queues it again); staleness counts from there."""
+    `queued` with its job; its status follows its tasks', except `cancelled` (Story 5.5),
+    which a person sets. `queued_at`: when it was last queued (a task retry queues it
+    again); staleness counts from there."""
 
     __tablename__ = "assessments_runs"
     __table_args__ = (
         Index(None, "opportunity_id", "created_at"),
         CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'partially_failed', 'failed')",
+            "status IN ('queued', 'running', 'succeeded', 'partially_failed', 'failed', "
+            "'cancelled')",
             name="status",
         ),
     )
@@ -176,13 +178,16 @@ class AssessmentRunRow(Base):
 
 
 class AssessmentTaskRow(Base):
-    """One agent's task in an assessment run. `error_code` is set only when `failed`."""
+    """One agent's task in an assessment run. `error_code` is set only when `failed`;
+    `skipped` when its run was cancelled before it finished (Story 5.5)."""
 
     __tablename__ = "assessments_tasks"
     __table_args__ = (
         UniqueConstraint("run_id", "agent"),
         CheckConstraint(f"agent IN {_AGENTS}", name="agent"),
-        CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed')", name="status"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'skipped')", name="status"
+        ),
         CheckConstraint(f"error_code IS NULL OR error_code IN {_ERROR_CODES}", name="error_code"),
         CheckConstraint("(status = 'failed') = (error_code IS NOT NULL)", name="failed_has_code"),
     )

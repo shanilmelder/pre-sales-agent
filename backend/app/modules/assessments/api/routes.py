@@ -3,7 +3,8 @@
 - Red Team (Story 6.5): `GET /api/v1/opportunities/{opportunity_id}/red-team` and
   `POST /api/v1/opportunities/{opportunity_id}/red-team-reviews`.
 - Specialist Assessments (Epic 5 slice 5A): `GET …/assessments`, `POST …/assessment-runs`
-  and `POST …/assessment-runs/{run_id}/tasks/{agent}/retry`.
+  and `POST …/assessment-runs/{run_id}/tasks/{agent}/retry`; `POST …/assessment-runs/
+  {run_id}/cancel` (Story 5.5).
 
 Read-only for Findings."""
 
@@ -34,10 +35,14 @@ _DESCRIBED: dict[int, str] = {
     422: "The Opportunity id is not a UUID (`validation_error`)",
     4091: "An assessment run is already queued or running (`assessment_in_progress`)",
     4092: "An assessment run is already queued or running (`assessment_in_progress`), or the "
-    "task is not a failed task of the latest run (`assessment_task_not_failed`)",
+    "task is not a failed task of the latest run, or that run was cancelled "
+    "(`assessment_task_not_failed`)",
+    4093: "The run is not the Opportunity's latest, or is no longer queued or running "
+    "(`assessment_not_in_progress`)",
     4041: "No Opportunity with this id, or the caller may not see it, or no such assessment "
     "run for it (`not_found`)",
     4221: "An id is not a UUID, or the agent is unknown (`validation_error`)",
+    4222: "An id is not a UUID (`validation_error`)",
     503: "Sign-in service unavailable (`auth_unavailable`)",
 }
 
@@ -132,3 +137,21 @@ async def retry_assessment_task(
     """Re-run one failed task of the Opportunity's latest assessment run; the other tasks
     keep their results. The owner and collaborators, except sales representatives."""
     return await assessments.retry_task(uow, actor, opportunity_id, run_id, agent)
+
+
+@router.post(
+    "/assessment-runs/{run_id}/cancel",
+    operation_id="cancel_assessment_run",
+    responses={
+        **_responses(403, 4041, 4093, 4222),
+        200: {"description": "The run, `cancelled`, with its unfinished tasks `skipped`"},
+    },
+)
+async def cancel_assessment_run(
+    opportunity_id: UUID, run_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> AssessmentRun:
+    """Cancel the Opportunity's latest assessment run while it is queued or running: its
+    unfinished tasks are skipped and the Assessments already completed are kept. A cancelled
+    run can't be retried; start a new one instead. The owner and collaborators, except sales
+    representatives."""
+    return await assessments.cancel_run(uow, actor, opportunity_id, run_id)

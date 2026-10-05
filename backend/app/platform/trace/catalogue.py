@@ -393,6 +393,18 @@ class AssessmentsAssessmentRunStarted(TracePayload):
 
 
 @register
+class AssessmentsAssessmentRunCancelled(TracePayload):
+    """A person cancelled a queued or running assessment run (Story 5.5). Subject: the run
+    (`assessments.assessment_run`). Actor: that person. `skipped_count`: the unfinished tasks
+    it skipped; `succeeded_count`: the tasks whose Assessments it kept."""
+
+    event_type: ClassVar[str] = "assessments.assessment_run.cancelled"
+
+    skipped_count: int
+    succeeded_count: int
+
+
+@register
 class AssessmentsAssessmentCompleted(TracePayload):
     """A specialist agent's task succeeded and stored a new Assessment. Subject: the
     Assessment (`assessments.assessment`). Actor: the agent (`<agent_id>@<semver>`). Counts

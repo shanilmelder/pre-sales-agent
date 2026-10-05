@@ -18,6 +18,7 @@ import {
   addSource,
   addTextSource,
   approveAllClarificationQuestions,
+  cancelAssessmentRun,
   approveClarificationQuestion,
   changeCollaborator,
   confirmAllRequirements,
@@ -720,7 +721,7 @@ describe("loadRedTeam", () => {
   });
 });
 
-describe("startAssessmentRun / retryAssessmentTask", () => {
+describe("startAssessmentRun / retryAssessmentTask / cancelAssessmentRun", () => {
   const RUN_ID = "00000000-0000-7000-8000-0000000000b1";
   const RUN = { id: RUN_ID, status: "queued", tasks: [] };
 
@@ -747,6 +748,16 @@ describe("startAssessmentRun / retryAssessmentTask", () => {
     );
   });
 
+  it("posts a cancel to the run's cancel route", async () => {
+    const cancelled = { ...RUN, status: "cancelled" };
+    api.POST.mockResolvedValue({ data: cancelled, response: new Response(null, { status: 200 }) });
+    expect(await cancelAssessmentRun(OPP_ID, RUN_ID)).toEqual({ kind: "ok", run: cancelled });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/cancel",
+      { params: { path: { opportunity_id: OPP_ID, run_id: RUN_ID } } },
+    );
+  });
+
   it.each([
     [409, "conflict"],
     [403, "forbidden"],
@@ -757,6 +768,7 @@ describe("startAssessmentRun / retryAssessmentTask", () => {
     api.POST.mockResolvedValue({ error: { code: "x" }, response: new Response(null, { status }) });
     expect(await startAssessmentRun(OPP_ID)).toEqual({ kind });
     expect(await retryAssessmentTask(OPP_ID, RUN_ID, "pm_agent")).toEqual({ kind });
+    expect(await cancelAssessmentRun(OPP_ID, RUN_ID)).toEqual({ kind });
   });
 
   it("is an error when the call throws", async () => {
@@ -765,6 +777,8 @@ describe("startAssessmentRun / retryAssessmentTask", () => {
     expect(await startAssessmentRun(OPP_ID)).toEqual({ kind: "error" });
     api.POST.mockRejectedValueOnce(new Error("network"));
     expect(await retryAssessmentTask(OPP_ID, RUN_ID, "pm_agent")).toEqual({ kind: "error" });
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await cancelAssessmentRun(OPP_ID, RUN_ID)).toEqual({ kind: "error" });
   });
 
   it("refuses bad ids or an unknown agent without calling the API", async () => {
@@ -774,6 +788,8 @@ describe("startAssessmentRun / retryAssessmentTask", () => {
     expect(await retryAssessmentTask(OPP_ID, RUN_ID, "red_team_agent")).toEqual({
       kind: "error",
     });
+    expect(await cancelAssessmentRun("nope", RUN_ID)).toEqual({ kind: "error" });
+    expect(await cancelAssessmentRun(OPP_ID, undefined)).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
   });
 });

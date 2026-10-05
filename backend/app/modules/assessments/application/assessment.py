@@ -29,6 +29,14 @@ lock until commit and refuse (409) while one of its runs is queued or running.
 A run stuck past `stale_after()` (its job died without recording it) is failed on the next
 start or retry: its unfinished tasks `failed` / `model_timeout`.
 
+**Cancelling** (Story 5.5). `cancel` (the Cancel run API, under the run lock) marks the
+run's unfinished tasks `skipped` and the run `cancelled`. Nothing moves a cancelled run
+again: a queued job for it is skipped (`_start`), a reply arriving afterwards is discarded
+(`accept_assessment` requires the task to be `running`), and `finish_run`, `fail_stale` and
+the final-attempt failure only touch runs and tasks still in progress. While the agents
+work, the handler re-reads the run every `CANCEL_POLL_S` seconds and, once it is
+`cancelled`, cancels the in-flight calls (freeing their model slots) and ends without error.
+
 Logs, trace and `last_error` carry ids, codes and counts only, never Requirement, Gap or
 Finding text.
 """
@@ -83,6 +91,7 @@ from app.platform.model_gateway.port import (
 )
 from app.platform.trace.catalogue import (
     AssessmentsAssessmentCompleted,
+    AssessmentsAssessmentRunCancelled,
     AssessmentsAssessmentRunCompleted,
     AssessmentsAssessmentRunStarted,
 )
@@ -92,6 +101,9 @@ RUN_ASSESSMENT = "assessments.run_assessment"
 _RUN_IN_PROGRESS = tuple(sorted(s.value for s in RUN_IN_PROGRESS))
 _TASK_IN_PROGRESS = tuple(sorted(s.value for s in TASK_IN_PROGRESS))
 _RUNNING = (AssessmentTaskStatus.RUNNING.value,)
+_QUEUED = (AssessmentTaskStatus.QUEUED.value,)
+CANCEL_POLL_S = 2.0
+"""How often the handler re-reads its run to notice a cancel while the agents work."""
 _SYSTEM = Actor(type="system", id=RUN_ASSESSMENT)
 _log = get_logger(__name__)
 
@@ -195,6 +207,42 @@ async def _trace_started(
         subject_id=run_id,
         opportunity_id=opportunity_id,
     )
+
+
+async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, int]:
+    """Cancel the run: its unfinished tasks `skipped` (a started one keeps when it stopped,
+    for its duration), the run `cancelled` and finished, and the trace event. Assessments
+    already accepted stay current. The caller holds the Opportunity's run lock and has
+    checked the run is queued or running. Returns (skipped, succeeded) task counts."""
+    stopped = await repo.update_tasks(
+        uow,
+        run.id,
+        from_statuses=_RUNNING,
+        status=AssessmentTaskStatus.SKIPPED.value,
+        finished=True,
+    )
+    unstarted = await repo.update_tasks(
+        uow, run.id, from_statuses=_QUEUED, status=AssessmentTaskStatus.SKIPPED.value
+    )
+    await repo.set_run_status(
+        uow,
+        run.id,
+        from_statuses=_RUN_IN_PROGRESS,
+        status=AssessmentRunStatus.CANCELLED.value,
+        finished=True,
+    )
+    tasks = await repo.tasks_of(uow, run.id)
+    succeeded = sum(1 for t in tasks if t.status == AssessmentTaskStatus.SUCCEEDED)
+    skipped = len(stopped) + len(unstarted)
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=AssessmentsAssessmentRunCancelled(skipped_count=skipped, succeeded_count=succeeded),
+        subject_type=RUN_SUBJECT_TYPE,
+        subject_id=run.id,
+        opportunity_id=run.opportunity_id,
+    )
+    return skipped, succeeded
 
 
 async def fail_stale(uow: UnitOfWork, opportunity_id: UUID) -> None:
@@ -454,7 +502,8 @@ def error_code(exc: BaseException) -> RunErrorCode:
 
 async def _fail_open(ctx: JobContext, run_id: UUID, code: RunErrorCode) -> bool:
     """Mark the run's unfinished tasks `failed` with `code` and finish the run. True when a
-    task changed."""
+    task changed. A cancelled run has no unfinished task and is already finished, so it is
+    left alone."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_run(uow, run_id)
         if record is None:
@@ -655,6 +704,40 @@ async def _task(
         return exc
 
 
+async def _cancelled(ctx: JobContext, run_id: UUID) -> bool:
+    """Whether the run has been cancelled (a short read, no lock)."""
+    async with unit_of_work(ctx.engine) as uow:
+        record = await repo.get_run(uow, run_id)
+    return record is not None and record.status == AssessmentRunStatus.CANCELLED
+
+
+async def _cancelled_or_unknown(ctx: JobContext, run_id: UUID) -> bool:
+    """`_cancelled`, but a failed read is logged and taken as not cancelled, so the task's own
+    error (and its code) still decides what happens to the job."""
+    try:
+        return await _cancelled(ctx, run_id)
+    except Exception as exc:
+        _log.warning(
+            "assessments.assessment_cancel_check_failed",
+            extra={"run_id": str(run_id), "exc_type": type(exc).__name__},
+        )
+        return False
+
+
+async def _watch_cancel(
+    ctx: JobContext, run_id: UUID, tasks: Sequence[asyncio.Task[BaseException | None]]
+) -> bool:
+    """Re-read the run every `CANCEL_POLL_S` seconds; once it is cancelled, cancel the
+    agents' tasks (their in-flight model calls release their slots) and return True. A
+    failed read is logged and tried again at the next tick."""
+    while True:
+        await asyncio.sleep(CANCEL_POLL_S)
+        if await _cancelled_or_unknown(ctx, run_id):
+            for task in tasks:
+                task.cancel()
+            return True
+
+
 async def _run(ctx: JobContext, payload: RunAssessment) -> None:
     settings = assessment_settings()
     run_id = payload.run_id
@@ -679,22 +762,37 @@ async def _run(ctx: JobContext, payload: RunAssessment) -> None:
         _log.info("assessments.assessment_run_empty", extra=ids)
         return
 
-    # `return_exceptions`: a task whose failure could not even be recorded (e.g. the database
-    # dropped) must not abandon its siblings mid-call; its error is collected like theirs.
-    errors = [
-        error
-        for error in await asyncio.gather(
-            *(_task(ctx, run_id, agent, started, settings) for agent in started.agents),
-            return_exceptions=True,
-        )
-        if error is not None
+    tasks = [
+        asyncio.create_task(_task(ctx, run_id, agent, started, settings))
+        for agent in started.agents
     ]
+    watcher = asyncio.create_task(_watch_cancel(ctx, run_id, tasks))
+    try:
+        # `return_exceptions`: a task whose failure could not even be recorded (e.g. the
+        # database dropped) must not abandon its siblings mid-call; its error is collected
+        # like theirs. A task the watcher cancelled is collected as its CancelledError.
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        watcher.cancel()
+        await asyncio.wait({watcher})
+    stopped = not watcher.cancelled() and watcher.exception() is None and watcher.result()
+    errors = [error for error in outcomes if isinstance(error, BaseException)]
+    if stopped:
+        # Cancelled by a person: the cancel already recorded the run; nothing to retry.
+        _log.info("assessments.assessment_run_cancelled_stopped", extra=ids)
+        return
     if errors and ctx.attempt < ctx.max_attempts:
+        if await _cancelled_or_unknown(ctx, run_id):  # cancelled meanwhile: no retry
+            _log.info("assessments.assessment_run_cancelled_stopped", extra=ids)
+            return
         raise errors[0]  # the queue runs the job again for the unfinished tasks
     async with unit_of_work(ctx.engine) as uow:
         await repo.lock_runs(uow, started.opportunity_id)
         await finish_run(uow, run_id)
     if errors:
+        if await _cancelled_or_unknown(ctx, run_id):  # cancelled meanwhile: not dead
+            _log.info("assessments.assessment_run_cancelled_stopped", extra=ids)
+            return
         raise errors[0]  # recorded; the job ends dead, as its tasks did
 
 

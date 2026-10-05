@@ -174,6 +174,14 @@ class AssessmentInProgressError(ConflictError):
     title = "Assessment in progress"
 
 
+class AssessmentNotInProgressError(ConflictError):
+    """A cancel was asked for a run that is not the Opportunity's latest, or is no longer
+    queued or running (Story 5.5)."""
+
+    code = "assessment_not_in_progress"
+    title = "Assessment not in progress"
+
+
 class AssessmentTaskNotFailedError(ConflictError):
     """A task retry was asked for a task that is not `failed`, or not of the Opportunity's
     latest run (Epic 5 slice 5A)."""
