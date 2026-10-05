@@ -170,7 +170,8 @@ def events(engine: Engine, opp_id: str) -> list[dict[str, Any]]:
     return rows(
         engine,
         "SELECT * FROM platform_trace_events WHERE opportunity_id = :o "
-        "AND event_type LIKE 'assessments.%' ORDER BY occurred_at, id",
+        "AND event_type LIKE 'assessments.%' "
+        "AND event_type NOT LIKE 'assessments.assessment_run.%' ORDER BY occurred_at, id",
         o=opp_id,
     )
 

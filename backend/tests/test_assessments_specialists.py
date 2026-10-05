@@ -30,6 +30,7 @@ from app.agents.pm_agent.agent import prompt as pm_prompt
 from app.agents.security_agent.agent import prompt as security_prompt
 from app.agents.specialist.schema import SpecialistOutput
 from app.modules.assessments.application import assessment as assessments_assessment
+from app.modules.assessments.application import public as assessments_public
 from app.modules.assessments.domain.assessments import AssessmentAgent
 from app.platform.actor import Actor
 from app.platform.config import Settings
@@ -50,7 +51,7 @@ from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_estimates_draft import detected
 from tests.test_gaps_detection import requirement_rows, rows
-from tests.test_intake_extraction import ASSESS, BASE, FakeGateway, drain, owner
+from tests.test_intake_extraction import ASSESS, BASE, DETECT, FakeGateway, drain, owner
 
 storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
@@ -69,6 +70,25 @@ def _assessment_profile(monkeypatch: pytest.MonkeyPatch) -> None:
         "assessment_settings",
         lambda: Settings(model_profile_chat="demo-chat"),
     )
+
+
+@pytest.fixture
+def auto_run() -> None:
+    """Requested by a test that keeps the automatic run a Gap detection queues (Story 5.1)."""
+
+
+@pytest.fixture(autouse=True)
+def _no_auto_run(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most tests here start their runs by hand after `prepared`'s Gap detection; the run
+    that detection would queue by itself (Story 5.1) is left out unless the test requests
+    `auto_run`. `assessments_assessment.enqueue_run` itself stays real."""
+    if "auto_run" in request.fixturenames:
+        return
+
+    async def no_run(uow: Any, opportunity_id: UUID) -> UUID:
+        return uuid4()
+
+    monkeypatch.setattr(assessments_public, "enqueue_run", no_run)
 
 
 # --- the per-agent fake gateway -------------------------------------------------------------
@@ -191,7 +211,8 @@ def replies(**overrides: list[Reply]) -> dict[str, list[Reply]]:
 def prepared(
     client: TestClient, engine: Engine, db_url: str, gateway: FakeGateway, count: int = 5
 ) -> tuple[dict[str, str], dict[str, Any]]:
-    """An Opportunity with `count` Requirements (R1…) and one open Gap about R1."""
+    """An Opportunity with `count` Requirements (R1…) and one open Gap about R1 (and, only
+    for a test that requests `auto_run`, the assessment run that detection queued)."""
     return detected(client, engine, db_url, gateway, count=count)
 
 
@@ -1310,3 +1331,134 @@ def test_a_task_failing_after_the_cancel_neither_retries_nor_fails_the_run(
     assert {(t["status"], t["error_code"]) for t in task_rows(sync_engine, run["id"]).values()} == {
         ("skipped", None)
     }
+
+
+# --- the automatic run after Gap detection (Story 5.1) --------------------------------------
+
+
+def _enqueue(db_url: str, opp_id: str) -> UUID:
+    """`assessments_assessment.enqueue_run` in its own Unit of Work."""
+
+    async def scenario() -> UUID:
+        engine = create_engine(Settings(database_url=db_url))
+        try:
+            async with unit_of_work(engine) as uow:
+                return await assessments_assessment.enqueue_run(uow, UUID(opp_id))
+        finally:
+            await engine.dispose()
+
+    return run_async(scenario())
+
+
+def test_enqueue_coalesces_with_a_queued_run(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway, auto_run: None
+) -> None:
+    _, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "queued"
+
+    assert _enqueue(db_url, opp["id"]) == run["id"]
+
+    assert [r["id"] for r in run_rows(sync_engine, opp["id"])] == [run["id"]]
+    assert len(assess_jobs(sync_engine, opp["id"])) == 1
+    assert [e["event_type"] for e in events(sync_engine, opp["id"])] == [
+        "assessments.assessment_run.started"
+    ]
+
+
+def test_enqueue_coalesces_with_a_running_run(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway, auto_run: None
+) -> None:
+    _, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    (run,) = run_rows(sync_engine, opp["id"])
+    with sync_engine.begin() as conn:  # its job has started
+        conn.execute(
+            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"),
+            {"r": run["id"]},
+        )
+
+    assert _enqueue(db_url, opp["id"]) == run["id"]
+
+    (still,) = run_rows(sync_engine, opp["id"])
+    assert still["status"] == "running"
+    assert len(assess_jobs(sync_engine, opp["id"])) == 1
+
+
+def test_enqueue_fails_a_lost_run_first_then_queues_one(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway, auto_run: None
+) -> None:
+    _, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    with sync_engine.begin() as conn:  # its job died without recording it, long ago
+        conn.execute(
+            sa.text(
+                "UPDATE assessments_runs SET status = 'running', queued_at = now() - :age "
+                "WHERE opportunity_id = :o"
+            ),
+            {"age": assessments_assessment.stale_after() * 2, "o": opp["id"]},
+        )
+
+    new_id = _enqueue(db_url, opp["id"])
+
+    lost, new = run_rows(sync_engine, opp["id"])
+    assert lost["status"] == "failed"
+    assert {
+        (t["status"], t["error_code"]) for t in task_rows(sync_engine, lost["id"]).values()
+    } == {("failed", "model_timeout")}
+    assert (new["id"], new["status"]) == (new_id, "queued")
+    assert set(task_rows(sync_engine, new["id"])) == set(AGENTS)
+    assert len(assess_jobs(sync_engine, opp["id"])) == 2
+
+
+def test_run_assessment_is_409_while_the_automatic_run_is_queued_then_works(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway, auto_run: None
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    (auto,) = run_rows(sync_engine, opp["id"])
+
+    busy = start(client, headers, opp["id"])
+    assert busy.status_code == 409, busy.text
+    assert busy.json()["code"] == "assessment_in_progress"
+
+    install(AgentGateway(replies()))
+    assert drain(db_url, ASSESS) == ["succeeded"]
+    body = started(client, headers, opp["id"])
+
+    assert [r["id"] for r in run_rows(sync_engine, opp["id"])] == [auto["id"], UUID(body["id"])]
+
+
+def test_extraction_and_detection_assess_the_opportunity_without_anyone_pressing_run(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway, auto_run: None
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway, count=5)
+    fake = install(AgentGateway(replies()))
+
+    assert drain(db_url, ASSESS) == ["succeeded"]
+
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "succeeded"
+    assert {fake.calls(agent) for agent in AGENTS} == {1}
+    assert {r["agent"] for r in assessment_rows(sync_engine, opp["id"])} == set(AGENTS)
+    (event, *_) = events(sync_engine, opp["id"])
+    assert event["event_type"] == "assessments.assessment_run.started"
+    assert (event["actor_type"], event["actor_id"]) == ("system", "assessments.run_assessment")
+    view = client.get(f"{BASE}/{opp['id']}/assessments", headers=headers).json()
+    assert [slot["assessment"]["version"] for slot in view["assessments"]] == [1, 1, 1]
+
+
+def test_a_second_detection_while_the_automatic_run_is_queued_adds_no_run(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway, auto_run: None
+) -> None:
+    _, opp = prepared(client, sync_engine, db_url, gateway, count=2)
+    (run,) = run_rows(sync_engine, opp["id"])
+    detection_tests.requeue(db_url, opp["id"])
+    gateway.replies = [detection_tests.gaps_out(detection_tests.gap("Uptime", ["R2"]))]
+
+    assert drain(db_url, DETECT) == ["succeeded"]
+
+    assert [d["status"] for d in detection_tests.detections(sync_engine, opp["id"])] == [
+        "succeeded",
+        "succeeded",
+    ]
+    assert "queued" in [j["status"] for j in draft_tests.draft_jobs(sync_engine, opp["id"])]
+    assert [r["id"] for r in run_rows(sync_engine, opp["id"])] == [run["id"]]
+    assert len(assess_jobs(sync_engine, opp["id"])) == 1

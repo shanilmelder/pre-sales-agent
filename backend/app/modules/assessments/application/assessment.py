@@ -6,6 +6,11 @@ task per specialist agent (`engineering_agent`, `pm_agent`, `security_agent`) an
 (background priority). `retry_task` puts one `failed` task of the latest run back to
 `queued`, queues the run again and enqueues a job for it. Both hold the Opportunity's run
 lock until commit and refuse (409) while one of its runs is queued or running.
+`enqueue_run` (Story 5.1: after every successful Gap detection, in its Unit of Work) queues a
+run the same way, attributed to the system, but never refuses with a conflict: while one of
+the Opportunity's runs is queued or running it adds nothing and returns that run's id. Any
+other error (e.g. the database) fails the detection's Unit of Work, as the Estimate-draft
+hand-off does.
 
 **The handler** (one job per run; the agents work concurrently inside it).
 
@@ -168,6 +173,24 @@ async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID
     )
     await enqueue(uow, RunAssessment(run_id=run_id), opportunity_id=opportunity_id)
     await _trace_started(uow, run_id, opportunity_id, actor, agent_count=len(AGENTS))
+    return run_id
+
+
+async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
+    """Queue an assessment run of the Opportunity in the caller's Unit of Work, as the
+    system, unless one of its runs is already queued or running: then that run's id is
+    returned and nothing added (a running run keeps the inputs it read). Lost runs are
+    failed first. Never refuses with a conflict; any other error (e.g. the database) fails
+    the caller's Unit of Work, as `estimates.enqueue_draft` does."""
+    await repo.lock_runs(uow, opportunity_id)
+    await fail_stale(uow, opportunity_id)
+    ids = {"opportunity_id": str(opportunity_id)}
+    active = await repo.run_in_progress(uow, opportunity_id)
+    if active is not None:
+        _log.info("assessments.assessment_run_coalesced", extra={**ids, "run_id": str(active)})
+        return active
+    run_id = await queue_run(uow, opportunity_id, _SYSTEM)
+    _log.info("assessments.assessment_run_queued", extra={**ids, "run_id": str(run_id)})
     return run_id
 
 

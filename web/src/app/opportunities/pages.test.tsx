@@ -840,7 +840,7 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
     expect(
       within(panel).getByText(
-        "No assessment yet. Run assessment to have the Engineering, PM and Security Agents review this Opportunity.",
+        "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.",
       ),
     ).toBeTruthy();
     expect(within(panel).getByRole("button", { name: "Run assessment" })).toBeTruthy();

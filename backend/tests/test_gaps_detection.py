@@ -36,8 +36,10 @@ from app.platform.uow import unit_of_work
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_intake_extraction import (
+    ASSESS,
     BASE,
     DETECT,
+    DRAFT,
     EXTRACT,
     FakeGateway,
     drain,
@@ -670,3 +672,73 @@ def test_queueing_fails_a_lost_detection_first(
     jobs = detect_jobs(sync_engine, opp["id"])
     assert len(jobs) == 2
     assert jobs[1]["payload"] == {"detection_id": str(new["id"])}
+
+
+# --- the assessment run queued after a detection (Story 5.1) --------------------------------
+
+
+def _jobs(engine: Engine, opp_id: str, job_type: str) -> list[dict[str, Any]]:
+    return rows(
+        engine,
+        "SELECT * FROM platform_jobs WHERE job_type = :t AND opportunity_id = :o "
+        "ORDER BY created_at, id",
+        t=job_type,
+        o=opp_id,
+    )
+
+
+def _assessment_runs(engine: Engine, opp_id: str) -> list[dict[str, Any]]:
+    return rows(
+        engine,
+        "SELECT * FROM assessments_runs WHERE opportunity_id = :o ORDER BY created_at, id",
+        o=opp_id,
+    )
+
+
+@pytest.mark.parametrize("found", [("SAP interface type",), ()], ids=["gaps", "no-gaps"])
+def test_a_successful_detection_queues_an_assessment_run(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    found: tuple[str, ...],
+) -> None:
+    _, opp = extracted(client, sync_engine, db_url, gateway)
+    gateway.replies = [gaps_out(*(gap(t, ["R1"]) for t in found))]
+
+    assert drain(db_url, DETECT) == ["succeeded"]
+
+    (detection,) = detections(sync_engine, opp["id"])
+    assert detection["gap_count"] == len(found)
+    (run,) = _assessment_runs(sync_engine, opp["id"])
+    assert run["status"] == "queued"
+    tasks = rows(sync_engine, "SELECT * FROM assessments_tasks WHERE run_id = :r", r=run["id"])
+    assert sorted((t["agent"], t["status"]) for t in tasks) == [
+        ("engineering_agent", "queued"),
+        ("pm_agent", "queued"),
+        ("security_agent", "queued"),
+    ]
+    (job,) = _jobs(sync_engine, opp["id"], ASSESS)
+    assert job["payload"] == {"run_id": str(run["id"])}
+    assert len(_jobs(sync_engine, opp["id"], DRAFT)) == 1  # the Estimate draft still queued
+    (event,) = rows(
+        sync_engine,
+        "SELECT * FROM platform_trace_events WHERE opportunity_id = :o "
+        "AND event_type = 'assessments.assessment_run.started'",
+        o=opp["id"],
+    )
+    assert (event["actor_type"], event["actor_id"]) == ("system", "assessments.run_assessment")
+    assert (event["subject_id"], event["payload"]) == (run["id"], {"agent_count": 3})
+
+
+def test_a_failed_detection_queues_no_assessment_run(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    _, opp = extracted(client, sync_engine, db_url, gateway)
+    gateway.replies = [ModelUnavailableError("down", error_code="connection")]
+
+    assert drain(db_url, DETECT) == ["failed_retrying", "dead"]
+
+    assert detections(sync_engine, opp["id"])[0]["status"] == "failed"
+    assert _assessment_runs(sync_engine, opp["id"]) == []
+    assert _jobs(sync_engine, opp["id"], ASSESS) == []

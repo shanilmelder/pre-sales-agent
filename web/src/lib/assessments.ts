@@ -170,7 +170,7 @@ export function taskElapsed(
 
 /** The empty-state sentence. */
 export const NO_ASSESSMENT =
-  "No assessment yet. Run assessment to have the Engineering, PM and Security Agents review this Opportunity.";
+  "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.";
 
 /** A finished run that had no active Requirements to assess. */
 export const NOTHING_TO_ASSESS = "There were no active Requirements to assess.";

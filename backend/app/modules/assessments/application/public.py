@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from app.modules.assessments.application import review
+from app.modules.assessments.application import assessment, review
 from app.modules.assessments.application.assessments import (
     cancel_run,
     get_assessments,
@@ -37,6 +37,14 @@ async def enqueue_review(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     return await review.enqueue_review(uow, opportunity_id)
 
 
+async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
+    """Queue an assessment run of the Opportunity in the caller's Unit of Work (Story 5.1:
+    after every successful Gap detection). Coalesces with a run that is queued or running;
+    returns the run's id. Never refuses with a conflict; any other error (e.g. the
+    database) fails the caller's Unit of Work, as the Estimate-draft hand-off does."""
+    return await assessment.enqueue_run(uow, opportunity_id)
+
+
 __all__ = [
     "AgentAssessment",
     "AssessmentAgent",
@@ -55,6 +63,7 @@ __all__ = [
     "SeverityCounts",
     "cancel_run",
     "enqueue_review",
+    "enqueue_run",
     "get_assessments",
     "get_red_team",
     "retry_task",
