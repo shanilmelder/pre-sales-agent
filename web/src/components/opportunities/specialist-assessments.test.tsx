@@ -158,19 +158,56 @@ const PM = assessment("pm_agent", 1, [finding(4, "low", "dependency")], {
   total_hours: 0,
 });
 
+const T0 = Date.parse("2026-10-05T09:00:00Z");
+/** The fixture clock: `s` seconds after the run was queued. */
+const at = (s: number) => new Date(T0 + s * 1000).toISOString();
+
+/** A task. Started tasks start 5 s in; finished ones (succeeded or failed) by default after
+ * 40 s. */
 function task(
   agent: AssessmentAgent,
   status: AssessmentTask["status"],
   code: AssessmentTask["error_code"] = null,
-) {
-  return { agent, status, error_code: code };
+  times: Partial<Pick<AssessmentTask, "started_at" | "finished_at">> = {},
+): AssessmentTask {
+  const started = status === "queued" ? null : at(5);
+  const finished =
+    status === "succeeded" || status === "failed" ? at(45) : null;
+  return {
+    agent,
+    status,
+    error_code: code,
+    started_at: started,
+    finished_at: finished,
+    ...times,
+  };
 }
 
 function run(
   status: AssessmentRun["status"],
   tasks: AssessmentTask[],
 ): AssessmentRun {
-  return { id: RUN_ID, status, created_at: "2026-10-05T09:00:00Z", tasks };
+  const finished = status === "queued" || status === "running" ? null : at(300);
+  return {
+    id: RUN_ID,
+    status,
+    created_at: at(0),
+    queued_at: at(0),
+    finished_at: finished,
+    tasks,
+  };
+}
+
+/** Each panel row's non-empty parts (role, pill, elapsed time, note, Retry). */
+function panelRows() {
+  const progress = screen.getByRole("list", { name: "Agent progress" });
+  return within(progress)
+    .getAllByRole("listitem")
+    .map((li) =>
+      Array.from(li.children)
+        .map((c) => c.textContent ?? "")
+        .filter((t) => t !== ""),
+    );
 }
 
 const queued = run(
@@ -301,7 +338,7 @@ describe("SpecialistAssessmentsSection", () => {
     const security = screen.getByRole("article", { name: "Security Agent" });
     expect(within(security).getByText("No Assessment yet.")).toBeTruthy();
     expect(screen.getByText("Assessment complete")).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "Agent progress" })).toBeNull();
+    expect(panelRows().map((r) => r[1])).toEqual(["Done", "Done", "Done"]);
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -351,19 +388,14 @@ describe("SpecialistAssessmentsSection", () => {
     await user.click(screen.getByRole("button", { name: "Run assessment" }));
 
     expect(startAssessmentRun).toHaveBeenCalledWith(OPP_ID);
-    const progress = screen.getByRole("list", { name: "Agent progress" });
-    expect(
-      within(progress)
-        .getAllByRole("listitem")
-        .map((li) => li.textContent),
-    ).toEqual([
-      "Engineering Agent — Assessing…",
-      "PM Agent — Assessing…",
-      "Security Agent — Assessing…",
-    ]);
-    expect(screen.getAllByTestId("running-dot")[0].className).toContain(
-      "motion-reduce:animate-none",
+    expect(panelRows()).toEqual(
+      ["Engineering Agent", "PM Agent", "Security Agent"].map((name) => [
+        name,
+        "Queued",
+        "Waiting for the worker",
+      ]),
     );
+    expect(screen.queryByTestId("running-dot")).toBeNull();
     expect(
       (
         screen.getByRole("button", {
@@ -372,15 +404,22 @@ describe("SpecialistAssessmentsSection", () => {
       ).disabled,
     ).toBe(true);
     await waitFor(
-      () => expect(screen.getByText("PM Agent — Done")).toBeTruthy(),
-      {
-        timeout: 4000,
-      },
+      () => expect(panelRows()[1]).toEqual(["PM Agent", "Done", "0:40"]),
+      { timeout: 4000 },
     );
+    expect(screen.getAllByTestId("running-dot")).toHaveLength(1);
     await waitFor(() => expect(screen.getByText("[FINDING 3]")).toBeTruthy(), {
       timeout: 4000,
     });
-    expect(screen.queryByRole("list", { name: "Agent progress" })).toBeNull();
+    // The panel stays for the finished run, every row with its duration.
+    expect(panelRows()).toEqual(
+      ["Engineering Agent", "PM Agent", "Security Agent"].map((name) => [
+        name,
+        "Done",
+        "0:40",
+      ]),
+    );
+    expect(screen.queryByTestId("running-dot")).toBeNull();
   }, 15_000);
 
   it("polls every 2 s only while assessing", async () => {
@@ -476,15 +515,16 @@ describe("SpecialistAssessmentsSection", () => {
     });
     const { container } = renderSection(view(partial, FULL));
     expect(screen.getByText("Assessment partly failed")).toBeTruthy();
-    const progress = screen.getByRole("list", { name: "Agent progress" });
-    expect(
-      within(progress)
-        .getAllByRole("listitem")
-        .map((li) => li.textContent),
-    ).toEqual([
-      "Engineering Agent — Done",
-      "PM Agent — Done",
-      "Security Agent — Failed: the model service couldn't be reachedRetry",
+    expect(panelRows()).toEqual([
+      ["Engineering Agent", "Done", "0:40"],
+      ["PM Agent", "Done", "0:40"],
+      [
+        "Security Agent",
+        "Failed",
+        "0:40",
+        "the model service couldn't be reached",
+        "Retry",
+      ],
     ]);
     expect(await axeViolations(container)).toEqual([]);
 
@@ -497,7 +537,11 @@ describe("SpecialistAssessmentsSection", () => {
       RUN_ID,
       "security_agent",
     );
-    expect(screen.getByText("Security Agent — Assessing…")).toBeTruthy();
+    expect(panelRows()[2]).toEqual([
+      "Security Agent",
+      "Queued",
+      "Waiting for the worker",
+    ]);
     expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
   });
 
@@ -506,6 +550,12 @@ describe("SpecialistAssessmentsSection", () => {
     renderSection(view(partial, FULL, false));
     expect(screen.queryByRole("button", { name: "Run assessment" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+    expect(panelRows()[2]).toEqual([
+      "Security Agent",
+      "Failed",
+      "0:40",
+      "the model service couldn't be reached",
+    ]);
 
     await user.click(row(4));
 
@@ -543,7 +593,10 @@ describe("SpecialistAssessmentsSection", () => {
     await user.click(screen.getByRole("button", { name: "Run assessment" }));
 
     await waitFor(() =>
-      expect(screen.getByText("Engineering Agent — Assessing…")).toBeTruthy(),
+      expect(panelRows()[0].slice(0, 2)).toEqual([
+        "Engineering Agent",
+        "Running",
+      ]),
     );
   });
 
@@ -572,12 +625,124 @@ describe("SpecialistAssessmentsHeader", () => {
       />,
     );
     expect(screen.getByText("Assessment failed")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Engineering Agent — Failed: the model took too long to answer",
-      ),
-    ).toBeTruthy();
+    expect(panelRows()[0]).toEqual([
+      "Engineering Agent",
+      "Failed",
+      "0:40",
+      "the model took too long to answer",
+    ]);
     expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("AgentRunPanel timings", () => {
+  const NOW = T0 + 70_000;
+
+  it("shows a final duration, a ticking time and a waiting row, ticking without a fetch", async () => {
+    vi.useFakeTimers();
+    let container: HTMLElement;
+    try {
+      vi.setSystemTime(NOW);
+      const timings = run("running", [
+        task("engineering_agent", "succeeded", null, {
+          started_at: at(5),
+          finished_at: at(47),
+        }),
+        task("pm_agent", "running"), // started 5 s in: 65 s ago
+        task("security_agent", "queued"),
+      ]);
+      loadAssessments.mockResolvedValue({
+        kind: "ok",
+        assessments: view(timings),
+      });
+      ({ container } = renderSection(view(timings)));
+
+      expect(panelRows()).toEqual([
+        ["Engineering Agent", "Done", "0:42"],
+        ["PM Agent", "Running", "1:05"],
+        ["Security Agent", "Queued", "Waiting for the worker"],
+      ]);
+      expect(screen.getAllByTestId("running-dot")).toHaveLength(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(panelRows()[1]).toEqual(["PM Agent", "Running", "1:06"]);
+      expect(panelRows()[0]).toEqual(["Engineering Agent", "Done", "0:42"]);
+      expect(loadAssessments).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a failed task shows its reason, its duration and Retry for those who may start", () => {
+    const failed = run("partially_failed", [
+      task("engineering_agent", "succeeded"),
+      task("pm_agent", "succeeded"),
+      task("security_agent", "failed", "model_timeout", {
+        started_at: at(5),
+        finished_at: at(135),
+      }),
+    ]);
+    render(<SpecialistAssessmentsHeader run={failed} canStart />);
+    expect(panelRows()[2]).toEqual([
+      "Security Agent",
+      "Failed",
+      "2:10",
+      "the model took too long to answer",
+      "Retry",
+    ]);
+  });
+
+  it("a lost run's task with no finish time shows no time", () => {
+    const lost = {
+      ...run("failed", [
+        task("engineering_agent", "failed", "model_timeout", {
+          finished_at: null,
+        }),
+        task("pm_agent", "failed", "model_timeout", {
+          started_at: null,
+          finished_at: null,
+        }),
+        task("security_agent", "succeeded"),
+      ]),
+      finished_at: null, // a lost run is not recorded as finished yet
+    };
+    render(<SpecialistAssessmentsHeader run={lost} />);
+    expect(screen.getAllByTestId("elapsed").map((e) => e.textContent)).toEqual([
+      "",
+      "",
+      "0:40",
+    ]);
+  });
+
+  it("stops the clock once polling has stalled", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      const { rerender } = render(
+        <SpecialistAssessmentsHeader run={running} />,
+      );
+      expect(panelRows()[0]).toEqual(["Engineering Agent", "Running", "1:05"]);
+      rerender(<SpecialistAssessmentsHeader run={running} stalled />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(
+        screen.getByText("Still assessing — reload to check."),
+      ).toBeTruthy();
+      expect(panelRows()[0]).toEqual(["Engineering Agent", "Running", "1:05"]);
+      expect(screen.queryByTestId("running-dot")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the running dot is static under reduced motion", () => {
+    render(<SpecialistAssessmentsHeader run={running} />);
+    const dot = screen.getByTestId("running-dot");
+    expect(dot.className).toContain("animate-pulse");
+    expect(dot.className).toContain("motion-reduce:animate-none");
   });
 });
 

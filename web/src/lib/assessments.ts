@@ -125,18 +125,44 @@ export function failureReason(code: RunErrorCode | null | undefined): string {
   );
 }
 
-/** A task's line in the header: "Engineering Agent — Assessing…", "PM Agent — Done",
- * "Security Agent — Failed: <reason>". */
-export function taskLine(task: AssessmentTask): string {
-  const name = agentLabel(task.agent);
-  switch (task.status) {
-    case "succeeded":
-      return `${name} — Done`;
-    case "failed":
-      return `${name} — Failed: ${failureReason(task.error_code)}`;
-    default:
-      return `${name} — Assessing…`;
-  }
+/** A task's status pill label: Queued, Running, Done, Failed. */
+export const TASK_STATUS_LABELS: Record<AssessmentTask["status"], string> = {
+  queued: "Queued",
+  running: "Running",
+  succeeded: "Done",
+  failed: "Failed",
+};
+
+export function taskStatusLabel(status: AssessmentTask["status"]): string {
+  return TASK_STATUS_LABELS[status] ?? status;
+}
+
+/** What a queued task's row says. */
+export const WAITING_FOR_WORKER = "Waiting for the worker";
+
+/** A duration as `m:ss` (minutes keep counting past an hour; negative reads as 0:00). */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** A task's elapsed time for the run panel, given the browser's clock: its final duration
+ * once it succeeded or failed, the time since it started while it runs, and "" otherwise
+ * (before it starts, or a failed task with no finish time, e.g. a lost run's). */
+export function taskElapsed(
+  task: Pick<AssessmentTask, "status" | "started_at" | "finished_at">,
+  now: number,
+): string {
+  if (!task.started_at) return "";
+  const started = Date.parse(task.started_at);
+  if (Number.isNaN(started)) return "";
+  if (task.status === "running") return formatElapsed(now - started);
+  if (task.status !== "succeeded" && task.status !== "failed") return "";
+  if (!task.finished_at) return "";
+  const finished = Date.parse(task.finished_at);
+  return Number.isNaN(finished) ? "" : formatElapsed(finished - started);
 }
 
 /** The empty-state sentence. */

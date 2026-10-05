@@ -2,6 +2,7 @@
 `POST …/assessment-runs` and `POST …/assessment-runs/{run_id}/tasks/{agent}/retry`, against
 a real, migrated Postgres as psa_app, with the per-agent fake gateway and hidden jobs."""
 
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -47,6 +48,10 @@ def _get(client: TestClient, headers: dict[str, str], opp_id: str) -> Any:
     return client.get(f"{BASE}/{opp_id}/assessments", headers=headers)
 
 
+def _at(value: str) -> datetime:
+    return datetime.fromisoformat(value)
+
+
 def _slots(body: dict[str, Any]) -> dict[str, Any]:
     return {slot["agent"]: slot["assessment"] for slot in body["assessments"]}
 
@@ -77,6 +82,11 @@ def test_the_assessments_show_ranked_findings_chips_effort_and_totals(
     queued = _get(client, headers, opp["id"]).json()
     assert queued["run"]["id"] == body["id"]
     assert queued["run"]["status"] == "queued"
+    assert queued["run"]["queued_at"] is not None
+    assert queued["run"]["finished_at"] is None
+    assert [(t["started_at"], t["finished_at"]) for t in queued["run"]["tasks"]] == [
+        (None, None) for _ in AGENTS
+    ]
     assert drain(db_url, ASSESS) == ["succeeded"]
 
     view = _get(client, headers, opp["id"]).json()
@@ -87,6 +97,9 @@ def test_the_assessments_show_ranked_findings_chips_effort_and_totals(
     assert [(t["agent"], t["status"], t["error_code"]) for t in run["tasks"]] == [
         (agent, "succeeded", None) for agent in AGENTS
     ]
+    queued_at, finished_at = _at(run["queued_at"]), _at(run["finished_at"])
+    for task in run["tasks"]:  # each task's window sits inside the run's
+        assert queued_at <= _at(task["started_at"]) <= _at(task["finished_at"]) <= finished_at
     assert [slot["agent"] for slot in view["assessments"]] == list(AGENTS)
     engineering = _slots(view)["engineering_agent"]
     assert (engineering["version"], engineering["status"], engineering["run_id"]) == (
@@ -197,6 +210,9 @@ def test_who_may_start_and_retry_and_who_may_read(
         "failed",
         "model_unavailable",
     )
+    failed = tasks["security_agent"]  # a failed task keeps its timings for the panel
+    assert _at(failed["started_at"]) <= _at(failed["finished_at"])
+    assert seen.json()["run"]["finished_at"] is not None
     assert _slots(seen.json())["security_agent"] is None
     assert _get(client, reader, opp["id"]).status_code == 200
     assert _get(client, outsider, opp["id"]).status_code == 404
@@ -204,8 +220,19 @@ def test_who_may_start_and_retry_and_who_may_read(
         assert retry(client, forbidden, opp["id"], body["id"], "security_agent").status_code == 403
     assert retry(client, outsider, opp["id"], body["id"], "security_agent").status_code == 404
 
+    finished = seen.json()["run"]
     retried = retry(client, colleague, opp["id"], body["id"], "security_agent")
     assert retried.status_code == 201, retried.text
+    for again in (retried.json(), _get(client, colleague, opp["id"]).json()["run"]):
+        assert again["finished_at"] is None
+        assert _at(again["queued_at"]) > _at(finished["queued_at"])
+        timings = {t["agent"]: (t["started_at"], t["finished_at"]) for t in again["tasks"]}
+        assert timings["security_agent"] == (None, None)
+        assert timings["pm_agent"] == next(
+            (t["started_at"], t["finished_at"])
+            for t in finished["tasks"]
+            if t["agent"] == "pm_agent"
+        )
 
 
 def test_retry_is_only_for_a_failed_task_of_the_latest_finished_run(
@@ -264,7 +291,10 @@ def test_a_lost_run_reads_as_failed_and_can_be_started_again(
         )
         conn.execute(
             sa.text(
-                "UPDATE assessments_tasks SET status = 'succeeded' WHERE agent = 'pm_agent' "
+                "UPDATE assessments_tasks SET status = 'succeeded', "
+                "started_at = now() - interval '2 hours', "
+                "finished_at = now() - interval '2 hours' + interval '65 seconds' "
+                "WHERE agent = 'pm_agent' "
                 "AND run_id IN (SELECT id FROM assessments_runs WHERE opportunity_id = :o)"
             ),
             {"o": opp["id"]},
@@ -277,6 +307,11 @@ def test_a_lost_run_reads_as_failed_and_can_be_started_again(
         ("pm_agent", "succeeded", None),
         ("security_agent", "failed", "model_timeout"),
     ]
+    timings = {t["agent"]: (t["started_at"], t["finished_at"]) for t in run["tasks"]}
+    assert timings["engineering_agent"] == (None, None)  # never started: no time to show
+    pm_started, pm_finished = timings["pm_agent"]
+    assert (_at(pm_finished) - _at(pm_started)).total_seconds() == 65
+    assert run["finished_at"] is None
     assert start(client, headers, opp["id"]).status_code == 201
     lost, new = run_rows(sync_engine, opp["id"])
     assert (lost["status"], new["status"]) == ("partially_failed", "queued")

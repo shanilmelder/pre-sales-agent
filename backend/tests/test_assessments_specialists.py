@@ -813,6 +813,13 @@ def test_retry_fails_a_lost_run_first(
             ),
             {"age": assessments_assessment.stale_after() * 2, "o": opp["id"]},
         )
+        conn.execute(  # the Engineering Agent had started
+            sa.text(
+                "UPDATE assessments_tasks SET status = 'running', started_at = now() - :age "
+                "WHERE agent = 'engineering_agent' AND run_id = :r"
+            ),
+            {"age": assessments_assessment.stale_after() * 2, "r": body["id"]},
+        )
 
     retried = retry(client, headers, opp["id"], body["id"], "pm_agent")
 
@@ -823,6 +830,9 @@ def test_retry_fails_a_lost_run_first(
     assert (tasks["pm_agent"]["status"], tasks["pm_agent"]["error_code"]) == ("queued", None)
     for agent in ("engineering_agent", "security_agent"):
         assert (tasks[agent]["status"], tasks[agent]["error_code"]) == ("failed", "model_timeout")
+        assert tasks[agent]["finished_at"] is None  # when it stopped is unknown: no duration
+    assert tasks["engineering_agent"]["started_at"] is not None
+    assert tasks["security_agent"]["started_at"] is None
 
 
 def _inputs(engine: Engine, opp_id: str) -> assessments_assessment.AssessmentInputs:

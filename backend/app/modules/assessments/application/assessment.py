@@ -198,8 +198,9 @@ async def _trace_started(
 
 
 async def fail_stale(uow: UnitOfWork, opportunity_id: UUID) -> None:
-    """Fail the Opportunity's lost runs: their unfinished tasks `failed` / `model_timeout`,
-    then the run finished. The caller holds the Opportunity's run lock."""
+    """Fail the Opportunity's lost runs: their unfinished tasks `failed` / `model_timeout`
+    (with no `finished_at`: when they stopped is unknown), then the run finished. The caller
+    holds the Opportunity's run lock."""
     lost = await repo.stale_runs(uow, opportunity_id, older_than=stale_after())
     for run_id in lost:
         await repo.update_tasks(
@@ -208,7 +209,6 @@ async def fail_stale(uow: UnitOfWork, opportunity_id: UUID) -> None:
             from_statuses=_TASK_IN_PROGRESS,
             status=AssessmentTaskStatus.FAILED.value,
             error_code=RunErrorCode.MODEL_TIMEOUT.value,
-            finished=True,
         )
         await finish_run(uow, run_id)
     if lost:

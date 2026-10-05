@@ -103,19 +103,27 @@ class RedTeamView(BaseModel):
 
 
 class AssessmentTask(BaseModel):
-    """One agent's task in an assessment run. `error_code` is set only when `failed`."""
+    """One agent's task in an assessment run. `error_code` is set only when `failed`.
+    `started_at` / `finished_at`: when the task last started and finished (null before
+    either); the panel derives elapsed time from them."""
 
     agent: AssessmentAgent
     status: AssessmentTaskStatus
     error_code: RunErrorCode | None
+    started_at: datetime | None
+    finished_at: datetime | None
 
 
 class AssessmentRun(BaseModel):
-    """An assessment run: its status and one task per agent, in agent order."""
+    """An assessment run: its status and one task per agent, in agent order. `queued_at`:
+    when it was last queued (a retry re-queues it); `finished_at`: null while in progress,
+    or for a lost run not yet recorded."""
 
     id: str
     status: AssessmentRunStatus
     created_at: datetime
+    queued_at: datetime
+    finished_at: datetime | None
     tasks: list[AssessmentTask]
 
 

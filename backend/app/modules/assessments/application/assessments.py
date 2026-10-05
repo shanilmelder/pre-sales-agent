@@ -96,7 +96,8 @@ def _agent_order(agent: str) -> int:
 def run_view(record: RunRecord, tasks: Sequence[TaskRecord]) -> AssessmentRun:
     """The read model of a run. One still queued or running past `stale_after()` is lost: its
     unfinished tasks read as failed with `model_timeout` and the run's status follows from
-    its tasks', so it can be started again (`start_run` records that)."""
+    its tasks', so it can be started again (`start_run` records that). Tasks keep their
+    timestamps either way."""
     lost = (
         AssessmentRunStatus(record.status) in RUN_IN_PROGRESS
         and datetime.now(UTC) - record.queued_at > stale_after()
@@ -108,11 +109,22 @@ def run_view(record: RunRecord, tasks: Sequence[TaskRecord]) -> AssessmentRun:
         if lost and status in TASK_IN_PROGRESS:
             status, code = AssessmentTaskStatus.FAILED, RunErrorCode.MODEL_TIMEOUT
         views.append(
-            AssessmentTask(agent=AssessmentAgent(task.agent), status=status, error_code=code)
+            AssessmentTask(
+                agent=AssessmentAgent(task.agent),
+                status=status,
+                error_code=code,
+                started_at=task.started_at,
+                finished_at=task.finished_at,
+            )
         )
     overall = run_status(t.status for t in views) if lost else AssessmentRunStatus(record.status)
     return AssessmentRun(
-        id=str(record.id), status=overall, created_at=record.created_at, tasks=views
+        id=str(record.id),
+        status=overall,
+        created_at=record.created_at,
+        queued_at=record.queued_at,
+        finished_at=record.finished_at,
+        tasks=views,
     )
 
 

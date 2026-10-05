@@ -4,10 +4,12 @@ import {
   agentLabel,
   assessmentLabel,
   confidenceLabel,
+  formatElapsed,
   isAssessing,
   kindLabel,
   recommendationInfo,
-  taskLine,
+  taskElapsed,
+  taskStatusLabel,
 } from "@/lib/assessments";
 
 describe("assessment labels", () => {
@@ -40,24 +42,11 @@ describe("assessment labels", () => {
     expect(kindLabel("dependency")).toBe("Dependency");
   });
 
-  it("says what each agent is doing", () => {
-    expect(
-      taskLine({
-        agent: "engineering_agent",
-        status: "running",
-        error_code: null,
-      }),
-    ).toBe("Engineering Agent — Assessing…");
-    expect(
-      taskLine({ agent: "pm_agent", status: "succeeded", error_code: null }),
-    ).toBe("PM Agent — Done");
-    expect(
-      taskLine({
-        agent: "security_agent",
-        status: "failed",
-        error_code: "output_invalid",
-      }),
-    ).toBe("Security Agent — Failed: the model's answer couldn't be used");
+  it("labels task statuses for the pill", () => {
+    expect(taskStatusLabel("queued")).toBe("Queued");
+    expect(taskStatusLabel("running")).toBe("Running");
+    expect(taskStatusLabel("succeeded")).toBe("Done");
+    expect(taskStatusLabel("failed")).toBe("Failed");
   });
 
   it("is assessing only while queued or running", () => {
@@ -68,11 +57,86 @@ describe("assessment labels", () => {
       id: "x",
       status,
       created_at: "2026-10-05T09:00:00Z",
+      queued_at: "2026-10-05T09:00:00Z",
+      finished_at: null,
       tasks: [],
     });
     expect(isAssessing(run("queued"))).toBe(true);
     expect(isAssessing(run("running"))).toBe(true);
     expect(isAssessing(run("partially_failed"))).toBe(false);
     expect(isAssessing(null)).toBe(false);
+  });
+});
+
+describe("elapsed time", () => {
+  const START = "2026-10-05T09:00:00Z";
+  const at = (seconds: number) => Date.parse(START) + seconds * 1000;
+
+  it("formats m:ss in whole seconds", () => {
+    expect(formatElapsed(0)).toBe("0:00");
+    expect(formatElapsed(999)).toBe("0:00");
+    expect(formatElapsed(65_000)).toBe("1:05");
+    expect(formatElapsed(130_000)).toBe("2:10");
+    expect(formatElapsed(75 * 60_000 + 9_000)).toBe("75:09");
+    expect(formatElapsed(-5_000)).toBe("0:00"); // a browser clock behind the server's
+  });
+
+  it("ticks while running, from started_at to now", () => {
+    const task = {
+      status: "running",
+      started_at: START,
+      finished_at: null,
+    } as const;
+    expect(taskElapsed(task, at(65))).toBe("1:05");
+    expect(taskElapsed(task, at(66))).toBe("1:06");
+  });
+
+  it("keeps the final duration once done or failed", () => {
+    const finished = "2026-10-05T09:02:10Z";
+    for (const status of ["succeeded", "failed"] as const) {
+      expect(
+        taskElapsed(
+          { status, started_at: START, finished_at: finished },
+          at(999),
+        ),
+      ).toBe("2:10");
+    }
+  });
+
+  it("ignores a leftover finish time on a queued or running task", () => {
+    const leftover = "2026-10-05T09:00:30Z";
+    expect(
+      taskElapsed(
+        { status: "queued", started_at: START, finished_at: leftover },
+        at(65),
+      ),
+    ).toBe("");
+    expect(
+      taskElapsed(
+        { status: "running", started_at: START, finished_at: leftover },
+        at(65),
+      ),
+    ).toBe("1:05");
+  });
+
+  it("is blank before starting or when a failed task has no finish time", () => {
+    expect(
+      taskElapsed(
+        { status: "queued", started_at: null, finished_at: null },
+        at(5),
+      ),
+    ).toBe("");
+    expect(
+      taskElapsed(
+        { status: "failed", started_at: START, finished_at: null },
+        at(5),
+      ),
+    ).toBe("");
+    expect(
+      taskElapsed(
+        { status: "failed", started_at: null, finished_at: null },
+        at(5),
+      ),
+    ).toBe("");
   });
 });
