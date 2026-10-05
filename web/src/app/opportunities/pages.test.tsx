@@ -324,10 +324,13 @@ describe("/opportunities/[id] workspace", () => {
 
   /** Renders the workspace layout around a tab page, as Next.js would for `tab` (none is
    * `/opportunities/{id}`). */
-  async function renderWorkspace(tab?: string, id = OPP_ID) {
+  async function renderWorkspace(tab?: string, id = OPP_ID, search: Record<string, string> = {}) {
     segment.current = tab ?? null;
     const page = tab
-      ? await WorkspaceTabPage({ params: Promise.resolve({ id, tab }) })
+      ? await WorkspaceTabPage({
+          params: Promise.resolve({ id, tab }),
+          searchParams: Promise.resolve(search),
+        })
       : await OpportunityPage({ params: Promise.resolve({ id }) });
     return renderPage(
       await OpportunityLayout({ children: page, params: Promise.resolve({ id }) }),
@@ -816,9 +819,133 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
+  const TRACE_PAGE = {
+    page: 1,
+    page_size: 50,
+    total: 2,
+    options: {
+      subject_types: ["assessments.review", "opportunities.opportunity"],
+      actor_types: ["agent", "user"],
+      event_types: ["assessments.red_team_review.completed", "opportunities.opportunity.created"],
+    },
+    items: [
+      {
+        id: "00000000-0000-7000-8000-0000000000e1",
+        occurred_at: "2026-10-05T09:00:00Z",
+        event_type: "assessments.red_team_review.completed",
+        actor: {
+          type: "agent",
+          id: "red_team_agent@1.2.0",
+          name: "Red Team Agent",
+          version: "1.2.0",
+        },
+        subject: {
+          type: "assessments.review",
+          id: "00000000-0000-7000-8000-0000000000c1",
+          version: 1,
+        },
+        payload: { version: 1, finding_count: 3 },
+      },
+      {
+        id: "00000000-0000-7000-8000-0000000000e2",
+        occurred_at: "2026-10-04T10:00:00Z",
+        event_type: "opportunities.opportunity.created",
+        actor: { type: "user", id: "00000000-0000-7000-8000-0000000000a1", name: "[OWNER]" },
+        subject: { type: "opportunities.opportunity", id: OPP_ID, version: 1 },
+        payload: {},
+      },
+    ],
+  };
+
+  function foundWithTrace(body: unknown) {
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/trace")
+        ? body
+          ? { data: body, response: new Response(null, { status: 200 }) }
+          : { response: new Response(null, { status: 500 }) }
+        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+  }
+
+  it("tab URL /trace: the Decision Trace newest first, read-only", async () => {
+    signedIn(["sales_representative"]);
+    foundWithTrace(TRACE_PAGE);
+    const { container } = await renderWorkspace("trace");
+    expect(selectedTabs()).toEqual(["8Trace"]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { level: 2, name: "Trace" })).toBeTruthy();
+    const rows = within(panel).getAllByRole("row");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining("Red Team AgentRed Team Review completed"),
+      expect.stringContaining("[OWNER]Opportunity created"),
+    ]);
+    expect(
+      within(panel).getByRole("link", { name: "Red Team Review v1" }).getAttribute("href"),
+    ).toBe(`/opportunities/${OPP_ID}/assessments`);
+    expect(within(panel).getByText("Page 1 of 1")).toBeTruthy();
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/trace", {
+      params: { path: { opportunity_id: OPP_ID }, query: { page: 1, page_size: 50 } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /trace?actor=agent: the filters and page come from the URL", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithTrace({ ...TRACE_PAGE, page: 2, total: 52, items: TRACE_PAGE.items.slice(0, 1) });
+    await renderWorkspace("trace", OPP_ID, { actor: "agent", page: "2" });
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/trace", {
+      params: {
+        path: { opportunity_id: OPP_ID },
+        query: { page: 2, page_size: 50, actor_type: "agent" },
+      },
+    });
+    const actor = screen.getByLabelText("Actor") as HTMLSelectElement;
+    expect(actor.value).toBe("agent");
+    expect(actor.selectedOptions[0].textContent).toBe("Agent");
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe(
+      `/opportunities/${OPP_ID}/trace?actor=agent`,
+    );
+    expect(screen.queryByRole("link", { name: "Next" })).toBeNull();
+  });
+
+  it("tab URL /trace: past the last page goes to the last one", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithTrace({ ...TRACE_PAGE, page: 9, total: 52, items: [] });
+    await expect(renderWorkspace("trace", OPP_ID, { event: "x.y.z", page: "9" })).rejects.toThrow(
+      `NEXT_REDIRECT /opportunities/${OPP_ID}/trace?event=x.y.z&page=2`,
+    );
+  });
+
+  it("tab URL /trace: the empty state", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithTrace({
+      ...TRACE_PAGE,
+      total: 0,
+      items: [],
+      options: { subject_types: [], actor_types: [], event_types: [] },
+    });
+    await renderWorkspace("trace");
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByText("No decisions recorded yet.")).toBeTruthy();
+    expect(within(panel).queryByRole("group", { name: "Filters" })).toBeNull();
+  });
+
+  it("tab URL /trace: a failed read says so", async () => {
+    signedIn(["head_of_delivery"]);
+    foundWithTrace(null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("trace");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Decision Trace could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
+
   it.each([
     ["conflicts", "6Conflicts"],
-    ["trace", "8Trace"],
     ["actuals", "9Actuals"],
   ])("tab URL /%s: header, that tab selected, 'Not available yet.'", async (tab, label) => {
     signedIn(["head_of_delivery"]);
@@ -852,6 +979,7 @@ describe("/opportunities/[id] workspace", () => {
     "gaps",
     "assessments",
     "estimate",
+    "trace",
     "actuals",
   ])(
     "no access on %s: the no-access sentence and no tabs",

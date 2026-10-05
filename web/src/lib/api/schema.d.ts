@@ -223,6 +223,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Opportunity Trace
+         * @description The Opportunity's Decision Trace, read-only, newest first, one page at a time, with
+         *     the subject, actor and event types present on it (`options`, unaffected by filters).
+         *     Filters are exact matches on the stored values and combine with AND; an unknown value
+         *     gives an empty page and an empty one (`?actor_type=`) is no filter. Each is at most
+         *     200 characters. Anyone who can read the Opportunity can read its trace.
+         */
+        get: operations["list_opportunity_trace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/sources": {
         parameters: {
             query?: never;
@@ -1584,6 +1608,88 @@ export interface components {
             /** Total Hours */
             total_hours: number;
             role_hours: components["schemas"]["RoleHours"];
+        };
+        /**
+         * TraceActor
+         * @description Who recorded the event. `name`: a user's name, an agent's role in words (e.g. "Red
+         *     Team Agent") or "System". `version`: an agent's semver (from `<agent_id>@<semver>`),
+         *     else null.
+         */
+        TraceActor: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "user" | "agent" | "system";
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Version */
+            version?: string | null;
+        };
+        /**
+         * TraceEventItem
+         * @description One Decision Trace event. `payload` is the stored payload (ids, counts and kinds only,
+         *     never customer content), its fields in catalogue order.
+         */
+        TraceEventItem: {
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Event Type */
+            event_type: string;
+            actor: components["schemas"]["TraceActor"];
+            subject: components["schemas"]["TraceSubject"];
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * TraceFilterOptions
+         * @description The distinct stored values present on this Opportunity's trace, each sorted, so the
+         *     filters only offer real ones. Unaffected by the filters applied.
+         */
+        TraceFilterOptions: {
+            /** Subject Types */
+            subject_types: string[];
+            /** Actor Types */
+            actor_types: string[];
+            /** Event Types */
+            event_types: string[];
+        };
+        /**
+         * TracePage
+         * @description One page of an Opportunity's Decision Trace, newest first.
+         */
+        TracePage: {
+            /** Items */
+            items: components["schemas"]["TraceEventItem"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            options: components["schemas"]["TraceFilterOptions"];
+        };
+        /**
+         * TraceSubject
+         * @description What the event is about, as stored: `type` (e.g. `intake.requirement`), its id and
+         *     version (null when the event has none).
+         */
+        TraceSubject: {
+            /** Type */
+            type: string;
+            /** Id */
+            id: string;
+            /** Version */
+            version: number | null;
         };
         /**
          * UnconvertedGap
@@ -3421,6 +3527,125 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_opportunity_trace: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                /** @description Only events about this subject type, e.g. `intake.requirement`. */
+                subject_type?: string | null;
+                /** @description Only events by this actor type: `user`, `agent` or `system`. */
+                actor_type?: string | null;
+                /** @description Only events of this type, e.g. `estimates.assumption.accepted`. */
+                event_type?: string | null;
+            };
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TracePage"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

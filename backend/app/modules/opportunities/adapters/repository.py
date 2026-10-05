@@ -324,3 +324,99 @@ async def last_changer_id(uow: UnitOfWork, opportunity_id: UUID) -> UUID | None:
         return UUID(row.actor_id)
     except ValueError:
         return None
+
+
+# --- Decision Trace (Story 9.8) ----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TraceRecord:
+    id: UUID
+    occurred_at: datetime
+    event_type: str
+    actor_type: str
+    actor_id: str
+    subject_type: str
+    subject_id: UUID
+    subject_version: int | None
+    payload: dict[str, Any]
+
+
+async def trace_page(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    subject_type: str | None,
+    actor_type: str | None,
+    event_type: str | None,
+    offset: int,
+    limit: int,
+) -> tuple[list[TraceRecord], int]:
+    """One page of the Opportunity's trace events, newest first (`occurred_at desc, id
+    desc`, served by the `(opportunity_id, occurred_at)` index), and the total matching.
+    Filters are exact matches on the stored values (None: any)."""
+    conditions: list[ColumnElement[bool]] = [TraceEvent.opportunity_id == opportunity_id]
+    if subject_type is not None:
+        conditions.append(TraceEvent.subject_type == subject_type)
+    if actor_type is not None:
+        conditions.append(TraceEvent.actor_type == actor_type)
+    if event_type is not None:
+        conditions.append(TraceEvent.event_type == event_type)
+    rows = (
+        await uow.session.execute(
+            select(
+                TraceEvent.id,
+                TraceEvent.occurred_at,
+                TraceEvent.event_type,
+                TraceEvent.actor_type,
+                TraceEvent.actor_id,
+                TraceEvent.subject_type,
+                TraceEvent.subject_id,
+                TraceEvent.subject_version,
+                TraceEvent.payload,
+            )
+            .where(*conditions)
+            .order_by(TraceEvent.occurred_at.desc(), TraceEvent.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    total = (
+        await uow.session.execute(select(func.count()).select_from(TraceEvent).where(*conditions))
+    ).scalar_one()
+    return [
+        TraceRecord(
+            id=row.id,
+            occurred_at=row.occurred_at,
+            event_type=row.event_type,
+            actor_type=row.actor_type,
+            actor_id=row.actor_id,
+            subject_type=row.subject_type,
+            subject_id=row.subject_id,
+            subject_version=row.subject_version,
+            payload=dict(row.payload or {}),
+        )
+        for row in rows
+    ], total
+
+
+async def trace_options(
+    uow: UnitOfWork, opportunity_id: UUID
+) -> tuple[list[str], list[str], list[str]]:
+    """The distinct subject types, actor types and event types on the Opportunity's trace,
+    each sorted."""
+
+    async def distinct(column: Any) -> list[str]:
+        result = await uow.session.execute(
+            select(column)
+            .where(TraceEvent.opportunity_id == opportunity_id)
+            .distinct()
+            .order_by(column)
+        )
+        return list(result.scalars())
+
+    return (
+        await distinct(TraceEvent.subject_type),
+        await distinct(TraceEvent.actor_type),
+        await distinct(TraceEvent.event_type),
+    )
