@@ -60,12 +60,16 @@ export function roleMixLabel(mix: RoleMix): string {
   return ROLES.map((role) => `${role.short} ${mix[role.value]}`).join(" · ");
 }
 
+/** "Draft" or "Superseded". */
+export function versionStatusLabel(status: EstimateVersion["status"]): string {
+  return status === "draft" ? "Draft" : "Superseded";
+}
+
 /** "Draft v2". */
 export function versionLabel(
   version: Pick<EstimateVersion, "status" | "version">,
 ): string {
-  const status = version.status === "draft" ? "Draft" : "Superseded";
-  return `${status} v${version.version}`;
+  return `${versionStatusLabel(version.status)} v${version.version}`;
 }
 
 /** "1 Requirement", "3 Requirements". */
