@@ -337,8 +337,55 @@ describe("/opportunities/[id] workspace", () => {
     );
   }
 
-  function found(opportunity: Opportunity = OPPORTUNITY) {
-    apiGet.mockResolvedValue({ data: opportunity, response: new Response(null, { status: 200 }) });
+  /** What the Overview's summary reads get for a fresh Opportunity (by path suffix). */
+  const EMPTY_READS: Record<string, unknown> = {
+    "/sources": { items: [] },
+    "/requirements": {
+      items: [],
+      extraction: null,
+      can_start_extraction: false,
+      can_edit_requirements: false,
+    },
+    "/gaps": { items: [], detection: null, can_start_detection: false, can_edit_questions: false },
+    "/estimate": {
+      version: null,
+      draft: null,
+      can_start_draft: false,
+      can_accept_assumptions: false,
+      can_export: false,
+    },
+    "/assessments": {
+      run: null,
+      assessments: [
+        { agent: "engineering_agent", assessment: null },
+        { agent: "pm_agent", assessment: null },
+        { agent: "security_agent", assessment: null },
+      ],
+      can_start: false,
+    },
+    "/red-team": { review: null, run: null, can_start: false },
+    "/trace": {
+      items: [],
+      page: 1,
+      page_size: 50,
+      total: 0,
+      options: { subject_types: [], actor_types: [], event_types: [] },
+    },
+  };
+
+  /** The Opportunity, and the summary reads (`null`: that read fails with a 500). */
+  function found(opportunity: Opportunity = OPPORTUNITY, reads: Record<string, unknown> = {}) {
+    const bodies = { ...EMPTY_READS, ...reads };
+    apiGet.mockImplementation(async (path: string) => {
+      const suffix = Object.keys(bodies).find((key) => path.endsWith(key));
+      if (suffix === undefined) {
+        return { data: opportunity, response: new Response(null, { status: 200 }) };
+      }
+      const body = bodies[suffix];
+      return body === null
+        ? { response: new Response(null, { status: 500 }) }
+        : { data: body, response: new Response(null, { status: 200 }) };
+    });
   }
 
   function hidden() {
@@ -403,6 +450,434 @@ describe("/opportunities/[id] workspace", () => {
     expect(screen.getByRole("button", { name: "Edit title" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Edit target proposal date" })).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  describe("Overview summary", () => {
+    const uid = (n: number) => `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+    const finding = (n: number, severity: string, title: string) => ({
+      id: uid(n),
+      position: n,
+      kind: "risk",
+      category: "integration_harder",
+      severity,
+      title,
+      detail: "[DETAIL]",
+      argument: "[ARGUMENT]",
+      requirements: [],
+      lines: [],
+    });
+    const assessment = (
+      n: number,
+      agent: string,
+      recommendation: string,
+      confidence: string,
+      findings: unknown[] = [],
+    ) => ({
+      id: uid(n),
+      agent,
+      version: 1,
+      status: "current",
+      run_id: uid(900),
+      recommendation,
+      confidence,
+      confidence_basis: "[BASIS]",
+      dropped_count: 0,
+      created_at: "2026-10-05T09:00:00Z",
+      counts: { critical: 0, high: 0, medium: 0, low: 0 },
+      findings,
+      effort: [],
+      total_hours: 0,
+    });
+    const gap = (n: number, title: string, impact: string) => ({
+      id: uid(n),
+      title,
+      category: "data_volumes",
+      impact,
+      status: "open",
+    });
+    const assumption = (n: number, wording: string, amount: number | null, accepted = false) => ({
+      id: uid(n),
+      kind: amount === null ? "condition" : "contingency",
+      wording,
+      amount_hours: amount,
+      accepted_at: accepted ? "2026-10-05T09:00:00Z" : null,
+      accepted_by: null,
+    });
+    const source = (n: number, status: string) => ({
+      id: uid(n),
+      kind: "document",
+      filename: "rfp.pdf",
+      version: 1,
+      version_count: 1,
+      size_bytes: 10,
+      uploaded_by: { id: uid(800), name: "[MEMBER]" },
+      uploaded_at: "2026-10-04T13:05:00Z",
+      created_at: "2026-10-04T12:00:00Z",
+      parse: { status, error_code: null },
+    });
+    const requirement = (n: number, classification: string) => ({
+      id: uid(n),
+      text: "[REQ]",
+      classification,
+    });
+    const run = (status: string) => ({
+      id: uid(900),
+      status,
+      created_at: "2026-10-05T09:00:00Z",
+      queued_at: "2026-10-05T09:00:00Z",
+      finished_at: null,
+      tasks: [],
+    });
+
+    const FULL: Record<string, unknown> = {
+      "/sources": { items: [source(1, "parsed"), source(2, "parsed"), source(3, "failed")] },
+      "/requirements": {
+        items: [
+          requirement(10, "functional"),
+          requirement(11, "functional"),
+          requirement(12, "security"),
+        ],
+        extraction: { status: "succeeded", error_code: null, source_count: 3 },
+        can_start_extraction: false,
+        can_edit_requirements: false,
+      },
+      "/gaps": {
+        items: [
+          gap(20, "[GAP HIGH 1]", "high"),
+          gap(21, "[GAP HIGH 2]", "high"),
+          gap(22, "[GAP LOW]", "low"),
+        ],
+        detection: { status: "succeeded", error_code: null },
+        can_start_detection: false,
+        can_edit_questions: false,
+      },
+      "/estimate": {
+        version: {
+          id: uid(30),
+          version: 2,
+          status: "draft",
+          totals: { effort_hours: 1332, contingency_hours: 120, total_hours: 1452 },
+          counts: { total: 3, accepted: 2, not_accepted: 1 },
+          assumptions: {
+            conditions: [assumption(31, "[COND]", null, true)],
+            contingencies: [assumption(32, "[ERP MAPPING]", 80), assumption(33, "[OK]", 40, true)],
+            contingency_hours: 120,
+          },
+        },
+        draft: null,
+        can_start_draft: false,
+        can_accept_assumptions: false,
+        can_export: false,
+      },
+      "/assessments": {
+        run: run("succeeded"),
+        assessments: [
+          {
+            agent: "engineering_agent",
+            assessment: assessment(40, "engineering_agent", "proceed", "high"),
+          },
+          {
+            agent: "pm_agent",
+            assessment: assessment(41, "pm_agent", "proceed_with_conditions", "medium"),
+          },
+          {
+            agent: "security_agent",
+            assessment: assessment(42, "security_agent", "do_not_proceed", "low", [
+              finding(43, "high", "[SSO]"),
+              finding(44, "low", "[LOW FINDING]"),
+            ]),
+          },
+        ],
+        can_start: false,
+      },
+      "/red-team": {
+        review: {
+          id: uid(50),
+          version: 1,
+          status: "current",
+          counts: { critical: 1, high: 0, medium: 0, low: 0 },
+          findings: [finding(51, "critical", "[ERP FIELDS]")],
+        },
+        run: { status: "succeeded", error_code: null },
+        can_start: false,
+      },
+      "/trace": {
+        items: Array.from({ length: 6 }, (_, i) => ({
+          id: uid(60 + i),
+          occurred_at: `2026-10-05T09:0${i}:00Z`,
+          event_type: i === 0 ? "estimates.estimate_version.created" : "gaps.gap.raised",
+          actor: { type: "agent", id: "a", name: `[ACTOR ${i}]` },
+          subject: { type: "gaps.gap", id: uid(70 + i), version: null },
+          payload: {},
+        })),
+        page: 1,
+        page_size: 50,
+        total: 6,
+        options: { subject_types: [], actor_types: [], event_types: [] },
+      },
+    };
+
+    const card = (name: string) => screen.getByRole("region", { name });
+    const href = (tab: string) => `/opportunities/${OPP_ID}/${tab}`;
+
+    it("Fresh: every card says nothing has happened yet; the fields stay below", async () => {
+      signedIn(["presales_engineer"]);
+      found();
+      const { container } = await renderWorkspace();
+      expect(within(card("Needs attention")).getByText("Nothing needs attention.")).toBeTruthy();
+      const pipeline = card("Pipeline");
+      expect(within(pipeline).getAllByText("—")).toHaveLength(3);
+      expect(within(pipeline).getByRole("link", { name: /Sources/ }).getAttribute("href")).toBe(
+        href("sources"),
+      );
+      expect(within(card("Estimate")).getByText("No Estimate yet.")).toBeTruthy();
+      expect(within(card("Assessments")).getByText("No assessment yet.")).toBeTruthy();
+      expect(within(card("Recent activity")).getByText("No decisions recorded yet.")).toBeTruthy();
+      expect(screen.getByText("Retail")).toBeTruthy();
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Full: counts, totals, recommendations, ranked attention and links to each tab", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, FULL);
+      const { container } = await renderWorkspace();
+
+      const rows = within(card("Needs attention")).getAllByRole("link");
+      expect(rows.map((r) => [r.textContent, r.getAttribute("href")])).toEqual([
+        ["CriticalRed Team: [ERP FIELDS]Assessments", href("assessments")],
+        ["HighSecurity Agent: [SSO]Assessments", href("assessments")],
+        ["High impactOpen Gap: [GAP HIGH 1]Gaps", href("gaps")],
+        ["High impactOpen Gap: [GAP HIGH 2]Gaps", href("gaps")],
+        ["Unaccepted Assumption: [ERP MAPPING] — 80.0 hEstimate", href("estimate")],
+      ]);
+
+      const pipeline = card("Pipeline");
+      expect(
+        within(pipeline).getByRole("link", { name: /Sources\s*3\s*2 of 3 parsed, 1 failed/ }),
+      ).toBeTruthy();
+      expect(within(card("Needs attention")).getByRole("img", { name: "5 items" })).toBeTruthy();
+      expect(
+        within(pipeline).getByRole("link", { name: /Requirements\s*3\s*2 Functional · 1 Security/ }),
+      ).toBeTruthy();
+      const gapsLink = within(pipeline).getByRole("link", { name: /Open Gaps\s*3\s*2 high impact/ });
+      expect(gapsLink.getAttribute("href")).toBe(href("gaps"));
+
+      const estimate = card("Estimate v2");
+      expect(within(estimate).getByText("Draft")).toBeTruthy();
+      expect(within(estimate).getByText("1332.0 h")).toBeTruthy();
+      expect(within(estimate).getByText("120.0 h")).toBeTruthy();
+      expect(within(estimate).getByText("1452.0 h")).toBeTruthy();
+      expect(estimate.textContent).toContain("Assumptions32 accepted · 1 not accepted");
+      expect(
+        within(estimate).getByRole("link", { name: /Open Estimate/ }).getAttribute("href"),
+      ).toBe(href("estimate"));
+
+      const assessments = card("Assessments");
+      expect(within(assessments).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+        "Engineering AgentProceedHigh confidence",
+        "PM AgentProceed with conditionsMedium confidence",
+        "Security AgentDo not proceedLow confidence",
+        "Red Team1 critical · 0 high",
+      ]);
+      expect(within(assessments).queryByText("Assessing")).toBeNull();
+
+      const activity = card("Recent activity");
+      const events = within(activity).getAllByRole("listitem");
+      expect(events).toHaveLength(5);
+      expect(events[0].textContent).toContain("[ACTOR 0]");
+      expect(events[0].textContent).toContain("Estimate Version created");
+      expect(
+        within(activity).getByRole("link", { name: /Open Trace/ }).getAttribute("href"),
+      ).toBe(href("trace"));
+      // Read-only: no Submit.
+      expect(screen.queryByRole("button", { name: /Submit/ })).toBeNull();
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Cut: 8 rows and '+N more' linking to the tab", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, {
+        "/gaps": {
+          items: Array.from({ length: 12 }, (_, i) => gap(100 + i, `[G${i}]`, "high")),
+          detection: { status: "succeeded", error_code: null },
+          can_start_detection: false,
+          can_edit_questions: false,
+        },
+      });
+      const { container } = await renderWorkspace();
+      const attention = card("Needs attention");
+      expect(within(attention).getAllByRole("listitem")).toHaveLength(8);
+      expect(within(attention).getByRole("link", { name: "+4 more" }).getAttribute("href")).toBe(
+        href("gaps"),
+      );
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Partial failure: only the Estimate card says it could not be loaded", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, { ...FULL, "/estimate": null });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { container } = await renderWorkspace();
+      expect(
+        within(card("Estimate")).getByText(
+          "The Estimate could not be loaded. Try again in a moment.",
+        ),
+      ).toBeTruthy();
+      expect(within(card("Assessments")).getByText("Proceed")).toBeTruthy();
+      expect(within(card("Pipeline")).getByText("2 of 3 parsed, 1 failed")).toBeTruthy();
+      const attention = card("Needs attention");
+      expect(within(attention).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
+      expect(
+        within(attention).getByText(
+          "Some items could not be loaded, so this list may be incomplete.",
+        ),
+      ).toBeTruthy();
+      // Logged with the status only.
+      expect(error).toHaveBeenCalledWith("GET estimate failed: status=500");
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Partial failure: Sources", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, { ...FULL, "/sources": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      expect(
+        within(card("Pipeline")).getByText("Sources could not be loaded. Try again in a moment."),
+      ).toBeTruthy();
+      expect(within(card("Pipeline")).getByText("2 high impact")).toBeTruthy();
+      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+      expect(within(card("Needs attention")).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
+    });
+
+    it("Partial failure: Red Team", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, { ...FULL, "/red-team": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      const assessments = card("Assessments");
+      expect(
+        within(assessments).getByText(
+          "The Red Team Review could not be loaded. Try again in a moment.",
+        ),
+      ).toBeTruthy();
+      expect(within(assessments).getByText("Do not proceed")).toBeTruthy();
+      const attention = card("Needs attention");
+      expect(within(attention).queryByText("Red Team: [ERP FIELDS]")).toBeNull();
+      expect(within(attention).getByText("Security Agent: [SSO]")).toBeTruthy();
+      expect(
+        within(attention).getByText(
+          "Some items could not be loaded, so this list may be incomplete.",
+        ),
+      ).toBeTruthy();
+      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+    });
+
+    it("Partial failure: Specialist Assessments and Red Team", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, { ...FULL, "/assessments": null, "/red-team": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      expect(
+        within(card("Assessments")).getByText(
+          "The Assessments could not be loaded. Try again in a moment.",
+        ),
+      ).toBeTruthy();
+      expect(within(card("Needs attention")).getByText("Open Gap: [GAP HIGH 1]")).toBeTruthy();
+      expect(within(card("Pipeline")).getByText("2 of 3 parsed, 1 failed")).toBeTruthy();
+      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+    });
+
+    it("Partial failure: Trace", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, { ...FULL, "/trace": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      expect(
+        within(card("Recent activity")).getByText(
+          "The recent activity could not be loaded. Try again in a moment.",
+        ),
+      ).toBeTruthy();
+      expect(within(card("Assessments")).getByText("Proceed")).toBeTruthy();
+      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+    });
+
+    it("Partial failure: Gaps with nothing else to attend to says the list may be incomplete", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, { "/gaps": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      const attention = card("Needs attention");
+      expect(
+        within(attention).getByText(
+          "Some items could not be loaded, so this list may be incomplete.",
+        ),
+      ).toBeTruthy();
+      expect(within(attention).queryByText("Nothing needs attention.")).toBeNull();
+      expect(
+        within(card("Pipeline")).getByText("Open Gaps could not be loaded. Try again in a moment."),
+      ).toBeTruthy();
+      expect(within(card("Estimate")).getByText("No Estimate yet.")).toBeTruthy();
+    });
+
+    it("Running: the run status alongside the current results", async () => {
+      signedIn(["presales_engineer"]);
+      const current = FULL["/assessments"] as Record<string, unknown>;
+      found(OPPORTUNITY, { ...FULL, "/assessments": { ...current, run: run("running") } });
+      const { container } = await renderWorkspace();
+      const assessments = card("Assessments");
+      expect(within(assessments).getByText("Assessing")).toBeTruthy();
+      expect(within(assessments).getByText("Do not proceed")).toBeTruthy();
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Running: a Red Team run says so", async () => {
+      signedIn(["presales_engineer"]);
+      const current = FULL["/red-team"] as Record<string, unknown>;
+      found(OPPORTUNITY, {
+        ...FULL,
+        "/red-team": { ...current, run: { status: "running", error_code: null } },
+      });
+      await renderWorkspace();
+      const assessments = card("Assessments");
+      expect(within(assessments).getByText("Red Team reviewing")).toBeTruthy();
+      expect(within(assessments).getByText("1 critical · 0 high")).toBeTruthy();
+    });
+
+    it("Pipeline: a first extraction running or a failed detection is not zero", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, {
+        "/requirements": {
+          items: [],
+          extraction: { status: "running", error_code: null, source_count: 1 },
+          can_start_extraction: false,
+          can_edit_requirements: false,
+        },
+        "/gaps": {
+          items: [],
+          detection: { status: "failed", error_code: "model_timeout" },
+          can_start_detection: false,
+          can_edit_questions: false,
+        },
+      });
+      await renderWorkspace();
+      const pipeline = card("Pipeline");
+      expect(
+        within(pipeline).getByRole("link", { name: /Requirements\s*—\s*Extracting…/ }),
+      ).toBeTruthy();
+      expect(within(pipeline).getByRole("link", { name: /Open Gaps\s*—\s*Failed/ })).toBeTruthy();
+      expect(within(pipeline).queryByText("0")).toBeNull();
+    });
+
+    it("Who: a sales representative sees the same read-only summary", async () => {
+      signedIn(["sales_representative"]);
+      found(OPPORTUNITY, FULL);
+      const { container } = await renderWorkspace();
+      expect(within(card("Needs attention")).getAllByRole("listitem")).toHaveLength(5);
+      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Run assessment" })).toBeNull();
+      expect(await axeViolations(container)).toEqual([]);
+    });
   });
 
   const SOURCE = {
