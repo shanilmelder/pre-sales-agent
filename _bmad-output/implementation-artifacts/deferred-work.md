@@ -103,3 +103,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-cancel-run.md`
   summary: Migration 0018's downgrade sets every cancelled run to `failed` (should derive succeeded/partially_failed/failed from its tasks) and marks never-started skipped tasks `model_timeout`; the data rewrite has no test.
   evidence: Review pass 1 (blind-hunter, edge-case-hunter, verification-gap); rollback isn't on the demo path, so deferred `[post-demo]`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3-effort-comparison.md`
+  summary: `specialist-assessments.test.tsx` "a cancel answered 409 re-reads the section" failed once in a full parallel `npm test` run, then passed in 4 further full runs and alone; likely a timing flake (waitFor under load), possibly touched by the new `router.refresh()` on run completion in the same component.
+  evidence: Seen during Story 5.3 verification (2026-10-05); watch CI, and raise its waitFor timeout if it recurs.

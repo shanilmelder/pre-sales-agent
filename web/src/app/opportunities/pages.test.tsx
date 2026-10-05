@@ -1240,13 +1240,22 @@ describe("/opportunities/[id] workspace", () => {
       : { response: new Response(null, { status: 500 }) };
   }
 
-  function foundWithRedTeam(body: unknown, assessments: unknown = NO_ASSESSMENTS) {
+  function foundWithRedTeam(
+    body: unknown,
+    assessments: unknown = NO_ASSESSMENTS,
+    estimate: unknown = EMPTY_READS["/estimate"],
+    requirements: unknown = EMPTY_READS["/requirements"],
+  ) {
     apiGet.mockImplementation(async (path: string) =>
       path.endsWith("/red-team")
         ? reply(body)
         : path.endsWith("/assessments")
           ? reply(assessments)
-          : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+          : path.endsWith("/estimate")
+            ? reply(estimate)
+            : path.endsWith("/requirements")
+              ? reply(requirements)
+              : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
     );
   }
 
@@ -1335,6 +1344,151 @@ describe("/opportunities/[id] workspace", () => {
         "The Specialist Assessments could not be loaded. Try again in a moment.",
       ),
     ).toBeTruthy();
+    expect(
+      within(panel).getByText("The Effort comparison could not be loaded. Try again in a moment."),
+    ).toBeTruthy();
+  });
+
+  describe("tab URL /assessments: Effort comparison", () => {
+    const R1_ID = "00000000-0000-7000-8000-0000000000f1";
+    const R2_ID = "00000000-0000-7000-8000-0000000000f2";
+    const REQUIREMENTS = {
+      items: [
+        { id: R1_ID, text: "[REQ ONE]", classification: "integration", version: 1 },
+        { id: R2_ID, text: "[REQ TWO]", classification: "security", version: 1 },
+      ],
+      extraction: null,
+      can_start_extraction: false,
+      can_edit_requirements: false,
+    };
+    const chip = (id: string) => ({ id, version: 1, label: "R1", excerpt: "[EXCERPT]" });
+    const assessment = (agent: string, effort: [string, number][]) => ({
+      agent,
+      assessment: {
+        id: `00000000-0000-7000-8000-0000000001${agent.length}0`,
+        agent,
+        version: 1,
+        status: "current",
+        run_id: "00000000-0000-7000-8000-0000000000b1",
+        recommendation: "proceed",
+        confidence: "high",
+        confidence_basis: "[BASIS]",
+        dropped_count: 0,
+        created_at: "2026-10-05T09:00:00Z",
+        counts: { critical: 0, high: 0, medium: 0, low: 0 },
+        findings: [],
+        effort: effort.map(([id, hours]) => ({ requirement: chip(id), hours, basis: "[WHY]" })),
+        total_hours: effort.reduce((sum, [, h]) => sum + h, 0),
+      },
+    });
+    const ASSESSMENTS = {
+      run: null,
+      assessments: [
+        assessment("engineering_agent", [[R1_ID, 20]]),
+        assessment("pm_agent", [[R1_ID, 10]]),
+        assessment("security_agent", [[R1_ID, 4]]),
+      ],
+      can_start: false,
+    };
+    const ESTIMATE = {
+      version: {
+        id: "00000000-0000-7000-8000-0000000000d1",
+        version: 1,
+        status: "draft",
+        sections: [
+          {
+            section: "functional",
+            lines: [
+              { id: "l1", effort_hours: 30, requirements: [chip(R1_ID)] },
+              { id: "l2", effort_hours: 12, requirements: [] },
+            ],
+          },
+        ],
+      },
+      draft: null,
+      can_start_draft: false,
+      can_accept_assumptions: false,
+      can_export: false,
+    };
+    const RED_TEAM = { review: null, run: null, can_start: false };
+
+    it("sits between Specialist Assessments and the Red Team, for any reader", async () => {
+      signedIn(["sales_representative"]);
+      foundWithRedTeam(RED_TEAM, ASSESSMENTS, ESTIMATE, REQUIREMENTS);
+      const { container } = await renderWorkspace("assessments");
+      const panel = screen.getByRole("tabpanel");
+      const headings = within(panel)
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent);
+      const at = (name: string) => headings.indexOf(name);
+      expect(at("Specialist Assessments")).toBeGreaterThanOrEqual(0);
+      expect(at("Effort comparison")).toBe(at("Specialist Assessments") + 1);
+      expect(at("Red Team")).toBe(at("Effort comparison") + 1);
+
+      const table = within(panel).getByRole("table", {
+        name: "Effort comparison by Requirement, in hours",
+      });
+      const r1 = within(table).getByRole("row", { name: /R1 \[REQ ONE\]/ });
+      expect(within(r1).getAllByRole("cell").map((c) => c.textContent)).toEqual([
+        "20.0",
+        "10.0",
+        "4.0",
+        "34.0",
+        "30.0",
+        "−4.0",
+      ]);
+      expect(within(table).getByText("Not linked to a Requirement: 12.0 h")).toBeTruthy();
+      expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/estimate", {
+        params: { path: { opportunity_id: OPP_ID } },
+      });
+      expect(apiGet).toHaveBeenCalledWith(
+        "/api/v1/opportunities/{opportunity_id}/requirements",
+        { params: { path: { opportunity_id: OPP_ID } } },
+      );
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("a failed Estimate read: the table without the Estimate columns, and it says so", async () => {
+      signedIn(["presales_engineer"]);
+      foundWithRedTeam(RED_TEAM, ASSESSMENTS, null, REQUIREMENTS);
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace("assessments");
+      const panel = screen.getByRole("tabpanel");
+      expect(
+        within(panel).getByText("The Estimate could not be loaded, so its hours are not shown."),
+      ).toBeTruthy();
+      const table = within(panel).getByRole("table", {
+        name: "Effort comparison by Requirement, in hours",
+      });
+      expect(within(table).queryByRole("columnheader", { name: "Estimate (allocated)" })).toBeNull();
+      expect(within(table).queryByRole("columnheader", { name: "Difference" })).toBeNull();
+      expect(within(table).getByRole("columnheader", { name: "Agents total" })).toBeTruthy();
+      // Logged with the status only.
+      expect(error).toHaveBeenCalledWith("GET estimate failed: status=500");
+    });
+
+    it("a failed Requirements read says the comparison could not be loaded", async () => {
+      signedIn(["presales_engineer"]);
+      foundWithRedTeam(RED_TEAM, ASSESSMENTS, ESTIMATE, null);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace("assessments");
+      const panel = screen.getByRole("tabpanel");
+      expect(
+        within(panel).getByText(
+          "The Effort comparison could not be loaded. Try again in a moment.",
+        ),
+      ).toBeTruthy();
+      expect(within(panel).queryByRole("table", { name: /Effort comparison/ })).toBeNull();
+    });
+
+    it("the empty state", async () => {
+      signedIn(["presales_engineer"]);
+      foundWithRedTeam(RED_TEAM, NO_ASSESSMENTS, EMPTY_READS["/estimate"], REQUIREMENTS);
+      await renderWorkspace("assessments");
+      expect(
+        within(screen.getByRole("tabpanel")).getByText("No effort to compare yet."),
+      ).toBeTruthy();
+    });
   });
 
   const TRACE_PAGE = {

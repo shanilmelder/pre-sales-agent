@@ -9,6 +9,7 @@ import {
   ListChecksIcon,
   type LucideIcon,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import {
@@ -633,6 +634,12 @@ export function SpecialistAssessmentsSection({
   initial: AssessmentsView;
 }) {
   const announce = useAnnounce();
+  const router = useRouter();
+  /** The router for the polling effect, kept out of its dependencies. */
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  });
   const headingId = useId();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<AssessmentsView>(initial);
@@ -726,6 +733,9 @@ export function SpecialistAssessmentsSection({
           setView(result.assessments);
           const { run, assessments } = result.assessments;
           if (run && !isAssessing(run)) {
+            // The run this section was polling finished: re-render the tab's server reads
+            // (e.g. the Effort comparison) with its results.
+            routerRef.current.refresh();
             announce(
               run.status === "succeeded" &&
                 assessments.every((s) => s.assessment === null)
