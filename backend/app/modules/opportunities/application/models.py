@@ -1,6 +1,7 @@
 """Inputs and read models for Opportunities (Story 1.7)."""
 
 from datetime import UTC, date, datetime
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -167,3 +168,57 @@ class Opportunity(BaseModel):
     can_manage_collaborators: bool
     can_edit: bool
     can_add_sources: bool
+
+
+# --- Decision Trace (Story 9.8, demo slice) ------------------------------------------------
+
+
+class TraceActor(BaseModel):
+    """Who recorded the event. `name`: a user's name, an agent's role in words (e.g. "Red
+    Team Agent") or "System". `version`: an agent's semver (from `<agent_id>@<semver>`),
+    else null."""
+
+    type: Literal["user", "agent", "system"]
+    id: str
+    name: str
+    version: str | None = None
+
+
+class TraceSubject(BaseModel):
+    """What the event is about, as stored: `type` (e.g. `intake.requirement`), its id and
+    version (null when the event has none)."""
+
+    type: str
+    id: str
+    version: int | None
+
+
+class TraceEventItem(BaseModel):
+    """One Decision Trace event. `payload` is the stored payload (ids, counts and kinds only,
+    never customer content), its fields in catalogue order."""
+
+    id: str
+    occurred_at: datetime
+    event_type: str
+    actor: TraceActor
+    subject: TraceSubject
+    payload: dict[str, Any]
+
+
+class TraceFilterOptions(BaseModel):
+    """The distinct stored values present on this Opportunity's trace, each sorted, so the
+    filters only offer real ones. Unaffected by the filters applied."""
+
+    subject_types: list[str]
+    actor_types: list[str]
+    event_types: list[str]
+
+
+class TracePage(BaseModel):
+    """One page of an Opportunity's Decision Trace, newest first."""
+
+    items: list[TraceEventItem]
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1)
+    total: int = Field(ge=0)
+    options: TraceFilterOptions

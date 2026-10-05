@@ -12,6 +12,7 @@ import type { GapList } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
 import type { RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
+import { TRACE_PAGE_SIZE, type TraceFilters, type TracePage } from "@/lib/trace";
 
 export const PAGE_SIZE = 50;
 
@@ -22,6 +23,7 @@ export type SourcesResult = { kind: "ok"; sources: Source[] } | { kind: "error" 
 export type RequirementsResult = { kind: "ok"; list: RequirementList } | { kind: "error" };
 export type GapsResult = { kind: "ok"; list: GapList } | { kind: "error" };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
+export type TraceResult = { kind: "ok"; page: TracePage } | { kind: "error" };
 export type RedTeamResult = { kind: "ok"; redTeam: RedTeamView } | { kind: "error" };
 export type GetResult =
   | { kind: "ok"; opportunity: Opportunity }
@@ -176,6 +178,35 @@ export async function getRedTeam(id: string): Promise<RedTeamResult> {
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET red-team failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/trace`: one page of the Decision Trace, newest first,
+ * filtered by the URL's subject, actor and event types (Story 9.8). */
+export async function listTrace(
+  id: string,
+  page: number,
+  filters: TraceFilters = {},
+): Promise<TraceResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const query = {
+      page,
+      page_size: TRACE_PAGE_SIZE,
+      ...(filters.subject ? { subject_type: filters.subject } : {}),
+      ...(filters.actor ? { actor_type: filters.actor } : {}),
+      ...(filters.event ? { event_type: filters.event } : {}),
+    };
+    const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/trace", {
+      params: { path: { opportunity_id: id }, query },
+    });
+    if (data) return { kind: "ok", page: data };
+    console.error(`GET trace failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET trace failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

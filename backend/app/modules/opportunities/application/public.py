@@ -8,6 +8,11 @@ from app.modules.opportunities.application.models import (
     OpportunityFilters,
     OpportunityPage,
     OpportunitySummary,
+    TraceActor,
+    TraceEventItem,
+    TraceFilterOptions,
+    TracePage,
+    TraceSubject,
     UserRef,
 )
 from app.modules.opportunities.application.opportunities import (
@@ -25,6 +30,11 @@ from app.modules.opportunities.application.opportunities import (
     remove_collaborator,
     update,
 )
+from app.modules.opportunities.application.trace import (
+    TRACE_DEFAULT_PAGE_SIZE,
+    TRACE_MAX_PAGE_SIZE,
+    trace_page,
+)
 from app.modules.opportunities.domain.opportunity import OpportunityStatus, derived_status
 
 __all__ = [
@@ -32,6 +42,8 @@ __all__ = [
     "MAX_PAGE",
     "MAX_PAGE_SIZE",
     "NOT_FOUND_DETAIL",
+    "TRACE_DEFAULT_PAGE_SIZE",
+    "TRACE_MAX_PAGE_SIZE",
     "NewOpportunity",
     "Opportunity",
     "OpportunityChanges",
@@ -40,6 +52,11 @@ __all__ = [
     "OpportunityPage",
     "OpportunityStatus",
     "OpportunitySummary",
+    "TraceActor",
+    "TraceEventItem",
+    "TraceFilterOptions",
+    "TracePage",
+    "TraceSubject",
     "UserRef",
     "add_collaborator",
     "create",
@@ -50,5 +67,6 @@ __all__ = [
     "list_mine",
     "readable_resource",
     "remove_collaborator",
+    "trace_page",
     "update",
 ]

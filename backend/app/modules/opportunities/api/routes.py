@@ -23,6 +23,7 @@ from app.modules.opportunities.application.public import (
     OpportunityFilters,
     OpportunityPage,
     OpportunityStatus,
+    TracePage,
 )
 from app.modules.opportunities.domain.opportunity import PRODUCT_NAME_MAX
 from app.platform.concurrency import etag
@@ -296,3 +297,59 @@ async def remove_collaborator(
     isn't a collaborator changes nothing."""
     changed = await opportunities.remove_collaborator(uow, actor, opportunity_id, user_id, if_match)
     return _with_etag(response, changed)
+
+
+TRACE_FILTER_MAX = 200
+"""The longest trace filter value accepted (the web's `MAX_FILTER_LENGTH`)."""
+
+
+@router.get(
+    "/{opportunity_id}/trace",
+    operation_id="list_opportunity_trace",
+    responses=_responses(404, 422),
+)
+async def list_opportunity_trace(
+    opportunity_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    page: Annotated[int, Query(ge=1, le=opportunities.MAX_PAGE)] = 1,
+    page_size: Annotated[
+        int, Query(ge=1, le=opportunities.TRACE_MAX_PAGE_SIZE)
+    ] = opportunities.TRACE_DEFAULT_PAGE_SIZE,
+    subject_type: Annotated[
+        str | None,
+        Query(
+            max_length=TRACE_FILTER_MAX,
+            description="Only events about this subject type, e.g. `intake.requirement`.",
+        ),
+    ] = None,
+    actor_type: Annotated[
+        str | None,
+        Query(
+            max_length=TRACE_FILTER_MAX,
+            description="Only events by this actor type: `user`, `agent` or `system`.",
+        ),
+    ] = None,
+    event_type: Annotated[
+        str | None,
+        Query(
+            max_length=TRACE_FILTER_MAX,
+            description="Only events of this type, e.g. `estimates.assumption.accepted`.",
+        ),
+    ] = None,
+) -> TracePage:
+    """The Opportunity's Decision Trace, read-only, newest first, one page at a time, with
+    the subject, actor and event types present on it (`options`, unaffected by filters).
+    Filters are exact matches on the stored values and combine with AND; an unknown value
+    gives an empty page and an empty one (`?actor_type=`) is no filter. Each is at most
+    200 characters. Anyone who can read the Opportunity can read its trace."""
+    return await opportunities.trace_page(
+        uow,
+        actor,
+        opportunity_id,
+        page=page,
+        page_size=page_size,
+        subject_type=subject_type or None,
+        actor_type=actor_type or None,
+        event_type=event_type or None,
+    )
