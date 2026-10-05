@@ -32,6 +32,8 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "intake.requirement.confirmed": "Requirement confirmed",
   "gaps.gap.raised": "Gap raised",
   "gaps.clarification_question.drafted": "Clarification Question drafted",
+  "gaps.clarification_question.edited": "Clarification Question edited",
+  "gaps.clarification_question.approved": "Clarification Question approved",
   "gaps.detection.completed": "Gap detection completed",
   "gaps.gap.converted": "Gap converted to Assumption",
   "estimates.estimate_version.created": "Estimate Version created",
@@ -116,6 +118,7 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   size_bytes: "Size (bytes)",
   version_id: "Estimate Version id",
   requirement_ids: "Requirement ids",
+  approved_by: "Approved by (user id)",
 };
 
 /** A payload field name in words: `gap_count` -> "Gap count", `line_id` -> "Line id". */

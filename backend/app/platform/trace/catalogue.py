@@ -226,7 +226,8 @@ class GapsClarificationQuestionDrafted(TracePayload):
 class GapsDetectionCompleted(TracePayload):
     """A Gap detection finished and its Gaps were stored. Subject: the detection
     (`gaps.detection`). Actor: the agent. Counts only: Gaps stored, candidates dropped,
-    Requirements read, and earlier open Gaps superseded."""
+    Requirements read, earlier open Gaps superseded, and earlier open Gaps kept because a
+    person edited or approved their question (Story 4.5)."""
 
     event_type: ClassVar[str] = "gaps.detection.completed"
 
@@ -234,6 +235,35 @@ class GapsDetectionCompleted(TracePayload):
     dropped_count: int
     requirement_count: int
     superseded_count: int
+    kept_count: int = 0
+
+
+@register
+class GapsClarificationQuestionEdited(TracePayload):
+    """A person changed a Clarification Question's text and/or topic (Story 4.5); an approved
+    question returned to `drafted` (`approval_revoked`). Subject: the question
+    (`gaps.clarification_question`). Field names only, never the text."""
+
+    event_type: ClassVar[str] = "gaps.clarification_question.edited"
+
+    gap_id: str
+    fields: list[Literal["text", "topic"]]
+    row_version: int
+    approval_revoked: bool
+    """The question was approved, and the edit returned it to drafted."""
+
+
+@register
+class GapsClarificationQuestionApproved(TracePayload):
+    """A person approved a Clarification Question (Story 4.5), on its own or with **Approve
+    all**. Subject: the question (`gaps.clarification_question`). `approved_by`: the
+    approver's user id."""
+
+    event_type: ClassVar[str] = "gaps.clarification_question.approved"
+
+    gap_id: str
+    approved_by: str
+    row_version: int
 
 
 @register

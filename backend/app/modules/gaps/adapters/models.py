@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -22,6 +23,7 @@ from app.platform.concurrency import RowVersioned
 from app.platform.db import Base
 
 _NOW = text("now()")
+_FALSE = text("false")
 """`QuestionRow` has a `text` column, which shadows `text()` inside its class body."""
 
 
@@ -105,10 +107,19 @@ class GapRequirementRow(Base):
 
 
 class QuestionRow(RowVersioned, Base):
-    """The Clarification Question drafted for a Gap (one per Gap in the demo)."""
+    """The Clarification Question drafted for a Gap (one per Gap in the demo). Story 4.5: a
+    person may edit its text and topic (`edited_by_human`) and approve it (`approved_by` /
+    `approved_at`, set only while `approved`); editing an approved question returns it to
+    `drafted`. `changed_by`: the person behind its latest edit or approval."""
 
     __tablename__ = "gaps_clarification_questions"
-    __table_args__ = (CheckConstraint("status IN ('drafted', 'superseded')", name="status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('drafted', 'approved', 'superseded')", name="status"),
+        CheckConstraint("(approved_at IS NULL) = (approved_by IS NULL)", name="approved_has_by"),
+        CheckConstraint(
+            "(status = 'approved') = (approved_by IS NOT NULL)", name="approved_iff_status"
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     gap_id: Mapped[UUID] = mapped_column(
@@ -120,3 +131,7 @@ class QuestionRow(RowVersioned, Base):
     status_changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=_NOW
     )
+    approved_by: Mapped[UUID | None] = mapped_column(Uuid)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    edited_by_human: Mapped[bool] = mapped_column(Boolean, server_default=_FALSE)
+    changed_by: Mapped[UUID | None] = mapped_column(Uuid)

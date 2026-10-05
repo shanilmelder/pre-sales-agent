@@ -2,16 +2,42 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StartGapDetectionResult } from "@/app/opportunities/actions";
+import type {
+  ApproveAllQuestionsResult,
+  QuestionWriteResult,
+  StartGapDetectionResult,
+} from "@/app/opportunities/actions";
 import type { GapsResult } from "@/app/opportunities/data";
-import type { Detection, Gap, GapCategory, GapList, Impact } from "@/lib/gaps";
+import type {
+  ClarificationQuestion,
+  Detection,
+  Gap,
+  GapCategory,
+  GapList,
+  Impact,
+} from "@/lib/gaps";
 import { axeViolations } from "@/test/axe";
 
 const startGapDetection = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<StartGapDetectionResult>>(),
 );
 const loadGaps = vi.hoisted(() => vi.fn<(opportunityId: string) => Promise<GapsResult>>());
-vi.mock("@/app/opportunities/actions", () => ({ startGapDetection, loadGaps }));
+const editClarificationQuestion = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<QuestionWriteResult>>(),
+);
+const approveClarificationQuestion = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<QuestionWriteResult>>(),
+);
+const approveAllClarificationQuestions = vi.hoisted(() =>
+  vi.fn<(opportunityId: string, shown: unknown) => Promise<ApproveAllQuestionsResult>>(),
+);
+vi.mock("@/app/opportunities/actions", () => ({
+  startGapDetection,
+  loadGaps,
+  editClarificationQuestion,
+  approveClarificationQuestion,
+  approveAllClarificationQuestions,
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => "/opportunities/x/gaps",
@@ -53,6 +79,10 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
       status: "drafted",
       status_changed_at: "2026-10-05T09:00:00Z",
       row_version: 1,
+      approved_by: null,
+      approved_at: null,
+      edited_by_human: false,
+      last_changed_by: null,
     },
   };
 }
@@ -62,8 +92,13 @@ const running: Detection = { status: "running", error_code: null };
 const succeeded: Detection = { status: "succeeded", error_code: null };
 const failed: Detection = { status: "failed", error_code: "model_unavailable" };
 
-function list(items: Gap[], detection: Detection | null, canStart = true): GapList {
-  return { items, detection, can_start_detection: canStart };
+function list(
+  items: Gap[],
+  detection: Detection | null,
+  canStart = true,
+  canEdit = false,
+): GapList {
+  return { items, detection, can_start_detection: canStart, can_edit_questions: canEdit };
 }
 
 function renderSection(initial: GapList, singleKeyShortcuts = true) {
@@ -81,6 +116,9 @@ const pane = () => screen.getByRole("complementary", { name: "Details" });
 beforeEach(() => {
   startGapDetection.mockReset();
   loadGaps.mockReset();
+  editClarificationQuestion.mockReset();
+  approveClarificationQuestion.mockReset();
+  approveAllClarificationQuestions.mockReset();
 });
 
 afterEach(() => {
@@ -439,5 +477,315 @@ describe("GapsSection", () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     expect(screen.getByRole("status").textContent).toBe("2 Gaps");
+  });
+});
+
+// --- editing and approving questions (Story 4.5) ---------------------------------------------
+
+const OWNER = { id: "00000000-0000-7000-8000-0000000000aa", name: "Owner Person" };
+
+function approvedQuestion(q: ClarificationQuestion, version = q.row_version + 1) {
+  return {
+    ...q,
+    status: "approved" as const,
+    row_version: version,
+    approved_by: OWNER,
+    approved_at: "2026-10-05T11:00:00Z",
+    status_changed_at: "2026-10-05T11:00:00Z",
+    last_changed_by: OWNER,
+  };
+}
+
+function approvedGap(n: number, impact: Impact): Gap {
+  const base = gap(n, impact);
+  return { ...base, question: approvedQuestion(base.question!) };
+}
+
+async function openRow(user: ReturnType<typeof userEvent.setup>, n: number) {
+  await user.click(row(n));
+  return pane();
+}
+
+describe("question pills", () => {
+  it("rows and the inspector show Draft or Approved, with the date of the last change", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSection(list([approvedGap(1, "high"), gap(2, "low")], succeeded));
+    const rows = screen.getAllByRole("row");
+    expect(rows[0].textContent).toBe("HighIntegration details[GAP 1]Approved");
+    expect(rows[1].textContent).toBe("LowIntegration details[GAP 2]Draft");
+    expect(rows[0].querySelector("[data-question-status] svg")).toBeTruthy(); // icon plus label
+
+    const inspector = await openRow(user, 1);
+
+    expect(within(inspector).getByText("Approved since 5 Oct 2026")).toBeTruthy();
+    expect(within(inspector).getByText("Approved by Owner Person, 5 Oct 2026")).toBeTruthy();
+    expect(within(inspector).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("editing questions", () => {
+  it("edits the question text inline: Enter saves with If-Match, the new text shows", async () => {
+    const user = userEvent.setup();
+    const saved = { ...gap(1, "high").question!, text: "[NEW TEXT]", row_version: 2 };
+    editClarificationQuestion.mockResolvedValue({ kind: "ok", question: saved });
+    const { container } = renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(within(inspector).getByRole("button", { name: "Edit question" }));
+    const input = within(inspector).getByRole("textbox", { name: "Question" });
+    expect(document.activeElement).toBe(input);
+    await user.clear(input);
+    await user.type(input, "  [[NEW TEXT]  {Enter}");
+
+    expect(editClarificationQuestion).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      questionId: gap(1, "high").question!.id,
+      rowVersion: 1,
+      text: "[NEW TEXT]",
+    });
+    expect(await within(inspector).findByText("[NEW TEXT]")).toBeTruthy();
+    expect(document.activeElement).toBe(
+      within(inspector).getByRole("button", { name: "Edit question" }),
+    );
+  });
+
+  it("edits the topic; Esc reverts without saving; an unchanged value sends nothing", async () => {
+    const user = userEvent.setup();
+    const saved = { ...gap(1, "high").question!, topic: "[NEW TOPIC]", row_version: 2 };
+    editClarificationQuestion.mockResolvedValue({ kind: "ok", question: saved });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Edit question" }));
+    await user.type(within(inspector).getByRole("textbox", { name: "Question" }), "more{Escape}");
+    await user.click(within(inspector).getByRole("button", { name: "Edit topic" }));
+    await user.keyboard("{Enter}");
+    expect(editClarificationQuestion).not.toHaveBeenCalled();
+    expect(within(inspector).getByText("[QUESTION 1]")).toBeTruthy();
+
+    await user.click(within(inspector).getByRole("button", { name: "Edit topic" }));
+    const topic = within(inspector).getByRole("textbox", { name: "Topic" });
+    await user.clear(topic);
+    await user.type(topic, "[[NEW TOPIC]{Enter}");
+
+    expect(editClarificationQuestion).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: "[NEW TOPIC]", rowVersion: 1 }),
+    );
+    await waitFor(() => expect(within(inspector).getByText("[NEW TOPIC]")).toBeTruthy());
+  });
+
+  it("refuses a too-long topic before sending, keeping the text under the field", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Edit topic" }));
+    const topic = within(inspector).getByRole("textbox", { name: "Topic" });
+    await user.clear(topic);
+    await user.paste("t".repeat(81));
+    await user.keyboard("{Enter}");
+
+    expect(editClarificationQuestion).not.toHaveBeenCalled();
+    expect(within(inspector).getByText("The topic can be at most 80 characters.")).toBeTruthy();
+  });
+
+  it("a 412 says who changed it, keeps the text, and Reload re-reads the Gaps", async () => {
+    const user = userEvent.setup();
+    editClarificationQuestion.mockResolvedValue({ kind: "stale", changedBy: "Colleague" });
+    const newer = { ...gap(1, "high").question!, text: "[THEIR TEXT]", row_version: 2 };
+    loadGaps.mockResolvedValue({
+      kind: "ok",
+      list: list([{ ...gap(1, "high"), question: newer }], succeeded, true, true),
+    });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Edit question" }));
+    const input = within(inspector).getByRole("textbox", { name: "Question" });
+    await user.clear(input);
+    await user.type(input, "[[MY TEXT]{Enter}");
+
+    const reload = await screen.findByRole("button", { name: "Reload" });
+    expect(screen.getAllByText("Changed by Colleague since you opened it.").length).toBeGreaterThan(
+      0,
+    );
+    expect(within(inspector).getByText("[QUESTION 1]")).toBeTruthy(); // rolled back
+    await waitFor(() => expect(document.activeElement).toBe(reload));
+
+    await user.click(reload);
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Reload" })).toBeNull());
+    expect(loadGaps).toHaveBeenCalledWith(OPP_ID);
+    expect(within(pane()).getByText("[THEIR TEXT]")).toBeTruthy();
+    // The field still offers the user's text to save again.
+    await user.click(within(pane()).getByRole("button", { name: "Edit question" }));
+    expect(
+      (within(pane()).getByRole("textbox", { name: "Question" }) as HTMLTextAreaElement).value,
+    ).toBe("[MY TEXT]");
+  });
+
+  it("a 409 says the Gap is no longer open and re-reads the Gaps", async () => {
+    const user = userEvent.setup();
+    approveClarificationQuestion.mockResolvedValue({ kind: "gap-not-open" });
+    loadGaps.mockResolvedValue({ kind: "ok", list: list([], succeeded, true, true) });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Approve" }));
+
+    expect(
+      await screen.findByText(
+        "This Gap is no longer open: it was converted or replaced by a newer Gap detection.",
+      ),
+    ).toBeTruthy();
+    expect(loadGaps).toHaveBeenCalled();
+  });
+
+  it("e on a row opens the inspector with the question text being edited", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high"), gap(2, "low")], succeeded, true, true));
+
+    act(() => row(1).focus());
+    await user.keyboard("j");
+    await user.keyboard("e");
+
+    const input = within(pane()).getByRole("textbox", { name: "Question" });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect((input as HTMLTextAreaElement).value).toBe("[QUESTION 2]");
+  });
+
+  it("e does nothing for those who may not edit", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high")], succeeded, false, false));
+
+    act(() => row(1).focus());
+    await user.keyboard("e");
+
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+});
+
+describe("approving questions", () => {
+  it("Approve approves a drafted question and shows who approved it", async () => {
+    const user = userEvent.setup();
+    approveClarificationQuestion.mockResolvedValue({
+      kind: "ok",
+      question: approvedQuestion(gap(1, "high").question!),
+    });
+    const { container } = renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Approve" }));
+
+    expect(approveClarificationQuestion).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      questionId: gap(1, "high").question!.id,
+      rowVersion: 1,
+    });
+    expect(
+      await within(inspector).findByText("Approved by Owner Person, 5 Oct 2026"),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("row")[0].textContent).toBe(
+      "HighIntegration details[GAP 1]Approved",
+    );
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Approve all (N) counts the drafted questions of open Gaps and re-reads after", async () => {
+    const user = userEvent.setup();
+    const converted: Gap = { ...gap(3, "low"), status: "converted", converted_to: "condition" };
+    approveAllClarificationQuestions.mockResolvedValue({ kind: "ok", count: 2 });
+    loadGaps.mockResolvedValue({
+      kind: "ok",
+      list: list(
+        [approvedGap(1, "high"), approvedGap(2, "medium"), approvedGap(4, "low"), converted],
+        succeeded,
+        true,
+        true,
+      ),
+    });
+    renderSection(
+      list(
+        [gap(1, "high"), gap(2, "medium"), approvedGap(4, "low"), converted],
+        succeeded,
+        true,
+        true,
+      ),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Approve all (2)" }));
+
+    expect(approveAllClarificationQuestions).toHaveBeenCalledWith(OPP_ID, [
+      { id: gap(1, "high").question!.id, row_version: 1 },
+      { id: gap(2, "medium").question!.id, row_version: 1 },
+    ]);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Approve all/ })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe("2 questions approved"),
+    );
+    expect(screen.getAllByRole("row")[1].textContent).toBe(
+      "MediumIntegration details[GAP 2]Approved",
+    );
+  });
+
+  it("a 412 on Approve all says who changed it and offers Reload", async () => {
+    const user = userEvent.setup();
+    approveAllClarificationQuestions.mockResolvedValue({ kind: "stale", changedBy: "Colleague" });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+
+    await user.click(screen.getByRole("button", { name: "Approve all (1)" }));
+
+    const reload = await screen.findByRole("button", { name: "Reload" });
+    expect(screen.getByText("Changed by Colleague since you opened it.")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(reload));
+    expect(screen.getAllByRole("row")[0].textContent).toBe("HighIntegration details[GAP 1]Draft");
+  });
+
+  it("if the re-read after Approve all fails, offers Reload straight away", async () => {
+    const user = userEvent.setup();
+    approveAllClarificationQuestions.mockResolvedValue({ kind: "ok", count: 1 });
+    loadGaps.mockResolvedValue({ kind: "error" });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+
+    await user.click(screen.getByRole("button", { name: "Approve all (1)" }));
+
+    expect(await screen.findByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(screen.getByText("Changed by someone else since you opened it.")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe("1 question approved"),
+    );
+  });
+
+  it("hides Approve all from those who may not edit", () => {
+    renderSection(list([gap(1, "high")], succeeded, false, false));
+    expect(screen.queryByRole("button", { name: /Approve all/ })).toBeNull();
+  });
+});
+
+describe("a sales representative", () => {
+  it("sees Gaps without unapproved questions, and approved ones read-only", async () => {
+    const user = userEvent.setup();
+    const hidden: Gap = { ...gap(2, "low"), question: null };
+    const { container } = renderSection(
+      list([approvedGap(1, "high"), hidden], succeeded, false, false),
+    );
+    const rows = screen.getAllByRole("row");
+    expect(rows[0].textContent).toBe("HighIntegration details[GAP 1]Approved");
+    expect(rows[1].textContent).toBe("LowIntegration details[GAP 2]");
+
+    const inspector = await openRow(user, 1);
+    expect(
+      within(inspector).getByRole("group", { name: "Clarification Question (read-only)" }),
+    ).toBeTruthy();
+    const section = within(inspector).getByRole("region", { name: "[GAP 1]" });
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(row(2));
+    expect(within(pane()).queryByText("Clarification Question")).toBeNull();
   });
 });

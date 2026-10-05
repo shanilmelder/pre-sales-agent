@@ -159,6 +159,24 @@ def test_the_xlsx_export_matches_the_estimate_register_and_questions(
 ) -> None:
     headers, opp = carried_v2(client, sync_engine, db_url, gateway)
     version = _register(client, headers, opp["id"])
+    shown = [
+        {"id": g["question"]["id"], "row_version": g["question"]["row_version"]}
+        for g in client.get(f"{BASE}/{opp['id']}/gaps", headers=headers).json()["items"]
+        if g["status"] == "open" and g["question"] and g["question"]["status"] == "drafted"
+    ]
+    approved = client.post(
+        f"{BASE}/{opp['id']}/clarification-questions/approve-all", headers=headers, json=shown
+    )
+    assert approved.json() == {"count": 1}, approved.text  # the open "Test data owner" Gap's
+    with sync_engine.begin() as conn:  # and a converted Gap's, approved before it converted
+        conn.execute(
+            sa.text(
+                "UPDATE gaps_clarification_questions SET status = 'approved', "
+                "approved_by = gen_random_uuid(), approved_at = now() WHERE gap_id = "
+                "(SELECT id FROM gaps_gaps WHERE opportunity_id = :o AND title = :t)"
+            ),
+            {"o": opp["id"], "t": "WMS version unknown"},
+        )
     gaps = client.get(f"{BASE}/{opp['id']}/gaps", headers=headers).json()["items"]
 
     with caplog.at_level(logging.DEBUG):
@@ -211,18 +229,20 @@ def test_the_xlsx_export_matches_the_estimate_register_and_questions(
             g["impact"].capitalize(),
             g["question"]["topic"],
             g["question"]["text"],
+            {"drafted": "Draft", "approved": "Approved"}[g["question"]["status"]],
             g["status"].capitalize(),
         )
         for g in gaps
         if g["question"] is not None
-        and g["question"]["status"] == "drafted"
+        and g["question"]["status"] in ("drafted", "approved")
         and g["status"] in ("open", "converted")
     ]
     assert len(gaps) == 4
     assert len(expected) == 3  # the superseded question is left out
     assert "SSO provider" not in {q[0] for q in questions}
     assert questions == expected
-    assert {q[4] for q in questions} == {"Open", "Converted"}
+    assert sorted(q[4] for q in questions) == ["Approved", "Approved", "Draft"]
+    assert {q[5] for q in questions} == {"Open", "Converted"}
 
     (event,) = events(sync_engine, opp["id"], EXPORTED)
     assert (event["subject_type"], str(event["subject_id"])) == (

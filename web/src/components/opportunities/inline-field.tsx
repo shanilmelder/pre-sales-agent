@@ -36,7 +36,8 @@ type InlineFieldProps = {
   label: string;
   /** The input's accessible name, e.g. "Title". */
   inputLabel: string;
-  type: "text" | "date";
+  /** `textarea` is multi-line: Enter still saves, Shift+Enter starts a new line. */
+  type: "text" | "date" | "textarea";
   /** The value the input starts from. */
   value: string;
   /** Text the input starts from instead of `value` (e.g. the user's unsaved text after a
@@ -50,6 +51,9 @@ type InlineFieldProps = {
   error?: string | null;
   /** True while nothing may be edited (a save in flight, or a stale view). */
   locked?: boolean;
+  /** Bump to start editing from outside (e.g. the `e` shortcut); 0 does nothing. A field
+   * mounted with a value above 0 starts editing. */
+  editRequest?: number;
   /** Called on blur or Enter with the new text, only when it differs from `value`. */
   onCommit: (next: string) => void;
   className?: string;
@@ -69,6 +73,7 @@ export function InlineField({
   min,
   error,
   locked = false,
+  editRequest = 0,
   onCommit,
   className,
   inputClassName,
@@ -78,11 +83,23 @@ export function InlineField({
   const finished = useRef(false);
   const refocus = useRef(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const errorId = useId();
+  // Starts at 0, so a field mounted with a pending request (e.g. the inspector opened by
+  // the `e` shortcut) starts editing too.
+  const [handledRequest, setHandledRequest] = useState(0);
+  if (handledRequest !== editRequest) {
+    setHandledRequest(editRequest);
+    if (editRequest > 0 && !locked && !editing) {
+      // `finished` is reset by the effect below once the input shows.
+      setDraft(keptDraft ?? value);
+      setEditing(true);
+    }
+  }
 
   useEffect(() => {
     if (editing) {
+      finished.current = false;
       inputRef.current?.focus();
     } else if (refocus.current) {
       refocus.current = false;
@@ -106,8 +123,8 @@ export function InlineField({
     if (save && draft !== value) onCommit(draft);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !(type === "textarea" && event.shiftKey)) {
       event.preventDefault();
       finish(true, true);
     } else if (event.key === "Escape") {
@@ -119,7 +136,18 @@ export function InlineField({
 
   return (
     <div className={className}>
-      {editing ? (
+      {editing && type === "textarea" ? (
+        <textarea
+          ref={inputRef}
+          aria-label={inputLabel}
+          value={draft}
+          rows={3}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => finish(true, false)}
+          onKeyDown={onKeyDown}
+          className={inputClassName}
+        />
+      ) : editing ? (
         <input
           ref={inputRef}
           type={type}

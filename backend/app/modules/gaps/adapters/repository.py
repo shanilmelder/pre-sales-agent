@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, insert, select, text, tuple_, update
+from sqlalchemy import ColumnElement, func, insert, or_, select, text, tuple_, update
 
 from app.modules.gaps.adapters.models import (
     DetectionRow,
@@ -62,6 +62,10 @@ class QuestionRecord:
     status: str
     status_changed_at: datetime
     row_version: int
+    approved_by: UUID | None = None
+    approved_at: datetime | None = None
+    edited_by_human: bool = False
+    changed_by: UUID | None = None
 
 
 # --- detections -----------------------------------------------------------------------------
@@ -200,9 +204,24 @@ async def update_detection(
 # --- Gaps -----------------------------------------------------------------------------------
 
 
-async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> int:
+def _untouched_question_or_none() -> ColumnElement[bool]:
+    """True for a Gap whose question (if any) no person has edited or approved."""
+    touched = (
+        select(QuestionRow.id)
+        .where(
+            QuestionRow.gap_id == GapRow.id,
+            or_(QuestionRow.edited_by_human.is_(True), QuestionRow.status == "approved"),
+        )
+        .exists()
+    )
+    return ~touched
+
+
+async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> tuple[int, int]:
     """Mark every `open`, `detected` Gap of the Opportunity `superseded`, together with its
-    Clarification Question. Returns how many Gaps changed."""
+    Clarification Question, except those whose question a person has edited or approved
+    (Story 4.5): they stay as they are. Returns how many Gaps changed and how many were
+    kept. The caller holds `lock_opportunity`, which question edits take too."""
     gap_ids = list(
         (
             await uow.session.execute(
@@ -211,6 +230,7 @@ async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> int:
                     GapRow.opportunity_id == opportunity_id,
                     GapRow.status == "open",
                     GapRow.origin == "detected",
+                    _untouched_question_or_none(),
                 )
                 .values(status="superseded", row_version=GapRow.row_version + 1)
                 .returning(GapRow.id)
@@ -229,7 +249,18 @@ async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> int:
             )
             .execution_options(synchronize_session=False)
         )
-    return len(gap_ids)
+    kept = (
+        await uow.session.execute(
+            select(func.count())
+            .select_from(GapRow)
+            .where(
+                GapRow.opportunity_id == opportunity_id,
+                GapRow.status == "open",
+                GapRow.origin == "detected",
+            )
+        )
+    ).scalar_one()
+    return len(gap_ids), int(kept)
 
 
 async def insert_gap(
@@ -375,19 +406,121 @@ async def links_for(uow: UnitOfWork, gap_ids: list[UUID]) -> list[GapLinkRecord]
     ]
 
 
+def _question(row: QuestionRow) -> QuestionRecord:
+    return QuestionRecord(
+        id=row.id,
+        gap_id=row.gap_id,
+        text=row.text,
+        topic=row.topic,
+        status=row.status,
+        status_changed_at=row.status_changed_at,
+        row_version=row.row_version,
+        approved_by=row.approved_by,
+        approved_at=row.approved_at,
+        edited_by_human=row.edited_by_human,
+        changed_by=row.changed_by,
+    )
+
+
 async def questions_for(uow: UnitOfWork, gap_ids: list[UUID]) -> dict[UUID, QuestionRecord]:
     if not gap_ids:
         return {}
-    rows = await uow.session.execute(select(QuestionRow).where(QuestionRow.gap_id.in_(gap_ids)))
-    return {
-        row.gap_id: QuestionRecord(
-            id=row.id,
-            gap_id=row.gap_id,
-            text=row.text,
-            topic=row.topic,
-            status=row.status,
-            status_changed_at=row.status_changed_at,
-            row_version=row.row_version,
+    rows = await uow.session.execute(
+        select(QuestionRow)
+        .where(QuestionRow.gap_id.in_(gap_ids))
+        .execution_options(populate_existing=True)
+    )
+    return {row.gap_id: _question(row) for row in rows.scalars()}
+
+
+async def get_question(
+    uow: UnitOfWork, opportunity_id: UUID, question_id: UUID
+) -> tuple[QuestionRecord, GapRecord] | None:
+    """The question with its Gap, if the Gap belongs to the Opportunity."""
+    found = (
+        await uow.session.execute(
+            select(QuestionRow, GapRow)
+            .join(GapRow, GapRow.id == QuestionRow.gap_id)
+            .where(QuestionRow.id == question_id, GapRow.opportunity_id == opportunity_id)
+            .execution_options(populate_existing=True)
         )
-        for row in rows.scalars()
+    ).one_or_none()
+    if found is None:
+        return None
+    question, gap = found
+    return _question(question), _gap(gap)
+
+
+async def drafted_questions_of_open_gaps(
+    uow: UnitOfWork, opportunity_id: UUID
+) -> list[QuestionRecord]:
+    """The `drafted` questions of the Opportunity's `open` Gaps, oldest Gap first."""
+    rows = await uow.session.execute(
+        select(QuestionRow)
+        .join(GapRow, GapRow.id == QuestionRow.gap_id)
+        .where(
+            GapRow.opportunity_id == opportunity_id,
+            GapRow.status == "open",
+            QuestionRow.status == "drafted",
+        )
+        .order_by(GapRow.created_at, GapRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return [_question(row) for row in rows.scalars()]
+
+
+async def update_question(
+    uow: UnitOfWork,
+    question_id: UUID,
+    *,
+    expected_row_version: int,
+    text_: str,
+    topic: str,
+    status: str,
+    approved_by: UUID | None,
+    approved_at: datetime | None,
+    edited_by_human: bool,
+    changed_by: UUID,
+    status_changed_at: datetime | None,
+) -> QuestionRecord | None:
+    """Write the question's new state if it is still at `expected_row_version` and its Gap
+    is still `open` (a Gap converted by `estimates` meanwhile doesn't take the gaps lock),
+    bumping it; None (and no change) otherwise. `status_changed_at` is set when given (a status
+    change)."""
+    values: dict[str, object] = {
+        "text": text_,
+        "topic": topic,
+        "status": status,
+        "approved_by": approved_by,
+        "approved_at": approved_at,
+        "edited_by_human": edited_by_human,
+        "changed_by": changed_by,
+        "row_version": QuestionRow.row_version + 1,
     }
+    if status_changed_at is not None:
+        values["status_changed_at"] = status_changed_at
+    changed = (
+        await uow.session.execute(
+            update(QuestionRow)
+            .where(
+                QuestionRow.id == question_id,
+                QuestionRow.row_version == expected_row_version,
+                select(GapRow.id)
+                .where(GapRow.id == QuestionRow.gap_id, GapRow.status == "open")
+                .exists(),
+            )
+            .values(**values)
+            .returning(QuestionRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    if changed is None:
+        return None
+    row = (
+        await uow.session.execute(
+            select(QuestionRow)
+            .where(QuestionRow.id == question_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    return _question(row)

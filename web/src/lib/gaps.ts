@@ -1,5 +1,10 @@
-// Gap display helpers (Story 4.3 + 4.4, demo scope). Safe on server and client.
+// Gap display helpers (Story 4.3 + 4.4, demo scope; Story 4.5 question edits). Safe on
+// server and client.
+import { CheckIcon, PencilLineIcon, type LucideIcon } from "lucide-react";
+
 import type { components } from "@/lib/api/client";
+import { registerDate } from "@/lib/estimates";
+import { codePointLength, type StatusTone } from "@/lib/opportunities";
 
 export type Gap = components["schemas"]["Gap"];
 export type GapList = components["schemas"]["GapList"];
@@ -9,6 +14,7 @@ export type Impact = components["schemas"]["Impact"];
 export type Detection = components["schemas"]["Detection"];
 export type DetectionErrorCode = components["schemas"]["DetectionErrorCode"];
 export type ClarificationQuestion = components["schemas"]["ClarificationQuestion"];
+export type QuestionStatus = components["schemas"]["QuestionStatus"];
 
 /** The categories with their labels. */
 export const GAP_CATEGORIES: readonly { value: GapCategory; label: string }[] = [
@@ -44,8 +50,78 @@ export function impactLevel(value: Impact): 0 | 1 | 2 | 3 {
   return IMPACTS.find((i) => i.value === value)?.level ?? 0;
 }
 
-/** The question pill: a drafted question reads "Draft". */
+/** The question pill: a drafted question reads "Draft", an approved one "Approved". */
 export const DRAFT = "Draft";
+export const APPROVED = "Approved";
+
+/** The question statuses the pill shows, with their label, icon and icon tone (the pill always
+ * shows icon and label). */
+export const QUESTION_STATUSES: Record<
+  "drafted" | "approved",
+  { label: string; icon: LucideIcon; tone: StatusTone }
+> = {
+  drafted: { label: DRAFT, icon: PencilLineIcon, tone: "text-muted-foreground" },
+  approved: { label: APPROVED, icon: CheckIcon, tone: "text-resolved" },
+};
+
+/** A question status's pill (Draft for one this build doesn't know). */
+export function questionStatus(status: QuestionStatus): {
+  label: string;
+  icon: LucideIcon;
+  tone: StatusTone;
+} {
+  return status === "approved" ? QUESTION_STATUSES.approved : QUESTION_STATUSES.drafted;
+}
+
+/** The API's longest question text and topic, in code points (trimmed). */
+export const QUESTION_MAX = 1000;
+export const TOPIC_MAX = 80;
+
+/** Why a question text can't be saved, or null. */
+export function questionTextProblem(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return "The question can't be blank.";
+  if (codePointLength(trimmed) > QUESTION_MAX) return "The question can be at most 1,000 characters.";
+  return null;
+}
+
+/** Why a topic can't be saved, or null. */
+export function questionTopicProblem(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return "The topic can't be blank.";
+  if (codePointLength(trimmed) > TOPIC_MAX) return "The topic can be at most 80 characters.";
+  return null;
+}
+
+/** "Approved by Jane Doe, 5 Oct 2026". */
+export function approvedLabel(
+  question: Pick<ClarificationQuestion, "approved_by" | "approved_at">,
+): string {
+  const name = question.approved_by?.name ?? "someone";
+  return question.approved_at
+    ? `Approved by ${name}, ${registerDate(question.approved_at)}`
+    : `Approved by ${name}`;
+}
+
+/** "Draft since 5 Oct 2026" / "Approved since 5 Oct 2026": the last status change. */
+export function statusSince(question: Pick<ClarificationQuestion, "status" | "status_changed_at">) {
+  return `${questionStatus(question.status).label} since ${registerDate(question.status_changed_at)}`;
+}
+
+/** The open Gaps whose question is drafted: what **Approve all** approves. */
+export function toApprove(items: readonly Gap[]): Gap[] {
+  return items.filter((g) => g.status === "open" && g.question?.status === "drafted");
+}
+
+/** "Approve all (3)". */
+export function approveAllLabel(n: number): string {
+  return `Approve all (${n})`;
+}
+
+/** "1 question approved", "3 questions approved". */
+export function approvedCount(n: number): string {
+  return `${n} ${n === 1 ? "question" : "questions"} approved`;
+}
 
 /** The header while a detection is queued or running. */
 export const DETECTING = "Detecting Gaps";

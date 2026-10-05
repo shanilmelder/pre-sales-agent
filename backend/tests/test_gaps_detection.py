@@ -299,6 +299,7 @@ def test_detection_stores_ranked_gaps_with_drafted_questions(
         "dropped_count": 0,
         "requirement_count": 5,
         "superseded_count": 0,
+        "kept_count": 0,
     }
     assert completed["subject_type"] == "gaps.detection"
     for event in trace:

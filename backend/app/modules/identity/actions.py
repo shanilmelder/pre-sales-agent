@@ -25,6 +25,7 @@ class Action(StrEnum):
     EXTRACTION_START = "intake.extraction.start"
     REQUIREMENT_EDIT = "intake.requirement.edit"
     GAP_DETECTION_START = "gaps.detection.start"
+    GAP_QUESTION_EDIT = "gaps.clarification_question.edit"
     ESTIMATE_DRAFT_START = "estimates.draft.start"
     ASSUMPTION_ACCEPT = "estimates.assumption.accept"
     RED_TEAM_START = "assessments.red_team.start"

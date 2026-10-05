@@ -17,10 +17,13 @@ import {
   acceptAssumption,
   addSource,
   addTextSource,
+  approveAllClarificationQuestions,
+  approveClarificationQuestion,
   changeCollaborator,
   confirmAllRequirements,
   confirmRequirement,
   createOpportunity,
+  editClarificationQuestion,
   editRequirement,
   getPassage,
   loadEstimate,
@@ -565,7 +568,12 @@ describe("startGapDetection", () => {
 
 describe("loadGaps", () => {
   it("reads the Opportunity's open Gaps and latest detection", async () => {
-    const LIST = { items: [], detection: null, can_start_detection: false };
+    const LIST = {
+      items: [],
+      detection: null,
+      can_start_detection: false,
+      can_edit_questions: false,
+    };
     api.GET.mockReset();
     api.GET.mockResolvedValue({ data: LIST, response: new Response(null, { status: 200 }) });
     expect(await loadGaps(OPP_ID)).toEqual({ kind: "ok", list: LIST });
@@ -1018,5 +1026,135 @@ describe("acceptAllAssumptions", () => {
   it("refuses an id that isn't a UUID", async () => {
     expect(await acceptAllAssumptions("nope")).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("editClarificationQuestion / approveClarificationQuestion / approveAll", () => {
+  const Q_ID = "00000000-0000-7000-8000-0000000000d1";
+  const QUESTION = { id: Q_ID, text: "[QUESTION]", topic: "[TOPIC]", row_version: 3 };
+  const ok = (data: unknown) => ({ data, response: new Response(null, { status: 200 }) });
+  const base = { opportunityId: OPP_ID, questionId: Q_ID, rowVersion: 2 };
+
+  it("PATCHes the text and topic with If-Match", async () => {
+    api.PATCH.mockResolvedValue(ok(QUESTION));
+    expect(
+      await editClarificationQuestion({ ...base, text: "[QUESTION]", topic: "[TOPIC]" }),
+    ).toEqual({ kind: "ok", question: QUESTION });
+    expect(api.PATCH).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, question_id: Q_ID },
+          header: { "If-Match": '"2"' },
+        },
+        body: { text: "[QUESTION]", topic: "[TOPIC]" },
+      },
+    );
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await editClarificationQuestion(base)).toEqual({ kind: "error" }); // nothing to change
+    expect(await editClarificationQuestion({ ...base, topic: 7 })).toEqual({ kind: "error" });
+    expect(await editClarificationQuestion({ ...base, questionId: "x", text: "a" })).toEqual({
+      kind: "error",
+    });
+    expect(await approveClarificationQuestion({ ...base, rowVersion: -1 })).toEqual({
+      kind: "error",
+    });
+    expect(await approveAllClarificationQuestions("nope", [])).toEqual({ kind: "error" });
+    expect(
+      await approveAllClarificationQuestions(OPP_ID, [{ id: "x", row_version: 1 }]),
+    ).toEqual({ kind: "error" });
+    expect(await approveAllClarificationQuestions(OPP_ID, undefined)).toEqual({ kind: "error" });
+    expect(api.PATCH).not.toHaveBeenCalled();
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it("on 412 reads who last changed the question", async () => {
+    api.PATCH.mockResolvedValue({ error: { code: "row_version_mismatch" }, response: status(412) });
+    api.GET.mockResolvedValue(
+      ok({
+        items: [
+          { id: "g", question: { ...QUESTION, last_changed_by: { id: USER_ID, name: "[OTHER]" } } },
+        ],
+      }),
+    );
+    expect(await editClarificationQuestion({ ...base, text: "a" })).toEqual({
+      kind: "stale",
+      changedBy: "[OTHER]",
+    });
+  });
+
+  it.each([
+    [409, { kind: "gap-not-open" }],
+    [422, { kind: "invalid", detail: "The question can't be blank." }],
+    [403, { kind: "forbidden" }],
+    [404, { kind: "not-found" }],
+    [500, { kind: "error" }],
+  ])("maps %i on approve", async (code, expected) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({
+      error: { code: "x", detail: "The question can't be blank." },
+      response: status(code),
+    });
+    expect(await approveClarificationQuestion(base)).toEqual(expected);
+  });
+
+  it.each([
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i on approve all to %s", async (code, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: status(code) });
+    expect(await approveAllClarificationQuestions(OPP_ID, [])).toEqual({ kind });
+  });
+
+  it("on 412 for approve all reads who changed a shown question", async () => {
+    api.POST.mockResolvedValue({ error: { code: "row_version_mismatch" }, response: status(412) });
+    api.GET.mockResolvedValue(
+      ok({
+        items: [
+          {
+            id: "g",
+            question: {
+              ...QUESTION,
+              status: "drafted",
+              row_version: 4,
+              last_changed_by: { id: USER_ID, name: "[OTHER]" },
+            },
+          },
+        ],
+      }),
+    );
+    expect(
+      await approveAllClarificationQuestions(OPP_ID, [{ id: Q_ID, row_version: 3 }]),
+    ).toEqual({ kind: "stale", changedBy: "[OTHER]" });
+  });
+
+  it("POSTs approve with If-Match, and approve-all with the shown questions", async () => {
+    api.POST.mockResolvedValueOnce(ok(QUESTION)).mockResolvedValueOnce(ok({ count: 1 }));
+    await approveClarificationQuestion({ ...base, rowVersion: 5 });
+    expect(
+      await approveAllClarificationQuestions(OPP_ID, [{ id: Q_ID, row_version: 3 }]),
+    ).toEqual({ kind: "ok", count: 1 });
+    expect(api.POST.mock.calls).toEqual([
+      [
+        "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/approve",
+        {
+          params: {
+            path: { opportunity_id: OPP_ID, question_id: Q_ID },
+            header: { "If-Match": '"5"' },
+          },
+        },
+      ],
+      [
+        "/api/v1/opportunities/{opportunity_id}/clarification-questions/approve-all",
+        {
+          params: { path: { opportunity_id: OPP_ID } },
+          body: [{ id: Q_ID, row_version: 3 }],
+        },
+      ],
+    ]);
   });
 });

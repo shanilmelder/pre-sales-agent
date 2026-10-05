@@ -2,10 +2,13 @@
 
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.gaps.domain.gaps import (
+    QUESTION_MAX,
+    TOPIC_MAX,
     ConvertedTo,
     DetectionErrorCode,
     DetectionStatus,
@@ -15,6 +18,7 @@ from app.modules.gaps.domain.gaps import (
     Impact,
     QuestionStatus,
 )
+from app.modules.opportunities.application.public import UserRef
 
 
 class GapTrigger(BaseModel):
@@ -37,12 +41,53 @@ class GapRequirement(BaseModel):
 
 
 class ClarificationQuestion(BaseModel):
+    """A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5);
+    `status_changed_at` moves on every status change. `approved_by` / `approved_at` are set
+    only while `approved`. `edited_by_human`: a person changed its text or topic.
+    `last_changed_by`: the person behind its latest edit or approval (null for the agent's
+    draft)."""
+
     id: str
     text: str
     topic: str
     status: QuestionStatus
     status_changed_at: datetime
     row_version: int = Field(ge=1)
+    approved_by: UserRef | None
+    approved_at: datetime | None
+    edited_by_human: bool
+    last_changed_by: UserRef | None
+
+
+class QuestionChanges(BaseModel):
+    """A person's edit of a Clarification Question (Story 4.5). Fields left out stay as they
+    are."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: StrictStr | None = Field(
+        default=None,
+        description=f"The new question. Trimmed, it must be 1 to {QUESTION_MAX:,} characters.",
+    )
+    topic: StrictStr | None = Field(
+        default=None,
+        description=f"The new topic. Trimmed, it must be 1 to {TOPIC_MAX} characters.",
+    )
+
+
+class QuestionVersion(BaseModel):
+    """A drafted question as the client shows it, for **Approve all** (Story 4.5)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    row_version: int = Field(ge=0)
+
+
+class ApproveAllResult(BaseModel):
+    """How many questions **Approve all** approved (the drafted questions of open Gaps)."""
+
+    count: int = Field(ge=0)
 
 
 class Gap(BaseModel):
@@ -77,9 +122,12 @@ class GapList(BaseModel):
     """The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
     within an impact, followed by its converted Gaps in the same order (Story 8.4); and its
     latest detection (null when none has been queued yet).
-    `can_start_detection`: whether the caller may start (retry) a detection. The UI only
-    uses it to hide controls; the API decides."""
+    `can_start_detection`: whether the caller may start (retry) a detection;
+    `can_edit_questions`: whether the caller may edit and approve Clarification Questions
+    (Story 4.5). The UI only uses them to hide controls; the API decides. A sales
+    representative sees only approved questions: other Gaps come with `question` null."""
 
     items: list[Gap]
     detection: Detection | None
     can_start_detection: bool
+    can_edit_questions: bool

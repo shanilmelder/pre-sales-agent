@@ -695,20 +695,25 @@ describe("/opportunities/[id] workspace", () => {
             id: "00000000-0000-7000-8000-0000000000f2",
             text: "[QUESTION]",
             topic: "[TOPIC]",
-            status: "drafted",
+            status: "approved",
             status_changed_at: "2026-10-05T09:00:00Z",
-            row_version: 1,
+            row_version: 2,
+            approved_by: { id: "00000000-0000-7000-8000-0000000000f3", name: "[OWNER]" },
+            approved_at: "2026-10-05T09:00:00Z",
+            edited_by_human: false,
+            last_changed_by: { id: "00000000-0000-7000-8000-0000000000f3", name: "[OWNER]" },
           },
         },
       ],
       detection: { status: "succeeded", error_code: null },
       can_start_detection: false,
+      can_edit_questions: false,
     });
     const { container } = await renderWorkspace("gaps");
     expect(selectedTabs()).toEqual(["4Gaps"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
-    expect(within(panel).getByRole("row").textContent).toBe("HighIntegration details[GAP]Draft");
+    expect(within(panel).getByRole("row").textContent).toBe("HighIntegration details[GAP]Approved");
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps", {
       params: { path: { opportunity_id: OPP_ID } },
@@ -718,7 +723,12 @@ describe("/opportunities/[id] workspace", () => {
 
   it("tab URL /gaps: the empty state", async () => {
     signedIn(["presales_engineer"]);
-    foundWithGaps({ items: [], detection: null, can_start_detection: true });
+    foundWithGaps({
+      items: [],
+      detection: null,
+      can_start_detection: true,
+      can_edit_questions: true,
+    });
     await renderWorkspace("gaps");
     expect(
       within(screen.getByRole("tabpanel")).getByText(

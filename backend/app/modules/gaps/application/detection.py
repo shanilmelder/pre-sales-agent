@@ -16,7 +16,8 @@ Opportunity's detection lock until commit.
 3. No Unit of Work open: `clarification_agent` proposes Gaps through the ModelGateway.
 4. `accept_gap_detection`, one Unit of Work: validates every candidate (the related labels
    must resolve to Requirements still active at the version read), supersedes the earlier
-   open, detected Gaps with their questions, stores the new Gaps, their Requirement links and
+   open, detected Gaps with their questions (except those whose question a person edited or
+   approved, Story 4.5: they are kept as they are), stores the new Gaps, their Requirement links and
    their drafted questions, marks the detection `succeeded` with its counts, and traces
    `gaps.gap.raised` and `gaps.clarification_question.drafted` per Gap and
    `gaps.detection.completed`; and queues the Opportunity's Estimate draft
@@ -232,6 +233,7 @@ async def accept_gap_detection(
             dropped_count=0,
             requirement_count=len(requirements),
             superseded_count=0,
+            kept_count=0,
         )
         await _succeed(uow, record, outdated, actor)
         _log.info("gaps.detection_outdated", extra={**ids, **outdated.model_dump()})
@@ -242,7 +244,7 @@ async def accept_gap_detection(
             extra={**ids, "dropped_count": validation.dropped},
         )
         raise ModelOutputInvalidError("Every proposed Gap was invalid.")
-    superseded = await repo.supersede_detected(uow, record.opportunity_id)
+    superseded, kept = await repo.supersede_detected(uow, record.opportunity_id)
     for gap in validation.gaps:
         gap_id = new_id()
         question_id = new_id()
@@ -288,6 +290,7 @@ async def accept_gap_detection(
         dropped_count=validation.dropped,
         requirement_count=len(requirements),
         superseded_count=superseded,
+        kept_count=kept,
     )
     await _succeed(uow, record, completed, actor)
     # Story 8.1: every successful Gap detection (re)queues the Opportunity's Estimate draft,
