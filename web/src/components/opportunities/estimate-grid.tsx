@@ -12,6 +12,7 @@ import {
   AssumptionsRegister,
   OriginGapInspector,
 } from "@/components/opportunities/assumptions-register";
+import { EstimateExport } from "@/components/opportunities/estimate-export";
 import { EstimateInspector } from "@/components/opportunities/estimate-inspector";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -299,11 +300,14 @@ export function EstimateGrid({
 /** The header above the grid: the version pill and how many Requirements no line covers;
  * "Drafting Estimate" with a running dot while a draft is queued or running ("Still
  * drafting — reload to check." once polling has stopped); "Estimate draft failed:
- * <reason>" with **Retry** (only for those who may start a draft) once failed. */
+ * <reason>" with **Retry** (only for those who may start a draft) once failed; and **Export**
+ * (Story 8.8) when there is a version and the caller may export it. */
 export function EstimateHeader({
   version,
   draft,
   canStart = false,
+  opportunityId,
+  canExport = false,
   busy = false,
   message = null,
   stalled = false,
@@ -312,6 +316,9 @@ export function EstimateHeader({
   version: EstimateVersion | null;
   draft: EstimateDraft | null;
   canStart?: boolean;
+  /** Needed for **Export**; without it the control is hidden. */
+  opportunityId?: string;
+  canExport?: boolean;
   /** A Retry is in flight. */
   busy?: boolean;
   /** A Retry's failure sentence. */
@@ -327,6 +334,9 @@ export function EstimateHeader({
     <div className="flex flex-col items-start gap-1">
       <div className="flex flex-wrap items-center gap-3">
         {version ? <VersionPill version={version} /> : null}
+        {version && canExport && opportunityId ? (
+          <EstimateExport opportunityId={opportunityId} />
+        ) : null}
         {version && version.uncovered_count > 0 ? (
           <p className="flex items-center gap-1.5 text-label text-foreground">
             <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
@@ -573,6 +583,8 @@ export function EstimateSection({
         version={version}
         draft={draft}
         canStart={view.can_start_draft}
+        opportunityId={opportunityId}
+        canExport={view.can_export}
         busy={busy}
         message={message}
         stalled={stalled}

@@ -157,6 +157,7 @@ function view(v: EstimateVersion, canAccept = true): EstimateView {
     draft: { status: "succeeded", error_code: null },
     can_start_draft: canAccept,
     can_accept_assumptions: canAccept,
+    can_export: false,
   };
 }
 

@@ -1,19 +1,22 @@
 """Estimate routes (Stories 8.1 and 8.4): `GET /api/v1/opportunities/{opportunity_id}/estimate`,
 `POST /api/v1/opportunities/{opportunity_id}/estimate-drafts`, and accepting Assumptions
-(`POST …/assumptions/{assumption_id}/accept`, `POST …/assumptions/accept-all`). No endpoint
+(`POST …/assumptions/{assumption_id}/accept`, `POST …/assumptions/accept-all`), and
+exporting the Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`). No endpoint
 accepts a total."""
 
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Response
+from fastapi import APIRouter, Header, Query, Response
 
 from app.modules.estimates.application import public as estimates
+from app.modules.estimates.application.export_content import MEDIA_TYPES
 from app.modules.estimates.application.public import (
     AcceptAllResult,
     Assumption,
     EstimateDraft,
     EstimateView,
+    ExportFormat,
 )
 from app.modules.identity.application.public import CurrentPrincipal
 from app.platform.concurrency import etag
@@ -152,3 +155,62 @@ async def accept_assumption(
     )
     response.headers["ETag"] = etag(accepted.row_version)
     return accepted
+
+
+# --- Export (Story 8.8) ---------------------------------------------------------------------
+
+_EXPORT_409 = "The Opportunity has no Estimate Version to export yet (`estimate_not_found`)"
+_EXPORT_422 = (
+    "The Opportunity id is not a UUID, or `format` is missing or not `xlsx` or `docx` "
+    "(`validation_error`)"
+)
+_FORMAT = Annotated[
+    ExportFormat,
+    Query(alias="format", description="`xlsx` (a workbook) or `docx` (a document)."),
+]
+
+
+def _export_responses() -> dict[int | str, dict[str, Any]]:
+    responses = _responses(403, 404)
+    responses[409] = {"description": _EXPORT_409, "content": PROBLEM_CONTENT}
+    responses[422] = {"description": _EXPORT_422, "content": PROBLEM_CONTENT}
+    responses[200] = {
+        "description": "The file, as an attachment named "
+        "`{opportunity-slug}-estimate-v{n}.{xlsx|docx}`",
+        "content": {
+            media_type: {"schema": {"type": "string", "format": "binary"}}
+            for media_type in MEDIA_TYPES.values()
+        },
+        "headers": {
+            "Content-Disposition": {
+                "description": '`attachment; filename="…"`',
+                "schema": {"type": "string"},
+            }
+        },
+    }
+    return responses
+
+
+@router.get(
+    "/estimate/export",
+    operation_id="export_estimate",
+    response_class=Response,
+    responses=_export_responses(),
+)
+async def export_estimate(
+    opportunity_id: UUID, export_format: _FORMAT, actor: CurrentPrincipal, uow: UoW
+) -> Response:
+    """Download the current draft Estimate Version as one file: the Estimate (lines by
+    section, subtotals, totals), the Assumptions Register and the Clarification Questions,
+    each under the header "Estimate v{n} · Draft — not submitted". Built on request from the
+    same read models as `GET …/estimate`; every number is the server-calculated one. The
+    owner and collaborators, except sales representatives."""
+    exported = await estimates.export_estimate(uow, actor, opportunity_id, export_format)
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{exported.file_name}"',
+            "Cache-Control": "no-store",
+        },
+    )

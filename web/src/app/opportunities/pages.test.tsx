@@ -609,6 +609,7 @@ describe("/opportunities/[id] workspace", () => {
       draft: { status: "succeeded", error_code: null },
       can_start_draft: false,
       can_accept_assumptions: false,
+      can_export: false,
     });
     const { container } = await renderWorkspace("estimate");
     expect(selectedTabs()).toEqual(["7Estimate"]);
@@ -630,6 +631,7 @@ describe("/opportunities/[id] workspace", () => {
       draft: null,
       can_start_draft: true,
       can_accept_assumptions: true,
+      can_export: true,
     });
     await renderWorkspace("estimate");
     expect(

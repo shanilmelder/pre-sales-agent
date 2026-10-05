@@ -9,6 +9,8 @@ from app.modules.estimates.application.estimates import (
     get_estimate,
     start_draft,
 )
+from app.modules.estimates.application.export import ExportFile, export_estimate
+from app.modules.estimates.application.export_content import ExportFormat
 from app.modules.estimates.application.line_refs import (
     LineRef,
     VersionLines,
@@ -54,6 +56,8 @@ __all__ = [
     "EstimateSection",
     "EstimateVersion",
     "EstimateView",
+    "ExportFile",
+    "ExportFormat",
     "LineRef",
     "LineRequirement",
     "OriginGap",
@@ -66,6 +70,7 @@ __all__ = [
     "accept_assumption",
     "current_version_lines",
     "enqueue_draft",
+    "export_estimate",
     "get_estimate",
     "start_draft",
     "version_lines",

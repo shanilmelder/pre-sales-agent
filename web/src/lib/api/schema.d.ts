@@ -558,6 +558,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/estimate/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Estimate
+         * @description Download the current draft Estimate Version as one file: the Estimate (lines by
+         *     section, subtotals, totals), the Assumptions Register and the Clarification Questions,
+         *     each under the header "Estimate v{n} · Draft — not submitted". Built on request from the
+         *     same read models as `GET …/estimate`; every number is the server-calculated one. The
+         *     owner and collaborators, except sales representatives.
+         */
+        get: operations["export_estimate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/red-team": {
         parameters: {
             query?: never;
@@ -884,8 +908,9 @@ export interface components {
          * EstimateView
          * @description The Opportunity's current (draft) Estimate Version, null before the first, and its
          *     latest draft run, null before the first. `can_start_draft`: whether the caller may start
-         *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions. The
-         *     UI only uses them to hide controls; the API decides.
+         *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
+         *     `can_export`: whether the caller may export the Estimate (Story 8.8). The UI only uses
+         *     them to hide controls; the API decides.
          */
         EstimateView: {
             version: components["schemas"]["EstimateVersion"] | null;
@@ -894,7 +919,14 @@ export interface components {
             can_start_draft: boolean;
             /** Can Accept Assumptions */
             can_accept_assumptions: boolean;
+            /** Can Export */
+            can_export: boolean;
         };
+        /**
+         * ExportFormat
+         * @enum {string}
+         */
+        ExportFormat: "xlsx" | "docx";
         /**
          * Extraction
          * @description The Opportunity's latest Requirement extraction. `error_code` is set only when
@@ -5731,6 +5763,166 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    export_estimate: {
+        parameters: {
+            query: {
+                /** @description `xlsx` (a workbook) or `docx` (a document). */
+                format: components["schemas"]["ExportFormat"];
+            };
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file, as an attachment named `{opportunity-slug}-estimate-v{n}.{xlsx|docx}` */
+            200: {
+                headers: {
+                    /** @description `attachment; filename="…"` */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity has no Estimate Version to export yet (`estimate_not_found`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID, or `format` is missing or not `xlsx` or `docx` (`validation_error`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

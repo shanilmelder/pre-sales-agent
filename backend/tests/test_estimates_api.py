@@ -49,12 +49,14 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "draft": None,
         "can_start_draft": True,
         "can_accept_assumptions": True,
+        "can_export": True,
     }
     assert theirs.json() == {
         "version": None,
         "draft": None,
         "can_start_draft": False,
         "can_accept_assumptions": False,
+        "can_export": False,
     }
 
 

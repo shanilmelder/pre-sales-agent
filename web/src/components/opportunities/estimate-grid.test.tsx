@@ -127,6 +127,7 @@ function view(v: EstimateVersion | null, draft: EstimateDraft | null, canStart =
     draft,
     can_start_draft: canStart,
     can_accept_assumptions: canStart,
+    can_export: false,
   } satisfies EstimateView;
 }
 
@@ -317,6 +318,17 @@ describe("EstimateHeader", () => {
 });
 
 describe("EstimateSection", () => {
+  it("shows Export when the caller may export the version", () => {
+    renderSection({ ...view(version(2), succeeded), can_export: true });
+    expect(screen.getByRole("button", { name: /^Export/ })).toBeTruthy();
+  });
+
+  it("hides Export from a caller who may not export the version", () => {
+    renderSection(view(version(2), succeeded));
+    expect(screen.getByText("Draft v2")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Export/ })).toBeNull();
+  });
+
   it("shows the empty sentence before any draft", () => {
     renderSection(view(null, null));
     expect(screen.getByText("The Estimate is drafted after Gaps are detected.")).toBeTruthy();
