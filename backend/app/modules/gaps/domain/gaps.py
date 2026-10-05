@@ -8,8 +8,11 @@ added later without a schema change.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime
 from enum import StrEnum
+from typing import Literal
+from uuid import UUID
 
 DETECTION_SUBJECT_TYPE = "gaps.detection"
 """The trace subject of a detection run."""
@@ -68,6 +71,8 @@ class ConvertedTo(StrEnum):
 
 class QuestionStatus(StrEnum):
     DRAFTED = "drafted"
+    APPROVED = "approved"
+    """Story 4.5: a person approved it. Editing its text or topic returns it to `drafted`."""
     SUPERSEDED = "superseded"
     """Set together with its Gap's `superseded` by a newer detection."""
 
@@ -202,3 +207,86 @@ def validate_candidates[K](
         seen.add(_key(valid))
         kept.append(valid)
     return Validation(tuple(kept), dropped)
+
+
+# --- editing and approving Clarification Questions (Story 4.5) ------------------------------
+
+QuestionField = Literal["text", "topic"]
+
+
+class QuestionNotEditableError(ValueError):
+    """The question is `superseded`: it can't be edited or approved."""
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionState:
+    """What editing and approving change on a Clarification Question."""
+
+    text: str = field(repr=False)
+    topic: str = field(repr=False)
+    status: QuestionStatus
+    approved_by: UUID | None = None
+    approved_at: datetime | None = None
+    edited_by_human: bool = False
+
+
+def question_text(raw: str) -> str:
+    """The question text trimmed; ValueError (with the sentence to show) unless 1 to
+    `QUESTION_MAX` characters."""
+    trimmed = _bounded(raw, QUESTION_MAX)
+    if trimmed is None:
+        raise ValueError(
+            f"The question must be 1 to {QUESTION_MAX:,} characters long once trimmed."
+        )
+    return trimmed
+
+
+def question_topic(raw: str) -> str:
+    """The topic trimmed; ValueError (with the sentence to show) unless 1 to `TOPIC_MAX`
+    characters."""
+    trimmed = _bounded(raw, TOPIC_MAX)
+    if trimmed is None:
+        raise ValueError(f"The topic must be 1 to {TOPIC_MAX} characters long once trimmed.")
+    return trimmed
+
+
+def edit_question(
+    state: QuestionState, *, text: str | None = None, topic: str | None = None
+) -> tuple[QuestionState, tuple[QuestionField, ...]]:
+    """The question after a person's edit, and which fields changed (none: `state` itself).
+    `text` and `topic` are already validated. A change marks it `edited_by_human` and returns
+    an approved question to `drafted`, clearing its approval."""
+    if state.status == QuestionStatus.SUPERSEDED:
+        raise QuestionNotEditableError("A superseded question can't be edited.")
+    changed: list[QuestionField] = []
+    if text is not None and text != state.text:
+        changed.append("text")
+    if topic is not None and topic != state.topic:
+        changed.append("topic")
+    if not changed:
+        return state, ()
+    edited = replace(
+        state,
+        text=state.text if text is None else text,
+        topic=state.topic if topic is None else topic,
+        status=QuestionStatus.DRAFTED,
+        approved_by=None,
+        approved_at=None,
+        edited_by_human=True,
+    )
+    return edited, tuple(changed)
+
+
+def approve_question(state: QuestionState, *, user_id: UUID, at: datetime) -> QuestionState:
+    """The question approved by `user_id` at `at`; an approved question stays as it is."""
+    if state.status == QuestionStatus.SUPERSEDED:
+        raise QuestionNotEditableError("A superseded question can't be approved.")
+    if state.status == QuestionStatus.APPROVED:
+        return state
+    return replace(state, status=QuestionStatus.APPROVED, approved_by=user_id, approved_at=at)
+
+
+def touched(*, status: str, edited_by_human: bool) -> bool:
+    """Whether a person has touched the question (edited or approved it): a later detection
+    keeps its Gap instead of superseding it."""
+    return edited_by_human or status == QuestionStatus.APPROVED

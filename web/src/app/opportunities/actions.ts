@@ -15,7 +15,7 @@ import {
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Assumption, EstimateDraft } from "@/lib/estimates";
-import type { Detection } from "@/lib/gaps";
+import type { ClarificationQuestion, Detection } from "@/lib/gaps";
 import type { RedTeamRun } from "@/lib/red-team";
 import {
   codePointLength,
@@ -881,6 +881,239 @@ export async function confirmAllRequirements(opportunityId: unknown): Promise<Co
   } catch (thrown) {
     console.error(
       `confirm all requirements failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- editing and approving Clarification Questions (Story 4.5) -------------------------------
+
+export type QuestionEditInput = {
+  opportunityId: string;
+  questionId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  text?: string;
+  topic?: string;
+};
+
+export type QuestionApproveInput = {
+  opportunityId: string;
+  questionId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+};
+
+export type QuestionWriteResult =
+  | { kind: "ok"; question: ClarificationQuestion }
+  /** 412: someone changed the question first. `changedBy` is null when unknown. */
+  | { kind: "stale"; changedBy: string | null }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  /** 409 `gap_not_open`: the Gap was converted or replaced; nothing changed. */
+  | { kind: "gap-not-open" }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the question is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type ApproveAllQuestionsResult =
+  | { kind: "ok"; count: number }
+  /** 412: a shown question changed, or the drafted set differs; nothing was approved. */
+  | { kind: "stale"; changedBy: string | null }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isQuestionTarget(input: unknown): input is QuestionApproveInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, questionId, rowVersion } = input as Record<string, unknown>;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof questionId === "string" &&
+    UUID_RE.test(questionId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0
+  );
+}
+
+function isQuestionEdit(input: unknown): input is QuestionEditInput {
+  if (!isQuestionTarget(input)) return false;
+  const { text, topic } = input as Record<string, unknown>;
+  return (
+    (text === undefined || typeof text === "string") &&
+    (topic === undefined || typeof topic === "string") &&
+    (text !== undefined || topic !== undefined)
+  );
+}
+
+/** Who last changed the question, read again after a 412 (null when unknown). */
+async function questionChanger(opportunityId: string, questionId: string): Promise<string | null> {
+  const current = await listGaps(opportunityId);
+  if (current.kind !== "ok") return null;
+  return (
+    current.list.items.find((g) => g.question?.id === questionId)?.question?.last_changed_by
+      ?.name ?? null
+  );
+}
+
+async function questionWriteFailure(
+  action: string,
+  input: QuestionApproveInput,
+  status: number,
+  error: unknown,
+): Promise<QuestionWriteResult> {
+  switch (status) {
+    case 412:
+      return {
+        kind: "stale",
+        changedBy: await questionChanger(input.opportunityId, input.questionId),
+      };
+    case 422: {
+      const { detail } = problem(error);
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
+      };
+    }
+    case 409:
+      return { kind: "gap-not-open" };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${action} failed: status=${status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `PATCH /api/v1/opportunities/{id}/clarification-questions/{qid}` with `If-Match`: a
+ * question's text and/or topic. Never retries or overwrites on 412. Logs ids and statuses
+ * only. */
+export async function editClarificationQuestion(input: unknown): Promise<QuestionWriteResult> {
+  if (!isQuestionEdit(input)) return { kind: "error" };
+  const { opportunityId, questionId, rowVersion, text, topic } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, question_id: questionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: {
+          ...(text !== undefined ? { text } : {}),
+          ...(topic !== undefined ? { topic } : {}),
+        },
+      },
+    );
+    if (data) return { kind: "ok", question: data };
+    return await questionWriteFailure("edit question", input, response.status, error);
+  } catch (thrown) {
+    console.error(`edit question failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/clarification-questions/{qid}/approve` with `If-Match`.
+ * Approving one already approved is a no-op on the API. */
+export async function approveClarificationQuestion(input: unknown): Promise<QuestionWriteResult> {
+  if (!isQuestionTarget(input)) return { kind: "error" };
+  const { opportunityId, questionId, rowVersion } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/approve",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, question_id: questionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+      },
+    );
+    if (data) return { kind: "ok", question: data };
+    return await questionWriteFailure("approve question", input, response.status, error);
+  } catch (thrown) {
+    console.error(`approve question failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** A drafted question as the Gaps tab shows it, for **Approve all**. */
+export type ShownQuestion = { id: string; row_version: number };
+
+function isShownList(input: unknown): input is ShownQuestion[] {
+  return (
+    Array.isArray(input) &&
+    input.every(
+      (q) =>
+        typeof q === "object" &&
+        q !== null &&
+        typeof (q as Record<string, unknown>).id === "string" &&
+        UUID_RE.test((q as Record<string, unknown>).id as string) &&
+        typeof (q as Record<string, unknown>).row_version === "number" &&
+        Number.isSafeInteger((q as Record<string, unknown>).row_version) &&
+        ((q as Record<string, unknown>).row_version as number) >= 0,
+    )
+  );
+}
+
+/** Who changed one of the shown questions, read again after a 412 (null when unknown). */
+async function shownChanger(opportunityId: string, shown: ShownQuestion[]): Promise<string | null> {
+  const current = await listGaps(opportunityId);
+  if (current.kind !== "ok") return null;
+  const versions = new Map(shown.map((q) => [q.id, q.row_version]));
+  for (const gap of current.list.items) {
+    const question = gap.question;
+    if (!question) continue;
+    const seen = versions.get(question.id);
+    const changed =
+      seen === undefined ? question.status === "drafted" : seen !== question.row_version;
+    if (changed && question.last_changed_by) return question.last_changed_by.name;
+  }
+  return null;
+}
+
+/** `POST /api/v1/opportunities/{id}/clarification-questions/approve-all` with the drafted
+ * questions the tab shows (`[{id, row_version}]`): approves exactly those, all or nothing.
+ * A 412 (one changed, or the set differs) approves nothing. */
+export async function approveAllClarificationQuestions(
+  opportunityId: unknown,
+  shown: unknown,
+): Promise<ApproveAllQuestionsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId) || !isShownList(shown))
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/approve-all",
+      {
+        params: { path: { opportunity_id: opportunityId } },
+        body: shown.map(({ id, row_version }) => ({ id, row_version })),
+      },
+    );
+    if (data) return { kind: "ok", count: data.count };
+    switch (response.status) {
+      case 412:
+        return { kind: "stale", changedBy: await shownChanger(opportunityId, shown) };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `approve all questions failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `approve all questions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

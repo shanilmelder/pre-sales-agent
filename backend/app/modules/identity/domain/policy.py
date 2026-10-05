@@ -84,6 +84,9 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         # Starting (retrying) Gap detection (Story 4.3): like editing Requirements, the owner
         # and collaborators except sales representatives.
         Action.GAP_DETECTION_START: frozenset(),
+        # Editing and approving Clarification Questions (Story 4.5): the owner and
+        # collaborators except sales representatives.
+        Action.GAP_QUESTION_EDIT: frozenset(),
         # Starting (retrying) an Estimate draft (Story 8.1): the owner and collaborators
         # except sales representatives.
         Action.ESTIMATE_DRAFT_START: frozenset(),
@@ -103,6 +106,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
     {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.GAP_QUESTION_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_DRAFT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSUMPTION_ACCEPT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -121,6 +125,7 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
         Action.GAP_DETECTION_START,
+        Action.GAP_QUESTION_EDIT,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
@@ -134,6 +139,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
         Action.GAP_DETECTION_START,
+        Action.GAP_QUESTION_EDIT,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,

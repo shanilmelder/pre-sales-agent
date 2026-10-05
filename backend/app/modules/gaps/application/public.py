@@ -7,13 +7,17 @@ from app.modules.gaps.application.conversion import mark_converted
 from app.modules.gaps.application.gap_refs import GapSummary, gap_summaries, open_gap_summaries
 from app.modules.gaps.application.gaps import list_gaps, start_detection
 from app.modules.gaps.application.models import (
+    ApproveAllResult,
     ClarificationQuestion,
     Detection,
     Gap,
     GapList,
     GapRequirement,
     GapTrigger,
+    QuestionChanges,
+    QuestionVersion,
 )
+from app.modules.gaps.application.questions import approve_all, approve_question, edit_question
 from app.modules.gaps.domain.gaps import GapCategory, Impact
 from app.platform.uow import UnitOfWork
 
@@ -26,6 +30,7 @@ async def enqueue_detection(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 
 __all__ = [
+    "ApproveAllResult",
     "ClarificationQuestion",
     "Detection",
     "Gap",
@@ -35,6 +40,11 @@ __all__ = [
     "GapSummary",
     "GapTrigger",
     "Impact",
+    "QuestionChanges",
+    "QuestionVersion",
+    "approve_all",
+    "approve_question",
+    "edit_question",
     "enqueue_detection",
     "gap_summaries",
     "list_gaps",

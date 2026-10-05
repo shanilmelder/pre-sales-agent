@@ -116,6 +116,25 @@ describe("InlineField", () => {
     await user.keyboard("{Enter}");
     expect(onCommit).not.toHaveBeenCalled();
   });
+
+  it("a textarea takes Shift+Enter as a new line, and Enter saves", async () => {
+    const onCommit = vi.fn();
+    render(
+      <InlineField label="Edit note" inputLabel="Note" type="textarea" value="" onCommit={onCommit}>
+        <span>Note</span>
+      </InlineField>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit note" }));
+    const input = screen.getByRole("textbox", { name: "Note" }) as HTMLTextAreaElement;
+
+    await user.type(input, "a{Shift>}{Enter}{/Shift}b");
+
+    expect(input.value).toBe("a\nb");
+    expect(onCommit).not.toHaveBeenCalled();
+    await user.keyboard("{Enter}");
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith("a\nb");
+  });
 });
 
 describe("EditableWorkspaceHeader", () => {

@@ -46,8 +46,18 @@ def test_before_any_detection_the_list_is_empty(client: TestClient, sync_engine:
     theirs = _get(client, reader, opp["id"])
 
     assert mine.status_code == 200, mine.text
-    assert mine.json() == {"items": [], "detection": None, "can_start_detection": True}
-    assert theirs.json() == {"items": [], "detection": None, "can_start_detection": False}
+    assert mine.json() == {
+        "items": [],
+        "detection": None,
+        "can_start_detection": True,
+        "can_edit_questions": True,
+    }
+    assert theirs.json() == {
+        "items": [],
+        "detection": None,
+        "can_start_detection": False,
+        "can_edit_questions": False,
+    }
 
 
 def test_the_list_ranks_open_gaps_with_requirements_and_questions(

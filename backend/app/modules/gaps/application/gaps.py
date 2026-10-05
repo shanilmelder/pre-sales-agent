@@ -1,8 +1,9 @@
 """Gap queries and the detection start command (Story 4.3).
 
 - `list_gaps`: the Opportunity's open Gaps, ranked by impact, then its converted Gaps (Story
-  8.4) in the same order, each with the Requirements it relates to and its drafted question,
-  and its latest detection (anyone who can read the Opportunity).
+  8.4) in the same order, each with the Requirements it relates to and its Clarification
+  Question, and its latest detection (anyone who can read the Opportunity; a sales
+  representative sees only approved questions, Story 4.5).
 - `start_detection`: queue a new detection, e.g. to retry a failed one
   (`gaps.detection.start`: the owner and collaborators except sales representatives; other
   readers 403, everyone else the Opportunity's 404). 409 `gap_detection_in_progress` while
@@ -11,11 +12,12 @@
 """
 
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from uuid import UUID
 
 from app.modules.gaps.adapters import repository as repo
-from app.modules.gaps.adapters.repository import DetectionRecord, GapRecord
+from app.modules.gaps.adapters.repository import DetectionRecord, GapRecord, QuestionRecord
 from app.modules.gaps.application.detection import fail_stale, queue_detection, stale_after
 from app.modules.gaps.application.models import (
     ClarificationQuestion,
@@ -38,9 +40,10 @@ from app.modules.gaps.domain.gaps import (
     impact_rank,
 )
 from app.modules.identity.application import public as identity
-from app.modules.identity.application.public import Action, Principal
+from app.modules.identity.application.public import Action, Principal, Role
 from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
+from app.modules.opportunities.application.public import UserRef
 from app.platform.errors import GapDetectionInProgressError
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
@@ -48,6 +51,7 @@ from app.platform.uow import UnitOfWork
 IN_PROGRESS_DETAIL = "Gaps are already being detected for this Opportunity."
 EXCERPT_MAX = 140
 INACTIVE_LABEL = "Superseded"
+UNKNOWN_USER = "Unknown user"
 _log = get_logger(__name__)
 
 
@@ -87,10 +91,54 @@ def _ranked(records: list[GapRecord]) -> list[GapRecord]:
     return sorted(records, key=lambda g: (impact_rank(g.impact), g.created_at, g.id))
 
 
-async def gap_views(uow: UnitOfWork, opportunity_id: UUID, records: list[GapRecord]) -> list[Gap]:
+def question_view(question: QuestionRecord, names: Mapping[UUID, str]) -> ClarificationQuestion:
+    def ref(user_id: UUID | None) -> UserRef | None:
+        if user_id is None:
+            return None
+        return UserRef(id=str(user_id), name=names.get(user_id, UNKNOWN_USER))
+
+    return ClarificationQuestion(
+        id=str(question.id),
+        text=question.text,
+        topic=question.topic,
+        status=QuestionStatus(question.status),
+        status_changed_at=question.status_changed_at,
+        row_version=question.row_version,
+        approved_by=ref(question.approved_by),
+        approved_at=question.approved_at,
+        edited_by_human=question.edited_by_human,
+        last_changed_by=ref(question.changed_by),
+    )
+
+
+async def question_names(uow: UnitOfWork, questions: Iterable[QuestionRecord]) -> dict[UUID, str]:
+    """The names of the people who approved or last changed these questions."""
+    wanted = {
+        user_id
+        for q in questions
+        for user_id in (q.approved_by, q.changed_by)
+        if user_id is not None
+    }
+    return await identity.user_names(uow, wanted) if wanted else {}
+
+
+async def gap_views(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    records: list[GapRecord],
+    *,
+    approved_only: bool = False,
+) -> list[Gap]:
+    """The read models of these Gaps, in the given order. With `approved_only` (a sales
+    representative's view, Story 4.5), a question that isn't `approved` is left out."""
     gap_ids = [g.id for g in records]
     links = await repo.links_for(uow, gap_ids)
     questions = await repo.questions_for(uow, gap_ids)
+    if approved_only:
+        questions = {
+            gap_id: q for gap_id, q in questions.items() if q.status == QuestionStatus.APPROVED
+        }
+    names = await question_names(uow, questions.values())
     active = {
         s.id: s.number for s in await intake.active_requirement_snapshots(uow, opportunity_id)
     }
@@ -134,19 +182,16 @@ async def gap_views(uow: UnitOfWork, opportunity_id: UUID, records: list[GapReco
                 requirements=[
                     r for _, r in sorted(related[g.id], key=lambda pair: (pair[0], pair[1].id))
                 ],
-                question=None
-                if question is None
-                else ClarificationQuestion(
-                    id=str(question.id),
-                    text=question.text,
-                    topic=question.topic,
-                    status=QuestionStatus(question.status),
-                    status_changed_at=question.status_changed_at,
-                    row_version=question.row_version,
-                ),
+                question=None if question is None else question_view(question, names),
             )
         )
     return views
+
+
+def sees_only_approved_questions(actor: Principal) -> bool:
+    """A sales representative (every role they hold is sales representative) sees only
+    approved Clarification Questions (Story 4.5)."""
+    return bool(actor.roles) and actor.roles <= {Role.SALES_REPRESENTATIVE}
 
 
 async def list_gaps(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> GapList:
@@ -155,9 +200,12 @@ async def list_gaps(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> 
         await repo.gaps_in(uow, opportunity_id, GapStatus.CONVERTED.value)
     )
     return GapList(
-        items=await gap_views(uow, opportunity_id, records),
+        items=await gap_views(
+            uow, opportunity_id, records, approved_only=sees_only_approved_questions(actor)
+        ),
         detection=_detection(await repo.latest_detection(uow, opportunity_id)),
         can_start_detection=identity.can(actor, Action.GAP_DETECTION_START, resource),
+        can_edit_questions=identity.can(actor, Action.GAP_QUESTION_EDIT, resource),
     )
 
 

@@ -146,13 +146,19 @@ def _gap(title: str, status: str, question: str | None, q_status: str = "drafted
                 "status": q_status,
                 "status_changed_at": "2026-10-05T10:00:00Z",
                 "row_version": 1,
+                "approved_by": {"id": "0199b1a0-0000-7000-8000-000000000600", "name": "Owner"}
+                if q_status == "approved"
+                else None,
+                "approved_at": "2026-10-05T11:00:00Z" if q_status == "approved" else None,
+                "edited_by_human": False,
+                "last_changed_by": None,
             },
         }
     )
 
 
 GAPS = [
-    _gap("WMS version unknown", "converted", "Which WMS version?"),
+    _gap("WMS version unknown", "converted", "Which WMS version?", q_status="approved"),
     _gap("Peak order volume", "open", "What is the peak?"),
     _gap("No question", "open", None),
 ]
@@ -281,9 +287,16 @@ def test_the_register_and_the_questions_sheets() -> None:
         ),
     ]
     assert questions == [
-        ("Gap", "Impact", "Topic", "Question", "Status"),
-        ("WMS version unknown", "Medium", "Interfaces", "Which WMS version?", "Converted"),
-        ("Peak order volume", "Medium", "Interfaces", "What is the peak?", "Open"),
+        ("Gap", "Impact", "Topic", "Question", "Question status", "Gap status"),
+        (
+            "WMS version unknown",
+            "Medium",
+            "Interfaces",
+            "Which WMS version?",
+            "Approved",
+            "Converted",
+        ),
+        ("Peak order volume", "Medium", "Interfaces", "What is the peak?", "Draft", "Open"),
     ]
 
 

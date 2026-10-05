@@ -27,6 +27,12 @@ describe("labels", () => {
     );
     expect(eventLabel("intake.source.parsed")).toBe("Source parsed");
     expect(eventLabel("estimates.estimate_version.exported")).toBe("Estimate exported");
+    expect(eventLabel("gaps.clarification_question.edited")).toBe(
+      "Clarification Question edited",
+    );
+    expect(eventLabel("gaps.clarification_question.approved")).toBe(
+      "Clarification Question approved",
+    );
     expect(eventLabel("brand.new.happened")).toBe("brand.new.happened");
     for (const [type, label] of Object.entries(EVENT_LABELS)) {
       expect(type).toMatch(/^[a-z_]+\.[a-z_]+\.[a-z_]+$/);

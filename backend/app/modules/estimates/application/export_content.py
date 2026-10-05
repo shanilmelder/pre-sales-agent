@@ -94,7 +94,9 @@ ASSUMPTION_COLUMNS = (
     "Accepted",
     "Carried",
 )
-QUESTION_COLUMNS = ("Gap", "Impact", "Topic", "Question", "Status")
+QUESTION_COLUMNS = ("Gap", "Impact", "Topic", "Question", "Question status", "Gap status")
+QUESTION_STATUS_LABELS = {"drafted": "Draft", "approved": "Approved"}
+"""The exported questions' statuses (Story 4.5); superseded questions are left out."""
 
 
 _XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -231,16 +233,17 @@ def _questions_table(gaps: Sequence[Gap]) -> Table:
                 gap.impact.value.capitalize(),
                 gap.question.topic,
                 gap.question.text,
+                QUESTION_STATUS_LABELS[gap.question.status.value],
                 gap.status.value.capitalize(),
             ),
         )
         for gap in gaps
         if gap.question is not None
-        and gap.question.status.value == "drafted"
+        and gap.question.status.value in QUESTION_STATUS_LABELS
         and gap.status.value in ("open", "converted")
     ]
     if not rows:
-        rows = [Row("item", (NONE_ROW, None, None, None, None))]
+        rows = [Row("item", (NONE_ROW, None, None, None, None, None))]
     return Table("Clarification Questions", QUESTION_COLUMNS, tuple(rows), frozenset())
 
 

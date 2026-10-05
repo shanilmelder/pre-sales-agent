@@ -459,8 +459,9 @@ export interface paths {
          * List Gaps
          * @description The Opportunity's open Gaps, high impact first, then medium, then low (oldest first
          *     within an impact), then its converted Gaps in the same order, each with the Requirements
-         *     it relates to and its drafted Clarification Question; and its latest Gap detection (null
-         *     before the first). Anyone who can read the Opportunity.
+         *     it relates to and its Clarification Question; and its latest Gap detection (null before
+         *     the first). Anyone who can read the Opportunity; a sales representative sees only
+         *     approved questions.
          */
         get: operations["list_gaps"];
         put?: never;
@@ -486,6 +487,74 @@ export interface paths {
          *     failed one. The owner and collaborators, except sales representatives.
          */
         post: operations["start_gap_detection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/clarification-questions/approve-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve All Clarification Questions
+         * @description Approve exactly the drafted Clarification Questions the client shows (`id` and
+         *     `row_version` each), all or nothing. If one changed or is no longer drafted, or a drafted
+         *     question of an open Gap isn't listed, 412 and nothing is approved. The owner and
+         *     collaborators, except sales representatives.
+         */
+        post: operations["approve_all_clarification_questions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit Clarification Question
+         * @description Change a Clarification Question's text and/or topic. A change marks it edited by a
+         *     person (so a later Gap detection keeps it) and returns an approved question to drafted.
+         *     Nothing changed: nothing is written. Only questions of open Gaps. The owner and
+         *     collaborators, except sales representatives.
+         */
+        patch: operations["edit_clarification_question"];
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Clarification Question
+         * @description Approve a Clarification Question as the caller (so a later Gap detection keeps it).
+         *     Already approved: nothing changes. Only questions of open Gaps. The owner and
+         *     collaborators, except sales representatives.
+         */
+        post: operations["approve_clarification_question"];
         delete?: never;
         options?: never;
         head?: never;
@@ -699,6 +768,14 @@ export interface components {
             total: number;
         };
         /**
+         * ApproveAllResult
+         * @description How many questions **Approve all** approved (the drafted questions of open Gaps).
+         */
+        ApproveAllResult: {
+            /** Count */
+            count: number;
+        };
+        /**
          * Assumption
          * @description An Assumption of the version: a `condition` (proposal-ready wording, no hours) or a
          *     `contingency` (`amount_hours`, and the line it is linked to, if any), made from one Gap
@@ -767,7 +844,14 @@ export interface components {
             /** Title */
             title: string;
         };
-        /** ClarificationQuestion */
+        /**
+         * ClarificationQuestion
+         * @description A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5);
+         *     `status_changed_at` moves on every status change. `approved_by` / `approved_at` are set
+         *     only while `approved`. `edited_by_human`: a person changed its text or topic.
+         *     `last_changed_by`: the person behind its latest edit or approval (null for the agent's
+         *     draft).
+         */
         ClarificationQuestion: {
             /** Id */
             id: string;
@@ -783,6 +867,12 @@ export interface components {
             status_changed_at: string;
             /** Row Version */
             row_version: number;
+            approved_by: components["schemas"]["UserRef"] | null;
+            /** Approved At */
+            approved_at: string | null;
+            /** Edited By Human */
+            edited_by_human: boolean;
+            last_changed_by: components["schemas"]["UserRef"] | null;
         };
         /**
          * Classification
@@ -1050,8 +1140,10 @@ export interface components {
          * @description The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
          *     within an impact, followed by its converted Gaps in the same order (Story 8.4); and its
          *     latest detection (null when none has been queued yet).
-         *     `can_start_detection`: whether the caller may start (retry) a detection. The UI only
-         *     uses it to hide controls; the API decides.
+         *     `can_start_detection`: whether the caller may start (retry) a detection;
+         *     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
+         *     (Story 4.5). The UI only uses them to hide controls; the API decides. A sales
+         *     representative sees only approved questions: other Gaps come with `question` null.
          */
         GapList: {
             /** Items */
@@ -1059,6 +1151,8 @@ export interface components {
             detection: components["schemas"]["Detection"] | null;
             /** Can Start Detection */
             can_start_detection: boolean;
+            /** Can Edit Questions */
+            can_edit_questions: boolean;
         };
         /**
          * GapOrigin
@@ -1353,10 +1447,40 @@ export interface components {
          */
         ProposalStatus: "queued" | "running" | "succeeded" | "failed";
         /**
+         * QuestionChanges
+         * @description A person's edit of a Clarification Question (Story 4.5). Fields left out stay as they
+         *     are.
+         */
+        QuestionChanges: {
+            /**
+             * Text
+             * @description The new question. Trimmed, it must be 1 to 1,000 characters.
+             */
+            text?: string | null;
+            /**
+             * Topic
+             * @description The new topic. Trimmed, it must be 1 to 80 characters.
+             */
+            topic?: string | null;
+        };
+        /**
          * QuestionStatus
          * @enum {string}
          */
-        QuestionStatus: "drafted" | "superseded";
+        QuestionStatus: "drafted" | "approved" | "superseded";
+        /**
+         * QuestionVersion
+         * @description A drafted question as the client shows it, for **Approve all** (Story 4.5).
+         */
+        QuestionVersion: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Row Version */
+            row_version: number;
+        };
         /**
          * RedTeamFinding
          * @description A Red Team Finding: its category, severity, specific title and argument, with the
@@ -5366,6 +5490,576 @@ export interface operations {
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    approve_all_clarification_questions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionVersion"][];
+            };
+        };
+        responses: {
+            /** @description How many questions were approved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApproveAllResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The listed questions differ from the drafted questions of open Gaps: one changed (row version), is no longer drafted, or a drafted one isn't listed (`row_version_mismatch`); nothing is approved */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID, or the body is not a list of `{id, row_version}` (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    edit_clarification_question: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the question as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionChanges"];
+            };
+        };
+        responses: {
+            /** @description The question */
+            200: {
+                headers: {
+                    /** @description The question's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarificationQuestion"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Clarification Question with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The question's Gap is not open: it was converted or superseded (`gap_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The question changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: the text is blank or longer than 1,000 characters, or the topic blank or longer than 80, once trimmed (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    approve_clarification_question: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the question as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The question */
+            200: {
+                headers: {
+                    /** @description The question's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarificationQuestion"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Clarification Question with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The question's Gap is not open: it was converted or superseded (`gap_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The question changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

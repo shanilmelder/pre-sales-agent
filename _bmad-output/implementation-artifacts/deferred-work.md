@@ -96,3 +96,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-5-red-team-flags.md`
   summary: [post-demo] Add a downgrade test for migration 0014 that seeds a queued Red Team job and asserts it is retired.
   evidence: Review triage row 18; CI's downgrade round-trip runs on empty tables.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-5-edit-questions.md`
+  summary: [post-demo] Make `tests/test_user_search.py::test_matches_email` independent of leftover users: it searches "Email Match" with limit 50, and a long-lived local DB had 53 such users, so it fails on any branch.
+  evidence: Seen during 4.5 verification on 2026-10-05; a fresh DB (CI) passes. Fix with a unique name per run or a narrower query.

@@ -85,6 +85,7 @@ def test_every_action_has_a_policy_entry() -> None:
     assert POLICY[Action.EXTRACTION_START] == frozenset()
     assert POLICY[Action.REQUIREMENT_EDIT] == frozenset()
     assert POLICY[Action.GAP_DETECTION_START] == frozenset()
+    assert POLICY[Action.GAP_QUESTION_EDIT] == frozenset()
     assert POLICY[Action.ESTIMATE_DRAFT_START] == frozenset()
     assert POLICY[Action.ASSUMPTION_ACCEPT] == frozenset()
     assert POLICY[Action.RED_TEAM_START] == frozenset()
@@ -101,6 +102,7 @@ def test_resource_scoped_grants() -> None:
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
         Action.GAP_DETECTION_START,
+        Action.GAP_QUESTION_EDIT,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
@@ -112,6 +114,7 @@ def test_resource_scoped_grants() -> None:
         Action.EXTRACTION_START,
         Action.REQUIREMENT_EDIT,
         Action.GAP_DETECTION_START,
+        Action.GAP_QUESTION_EDIT,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
@@ -120,6 +123,7 @@ def test_resource_scoped_grants() -> None:
     assert RELATION_EXCLUDED_ROLES == {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.GAP_QUESTION_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_DRAFT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSUMPTION_ACCEPT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -141,6 +145,8 @@ def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) ->
     assert can(member, Action.REQUIREMENT_EDIT, opportunity) is allowed
     assert can(owner, Action.GAP_DETECTION_START, opportunity) is allowed
     assert can(member, Action.GAP_DETECTION_START, opportunity) is allowed
+    assert can(owner, Action.GAP_QUESTION_EDIT, opportunity) is allowed
+    assert can(member, Action.GAP_QUESTION_EDIT, opportunity) is allowed
     assert can(owner, Action.ESTIMATE_DRAFT_START, opportunity) is allowed
     assert can(member, Action.ESTIMATE_DRAFT_START, opportunity) is allowed
     assert can(owner, Action.ASSUMPTION_ACCEPT, opportunity) is allowed
