@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AccessGate, hasAccess } from "@/components/access-gate";
+import { AdminNav } from "@/components/admin/admin-nav";
 import { UsersAdmin } from "@/components/admin/users-admin";
 import { AppShell } from "@/components/shell/app-shell";
 import type { components } from "@/lib/api/client";
@@ -106,6 +107,7 @@ export default async function AdminUsersPage({
             Role changes apply on the person&apos;s next request.
           </p>
         </div>
+        <AdminNav current="/admin/users" />
         {list.kind === "forbidden" ? <NoAccess /> : null}
         {list.kind === "error" ? (
           <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>

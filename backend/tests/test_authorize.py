@@ -24,8 +24,16 @@ from app.platform.errors import ForbiddenError
 
 ADMIN = Principal(Actor("user", "u-admin"), frozenset({Role.PLATFORM_ADMINISTRATOR}))
 ENGINEER = Principal(Actor("user", "u-pse"), frozenset({Role.PRESALES_ENGINEER}))
-ADMIN_ONLY = (Action.USER_LIST, Action.USER_ASSIGN_ROLE, Action.USER_REMOVE_ROLE)
-MODULES = {"identity", "opportunities", "intake", "gaps", "estimates", "assessments"}
+ADMIN_ONLY = (
+    Action.USER_LIST,
+    Action.USER_ASSIGN_ROLE,
+    Action.USER_REMOVE_ROLE,
+    Action.CATALOGUE_ENTRY_CREATE,
+    Action.CATALOGUE_ENTRY_EDIT,
+    Action.CATALOGUE_ENTRY_RETIRE,
+    Action.CATALOGUE_ENTRY_REACTIVATE,
+)
+MODULES = {"identity", "opportunities", "intake", "gaps", "estimates", "assessments", "knowledge"}
 
 
 def _user(roles: set[Role] | None = None) -> tuple[Principal, UUID]:

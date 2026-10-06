@@ -205,6 +205,14 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
+class CatalogueDuplicateError(ConflictError):
+    """A catalogue entry's code or name equals that of an active entry of the same kind
+    (Story 3.1)."""
+
+    code = "catalogue_duplicate"
+    title = "Catalogue entry already exists"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

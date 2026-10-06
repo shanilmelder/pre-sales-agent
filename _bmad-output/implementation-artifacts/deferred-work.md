@@ -107,3 +107,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-effort-comparison.md`
   summary: `specialist-assessments.test.tsx` "a cancel answered 409 re-reads the section" failed once in a full parallel `npm test` run, then passed in 4 further full runs and alone; likely a timing flake (waitFor under load), possibly touched by the new `router.refresh()` on run completion in the same component.
   evidence: Seen during Story 5.3 verification (2026-10-05); watch CI, and raise its waitFor timeout if it recurs.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-integration-type-and-work-package-catalogue.md`
+  summary: Add a partial unique index on active catalogue entries (kind, lower(code)) and (kind, lower(name)) and a concurrent-create test.
+  evidence: The duplicate rule is enforced only by a per-kind advisory lock in `knowledge/application/catalogue.py`; a writer that skips `lock_kind` could create duplicates, and no test races two creates (unverified, medium if real).

@@ -11,6 +11,7 @@ import {
   parseTraceFilters,
   relativeTime,
   subjectHref,
+  subjectLabel,
   subjectLinkText,
   subjectText,
   traceHref,
@@ -33,6 +34,9 @@ describe("labels", () => {
     expect(eventLabel("gaps.clarification_question.approved")).toBe(
       "Clarification Question approved",
     );
+    expect(eventLabel("knowledge.catalogue_entry.updated")).toBe("Catalogue entry updated");
+    expect(eventLabel("knowledge.catalogue_entry.reactivated")).toBe("Catalogue entry reactivated");
+    expect(subjectLabel("knowledge.catalogue_entry")).toBe("Catalogue entry");
     expect(eventLabel("brand.new.happened")).toBe("brand.new.happened");
     for (const [type, label] of Object.entries(EVENT_LABELS)) {
       expect(type).toMatch(/^[a-z_]+\.[a-z_]+\.[a-z_]+$/);

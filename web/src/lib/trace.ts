@@ -45,6 +45,10 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "assessments.assessment.completed": "Assessment completed",
   "assessments.assessment_run.completed": "Assessment run completed",
   "assessments.assessment_run.cancelled": "Assessment run cancelled",
+  "knowledge.catalogue_entry.created": "Catalogue entry created",
+  "knowledge.catalogue_entry.updated": "Catalogue entry updated",
+  "knowledge.catalogue_entry.retired": "Catalogue entry retired",
+  "knowledge.catalogue_entry.reactivated": "Catalogue entry reactivated",
 };
 
 /** An event type in plain words, or the raw type for one this build doesn't know. */
@@ -72,6 +76,7 @@ export const SUBJECTS: Readonly<
   "assessments.review": { label: "Red Team Review", tab: "assessments" },
   "assessments.assessment_run": { label: "Assessment run", tab: "assessments" },
   "assessments.assessment": { label: "Assessment", tab: "assessments" },
+  "knowledge.catalogue_entry": { label: "Catalogue entry", tab: null },
 };
 
 export function subjectLabel(subjectType: string): string {

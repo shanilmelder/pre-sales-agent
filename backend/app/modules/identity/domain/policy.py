@@ -102,6 +102,12 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         # Exporting the Estimate (Story 8.8): the owner and collaborators except sales
         # representatives.
         Action.ESTIMATE_EXPORT: frozenset(),
+        # Writing the Integration Type and Work Package catalogue (Story 3.1): platform
+        # administrators only. Reading it needs only a role.
+        Action.CATALOGUE_ENTRY_CREATE: frozenset({Role.PLATFORM_ADMINISTRATOR}),
+        Action.CATALOGUE_ENTRY_EDIT: frozenset({Role.PLATFORM_ADMINISTRATOR}),
+        Action.CATALOGUE_ENTRY_RETIRE: frozenset({Role.PLATFORM_ADMINISTRATOR}),
+        Action.CATALOGUE_ENTRY_REACTIVATE: frozenset({Role.PLATFORM_ADMINISTRATOR}),
     }
 )
 

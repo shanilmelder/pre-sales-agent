@@ -443,3 +443,52 @@ class AssessmentsAssessmentRunCompleted(TracePayload):
     task_count: int
     succeeded_count: int
     failed_count: int
+
+
+# --- knowledge ----------------------------------------------------------------------------
+# Story 3.1. Catalogue events have no Opportunity. Payloads hold ids, kinds and version
+# numbers only, never an entry's code, name, definition or retirement reason.
+
+
+@register
+class KnowledgeCatalogueEntryCreated(TracePayload):
+    """An administrator created a catalogue entry at version 1. Subject: the entry
+    (`knowledge.catalogue_entry`)."""
+
+    event_type: ClassVar[str] = "knowledge.catalogue_entry.created"
+
+    kind: str
+    version: int
+
+
+@register
+class KnowledgeCatalogueEntryUpdated(TracePayload):
+    """An administrator changed an entry's name and/or definition, saving a new version.
+    Subject: the entry. `from_version` and `to_version`: the version numbers before and
+    after."""
+
+    event_type: ClassVar[str] = "knowledge.catalogue_entry.updated"
+
+    kind: str
+    from_version: int
+    to_version: int
+
+
+@register
+class KnowledgeCatalogueEntryRetired(TracePayload):
+    """An administrator retired an entry. Subject: the entry. The reason is not traced."""
+
+    event_type: ClassVar[str] = "knowledge.catalogue_entry.retired"
+
+    kind: str
+    version: int
+
+
+@register
+class KnowledgeCatalogueEntryReactivated(TracePayload):
+    """An administrator reactivated a retired entry. Subject: the entry."""
+
+    event_type: ClassVar[str] = "knowledge.catalogue_entry.reactivated"
+
+    kind: str
+    version: int

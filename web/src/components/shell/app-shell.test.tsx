@@ -492,6 +492,13 @@ describe("c creates an Opportunity (presales engineers only)", () => {
     expect(push).toHaveBeenCalledWith("/opportunities/new");
   });
 
+  it("c is left to Admin → Catalogue, which opens its own create form", async () => {
+    pathname.current = "/admin/catalogue";
+    const { user } = renderShell({ roles: ["presales_engineer", "platform_administrator"] });
+    await user.keyboard("c");
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("c does nothing for other roles, and the cheat sheet leaves it out", async () => {
     const { user } = renderShell({ roles: ["head_of_delivery", "platform_administrator"] });
     await user.keyboard("c");

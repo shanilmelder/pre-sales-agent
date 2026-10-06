@@ -31,3 +31,7 @@ class Action(StrEnum):
     RED_TEAM_START = "assessments.red_team.start"
     ASSESSMENT_START = "assessments.assessment.start"
     ESTIMATE_EXPORT = "estimates.estimate.export"
+    CATALOGUE_ENTRY_CREATE = "knowledge.catalogue_entry.create"
+    CATALOGUE_ENTRY_EDIT = "knowledge.catalogue_entry.edit"
+    CATALOGUE_ENTRY_RETIRE = "knowledge.catalogue_entry.retire"
+    CATALOGUE_ENTRY_REACTIVATE = "knowledge.catalogue_entry.reactivate"

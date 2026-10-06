@@ -77,6 +77,9 @@ function sequenceKey(key: string): string {
   return /^[a-z]$/i.test(key) ? key.toLowerCase() : key;
 }
 
+/** The page that handles `c` itself (a new catalogue entry, not an Opportunity). */
+const CATALOGUE_PATH = "/admin/catalogue";
+
 const SEQUENCES = SHORTCUTS.filter(
   (s): s is Shortcut & { match: { kind: "sequence" } } => s.match.kind === "sequence",
 );
@@ -208,6 +211,9 @@ export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
         pending.current = { key, at: Date.now() };
         return;
       }
+
+      // Admin → Catalogue uses `c` for its own create form.
+      if (shortcut?.id === "create-opportunity" && pathname.startsWith(CATALOGUE_PATH)) return;
 
       if (shortcut) {
         event.preventDefault();
