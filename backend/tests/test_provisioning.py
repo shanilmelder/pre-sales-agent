@@ -1,6 +1,7 @@
 """First-sign-in provisioning and `GET /api/v1/me` against a real, migrated Postgres."""
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
@@ -14,7 +15,16 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.modules.identity.application.provisioning import provision_or_load
 from app.modules.identity.application.public import TokenIdentity
 from app.platform.uow import UnitOfWork, get_uow, unit_of_work
-from tests.auth_tokens import NAME_CLAIM, StubJWKSClient, auth_app, bearer, claims, make_token
+from tests.auth_tokens import (
+    NAME_CLAIM,
+    PERMISSIONS_CLAIM,
+    ROLES_CLAIM,
+    StubJWKSClient,
+    auth_app,
+    bearer,
+    claims,
+    make_token,
+)
 from tests.conftest import make_client, run_async
 
 
@@ -61,6 +71,7 @@ def test_first_token_provisions_once_and_returning_user_is_not_reprovisioned(
     assert body["name"] == "Test Person"
     assert body["email"] == "person@example.test"
     assert body["roles"] == []
+    assert body["permissions"] == []
     assert second.json() == body
 
     users = _users(sync_engine, sub)
@@ -89,19 +100,92 @@ def test_missing_name_claim_falls_back_to_email(db_url: str, sync_engine: Engine
     assert _users(sync_engine, sub)[0]["name"] == "person@example.test"
 
 
-def test_assigned_role_is_returned_on_next_request(db_url: str, sync_engine: Engine) -> None:
-    sub = _new_sub()
-    token = make_token(claims(sub))
-    with make_client(auth_app(db_url)) as client:
-        user_id = client.get("/api/v1/me", headers=bearer(token)).json()["id"]
-        with sync_engine.begin() as conn:
+def _cached_roles(engine: Engine, user_id: str) -> list[str]:
+    with engine.connect() as conn:
+        return list(
             conn.execute(
-                sa.text("INSERT INTO identity_user_roles (user_id, role) VALUES (:u, :r)"),
-                [{"u": user_id, "r": "presales_engineer"}, {"u": user_id, "r": "retired_role"}],
-            )
+                sa.text("SELECT role FROM identity_user_roles WHERE user_id = :u ORDER BY role"),
+                {"u": user_id},
+            ).scalars()
+        )
+
+
+def _ignored_claims_logs(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line]
+    return [r for r in records if r.get("event") == "identity.claim_values_ignored"]
+
+
+def test_roles_and_permissions_come_from_the_token(db_url: str, sync_engine: Engine) -> None:
+    token = make_token(
+        claims(
+            _new_sub(),
+            **{
+                ROLES_CLAIM: ["presales_engineer", "commercial"],
+                PERMISSIONS_CLAIM: ["opportunities.opportunity.create", "identity.user.search"],
+            },
+        )
+    )
+    with make_client(auth_app(db_url)) as client:
+        body = client.get("/api/v1/me", headers=bearer(token)).json()
+    assert body["roles"] == ["commercial", "presales_engineer"]
+    assert body["permissions"] == ["identity.user.search", "opportunities.opportunity.create"]
+    assert _cached_roles(sync_engine, body["id"]) == ["commercial", "presales_engineer"]
+
+
+def test_absent_claims_grant_nothing_and_are_not_a_401(db_url: str, sync_engine: Engine) -> None:
+    with make_client(auth_app(db_url)) as client:
+        resp = client.get("/api/v1/me", headers=bearer(make_token(claims(_new_sub()))))
+    assert resp.status_code == 200
+    assert (resp.json()["roles"], resp.json()["permissions"]) == ([], [])
+    assert _cached_roles(sync_engine, resp.json()["id"]) == []
+
+
+@pytest.mark.parametrize(
+    ("roles", "permissions"),
+    [
+        (["intern", "commercial"], ["foo.bar.baz", "identity.user.list"]),
+        (["commercial", 7, None], ["identity.user.list", {"x": 1}]),  # non-strings
+    ],
+    ids=["unknown-values", "malformed-items"],
+)
+def test_unknown_or_malformed_values_are_ignored_and_logged(
+    db_url: str, capsys: pytest.CaptureFixture[str], roles: list[Any], permissions: list[Any]
+) -> None:
+    token = make_token(claims(_new_sub(), **{ROLES_CLAIM: roles, PERMISSIONS_CLAIM: permissions}))
+    with make_client(auth_app(db_url)) as client:
+        resp = client.get("/api/v1/me", headers=bearer(token))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["roles"] == ["commercial"]
+    assert resp.json()["permissions"] == ["identity.user.list"]
+    (record,) = _ignored_claims_logs(capsys)
+    assert record["level"] == "warning"
+    assert record["user_id"] == resp.json()["id"]
+
+
+@pytest.mark.parametrize("value", ["presales_engineer", {"a": 1}, 42])
+def test_claim_that_is_not_a_list_grants_nothing(
+    db_url: str, capsys: pytest.CaptureFixture[str], value: Any
+) -> None:
+    token = make_token(claims(_new_sub(), **{ROLES_CLAIM: value, PERMISSIONS_CLAIM: value}))
+    with make_client(auth_app(db_url)) as client:
         resp = client.get("/api/v1/me", headers=bearer(token))
     assert resp.status_code == 200
-    assert resp.json()["roles"] == ["presales_engineer"]
+    assert (resp.json()["roles"], resp.json()["permissions"]) == ([], [])
+    (record,) = _ignored_claims_logs(capsys)
+    assert record["malformed_claims"] == [ROLES_CLAIM, PERMISSIONS_CLAIM]
+
+
+def test_role_change_takes_effect_with_the_next_token(db_url: str, sync_engine: Engine) -> None:
+    sub = _new_sub()
+    with make_client(auth_app(db_url)) as client:
+        first = client.get(
+            "/api/v1/me", headers=bearer(make_token(claims(sub, **{ROLES_CLAIM: ["commercial"]})))
+        )
+        user_id = first.json()["id"]
+        assert _cached_roles(sync_engine, user_id) == ["commercial"]
+        second = client.get("/api/v1/me", headers=bearer(make_token(claims(sub))))
+    assert second.json()["roles"] == []
+    assert _cached_roles(sync_engine, user_id) == []
 
 
 def test_token_is_validated_before_the_unit_of_work_opens(db_url: str) -> None:

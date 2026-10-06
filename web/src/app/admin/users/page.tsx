@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { UsersAdmin } from "@/components/admin/users-admin";
 import { AppShell } from "@/components/shell/app-shell";
+import { auth0UsersUrl, ROLES_AS_OF_NOTE } from "@/lib/admin";
 import type { components } from "@/lib/api/client";
 import { createServerApiClient, getMe } from "@/lib/api/server";
 import { isAdmin } from "@/lib/navigation";
@@ -83,7 +84,7 @@ export default async function AdminUsersPage({
 }) {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
-  if (!isAdmin(result.me.roles)) {
+  if (!isAdmin(result.me.permissions)) {
     return (
       <AppShell me={result.me}>
         <NoAccess />
@@ -91,6 +92,7 @@ export default async function AdminUsersPage({
     );
   }
 
+  const manageRolesUrl = auth0UsersUrl(process.env.AUTH0_DOMAIN);
   const page = parsePage((await searchParams)?.page);
   const list = await listUsers(page);
   if (list.kind === "ok" && list.page.items.length === 0 && list.page.total > 0) {
@@ -103,7 +105,16 @@ export default async function AdminUsersPage({
         <div className="flex flex-col gap-1 p-gutter">
           <h1 className="text-title">Users &amp; roles</h1>
           <p className="text-meta text-muted-foreground">
-            Role changes apply on the person&apos;s next request.
+            {ROLES_AS_OF_NOTE}{" "}
+            <a
+              href={manageRolesUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-sm underline outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              Manage roles in Auth0
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
           </p>
         </div>
         {list.kind === "forbidden" ? <NoAccess /> : null}
@@ -112,7 +123,11 @@ export default async function AdminUsersPage({
         ) : null}
         {list.kind === "ok" ? (
           <>
-            <UsersAdmin key={list.page.page} initialUsers={list.page.items} />
+            <UsersAdmin
+              key={list.page.page}
+              initialUsers={list.page.items}
+              manageRolesUrl={manageRolesUrl}
+            />
             <Pagination page={list.page} />
           </>
         ) : null}

@@ -48,6 +48,7 @@ const ME: Me = {
   name: "[USER]",
   email: "user@example.invalid",
   roles: ["presales_engineer"],
+  permissions: ["identity.user.search", "opportunities.opportunity.create"],
 };
 
 function tree(children: ReactNode = <p>Tab body</p>, singleKeyShortcuts = true) {

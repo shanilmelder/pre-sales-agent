@@ -24,5 +24,6 @@ router = APIRouter(tags=["identity"])
 
 @router.get("/me", operation_id="get_me", responses=AUTH_RESPONSES)
 async def get_me(user: CurrentUserDep) -> UserProfile:
-    """The signed-in user, provisioned with no roles on their first valid token."""
+    """The signed-in user, provisioned on their first valid token, with the roles and
+    permissions that token carries."""
     return UserProfile.of(user)

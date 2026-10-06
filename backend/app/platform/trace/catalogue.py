@@ -64,7 +64,10 @@ class IdentityUserProvisioned(TracePayload):
 
 @register
 class IdentityUserRoleAssigned(TracePayload):
-    """An administrator assigned a role. Actor: the administrator; subject: the user."""
+    """An administrator assigned a role. Actor: the administrator; subject: the user.
+
+    Historical only: roles are managed in Auth0 since Story 1.9, so nothing appends this
+    any more. Kept registered so existing rows stay readable."""
 
     event_type: ClassVar[str] = "identity.user.role_assigned"
 
@@ -73,7 +76,9 @@ class IdentityUserRoleAssigned(TracePayload):
 
 @register
 class IdentityUserRoleRemoved(TracePayload):
-    """An administrator removed a role. Actor: the administrator; subject: the user."""
+    """An administrator removed a role. Actor: the administrator; subject: the user.
+
+    Historical only (see `IdentityUserRoleAssigned`)."""
 
     event_type: ClassVar[str] = "identity.user.role_removed"
 

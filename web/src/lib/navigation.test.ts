@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { NAV_ITEMS, landingFor, visibleNav, type Role } from "./navigation";
+import { canCreateOpportunity, shortcutsFor } from "./shortcuts";
 
 describe("NAV_ITEMS", () => {
   it("lists the sidebar items in order, each with an icon", () => {
@@ -27,14 +28,17 @@ describe("NAV_ITEMS", () => {
 });
 
 describe("visibleNav", () => {
-  it("hides Admin from non-admins", () => {
-    const labels = visibleNav(["presales_engineer", "pm_reviewer"]).map((i) => i.label);
+  it("hides Admin from users without identity.user.list", () => {
+    const labels = visibleNav(["identity.user.search", "opportunities.opportunity.create"]).map(
+      (i) => i.label,
+    );
     expect(labels).not.toContain("Admin");
     expect(labels).toHaveLength(5);
+    expect(visibleNav([]).map((i) => i.label)).not.toContain("Admin");
   });
 
-  it("shows Admin to platform administrators", () => {
-    expect(visibleNav(["platform_administrator"]).map((i) => i.label)).toContain("Admin");
+  it("shows Admin to holders of identity.user.list, whatever their roles", () => {
+    expect(visibleNav(["identity.user.list"]).map((i) => i.label)).toContain("Admin");
   });
 });
 
@@ -47,5 +51,15 @@ describe("landingFor", () => {
     [["sales_representative", "commercial"], "/inbox"],
   ])("%j lands on %s", (roles, href) => {
     expect(landingFor(roles)).toBe(href);
+  });
+});
+
+describe("canCreateOpportunity and shortcutsFor", () => {
+  it("follow the opportunities.opportunity.create permission, not the role", () => {
+    const create = ["opportunities.opportunity.create"];
+    expect(canCreateOpportunity(create)).toBe(true);
+    expect(canCreateOpportunity(["identity.user.search"])).toBe(false);
+    expect(shortcutsFor(create).some((s) => s.id === "create-opportunity")).toBe(true);
+    expect(shortcutsFor([]).some((s) => s.id === "create-opportunity")).toBe(false);
   });
 });

@@ -13,13 +13,13 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import type { Role } from "@/lib/navigation";
+import type { Permission } from "@/lib/navigation";
 import { visibleNav } from "@/lib/navigation";
 import { canCreateOpportunity, NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
 
-/** ⌘K/Ctrl+K: navigation commands (Admin only for admins), New Opportunity (presales
- * engineers only) and Settings, fuzzy-filtered. */
-export function CommandPalette({ roles }: { roles: readonly Role[] }) {
+/** ⌘K/Ctrl+K: navigation commands (Admin only with `identity.user.list`), New Opportunity
+ * (only with `opportunities.opportunity.create`) and Settings, fuzzy-filtered. */
+export function CommandPalette({ permissions }: { permissions: readonly Permission[] }) {
   const router = useRouter();
   const { dialog, openDialog, closeDialog } = useShell();
 
@@ -43,7 +43,7 @@ export function CommandPalette({ roles }: { roles: readonly Role[] }) {
         <CommandList>
           <CommandEmpty>No matching commands.</CommandEmpty>
           <CommandGroup heading="Go to">
-            {visibleNav(roles).map((item) => {
+            {visibleNav(permissions).map((item) => {
               const Icon = item.icon;
               return (
                 <CommandItem key={item.id} value={item.label} onSelect={() => go(item.href)}>
@@ -53,7 +53,7 @@ export function CommandPalette({ roles }: { roles: readonly Role[] }) {
               );
             })}
           </CommandGroup>
-          {canCreateOpportunity(roles) ? (
+          {canCreateOpportunity(permissions) ? (
             <CommandGroup heading="Create">
               <CommandItem value="New Opportunity" onSelect={() => go(NEW_OPPORTUNITY_HREF)}>
                 <PlusIcon aria-hidden="true" />

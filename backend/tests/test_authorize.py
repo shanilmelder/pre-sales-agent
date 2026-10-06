@@ -1,5 +1,8 @@
-"""Central authorization (AD-15): the action catalogue, roles, resource-scoped rules and
-`authorize`."""
+"""Central authorization (AD-15): the action catalogue, permission grants (Auth0 RBAC, from
+the token), resource-scoped rules and `authorize`.
+
+Principals get the permissions Auth0 issues for their roles under the README seed
+(`tests.auth_tokens.SEED_PERMISSIONS`) unless a test says otherwise."""
 
 from uuid import UUID, uuid4
 
@@ -10,7 +13,6 @@ from app.modules.identity.application.public import (
     MEMBER_GRANTS,
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
-    POLICY,
     RELATION_EXCLUDED_ROLES,
     Action,
     Principal,
@@ -21,16 +23,30 @@ from app.modules.identity.application.public import (
 )
 from app.platform.actor import Actor
 from app.platform.errors import ForbiddenError
+from tests.auth_tokens import permissions_for
 
-ADMIN = Principal(Actor("user", "u-admin"), frozenset({Role.PLATFORM_ADMINISTRATOR}))
-ENGINEER = Principal(Actor("user", "u-pse"), frozenset({Role.PRESALES_ENGINEER}))
-ADMIN_ONLY = (Action.USER_LIST, Action.USER_ASSIGN_ROLE, Action.USER_REMOVE_ROLE)
+
+def _seeded(roles: set[Role]) -> frozenset[Action]:
+    return frozenset(Action(p) for p in permissions_for(r.value for r in roles))
+
+
+def _principal(actor: Actor, roles: set[Role]) -> Principal:
+    return Principal(actor, frozenset(roles), _seeded(roles))
+
+
+ADMIN = _principal(Actor("user", "u-admin"), {Role.PLATFORM_ADMINISTRATOR})
+ENGINEER = _principal(Actor("user", "u-pse"), {Role.PRESALES_ENGINEER})
+ADMIN_ONLY = (Action.USER_LIST,)
 MODULES = {"identity", "opportunities", "intake", "gaps", "estimates", "assessments"}
 
 
-def _user(roles: set[Role] | None = None) -> tuple[Principal, UUID]:
+def _user(
+    roles: set[Role] | None = None, permissions: set[Action] | None = None
+) -> tuple[Principal, UUID]:
     user_id = uuid4()
-    return Principal(Actor("user", str(user_id)), frozenset(roles or set())), user_id
+    roles = roles or set()
+    granted = _seeded(roles) if permissions is None else frozenset(permissions)
+    return Principal(Actor("user", str(user_id)), frozenset(roles), granted), user_id
 
 
 def _opportunity(owner: UUID, *members: UUID) -> Resource:
@@ -68,30 +84,49 @@ def test_nine_roles() -> None:
     assert len(Role) == 9
 
 
-def test_every_action_has_a_policy_entry() -> None:
-    assert set(POLICY) == set(Action)
-    for action in ADMIN_ONLY:
-        assert POLICY[action] == {Role.PLATFORM_ADMINISTRATOR}
-    assert POLICY[Action.OPPORTUNITY_CREATE] == {Role.PRESALES_ENGINEER}
-    assert POLICY[Action.OPPORTUNITY_READ] == {
-        Role.HEAD_OF_DELIVERY,
-        Role.PLATFORM_ADMINISTRATOR,
-    }
-    assert POLICY[Action.OPPORTUNITY_UPDATE] == frozenset()
-    assert POLICY[Action.COLLABORATOR_ADD] == frozenset()
-    assert POLICY[Action.COLLABORATOR_REMOVE] == frozenset()
-    assert POLICY[Action.USER_SEARCH] == {Role.PRESALES_ENGINEER}
-    assert POLICY[Action.SOURCE_ADD] == frozenset()
-    assert POLICY[Action.EXTRACTION_START] == frozenset()
-    assert POLICY[Action.REQUIREMENT_EDIT] == frozenset()
-    assert POLICY[Action.GAP_DETECTION_START] == frozenset()
-    assert POLICY[Action.GAP_QUESTION_EDIT] == frozenset()
-    assert POLICY[Action.ESTIMATE_DRAFT_START] == frozenset()
-    assert POLICY[Action.ASSUMPTION_ACCEPT] == frozenset()
-    assert POLICY[Action.RED_TEAM_START] == frozenset()
-    assert POLICY[Action.ASSESSMENT_START] == frozenset()
-    assert POLICY[Action.ESTIMATE_EXPORT] == frozenset()
-    assert POLICY[Action.ESTIMATE_LINE_EDIT] == frozenset()
+def test_role_admin_writes_are_gone_from_the_catalogue() -> None:
+    """Roles are assigned in Auth0 since Story 1.9."""
+    assert {a.value for a in Action}.isdisjoint(
+        {"identity.user.assign_role", "identity.user.remove_role"}
+    )
+
+
+@pytest.mark.parametrize("action", list(Action))
+def test_a_permission_grants_its_action_without_any_role(action: Action) -> None:
+    principal, _ = _user(permissions={action})
+    assert can(principal, action)
+    other = next(a for a in Action if a is not action)
+    assert not can(principal, other)
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_a_role_without_permissions_grants_nothing_on_its_own(role: Role) -> None:
+    principal, _ = _user({role}, permissions=set())
+    for action in Action:
+        assert not can(principal, action)
+
+
+def test_role_without_create_permission_keeps_owner_and_member_access() -> None:
+    owner, owner_id = _user({Role.PRESALES_ENGINEER}, permissions=set())
+    member, member_id = _user({Role.PRESALES_ENGINEER}, permissions=set())
+    resource = _opportunity(owner_id, member_id)
+    assert not can(owner, Action.OPPORTUNITY_CREATE)
+    assert can(owner, Action.OPPORTUNITY_UPDATE, resource)
+    assert can(member, Action.REQUIREMENT_EDIT, resource)
+
+
+def test_permissions_without_roles_earn_no_relation_grants() -> None:
+    owner, owner_id = _user(permissions={Action.OPPORTUNITY_CREATE})
+    assert not can(owner, Action.OPPORTUNITY_UPDATE, _opportunity(owner_id))
+
+
+def test_sales_rep_collaborator_adds_sources_but_cannot_edit_requirements() -> None:
+    _, owner_id = _user({Role.PRESALES_ENGINEER})
+    rep, rep_id = _user({Role.SALES_REPRESENTATIVE})
+    resource = _opportunity(owner_id, rep_id)
+    assert can(rep, Action.SOURCE_ADD, resource)
+    with pytest.raises(ForbiddenError):
+        authorize(rep, Action.REQUIREMENT_EDIT, resource)
 
 
 def test_resource_scoped_grants() -> None:
@@ -209,9 +244,9 @@ def test_no_granting_role_is_forbidden(principal: Principal, action: Action) -> 
         authorize(principal, action)
 
 
-def test_policy_cannot_be_mutated_at_runtime() -> None:
+def test_relation_exclusions_cannot_be_mutated_at_runtime() -> None:
     with pytest.raises(TypeError):
-        POLICY[Action.USER_ASSIGN_ROLE] = frozenset(Role)  # type: ignore[index]
+        RELATION_EXCLUDED_ROLES[Action.SOURCE_ADD] = frozenset(Role)  # type: ignore[index]
 
 
 # --- Opportunities: role and resource-scoped rules ------------------------------------------
@@ -289,9 +324,9 @@ def test_other_roles_cannot_read_someone_elses_opportunity(role: Role) -> None:
 @pytest.mark.parametrize("actor_type", ["agent", "system"])
 def test_non_user_actors_get_no_resource_grants(actor_type: str) -> None:
     some_id = uuid4()
-    principal = Principal(
+    principal = _principal(
         Actor(actor_type, str(some_id)),  # type: ignore[arg-type]
-        frozenset({Role.PRESALES_ENGINEER}),
+        {Role.PRESALES_ENGINEER},
     )
     resource = _opportunity(some_id, some_id)
     assert not can(principal, Action.OPPORTUNITY_READ, resource)
@@ -299,7 +334,7 @@ def test_non_user_actors_get_no_resource_grants(actor_type: str) -> None:
 
 
 def test_non_uuid_user_actor_gets_no_resource_grants() -> None:
-    principal = Principal(Actor("user", "not-a-uuid"), frozenset({Role.PRESALES_ENGINEER}))
+    principal = _principal(Actor("user", "not-a-uuid"), {Role.PRESALES_ENGINEER})
     assert principal.user_id is None
     assert not can(principal, Action.OPPORTUNITY_READ, _opportunity(uuid4()))
 

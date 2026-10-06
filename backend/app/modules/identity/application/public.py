@@ -11,15 +11,12 @@ from app.modules.identity.application.provisioning import (
 )
 from app.modules.identity.application.role_admin import (
     DEFAULT_PAGE_SIZE,
-    LAST_ADMINISTRATOR_DETAIL,
     MAX_PAGE,
     MAX_PAGE_SIZE,
     AdminUser,
     AdminUserPage,
-    assign_role,
     get_user,
     list_users,
-    remove_role,
 )
 from app.modules.identity.application.user_search import (
     SEARCH_DEFAULT_LIMIT,
@@ -35,7 +32,6 @@ from app.modules.identity.domain.policy import (
     MEMBER_GRANTS,
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
-    POLICY,
     RELATION_EXCLUDED_ROLES,
     Principal,
     Resource,
@@ -45,13 +41,11 @@ from app.modules.identity.domain.roles import Role
 __all__ = [
     "ACTION_NAME_RE",
     "DEFAULT_PAGE_SIZE",
-    "LAST_ADMINISTRATOR_DETAIL",
     "MAX_PAGE",
     "MAX_PAGE_SIZE",
     "MEMBER_GRANTS",
     "OPPORTUNITY_RESOURCE",
     "OWNER_GRANTS",
-    "POLICY",
     "RELATION_EXCLUDED_ROLES",
     "SEARCH_DEFAULT_LIMIT",
     "SEARCH_MAX_LIMIT",
@@ -71,12 +65,10 @@ __all__ = [
     "UserProfile",
     "UserSearchResult",
     "UserSummary",
-    "assign_role",
     "authorize",
     "can",
     "get_user",
     "list_users",
-    "remove_role",
     "search_users",
     "user_names",
 ]

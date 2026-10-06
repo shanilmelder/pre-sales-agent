@@ -34,7 +34,8 @@ from app.platform.uow import UoW
 PROBLEM_CONTENT = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
 _DESCRIBED: dict[int, str] = {
     401: "No valid access token (`token_missing`, `token_expired`, `token_invalid`)",
-    403: "Not allowed (`forbidden`): creating without the presales engineer role, or "
+    403: "Not allowed (`forbidden`): creating without the "
+    "`opportunities.opportunity.create` permission, or "
     "editing the Opportunity or changing collaborators without being the owner",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
     412: "The Opportunity changed since it was read (`row_version_mismatch`)",
@@ -290,7 +291,7 @@ async def add_collaborator(
     response: Response,
     if_match: IfMatchHeader = None,
 ) -> Opportunity:
-    """Share the Opportunity with a user who holds a role. Owner only; adding an existing
+    """Share the Opportunity with a provisioned user. Owner only; adding an existing
     collaborator changes nothing."""
     changed = await opportunities.add_collaborator(uow, actor, opportunity_id, user_id, if_match)
     return _with_etag(response, changed)

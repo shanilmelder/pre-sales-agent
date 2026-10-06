@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { permissionsFor } from "@/test/permissions";
 
 import type { MeResult } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
@@ -77,7 +78,13 @@ const OPP_ID = "00000000-0000-7000-8000-000000000001";
 function signedIn(roles: Role[]) {
   getMe.mockResolvedValue({
     kind: "ok",
-    me: { id: "00000000-0000-7000-8000-000000000000", name: "[USER]", email: "u@x", roles },
+    me: {
+      id: "00000000-0000-7000-8000-000000000000",
+      name: "[USER]",
+      email: "u@x",
+      roles,
+      permissions: permissionsFor(roles),
+    },
   });
 }
 

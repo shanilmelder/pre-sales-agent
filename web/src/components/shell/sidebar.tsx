@@ -24,7 +24,7 @@ const itemClass =
   "flex h-row w-full items-center gap-2 rounded-sm px-2 text-body text-sidebar-foreground outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-primary";
 
 /** Primary navigation. Below 1280px, or when collapsed with `[`, only icons show. */
-export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "roles"> }) {
+export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "permissions"> }) {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar, openDialog } = useShell();
   const modKey = useModKeyLabel();
@@ -55,7 +55,7 @@ export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "roles"> }) {
       </button>
 
       <ul className="flex flex-1 flex-col gap-0.5">
-        {visibleNav(me.roles).map((item) => {
+        {visibleNav(me.permissions).map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           const Icon = item.icon;
           return (

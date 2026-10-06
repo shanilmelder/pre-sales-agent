@@ -399,10 +399,8 @@ async def _change_member(
             raise _stale()
         return await _detail(uow, actor, record, members, resource)
 
-    if not removing and user_id not in await identity.user_names(
-        uow, [user_id], with_roles_only=True
-    ):
-        raise InvalidCollaboratorError("Only users who hold a role can be collaborators.")
+    if not removing and user_id not in await identity.user_names(uow, [user_id]):
+        raise InvalidCollaboratorError("Only users who have signed in can be collaborators.")
 
     new_version = await repository.bump_row_version(uow, opportunity_id, expected)
     if new_version is None:
