@@ -1,0 +1,48 @@
+From: Marcus Bell <marcus.bell@harbourline.example>
+To: Alex Chen <alex.chen@vendor.example>
+Cc: Hannah Reid <hannah.reid@harbourline.example>
+Subject: Elmbridge FC - IT follow-up: ERP, legacy WMS, sign-on
+Date: Wed, 30 Sep 2026 10:12:44 +0100
+Message-ID: <elmbridge-it-0930@harbourline.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+As promised on the call, here is the IT side in writing. I've split it into decisions
+that are still ours to make and things we honestly can't answer.
+
+Still ours to decide or provide (we'll come back to you on each):
+
+- Dynamics 365 sandbox: you'll need a Dynamics 365 Finance and Operations sandbox for
+  development and testing. We haven't ordered it yet and we haven't decided whether it
+  will be a dedicated sandbox or shared with our finance upgrade project. That's our
+  call; I'll confirm which, and when it's available.
+- Integration method: not decided yet. Our D365 partner prefers the standard data
+  entities over OData, but our architects are also considering file-based batch
+  integration through the data management framework. We'll tell you which one.
+- Single sign-on: your system must use single sign-on. We're in the middle of moving
+  from Okta to Microsoft Entra ID and haven't decided whether the automation goes on
+  Entra from day one. IT security decides that this quarter.
+- Network: we will provide the network for the automation, but we haven't yet decided
+  whether it gets its own VLAN or shares the warehouse VLAN. We need your network
+  requirements first.
+
+What we cannot tell you:
+
+- The legacy WMS. It was built in-house in 2009 by a contractor who left in 2015.
+  There is no documentation, no interface list and no test environment. Over the
+  years interfaces were added to label printers, the old conveyor, a returns tool,
+  carrier manifests and several Excel macros that read its database directly.
+- We genuinely do not know how many interfaces there are or what format each one
+  uses. Our best guess is "between eight and twenty", but that is a guess. Nobody,
+  including us, will know until your team traces them in the code and the database
+  during the migration.
+- We don't want this to hold up the proposal, and we can't remove the uncertainty
+  for you. Please carry an allowance for the unknown interfaces in your price rather
+  than assume the low end.
+
+Regards,
+Marcus Bell
+IT Lead, Harbourline Home & Garden

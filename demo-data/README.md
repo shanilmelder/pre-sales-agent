@@ -39,3 +39,7 @@ Opportunity to create: **Riverside DC automation**, customer **Meridian Fresh Fo
 - Upload all the files before opening the Requirements tab, so extraction sees everything.
 - Approve the Clarification Questions you want to show **before** Accept all on the Assumptions.
 - Good line to edit live in the Estimate: the SAP integration or master-data line (e.g. "Reuse the existing IDoc mapping").
+
+## Second scenario: Conditions and Contingencies
+
+`elmbridge-fc-scenario/` is a complete second scenario (Harbourline Home & Garden, Elmbridge FC) with a call transcript, four emails and site-visit notes. It is built to show **several Contingencies and many Conditions** in the same Estimate. See its own `README.md`.

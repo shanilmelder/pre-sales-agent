@@ -60,6 +60,7 @@ from app.modules.gaps.domain.gaps import (
     DetectionErrorCode,
     DetectionStatus,
     Validation,
+    mark_unknown_to_customer,
     trigger,
     validate_candidates,
 )
@@ -174,7 +175,11 @@ def candidates(output: ClarificationOutput) -> list[Candidate]:
         Candidate(
             title=gap.title,
             category=gap.category,
-            why_it_matters=gap.why_it_matters,
+            why_it_matters=(
+                gap.why_it_matters
+                if gap.customer_can_answer
+                else mark_unknown_to_customer(gap.why_it_matters)
+            ),
             impact=gap.impact,
             impact_basis=gap.impact_basis,
             related=tuple(gap.related),

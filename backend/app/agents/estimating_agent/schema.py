@@ -52,9 +52,22 @@ class EstimatingOutput(_Output):
 
 class AssumptionCandidate(_Output):
     gap: str = Field(description="The label of the open Gap this Assumption covers, e.g. 'G2'.")
+    resolvable_by: str = Field(
+        description=(
+            "One sentence, written before choosing the kind: can the customer realistically "
+            "remove this uncertainty before the work starts, or will nobody know until the "
+            "work is under way? Not stored."
+        )
+    )
+    """Comes before `kind` so that, under constrained decoding, the model weighs who can
+    remove the uncertainty before it commits to a kind (without it nearly every Gap became a
+    Condition, since every Gap carries a question to the customer)."""
     kind: Literal["condition", "contingency"]
     wording: str = Field(
-        description="Proposal-ready wording, e.g. 'The estimate assumes the customer provides…'."
+        description=(
+            "Proposal-ready wording: a Condition starts 'The estimate assumes the customer…'; "
+            "a Contingency says what the hours cover."
+        )
     )
     hours: float | None = Field(
         default=None,
