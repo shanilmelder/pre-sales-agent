@@ -651,6 +651,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit Estimate Line
+         * @description Change a line of the current draft Estimate's effort hours and/or role mix, with a
+         *     reason. Recorded with who and when, and traced with the before and after values. Values
+         *     equal to the stored ones change nothing. The answer is the whole Estimate, so line role
+         *     hours, subtotals and totals come from the server. The owner and collaborators, except
+         *     sales representatives.
+         */
+        patch: operations["edit_estimate_line"];
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/estimate/export": {
         parameters: {
             query?: never;
@@ -1175,9 +1199,14 @@ export interface components {
         };
         /**
          * EstimateLine
-         * @description A work item: its effort and role mix as drafted, and its server-calculated role
-         *     hours, Contingency (the sum of its linked Contingency Assumptions' hours, accepted or
-         *     not) and total (effort plus Contingency).
+         * @description A work item: its effort and role mix (as drafted, or as a person last edited them),
+         *     and its server-calculated role hours, Contingency (the sum of its linked Contingency
+         *     Assumptions' hours, accepted or not) and total (effort plus Contingency).
+         *
+         *     Story 8.2: `row_version` goes back in `If-Match` to edit it. `edited` is true once a
+         *     person changed its effort or role mix (here, or on the earlier version a re-draft
+         *     carried the edit from: `edit_carried_from_version`); `edited_by_name`, `edited_at` and
+         *     `edit_reason` say who, when and why (null when not edited).
          */
         EstimateLine: {
             /** Id */
@@ -1199,6 +1228,42 @@ export interface components {
             role_hours: components["schemas"]["RoleHours"];
             /** Requirements */
             requirements: components["schemas"]["LineRequirement"][];
+            /** Row Version */
+            row_version: number;
+            /** Edited */
+            edited: boolean;
+            /** Edited By Name */
+            edited_by_name: string | null;
+            /** Edited At */
+            edited_at: string | null;
+            /** Edit Reason */
+            edit_reason: string | null;
+            /** Edit Carried From Version */
+            edit_carried_from_version: number | null;
+        };
+        /**
+         * EstimateLineChanges
+         * @description A person's edit of an Estimate line (Story 8.2): new effort and/or role mix (at least
+         *     one), and why. Fields left out stay as they are.
+         */
+        EstimateLineChanges: {
+            /**
+             * Effort Hours
+             * @description The new effort in hours, 0 to 2,000; rounded half up to 0.1.
+             */
+            effort_hours?: number | null;
+            /**
+             * Role Mix
+             * @description The new role mix: a whole percentage (0-100) for exactly each of the template's roles (`engineer`, `project_manager`, `qa`), summing to 100.
+             */
+            role_mix?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Reason
+             * @description Why. Trimmed, it must be 1 to 300 characters.
+             */
+            reason: string;
         };
         /**
          * EstimateRole
@@ -1228,6 +1293,10 @@ export interface components {
          *     Story 8.4: `proposal_status` is the state of the version's Assumption proposals (null
          *     when none were queued); `assumptions` and `counts` its Assumptions; `unconverted_gaps`
          *     the open Gaps without an Assumption in it, once proposals have finished (empty before).
+         *
+         *     Story 8.2: `uncarried_edit_count` is how many edited lines of the superseded draft (number
+         *     `uncarried_edits_from_version`, null when the count is 0) had no matching line here; they
+         *     stay in that version and the Trace.
          */
         EstimateVersion: {
             /** Id */
@@ -1260,14 +1329,19 @@ export interface components {
             unconverted_gaps: components["schemas"]["UnconvertedGap"][];
             /** Unallocated Contingency Hours */
             unallocated_contingency_hours: number;
+            /** Uncarried Edit Count */
+            uncarried_edit_count: number;
+            /** Uncarried Edits From Version */
+            uncarried_edits_from_version: number | null;
         };
         /**
          * EstimateView
          * @description The Opportunity's current (draft) Estimate Version, null before the first, and its
          *     latest draft run, null before the first. `can_start_draft`: whether the caller may start
          *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
-         *     `can_export`: whether the caller may export the Estimate (Story 8.8). The UI only uses
-         *     them to hide controls; the API decides.
+         *     `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
+         *     whether the caller may edit the draft's lines (Story 8.2). The UI only uses them to hide
+         *     controls; the API decides.
          */
         EstimateView: {
             version: components["schemas"]["EstimateVersion"] | null;
@@ -1278,6 +1352,8 @@ export interface components {
             can_accept_assumptions: boolean;
             /** Can Export */
             can_export: boolean;
+            /** Can Edit Lines */
+            can_edit_lines: boolean;
         };
         /**
          * ExportFormat
@@ -6912,6 +6988,212 @@ export interface operations {
                 };
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    edit_estimate_line: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Estimate line as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                line_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EstimateLineChanges"];
+            };
+        };
+        responses: {
+            /** @description The Estimate as it is now, every total recalculated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate line with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The line's Estimate Version is no longer the draft: a re-draft replaced it (`estimate_version_not_draft`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The line changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: neither effort nor role mix given, effort not 0-2,000 hours, a role mix that doesn't name every role with whole percentages adding up to 100, a blank or over-300-character reason (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID */
             422: {
                 headers: {
                     [name: string]: unknown;

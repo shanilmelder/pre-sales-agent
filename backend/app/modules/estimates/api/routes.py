@@ -1,8 +1,9 @@
 """Estimate routes (Stories 8.1 and 8.4): `GET /api/v1/opportunities/{opportunity_id}/estimate`,
-`POST /api/v1/opportunities/{opportunity_id}/estimate-drafts`, and accepting Assumptions
-(`POST …/assumptions/{assumption_id}/accept`, `POST …/assumptions/accept-all`), and
-exporting the Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`). No endpoint
-accepts a total."""
+`POST /api/v1/opportunities/{opportunity_id}/estimate-drafts`, accepting Assumptions
+(`POST …/assumptions/{assumption_id}/accept`, `POST …/assumptions/accept-all`), editing a
+line's hours and role mix (Story 8.2, `PATCH …/estimate-lines/{line_id}`), and exporting the
+Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`). No endpoint accepts a
+total."""
 
 from typing import Annotated, Any
 from uuid import UUID
@@ -15,6 +16,7 @@ from app.modules.estimates.application.public import (
     AcceptAllResult,
     Assumption,
     EstimateDraft,
+    EstimateLineChanges,
     EstimateView,
     ExportFormat,
 )
@@ -155,6 +157,67 @@ async def accept_assumption(
     )
     response.headers["ETag"] = etag(accepted.row_version)
     return accepted
+
+
+# --- Editing a line (Story 8.2) -------------------------------------------------------------
+
+_LINE_IF_MATCH = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description='The ETag of the Estimate line as last read (its `row_version`), e.g. `"1"`.',
+    ),
+]
+
+
+def _edit_line_responses() -> dict[int | str, dict[str, Any]]:
+    responses = _responses(428)
+    responses[403] = {"description": _ACCEPT_403, "content": PROBLEM_CONTENT}
+    responses[404] = {
+        "description": "No Opportunity with this id, or the caller may not see it, or no "
+        "Estimate line with this id in it (`not_found`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[409] = {
+        "description": "The line's Estimate Version is no longer the draft: a re-draft "
+        "replaced it (`estimate_version_not_draft`); nothing changed",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[412] = {
+        "description": "The line changed since the caller read it (`row_version_mismatch`); "
+        "the `detail` names who changed it",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[422] = {
+        "description": "`validation_error`: neither effort nor role mix given, effort not "
+        "0-2,000 hours, a role mix that doesn't name every role with whole percentages "
+        "adding up to 100, a blank or over-300-character reason (the `detail` is the "
+        "sentence to show), an unknown field, or an id that is not a UUID",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[200] = {"description": "The Estimate as it is now, every total recalculated"}
+    return responses
+
+
+@router.patch(
+    "/estimate-lines/{line_id}",
+    operation_id="edit_estimate_line",
+    responses=_edit_line_responses(),
+)
+async def edit_estimate_line(
+    opportunity_id: UUID,
+    line_id: UUID,
+    body: EstimateLineChanges,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    if_match: _LINE_IF_MATCH = None,
+) -> EstimateView:
+    """Change a line of the current draft Estimate's effort hours and/or role mix, with a
+    reason. Recorded with who and when, and traced with the before and after values. Values
+    equal to the stored ones change nothing. The answer is the whole Estimate, so line role
+    hours, subtotals and totals come from the server. The owner and collaborators, except
+    sales representatives."""
+    return await estimates.edit_line(uow, actor, opportunity_id, line_id, body, if_match)
 
 
 # --- Export (Story 8.8) ---------------------------------------------------------------------

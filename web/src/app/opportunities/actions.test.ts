@@ -25,6 +25,7 @@ import {
   confirmRequirement,
   createOpportunity,
   editClarificationQuestion,
+  editEstimateLine,
   editRequirement,
   getPassage,
   loadAssessments,
@@ -1256,5 +1257,133 @@ describe("editClarificationQuestion / approveClarificationQuestion / approveAll"
         },
       ],
     ]);
+  });
+});
+
+describe("editEstimateLine", () => {
+  const LID = "00000000-0000-7000-8000-0000000000b1";
+  const INPUT = {
+    opportunityId: OPP_ID,
+    lineId: LID,
+    rowVersion: 1,
+    effortHours: 32,
+    reason: "[REASON]",
+  };
+  const ESTIMATE = { version: { sections: [] }, draft: null };
+
+  beforeEach(() => {
+    api.PATCH.mockReset();
+    api.GET.mockReset();
+  });
+
+  it("patches with If-Match and only the given values, and returns the Estimate", async () => {
+    api.PATCH.mockResolvedValue({
+      data: ESTIMATE,
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "ok",
+      estimate: ESTIMATE,
+    });
+    expect(api.PATCH).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, line_id: LID },
+          header: { "If-Match": '"1"' },
+        },
+        body: { effort_hours: 32, reason: "[REASON]" },
+      },
+    );
+  });
+
+  it("sends a role mix on its own", async () => {
+    api.PATCH.mockResolvedValue({
+      data: ESTIMATE,
+      response: new Response(null, { status: 200 }),
+    });
+    const roleMix = { engineer: 40, project_manager: 40, qa: 20 };
+    await editEstimateLine({ ...INPUT, effortHours: undefined, roleMix });
+    expect(api.PATCH.mock.calls[0][1].body).toEqual({
+      role_mix: roleMix,
+      reason: "[REASON]",
+    });
+  });
+
+  it("on 412 passes the API's sentence on, without reading anything again", async () => {
+    api.PATCH.mockResolvedValueOnce({
+      error: {
+        code: "row_version_mismatch",
+        detail: "Changed by [OTHER] since you opened it.",
+      },
+      response: new Response(null, { status: 412 }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "stale",
+      message: "Changed by [OTHER] since you opened it.",
+    });
+    api.PATCH.mockResolvedValueOnce({
+      error: { code: "row_version_mismatch" },
+      response: new Response(null, { status: 412 }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "stale",
+      message: "Changed by someone else since you opened it.",
+    });
+    expect(api.GET).not.toHaveBeenCalled();
+  });
+
+  it("on 422 passes the API's sentence on, but not a field list", async () => {
+    const reject = (detail: string) =>
+      api.PATCH.mockResolvedValueOnce({
+        error: { code: "validation_error", detail },
+        response: new Response(null, { status: 422 }),
+      });
+    reject("Role mix must name every role and add up to 100%.");
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "invalid",
+      detail: "Role mix must name every role and add up to 100%.",
+    });
+    reject("Invalid fields: body.reason");
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "invalid",
+      detail: "The change was not accepted.",
+    });
+  });
+
+  it.each([
+    [409, "not-draft"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.PATCH.mockResolvedValue({
+      error: { code: "x" },
+      response: new Response(null, { status }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({ kind });
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    for (const bad of [
+      { ...INPUT, lineId: "nope" },
+      { ...INPUT, rowVersion: 1.5 },
+      { ...INPUT, effortHours: undefined },
+      { ...INPUT, effortHours: Number.NaN },
+      { ...INPUT, reason: undefined },
+      { ...INPUT, roleMix: { engineer: 100 } },
+      null,
+    ]) {
+      expect(await editEstimateLine(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.PATCH).not.toHaveBeenCalled();
+  });
+
+  it("is an error when the call throws, logging no reason", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    api.PATCH.mockRejectedValueOnce(new Error("network"));
+    expect(await editEstimateLine(INPUT)).toEqual({ kind: "error" });
+    expect(JSON.stringify(log.mock.calls)).not.toContain("[REASON]");
   });
 });

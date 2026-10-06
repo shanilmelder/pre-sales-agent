@@ -70,6 +70,7 @@ class EstimateVersionRow(RowVersioned, Base):
         CheckConstraint("status IN ('draft', 'superseded')", name="status"),
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint("uncovered_count >= 0 AND dropped_count >= 0", name="counts"),
+        CheckConstraint("uncarried_edit_count >= 0", name="uncarried_edit_count"),
         CheckConstraint(
             "proposal_status IS NULL OR proposal_status IN "
             "('queued', 'running', 'succeeded', 'failed')",
@@ -85,11 +86,16 @@ class EstimateVersionRow(RowVersioned, Base):
     uncovered_count: Mapped[int] = mapped_column(Integer)
     dropped_count: Mapped[int] = mapped_column(Integer)
     proposal_status: Mapped[str | None] = mapped_column(Text)
+    uncarried_edit_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    """Story 8.2: edited lines of the superseded draft that had no matching line here."""
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 
 
 class EstimateLineRow(Base):
-    """A work item of an Estimate Version. Insert-only in the demo (no inline editing)."""
+    """A work item of an Estimate Version. Its title, section, basis and links are
+    insert-only; a person may edit its effort and role mix on a `draft` version (Story 8.2),
+    which records who, when and why (`edited_*`; all or none) and bumps `row_version`.
+    `edit_carried_from_version`: the version number a re-draft carried the edit from."""
 
     __tablename__ = "estimates_estimate_lines"
     __table_args__ = (
@@ -101,6 +107,15 @@ class EstimateLineRow(Base):
         ),
         CheckConstraint("effort_hours >= 0", name="effort_hours"),
         CheckConstraint("position >= 1", name="position"),
+        CheckConstraint(
+            "(edited_at IS NULL) = (edited_by IS NULL) AND "
+            "(edited_at IS NULL) = (edit_reason IS NULL)",
+            name="edited_has_by",
+        ),
+        CheckConstraint(
+            "edit_carried_from_version IS NULL OR edited_at IS NOT NULL",
+            name="carried_was_edited",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -119,6 +134,11 @@ class EstimateLineRow(Base):
     effort_hours: Mapped[Decimal] = mapped_column(Numeric(10, 1))
     role_mix: Mapped[dict[str, Any]] = mapped_column(JSONB)
     basis: Mapped[str] = mapped_column(Text)
+    row_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    edited_by: Mapped[UUID | None] = mapped_column(Uuid)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    edit_reason: Mapped[str | None] = mapped_column(Text)
+    edit_carried_from_version: Mapped[int | None] = mapped_column(Integer)
 
 
 class LineRequirementRow(Base):

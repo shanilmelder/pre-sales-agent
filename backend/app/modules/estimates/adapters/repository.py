@@ -42,6 +42,7 @@ class VersionRecord:
     row_version: int
     created_at: datetime
     proposal_status: str | None = None
+    uncarried_edit_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +54,12 @@ class LineRecord:
     effort_hours: Decimal
     role_mix: dict[str, Any]
     basis: str
+    version_id: UUID | None = None
+    row_version: int = 1
+    edited_by: UUID | None = None
+    edited_at: datetime | None = None
+    edit_reason: str | None = None
+    edit_carried_from_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +216,7 @@ def _version(row: EstimateVersionRow) -> VersionRecord:
         row_version=row.row_version,
         created_at=row.created_at,
         proposal_status=row.proposal_status,
+        uncarried_edit_count=row.uncarried_edit_count,
     )
 
 
@@ -309,24 +317,112 @@ async def current_version(uow: UnitOfWork, opportunity_id: UUID) -> VersionRecor
     return None if row is None else _version(row)
 
 
+def _line(row: EstimateLineRow) -> LineRecord:
+    return LineRecord(
+        id=row.id,
+        position=row.position,
+        section=row.section,
+        title=row.title,
+        effort_hours=row.effort_hours,
+        role_mix=row.role_mix,
+        basis=row.basis,
+        version_id=row.version_id,
+        row_version=row.row_version,
+        edited_by=row.edited_by,
+        edited_at=row.edited_at,
+        edit_reason=row.edit_reason,
+        edit_carried_from_version=row.edit_carried_from_version,
+    )
+
+
 async def lines_of(uow: UnitOfWork, version_id: UUID) -> list[LineRecord]:
     rows = await uow.session.execute(
         select(EstimateLineRow)
         .where(EstimateLineRow.version_id == version_id)
         .order_by(EstimateLineRow.position)
+        .execution_options(populate_existing=True)
     )
-    return [
-        LineRecord(
-            id=row.id,
-            position=row.position,
-            section=row.section,
-            title=row.title,
-            effort_hours=row.effort_hours,
-            role_mix=row.role_mix,
-            basis=row.basis,
+    return [_line(row) for row in rows.scalars()]
+
+
+# --- line edits (Story 8.2) -----------------------------------------------------------------
+
+
+async def get_line(uow: UnitOfWork, line_id: UUID) -> LineRecord | None:
+    row = (
+        await uow.session.execute(
+            select(EstimateLineRow)
+            .where(EstimateLineRow.id == line_id)
+            .execution_options(populate_existing=True)
         )
-        for row in rows.scalars()
-    ]
+    ).scalar_one_or_none()
+    return None if row is None else _line(row)
+
+
+async def edit_line(
+    uow: UnitOfWork,
+    line_id: UUID,
+    *,
+    expected_row_version: int,
+    effort_hours: Decimal,
+    role_mix: dict[str, int],
+    user_id: UUID,
+    reason: str,
+) -> LineRecord | None:
+    """A person's edit of the line at `expected_row_version`: its effort and role mix, who,
+    now, why; no longer carried. Bumps `row_version`. None (and no change) when the line is
+    at another row version."""
+    changed = (
+        await uow.session.execute(
+            update(EstimateLineRow)
+            .where(
+                EstimateLineRow.id == line_id,
+                EstimateLineRow.row_version == expected_row_version,
+            )
+            .values(
+                effort_hours=effort_hours,
+                role_mix=role_mix,
+                edited_by=user_id,
+                edited_at=func.now(),
+                edit_reason=reason,
+                edit_carried_from_version=None,
+                row_version=EstimateLineRow.row_version + 1,
+            )
+            .returning(EstimateLineRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_line(uow, line_id)
+
+
+async def carry_line_edit(
+    uow: UnitOfWork, line_id: UUID, *, source: LineRecord, from_version: int
+) -> None:
+    """Copy an edited line's hours, role mix, editor, time and reason onto a just-inserted
+    line of the new draft, marked as carried from `from_version`. Its `row_version` stays 1:
+    nobody has read it yet."""
+    await uow.session.execute(
+        update(EstimateLineRow)
+        .where(EstimateLineRow.id == line_id)
+        .values(
+            effort_hours=source.effort_hours,
+            role_mix=source.role_mix,
+            edited_by=source.edited_by,
+            edited_at=source.edited_at,
+            edit_reason=source.edit_reason,
+            edit_carried_from_version=from_version,
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def set_uncarried_edit_count(uow: UnitOfWork, version_id: UUID, count: int) -> None:
+    await uow.session.execute(
+        update(EstimateVersionRow)
+        .where(EstimateVersionRow.id == version_id)
+        .values(uncarried_edit_count=count)
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def links_for(uow: UnitOfWork, line_ids: list[UUID]) -> list[LineLinkRecord]:

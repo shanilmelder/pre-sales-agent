@@ -102,6 +102,9 @@ POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
         # Exporting the Estimate (Story 8.8): the owner and collaborators except sales
         # representatives.
         Action.ESTIMATE_EXPORT: frozenset(),
+        # Editing an Estimate line's hours and role mix (Story 8.2): the owner and
+        # collaborators except sales representatives.
+        Action.ESTIMATE_LINE_EDIT: frozenset(),
     }
 )
 
@@ -115,6 +118,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSESSMENT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_EXPORT: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ESTIMATE_LINE_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -135,6 +139,7 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.RED_TEAM_START,
         Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
+        Action.ESTIMATE_LINE_EDIT,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -150,6 +155,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.RED_TEAM_START,
         Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
+        Action.ESTIMATE_LINE_EDIT,
     }
 )
 

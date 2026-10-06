@@ -6,6 +6,7 @@ from app.modules.estimates.application import draft
 from app.modules.estimates.application.estimates import (
     accept_all_assumptions,
     accept_assumption,
+    edit_line,
     get_estimate,
     start_draft,
 )
@@ -25,6 +26,7 @@ from app.modules.estimates.application.models import (
     AssumptionLine,
     EstimateDraft,
     EstimateLine,
+    EstimateLineChanges,
     EstimateSection,
     EstimateVersion,
     EstimateView,
@@ -53,6 +55,7 @@ __all__ = [
     "AssumptionLine",
     "EstimateDraft",
     "EstimateLine",
+    "EstimateLineChanges",
     "EstimateSection",
     "EstimateVersion",
     "EstimateView",
@@ -69,6 +72,7 @@ __all__ = [
     "accept_all_assumptions",
     "accept_assumption",
     "current_version_lines",
+    "edit_line",
     "enqueue_draft",
     "export_estimate",
     "get_estimate",
