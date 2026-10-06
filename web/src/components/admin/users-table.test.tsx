@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AdminUser } from "@/app/admin/users/actions";
+import type { AdminUser } from "@/lib/admin";
 import { axeViolations } from "@/test/axe";
 
 import { ShellProviders } from "../shell/shell-context";
@@ -15,7 +15,6 @@ function user(n: number, roles: AdminUser["roles"] = []): AdminUser {
     email: `user${n}@example.invalid`,
     roles,
     row_version: 1,
-    last_changed_by: null,
   };
 }
 

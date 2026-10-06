@@ -11,10 +11,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main_api import create_app
+from app.modules.identity.application.authentication import _identity
 from app.platform.config import Settings
 from tests.auth_tokens import (
     EMAIL_CLAIM,
     OTHER_KEY,
+    PERMISSIONS_CLAIM,
+    ROLES_CLAIM,
     StubJWKSClient,
     auth_app,
     bearer,
@@ -161,3 +164,36 @@ def test_openapi_documents_me_with_bearer_security(client: TestClient) -> None:
     assert op["operationId"] == "get_me"
     assert {"401", "503"} <= set(op["responses"])
     assert op["security"] == [{"HTTPBearer": []}]
+
+
+# --- roles and permissions claims (Story 1.9) -------------------------------------------------
+
+
+def test_identity_reads_roles_and_permissions_claims() -> None:
+    identity = _identity(
+        claims(
+            **{
+                ROLES_CLAIM: ["presales_engineer", "intern"],
+                PERMISSIONS_CLAIM: ["opportunities.opportunity.create", "foo.bar.baz"],
+            }
+        )
+    )
+    # Raw strings: unknown values are filtered (and logged with the user id) at provisioning.
+    assert identity.roles == ("presales_engineer", "intern")
+    assert identity.permissions == ("opportunities.opportunity.create", "foo.bar.baz")
+    assert identity.malformed_claims == ()
+
+
+def test_absent_claims_are_empty_not_an_error() -> None:
+    identity = _identity(claims())
+    assert (identity.roles, identity.permissions, identity.malformed_claims) == ((), (), ())
+
+
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [("presales_engineer", ()), ({"a": 1}, ()), (["commercial", 3, None], ("commercial",))],
+)
+def test_malformed_claims_are_dropped_and_reported(roles: Any, expected: tuple[str, ...]) -> None:
+    identity = _identity(claims(**{ROLES_CLAIM: roles}))
+    assert identity.roles == expected
+    assert identity.malformed_claims == (ROLES_CLAIM,)

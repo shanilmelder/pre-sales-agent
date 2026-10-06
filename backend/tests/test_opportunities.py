@@ -26,7 +26,7 @@ from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE
 from tests.auth_tokens import auth_app
 from tests.conftest import make_client
 from tests.test_health import assert_problem
-from tests.test_role_admin import _grant, _signed_in
+from tests.test_role_admin import _reissue, _signed_in
 
 BASE = "/api/v1/opportunities"
 PSE = "presales_engineer"
@@ -45,10 +45,9 @@ def _today() -> date:
 def _user(
     client: TestClient, engine: Engine, name: str, *roles: str
 ) -> tuple[dict[str, str], UUID]:
-    headers, user_id = _signed_in(client, name)
-    if roles:
-        _grant(engine, user_id, *roles)
-    return headers, user_id
+    """A signed-in user whose token carries `roles` and their Auth0 permissions. `engine`
+    is unused (roles come from the token) but kept for the many callers."""
+    return _signed_in(client, name, *roles)
 
 
 def _body(**overrides: Any) -> dict[str, Any]:
@@ -379,7 +378,6 @@ def test_add_existing_and_remove_missing_are_noops(client: TestClient, sync_engi
 
 def test_bad_members_are_422(client: TestClient, sync_engine: Engine) -> None:
     owner_headers, owner_id = _user(client, sync_engine, "Owner Person", PSE)
-    _, roleless_id = _user(client, sync_engine, "No Role")
     opp = _create(client, owner_headers)
 
     responses = [
@@ -388,7 +386,6 @@ def test_bad_members_are_422(client: TestClient, sync_engine: Engine) -> None:
             f"{BASE}/{opp['id']}/collaborators/{owner_id}",
             headers={**owner_headers, **_if_match(1)},
         ),
-        _add(client, owner_headers, opp, roleless_id),
         _add(client, owner_headers, opp, uuid4()),  # no such user
     ]
 
@@ -397,6 +394,42 @@ def test_bad_members_are_422(client: TestClient, sync_engine: Engine) -> None:
         assert_problem(resp.json(), 422, "invalid_collaborator")
     assert len(_events(sync_engine, opp["id"])) == 1
     assert client.get(f"{BASE}/{opp['id']}", headers=owner_headers).json()["row_version"] == 1
+
+
+def test_owner_finds_and_adds_a_user_with_no_roles(client: TestClient, sync_engine: Engine) -> None:
+    """Any provisioned user can be found and added; roles decide what they can then do."""
+    owner_headers, _ = _user(client, sync_engine, "Owner Person", PSE)
+    tag = uuid4().hex[:10]
+    _, roleless_id = _user(client, sync_engine, f"No Role {tag}")
+    opp = _create(client, owner_headers)
+
+    found = client.get("/api/v1/users/search", headers=owner_headers, params={"q": tag})
+    assert [u["id"] for u in found.json()["items"]] == [str(roleless_id)]
+    resp = _add(client, owner_headers, opp, roleless_id)
+
+    assert resp.status_code == 200, resp.text
+    assert [c["id"] for c in resp.json()["collaborators"]] == [str(roleless_id)]
+
+
+def test_role_without_create_permission_is_403_but_owner_access_stays(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    owner_headers, owner_id = _user(client, sync_engine, "Owner Person", PSE)
+    opp = _create(client, owner_headers)
+    no_permissions = _reissue(owner_id, PSE, permissions=[])
+
+    denied = client.post(BASE, headers=no_permissions, json=_body())
+    assert denied.status_code == 403
+    assert_problem(denied.json(), 403, "forbidden")
+    assert client.get(f"{BASE}/{opp['id']}", headers=no_permissions).status_code == 200
+
+
+def test_create_permission_decides_not_the_role(client: TestClient, sync_engine: Engine) -> None:
+    """Auth0 may give any role the create permission. (Owner access still needs a role.)"""
+    headers, _ = _signed_in(
+        client, "Commercial Creator", "commercial", permissions=["opportunities.opportunity.create"]
+    )
+    assert client.post(BASE, headers=headers, json=_body()).status_code == 201
 
 
 @pytest.mark.parametrize("who", ["collaborator", "head_of_delivery", "admin"])
@@ -508,11 +541,8 @@ def test_owner_whose_roles_were_removed_loses_access(
     _, other_id = _user(client, sync_engine, "Other", "commercial")
     opp = _create(client, owner_headers)
     added = _add(client, owner_headers, opp, member_id).json()
-    with sync_engine.begin() as conn:
-        conn.execute(
-            sa.text("DELETE FROM identity_user_roles WHERE user_id = ANY(:u)"),
-            {"u": [owner_id, member_id]},
-        )
+    # Their roles are removed in Auth0; their next tokens carry none.
+    owner_headers, member_headers = _reissue(owner_id), _reissue(member_id)
 
     for headers in (owner_headers, member_headers):
         resp = client.get(f"{BASE}/{opp['id']}", headers=headers)

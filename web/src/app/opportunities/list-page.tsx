@@ -56,7 +56,7 @@ function Pagination({
   );
 }
 
-/** A paginated Opportunity list with New Opportunity for presales engineers. All
+/** A paginated Opportunity list with New Opportunity for those who may create. All
  * Opportunities (`scope="all"`) also has the filter bar; its filters live in the URL query
  * and are kept by the page links. Invalid filter values are dropped. */
 export async function OpportunityListPage({
@@ -88,7 +88,7 @@ export async function OpportunityListPage({
     redirect(filtersHref(basePath, filters, total > 0 ? Math.ceil(total / page_size) : 1));
   }
   const filtered = hasFilters(filters);
-  const canCreate = canCreateOpportunity(result.me.roles);
+  const canCreate = canCreateOpportunity(result.me.permissions);
 
   return (
     <AppShell me={result.me}>

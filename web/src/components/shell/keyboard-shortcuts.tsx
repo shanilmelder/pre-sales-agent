@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { useShell } from "@/components/shell/shell-context";
-import { NAV_ITEMS, type Role } from "@/lib/navigation";
+import { NAV_ITEMS, type Permission } from "@/lib/navigation";
 import {
   NEW_OPPORTUNITY_HREF,
   SEQUENCE_TIMEOUT_MS,
@@ -83,15 +83,15 @@ const SEQUENCES = SHORTCUTS.filter(
 
 /** The shell's global key handler. Matches events against the user's shortcuts (`SHORTCUTS`
  * minus those needing a permission they lack). */
-export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
+export function KeyboardShortcuts({ permissions }: { permissions: readonly Permission[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const shell = useShell();
   const pending = useRef<{ key: string; at: number } | null>(null);
-  const rolesKey = roles.join(",");
+  const permissionsKey = permissions.join(",");
 
   useEffect(() => {
-    const shortcuts = shortcutsFor(rolesKey ? (rolesKey.split(",") as Role[]) : []);
+    const shortcuts = shortcutsFor(permissionsKey ? permissionsKey.split(",") : []);
 
     function run(id: ShortcutId) {
       switch (id) {
@@ -218,7 +218,7 @@ export function KeyboardShortcuts({ roles }: { roles: readonly Role[] }) {
     // Capture phase: runs before dialogs see the key, so Esc closes only the top layer.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [router, pathname, shell, rolesKey]);
+  }, [router, pathname, shell, permissionsKey]);
 
   return null;
 }

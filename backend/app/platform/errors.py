@@ -124,13 +124,6 @@ class ConflictError(ProblemError):
     title = "Conflict"
 
 
-class LastAdministratorError(ConflictError):
-    """Removing the role would leave the platform without a platform administrator."""
-
-    code = "last_administrator"
-    title = "Last administrator"
-
-
 class ParseNotFailedError(ConflictError):
     """A Source parse retry asked for a version whose parse has not failed."""
 

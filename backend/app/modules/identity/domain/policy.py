@@ -1,9 +1,12 @@
-"""Authorization policy (AD-15): which roles, and which relations to a resource, grant
+"""Authorization policy (AD-15): which permissions, and which relations to a resource, grant
 which actions. Pure, no I/O.
 
 Two kinds of grant, either of which allows an action:
 
-- **Role grants** (`POLICY`): a role allows the action on every resource of its kind.
+- **Permission grants**: Auth0 RBAC assigns permissions to roles, and the access token's
+  `permissions` claim carries them. Each permission name equals an `Action` value; holding
+  it allows the action on every resource of its kind. Which role holds which permission is
+  configured in Auth0 (README "Auth0 setup"), not here.
 - **Resource-scoped grants**: the principal's relation to the resource. The resource's
   owner gets `OWNER_GRANTS`, its members (e.g. Opportunity collaborators) `MEMBER_GRANTS`.
   The caller loads `owner_id` and `member_ids` into the `Resource` before asking.
@@ -26,12 +29,13 @@ from app.platform.actor import Actor
 
 @dataclass(frozen=True, slots=True)
 class Principal:
-    """identity's actor: a platform `Actor` plus the roles loaded for it at the edge.
-
-    Roles are loaded per request, so role changes take effect on the next request."""
+    """identity's actor: a platform `Actor` plus the roles and permissions its access token
+    carries. Both are read from the token on every request, so a change in Auth0 takes
+    effect when the user's next token is issued."""
 
     actor: Actor
     roles: frozenset[Role] = frozenset()
+    permissions: frozenset[Action] = frozenset()
 
     @property
     def user_id(self) -> UUID | None:
@@ -58,55 +62,6 @@ class Resource:
 
 OPPORTUNITY_RESOURCE = "opportunities.opportunity"
 """The only resource type the owner/member rules apply to."""
-
-POLICY: Mapping[Action, frozenset[Role]] = MappingProxyType(
-    {
-        Action.USER_LIST: frozenset({Role.PLATFORM_ADMINISTRATOR}),
-        Action.USER_ASSIGN_ROLE: frozenset({Role.PLATFORM_ADMINISTRATOR}),
-        Action.USER_REMOVE_ROLE: frozenset({Role.PLATFORM_ADMINISTRATOR}),
-        # Presales engineers look people up to pick collaborators.
-        Action.USER_SEARCH: frozenset({Role.PRESALES_ENGINEER}),
-        Action.OPPORTUNITY_CREATE: frozenset({Role.PRESALES_ENGINEER}),
-        Action.OPPORTUNITY_READ: frozenset({Role.HEAD_OF_DELIVERY, Role.PLATFORM_ADMINISTRATOR}),
-        # Only the owner edits the Opportunity or manages collaborators: no role grants it.
-        Action.OPPORTUNITY_UPDATE: frozenset(),
-        Action.COLLABORATOR_ADD: frozenset(),
-        Action.COLLABORATOR_REMOVE: frozenset(),
-        # The owner and collaborators add Sources, whatever their role (so sales
-        # representatives on the Opportunity can); no role grants it on its own.
-        Action.SOURCE_ADD: frozenset(),
-        # Starting (retrying) Requirement extraction follows adding Sources: the owner and
-        # collaborators, whatever their role.
-        Action.EXTRACTION_START: frozenset(),
-        # Editing and confirming Requirements: the owner and collaborators, except sales
-        # representatives (`RELATION_EXCLUDED_ROLES`); no role grants it on its own.
-        Action.REQUIREMENT_EDIT: frozenset(),
-        # Starting (retrying) Gap detection (Story 4.3): like editing Requirements, the owner
-        # and collaborators except sales representatives.
-        Action.GAP_DETECTION_START: frozenset(),
-        # Editing and approving Clarification Questions (Story 4.5): the owner and
-        # collaborators except sales representatives.
-        Action.GAP_QUESTION_EDIT: frozenset(),
-        # Starting (retrying) an Estimate draft (Story 8.1): the owner and collaborators
-        # except sales representatives.
-        Action.ESTIMATE_DRAFT_START: frozenset(),
-        # Accepting an Assumption (Story 8.4): the owner and collaborators except sales
-        # representatives; always as themselves.
-        Action.ASSUMPTION_ACCEPT: frozenset(),
-        # Starting (retrying) a Red Team Review (Story 6.5): the owner and collaborators
-        # except sales representatives.
-        Action.RED_TEAM_START: frozenset(),
-        # Starting an assessment run, or retrying one of its tasks (Epic 5 slice 5A): the
-        # owner and collaborators except sales representatives.
-        Action.ASSESSMENT_START: frozenset(),
-        # Exporting the Estimate (Story 8.8): the owner and collaborators except sales
-        # representatives.
-        Action.ESTIMATE_EXPORT: frozenset(),
-        # Editing an Estimate line's hours and role mix (Story 8.2): the owner and
-        # collaborators except sales representatives.
-        Action.ESTIMATE_LINE_EDIT: frozenset(),
-    }
-)
 
 RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
     {
@@ -161,13 +116,13 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
 
 
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:
-    """True if one of the principal's roles grants the action, or the principal is the
+    """True if the principal holds the action as a permission, or the principal is the
     resource's owner or a member and that relation grants it. Relations count only on an
     Opportunity and only for principals holding at least one role (a user whose roles were
     all removed loses access), and not for a principal whose roles are all excluded for the
     action (`RELATION_EXCLUDED_ROLES`). Agent and system actors follow the same rules: with
-    no granting role or relation they are denied."""
-    if not principal.roles.isdisjoint(POLICY.get(action, frozenset())):
+    no granting permission or relation they are denied."""
+    if action in principal.permissions:
         return True
     if resource is None or resource.type != OPPORTUNITY_RESOURCE or not principal.roles:
         return False

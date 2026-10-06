@@ -49,9 +49,9 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
           <RightPane />
         </div>
       </div>
-      <CommandPalette roles={me.roles} />
-      <CheatSheet roles={me.roles} />
-      <KeyboardShortcuts roles={me.roles} />
+      <CommandPalette permissions={me.permissions} />
+      <CheatSheet permissions={me.permissions} />
+      <KeyboardShortcuts permissions={me.permissions} />
     </>
   );
 }

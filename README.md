@@ -160,8 +160,9 @@ PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost
 
 ## Authentication (Auth0)
 
-Auth0 (EU tenant) handles authentication only; roles live in `identity`, not in Auth0
-RBAC. The web app (`@auth0/nextjs-auth0` v4, `web/src/proxy.ts`) mounts `/auth/login`,
+Auth0 (EU tenant) handles authentication and is the one place where roles and permissions
+are managed (Auth0 RBAC). Opportunity owners and collaborators stay in the platform. The
+web app (`@auth0/nextjs-auth0` v4, `web/src/proxy.ts`) mounts `/auth/login`,
 `/auth/callback` and `/auth/logout`, sends visitors without a session to Universal Login
 and returns them to the page they asked for. `/healthz` and static assets stay public.
 Server components call the API through `web/src/lib/api/server.ts`, which sends the
@@ -169,10 +170,19 @@ user's access token for the API audience as `Authorization: Bearer`.
 
 The API validates every token with PyJWT against the tenant's JWKS (RS256 only, `iss` =
 `https://$AUTH0_DOMAIN/`, `aud` = `$AUTH0_AUDIENCE`, `exp`). The first valid token for an
-unknown `sub` provisions a platform user with no roles and appends
-`identity.user.provisioned` to the trace. `GET /api/v1/me` returns `{id, name, email,
-roles}`. A user with no roles sees only "You're signed in, but you don't have access yet.
-Ask an administrator to assign a role." Failures are problem+json: 401 `token_missing`,
+unknown `sub` provisions a platform user and appends `identity.user.provisioned` to the
+trace. The API authorizes from the token alone: the `permissions` claim (each permission
+name equals an API action, e.g. `opportunities.opportunity.create`) grants actions, and
+the namespaced roles claim drives owner/collaborator access and the sales-representative
+exclusions. A missing claim grants nothing (it is not a 401); values the platform doesn't
+know are ignored and logged with the user id. Role changes in Auth0 apply when the user's
+next access token is issued (sign out and back in to see them at once). `GET /api/v1/me`
+returns `{id, name, email, roles, permissions}`. A user with no roles sees only "You're
+signed in, but you don't have access yet. Ask an administrator to assign a role."
+
+Admin > Users & roles is read-only. It lists every provisioned user with their roles as of
+their last sign-in, from a display-only cache refreshed from each user's token (never used
+for authorization), and links to the Auth0 dashboard where roles are edited. Failures are problem+json: 401 `token_missing`,
 `token_expired` or `token_invalid` (with `WWW-Authenticate: Bearer`), and 503
 `auth_unavailable` when the JWKS can't be fetched. Sign out (avatar menu) ends the app
 session and the Auth0 session.
@@ -186,12 +196,13 @@ session and the Auth0 session.
    - Copy the Domain, Client ID and Client Secret.
 3. **APIs > Create API.** Identifier: `https://api.pre-sales-agent` (any URI works; it
    becomes `AUTH0_AUDIENCE`), signing algorithm RS256. Turn on "Allow Offline Access" so
-   sessions can refresh their access token. Leave RBAC off.
+   sessions can refresh their access token. Under **RBAC Settings** turn on **Enable RBAC**
+   and **Add Permissions in the Access Token**.
 4. **Actions > Library > Create Action > Build from scratch**, trigger "Login / Post
    Login", with this code, then Deploy and add it to the Post Login trigger
-   (**Actions > Triggers > post-login**). The API reads name and email only from these
-   namespaced access-token claims; a token without the email claim is rejected with 401
-   `token_invalid`.
+   (**Actions > Triggers > post-login**). The API reads name, email and roles only from
+   these namespaced access-token claims; a token without the email claim is rejected with
+   401 `token_invalid`.
 
    ```js
    exports.onExecutePostLogin = async (event, api) => {
@@ -200,10 +211,61 @@ session and the Auth0 session.
        api.accessToken.setCustomClaim(`${namespace}email`, event.user.email);
        api.accessToken.setCustomClaim(`${namespace}name`, event.user.name || event.user.email);
      }
+     api.accessToken.setCustomClaim(`${namespace}roles`, event.authorization?.roles ?? []);
    };
    ```
 
-5. Put the values in your local `.env` (never commit it):
+5. **APIs > (your API) > Permissions.** Add one permission per API action that a role
+   grants on its own (the name must equal the action exactly):
+   `identity.user.list`, `identity.user.search`, `opportunities.opportunity.create`,
+   `opportunities.opportunity.read`.
+6. **User Management > Roles.** Create the nine roles with these exact names (the API
+   ignores any other name): `presales_engineer`, `sales_representative`,
+   `engineering_reviewer`, `pm_reviewer`, `security_reviewer`, `commercial`,
+   `delivery_manager`, `head_of_delivery`, `platform_administrator`. Give them the API's
+   permissions as follows; the other roles get none (their access comes from being an
+   Opportunity's owner or collaborator):
+
+   | Role | Permissions |
+   | --- | --- |
+   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read` |
+   | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
+   | `head_of_delivery` | `opportunities.opportunity.read` |
+
+   Assign roles to users under **User Management > Users > (user) > Roles**. Give yourself
+   `platform_administrator` (and `presales_engineer` to create Opportunities).
+
+   Steps 3's RBAC settings, 5 and 6 can be scripted instead: `backend/scripts/seed_auth0.py`
+   adds whatever is missing (it never removes anything, so re-running is safe). Create a
+   **Machine to Machine** application authorized for the **Auth0 Management API** with the
+   scopes `read:resource_servers update:resource_servers read:roles create:roles
+   update:roles read:users update:users`. Add its credentials to the repo-root `.env` next
+   to `AUTH0_DOMAIN` and `AUTH0_AUDIENCE` (the script reads them from there; environment
+   variables win):
+
+   ```sh
+   AUTH0_MGMT_CLIENT_ID=<m2m client id>
+   AUTH0_MGMT_CLIENT_SECRET=<m2m secret>
+   ```
+
+   Then from `backend/`:
+
+   ```sh
+   uv run python -m scripts.seed_auth0 --dry-run   # shows the changes
+   uv run python -m scripts.seed_auth0 --assign you@example.com=platform_administrator,presales_engineer
+   ```
+
+   `--assign` needs the user to have signed in once. The Action code in step 4 is still
+   added by hand.
+
+   **Upgrading from in-app roles.** Roles that were assigned on Users & roles before Story
+   1.9 are not carried over: until the same roles are assigned in Auth0, those people see
+   the no-access page. Before (or right after) upgrading, note each person's roles on Users &
+   roles and assign them in Auth0. Auth0 doesn't stop you removing the last
+   `platform_administrator`; if that happens, recover with
+   `uv run python -m scripts.seed_auth0 --assign you@example.com=platform_administrator`.
+
+7. Put the values in your local `.env` (never commit it):
 
    ```sh
    AUTH0_DOMAIN=<tenant>.eu.auth0.com
@@ -214,9 +276,9 @@ session and the Auth0 session.
    APP_BASE_URL=http://localhost:3000
    ```
 
-6. Restart the stack (`docker compose --profile local up --build --wait -d`) and open
-   http://localhost:3000. A new user sees the no-access message until an administrator
-   assigns a role (Story 1.6).
+8. Restart the stack (`docker compose --profile local up --build --wait -d`) and open
+   http://localhost:3000. A user without roles sees the no-access message until an
+   administrator assigns a role in Auth0 and the user signs in again.
 
 Running the API outside Docker, export `PSA_AUTH0_DOMAIN` and `PSA_AUTH0_AUDIENCE` (the
 same values as `AUTH0_DOMAIN` and `AUTH0_AUDIENCE`).

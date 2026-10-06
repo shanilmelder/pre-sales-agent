@@ -8,7 +8,7 @@ import { canCreateOpportunity } from "@/lib/shortcuts";
 
 export const metadata: Metadata = { title: "New Opportunity · Pre-Sales Agent" };
 
-/** Create an Opportunity (presales engineers; the API decides). */
+/** Create an Opportunity (with `opportunities.opportunity.create`; the API decides). */
 export default async function NewOpportunityPage() {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
@@ -19,7 +19,7 @@ export default async function NewOpportunityPage() {
         <div className="p-gutter pb-0">
           <h1 className="text-title">New Opportunity</h1>
         </div>
-        {canCreateOpportunity(result.me.roles) ? (
+        {canCreateOpportunity(result.me.permissions) ? (
           <CreateOpportunityForm />
         ) : (
           <p className="p-gutter">You don&apos;t have access to create Opportunities.</p>

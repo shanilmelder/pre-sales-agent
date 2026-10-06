@@ -27,7 +27,8 @@ export interface paths {
         };
         /**
          * Get Me
-         * @description The signed-in user, provisioned with no roles on their first valid token.
+         * @description The signed-in user, provisioned on their first valid token, with the roles and
+         *     permissions that token carries.
          */
         get: operations["get_me"];
         put?: never;
@@ -47,7 +48,8 @@ export interface paths {
         };
         /**
          * List Admin Users
-         * @description Users and their roles, ordered by name, one page at a time.
+         * @description Users and their roles (as of each user's last sign-in), ordered by name, one page at
+         *     a time.
          */
         get: operations["list_admin_users"];
         put?: never;
@@ -67,37 +69,12 @@ export interface paths {
         };
         /**
          * Get Admin User
-         * @description One user with their roles and who last changed them.
+         * @description One user with their roles as of their last sign-in.
          */
         get: operations["get_admin_user"];
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/users/{user_id}/roles/{role}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Assign Role
-         * @description Give the user a role. Assigning a role they already hold changes nothing.
-         */
-        put: operations["assign_role"];
-        post?: never;
-        /**
-         * Remove Role
-         * @description Take a role from the user. Removing a role they don't hold changes nothing; removing
-         *     the last platform administrator is rejected with 409.
-         */
-        delete: operations["remove_role"];
         options?: never;
         head?: never;
         patch?: never;
@@ -112,8 +89,8 @@ export interface paths {
         };
         /**
          * Search Users
-         * @description Users who hold at least one role and whose name or email contains `q`
-         *     (case-insensitive), ordered by name.
+         * @description Provisioned users whose name or email contains `q` (case-insensitive), ordered by
+         *     name.
          */
         get: operations["search_users"];
         put?: never;
@@ -209,7 +186,7 @@ export interface paths {
         get?: never;
         /**
          * Add Collaborator
-         * @description Share the Opportunity with a user who holds a role. Owner only; adding an existing
+         * @description Share the Opportunity with a provisioned user. Owner only; adding an existing
          *     collaborator changes nothing.
          */
         put: operations["add_collaborator"];
@@ -892,10 +869,8 @@ export interface components {
         };
         /**
          * AdminUser
-         * @description A platform user as administrators see it. `row_version` is also the `ETag`.
-         *
-         *     `last_changed_by` is the name of whoever made the latest role change, or null when no
-         *     role change is recorded (the UI then says "another administrator").
+         * @description A platform user as administrators see it. `roles` are as of the user's last sign-in
+         *     (managed in Auth0). `row_version` is also the `ETag`.
          */
         AdminUser: {
             /** Id */
@@ -908,8 +883,6 @@ export interface components {
             roles: components["schemas"]["Role"][];
             /** Row Version */
             row_version: number;
-            /** Last Changed By */
-            last_changed_by: string | null;
         };
         /**
          * AdminUserPage
@@ -2300,7 +2273,8 @@ export interface components {
         };
         /**
          * UserProfile
-         * @description The signed-in user. `roles` is empty until an administrator assigns one.
+         * @description The signed-in user, with the roles and permissions their access token carries
+         *     (assigned in Auth0). Both are empty until an administrator assigns a role there.
          */
         UserProfile: {
             /** Id */
@@ -2311,6 +2285,8 @@ export interface components {
             email: string;
             /** Roles */
             roles: components["schemas"]["Role"][];
+            /** Permissions */
+            permissions: string[];
         };
         /**
          * UserRef
@@ -2505,7 +2481,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not a platform administrator (`forbidden`) */
+            /** @description No `identity.user.list` permission (`forbidden`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2527,7 +2503,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
+            /** @description Invalid path or query parameter (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2617,7 +2593,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not a platform administrator (`forbidden`) */
+            /** @description No `identity.user.list` permission (`forbidden`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2661,416 +2637,8 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
+            /** @description Invalid path or query parameter (`validation_error`) */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-        };
-    };
-    assign_role: {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description The ETag of the user as last read, e.g. `"3"`. */
-                "If-Match"?: string | null;
-            };
-            path: {
-                user_id: string;
-                role: components["schemas"]["Role"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The user after the change */
-            200: {
-                headers: {
-                    /** @description The user's row version, for `If-Match`. */
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminUser"];
-                };
-            };
-            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Not a platform administrator (`forbidden`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description No user with this id (`not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Would leave no platform administrator (`last_administrator`) */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The user changed since it was read (`row_version_mismatch`) */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The write has no `If-Match` header (`if_match_required`) */
-            428: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-        };
-    };
-    remove_role: {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description The ETag of the user as last read, e.g. `"3"`. */
-                "If-Match"?: string | null;
-            };
-            path: {
-                user_id: string;
-                role: components["schemas"]["Role"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The user after the change */
-            200: {
-                headers: {
-                    /** @description The user's row version, for `If-Match`. */
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminUser"];
-                };
-            };
-            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Not a platform administrator (`forbidden`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description No user with this id (`not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Would leave no platform administrator (`last_administrator`) */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The user changed since it was read (`row_version_mismatch`) */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The write has no `If-Match` header (`if_match_required`) */
-            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3158,7 +2726,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not a presales engineer (`forbidden`) */
+            /** @description No `identity.user.search` permission (`forbidden`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3373,7 +2941,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3734,7 +3302,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3916,7 +3484,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4098,7 +3666,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
