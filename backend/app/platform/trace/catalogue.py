@@ -87,9 +87,13 @@ class IdentityUserRoleRemoved(TracePayload):
 
 @register
 class OpportunitiesOpportunityCreated(TracePayload):
-    """A presales engineer created an Opportunity. Actor: the creator (its owner)."""
+    """A presales engineer created an Opportunity. Actor: the creator (its owner).
+    `from_import`: started from an imported file (Story 1.7 import), which was added as its
+    first Source (traced as `intake.source.added`)."""
 
     event_type: ClassVar[str] = "opportunities.opportunity.created"
+
+    from_import: bool = False
 
 
 @register

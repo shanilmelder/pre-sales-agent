@@ -1,0 +1,45 @@
+From: Daniel Okafor <daniel.okafor@meridianfresh.example>
+To: Alex Chen <alex.chen@vendor.example>
+Cc: Priya Raman <priya.raman@meridianfresh.example>
+Subject: RE: Riverside DC - what you need from us
+Date: Tue, 29 Sep 2026 14:20:07 +0100
+Message-ID: <riverside-deps-0929@meridianfresh.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+Thanks for the list of open points. These ones all sit with us, so here is where
+each one stands. None of them are decided or delivered yet, but they are ours to
+sort out, not something you need to guess at.
+
+- Carrier label formats: we ship with three carriers. Each carrier has to send us
+  its current label and manifest specification, and we will forward them to you.
+  We have asked, but nothing has come back yet, and one carrier is moving to a
+  new label format next year.
+- Label printers: we haven't decided whether to keep the existing Zebra printers
+  on the packing benches or buy new ones as part of this project. Facilities will
+  make that call once the budget is approved.
+- Building drawings and floor survey: the landlord holds the as-built drawings
+  and the floor flatness survey for the new building. We will request them and
+  pass them on, but we don't have a date from the landlord yet.
+- Network: our IT team will provide the network for the automation (VLANs, IP
+  ranges, firewall rules and the wireless coverage in the chilled zone). We
+  haven't designed it yet and we will need your requirements first.
+- Remote access: any vendor access to the site systems has to go through our own
+  remote access gateway. Security has to approve your engineers' accounts one by
+  one, and that approval normally takes about three weeks.
+- Chilled zone layout: the operations team still has to sign off the final
+  chilled zone layout, including where the dock doors and the air curtains go.
+  Sign-off is planned for November.
+- Test orders: our business team will prepare a representative set of test
+  orders and the expected results for acceptance testing, but they won't start
+  on that until the design is agreed.
+
+Please price on the basis that we deliver these. If any of them is critical for
+your plan, tell us by when you need it and we will put it in our project plan.
+
+Regards,
+Daniel Okafor
+IT Manager, Meridian Fresh Foods

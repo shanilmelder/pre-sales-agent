@@ -243,8 +243,12 @@ async def facets(uow: UnitOfWork, actor: Principal) -> OpportunityFacets:
 # --- commands -------------------------------------------------------------------------------
 
 
-async def create(uow: UnitOfWork, actor: Principal, new: NewOpportunity) -> Opportunity:
-    """Create an Opportunity owned by the caller (`presales_engineer` only)."""
+async def create(
+    uow: UnitOfWork, actor: Principal, new: NewOpportunity, *, from_import: bool = False
+) -> Opportunity:
+    """Create an Opportunity owned by the caller (`presales_engineer` only). `from_import`:
+    started from an Opportunity import (`application.imports`), recorded on the trace
+    event; the import itself is checked and consumed by the caller."""
     identity.authorize(actor, Action.OPPORTUNITY_CREATE)
     owner_id = actor.user_id
     if owner_id is None:
@@ -263,7 +267,7 @@ async def create(uow: UnitOfWork, actor: Principal, new: NewOpportunity) -> Oppo
     await trace.append(
         uow,
         actor=actor.actor,
-        payload=OpportunitiesOpportunityCreated(),
+        payload=OpportunitiesOpportunityCreated(from_import=from_import),
         subject_type=SUBJECT_TYPE,
         subject_id=opportunity_id,
         opportunity_id=opportunity_id,

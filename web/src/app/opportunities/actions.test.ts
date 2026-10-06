@@ -28,9 +28,11 @@ import {
   editEstimateLine,
   editRequirement,
   getPassage,
+  importFile,
   loadAssessments,
   loadEstimate,
   loadGaps,
+  loadImport,
   loadRedTeam,
   loadRequirements,
   loadSources,
@@ -110,6 +112,91 @@ describe("createOpportunity", () => {
     api.POST.mockRejectedValueOnce(new Error("network"));
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await createOpportunity(INPUT)).toEqual({ kind: "error" });
+  });
+});
+
+describe("createOpportunity with an import", () => {
+  const IMPORT_ID = "00000000-0000-7000-8000-0000000000e1";
+
+  it("sends the import id", async () => {
+    api.POST.mockResolvedValue({ data: OPPORTUNITY, response: status(201) });
+    expect(await createOpportunity({ ...INPUT, importId: IMPORT_ID })).toEqual({
+      kind: "ok",
+      id: OPP_ID,
+    });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities", {
+      body: { ...INPUT, title: null, import_id: IMPORT_ID },
+    });
+  });
+
+  it.each([404, 409, 410])("maps %i for the import to import-unusable", async (code) => {
+    api.POST.mockResolvedValueOnce({ error: { code: "x" }, response: status(code) });
+    expect(await createOpportunity({ ...INPUT, importId: IMPORT_ID })).toEqual({
+      kind: "import-unusable",
+    });
+  });
+
+  it("refuses a malformed import id without calling the API", async () => {
+    expect(await createOpportunity({ ...INPUT, importId: "nope" })).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("importFile and loadImport", () => {
+  const IMPORTED = {
+    id: "00000000-0000-7000-8000-0000000000e1",
+    filename: "follow-up.eml",
+    size_bytes: 10,
+    status: "queued",
+    error_code: null,
+    suggestions: null,
+    created_at: "2026-10-06T10:00:00Z",
+  };
+
+  function form(file: File | null = new File(["From: x"], "follow-up.eml")) {
+    const data = new FormData();
+    if (file !== null) data.append("file", file);
+    return data;
+  }
+
+  it("posts the file as multipart to the imports", async () => {
+    api.POST.mockResolvedValue({ data: IMPORTED, response: status(202) });
+    expect(await importFile(form())).toEqual({ kind: "ok", import: IMPORTED });
+    const [path, init] = api.POST.mock.calls[0];
+    expect(path).toBe("/api/v1/opportunity-imports");
+    const file = (init.bodySerializer(init.body) as FormData).get("file") as File;
+    expect(file.name).toBe("follow-up.eml");
+    expect(await file.text()).toBe("From: x");
+  });
+
+  it("passes on the API's rejection sentence for 413, 415 and 422", async () => {
+    for (const [code, detail] of [
+      [415, "Rejected: .exe files aren't allowed"],
+      [413, "Rejected: larger than 50 MB"],
+      [422, "Rejected: this file is empty"],
+    ] as const) {
+      api.POST.mockResolvedValueOnce({ error: { code: "x", detail }, response: status(code) });
+      expect(await importFile(form())).toEqual({ kind: "rejected", reason: detail });
+    }
+    api.POST.mockResolvedValueOnce({ error: { code: "forbidden" }, response: status(403) });
+    expect(await importFile(form())).toEqual({ kind: "forbidden" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await importFile(form())).toEqual({ kind: "error" });
+    expect(await importFile(form(null))).toEqual({ kind: "error" });
+  });
+
+  it("reads an import, and 404/410 are gone", async () => {
+    api.GET.mockResolvedValueOnce({ data: IMPORTED, response: status(200) });
+    expect(await loadImport(IMPORTED.id)).toEqual({ kind: "ok", import: IMPORTED });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunity-imports/{import_id}", {
+      params: { path: { import_id: IMPORTED.id } },
+    });
+    api.GET.mockResolvedValueOnce({ error: { code: "import_expired" }, response: status(410) });
+    expect(await loadImport(IMPORTED.id)).toEqual({ kind: "gone" });
+    api.GET.mockResolvedValueOnce({ error: { code: "not_found" }, response: status(404) });
+    expect(await loadImport(IMPORTED.id)).toEqual({ kind: "gone" });
+    expect(await loadImport("nope")).toEqual({ kind: "error" });
   });
 });
 
