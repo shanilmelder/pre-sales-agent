@@ -195,7 +195,7 @@ def test_timeline_is_newest_first_with_readable_actors(
         "id": opp["id"],
         "version": 1,
     }
-    assert created["payload"] == {}
+    assert created["payload"] == {"from_import": False}
     assert datetime.fromisoformat(red_team["occurred_at"]) > datetime.fromisoformat(
         created["occurred_at"]
     )

@@ -156,7 +156,7 @@ def test_create_sets_owner_status_and_traces(client: TestClient, sync_engine: En
 
     (event,) = _events(sync_engine, opp["id"])
     assert event["event_type"] == "opportunities.opportunity.created"
-    assert event["payload"] == {}
+    assert event["payload"] == {"from_import": False}
     assert (event["actor_type"], event["actor_id"]) == ("user", str(owner_id))
     assert (event["subject_type"], str(event["subject_id"])) == (
         "opportunities.opportunity",

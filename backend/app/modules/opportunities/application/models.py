@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.modules.opportunities.domain import opportunity as rules
+from app.modules.opportunities.domain.imports import ImportErrorCode, ImportStatus
 from app.modules.opportunities.domain.opportunity import OpportunityStatus
 
 
@@ -29,6 +30,11 @@ class NewOpportunity(BaseModel):
     )
     industry: str = Field(description=f"Required, at most {rules.INDUSTRY_MAX} characters.")
     target_proposal_date: date = Field(description="A calendar date, not in the past.")
+    import_id: UUID | None = Field(
+        default=None,
+        description="An Opportunity import of the caller's, not used yet and under 24 hours "
+        "old: its file becomes the new Opportunity's first Source.",
+    )
 
     @field_validator("title")
     @classmethod
@@ -222,3 +228,43 @@ class TracePage(BaseModel):
     page_size: int = Field(ge=1)
     total: int = Field(ge=0)
     options: TraceFilterOptions
+
+
+# --- Opportunity imports (Story 1.7, import from file) -------------------------------------
+
+
+class SuggestedValue(BaseModel):
+    """A suggested field value and the short quote of the file it came from."""
+
+    value: str
+    quote: str
+
+
+class ImportSuggestions(BaseModel):
+    """The New Opportunity fields suggested from the file. A field the file doesn't support
+    is null (or `products` empty); every value already passes the form's rules.
+    `target_proposal_date` is `YYYY-MM-DD`."""
+
+    title: SuggestedValue | None = None
+    customer_name: SuggestedValue | None = None
+    industry: SuggestedValue | None = None
+    products: list[SuggestedValue] = Field(default_factory=list)
+    target_proposal_date: SuggestedValue | None = None
+    industry_inferred: bool = Field(
+        default=False,
+        description="The industry isn't named in the file: it was inferred from what the "
+        "customer does, quoting the passage it was inferred from.",
+    )
+
+
+class OpportunityImport(BaseModel):
+    """An uploaded file being read for New Opportunity suggestions. `suggestions` is set once
+    `succeeded`; `error_code` once `failed`."""
+
+    id: str
+    filename: str
+    size_bytes: int
+    status: ImportStatus
+    error_code: ImportErrorCode | None
+    suggestions: ImportSuggestions | None
+    created_at: datetime

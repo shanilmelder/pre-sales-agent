@@ -86,12 +86,15 @@ source_modules = ["app.main_api"]
 forbidden_modules = ["app.platform.model_gateway.gateway", "app.platform.model_gateway.ollama"]
 
 [[tool.importlinter.contracts]]
-name = "opportunities uses identity and assessments only through their public APIs (AD-2)"
+name = "opportunities uses identity, intake and assessments only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.opportunities"]
 forbidden_modules = [
     "app.modules.identity.domain",
     "app.modules.identity.adapters",
+    "app.modules.intake.domain",
+    "app.modules.intake.adapters",
+    "app.modules.intake.api",
     "app.modules.assessments.domain",
     "app.modules.assessments.adapters",
     "app.modules.assessments.api",

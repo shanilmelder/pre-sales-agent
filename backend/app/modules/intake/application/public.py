@@ -1,5 +1,6 @@
 """intake's public API. Other modules import intake only from here."""
 
+from app.modules.intake.application.file_text import FileTextUnreadableError, read_stored_text
 from app.modules.intake.application.models import (
     AddTextSource,
     ConfirmAllResult,
@@ -31,10 +32,13 @@ from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
     TEXT_BODY_MAX_BYTES,
     IncomingFile,
+    StoredUpload,
     add_file,
+    add_stored_file,
     add_text,
     list_sources,
     max_body_bytes,
+    store_upload,
 )
 from app.modules.intake.domain.sources import (
     EXTENSION_KINDS,
@@ -50,6 +54,7 @@ __all__ = [
     "AddTextSource",
     "ConfirmAllResult",
     "Extraction",
+    "FileTextUnreadableError",
     "IncomingFile",
     "Passage",
     "Requirement",
@@ -62,8 +67,10 @@ __all__ = [
     "SourceKind",
     "SourceList",
     "SourceParse",
+    "StoredUpload",
     "active_requirement_snapshots",
     "add_file",
+    "add_stored_file",
     "add_text",
     "confirm_all",
     "confirm_requirement",
@@ -73,7 +80,9 @@ __all__ = [
     "list_requirements",
     "list_sources",
     "max_body_bytes",
+    "read_stored_text",
     "requirement_version_texts",
     "retry_parse",
     "start_extraction",
+    "store_upload",
 ]

@@ -213,6 +213,46 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
+class ImportConsumedError(ConflictError):
+    """An Opportunity import was already used to create an Opportunity (Story 1.7 import)."""
+
+    code = "import_consumed"
+    title = "Import already used"
+
+
+class GoneError(ProblemError):
+    """The resource existed but no longer can be used (410)."""
+
+    status = 410
+    code = "gone"
+    title = "Gone"
+
+
+class ImportExpiredError(GoneError):
+    """An Opportunity import is older than its 24-hour lifetime (Story 1.7 import)."""
+
+    code = "import_expired"
+    title = "Import expired"
+
+
+class UploadTooLargeError(ProblemError):
+    """An Opportunity import file is larger than `upload_max_bytes` (413). Same `code` and
+    sentence as a Source upload's 422 `file_too_large`."""
+
+    status = 413
+    code = "file_too_large"
+    title = "File too large"
+
+
+class UploadTypeNotAllowedError(ProblemError):
+    """An Opportunity import file's extension is not on the allowlist (415). Same `code`
+    and sentence as a Source upload's 422 `file_type_not_allowed`."""
+
+    status = 415
+    code = "file_type_not_allowed"
+    title = "File type not allowed"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

@@ -141,7 +141,9 @@ export interface paths {
         put?: never;
         /**
          * Create Opportunity
-         * @description Create an Opportunity owned by the caller. Presales engineers only.
+         * @description Create an Opportunity owned by the caller. Presales engineers only. With `import_id`,
+         *     the import's file becomes the Opportunity's first Source (parsed as any upload) and the
+         *     import can't be used again.
          */
         post: operations["create_opportunity"];
         delete?: never;
@@ -239,6 +241,48 @@ export interface paths {
          *     200 characters. Anyone who can read the Opportunity can read its trace.
          */
         get: operations["list_opportunity_trace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Opportunity Import
+         * @description Upload one file to start a New Opportunity from. The worker reads it and suggests the
+         *     form's fields; poll `GET /opportunity-imports/{id}`. Presales engineers only.
+         */
+        post: operations["create_opportunity_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity-imports/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Opportunity Import
+         * @description The import's status (`queued`, `running`, `succeeded`, `failed`) and, once
+         *     `succeeded`, its suggestions, each with the quote it came from. Its uploader only.
+         */
+        get: operations["get_opportunity_import"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1538,6 +1582,36 @@ export interface components {
          */
         Impact: "high" | "medium" | "low";
         /**
+         * ImportErrorCode
+         * @enum {string}
+         */
+        ImportErrorCode: "unreadable" | "model_unavailable" | "model_timeout" | "output_invalid";
+        /**
+         * ImportStatus
+         * @enum {string}
+         */
+        ImportStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * ImportSuggestions
+         * @description The New Opportunity fields suggested from the file. A field the file doesn't support
+         *     is null (or `products` empty); every value already passes the form's rules.
+         *     `target_proposal_date` is `YYYY-MM-DD`.
+         */
+        ImportSuggestions: {
+            title?: components["schemas"]["SuggestedValue"] | null;
+            customer_name?: components["schemas"]["SuggestedValue"] | null;
+            industry?: components["schemas"]["SuggestedValue"] | null;
+            /** Products */
+            products?: components["schemas"]["SuggestedValue"][];
+            target_proposal_date?: components["schemas"]["SuggestedValue"] | null;
+            /**
+             * Industry Inferred
+             * @description The industry isn't named in the file: it was inferred from what the customer does, quoting the passage it was inferred from.
+             * @default false
+             */
+            industry_inferred: boolean;
+        };
+        /**
          * LineRequirement
          * @description A Requirement the line covers, at the version it was drafted against. `label` is
          *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
@@ -1587,6 +1661,11 @@ export interface components {
              * @description A calendar date, not in the past.
              */
             target_proposal_date: string;
+            /**
+             * Import Id
+             * @description An Opportunity import of the caller's, not used yet and under 24 hours old: its file becomes the new Opportunity's first Source.
+             */
+            import_id?: string | null;
         };
         /**
          * Opportunity
@@ -1663,6 +1742,27 @@ export interface components {
             owners: components["schemas"]["UserRef"][];
             /** Products */
             products: string[];
+        };
+        /**
+         * OpportunityImport
+         * @description An uploaded file being read for New Opportunity suggestions. `suggestions` is set once
+         *     `succeeded`; `error_code` once `failed`.
+         */
+        OpportunityImport: {
+            /** Id */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            status: components["schemas"]["ImportStatus"];
+            error_code: components["schemas"]["ImportErrorCode"] | null;
+            suggestions: components["schemas"]["ImportSuggestions"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * OpportunityPage
@@ -2080,6 +2180,16 @@ export interface components {
         SourceParse: {
             status: components["schemas"]["ParseStatus"];
             error_code: components["schemas"]["ParseErrorCode"] | null;
+        };
+        /**
+         * SuggestedValue
+         * @description A suggested field value and the short quote of the file it came from.
+         */
+        SuggestedValue: {
+            /** Value */
+            value: string;
+            /** Quote */
+            quote: string;
         };
         /**
          * Totals
@@ -3285,6 +3395,72 @@ export interface operations {
                     };
                 };
             };
+            /** @description No Opportunity import with this `import_id` of the caller's (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The import was already used (`import_consumed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The import is older than 24 hours (`import_expired`) */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
             /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
             422: {
                 headers: {
@@ -4130,6 +4306,300 @@ export interface operations {
                 };
             };
             /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_opportunity_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description One file: .eml, .vtt, .txt, .docx or .pdf (any Source type), at most `PSA_UPLOAD_MAX_BYTES` (50 MB).
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The import, `queued` for reading */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityImport"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only presales engineers create Opportunities */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: larger than the upload limit (`file_too_large`; the `detail` is the sentence to show) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: a type not allowed (`file_type_not_allowed`; the `detail` is the sentence to show) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: `file_content_mismatch`, `file_empty` (the `detail` is the sentence to show), or `validation_error` (no `file` part, an unusable file name, or an id that is not a UUID) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_opportunity_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityImport"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No import with this id of the caller's (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The import is older than 24 hours (`import_expired`) */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: `file_content_mismatch`, `file_empty` (the `detail` is the sentence to show), or `validation_error` (no `file` part, an unusable file name, or an id that is not a UUID) */
             422: {
                 headers: {
                     [name: string]: unknown;

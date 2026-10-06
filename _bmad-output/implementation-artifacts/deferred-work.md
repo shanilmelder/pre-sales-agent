@@ -107,3 +107,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-effort-comparison.md`
   summary: `specialist-assessments.test.tsx` "a cancel answered 409 re-reads the section" failed once in a full parallel `npm test` run, then passed in 4 further full runs and alone; likely a timing flake (waitFor under load), possibly touched by the new `router.refresh()` on run completion in the same component.
   evidence: Seen during Story 5.3 verification (2026-10-05); watch CI, and raise its waitFor timeout if it recurs.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-7-import-opportunity.md`
+  summary: [post-demo] Opportunity imports add a blob reference that is never released (no release API in `platform.files`): abandoned or expired imports pin their blob, and a consumed import leaves ref_count at 2.
+  evidence: Review pass 1 (blind-hunter, edge-case-hunter); needs a `release_reference` in platform files plus release on consume/expiry and in the 0020 downgrade.

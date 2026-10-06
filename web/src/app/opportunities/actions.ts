@@ -19,6 +19,7 @@ import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
 import type { ClarificationQuestion, Detection } from "@/lib/gaps";
+import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
 import {
   codePointLength,
@@ -54,13 +55,30 @@ export type CreateInput = {
   products: string[];
   industry: string;
   target_proposal_date: string;
+  /** An Opportunity import whose file becomes the first Source. */
+  importId?: string;
 };
 
 export type CreateResult =
   | { kind: "ok"; id: string }
   /** 422: the fields the API rejected (empty when it named none we know). */
   | { kind: "invalid"; fields: CreateField[] }
+  /** 404 / 409 / 410 for the import: not the caller's, already used, or expired. */
+  | { kind: "import-unusable" }
   | { kind: "forbidden" }
+  | { kind: "error" };
+
+export type ImportFileResult =
+  | { kind: "ok"; import: OpportunityImport }
+  /** 413 / 415 / 422: the API's sentence for the UI ("Rejected: .exe files aren't allowed"). */
+  | { kind: "rejected"; reason: string }
+  | { kind: "forbidden" }
+  | { kind: "error" };
+
+export type LoadImportResult =
+  | { kind: "ok"; import: OpportunityImport }
+  /** 404 / 410: not the caller's, or expired. */
+  | { kind: "gone" }
   | { kind: "error" };
 
 export type LoadResult =
@@ -201,7 +219,9 @@ function isCreateInput(input: unknown): input is CreateInput {
     string,
     unknown
   >;
+  const { importId } = input as Record<string, unknown>;
   return (
+    (importId === undefined || (typeof importId === "string" && UUID_RE.test(importId))) &&
     typeof title === "string" &&
     typeof customer_name === "string" &&
     Array.isArray(products) &&
@@ -223,15 +243,72 @@ export async function createOpportunity(input: unknown): Promise<CreateResult> {
         products: input.products,
         industry: input.industry,
         target_proposal_date: input.target_proposal_date,
+        ...(input.importId ? { import_id: input.importId } : {}),
       },
     });
     if (data) return { kind: "ok", id: data.id };
     if (response.status === 422) return { kind: "invalid", fields: invalidFields(problem(error).detail) };
     if (response.status === 403) return { kind: "forbidden" };
+    if (input.importId && [404, 409, 410].includes(response.status)) {
+      return { kind: "import-unusable" };
+    }
     console.error(`create opportunity failed: status=${response.status}`);
     return { kind: "error" };
   } catch (thrown) {
     console.error(`create opportunity failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunity-imports` with the `file` from `formData`: one file to start a
+ * New Opportunity from. The API checks who may import, the type, the size and the content;
+ * this only forwards the file. */
+export async function importFile(formData: unknown): Promise<ImportFileResult> {
+  if (!(formData instanceof FormData)) return { kind: "error" };
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { kind: "error" };
+  const upload = new FormData();
+  upload.append("file", file, file.name);
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST("/api/v1/opportunity-imports", {
+      // The generated type describes the multipart field; the body sent is the FormData.
+      body: { file: "" },
+      bodySerializer: () => upload,
+    });
+    if (data) return { kind: "ok", import: data };
+    switch (response.status) {
+      case 413:
+      case 415:
+      case 422:
+        return { kind: "rejected", reason: rejectionReason(problem(error).detail, FILE_UNREADABLE) };
+      case 403:
+        return { kind: "forbidden" };
+      default:
+        console.error(`import file failed: status=${response.status} code=${String(problem(error).code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`import file failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunity-imports/{id}`: the import's status and suggestions (the New
+ * Opportunity form polls this while the file is read). */
+export async function loadImport(importId: unknown): Promise<LoadImportResult> {
+  if (typeof importId !== "string" || !UUID_RE.test(importId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.GET("/api/v1/opportunity-imports/{import_id}", {
+      params: { path: { import_id: importId } },
+    });
+    if (data) return { kind: "ok", import: data };
+    if (response.status === 404 || response.status === 410) return { kind: "gone" };
+    console.error(`load import failed: status=${response.status} code=${String(problem(error).code)}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`load import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

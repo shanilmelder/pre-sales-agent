@@ -24,6 +24,7 @@ kinds and sizes only.
 """
 
 from collections.abc import AsyncIterator, Iterable
+from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
@@ -148,20 +149,28 @@ async def _authorized_uploader(uow: UnitOfWork, actor: Principal, opportunity_id
     return uploader
 
 
-async def add_file(
-    uow: UnitOfWork,
-    actor: Principal,
-    opportunity_id: UUID,
+@dataclass(frozen=True, slots=True)
+class StoredUpload:
+    """An uploaded file checked and stored in `platform.storage`, not yet a Source (an
+    Opportunity import holds one until the Opportunity is created)."""
+
+    sha256: str
+    size: int
+    filename: str
+    kind: SourceKind
+
+
+async def store_upload(
     incoming: IncomingFile,
     *,
     store: BlobStore,
     max_bytes: int,
     content_length: int | None = None,
-) -> Source:
-    """Add an uploaded file as a Source (or as the next version of the Source that already
-    holds the same bytes). `content_length` is the request's, checked before any byte is
-    read; the file itself is counted as it streams."""
-    uploader = await _authorized_uploader(uow, actor, opportunity_id)
+) -> StoredUpload:
+    """Check and store an uploaded file exactly as a Source upload is checked: the type from
+    the filename before any byte is read, the size as it streams, the content before the
+    blob is stored. A rejected file stores nothing. No authorization and no database: the
+    caller authorizes first and records the blob in its Unit of Work."""
     if content_length is not None and content_length > max_body_bytes(max_bytes):
         raise FileTooLargeError(too_large_message(max_bytes))
 
@@ -185,9 +194,62 @@ async def add_file(
         raise UnprocessableError(exc.message) from None
     except MultipartError:
         raise UnprocessableError(MISSING_FILE_DETAIL) from None
+    return StoredUpload(sha256=blob.sha256, size=blob.size, filename=filename, kind=kind)
 
+
+async def add_file(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    incoming: IncomingFile,
+    *,
+    store: BlobStore,
+    max_bytes: int,
+    content_length: int | None = None,
+) -> Source:
+    """Add an uploaded file as a Source (or as the next version of the Source that already
+    holds the same bytes). `content_length` is the request's, checked before any byte is
+    read; the file itself is counted as it streams."""
+    uploader = await _authorized_uploader(uow, actor, opportunity_id)
+    upload = await store_upload(
+        incoming, store=store, max_bytes=max_bytes, content_length=content_length
+    )
     return await _record(
-        uow, actor, opportunity_id, uploader, blob=blob, kind=kind, filename=filename
+        uow,
+        actor,
+        opportunity_id,
+        uploader,
+        blob=StoredBlob(sha256=upload.sha256, size=upload.size),
+        kind=upload.kind,
+        filename=upload.filename,
+    )
+
+
+async def add_stored_file(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    *,
+    sha256: str,
+    size: int,
+    filename: str,
+) -> Source:
+    """Add a file already checked and stored by `store_upload` (e.g. an Opportunity import)
+    as a Source, through the same write path as an upload: authorized like one, versioned,
+    referenced, traced (`intake.source.added`) and queued for parsing in the caller's Unit
+    of Work."""
+    uploader = await _authorized_uploader(uow, actor, opportunity_id)
+    kind = kind_for(filename)
+    if kind is None:
+        raise FileTypeNotAllowedError(type_rejected_message(filename))
+    return await _record(
+        uow,
+        actor,
+        opportunity_id,
+        uploader,
+        blob=StoredBlob(sha256=sha256, size=size),
+        kind=kind,
+        filename=filename,
     )
 
 

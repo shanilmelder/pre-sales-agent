@@ -14,6 +14,7 @@ from fastapi import APIRouter, Header, Query, Response
 from fastapi.exceptions import RequestValidationError
 
 from app.modules.identity.application.public import CurrentPrincipal
+from app.modules.opportunities.application import imports
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import (
     NewOpportunity,
@@ -82,14 +83,29 @@ def _with_etag(response: Response, opportunity: Opportunity) -> Opportunity:
     status_code=201,
     responses={
         **_responses(403, 422),
+        404: {
+            "description": "No Opportunity import with this `import_id` of the caller's "
+            "(`not_found`)",
+            "content": PROBLEM_CONTENT,
+        },
+        409: {
+            "description": "The import was already used (`import_consumed`)",
+            "content": PROBLEM_CONTENT,
+        },
+        410: {
+            "description": "The import is older than 24 hours (`import_expired`)",
+            "content": PROBLEM_CONTENT,
+        },
         201: {"description": "The new Opportunity", "headers": _ETAG_HEADER},
     },
 )
 async def create_opportunity(
     body: NewOpportunity, actor: CurrentPrincipal, uow: UoW, response: Response
 ) -> Opportunity:
-    """Create an Opportunity owned by the caller. Presales engineers only."""
-    created = await opportunities.create(uow, actor, body)
+    """Create an Opportunity owned by the caller. Presales engineers only. With `import_id`,
+    the import's file becomes the Opportunity's first Source (parsed as any upload) and the
+    import can't be used again."""
+    created = await imports.create(uow, actor, body)
     response.headers["Location"] = f"/api/v1/opportunities/{created.id}"
     return _with_etag(response, created)
 
