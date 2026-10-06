@@ -97,6 +97,7 @@ def by_title(
 def condition(gap_title: str, wording: str | None = None, **extra: Any) -> dict[str, Any]:
     return {
         "gap": gap_title,
+        "resolvable_by": "The customer can settle this before the work starts.",
         "kind": "condition",
         "wording": wording or f"The estimate assumes the customer settles {gap_title.lower()}.",
         **extra,
@@ -106,6 +107,7 @@ def condition(gap_title: str, wording: str | None = None, **extra: Any) -> dict[
 def contingency(gap_title: str, hours: float | None, line: str | None = None) -> dict[str, Any]:
     return {
         "gap": gap_title,
+        "resolvable_by": "Nobody can know this until the work is under way.",
         "kind": "contingency",
         "wording": f"Contingency for {gap_title.lower()}.",
         "hours": hours,

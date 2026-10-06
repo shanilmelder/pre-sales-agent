@@ -26,6 +26,21 @@ QUESTION_MAX = 1_000
 TOPIC_MAX = 80
 """Limits in Unicode code points, on the trimmed text."""
 
+UNKNOWN_TO_CUSTOMER = "Unknown to the customer:"
+"""Opens the `why_it_matters` of a Gap the customer cannot answer before the work starts;
+`estimating_agent` proposes a Contingency for such a Gap."""
+
+
+def mark_unknown_to_customer(why_it_matters: str) -> str:
+    """`why_it_matters` opened with `UNKNOWN_TO_CUSTOMER`, unless it already is or the marked
+    text would exceed `WHY_MAX` (then it is returned unchanged)."""
+    trimmed = why_it_matters.strip()
+    if trimmed.casefold().startswith(UNKNOWN_TO_CUSTOMER.casefold()):
+        return trimmed
+    marked = f"{UNKNOWN_TO_CUSTOMER} {trimmed}"
+    return marked if len(marked) <= WHY_MAX else trimmed
+
+
 TRIGGER_KIND = "agent_category"
 
 
