@@ -46,6 +46,12 @@ def _line(n: int, section: str, title: str, effort: float, contingency: float) -
         "total_hours": effort + contingency,
         "role_hours": {"engineer": effort, "project_manager": 0.0, "qa": 0.0},
         "requirements": [],
+        "row_version": 1,
+        "edited": False,
+        "edited_by_name": None,
+        "edited_at": None,
+        "edit_reason": None,
+        "edit_carried_from_version": None,
     }
 
 
@@ -117,6 +123,8 @@ def version(unallocated: float = 12.0) -> EstimateVersion:
             "counts": {"total": 4, "accepted": 3, "not_accepted": 1},
             "unconverted_gaps": [],
             "unallocated_contingency_hours": unallocated,
+            "uncarried_edit_count": 0,
+            "uncarried_edits_from_version": None,
         }
     )
 

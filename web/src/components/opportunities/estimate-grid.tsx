@@ -1,11 +1,13 @@
 "use client";
 
-import { CircleAlertIcon, ListChecksIcon } from "lucide-react";
+import { CircleAlertIcon, ListChecksIcon, PencilIcon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
+  editEstimateLine,
   loadEstimate,
   startEstimateDraft,
+  type EstimateLineEditResult,
   type StartEstimateDraftResult,
 } from "@/app/opportunities/actions";
 import {
@@ -14,36 +16,47 @@ import {
 } from "@/components/opportunities/assumptions-register";
 import { EstimateExport } from "@/components/opportunities/estimate-export";
 import { EstimateInspector } from "@/components/opportunities/estimate-inspector";
+import { ReasonPrompt, RoleMixEditor } from "@/components/opportunities/estimate-line-edit";
+import { InlineInput } from "@/components/opportunities/inline-field";
 import { useAnnounce } from "@/components/shell/live-region";
-import {
-  RIGHT_PANE_TOGGLE_ID,
-  RightPaneContent,
-  useShell,
-} from "@/components/shell/shell-context";
+import { RIGHT_PANE_TOGGLE_ID, RightPaneContent, useShell } from "@/components/shell/shell-context";
 import {
   COLUMNS,
   DRAFT_POLL_LIMIT_MS,
   DRAFT_POLL_MS,
   DRAFTING,
   draftFailure,
+  EDIT_NOT_ALLOWED,
+  EDIT_SAVE_FAILED,
+  EFFORT_RULE,
+  editedLabel,
   hours,
   isDrafting,
   isProposing,
   NO_ESTIMATE,
+  keepReason,
+  NEW_VERSION_ARRIVED,
   NOTHING_TO_ESTIMATE,
+  parseEffort,
+  readKeptReason,
   roleMixLabel,
+  roundedHours,
+  roundHours,
   ROLES,
   sectionLabel,
   STILL_DRAFTING,
   UNALLOCATED_CONTINGENCY,
+  uncarriedEditsNote,
   uncoveredLabel,
   registerSummary,
+  VERSION_REPLACED,
   versionLabel,
   type Assumption,
   type EstimateDraft,
   type EstimateLine,
   type EstimateVersion,
   type EstimateView,
+  type RoleMix,
   type Totals,
 } from "@/lib/estimates";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
@@ -94,39 +107,221 @@ function TotalsCells({ totals }: { totals: Totals }) {
 
 /** "Engineer 31.7 h · Project manager 10.6 h · QA 10.7 h". */
 function roleTotalsLabel(totals: Totals): string {
-  return ROLES.map((role) => `${role.label} ${hours(totals.role_hours[role.value])} h`).join(
-    " · ",
+  return ROLES.map((role) => `${role.label} ${hours(totals.role_hours[role.value])} h`).join(" · ");
+}
+
+/** A change to a line, before its reason is given. */
+export type LineChange = { effortHours?: number; roleMix?: RoleMix };
+
+/** What saving a change came to: on failure, the sentence to show under the line, and
+ * whether a Reload is offered (stale or replaced version). */
+export type EditOutcome = { ok: true } | { ok: false; message: string; reload?: boolean };
+
+/** The line as it was when editing started: its `row_version` goes in `If-Match`, so a
+ * colleague's save in between is a 412, never silently overwritten. */
+type Snapshot = {
+  lineId: string;
+  rowVersion: number;
+  effort: number;
+  mix: RoleMix;
+};
+type Editing = Snapshot & { kind: "effort" | "mix" };
+type Pending = Snapshot & {
+  change: LineChange;
+  summary: string;
+  initialReason: string;
+};
+type Notice = { lineId: string; message: string; reload: boolean };
+
+/** The "Edited" marker: an icon plus its label, never the icon alone. */
+export function EditedMarker({ line }: { line: EstimateLine }) {
+  const label = editedLabel(line);
+  if (!label) return null;
+  return (
+    <span
+      data-edited=""
+      className="inline-flex shrink-0 items-center gap-1 text-meta whitespace-nowrap text-muted-foreground"
+    >
+      <PencilIcon aria-hidden="true" className="size-3 shrink-0" />
+      {label}
+    </span>
   );
 }
 
-/** The Estimate Version as a dense, read-only grid: lines grouped by section in template
- * order, each section closed by its subtotal row; a sticky header and sticky totals (the
- * overall totals and, under them, the per-role totals). Numbers are right-aligned tabular
- * figures from the server; the Contingency column has a left rule.
+const cellButton =
+  "rounded-sm px-1 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
+
+/** The Estimate Version as a dense grid: lines grouped by section in template order, each
+ * section closed by its subtotal row; a sticky header and sticky totals (the overall totals
+ * and, under them, the per-role totals). Numbers are right-aligned tabular figures from the
+ * server; the Contingency column has a left rule. Edited lines carry an "Edited" marker.
  *
  * The lines are one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first line); j/k (with single-key shortcuts on) or the arrow keys move between lines, and
- * Enter, Space or a click opens the line. */
+ * Enter, Space or a click opens the line.
+ *
+ * With `canEdit` (on a draft) the Effort cell is an inline field (Enter or blur to save, Esc
+ * to cancel; `e` on a focused line starts it) and the Role mix cell opens a compact editor;
+ * either then asks for a reason before `onSave` runs. While saving the cell is disabled; a
+ * failure leaves the stored value and shows `onSave`'s sentence under the line (with Reload
+ * when offered). */
 export function EstimateGrid({
   version,
   selectedId = null,
   onOpen,
+  canEdit = false,
+  onSave,
+  onReload,
+  opportunityId,
 }: {
   version: EstimateVersion;
   selectedId?: string | null;
   /** `viaKeyboard` is true when opened with Enter or Space, not a pointer. */
   onOpen?: (line: EstimateLine, viaKeyboard: boolean) => void;
+  canEdit?: boolean;
+  /** `rowVersion` is the line's `row_version` when editing started (for `If-Match`). */
+  onSave?: (
+    line: EstimateLine,
+    change: LineChange,
+    reason: string,
+    rowVersion: number,
+  ) => Promise<EditOutcome>;
+  onReload?: () => void;
+  /** Where the last reason is kept in the browser (one key per Opportunity). */
+  opportunityId?: string;
 }) {
   const { singleKeyShortcuts } = useShell();
   const container = useRef<HTMLDivElement>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  /** A selector to focus after the next render (e.g. back to a cell after Esc). */
+  const [focusTarget, setFocusTarget] = useState<string | null>(null);
+  /** A new version replaced the lines an open editor was changing. */
+  const [replaced, setReplaced] = useState(false);
+  const [seenVersionId, setSeenVersionId] = useState(version.id);
+  if (seenVersionId !== version.id) {
+    setSeenVersionId(version.id);
+    setReplaced(editing !== null || pending !== null);
+    setEditing(null);
+    setPending(null);
+    setNotice(null);
+  }
+  const reasonKey = opportunityId ?? version.id;
   const lines = version.sections.flatMap((section) => section.lines);
+  const editable = canEdit && version.status === "draft" && onSave !== undefined;
   const tabStopId =
     [focusedId, selectedId].find((id) => id !== null && lines.some((l) => l.id === id)) ??
     lines[0]?.id;
 
+  useEffect(() => {
+    if (!focusTarget) return;
+    container.current?.querySelector<HTMLElement>(focusTarget)?.focus();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot request
+    setFocusTarget(null);
+  }, [focusTarget]);
+
+  function startEdit(line: EstimateLine, kind: Editing["kind"]) {
+    if (!editable || saving) return;
+    setNotice(null);
+    setReplaced(false);
+    setPending(null);
+    setEditing({
+      lineId: line.id,
+      kind,
+      rowVersion: line.row_version,
+      effort: line.effort_hours,
+      mix: line.role_mix,
+    });
+  }
+
+  function cancel(line: EstimateLine, kind: Editing["kind"], viaKey: boolean) {
+    setEditing(null);
+    setPending(null);
+    if (viaKey) setFocusTarget(`[data-edit-${kind}="${line.id}"]`);
+  }
+
+  function commitEffort(line: EstimateLine, text: string, viaKey: boolean) {
+    const from = editing;
+    setEditing(null);
+    if (!from || from.lineId !== line.id) return;
+    const effort = parseEffort(text);
+    if (effort === null) {
+      setNotice({ lineId: line.id, message: EFFORT_RULE, reload: false });
+      if (viaKey) setFocusTarget(`[data-edit-effort="${line.id}"]`);
+      return;
+    }
+    if (roundHours(effort) === roundHours(from.effort)) {
+      if (viaKey) setFocusTarget(`[data-edit-effort="${line.id}"]`);
+      return; // unchanged: nothing to save
+    }
+    setPending({
+      ...from,
+      change: { effortHours: effort },
+      summary: `Effort ${hours(from.effort)} h → ${roundedHours(effort)} h`,
+      initialReason: readKeptReason(reasonKey, version.id),
+    });
+  }
+
+  function commitMix(line: EstimateLine, mix: RoleMix) {
+    const from = editing;
+    setEditing(null);
+    if (!from || from.lineId !== line.id) return;
+    if (ROLES.every((role) => mix[role.value] === from.mix[role.value])) {
+      setFocusTarget(`[data-edit-mix="${line.id}"]`);
+      return;
+    }
+    setPending({
+      ...from,
+      change: { roleMix: mix },
+      summary: `Role mix ${roleMixLabel(from.mix)} → ${roleMixLabel(mix)}`,
+      initialReason: readKeptReason(reasonKey, version.id),
+    });
+  }
+
+  async function save(line: EstimateLine, edit: Pending, reason: string) {
+    if (!onSave || saving) return;
+    const { change } = edit;
+    setSaving(true);
+    let outcome: EditOutcome;
+    try {
+      outcome = await onSave(line, change, reason, edit.rowVersion);
+    } catch {
+      outcome = { ok: false, message: EDIT_SAVE_FAILED };
+    }
+    setSaving(false);
+    setPending(null);
+    if (outcome.ok) {
+      keepReason(reasonKey, version.id, reason);
+      setNotice(null);
+    } else {
+      setNotice({
+        lineId: line.id,
+        message: outcome.message,
+        reload: outcome.reload ?? false,
+      });
+    }
+    setFocusTarget(`[data-edit-${change.roleMix ? "mix" : "effort"}="${line.id}"]`);
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement;
+    if (
+      editable &&
+      singleKeyShortcuts &&
+      event.key === "e" &&
+      target.matches("button[data-line-row]")
+    ) {
+      const line = lines.find((l) => l.id === target.dataset.lineId);
+      if (line) {
+        event.preventDefault();
+        startEdit(line, "effort");
+      }
+      return;
+    }
     const down = event.key === "ArrowDown" || (singleKeyShortcuts && event.key === "j");
     const up = event.key === "ArrowUp" || (singleKeyShortcuts && event.key === "k");
     if (!down && !up) return;
@@ -140,12 +335,67 @@ export function EstimateGrid({
     buttons[next]?.focus();
   }
 
+  function editorRow(line: EstimateLine) {
+    const showMixEditor = editing?.lineId === line.id && editing.kind === "mix";
+    const prompt = pending?.lineId === line.id ? pending : null;
+    const shownNotice = notice?.lineId === line.id ? notice : null;
+    if (!editable || (!showMixEditor && !prompt && !shownNotice)) return null;
+    return (
+      <tr key={`${line.id}-editor`} data-line-editor={line.id}>
+        <td colSpan={COLUMNS.length} className="border-b border-border bg-muted/40 px-2.5 py-1.5">
+          {showMixEditor ? (
+            <RoleMixEditor
+              lineTitle={line.title}
+              initial={editing?.mix ?? line.role_mix}
+              onSave={(mix) => commitMix(line, mix)}
+              onCancel={() => cancel(line, "mix", true)}
+            />
+          ) : prompt ? (
+            <ReasonPrompt
+              summary={prompt.summary}
+              initial={prompt.initialReason}
+              busy={saving}
+              onSave={(reason) => void save(line, prompt, reason)}
+              onCancel={() => cancel(line, prompt.change.roleMix ? "mix" : "effort", true)}
+            />
+          ) : shownNotice ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="flex items-center gap-1.5 text-meta text-destructive">
+                <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+                {shownNotice.message}
+              </p>
+              {shownNotice.reload && onReload ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNotice(null);
+                    onReload();
+                  }}
+                  className={actionClass}
+                >
+                  Reload
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <div
       ref={container}
       onKeyDown={onKeyDown}
+      aria-busy={saving || undefined}
       className="max-h-[70vh] overflow-auto rounded-md border border-border"
     >
+      {replaced ? (
+        <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-meta text-destructive">
+          <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+          {NEW_VERSION_ARRIVED}
+        </p>
+      ) : null}
       <table className="w-full border-separate border-spacing-0 text-body">
         <caption className="sr-only">{`Estimate ${versionLabel(version)}`}</caption>
         <thead className="sticky top-0 z-10 bg-background">
@@ -177,9 +427,17 @@ export function EstimateGrid({
                 {sectionLabel(section.section)}
               </th>
             </tr>
-            {section.lines.map((line) => {
+            {section.lines.flatMap((line) => {
               const selected = line.id === selectedId;
-              return (
+              const savingThis = saving && pending?.lineId === line.id;
+              const shownMix = (savingThis && pending?.change.roleMix) || line.role_mix;
+              const shownEffort =
+                savingThis && pending?.change.effortHours !== undefined
+                  ? roundHours(pending.change.effortHours)
+                  : line.effort_hours;
+              const editingEffort = editing?.lineId === line.id && editing.kind === "effort";
+              const editingMix = editing?.lineId === line.id && editing.kind === "mix";
+              const row = (
                 <tr
                   key={line.id}
                   aria-selected={selected}
@@ -195,27 +453,65 @@ export function EstimateGrid({
                       selected && "shadow-[inset_2px_0_0_var(--primary)]",
                     )}
                   >
-                    <button
-                      type="button"
-                      data-line-row=""
-                      data-line-id={line.id}
-                      tabIndex={line.id === tabStopId ? 0 : -1}
-                      onFocus={() => setFocusedId(line.id)}
-                      // A keyboard-activated click has no pointer clicks (detail 0).
-                      onClick={(event) => onOpen?.(line, event.detail === 0)}
-                      className="block min-h-row w-full truncate rounded-sm px-1.5 text-left text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                    >
-                      {line.title}
-                    </button>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        data-line-row=""
+                        data-line-id={line.id}
+                        tabIndex={line.id === tabStopId ? 0 : -1}
+                        onFocus={() => setFocusedId(line.id)}
+                        // A keyboard-activated click has no pointer clicks (detail 0).
+                        onClick={(event) => onOpen?.(line, event.detail === 0)}
+                        className="block min-h-row min-w-0 flex-1 truncate rounded-sm px-1.5 text-left text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      >
+                        {line.title}
+                      </button>
+                      <EditedMarker line={line} />
+                    </div>
                   </th>
                   <td className="w-24 border-b border-border px-2.5">
                     <CoversChip count={line.requirements.length} />
                   </td>
                   <td className="w-44 border-b border-border px-2.5 text-label whitespace-nowrap text-muted-foreground [font-variant-numeric:tabular-nums]">
-                    {roleMixLabel(line.role_mix)}
+                    {editable ? (
+                      <button
+                        type="button"
+                        data-edit-mix={line.id}
+                        aria-label={`Edit role mix of ${line.title}: ${roleMixLabel(shownMix)}`}
+                        aria-expanded={editingMix}
+                        disabled={saving}
+                        onClick={() => startEdit(line, "mix")}
+                        className={cellButton}
+                      >
+                        {roleMixLabel(shownMix)}
+                      </button>
+                    ) : (
+                      roleMixLabel(line.role_mix)
+                    )}
                   </td>
                   <td className={cn(num, "w-24 border-b border-border")}>
-                    {hours(line.effort_hours)}
+                    {editable && editingEffort ? (
+                      <InlineInput
+                        label={`Effort (h) of ${line.title}`}
+                        initial={hours(line.effort_hours)}
+                        onCommit={(text, viaKey) => commitEffort(line, text, viaKey)}
+                        onCancel={(viaKey) => cancel(line, "effort", viaKey)}
+                        className="h-6 w-20 rounded-md border border-input bg-background px-1.5 text-right text-numeric outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      />
+                    ) : editable ? (
+                      <button
+                        type="button"
+                        data-edit-effort={line.id}
+                        aria-label={`Edit effort of ${line.title}: ${hours(shownEffort)} hours`}
+                        disabled={saving}
+                        onClick={() => startEdit(line, "effort")}
+                        className={cn(cellButton, "text-numeric")}
+                      >
+                        {hours(shownEffort)}
+                      </button>
+                    ) : (
+                      hours(line.effort_hours)
+                    )}
                   </td>
                   <td className={cn(num, cont, "w-28 border-b border-border")}>
                     {hours(line.contingency_hours)}
@@ -225,6 +521,8 @@ export function EstimateGrid({
                   </td>
                 </tr>
               );
+              const extra = editorRow(line);
+              return extra ? [row, extra] : [row];
             })}
             <tr data-subtotal="" className="h-7">
               <th
@@ -281,7 +579,11 @@ export function EstimateGrid({
             </td>
           </tr>
           <tr data-role-totals="" className="h-7">
-            <th scope="row" colSpan={3} className="px-2.5 text-left text-label text-muted-foreground">
+            <th
+              scope="row"
+              colSpan={3}
+              className="px-2.5 text-left text-label text-muted-foreground"
+            >
               Effort by role
             </th>
             <td
@@ -398,8 +700,9 @@ type Selection = { kind: "line"; id: string } | { kind: "gap"; assumptionId: str
  * (opened if closed). While a draft or the Assumption proposals are queued or running the
  * Estimate is re-read every 2 s: paused while the tab is hidden, and stopped after 15
  * minutes. A selected line that a new version replaced leaves the pane showing "Nothing
- * selected." The grid is read-only; Retry only for those who may start a draft, Accept for
- * those who may accept Assumptions. */
+ * selected." Lines of the draft are editable for those who may edit them (Story 8.2), with
+ * a note when a re-draft could not carry some edits; Retry only for those who may start a
+ * draft, Accept for those who may accept Assumptions. */
 export function EstimateSection({
   opportunityId,
   initial,
@@ -539,6 +842,69 @@ export function EstimateSection({
     };
   }, [working, visible, opportunityId, pollTick, announce]);
 
+  /** Story 8.2: save a line's change with its reason; the grid re-renders from the server's
+   * Estimate. */
+  async function saveLine(
+    line: EstimateLine,
+    change: LineChange,
+    reason: string,
+    rowVersion: number,
+  ): Promise<EditOutcome> {
+    let result: EstimateLineEditResult;
+    try {
+      result = await editEstimateLine({
+        opportunityId,
+        lineId: line.id,
+        rowVersion,
+        ...(change.effortHours !== undefined ? { effortHours: change.effortHours } : {}),
+        ...(change.roleMix !== undefined ? { roleMix: change.roleMix } : {}),
+        reason,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    let outcome: EditOutcome;
+    switch (result.kind) {
+      case "ok":
+        mutation.current += 1;
+        setView(result.estimate);
+        announce(`Saved: ${line.title}`);
+        return { ok: true };
+      case "stale":
+        outcome = { ok: false, message: result.message, reload: true };
+        break;
+      case "not-draft":
+        outcome = { ok: false, message: VERSION_REPLACED, reload: true };
+        break;
+      case "invalid":
+        outcome = { ok: false, message: result.detail };
+        break;
+      case "forbidden":
+        outcome = { ok: false, message: EDIT_NOT_ALLOWED };
+        break;
+      case "not-found":
+        outcome = { ok: false, message: NO_ACCESS_TO_OPPORTUNITY };
+        break;
+      default:
+        outcome = { ok: false, message: EDIT_SAVE_FAILED };
+    }
+    announce(outcome.message);
+    return outcome;
+  }
+
+  async function reloadEstimate() {
+    try {
+      const loaded = await loadEstimate(opportunityId);
+      if (loaded.kind === "ok") {
+        mutation.current += 1;
+        setView(loaded.estimate);
+        announce("Reloaded the Estimate");
+      }
+    } catch {
+      // The tab stays as it is.
+    }
+  }
+
   async function retry() {
     if (busy) return;
     setBusy(true);
@@ -592,7 +958,24 @@ export function EstimateSection({
       />
       {version ? (
         <>
-          <EstimateGrid version={version} selectedId={selected?.id ?? null} onOpen={open} />
+          {version.uncarried_edit_count > 0 ? (
+            <p className="flex items-center gap-1.5 text-label text-foreground" data-uncarried="">
+              <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
+              {uncarriedEditsNote(
+                version.uncarried_edit_count,
+                version.uncarried_edits_from_version,
+              )}
+            </p>
+          ) : null}
+          <EstimateGrid
+            version={version}
+            selectedId={selected?.id ?? null}
+            onOpen={open}
+            canEdit={view.can_edit_lines}
+            onSave={saveLine}
+            onReload={() => void reloadEstimate()}
+            opportunityId={opportunityId}
+          />
           <AssumptionsRegister
             opportunityId={opportunityId}
             version={version}

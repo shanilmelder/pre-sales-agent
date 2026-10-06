@@ -292,6 +292,8 @@ def test_a_draft_stores_version_1_with_lines_links_and_one_event(
         "requirement_count": 5,
         "superseded_count": 0,
         "carried_assumption_count": 0,  # a first draft carries nothing
+        "carried_edit_count": 0,
+        "uncarried_edit_count": 0,
     }
 
     # One model call: instructions as the system message, Requirements and Gaps only as

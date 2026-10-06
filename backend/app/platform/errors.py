@@ -198,6 +198,14 @@ class EstimateNotFoundError(ConflictError):
     title = "No Estimate yet"
 
 
+class EstimateVersionNotDraftError(ConflictError):
+    """An Estimate line was edited whose version is no longer the Opportunity's `draft`: a
+    re-draft replaced it (Story 8.2)."""
+
+    code = "estimate_version_not_draft"
+    title = "Estimate Version not draft"
+
+
 class GapNotOpenError(ConflictError):
     """An Assumption was accepted whose origin Gap is no longer `open` (Story 8.4)."""
 

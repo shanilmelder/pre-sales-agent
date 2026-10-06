@@ -19,7 +19,8 @@ Opportunity's draft lock until commit.
    Requirements still active at the version read), supersedes the Opportunity's `draft`
    Estimate Version, stores the new `draft` version (numbered one past the latest, template
    `demo-1`) with its lines and their Requirement links, carries the superseded draft's
-   accepted Assumptions into it (Story 8.7), marks the draft `succeeded`,
+   accepted Assumptions into it (Story 8.7) and the edits people made to its lines onto the
+   matching new lines (Story 8.2), marks the draft `succeeded`,
    traces `estimates.estimate_version.created`, queues the version's Assumption
    proposals (`estimates.propose_assumptions`, Story 8.4) and the Opportunity's Red Team
    Review (`assessments.red_team_review`, Story 6.5).
@@ -52,6 +53,7 @@ from app.agents.estimating_agent.agent import config as agent_config
 from app.agents.estimating_agent.schema import EstimatingOutput
 from app.modules.estimates.adapters import repository as repo
 from app.modules.estimates.application.assumptions import carry_accepted, enqueue_proposals
+from app.modules.estimates.application.line_edits import CarriedEdits, carry_edits
 from app.modules.estimates.domain.assumptions import ProposalStatus
 from app.modules.estimates.domain.estimates import (
     IN_PROGRESS,
@@ -264,6 +266,12 @@ async def accept_draft(
         if previous is None
         else await carry_accepted(uow, source_version_id=previous.id, target_version_id=version_id)
     )
+    # Story 8.2: a person's edits of the superseded draft's lines go onto the matching lines.
+    edits = (
+        CarriedEdits(0, 0)
+        if previous is None
+        else await carry_edits(uow, source=previous, target_version_id=version_id)
+    )
     created = EstimatesEstimateVersionCreated(
         version=number,
         template_version=TEMPLATE_VERSION,
@@ -273,6 +281,8 @@ async def accept_draft(
         requirement_count=len(requirements),
         superseded_count=superseded,
         carried_assumption_count=carried,
+        carried_edit_count=edits.carried,
+        uncarried_edit_count=edits.uncarried,
     )
     await trace.append(
         uow,

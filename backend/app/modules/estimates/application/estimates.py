@@ -6,6 +6,8 @@
   from; the open Gaps left without one) and
   every server-calculated total, Contingency included; and its latest draft run (anyone who
   can read the Opportunity). Superseded versions are hidden.
+- `edit_line`: a person's edit of a draft line's hours and role mix (Story 8.2; see
+  `line_edits`), answered with the whole Estimate so every total refreshes.
 - `start_draft`: queue a new draft, e.g. to retry a failed one (`estimates.draft.start`: the
   owner and collaborators except sales representatives; other readers 403, everyone else
   the Opportunity's 404). 409 `estimate_draft_in_progress` while one is queued or running;
@@ -27,6 +29,7 @@ from app.modules.estimates.adapters.repository import (
     VersionRecord,
 )
 from app.modules.estimates.application import assumptions as assumption_commands
+from app.modules.estimates.application import line_edits
 from app.modules.estimates.application.draft import fail_stale, queue_draft, stale_after
 from app.modules.estimates.application.models import (
     AcceptAllResult,
@@ -36,6 +39,7 @@ from app.modules.estimates.application.models import (
     AssumptionLine,
     EstimateDraft,
     EstimateLine,
+    EstimateLineChanges,
     EstimateSection,
     EstimateVersion,
     EstimateView,
@@ -296,6 +300,9 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
     ]
     calculated = arithmetic.estimate_totals(inputs, unallocated)
     groups, counts, unconverted = await _register(uow, record, lines, assumptions)
+    editors = await identity.user_names(
+        uow, {line.edited_by for line in lines if line.edited_by is not None}
+    )
     by_section: dict[Section, list[EstimateLine]] = defaultdict(list)
     for line, given, totals in zip(lines, inputs, calculated.lines, strict=True):
         by_section[given.section].append(
@@ -315,6 +322,14 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
                 total_hours=_hours(totals.total),
                 role_hours=_role_hours(totals.role_hours),
                 requirements=covered.get(line.id, []),
+                row_version=line.row_version,
+                edited=line.edited_at is not None,
+                edited_by_name=None
+                if line.edited_by is None
+                else editors.get(line.edited_by, UNKNOWN_USER),
+                edited_at=line.edited_at,
+                edit_reason=line.edit_reason,
+                edit_carried_from_version=line.edit_carried_from_version,
             )
         )
     return EstimateVersion(
@@ -343,6 +358,9 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
         counts=counts,
         unconverted_gaps=unconverted,
         unallocated_contingency_hours=_hours(calculated.unallocated),
+        uncarried_edit_count=record.uncarried_edit_count,
+        # The superseded draft is always the version just before (Story 8.1 numbering).
+        uncarried_edits_from_version=record.version - 1 if record.uncarried_edit_count else None,
     )
 
 
@@ -355,6 +373,7 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         can_start_draft=identity.can(actor, Action.ESTIMATE_DRAFT_START, resource),
         can_accept_assumptions=identity.can(actor, Action.ASSUMPTION_ACCEPT, resource),
         can_export=identity.can(actor, Action.ESTIMATE_EXPORT, resource),
+        can_edit_lines=identity.can(actor, Action.ESTIMATE_LINE_EDIT, resource),
     )
 
 
@@ -406,3 +425,17 @@ async def accept_all_assumptions(
     return AcceptAllResult(
         count=await assumption_commands.accept_all_assumptions(uow, actor, opportunity_id)
     )
+
+
+async def edit_line(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    line_id: UUID,
+    changes: EstimateLineChanges,
+    if_match: str | None,
+) -> EstimateView:
+    """Edit a line of the current draft's effort and/or role mix with a reason (Story 8.2);
+    the Estimate as it is now, every total recalculated."""
+    await line_edits.edit_line(uow, actor, opportunity_id, line_id, changes, if_match)
+    return await get_estimate(uow, actor, opportunity_id)

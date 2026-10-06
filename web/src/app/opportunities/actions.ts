@@ -17,7 +17,7 @@ import {
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
-import type { Assumption, EstimateDraft } from "@/lib/estimates";
+import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
 import type { ClarificationQuestion, Detection } from "@/lib/gaps";
 import type { RedTeamRun } from "@/lib/red-team";
 import {
@@ -1369,6 +1369,125 @@ export async function acceptAllAssumptions(
   } catch (thrown) {
     console.error(
       `accept all assumptions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- editing an Estimate line (Story 8.2) ---------------------------------------------------
+
+export type EstimateLineEditInput = {
+  opportunityId: string;
+  lineId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  effortHours?: number;
+  roleMix?: RoleMix;
+  reason: string;
+};
+
+export type EstimateLineEditResult =
+  /** The whole Estimate as it is now, every total recalculated by the server. */
+  | { kind: "ok"; estimate: EstimateView }
+  /** 412: someone changed the line first; `message` is the API's "Changed by {name} since you
+   * opened it." */
+  | { kind: "stale"; message: string }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  /** 409 `estimate_version_not_draft`: a re-draft replaced the version. */
+  | { kind: "not-draft" }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the line is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+const ROLE_KEYS = ["engineer", "project_manager", "qa"] as const;
+
+function isRoleMix(value: unknown): value is RoleMix {
+  if (typeof value !== "object" || value === null) return false;
+  const mix = value as Record<string, unknown>;
+  return (
+    Object.keys(mix).length === ROLE_KEYS.length &&
+    ROLE_KEYS.every((key) => typeof mix[key] === "number" && Number.isFinite(mix[key]))
+  );
+}
+
+function isLineEditInput(input: unknown): input is EstimateLineEditInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, lineId, rowVersion, effortHours, roleMix, reason } = input as Record<
+    string,
+    unknown
+  >;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof lineId === "string" &&
+    UUID_RE.test(lineId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0 &&
+    (effortHours === undefined ||
+      (typeof effortHours === "number" && Number.isFinite(effortHours))) &&
+    (roleMix === undefined || isRoleMix(roleMix)) &&
+    (effortHours !== undefined || roleMix !== undefined) &&
+    typeof reason === "string"
+  );
+}
+
+/** `PATCH /api/v1/opportunities/{id}/estimate-lines/{lid}` with `If-Match`: a draft line's
+ * effort hours and/or role mix, with a reason. Never retries or overwrites on 412. Logs ids
+ * and statuses only (never the reason). */
+export async function editEstimateLine(input: unknown): Promise<EstimateLineEditResult> {
+  if (!isLineEditInput(input)) return { kind: "error" };
+  const { opportunityId, lineId, rowVersion, effortHours, roleMix, reason } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH(
+      "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, line_id: lineId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: {
+          ...(effortHours !== undefined ? { effort_hours: effortHours } : {}),
+          ...(roleMix !== undefined ? { role_mix: { ...roleMix } } : {}),
+          reason,
+        },
+      },
+    );
+    if (data) return { kind: "ok", estimate: data };
+    switch (response.status) {
+      case 412:
+        return {
+          kind: "stale",
+          message: problem(error).detail ?? "Changed by someone else since you opened it.",
+        };
+      case 422: {
+        const { detail } = problem(error);
+        return {
+          kind: "invalid",
+          detail:
+            detail && !detail.startsWith("Invalid fields:")
+              ? detail
+              : "The change was not accepted.",
+        };
+      }
+      case 409:
+        return { kind: "not-draft" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `edit estimate line failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `edit estimate line failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

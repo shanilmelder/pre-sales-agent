@@ -58,6 +58,12 @@ function line(contingency: number): EstimateLine {
     total_hours: 10 + contingency,
     role_hours: { engineer: 6, project_manager: 2, qa: 2 },
     requirements: [],
+    row_version: 1,
+    edited: false,
+    edited_by_name: null,
+    edited_at: null,
+    edit_reason: null,
+    edit_carried_from_version: null,
   };
 }
 
@@ -140,6 +146,8 @@ function version(
     },
     unconverted_gaps: [],
     unallocated_contingency_hours: unallocated,
+    uncarried_edit_count: 0,
+    uncarried_edits_from_version: null,
     ...overrides,
   };
 }
@@ -158,6 +166,7 @@ function view(v: EstimateVersion, canAccept = true): EstimateView {
     can_start_draft: canAccept,
     can_accept_assumptions: canAccept,
     can_export: false,
+    can_edit_lines: false,
   };
 }
 

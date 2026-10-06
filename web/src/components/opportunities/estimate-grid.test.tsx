@@ -2,7 +2,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StartEstimateDraftResult } from "@/app/opportunities/actions";
+import type {
+  EstimateLineEditInput,
+  EstimateLineEditResult,
+  StartEstimateDraftResult,
+} from "@/app/opportunities/actions";
 import type { EstimateResult } from "@/app/opportunities/data";
 import type {
   EstimateDraft,
@@ -19,7 +23,14 @@ const startEstimateDraft = vi.hoisted(() =>
 const loadEstimate = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<EstimateResult>>(),
 );
-vi.mock("@/app/opportunities/actions", () => ({ startEstimateDraft, loadEstimate }));
+const editEstimateLine = vi.hoisted(() =>
+  vi.fn<(input: EstimateLineEditInput) => Promise<EstimateLineEditResult>>(),
+);
+vi.mock("@/app/opportunities/actions", () => ({
+  startEstimateDraft,
+  loadEstimate,
+  editEstimateLine,
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => "/opportunities/x/estimate",
@@ -63,6 +74,12 @@ function line(
         excerpt: `[EXCERPT ${n}b]`,
       },
     ],
+    row_version: 1,
+    edited: false,
+    edited_by_name: null,
+    edited_at: null,
+    edit_reason: null,
+    edit_carried_from_version: null,
   };
 }
 
@@ -113,6 +130,8 @@ function version(n = 2, uncovered = 1): EstimateVersion {
     counts: { total: 0, accepted: 0, not_accepted: 0 },
     unconverted_gaps: [],
     unallocated_contingency_hours: 0,
+    uncarried_edit_count: 0,
+    uncarried_edits_from_version: null,
   };
 }
 
@@ -128,6 +147,7 @@ function view(v: EstimateVersion | null, draft: EstimateDraft | null, canStart =
     can_start_draft: canStart,
     can_accept_assumptions: canStart,
     can_export: false,
+    can_edit_lines: false,
   } satisfies EstimateView;
 }
 
@@ -146,6 +166,8 @@ const pane = () => screen.getByRole("complementary", { name: "Details" });
 beforeEach(() => {
   startEstimateDraft.mockReset();
   loadEstimate.mockReset();
+  editEstimateLine.mockReset();
+  window.localStorage.clear();
 });
 
 afterEach(() => {
@@ -589,5 +611,390 @@ describe("EstimateSection", () => {
   it("says so when a finished draft had nothing to estimate", () => {
     renderSection(view(null, succeeded));
     expect(screen.getByText("There were no active Requirements to estimate.")).toBeTruthy();
+  });
+});
+
+describe("editing a line (Story 8.2)", () => {
+  const editable = (v = version()) => ({
+    ...view(v, succeeded),
+    can_edit_lines: true,
+  });
+  const effortButton = (n: number) =>
+    screen.getByRole("button", {
+      name: (name) => name.startsWith(`Edit effort of [LINE ${n}]`),
+    });
+  const mixButton = (n: number) =>
+    screen.getByRole("button", {
+      name: (name) => name.startsWith(`Edit role mix of [LINE ${n}]`),
+    });
+  const reasonBox = () => screen.getByRole("textbox", { name: "Reason for the change" });
+
+  /** The Estimate after line 2's effort became `effort` with `reason`. */
+  function afterEdit(effort: number, reason: string) {
+    const next = version();
+    const integration = next.sections[1];
+    const edited: EstimateLine = {
+      ...integration.lines[0],
+      effort_hours: effort,
+      total_hours: effort,
+      row_version: 2,
+      edited: true,
+      edited_by_name: "[OWNER]",
+      edited_at: "2026-10-05T10:00:00Z",
+      edit_reason: reason,
+    };
+    next.sections = [next.sections[0], { ...integration, lines: [edited, integration.lines[1]] }];
+    next.totals = { ...next.totals, effort_hours: 39, total_hours: 39 };
+    return editable(next);
+  }
+
+  async function editEffortTo(user: ReturnType<typeof userEvent.setup>, n: number, text: string) {
+    await user.click(effortButton(n));
+    const input = screen.getByRole("textbox", {
+      name: `Effort (h) of [LINE ${n}]`,
+    });
+    await user.clear(input);
+    await user.type(input, `${text}{Enter}`);
+  }
+
+  it("Effort: Enter, a reason, Save; the grid re-renders from the server", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({
+      kind: "ok",
+      estimate: afterEdit(8, "[REASON]"),
+    });
+    const { container } = renderSection(editable());
+
+    await user.click(effortButton(2));
+    const input = screen.getByRole("textbox", {
+      name: "Effort (h) of [LINE 2]",
+    });
+    expect((input as HTMLInputElement).value).toBe("10.0");
+    await user.clear(input);
+    await user.type(input, "8{Enter}");
+    const prompt = screen.getByRole("form", { name: "Reason for the change" });
+    expect(within(prompt).getByText("Effort 10.0 h → 8.0 h")).toBeTruthy();
+    const save = within(prompt).getByRole("button", { name: "Save" });
+    expect((save as HTMLButtonElement).disabled).toBe(true); // no reason yet
+    expect(await axeViolations(container)).toEqual([]);
+    await user.type(reasonBox(), "Reuse connector");
+    await user.click(save);
+
+    expect(editEstimateLine).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      lineId: line(2, "integration", 10, [0, 0, 0]).id,
+      rowVersion: 1,
+      effortHours: 8,
+      reason: "Reuse connector",
+    });
+    await waitFor(() => expect(effortButton(2).textContent).toBe("8.0"));
+    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
+    const row = lineButton(2).closest("tr") as HTMLElement;
+    expect(within(row).getByText("Edited")).toBeTruthy();
+    const totals = container.querySelector("tr[data-totals]") as HTMLElement;
+    expect(totals.textContent).toContain("39.0");
+    await waitFor(() => expect(document.activeElement).toBe(effortButton(2)));
+
+    // The inspector shows who, when and why.
+    await user.click(lineButton(2));
+    const history = pane().querySelector("[data-edit-history]") as HTMLElement;
+    expect(history.textContent).toBe("Edited[OWNER], 5 Oct 2026: [REASON]");
+
+    // The next reason prompt in this version starts from the last reason.
+    await editEffortTo(user, 3, "2");
+    expect((reasonBox() as HTMLInputElement).value).toBe("Reuse connector");
+  });
+
+  it("e on a focused line starts editing its effort; Esc cancels back to the cell", async () => {
+    const user = userEvent.setup();
+    renderSection(editable());
+
+    await user.tab();
+    await user.keyboard("j");
+    await user.keyboard("e");
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Effort (h) of [LINE 2]" }),
+    );
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("textbox")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(effortButton(2)));
+    expect(editEstimateLine).not.toHaveBeenCalled();
+  });
+
+  it("Esc in the reason prompt drops the change", async () => {
+    const user = userEvent.setup();
+    renderSection(editable());
+
+    await editEffortTo(user, 2, "8");
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
+    expect(effortButton(2).textContent).toBe("10.0");
+    expect(editEstimateLine).not.toHaveBeenCalled();
+  });
+
+  it("an unchanged effort asks for nothing; a non-number says why without calling", async () => {
+    const user = userEvent.setup();
+    renderSection(editable());
+
+    await user.click(effortButton(2));
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
+
+    await editEffortTo(user, 2, "lots");
+    expect(screen.getByText("Effort must be a number of hours from 0 to 2,000.")).toBeTruthy();
+    expect(editEstimateLine).not.toHaveBeenCalled();
+  });
+
+  it("Role mix: Save stays disabled until the shares add up to 100", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({ kind: "ok", estimate: editable() });
+    const { container } = renderSection(editable());
+
+    await user.click(mixButton(2));
+    const editor = screen.getByRole("form", { name: "Role mix of [LINE 2]" });
+    const engineer = within(editor).getByRole("textbox", {
+      name: "Engineer (%)",
+    });
+    expect(document.activeElement).toBe(engineer);
+    expect(within(editor).getByText("= 100%")).toBeTruthy();
+    await user.clear(engineer);
+    await user.type(engineer, "20");
+    expect(within(editor).getByText("= 87%")).toBeTruthy();
+    const save = within(editor).getByRole("button", { name: "Save" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(await axeViolations(container)).toEqual([]);
+    await user.clear(engineer);
+    await user.type(engineer, "33.5");
+    expect((save as HTMLButtonElement).disabled).toBe(true); // a fraction
+    await user.clear(engineer);
+    await user.type(engineer, "34");
+    const pm = within(editor).getByRole("textbox", {
+      name: "Project manager (%)",
+    });
+    await user.clear(pm);
+    await user.type(pm, "32");
+    expect(within(editor).getByText("= 100%")).toBeTruthy();
+    await user.click(save);
+
+    const prompt = screen.getByRole("form", { name: "Reason for the change" });
+    expect(
+      within(prompt).getByText("Role mix E 33 · PM 33 · QA 34 → E 34 · PM 32 · QA 34"),
+    ).toBeTruthy();
+    await user.type(reasonBox(), "Less PM{Enter}");
+
+    expect(editEstimateLine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roleMix: { engineer: 34, project_manager: 32, qa: 34 },
+        reason: "Less PM",
+      }),
+    );
+    expect(editEstimateLine.mock.calls[0][0]).not.toHaveProperty("effortHours");
+  });
+
+  it("a refused change rolls back and shows the server's sentence under the line", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({
+      kind: "invalid",
+      detail: "Role mix must name every role and add up to 100%.",
+    });
+    renderSection(editable());
+
+    await editEffortTo(user, 2, "8");
+    await user.type(reasonBox(), "x{Enter}");
+
+    expect(
+      await screen.findByText("Role mix must name every role and add up to 100%."),
+    ).toBeTruthy();
+    expect(effortButton(2).textContent).toBe("10.0");
+    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+  });
+
+  it("a stale save names who changed it and offers Reload", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({
+      kind: "stale",
+      message: "Changed by [OTHER] since you opened it.",
+    });
+    loadEstimate.mockResolvedValue({
+      kind: "ok",
+      estimate: afterEdit(4, "[THEIRS]"),
+    });
+    renderSection(editable());
+
+    await editEffortTo(user, 2, "8");
+    await user.type(reasonBox(), "x{Enter}");
+
+    expect(await screen.findByText("Changed by [OTHER] since you opened it.")).toBeTruthy();
+    expect(effortButton(2).textContent).toBe("10.0");
+    await user.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(effortButton(2).textContent).toBe("4.0"));
+    expect(screen.queryByText(/Changed by/, { selector: "p" })).toBeNull();
+  });
+
+  it("a replaced version says so and offers Reload", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({ kind: "not-draft" });
+    renderSection(editable());
+
+    await editEffortTo(user, 2, "8");
+    await user.type(reasonBox(), "x{Enter}");
+
+    expect(
+      await screen.findByText(
+        "This Estimate Version was replaced by a newer draft. Reload to see it.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+  });
+
+  it("saves with the row version seen when editing started, even after a refresh", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({
+      kind: "stale",
+      message: "Changed by [OTHER] since you opened it.",
+    });
+    const { rerender } = renderSection(editable());
+    await editEffortTo(user, 2, "8");
+
+    // A refresh brings the colleague's save (row version 2) while the prompt is open.
+    const refreshed = afterEdit(4, "[THEIRS]");
+    rerender(
+      <ShellProviders singleKeyShortcuts>
+        <EstimateSection opportunityId={OPP_ID} initial={refreshed} />
+        <RightPane />
+      </ShellProviders>,
+    );
+    const prompt = screen.getByRole("form", { name: "Reason for the change" });
+    expect(within(prompt).getByText("Effort 10.0 h → 8.0 h")).toBeTruthy();
+    await user.type(reasonBox(), "x{Enter}");
+
+    expect(editEstimateLine).toHaveBeenCalledWith(
+      expect.objectContaining({ rowVersion: 1, effortHours: 8 }),
+    );
+    expect(await screen.findByText("Changed by [OTHER] since you opened it.")).toBeTruthy();
+  });
+
+  it("a new Estimate version drops an open edit and says so", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderSection(editable());
+    await editEffortTo(user, 2, "8");
+
+    rerender(
+      <ShellProviders singleKeyShortcuts>
+        <EstimateSection opportunityId={OPP_ID} initial={editable(version(3))} />
+        <RightPane />
+      </ShellProviders>,
+    );
+
+    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
+    expect(
+      screen.getByText("A new Estimate version arrived; your change was not saved."),
+    ).toBeTruthy();
+    expect(editEstimateLine).not.toHaveBeenCalled();
+    await user.click(effortButton(1));
+    expect(
+      screen.queryByText("A new Estimate version arrived; your change was not saved."),
+    ).toBeNull();
+  });
+
+  it("shows the effort as the server will round it (half up)", async () => {
+    const user = userEvent.setup();
+    renderSection(editable());
+
+    await editEffortTo(user, 2, "0.35");
+
+    expect(screen.getByText("Effort 10.0 h → 0.4 h")).toBeTruthy();
+  });
+
+  it("while a save is in flight the cells are disabled and show the pending value", async () => {
+    const user = userEvent.setup();
+    let finish: (result: EstimateLineEditResult) => void = () => {};
+    editEstimateLine.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderSection(editable());
+
+    await editEffortTo(user, 2, "8.25");
+    await user.type(reasonBox(), "x{Enter}");
+
+    expect(effortButton(2).textContent).toBe("8.3");
+    for (const cell of [effortButton(2), effortButton(3), mixButton(2), mixButton(3)]) {
+      expect((cell as HTMLButtonElement).disabled).toBe(true);
+    }
+    await user.click(mixButton(3));
+    expect(screen.queryByRole("form", { name: "Role mix of [LINE 3]" })).toBeNull();
+
+    await act(async () => {
+      finish({ kind: "ok", estimate: afterEdit(8.3, "x") });
+    });
+
+    await waitFor(() => expect((effortButton(2) as HTMLButtonElement).disabled).toBe(false));
+    expect(effortButton(2).textContent).toBe("8.3");
+    expect((mixButton(3) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("explains a disabled Save: the reason counter and invalid role shares", async () => {
+    const user = userEvent.setup();
+    renderSection(editable());
+
+    await editEffortTo(user, 2, "8");
+    expect(screen.getByText("0/300")).toBeTruthy();
+    await user.click(reasonBox());
+    await user.paste("y".repeat(301));
+    expect(screen.getByText("301/300: shorten the reason to save")).toBeTruthy();
+    const prompt = screen.getByRole("form", { name: "Reason for the change" });
+    expect(
+      (
+        within(prompt).getByRole("button", {
+          name: "Save",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    await user.keyboard("{Escape}");
+
+    await user.click(mixButton(2));
+    const editor = screen.getByRole("form", { name: "Role mix of [LINE 2]" });
+    const qa = within(editor).getByRole("textbox", { name: "QA (%)" });
+    expect(qa.getAttribute("aria-invalid")).toBeNull();
+    await user.clear(qa);
+    await user.type(qa, "3.5");
+    expect(qa.getAttribute("aria-invalid")).toBe("true");
+    expect(within(editor).getByText("Whole numbers 0–100")).toBeTruthy();
+  });
+
+  it("without the right to edit the cells are plain text, and e does nothing", async () => {
+    const user = userEvent.setup();
+    renderSection(view(version(), succeeded, false));
+
+    expect(screen.queryByRole("button", { name: /^Edit effort/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit role mix/ })).toBeNull();
+    await user.tab();
+    await user.keyboard("e");
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("shows a carried edit's marker and the note for edits a re-draft couldn't carry", async () => {
+    const v = version(3);
+    v.uncarried_edit_count = 1;
+    v.uncarried_edits_from_version = 2;
+    v.sections[0].lines[0] = {
+      ...v.sections[0].lines[0],
+      edited: true,
+      edited_by_name: "[OWNER]",
+      edited_at: "2026-10-05T10:00:00Z",
+      edit_reason: "[REASON]",
+      edit_carried_from_version: 2,
+    };
+    const { container } = renderSection(editable(v));
+
+    expect(
+      screen.getByText("1 edited line from v2 had no matching line; it stays in v2 and the Trace."),
+    ).toBeTruthy();
+    expect(screen.getByText("Edited, carried from v2")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
   });
 });

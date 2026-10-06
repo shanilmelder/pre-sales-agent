@@ -31,3 +31,4 @@ class Action(StrEnum):
     RED_TEAM_START = "assessments.red_team.start"
     ASSESSMENT_START = "assessments.assessment.start"
     ESTIMATE_EXPORT = "estimates.estimate.export"
+    ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"

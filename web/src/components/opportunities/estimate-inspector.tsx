@@ -2,11 +2,19 @@
 
 import { useEffect, useId, useRef } from "react";
 
-import { hours, ROLES, sectionLabel, type EstimateLine } from "@/lib/estimates";
+import {
+  editedLabel,
+  editHistory,
+  hours,
+  ROLES,
+  sectionLabel,
+  type EstimateLine,
+} from "@/lib/estimates";
 
 /** The selected Estimate line in the right pane, read-only: its section and title, the basis
  * for its effort, its role mix broken down into hours (server-calculated), its effort,
- * Contingency and total, and the Requirements it covers as chips with their excerpts. */
+ * Contingency and total, and the Requirements it covers as chips with their excerpts. An
+ * edited line (Story 8.2) also shows who edited it, when and why. */
 export function EstimateInspector({
   line,
   focusRequest = 0,
@@ -34,6 +42,13 @@ export function EstimateInspector({
           {line.title}
         </h3>
       </div>
+
+      {line.edited ? (
+        <div className="flex flex-col gap-1" data-edit-history="">
+          <h4 className="text-label text-muted-foreground">{editedLabel(line)}</h4>
+          <p className="whitespace-pre-wrap break-words text-body">{editHistory(line)}</p>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-1">
         <h4 className="text-label text-muted-foreground">Basis</h4>

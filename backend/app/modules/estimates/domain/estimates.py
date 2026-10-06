@@ -16,6 +16,9 @@ from enum import StrEnum
 VERSION_SUBJECT_TYPE = "estimates.estimate_version"
 """The trace subject of an Estimate Version."""
 
+LINE_SUBJECT_TYPE = "estimates.estimate_line"
+"""The trace subject of an Estimate line (Story 8.2)."""
+
 TEMPLATE_VERSION = "demo-1"
 
 
@@ -235,3 +238,29 @@ def uncovered[K](lines: Sequence[ValidLine[K]], active: Sequence[K]) -> int:
     """How many of the `active` Requirements no line covers."""
     covered = {k for line in lines for k in line.covers}
     return sum(1 for k in dict.fromkeys(active) if k not in covered)
+
+
+# --- a person's edit of a line (Story 8.2) --------------------------------------------------
+
+EDIT_EFFORT_MIN = Decimal("0")
+EDIT_EFFORT_MAX = Decimal("2000")
+REASON_MAX = 300
+"""In Unicode code points, on the trimmed text."""
+
+EFFORT_RULE = "Effort must be a number of hours from 0 to 2,000."
+MIX_RULE = "Role mix must name every role and add up to 100%."
+REASON_RULE = f"Give a reason of 1 to {REASON_MAX} characters."
+NOTHING_RULE = "Change the effort or the role mix."
+
+
+def valid_edit_effort(raw: float | int | Decimal | str) -> Decimal | None:
+    """A person's effort, rounded half-up to 0.1 h, if it lies in 0-2,000 h; None otherwise."""
+    effort = round_effort(raw)
+    if effort is None or not EDIT_EFFORT_MIN <= effort <= EDIT_EFFORT_MAX:
+        return None
+    return effort
+
+
+def edit_reason(raw: str) -> str | None:
+    """The reason trimmed, if it is 1-300 characters; None otherwise."""
+    return _bounded(raw, REASON_MAX)

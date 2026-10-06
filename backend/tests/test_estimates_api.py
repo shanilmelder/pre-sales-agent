@@ -50,6 +50,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_start_draft": True,
         "can_accept_assumptions": True,
         "can_export": True,
+        "can_edit_lines": True,
     }
     assert theirs.json() == {
         "version": None,
@@ -57,6 +58,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_start_draft": False,
         "can_accept_assumptions": False,
         "can_export": False,
+        "can_edit_lines": False,
     }
 
 
@@ -263,9 +265,21 @@ def test_a_superseded_requirement_reads_as_superseded(
 
 def test_no_endpoint_accepts_a_total() -> None:
     schema = create_app(Settings()).openapi()
+    bodies = 0
     for path, operations in schema["paths"].items():
         if "estimate" not in path:
             continue
         for method, operation in operations.items():
-            assert method in {"get", "post"}
-            assert "requestBody" not in operation, (method, path)
+            assert method in {"get", "post", "patch"}
+            if "requestBody" not in operation:
+                continue
+            # Story 8.2: only a line's edit takes a body, and none of its fields is a total.
+            assert (method, path.rsplit("/", 1)[0]) == (
+                "patch",
+                "/api/v1/opportunities/{opportunity_id}/estimate-lines",
+            )
+            ref = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            fields = schema["components"]["schemas"][ref.rsplit("/", 1)[1]]["properties"]
+            assert set(fields) == {"effort_hours", "role_mix", "reason"}
+            bodies += 1
+    assert bodies == 1

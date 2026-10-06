@@ -301,6 +301,10 @@ class EstimatesEstimateVersionCreated(TracePayload):
     requirement_count: int
     superseded_count: int
     carried_assumption_count: int = 0
+    carried_edit_count: int = 0
+    """Story 8.2: edited lines of the superseded draft carried onto a matching line."""
+    uncarried_edit_count: int = 0
+    """Story 8.2: edited lines of the superseded draft with no matching line."""
 
 
 # Story 8.4. Payloads hold ids, kinds and hours only, never Assumption wording or Gap text.
@@ -336,6 +340,26 @@ class EstimatesAssumptionAccepted(TracePayload):
     line_id: str | None
     gap_id: str
     accepted_by: str
+
+
+# Story 8.2. A person's edit of a line: the before and after values and the person's own
+# reason; never the line's title or any Requirement text.
+
+
+@register
+class EstimatesEstimateLineEdited(TracePayload):
+    """A person changed an Estimate line's effort and/or role mix on a draft version.
+    Subject: the line (`estimates.estimate_line`). Actor: the person. `version`: the Estimate
+    Version's number. Role mixes are `{engineer, project_manager, qa}` in whole percent."""
+
+    event_type: ClassVar[str] = "estimates.estimate_line.edited"
+
+    version: int
+    before_hours: float
+    after_hours: float
+    before_role_mix: dict[str, int]
+    after_role_mix: dict[str, int]
+    reason: str
 
 
 # Story 8.8. The version and the format only, never any line, Assumption or question text.
