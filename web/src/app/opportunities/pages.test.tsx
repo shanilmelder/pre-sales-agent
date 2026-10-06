@@ -371,6 +371,7 @@ describe("/opportunities/[id] workspace", () => {
       can_start: false,
     },
     "/red-team": { review: null, run: null, can_start: false },
+    "/conflicts": { conflicts: [], open_count: 0 },
     "/trace": {
       items: [],
       page: 1,
@@ -1623,20 +1624,120 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
-  it.each([
-    ["conflicts", "6Conflicts"],
-    ["actuals", "9Actuals"],
-  ])("tab URL /%s: header, that tab selected, 'Not available yet.'", async (tab, label) => {
-    signedIn(["head_of_delivery"]);
+  it.each([["actuals", "9Actuals"]])(
+    "tab URL /%s: header, that tab selected, 'Not available yet.'",
+    async (tab, label) => {
+      signedIn(["head_of_delivery"]);
+      found();
+      const { container } = await renderWorkspace(tab);
+      expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
+      expect(selectedTabs()).toEqual([label]);
+      const panel = screen.getByRole("tabpanel");
+      expect(within(panel).getByText(NOT_AVAILABLE)).toBeTruthy();
+      expect(within(panel).getByRole("heading", { level: 2, name: label.slice(1) })).toBeTruthy();
+      expect(screen.queryByText("[CUSTOMER]")).toBeNull();
+      expect(await axeViolations(container)).toEqual([]);
+    },
+  );
+
+  it("tab URL /conflicts: the empty state, no count on the tab", async () => {
+    signedIn(["sales_representative"]);
     found();
-    const { container } = await renderWorkspace(tab);
-    expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
-    expect(selectedTabs()).toEqual([label]);
+    const { container } = await renderWorkspace("conflicts");
+    expect(selectedTabs()).toEqual(["6Conflicts"]);
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByText(NOT_AVAILABLE)).toBeTruthy();
-    expect(within(panel).getByRole("heading", { level: 2, name: label.slice(1) })).toBeTruthy();
-    expect(screen.queryByText("[CUSTOMER]")).toBeNull();
-    if (tab === "conflicts") expect(await axeViolations(container)).toEqual([]);
+    expect(within(panel).getByRole("heading", { level: 2, name: "Conflicts" })).toBeTruthy();
+    expect(
+      within(panel).getByText("No Conflicts between the specialist Assessments."),
+    ).toBeTruthy();
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/conflicts", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /conflicts: a failed read says so; the header and tabs still render, no count", async () => {
+    signedIn(["presales_engineer"]);
+    found(OPPORTUNITY, { "/conflicts": null });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("conflicts");
+    expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
+    expect(screen.getAllByRole("tab")).toHaveLength(9);
+    expect(selectedTabs()).toEqual(["6Conflicts"]);
+    expect(screen.getByRole("tab", { name: "Conflicts" })).toBeTruthy();
+    expect(screen.queryByTestId("tab-count-conflicts")).toBeNull();
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Conflicts could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("tab URL /conflicts: the Conflicts read-only, and the open count on the tab", async () => {
+    signedIn(["sales_representative"]);
+    const requirement = {
+      id: "00000000-0000-7000-8000-0000000000e4",
+      version: 1,
+      label: "R4",
+      excerpt: "[EXCERPT]",
+    };
+    found(OPPORTUNITY, {
+      "/conflicts": {
+        open_count: 1,
+        conflicts: [
+          {
+            id: "00000000-0000-7000-8000-0000000000c1",
+            type: "scope",
+            severity: "medium",
+            status: "open",
+            detected_by: "rule",
+            summary: "[SUMMARY]",
+            run_id: "00000000-0000-7000-8000-0000000000c9",
+            previous_conflict_id: null,
+            resolution_reason: null,
+            resolved_at: null,
+            created_at: "2026-10-07T09:00:00Z",
+            requirement,
+            positions: [
+              {
+                position: 1,
+                source: "assessment",
+                agent: "engineering_agent",
+                assessment_id: "00000000-0000-7000-8000-0000000000a1",
+                assessment_version: 1,
+                estimate_version_id: null,
+                estimate_version: null,
+                summary: "24 h",
+                value: 24,
+                requirement,
+              },
+              {
+                position: 2,
+                source: "assessment",
+                agent: "pm_agent",
+                assessment_id: "00000000-0000-7000-8000-0000000000a2",
+                assessment_version: 1,
+                estimate_version_id: null,
+                estimate_version: null,
+                summary: "Not sized",
+                value: null,
+                requirement,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const { container } = await renderWorkspace("conflicts");
+    expect(screen.getByRole("tab", { name: "Conflicts, 1 open" })).toBeTruthy();
+    const panel = screen.getByRole("tabpanel");
+    const grid = within(panel).getByRole("grid", { name: "Open Conflicts" });
+    expect(within(grid).getAllByRole("row").map((r) => r.textContent)).toEqual([
+      "ScopeMediumOpenR4Engineering: 24 h · PM: not sized",
+    ]);
+    expect(within(panel).queryByRole("textbox")).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
   });
 
   it("an unknown slug is the not-found page", async () => {
@@ -1657,6 +1758,7 @@ describe("/opportunities/[id] workspace", () => {
     "requirements",
     "gaps",
     "assessments",
+    "conflicts",
     "estimate",
     "trace",
     "actuals",

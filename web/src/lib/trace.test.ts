@@ -49,6 +49,7 @@ describe("labels", () => {
     ["estimates.estimate_version", "estimate"],
     ["estimates.assumption", "estimate"],
     ["assessments.review", "assessments"],
+    ["conflicts.conflict", "conflicts"],
     ["intake.source", "sources"],
     ["opportunities.opportunity", "overview"],
   ])("links %s to the %s tab", (type, tab) => {

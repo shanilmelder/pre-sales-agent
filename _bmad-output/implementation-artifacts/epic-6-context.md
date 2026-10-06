@@ -26,7 +26,7 @@ Independent agents try to break the specialist Assessments before a reviewer see
 - **Blocking:** open `critical` Critic or Red Team Findings block submission. They clear only by supplying Evidence, being marked resolved (addressed) with a reason, or an authorized override with a reason. Closing the Opportunity clears them only once Story 10.5 exists.
 - **Never overridable:** Findings tied to mandatory security Checklist items or authorization policies. No role, including platform administrator, can override them.
 - **Override does not carry over silently:** a newer review re-raising the same fingerprint creates an `open` Finding that shows the previous override and offers "Re-apply override".
-- **Sales representatives** cannot resolve, escalate or override (403).
+- **Authorization:** resolve and escalate are allowed for a presales engineer on the Opportunity or the assigned reviewer of an escalated Conflict. Override needs `assessments.finding.override` under the R1 policy (the Opportunity's presales engineer or the Head of Delivery; a security reviewer for security-discipline Findings). Sales representatives and anyone else get 403, and the actions are hidden.
 - **Quality targets:** Red Team replay must surface at least 60% of known overrun causes as a Gap, Unknown or Red Team Finding. The Critic must find the uncovered Requirement in every fixture. Semantic conflict precision and recall are recorded as the baseline for the Epic 7 eval harness.
 
 ## Technical Decisions
@@ -39,6 +39,7 @@ Independent agents try to break the specialist Assessments before a reviewer see
 - **Plan tasks:** `conflict_detection` (executor kind `system`), `semantic_conflict_detection`, `critic_review` and `red_team_review` all run `after` every specialist task, so they still run when a specialist was skipped. The Critic and Red Team run in parallel.
 - **Deterministic code:** Conflict rules live in `conflicts/domain/rules/` and are unit-tested without DB or LLM. The Critic's coverage pre-check (Requirements cited by no Finding or effort line) is deterministic and is passed to the agent. `policy_ref` (non-overridable) is set deterministically at acceptance.
 - **ToolGateway:** a read-only tool returns the run's accepted Assessments and Findings with their versions. Untrusted text goes into delimited data blocks, and the `injection_suspected` flag shows on affected Findings.
+- **Authorization source:** roles and permissions come only from the Auth0 access token (`permissions` claim plus the namespaced roles claim). Each new action name (`<module>.<entity>.<verb>`, in the one action catalogue) must exist as an Auth0 permission with the same name. A missing claim grants nothing. Opportunity membership (owner, collaborators) and the sales-representative exclusions stay in platform policy code, evaluated against the token's roles. Platform-stored roles are a display cache only and are never read for authorization.
 - **Mutation path:** every command authorizes through `identity.authorize`, checks `row_version` (If-Match, 412 on mismatch), writes, and appends a trace event in the same Unit of Work. Overrides take `pg_advisory_xact_lock(opportunity_id)` because they affect Baseline checks.
 - **Trace events:** `conflicts.conflict.detected | resolved | escalated`, `assessments.finding.resolved | overridden`. Each has a payload model in the trace catalogue.
 - **Queries for blockers:** `conflicts.list_open(opportunity_id)` returns open and escalated Conflicts. `assessments.get_blocking_findings(opportunity_id)` returns open critical Findings with their Assessment version. Both feed `estimates.get_submission_blockers`, the only submission check.
@@ -59,6 +60,7 @@ Independent agents try to break the specialist Assessments before a reviewer see
 
 - **Within the epic:** 6.1 creates the `conflicts` module and `raise_conflict`, which 6.2, 6.4 and 6.5 use. 6.3 needs 6.1. 6.6 needs the reviews from 6.4 and 6.5.
 - **Epic 5:** the assessment plan template, specialist Assessments, the Assessment contract and Evidence validation (Story 5.3), ToolGateway and bounded retry.
+- **Epic 1 (Story 1.9):** new Epic 6 actions must be added to the action catalogue and granted through Auth0 roles, or every call returns 403.
 - **Epic 4:** `gaps.register_unknown`, and mandatory Checklist items for the rule-based mandatory checks.
 - **Epic 8:** `estimates.get_submission_blockers` consumes open Conflicts and unoverridden critical Findings.
 - **Epic 9:** Challenge reruns Conflict detection, Critic and Red Team. The Story 9.2 Inbox will list Conflicts escalated to a user. 6.3 creates no Inbox items.

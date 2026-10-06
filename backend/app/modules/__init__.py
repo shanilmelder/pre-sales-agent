@@ -13,5 +13,5 @@ Modules: `identity` (users, roles, the action catalogue and policy), `opportunit
 (Opportunities and collaborators), `intake` (Opportunity Sources and Requirements), `gaps`
 (Gaps and Clarification Questions), `estimates` (Estimate Versions and their lines) and
 `assessments` (Red Team Reviews, specialist assessment runs and Assessments, and their
-Findings).
+Findings) and `conflicts` (Conflicts between the Assessments and their positions).
 """

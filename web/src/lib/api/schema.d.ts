@@ -855,6 +855,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Conflicts
+         * @description The Conflicts between the Opportunity's specialist Assessments (and its Estimate): open
+         *     ones first, then resolved, each section critical to low and newest first, each with its
+         *     positions (the agent and Assessment version, or the Estimate version; the value; the
+         *     Requirement chip); and the open-plus-escalated count. Conflicts carried forward to a later
+         *     run are left out. Anyone who can read the Opportunity.
+         */
+        get: operations["get_conflicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1173,11 +1197,117 @@ export interface components {
             count: number;
         };
         /**
+         * ConflictPosition
+         * @description One side of a Conflict. From an agent's Assessment (`agent`, `assessment_id`,
+         *     `assessment_version`) or the Estimate (`estimate_version_id`, `estimate_version`).
+         *     `summary`: e.g. "24 h", "Not sized", "Do not proceed". `value`: hours to 0.1, or null.
+         */
+        ConflictPosition: {
+            /** Position */
+            position: number;
+            source: components["schemas"]["PositionSource"];
+            /** Agent */
+            agent: string | null;
+            /** Assessment Id */
+            assessment_id: string | null;
+            /** Assessment Version */
+            assessment_version: number | null;
+            /** Estimate Version Id */
+            estimate_version_id: string | null;
+            /** Estimate Version */
+            estimate_version: number | null;
+            /** Summary */
+            summary: string;
+            /** Value */
+            value: number | null;
+            requirement: components["schemas"]["ConflictRequirement"] | null;
+        };
+        /**
+         * ConflictRequirement
+         * @description The Requirement a position is about, at the version it names. `label` is `R<n>`, its
+         *     position among the Opportunity's active Requirements (oldest first), or `Superseded` once
+         *     it is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
+         *     when cut.
+         */
+        ConflictRequirement: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /**
+         * ConflictSeverity
+         * @enum {string}
+         */
+        ConflictSeverity: "critical" | "high" | "medium" | "low";
+        /**
+         * ConflictStatus
+         * @enum {string}
+         */
+        ConflictStatus: "open" | "negotiating" | "resolved" | "escalated";
+        /**
+         * ConflictType
+         * @enum {string}
+         */
+        ConflictType: "timeline" | "effort" | "resource" | "architecture" | "security" | "scope" | "assumption" | "evidence";
+        /**
+         * ConflictView
+         * @description A Conflict with its positions in order. `requirement`: the Requirement it is about
+         *     (null for an Opportunity-level Conflict).
+         */
+        ConflictView: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["ConflictType"];
+            severity: components["schemas"]["ConflictSeverity"];
+            status: components["schemas"]["ConflictStatus"];
+            detected_by: components["schemas"]["DetectedBy"];
+            /** Summary */
+            summary: string;
+            /** Run Id */
+            run_id: string;
+            /** Previous Conflict Id */
+            previous_conflict_id: string | null;
+            /** Resolution Reason */
+            resolution_reason: string | null;
+            /** Resolved At */
+            resolved_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            requirement: components["schemas"]["ConflictRequirement"] | null;
+            /** Positions */
+            positions: components["schemas"]["ConflictPosition"][];
+        };
+        /**
+         * ConflictsView
+         * @description The Opportunity's Conflicts: open (and negotiating, escalated) before resolved, then
+         *     critical to low, then newest first; those carried forward to a later run are left out.
+         *     `open_count`: open plus escalated.
+         */
+        ConflictsView: {
+            /** Conflicts */
+            conflicts: components["schemas"]["ConflictView"][];
+            /** Open Count */
+            open_count: number;
+        };
+        /**
          * ConvertedTo
          * @description The kind of Assumption a converted Gap became.
          * @enum {string}
          */
         ConvertedTo: "condition" | "contingency";
+        /**
+         * DetectedBy
+         * @enum {string}
+         */
+        DetectedBy: "rule" | "semantic" | "critic" | "red_team";
         /**
          * Detection
          * @description The Opportunity's latest Gap detection. `error_code` is set only when `failed`.
@@ -1837,6 +1967,11 @@ export interface components {
             /** After */
             after: string;
         };
+        /**
+         * PositionSource
+         * @enum {string}
+         */
+        PositionSource: "assessment" | "estimate";
         /**
          * ProposalStatus
          * @description The state of an Estimate Version's `estimates.propose_assumptions` job.
@@ -8253,6 +8388,116 @@ export interface operations {
                 };
             };
             /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_conflicts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConflictsView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;

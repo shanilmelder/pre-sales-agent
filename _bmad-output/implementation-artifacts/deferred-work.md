@@ -111,3 +111,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7-import-opportunity.md`
   summary: [post-demo] Opportunity imports add a blob reference that is never released (no release API in `platform.files`): abandoned or expired imports pin their blob, and a consumed import leaves ref_count at 2.
   evidence: Review pass 1 (blind-hunter, edge-case-hunter); needs a `release_reference` in platform files plus release on consume/expiry and in the 0020 downgrade.
+
+- source_spec: none
+  summary: Story 6.3 — resolve a Conflict on the Conflicts tab with a recorded reason (choose a position, enter a different one, or escalate to a named reviewer), keeping every original position in the Decision Trace.
+  evidence: Split from the "build the Conflicts tab" intent (2026-10-07); 6.3 needs 6.1's `conflicts` module and is independently shippable, so 6.1 (detection + read-only tab) goes first.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-conflicts-tab.md`
+  summary: Web suite timing flakes under full parallel load — a different untouched test fails per run (`estimate-grid.test.tsx` "a refused change rolls back…", `specialist-assessments.test.tsx` "a cancel answered 409…", `create-form.test.tsx` "says so when the user may not create (403)…"); each passes alone.
+  evidence: Seen in two full `npm test` runs during Story 6.1 verification (2026-10-07); none of these files changed in 6.1. Likely waitFor timeouts under load; raise timeouts or limit vitest workers.

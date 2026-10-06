@@ -476,3 +476,43 @@ class AssessmentsAssessmentRunCompleted(TracePayload):
     task_count: int
     succeeded_count: int
     failed_count: int
+
+
+# --- conflicts ------------------------------------------------------------------------------
+
+
+@register
+class ConflictsConflictDetected(TracePayload):
+    """A rule (or later a detector) raised a Conflict between Assessments (Story 6.1).
+    Subject: the Conflict (`conflicts.conflict`). Actor: the system. The run that raised it,
+    the Conflict's type, severity and detector, and how many positions it has; no Requirement
+    or Finding text."""
+
+    event_type: ClassVar[str] = "conflicts.conflict.detected"
+
+    run_id: str
+    type: Literal[
+        "timeline",
+        "effort",
+        "resource",
+        "architecture",
+        "security",
+        "scope",
+        "assumption",
+        "evidence",
+    ]
+    severity: Literal["low", "medium", "high", "critical"]
+    detected_by: Literal["rule", "semantic", "critic", "red_team"]
+    position_count: int
+
+
+@register
+class ConflictsConflictResolved(TracePayload):
+    """The system resolved a Conflict after a later run (Story 6.1): `no_longer_present` when
+    the run no longer raises it, `carried_forward` when it raises it again as a new Conflict
+    that links this one. Subject: the Conflict. Actor: the system. `run_id`: that later run."""
+
+    event_type: ClassVar[str] = "conflicts.conflict.resolved"
+
+    run_id: str
+    reason_kind: Literal["no_longer_present", "carried_forward"]

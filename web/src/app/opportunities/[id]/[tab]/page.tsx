@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AssessmentsTab } from "@/app/opportunities/[id]/assessments";
+import { ConflictsTab } from "@/app/opportunities/[id]/conflicts";
 import { EstimateTab } from "@/app/opportunities/[id]/estimate";
 import { GapsTab } from "@/app/opportunities/[id]/gaps";
 import { OverviewTab } from "@/app/opportunities/[id]/overview";
@@ -9,8 +10,8 @@ import { SourcesTab } from "@/app/opportunities/[id]/sources";
 import { TraceTab } from "@/app/opportunities/[id]/trace";
 import { isWorkspaceTab, TAB_NOT_AVAILABLE, WORKSPACE_TABS } from "@/lib/workspace";
 
-/** `/opportunities/{id}/{tab}`: Overview, Sources, Requirements, Gaps, Assessments, Estimate,
- * Trace, or "Not available yet." for a tab later epics build. An unknown slug is the
+/** `/opportunities/{id}/{tab}`: Overview, Sources, Requirements, Gaps, Assessments,
+ * Conflicts, Estimate, Trace, or "Not available yet." for a tab later epics build. An unknown slug is the
  * not-found page. */
 export default async function WorkspaceTabPage({
   params,
@@ -26,6 +27,7 @@ export default async function WorkspaceTabPage({
   if (tab === "requirements") return await RequirementsTab({ id });
   if (tab === "gaps") return await GapsTab({ id });
   if (tab === "assessments") return await AssessmentsTab({ id });
+  if (tab === "conflicts") return await ConflictsTab({ id });
   if (tab === "estimate") return await EstimateTab({ id });
   if (tab === "trace") return await TraceTab({ id, searchParams: (await searchParams) ?? {} });
   return (
