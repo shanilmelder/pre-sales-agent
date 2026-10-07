@@ -204,7 +204,11 @@ def test_agreeing_assessments_raise_no_conflict(
 
     assert conflict_rows(sync_engine, opp["id"]) == []
     assert conflict_events(sync_engine, opp["id"]) == []
-    assert get(client, headers, opp["id"]).json() == {"conflicts": [], "open_count": 0}
+    assert get(client, headers, opp["id"]).json() == {
+        "conflicts": [],
+        "open_count": 0,
+        "reviewers": [],
+    }
 
 
 def test_detecting_again_for_the_same_pass_adds_nothing(
@@ -371,6 +375,14 @@ def test_a_conflict_gone_on_a_rerun_is_resolved_naming_the_assessment(
     assert gone["payload"] == {
         "run_id": str(run_rows(sync_engine, opp["id"])[-1]["id"]),
         "reason_kind": "no_longer_present",
+        # Story 6.3's decision fields, unset for the system.
+        "reason": None,
+        "chosen_position": None,
+        "entered_position": None,
+        "positions": None,
+        "line_id": None,
+        "applied_hours": None,
+        "not_applied": None,
     }
 
     body = get(client, headers, opp["id"]).json()

@@ -1,5 +1,6 @@
 import {
   getAssessments,
+  getConflicts,
   getEstimate,
   getOpportunity,
   getRedTeam,
@@ -27,7 +28,8 @@ function Detail({ term, children }: { term: string; children: React.ReactNode })
 /** Every read the summary needs, in parallel (the same reads the other tabs make). A failed
  * read is `null`, so only its own card says it could not be loaded. */
 async function loadSummary(id: string): Promise<OverviewData> {
-  const [sources, requirements, gaps, estimate, assessments, redTeam, trace] = await Promise.all([
+  const [sources, requirements, gaps, estimate, assessments, redTeam, trace, conflicts] =
+    await Promise.all([
     listSources(id),
     listRequirements(id),
     listGaps(id),
@@ -35,6 +37,7 @@ async function loadSummary(id: string): Promise<OverviewData> {
     getAssessments(id),
     getRedTeam(id),
     listTrace(id, 1),
+    getConflicts(id),
   ]);
   return {
     sources: sources.kind === "ok" ? sources.sources : null,
@@ -44,6 +47,7 @@ async function loadSummary(id: string): Promise<OverviewData> {
     assessments: assessments.kind === "ok" ? assessments.assessments : null,
     redTeam: redTeam.kind === "ok" ? redTeam.redTeam : null,
     trace: trace.kind === "ok" ? trace.page.items : null,
+    conflicts: conflicts.kind === "ok" ? conflicts.conflicts : null,
   };
 }
 

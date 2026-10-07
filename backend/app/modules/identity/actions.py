@@ -31,3 +31,5 @@ class Action(StrEnum):
     ASSESSMENT_START = "assessments.assessment.start"
     ESTIMATE_EXPORT = "estimates.estimate.export"
     ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"
+    CONFLICT_RESOLVE = "conflicts.conflict.resolve"
+    CONFLICT_ESCALATE = "conflicts.conflict.escalate"

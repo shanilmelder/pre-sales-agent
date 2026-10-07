@@ -33,6 +33,7 @@ describe("labels", () => {
     expect(eventLabel("gaps.clarification_question.approved")).toBe(
       "Clarification Question approved",
     );
+    expect(eventLabel("conflicts.conflict.escalated")).toBe("Conflict escalated");
     expect(eventLabel("brand.new.happened")).toBe("brand.new.happened");
     for (const [type, label] of Object.entries(EVENT_LABELS)) {
       expect(type).toMatch(/^[a-z_]+\.[a-z_]+\.[a-z_]+$/);

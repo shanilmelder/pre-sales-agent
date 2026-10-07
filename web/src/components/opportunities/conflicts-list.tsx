@@ -11,6 +11,7 @@ import {
   useShell,
 } from "@/components/shell/shell-context";
 import {
+  escalatedLabel,
   NO_CONFLICTS,
   OPEN_SECTION,
   positionsSummary,
@@ -23,7 +24,8 @@ import {
 
 /** Conflicts as dense 32px rows, in the order given (the API ranks them critical to low,
  * then newest first). Each row shows the type, the severity pill, the status pill and the
- * positions summary ("Engineering: 24 h · PM: not sized").
+ * positions summary ("Engineering: 24 h · PM: not sized"); an escalated one names its reviewer
+ * ("Escalated to Sam").
  *
  * The list is one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows, and
@@ -93,6 +95,9 @@ export function ConflictsList({
                 <span className="w-24 shrink-0 truncate text-label">{typeLabel(item.type)}</span>
                 <SeverityPill severity={item.severity} />
                 <ConflictStatusPill status={item.status} />
+                {item.status === "escalated" && item.escalated_to ? (
+                  <span className="shrink-0 text-label text-gap">{escalatedLabel(item)}</span>
+                ) : null}
                 {item.requirement ? (
                   <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
                     {item.requirement.label}
@@ -111,8 +116,15 @@ export function ConflictsList({
 }
 
 /** The Conflicts tab: Open and Resolved sections of rows in the main pane, and the selected
- * Conflict's inspector in the right pane (opened if closed). Read-only for everyone. */
-export function ConflictsSection({ initial }: { initial: ConflictsView }) {
+ * Conflict's inspector in the right pane (opened if closed), where those allowed resolve or
+ * escalate it (Story 6.3). */
+export function ConflictsSection({
+  initial,
+  opportunityId = "",
+}: {
+  initial: ConflictsView;
+  opportunityId?: string;
+}) {
   const openHeadingId = useId();
   const resolvedHeadingId = useId();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
@@ -192,9 +204,11 @@ export function ConflictsSection({ initial }: { initial: ConflictsView }) {
       {selected ? (
         <RightPaneContent>
           <ConflictInspector
-            key={selected.id}
+            key={`${selected.id}:${selected.row_version}`}
             conflict={selected}
             focusRequest={focusRequest}
+            opportunityId={opportunityId}
+            reviewers={initial.reviewers}
           />
         </RightPaneContent>
       ) : null}
