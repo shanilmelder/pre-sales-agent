@@ -2,11 +2,20 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { Conflict, ConflictPosition, ConflictsView } from "@/lib/conflicts";
+import type {
+  Conflict,
+  ConflictPosition,
+  ConflictsView,
+} from "@/lib/conflicts";
 import { axeViolations } from "@/test/axe";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+  }),
   usePathname: () => "/opportunities/x/conflicts",
 }));
 
@@ -81,7 +90,10 @@ const GONE = conflict(3, {
 });
 const VIEW: ConflictsView = { conflicts: [CLASH, SCOPE, GONE], open_count: 2 };
 
-function renderSection(initial: ConflictsView = VIEW, singleKeyShortcuts = true) {
+function renderSection(
+  initial: ConflictsView = VIEW,
+  singleKeyShortcuts = true,
+) {
   return render(
     <ShellProviders singleKeyShortcuts={singleKeyShortcuts}>
       <ConflictsSection initial={initial} />
@@ -98,16 +110,26 @@ describe("ConflictsSection", () => {
     const { container } = renderSection();
 
     const open = screen.getByRole("grid", { name: "Open Conflicts" });
-    expect(within(open).getAllByRole("row").map((r) => r.textContent)).toEqual([
+    expect(
+      within(open)
+        .getAllByRole("row")
+        .map((r) => r.textContent),
+    ).toEqual([
       "AssumptionHighOpenEngineering: proceed · Security: do not proceed",
       "ScopeMediumOpenR4Engineering: 24 h · PM: not sized",
     ]);
     const resolved = screen.getByRole("grid", { name: "Resolved Conflicts" });
-    expect(within(resolved).getAllByRole("row").map((r) => r.textContent)).toEqual([
-      "ScopeMediumResolvedR4Engineering: 24 h · PM: not sized",
-    ]);
-    expect(screen.getByRole("heading", { level: 3, name: "Open 2" })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 3, name: "Resolved 1" })).toBeTruthy();
+    expect(
+      within(resolved)
+        .getAllByRole("row")
+        .map((r) => r.textContent),
+    ).toEqual(["ScopeMediumResolvedR4Engineering: 24 h · PM: not sized"]);
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Open 2" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Resolved 1" }),
+    ).toBeTruthy();
     // Status pills pair an icon with a label; blocker red only on Open.
     const statuses = Array.from(container.querySelectorAll("[data-status]"));
     expect(statuses.map((s) => s.getAttribute("data-status"))).toEqual([
@@ -116,8 +138,12 @@ describe("ConflictsSection", () => {
       "resolved",
     ]);
     for (const pill of statuses) expect(pill.querySelector("svg")).toBeTruthy();
-    expect(statuses[0]!.querySelector("svg")?.getAttribute("class")).toContain("text-blocker");
-    expect(statuses[2]!.querySelector("svg")?.getAttribute("class")).toContain("text-resolved");
+    expect(statuses[0]!.querySelector("svg")?.getAttribute("class")).toContain(
+      "text-blocker",
+    );
+    expect(statuses[2]!.querySelector("svg")?.getAttribute("class")).toContain(
+      "text-resolved",
+    );
     expect(row(/Scope.*Open/).className).toContain("min-h-row");
     // Read-only: no text fields; the rows are the only buttons.
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -126,7 +152,9 @@ describe("ConflictsSection", () => {
 
   it("shows the empty sentence without Conflicts", async () => {
     const { container } = renderSection({ conflicts: [], open_count: 0 });
-    expect(screen.getByText("No Conflicts between the specialist Assessments.")).toBeTruthy();
+    expect(
+      screen.getByText("No Conflicts between the specialist Assessments."),
+    ).toBeTruthy();
     expect(screen.queryByRole("grid")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
@@ -140,19 +168,31 @@ describe("ConflictsSection", () => {
     await user.keyboard("{Enter}");
 
     const inspector = pane();
-    const heading = within(inspector).getByRole("heading", { level: 3, name: "Scope Conflict" });
+    const heading = within(inspector).getByRole("heading", {
+      level: 3,
+      name: "Scope Conflict",
+    });
     await waitFor(() => expect(document.activeElement).toBe(heading));
-    expect(row(/Scope.*Open/).closest("[role=row]")?.getAttribute("aria-selected")).toBe("true");
+    expect(
+      row(/Scope.*Open/)
+        .closest("[role=row]")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
     expect(within(inspector).getByText("[SUMMARY 2]")).toBeTruthy();
     const cards = within(inspector).getAllByRole("listitem");
+    // The shared Requirement shows once above the cards, not in each card.
+    expect(within(inspector).getAllByText("[EXCERPT R4]")).toHaveLength(1);
     expect(cards.map((c) => c.textContent)).toEqual([
-      "Engineering24 hR4[EXCERPT R4]Engineering Assessment v2",
-      "PMNot sizedR4[EXCERPT R4]PM Assessment v2",
+      "Engineering24 hEngineering Assessment v2",
+      "PMNot sizedPM Assessment v2",
     ]);
-    expect((cards[0]!.parentElement as HTMLElement).style.gridTemplateColumns).toBe(
-      "repeat(2, minmax(0, 1fr))",
+    // Equal-width cards that wrap when the pane is too narrow for all of them.
+    expect((cards[0]!.parentElement as HTMLElement).className).toContain(
+      "grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))]",
     );
-    const section = within(inspector).getByRole("region", { name: "Scope Conflict" });
+    const section = within(inspector).getByRole("region", {
+      name: "Scope Conflict",
+    });
     expect(within(section).queryByRole("button")).toBeNull();
     expect(within(section).queryByRole("textbox")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
@@ -167,19 +207,33 @@ describe("ConflictsSection", () => {
     await user.keyboard("{Enter}");
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        within(pane()).getByRole("heading", { level: 3, name: "Scope Conflict" }),
+        within(pane()).getByRole("heading", {
+          level: 3,
+          name: "Scope Conflict",
+        }),
       ),
     );
-    await user.click(within(pane()).getByRole("button", { name: "Close right pane" }));
-    await waitFor(() => expect(document.activeElement).toBe(row(/Scope.*Open/)));
+    await user.click(
+      within(pane()).getByRole("button", { name: "Close right pane" }),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(row(/Scope.*Open/)),
+    );
 
     // A mouse open: closing leaves focus where the click put it, not on the row.
     await user.click(row(/Assumption/));
     await waitFor(() => expect(pane()).toBeTruthy());
-    const close = within(pane()).getByRole("button", { name: "Close right pane" });
+    const close = within(pane()).getByRole("button", {
+      name: "Close right pane",
+    });
     await user.click(close);
     await waitFor(() =>
-      expect(screen.queryByRole("heading", { level: 3, name: "Assumption Conflict" })).toBeNull(),
+      expect(
+        screen.queryByRole("heading", {
+          level: 3,
+          name: "Assumption Conflict",
+        }),
+      ).toBeNull(),
     );
     expect(document.activeElement).not.toBe(row(/Assumption/));
     expect(document.activeElement).not.toBe(row(/Scope.*Open/));
