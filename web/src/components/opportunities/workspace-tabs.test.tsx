@@ -51,11 +51,17 @@ const ME: Me = {
   permissions: ["identity.user.search", "opportunities.opportunity.create"],
 };
 
-function tree(children: ReactNode = <p>Tab body</p>, singleKeyShortcuts = true) {
+function tree(
+  children: ReactNode = <p>Tab body</p>,
+  singleKeyShortcuts = true,
+  counts: Record<string, number> = {},
+) {
   return (
     <ShellProviders singleKeyShortcuts={singleKeyShortcuts}>
       <AppShell me={ME}>
-        <WorkspaceTabs id={ID}>{children}</WorkspaceTabs>
+        <WorkspaceTabs id={ID} counts={counts}>
+          {children}
+        </WorkspaceTabs>
       </AppShell>
     </ShellProviders>
   );
@@ -97,6 +103,16 @@ describe("WorkspaceTabs", () => {
     segment.current = "gaps";
     render(tree());
     expect(selected().map((t) => t.textContent)).toEqual(["4Gaps"]);
+  });
+
+  it("the Conflicts tab shows its open count after the label, none at 0", async () => {
+    const { container, rerender } = render(tree(undefined, true, { conflicts: 3 }));
+    const conflicts = screen.getByRole("tab", { name: "Conflicts, 3 open" });
+    expect(within(conflicts).getByTestId("tab-count-conflicts").textContent).toBe("3, 3 open");
+    expect(await axeViolations(container)).toEqual([]);
+    rerender(tree(undefined, true, { conflicts: 0 }));
+    expect(screen.getByRole("tab", { name: "Conflicts" })).toBeTruthy();
+    expect(screen.queryByTestId("tab-count-conflicts")).toBeNull();
   });
 
   it("no tab is hidden or disabled", () => {

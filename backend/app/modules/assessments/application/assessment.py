@@ -29,7 +29,10 @@ hand-off does.
    `model_timeout` or `output_invalid`).
 5. When no task is left in progress the run is finished: `succeeded` (all tasks did),
    `partially_failed` (some did) or `failed` (none did), and
-   `assessments.assessment_run.completed` is traced.
+   `assessments.assessment_run.completed` is traced. In the same Unit of Work the Conflict
+   rules run over each agent's current Assessment and the current Estimate draft
+   (`conflicts.detect_for_run`, Story 6.1); a run finished again after a task retry runs
+   them again, which is idempotent per run.
 
 A run stuck past `stale_after()` (its job died without recording it) is failed on the next
 start or retry: its unfinished tasks `failed` / `model_timeout`.
@@ -80,6 +83,8 @@ from app.modules.assessments.domain.assessments import (
     validate_assessment,
 )
 from app.modules.assessments.domain.reviews import RunErrorCode, Severity, severity_counts
+from app.modules.conflicts.application import public as conflicts
+from app.modules.estimates.application import public as estimates
 from app.modules.gaps.application import public as gaps
 from app.modules.intake.application import public as intake
 from app.platform import trace
@@ -327,7 +332,60 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
             **completed.model_dump(),
         },
     )
+    await detect_conflicts(uow, record.opportunity_id, run_id)
     return status
+
+
+async def current_assessment_snapshots(
+    uow: UnitOfWork, opportunity_id: UUID
+) -> list[conflicts.AssessmentSnapshot]:
+    """Each agent's current Assessment of the Opportunity: id, version, recommendation and
+    effort rows (Requirement id and version, hours), in agent order. No authorization."""
+    records = sorted(
+        await repo.current_assessments(uow, opportunity_id),
+        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
+    )
+    effort: dict[UUID, list[conflicts.EffortSnapshot]] = {}
+    for row in await repo.effort_of(uow, [r.id for r in records]):
+        effort.setdefault(row.assessment_id, []).append(
+            conflicts.EffortSnapshot(
+                requirement_id=row.requirement_id,
+                requirement_version=row.requirement_version,
+                hours=row.hours,
+            )
+        )
+    return [
+        conflicts.AssessmentSnapshot(
+            assessment_id=r.id,
+            agent=r.agent,
+            version=r.version,
+            recommendation=r.recommendation,
+            effort=tuple(sorted(effort.get(r.id, []), key=lambda e: str(e.requirement_id))),
+        )
+        for r in records
+    ]
+
+
+async def detect_conflicts(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> None:
+    """Run the Conflict rules for the finished run (Story 6.1) over each agent's current
+    Assessment and the current Estimate draft, read now."""
+    snapshots = await current_assessment_snapshots(uow, opportunity_id)
+    lines = await estimates.current_version_lines(uow, opportunity_id)
+    estimate = (
+        None
+        if lines is None
+        else conflicts.EstimateSnapshot(
+            version_id=lines.version_id,
+            version=lines.version,
+            lines=tuple(
+                conflicts.EstimateLineSnapshot(
+                    effort_hours=line.effort_hours, requirement_ids=line.requirement_ids
+                )
+                for line in lines.lines
+            ),
+        )
+    )
+    await conflicts.detect_for_run(uow, opportunity_id, run_id, snapshots, estimate)
 
 
 # --- accepting ------------------------------------------------------------------------------

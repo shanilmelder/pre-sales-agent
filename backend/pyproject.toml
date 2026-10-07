@@ -86,7 +86,7 @@ source_modules = ["app.main_api"]
 forbidden_modules = ["app.platform.model_gateway.gateway", "app.platform.model_gateway.ollama"]
 
 [[tool.importlinter.contracts]]
-name = "opportunities uses identity, intake and assessments only through their public APIs (AD-2)"
+name = "opportunities uses identity, intake, assessments and conflicts only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.opportunities"]
 forbidden_modules = [
@@ -98,11 +98,14 @@ forbidden_modules = [
     "app.modules.assessments.domain",
     "app.modules.assessments.adapters",
     "app.modules.assessments.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "intake uses identity, opportunities, gaps and assessments only through their public APIs (AD-2)"
+name = "intake uses identity, opportunities, gaps, assessments and conflicts only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.intake"]
 forbidden_modules = [
@@ -116,11 +119,14 @@ forbidden_modules = [
     "app.modules.assessments.domain",
     "app.modules.assessments.adapters",
     "app.modules.assessments.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "gaps uses identity, opportunities, intake, estimates and assessments only through their public APIs (AD-2)"
+name = "gaps uses identity, opportunities, intake, estimates, assessments and conflicts only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.gaps"]
 forbidden_modules = [
@@ -139,11 +145,14 @@ forbidden_modules = [
     "app.modules.assessments.domain",
     "app.modules.assessments.adapters",
     "app.modules.assessments.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "estimates uses identity, opportunities, intake, gaps and assessments only through their public APIs (AD-2)"
+name = "estimates uses identity, opportunities, intake, gaps, assessments and conflicts only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.estimates"]
 forbidden_modules = [
@@ -162,11 +171,14 @@ forbidden_modules = [
     "app.modules.assessments.domain",
     "app.modules.assessments.adapters",
     "app.modules.assessments.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "assessments uses identity, opportunities, intake, gaps and estimates only through their public APIs (AD-2)"
+name = "assessments uses identity, opportunities, intake, gaps, estimates and conflicts only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.assessments"]
 forbidden_modules = [
@@ -185,5 +197,28 @@ forbidden_modules = [
     "app.modules.estimates.domain",
     "app.modules.estimates.adapters",
     "app.modules.estimates.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "conflicts uses identity, opportunities and intake only through their public APIs, and never imports assessments or estimates (AD-2)"
+type = "forbidden"
+source_modules = ["app.modules.conflicts"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.intake.domain",
+    "app.modules.intake.adapters",
+    "app.modules.intake.api",
+    "app.modules.gaps",
+    "app.modules.estimates",
+    "app.modules.assessments",
 ]
 allow_indirect_imports = true
