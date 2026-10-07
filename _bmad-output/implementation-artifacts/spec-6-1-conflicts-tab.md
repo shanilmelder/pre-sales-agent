@@ -150,7 +150,7 @@ context:
 | 12 | blind | Clash fingerprint constant; summary does not name the agents | low | reject | Positions name each agent; fresh positions per run. |
 | 13 | blind | Row chip may use an older Requirement version than the Estimate position | low | reject | Needs a Requirement edit between the Assessment and the Estimate; rare. |
 | 14 | blind | `_trace_resolved(kind: str)` maps unknown kinds to `no_longer_present` | false | reject | Only two literal call sites; no wrong event is written. |
-| 15 | blind | Inspector columns don't wrap in a narrow pane | low | reject | The workspace inspector is desktop-width; 4 cards still render. |
+| 15 | blind | Inspector columns don't wrap in a narrow pane | medium | patch (after review) | Verdict corrected: the PR screenshot showed a 4-position effort Conflict's cards too narrow to read the excerpt. Fixed in dbde6c8: cards wrap (`auto-fit`, min 7.5rem) and a Requirement shared by every position shows once above them. |
 | 16 | vgap | No test for a failed `GET …/conflicts` (tab message, layout badge) | medium | patch | Pre-verified: every sibling tab has one; Conflicts has none. |
 | 17 | vgap | `Superseded` chip label untested in conflicts | medium | patch | Pre-verified: sibling modules test it; conflicts does not. |
 | 18 | vgap | The "every source" fallback of the no-longer-present reason is untested | low | patch | Pre-verified: only the changed/newer steps are tested. |
