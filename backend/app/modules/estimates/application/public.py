@@ -12,6 +12,7 @@ from app.modules.estimates.application.estimates import (
 )
 from app.modules.estimates.application.export import ExportFile, export_estimate
 from app.modules.estimates.application.export_content import ExportFormat
+from app.modules.estimates.application.from_assessments import build_from_assessments
 from app.modules.estimates.application.line_refs import (
     LineRef,
     VersionLines,
@@ -30,6 +31,7 @@ from app.modules.estimates.application.models import (
     EstimateSection,
     EstimateVersion,
     EstimateView,
+    LineConflict,
     LineRequirement,
     OriginGap,
     RoleHours,
@@ -37,18 +39,21 @@ from app.modules.estimates.application.models import (
     Totals,
     UnconvertedGap,
 )
+from app.modules.estimates.domain.from_assessments import AgentSizing, SizingRow
 from app.platform.uow import UnitOfWork
 
 
 async def enqueue_draft(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
-    """Queue an Estimate draft of the Opportunity in the caller's Unit of Work (Story 8.1:
-    after every successful Gap detection). Coalesces with a draft that is queued and not yet
-    started; returns the draft's id."""
+    """Queue a model Estimate draft of the Opportunity in the caller's Unit of Work.
+    Coalesces with a draft that is queued and not yet started; returns the draft's id.
+    Story 8.3: Gap detection no longer calls it; the Estimate is built from the Assessments
+    (`build_from_assessments`)."""
     return await draft.enqueue_draft(uow, opportunity_id)
 
 
 __all__ = [
     "AcceptAllResult",
+    "AgentSizing",
     "Assumption",
     "AssumptionCounts",
     "AssumptionGroups",
@@ -61,16 +66,19 @@ __all__ = [
     "EstimateView",
     "ExportFile",
     "ExportFormat",
+    "LineConflict",
     "LineRef",
     "LineRequirement",
     "OriginGap",
     "RoleHours",
     "RoleMix",
+    "SizingRow",
     "Totals",
     "UnconvertedGap",
     "VersionLines",
     "accept_all_assumptions",
     "accept_assumption",
+    "build_from_assessments",
     "current_version_lines",
     "edit_line",
     "enqueue_draft",

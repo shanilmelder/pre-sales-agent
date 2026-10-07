@@ -294,11 +294,13 @@ class GapsGapConverted(TracePayload):
 
 @register
 class EstimatesEstimateVersionCreated(TracePayload):
-    """An accepted draft created an Estimate Version. Subject: the version
-    (`estimates.estimate_version`). Actor: the agent (`estimating_agent@<semver>`). Counts
-    only: lines stored, lines dropped, active Requirements no line covers, Requirements read,
-    earlier draft versions superseded, and accepted Assumptions carried from the superseded
-    draft (Story 8.7)."""
+    """An accepted draft, or a finished assessment run (Story 8.3), created an Estimate
+    Version. Subject: the version (`estimates.estimate_version`). Actor: the agent
+    (`estimating_agent@<semver>`), or the system for a version from the Assessments. Counts,
+    the source and ids only: lines stored, lines dropped, active Requirements no line covers,
+    Requirements read, earlier draft versions superseded, accepted Assumptions and line
+    edits carried from the superseded draft (Stories 8.7, 8.2), where the lines came from
+    and the assessment run's id (Story 8.3)."""
 
     event_type: ClassVar[str] = "estimates.estimate_version.created"
 
@@ -314,6 +316,11 @@ class EstimatesEstimateVersionCreated(TracePayload):
     """Story 8.2: edited lines of the superseded draft carried onto a matching line."""
     uncarried_edit_count: int = 0
     """Story 8.2: edited lines of the superseded draft with no matching line."""
+    source: Literal["model", "assessments"] = "model"
+    """Story 8.3: `assessments` when built from the specialist Assessments as an assessment
+    run finished (actor `system`), else `model`."""
+    source_run_id: str | None = None
+    """Story 8.3: that assessment run's id."""
 
 
 # Story 8.4. Payloads hold ids, kinds and hours only, never Assumption wording or Gap text.

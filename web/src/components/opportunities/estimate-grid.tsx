@@ -1,14 +1,13 @@
 "use client";
 
 import { CircleAlertIcon, ListChecksIcon, PencilIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
   editEstimateLine,
   loadEstimate,
-  startEstimateDraft,
   type EstimateLineEditResult,
-  type StartEstimateDraftResult,
 } from "@/app/opportunities/actions";
 import {
   AssumptionsRegister,
@@ -21,11 +20,11 @@ import { InlineInput } from "@/components/opportunities/inline-field";
 import { useAnnounce } from "@/components/shell/live-region";
 import { RIGHT_PANE_TOGGLE_ID, RightPaneContent, useShell } from "@/components/shell/shell-context";
 import {
+  BUILDING,
+  REBUILDING,
   COLUMNS,
   DRAFT_POLL_LIMIT_MS,
   DRAFT_POLL_MS,
-  DRAFTING,
-  draftFailure,
   EDIT_NOT_ALLOWED,
   EDIT_SAVE_FAILED,
   EFFORT_RULE,
@@ -36,7 +35,7 @@ import {
   NO_ESTIMATE,
   keepReason,
   NEW_VERSION_ARRIVED,
-  NOTHING_TO_ESTIMATE,
+  OPEN_CONFLICT,
   parseEffort,
   readKeptReason,
   roleMixLabel,
@@ -44,15 +43,15 @@ import {
   roundHours,
   ROLES,
   sectionLabel,
-  STILL_DRAFTING,
+  STILL_BUILDING,
   UNALLOCATED_CONTINGENCY,
   uncarriedEditsNote,
   uncoveredLabel,
   registerSummary,
   VERSION_REPLACED,
   versionLabel,
+  versionPillLabel,
   type Assumption,
-  type EstimateDraft,
   type EstimateLine,
   type EstimateVersion,
   type EstimateView,
@@ -61,11 +60,7 @@ import {
 } from "@/lib/estimates";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import { cn } from "@/lib/utils";
-
-export const RETRY = "Retry";
-const RETRY_FAILED = "The retry failed. Try again.";
-const RETRY_NOT_ALLOWED =
-  "Only the owner and collaborators, except sales representatives, can draft the Estimate.";
+import { tabHref } from "@/lib/workspace";
 
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
@@ -75,11 +70,16 @@ const num = "px-2.5 text-right text-numeric whitespace-nowrap";
 const cont = "border-l border-border";
 const headCell = "h-[30px] bg-background px-2.5 text-label text-muted-foreground whitespace-nowrap";
 
-/** The version pill: "Draft v2". 20px, fully rounded, neutral outline. */
-export function VersionPill({ version }: { version: Pick<EstimateVersion, "status" | "version"> }) {
+/** The version pill: "Estimate v4 · from Assessments (run 3)", or "Draft v2" for a model
+ * draft. 20px, fully rounded, neutral outline. */
+export function VersionPill({
+  version,
+}: {
+  version: Pick<EstimateVersion, "status" | "version" | "source" | "source_run">;
+}) {
   return (
     <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full border border-border bg-background px-2 text-label text-foreground">
-      {versionLabel(version)}
+      {versionPillLabel(version)}
     </span>
   );
 }
@@ -144,6 +144,44 @@ export function EditedMarker({ line }: { line: EstimateLine }) {
     >
       <PencilIcon aria-hidden="true" className="size-3 shrink-0" />
       {label}
+    </span>
+  );
+}
+
+/** The "Open Conflict" marker (Story 8.3): an icon plus its label in blocker colour, never
+ * the icon alone; it links to the Conflicts tab. */
+export function ConflictMarker({
+  line,
+  opportunityId,
+}: {
+  line: EstimateLine;
+  opportunityId?: string;
+}) {
+  if (line.conflicts.length === 0) return null;
+  const content = (
+    <>
+      <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+      {OPEN_CONFLICT}
+    </>
+  );
+  const className =
+    "inline-flex shrink-0 items-center gap-1 rounded-sm text-meta whitespace-nowrap text-blocker";
+  return opportunityId ? (
+    <Link
+      href={tabHref(opportunityId, "conflicts")}
+      data-conflict-marker=""
+      tabIndex={-1}
+      aria-label={`${OPEN_CONFLICT} on ${line.title}: open the Conflicts tab`}
+      className={cn(
+        className,
+        "outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary",
+      )}
+    >
+      {content}
+    </Link>
+  ) : (
+    <span data-conflict-marker="" className={className}>
+      {content}
     </span>
   );
 }
@@ -467,6 +505,7 @@ export function EstimateGrid({
                         {line.title}
                       </button>
                       <EditedMarker line={line} />
+                      <ConflictMarker line={line} opportunityId={opportunityId} />
                     </div>
                   </th>
                   <td className="w-24 border-b border-border px-2.5">
@@ -599,39 +638,33 @@ export function EstimateGrid({
   );
 }
 
-/** The header above the grid: the version pill and how many Requirements no line covers;
- * "Drafting Estimate" with a running dot while a draft is queued or running ("Still
- * drafting — reload to check." once polling has stopped); "Estimate draft failed:
- * <reason>" with **Retry** (only for those who may start a draft) once failed; and **Export**
- * (Story 8.8) when there is a version and the caller may export it. */
+/** The header above the grid: the version pill ("Estimate v4 · from Assessments (run 3)")
+ * and how many Requirements no line covers, with **Export** (Story 8.8) when the caller may
+ * export it. Before the first version, while an assessment run is queued or running (Story
+ * 8.3), "The Estimate is built when the Engineering, PM and Security Agents finish." with a
+ * running dot ("Still waiting for the agents — reload to check." once polling has stopped);
+ * with a version shown, "Rebuilding from the Assessments when the run finishes." in muted
+ * text with the running dot. There is no draft Retry: the Estimate is built from the
+ * Assessments. */
 export function EstimateHeader({
   version,
-  draft,
-  canStart = false,
+  assessmentRunning = false,
   opportunityId,
   canExport = false,
-  busy = false,
-  message = null,
   stalled = false,
-  onRetry,
 }: {
   version: EstimateVersion | null;
-  draft: EstimateDraft | null;
-  canStart?: boolean;
+  /** An assessment run is queued or running. */
+  assessmentRunning?: boolean;
   /** Needed for **Export**; without it the control is hidden. */
   opportunityId?: string;
   canExport?: boolean;
-  /** A Retry is in flight. */
-  busy?: boolean;
-  /** A Retry's failure sentence. */
-  message?: string | null;
-  /** Polling has stopped while still drafting. */
+  /** Polling has stopped while still waiting. */
   stalled?: boolean;
-  onRetry?: () => void;
 }) {
-  const drafting = isDrafting(draft);
-  const failed = draft?.status === "failed";
-  if (!version && !drafting && !failed) return null;
+  const waiting = !version && assessmentRunning;
+  const rebuilding = version !== null && assessmentRunning;
+  if (!version && !waiting) return null;
   return (
     <div className="flex flex-col items-start gap-1">
       <div className="flex flex-wrap items-center gap-3">
@@ -645,51 +678,33 @@ export function EstimateHeader({
             {uncoveredLabel(version.uncovered_count)}
           </p>
         ) : null}
-        {drafting && stalled ? (
-          <p className="text-label text-muted-foreground">{STILL_DRAFTING}</p>
-        ) : drafting ? (
-          <p className="flex items-center gap-2 text-label" data-status={draft?.status}>
+        {waiting && stalled ? (
+          <p className="text-label text-muted-foreground">{STILL_BUILDING}</p>
+        ) : waiting ? (
+          <p className="flex items-center gap-2 text-label" data-status="waiting">
             <span
               aria-hidden="true"
               data-testid="running-dot"
               className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
             />
-            {DRAFTING}
+            {BUILDING}
+          </p>
+        ) : rebuilding && !stalled ? (
+          <p
+            className="flex items-center gap-2 text-label text-muted-foreground"
+            data-status="rebuilding"
+          >
+            <span
+              aria-hidden="true"
+              data-testid="running-dot"
+              className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
+            />
+            {REBUILDING}
           </p>
         ) : null}
       </div>
-      {failed ? (
-        <>
-          <p className="flex items-center gap-1.5 text-label text-blocker" data-status="failed">
-            <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
-            {draftFailure(draft.error_code)}
-          </p>
-          {canStart ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onRetry?.()}
-              className={actionClass}
-            >
-              {RETRY}
-            </button>
-          ) : null}
-        </>
-      ) : null}
-      {message ? <span className="text-meta text-destructive">{message}</span> : null}
     </div>
   );
-}
-
-function retryMessage(result: StartEstimateDraftResult): string {
-  switch (result.kind) {
-    case "forbidden":
-      return RETRY_NOT_ALLOWED;
-    case "not-found":
-      return NO_ACCESS_TO_OPPORTUNITY;
-    default:
-      return RETRY_FAILED;
-  }
 }
 
 /** What the right pane shows: a line, or the Gap an Assumption was made from. */
@@ -697,12 +712,13 @@ type Selection = { kind: "line"; id: string } | { kind: "gap"; assumptionId: str
 
 /** The Estimate tab's content: the header, the grid and the Assumptions Register below it in
  * the main pane, and the selected line's (or Assumption's Gap's) inspector in the right pane
- * (opened if closed). While a draft or the Assumption proposals are queued or running the
- * Estimate is re-read every 2 s: paused while the tab is hidden, and stopped after 15
- * minutes. A selected line that a new version replaced leaves the pane showing "Nothing
- * selected." Lines of the draft are editable for those who may edit them (Story 8.2), with
- * a note when a re-draft could not carry some edits; Retry only for those who may start a
- * draft, Accept for those who may accept Assumptions. */
+ * (opened if closed). While an assessment run (which builds the Estimate, Story 8.3), a
+ * model draft left over from before Story 8.3, or the Assumption proposals are queued or
+ * running the Estimate is re-read every 2 s:
+ * paused while the tab is hidden, and stopped after 15 minutes. A selected line that a new
+ * version replaced leaves the pane showing "Nothing selected." Lines of the draft are
+ * editable for those who may edit them (Story 8.2), with a note when a new version could not
+ * carry some edits; Accept for those who may accept Assumptions. No draft Retry. */
 export function EstimateSection({
   opportunityId,
   initial,
@@ -719,17 +735,17 @@ export function EstimateSection({
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
   const [stalled, setStalled] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   /** Bumped after every poll, so the next one is scheduled. */
   const [pollTick, setPollTick] = useState(0);
-  /** Bumped on every local change (a Retry); a poll that started before one is dropped. */
+  /** Bumped on every local change (an edit, an acceptance); a poll that started before one
+   * is dropped. */
   const mutation = useRef(0);
   const draftingSince = useRef<number | null>(null);
   const [visible, setVisible] = useState(true);
   const drafting = isDrafting(view.draft);
   const proposing = isProposing(view.version);
-  const working = drafting || proposing;
+  const building = view.assessment_running;
+  const working = building || drafting || proposing;
   /** The view as last rendered, for the poll to tell what finished. */
   const viewRef = useRef(view);
   useEffect(() => {
@@ -815,15 +831,11 @@ export function EstimateSection({
         if (!cancelled && result.kind === "ok" && mutation.current === startedAt) {
           const before = viewRef.current;
           setView(result.estimate);
-          const { draft, version } = result.estimate;
-          if (isDrafting(before.draft) && !isDrafting(draft)) {
-            announce(
-              draft?.status === "failed"
-                ? draftFailure(draft.error_code)
-                : version
-                  ? versionLabel(version)
-                  : NOTHING_TO_ESTIMATE,
-            );
+          const { version } = result.estimate;
+          if (before.assessment_running && !result.estimate.assessment_running) {
+            announce(version ? versionPillLabel(version) : NO_ESTIMATE);
+          } else if (version && version.id !== before.version?.id) {
+            announce(versionPillLabel(version));
           } else if (isProposing(before.version) && version && !isProposing(version)) {
             announce(`Assumptions Register: ${registerSummary(version.counts)}`);
           }
@@ -905,56 +917,15 @@ export function EstimateSection({
     }
   }
 
-  async function retry() {
-    if (busy) return;
-    setBusy(true);
-    setMessage(null);
-    let result: StartEstimateDraftResult;
-    try {
-      result = await startEstimateDraft(opportunityId);
-    } catch {
-      result = { kind: "error" };
-    }
-    setBusy(false);
-    if (result.kind === "ok") {
-      const { draft } = result;
-      mutation.current += 1;
-      draftingSince.current = null;
-      setStalled(false);
-      setView((current) => ({ ...current, draft }));
-      announce(DRAFTING);
-    } else if (result.kind === "conflict") {
-      // One is already queued or running: show what is stored now.
-      try {
-        const loaded = await loadEstimate(opportunityId);
-        if (loaded.kind === "ok") {
-          mutation.current += 1;
-          setView(loaded.estimate);
-        }
-      } catch {
-        // The tab stays as it is.
-      }
-    } else {
-      const sentence = retryMessage(result);
-      setMessage(sentence);
-      announce(sentence);
-    }
-  }
-
-  const { version, draft } = view;
-  const succeeded = draft?.status === "succeeded";
+  const { version } = view;
   return (
     <div className="flex flex-col gap-4">
       <EstimateHeader
         version={version}
-        draft={draft}
-        canStart={view.can_start_draft}
+        assessmentRunning={building}
         opportunityId={opportunityId}
         canExport={view.can_export}
-        busy={busy}
-        message={message}
         stalled={stalled}
-        onRetry={() => void retry()}
       />
       {version ? (
         <>
@@ -986,19 +957,19 @@ export function EstimateSection({
               setView(estimate);
             }}
             onOpenGap={openGap}
-            canRetry={view.can_start_draft && !drafting}
-            retryBusy={busy}
-            onRetry={() => void retry()}
           />
         </>
-      ) : succeeded ? (
-        <p className="text-muted-foreground">{NOTHING_TO_ESTIMATE}</p>
-      ) : !drafting && draft?.status !== "failed" ? (
+      ) : !building ? (
         <p className="text-muted-foreground">{NO_ESTIMATE}</p>
       ) : null}
       {selected ? (
         <RightPaneContent>
-          <EstimateInspector key={selected.id} line={selected} focusRequest={focusRequest} />
+          <EstimateInspector
+            key={selected.id}
+            line={selected}
+            opportunityId={opportunityId}
+            focusRequest={focusRequest}
+          />
         </RightPaneContent>
       ) : selectedAssumption ? (
         <RightPaneContent>

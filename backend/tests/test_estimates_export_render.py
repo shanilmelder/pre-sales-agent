@@ -52,6 +52,7 @@ def _line(n: int, section: str, title: str, effort: float, contingency: float) -
         "edited_at": None,
         "edit_reason": None,
         "edit_carried_from_version": None,
+        "conflicts": [],
     }
 
 
@@ -125,6 +126,8 @@ def version(unallocated: float = 12.0) -> EstimateVersion:
             "unallocated_contingency_hours": unallocated,
             "uncarried_edit_count": 0,
             "uncarried_edits_from_version": None,
+            "source": "model",
+            "source_run": None,
         }
     )
 

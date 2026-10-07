@@ -742,7 +742,8 @@ def test_a_successful_detection_queues_an_assessment_run(
     ]
     (job,) = _jobs(sync_engine, opp["id"], ASSESS)
     assert job["payload"] == {"run_id": str(run["id"])}
-    assert len(_jobs(sync_engine, opp["id"], DRAFT)) == 1  # the Estimate draft still queued
+    # Story 8.3: no model Estimate draft; the Estimate is built when the run finishes.
+    assert _jobs(sync_engine, opp["id"], DRAFT) == []
     (event,) = rows(
         sync_engine,
         "SELECT * FROM platform_trace_events WHERE opportunity_id = :o "

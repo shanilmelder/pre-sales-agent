@@ -29,10 +29,11 @@ hand-off does.
    `model_timeout` or `output_invalid`).
 5. When no task is left in progress the run is finished: `succeeded` (all tasks did),
    `partially_failed` (some did) or `failed` (none did), and
-   `assessments.assessment_run.completed` is traced. In the same Unit of Work the Conflict
-   rules run over each agent's current Assessment and the current Estimate draft
-   (`conflicts.detect_for_run`, Story 6.1); a run finished again after a task retry runs
-   them again, which is idempotent per run.
+   `assessments.assessment_run.completed` is traced. In the same Unit of Work, when at least
+   one task succeeded, the Estimate is built from each agent's current Assessment
+   (`estimates.build_from_assessments`, Story 8.3); then the Conflict rules run over each
+   agent's current Assessment and the current Estimate draft (`conflicts.detect_for_run`,
+   Story 6.1). A run finished again after a task retry does both again.
 
 A run stuck past `stale_after()` (its job died without recording it) is failed on the next
 start or retry: its unfinished tasks `failed` / `model_timeout`.
@@ -186,7 +187,7 @@ async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     system, unless one of its runs is already queued or running: then that run's id is
     returned and nothing added (a running run keeps the inputs it read). Lost runs are
     failed first. Never refuses with a conflict; any other error (e.g. the database) fails
-    the caller's Unit of Work, as `estimates.enqueue_draft` does."""
+    the caller's Unit of Work."""
     await repo.lock_runs(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     ids = {"opportunity_id": str(opportunity_id)}
@@ -270,6 +271,13 @@ async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, in
         subject_id=run.id,
         opportunity_id=run.opportunity_id,
     )
+    if succeeded:
+        # Story 8.3: the Assessments that completed before the cancel are current, so the
+        # Estimate is built from them and the Conflicts re-checked, as `finish_run` does.
+        await estimates.build_from_assessments(
+            uow, run.opportunity_id, run.id, await current_sizings(uow, run.opportunity_id)
+        )
+        await detect_conflicts(uow, run.opportunity_id, run.id)
     return skipped, succeeded
 
 
@@ -332,6 +340,12 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
             **completed.model_dump(),
         },
     )
+    if succeeded:
+        # Story 8.3: the Estimate is built from the agents' current Assessments, before the
+        # Conflict detection, which therefore compares against this new version.
+        await estimates.build_from_assessments(
+            uow, record.opportunity_id, run_id, await current_sizings(uow, record.opportunity_id)
+        )
     await detect_conflicts(uow, record.opportunity_id, run_id)
     return status
 
@@ -361,6 +375,34 @@ async def current_assessment_snapshots(
             version=r.version,
             recommendation=r.recommendation,
             effort=tuple(sorted(effort.get(r.id, []), key=lambda e: str(e.requirement_id))),
+        )
+        for r in records
+    ]
+
+
+async def current_sizings(uow: UnitOfWork, opportunity_id: UUID) -> list[estimates.AgentSizing]:
+    """Each agent's current Assessment of the Opportunity with its effort rows and their
+    basis, in agent order (Story 8.3: the Estimate from the Assessments). No authorization."""
+    records = sorted(
+        await repo.current_assessments(uow, opportunity_id),
+        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
+    )
+    rows: dict[UUID, list[estimates.SizingRow]] = {}
+    for row in await repo.effort_of(uow, [r.id for r in records]):
+        rows.setdefault(row.assessment_id, []).append(
+            estimates.SizingRow(
+                requirement_id=row.requirement_id,
+                requirement_version=row.requirement_version,
+                hours=row.hours,
+                basis=row.basis,
+            )
+        )
+    return [
+        estimates.AgentSizing(
+            agent=r.agent,
+            assessment_id=r.id,
+            assessment_version=r.version,
+            rows=tuple(sorted(rows.get(r.id, []), key=lambda e: str(e.requirement_id))),
         )
         for r in records
     ]

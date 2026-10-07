@@ -100,12 +100,16 @@ def detected(
     count: int = 5,
     *,
     gap_titles: tuple[str, ...] = ("SAP interface type",),
+    queue_draft: bool = True,
 ) -> tuple[dict[str, str], dict[str, Any]]:
     """An Opportunity with `count` extracted Requirements (R1…), its Gaps detected (one per
-    title, about R1), and its Estimate draft queued."""
+    title, about R1), and (unless not `queue_draft`) a model Estimate draft queued (Story 8.3:
+    Gap detection no longer queues one, so it is queued here directly)."""
     headers, opp = extracted(client, engine, db_url, gateway, count=count)
     gateway.replies = [gaps_out(*(gap(t, ["R1"]) for t in gap_titles))]
     assert drain(db_url, DETECT) == ["succeeded"]
+    if queue_draft:
+        requeue(db_url, opp["id"])
     return headers, opp
 
 
@@ -181,14 +185,24 @@ SIX = (
 # --- queueing -------------------------------------------------------------------------------
 
 
-def test_an_accepted_gap_detection_queues_one_draft(
+def test_an_accepted_gap_detection_queues_no_draft(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
+    """Story 8.3: the Estimate is built from the Assessments when the run finishes; Gap
+    detection queues the assessment run only."""
     _, opp = extracted(client, sync_engine, db_url, gateway, count=2)
-    assert drafts(sync_engine, opp["id"]) == []  # nothing before the detection
     gateway.replies = [gaps_out(gap("SAP interface type", ["R1"]))]
 
     assert drain(db_url, DETECT) == ["succeeded"]
+
+    assert drafts(sync_engine, opp["id"]) == []
+    assert draft_jobs(sync_engine, opp["id"]) == []
+
+
+def test_queueing_a_draft_returns_it_and_queues_its_job(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    _, opp = detected(client, sync_engine, db_url, gateway, count=2)
 
     (draft,) = drafts(sync_engine, opp["id"])
     (job,) = draft_jobs(sync_engine, opp["id"])
@@ -197,14 +211,12 @@ def test_an_accepted_gap_detection_queues_one_draft(
     assert (draft["status"], draft["error_code"], draft["finished_at"]) == ("queued", None, None)
 
 
-def test_detections_while_one_draft_waits_coalesce(
+def test_queueing_while_one_draft_waits_coalesces(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
     _, opp = detected(client, sync_engine, db_url, gateway, count=2)
-    detection_tests.requeue(db_url, opp["id"])
-    gateway.replies = [gaps_out(gap("Uptime", ["R2"]))]
 
-    assert drain(db_url, DETECT) == ["succeeded"]
+    requeue(db_url, opp["id"])
 
     assert len(draft_jobs(sync_engine, opp["id"])) == 1
     assert [d["status"] for d in drafts(sync_engine, opp["id"])] == ["queued"]
@@ -294,6 +306,8 @@ def test_a_draft_stores_version_1_with_lines_links_and_one_event(
         "carried_assumption_count": 0,  # a first draft carries nothing
         "carried_edit_count": 0,
         "uncarried_edit_count": 0,
+        "source": "model",
+        "source_run_id": None,
     }
 
     # One model call: instructions as the system message, Requirements and Gaps only as

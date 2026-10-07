@@ -37,7 +37,6 @@ import { cn } from "@/lib/utils";
 
 export const ACCEPT = "Accept";
 export const RELOAD = "Reload";
-export const RETRY_PROPOSALS = "Retry";
 const ACCEPT_FAILED = "The Assumption could not be accepted. Try again.";
 const ACCEPT_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can accept Assumptions.";
@@ -202,7 +201,8 @@ function Group({
  * header "7 · 6 accepted · 1 not accepted" with **Accept all (N)**; and an "Unconverted Gaps"
  * note for open Gaps with no proposal. After every accept the Estimate is read again, so the
  * grid's Contingency column and totals come from the server. Read-only without
- * `canAccept`. */
+ * `canAccept`. Proposals that failed or are missing are said so, with no re-draft Retry
+ * (Story 8.3: the Estimate is built from the Assessments). */
 export function AssumptionsRegister({
   opportunityId,
   version,
@@ -210,20 +210,10 @@ export function AssumptionsRegister({
   selectedId = null,
   onChanged,
   onOpenGap,
-  canRetry = false,
-  retryBusy = false,
-  onRetry,
 }: {
   opportunityId: string;
   version: EstimateVersion;
   canAccept: boolean;
-  /** Whether the caller may re-draft the Estimate (which proposes Assumptions again), and no
-   * draft is under way. */
-  canRetry?: boolean;
-  /** A re-draft is in flight. */
-  retryBusy?: boolean;
-  /** Re-draft the Estimate (the existing start-draft action). */
-  onRetry?: () => void;
   /** The Assumption whose Gap is open in the inspector. */
   selectedId?: string | null;
   /** The Estimate as read again after an accept or a Reload. */
@@ -351,16 +341,6 @@ export function AssumptionsRegister({
             <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
             {version.proposal_status === "failed" ? PROPOSALS_FAILED : PROPOSALS_MISSING}
           </p>
-          {canRetry ? (
-            <button
-              type="button"
-              disabled={retryBusy}
-              onClick={() => onRetry?.()}
-              className={actionClass}
-            >
-              {RETRY_PROPOSALS}
-            </button>
-          ) : null}
         </div>
       ) : null}
 

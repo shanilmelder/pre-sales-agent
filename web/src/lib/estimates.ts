@@ -9,6 +9,7 @@ export type EstimateLine = components["schemas"]["EstimateLine"];
 export type EstimateDraft = components["schemas"]["EstimateDraft"];
 export type DraftErrorCode = components["schemas"]["DraftErrorCode"];
 export type LineRequirement = components["schemas"]["LineRequirement"];
+export type LineConflict = components["schemas"]["LineConflict"];
 export type Totals = components["schemas"]["Totals"];
 export type RoleHours = components["schemas"]["RoleHours"];
 export type RoleMix = components["schemas"]["RoleMix"];
@@ -72,6 +73,16 @@ export function versionLabel(
   return `${versionStatusLabel(version.status)} v${version.version}`;
 }
 
+/** The header's version pill: "Estimate v4 · from Assessments (run 3)" for a version built
+ * from the specialist Assessments (Story 8.3), else "Draft v2". */
+export function versionPillLabel(
+  version: Pick<EstimateVersion, "status" | "version" | "source" | "source_run">,
+): string {
+  if (version.source !== "assessments") return versionLabel(version);
+  const run = version.source_run == null ? "" : ` (run ${version.source_run})`;
+  return `Estimate v${version.version} · from Assessments${run}`;
+}
+
 /** "1 Requirement", "3 Requirements". */
 export function requirementCount(n: number): string {
   return `${n} ${n === 1 ? "Requirement" : "Requirements"}`;
@@ -85,8 +96,22 @@ export function uncoveredLabel(n: number): string {
 /** The header while a draft is queued or running. */
 export const DRAFTING = "Drafting Estimate";
 
-/** The empty-state sentence. */
-export const NO_ESTIMATE = "The Estimate is drafted after Gaps are detected.";
+/** The empty-state sentence (Story 8.3: the Estimate is built from the Assessments). */
+export const NO_ESTIMATE =
+  "No Estimate yet. Run assessment on the Assessments tab to build it.";
+
+/** The waiting state while an assessment run is queued or running and there is no version. */
+export const BUILDING =
+  "The Estimate is built when the Engineering, PM and Security Agents finish.";
+
+/** The header note while an assessment run is queued or running and a version is shown. */
+export const REBUILDING = "Rebuilding from the Assessments when the run finishes.";
+
+/** Shown instead of the waiting indicator once polling has stopped (15 minutes). */
+export const STILL_BUILDING = "Still waiting for the agents — reload to check.";
+
+/** The marker on a line whose Requirement has an open Conflict (Story 8.3). */
+export const OPEN_CONFLICT = "Open Conflict";
 
 /** A finished draft that stored no version (no active Requirements). */
 export const NOTHING_TO_ESTIMATE =

@@ -1,25 +1,35 @@
 "use client";
 
+import { CircleAlertIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useId, useRef } from "react";
 
+import { typeLabel } from "@/lib/conflicts";
 import {
   editedLabel,
   editHistory,
   hours,
+  OPEN_CONFLICT,
   ROLES,
   sectionLabel,
   type EstimateLine,
 } from "@/lib/estimates";
+import { tabHref } from "@/lib/workspace";
 
 /** The selected Estimate line in the right pane, read-only: its section and title, the basis
  * for its effort, its role mix broken down into hours (server-calculated), its effort,
  * Contingency and total, and the Requirements it covers as chips with their excerpts. An
- * edited line (Story 8.2) also shows who edited it, when and why. */
+ * edited line (Story 8.2) also shows who edited it, when and why; a line with an open
+ * Conflict about a Requirement it covers (Story 8.3) names each Conflict's type and links to
+ * the Conflicts tab. */
 export function EstimateInspector({
   line,
+  opportunityId,
   focusRequest = 0,
 }: {
   line: EstimateLine;
+  /** Needed for the Conflicts tab link; without it the link is left out. */
+  opportunityId?: string;
   focusRequest?: number;
 }) {
   const headingId = useId();
@@ -42,6 +52,28 @@ export function EstimateInspector({
           {line.title}
         </h3>
       </div>
+
+      {line.conflicts.length > 0 ? (
+        <div className="flex flex-col gap-1" data-line-conflicts="">
+          <h4 className="flex items-center gap-1.5 text-label text-blocker">
+            <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+            {OPEN_CONFLICT}
+          </h4>
+          <ul className="flex flex-col gap-0.5 text-body">
+            {line.conflicts.map((conflict) => (
+              <li key={conflict.id}>{`${typeLabel(conflict.type)} Conflict`}</li>
+            ))}
+          </ul>
+          {opportunityId ? (
+            <Link
+              href={tabHref(opportunityId, "conflicts")}
+              className="w-fit rounded-sm text-label text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              View on the Conflicts tab
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
       {line.edited ? (
         <div className="flex flex-col gap-1" data-edit-history="">

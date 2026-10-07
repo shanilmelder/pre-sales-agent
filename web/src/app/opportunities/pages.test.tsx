@@ -1080,6 +1080,7 @@ describe("/opportunities/[id] workspace", () => {
                     excerpt: "[EXCERPT]",
                   },
                 ],
+                conflicts: [],
               },
             ],
             subtotal: totals,
@@ -1091,17 +1092,20 @@ describe("/opportunities/[id] workspace", () => {
         counts: { total: 0, accepted: 0, not_accepted: 0 },
         unconverted_gaps: [],
         unallocated_contingency_hours: 0,
+        source: "assessments",
+        source_run: 1,
       },
-      draft: { status: "succeeded", error_code: null },
+      draft: null,
       can_start_draft: false,
       can_accept_assumptions: false,
       can_export: false,
+      assessment_running: false,
     });
     const { container } = await renderWorkspace("estimate");
     expect(selectedTabs()).toEqual(["7Estimate"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Estimate" })).toBeTruthy();
-    expect(within(panel).getByText("Draft v1")).toBeTruthy();
+    expect(within(panel).getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
     expect(within(panel).getByRole("button", { name: "[LINE]" })).toBeTruthy();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/estimate", {
@@ -1118,11 +1122,12 @@ describe("/opportunities/[id] workspace", () => {
       can_start_draft: true,
       can_accept_assumptions: true,
       can_export: true,
+      assessment_running: false,
     });
     await renderWorkspace("estimate");
     expect(
       within(screen.getByRole("tabpanel")).getByText(
-        "The Estimate is drafted after Gaps are detected.",
+        "No Estimate yet. Run assessment on the Assessments tab to build it.",
       ),
     ).toBeTruthy();
   });

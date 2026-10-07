@@ -55,8 +55,9 @@ class DraftRow(Base):
 class EstimateVersionRow(RowVersioned, Base):
     """An Estimate Version of an Opportunity. An accepted draft inserts a `draft` version
     numbered one past the latest, and marks the earlier `draft` `superseded`. At most one
-    `draft` per Opportunity. `proposal_status` is the state of its Assumption proposals
-    (Story 8.4); null for a version that never had them queued."""
+    `draft` per Opportunity. Story 8.3: a finished assessment run inserts one the same way
+    (`source` `assessments`, `source_run_id` the run). `proposal_status` is the state of its
+    Assumption proposals (Story 8.4); null for a version that never had them queued."""
 
     __tablename__ = "estimates_estimate_versions"
     __table_args__ = (
@@ -76,6 +77,10 @@ class EstimateVersionRow(RowVersioned, Base):
             "('queued', 'running', 'succeeded', 'failed')",
             name="proposal_status",
         ),
+        CheckConstraint("source IN ('model', 'assessments')", name="source"),
+        CheckConstraint(
+            "(source = 'assessments') = (source_run_id IS NOT NULL)", name="source_has_run"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -88,6 +93,12 @@ class EstimateVersionRow(RowVersioned, Base):
     proposal_status: Mapped[str | None] = mapped_column(Text)
     uncarried_edit_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     """Story 8.2: edited lines of the superseded draft that had no matching line here."""
+    source: Mapped[str] = mapped_column(Text, server_default=text("'model'"))
+    """Story 8.3: `model` (an accepted model draft) or `assessments` (built from the
+    specialist Assessments when an assessment run finished)."""
+    source_run_id: Mapped[UUID | None] = mapped_column(Uuid)
+    """Story 8.3: the assessment run (an assessments id) a version from the Assessments was
+    built for; null for a model draft."""
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 
 
