@@ -43,6 +43,8 @@ class VersionRecord:
     created_at: datetime
     proposal_status: str | None = None
     uncarried_edit_count: int = 0
+    source: str = "model"
+    source_run_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +219,8 @@ def _version(row: EstimateVersionRow) -> VersionRecord:
         created_at=row.created_at,
         proposal_status=row.proposal_status,
         uncarried_edit_count=row.uncarried_edit_count,
+        source=row.source,
+        source_run_id=row.source_run_id,
     )
 
 
@@ -258,6 +262,8 @@ async def insert_version(
     dropped_count: int,
     lines: list[NewLine],
     proposal_status: str | None = None,
+    source: str = "model",
+    source_run_id: UUID | None = None,
 ) -> None:
     """A `draft` Estimate Version with its lines and their Requirement links."""
     await uow.session.execute(
@@ -270,6 +276,8 @@ async def insert_version(
             uncovered_count=uncovered_count,
             dropped_count=dropped_count,
             proposal_status=proposal_status,
+            source=source,
+            source_run_id=source_run_id,
             row_version=1,
         )
     )
@@ -299,6 +307,20 @@ async def insert_version(
             for rid, version in line.requirements
         ],
     )
+
+
+async def has_version_from(uow: UnitOfWork, opportunity_id: UUID, source: str) -> bool:
+    """Whether any Estimate Version of the Opportunity, whatever its status, came from
+    `source` (Story 8.3)."""
+    found = await uow.session.execute(
+        select(EstimateVersionRow.id)
+        .where(
+            EstimateVersionRow.opportunity_id == opportunity_id,
+            EstimateVersionRow.source == source,
+        )
+        .limit(1)
+    )
+    return found.first() is not None
 
 
 async def current_version(uow: UnitOfWork, opportunity_id: UUID) -> VersionRecord | None:

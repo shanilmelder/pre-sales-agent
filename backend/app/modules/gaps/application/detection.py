@@ -20,9 +20,9 @@ Opportunity's detection lock until commit.
    approved, Story 4.5: they are kept as they are), stores the new Gaps, their Requirement links and
    their drafted questions, marks the detection `succeeded` with its counts, and traces
    `gaps.gap.raised` and `gaps.clarification_question.drafted` per Gap and
-   `gaps.detection.completed`; and queues the Opportunity's Estimate draft
-   (`estimates.enqueue_draft`, Story 8.1) and its specialist assessment run
-   (`assessments.enqueue_run`, Story 5.1; coalesced with a run already queued or running).
+   `gaps.detection.completed`; and queues the Opportunity's specialist assessment run
+   (`assessments.enqueue_run`, Story 5.1; coalesced with a run already queued or running),
+   whose finish builds the Estimate (Story 8.3: no model Estimate draft is queued).
 
 When the agent proposed candidates and every one is invalid, acceptance writes nothing and
 raises `ModelOutputInvalidError`, so the queue runs the job once more (`max_attempts` 2); on
@@ -299,16 +299,12 @@ async def accept_gap_detection(
         kept_count=kept,
     )
     await _succeed(uow, record, completed, actor)
-    # Story 8.1: every successful Gap detection (re)queues the Opportunity's Estimate draft,
-    # in this Unit of Work. Imported here, not at the top: estimates reads Gaps through
+    # Story 5.1: every successful Gap detection queues the specialist assessment run
+    # (coalesced with one already queued or running), in this Unit of Work; the Estimate is
+    # built from its Assessments when it finishes (Story 8.3: no model Estimate draft is
+    # queued any more). Imported here, not at the top: assessments reads Gaps through
     # `gaps.application.public`, which imports this module, so a top-level import would be
     # circular.
-    from app.modules.estimates.application import public as estimates
-
-    await estimates.enqueue_draft(uow, record.opportunity_id)
-    # Story 5.1: and queues the specialist assessment run (coalesced with one already queued
-    # or running). Imported here for the same reason: assessments reads Gaps through
-    # `gaps.application.public`.
     from app.modules.assessments.application import public as assessments
 
     await assessments.enqueue_run(uow, record.opportunity_id)

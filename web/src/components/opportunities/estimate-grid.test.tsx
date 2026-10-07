@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   EstimateLineEditInput,
   EstimateLineEditResult,
-  StartEstimateDraftResult,
 } from "@/app/opportunities/actions";
 import type { EstimateResult } from "@/app/opportunities/data";
 import type {
@@ -17,9 +16,6 @@ import type {
 } from "@/lib/estimates";
 import { axeViolations } from "@/test/axe";
 
-const startEstimateDraft = vi.hoisted(() =>
-  vi.fn<(opportunityId: string) => Promise<StartEstimateDraftResult>>(),
-);
 const loadEstimate = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<EstimateResult>>(),
 );
@@ -27,7 +23,6 @@ const editEstimateLine = vi.hoisted(() =>
   vi.fn<(input: EstimateLineEditInput) => Promise<EstimateLineEditResult>>(),
 );
 vi.mock("@/app/opportunities/actions", () => ({
-  startEstimateDraft,
   loadEstimate,
   editEstimateLine,
 }));
@@ -80,6 +75,7 @@ function line(
     edited_at: null,
     edit_reason: null,
     edit_carried_from_version: null,
+    conflicts: [],
   };
 }
 
@@ -132,15 +128,25 @@ function version(n = 2, uncovered = 1): EstimateVersion {
     unallocated_contingency_hours: 0,
     uncarried_edit_count: 0,
     uncarried_edits_from_version: null,
+    source: "model",
+    source_run: null,
   };
 }
 
-const queued: EstimateDraft = { status: "queued", error_code: null };
-const running: EstimateDraft = { status: "running", error_code: null };
 const succeeded: EstimateDraft = { status: "succeeded", error_code: null };
 const failed: EstimateDraft = { status: "failed", error_code: "model_unavailable" };
 
-function view(v: EstimateVersion | null, draft: EstimateDraft | null, canStart = true) {
+/** A version built from the Assessments of run `run` (Story 8.3). */
+function fromAssessments(n = 2, run = 1): EstimateVersion {
+  return { ...version(n), source: "assessments", source_run: run };
+}
+
+function view(
+  v: EstimateVersion | null,
+  draft: EstimateDraft | null,
+  canStart = true,
+  assessmentRunning = false,
+) {
   return {
     version: v,
     draft,
@@ -148,7 +154,13 @@ function view(v: EstimateVersion | null, draft: EstimateDraft | null, canStart =
     can_accept_assumptions: canStart,
     can_export: false,
     can_edit_lines: false,
+    assessment_running: assessmentRunning,
   } satisfies EstimateView;
+}
+
+/** The Estimate while an assessment run is queued or running. */
+function building(v: EstimateVersion | null = null) {
+  return view(v, null, true, true);
 }
 
 function renderSection(initial: EstimateView, singleKeyShortcuts = true) {
@@ -164,7 +176,6 @@ const lineButton = (n: number) => screen.getByRole("button", { name: `[LINE ${n}
 const pane = () => screen.getByRole("complementary", { name: "Details" });
 
 beforeEach(() => {
-  startEstimateDraft.mockReset();
   loadEstimate.mockReset();
   editEstimateLine.mockReset();
   window.localStorage.clear();
@@ -301,41 +312,123 @@ describe("the inspector", () => {
 });
 
 describe("EstimateHeader", () => {
-  it("shows the version pill and the uncovered Requirements", () => {
-    render(<EstimateHeader version={version(2, 1)} draft={succeeded} canStart />);
+  it("shows the version pill and the uncovered Requirements, with no Retry", () => {
+    render(<EstimateHeader version={version(2, 1)} />);
     expect(screen.getByText("Draft v2")).toBeTruthy();
     expect(screen.getByText("1 Requirement not covered")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("names the assessment run a version from the Assessments was built for", () => {
+    render(<EstimateHeader version={fromAssessments(4, 3)} />);
+    expect(screen.getByText("Estimate v4 · from Assessments (run 3)")).toBeTruthy();
+    expect(screen.queryByTestId("running-dot")).toBeNull();
+  });
+
+  it("says a shown version is rebuilt when the run in progress finishes", async () => {
+    const { container } = render(
+      <EstimateHeader version={fromAssessments(4, 3)} assessmentRunning />,
+    );
+    const note = screen.getByText("Rebuilding from the Assessments when the run finishes.");
+    expect(note.className).toContain("text-muted-foreground");
+    expect(screen.getByTestId("running-dot")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
   it("leaves out the uncovered count when every Requirement is covered", () => {
-    render(<EstimateHeader version={version(1, 0)} draft={succeeded} />);
+    render(<EstimateHeader version={version(1, 0)} />);
     expect(screen.queryByText(/not covered/)).toBeNull();
   });
 
-  it.each([queued, running])("shows Drafting Estimate with a running dot while $status", (d) => {
-    render(<EstimateHeader version={null} draft={d} canStart />);
-    expect(screen.getByText("Drafting Estimate")).toBeTruthy();
+  it("says the Estimate is built when the agents finish, with a running dot", () => {
+    render(<EstimateHeader version={null} assessmentRunning />);
+    expect(
+      screen.getByText(
+        "The Estimate is built when the Engineering, PM and Security Agents finish.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByTestId("running-dot").className).toContain("motion-reduce:animate-none");
   });
 
-  it("shows the failure reason and Retry for those who may start a draft", () => {
-    render(<EstimateHeader version={null} draft={failed} canStart />);
-    expect(
-      screen.getByText("Estimate draft failed: the model service couldn't be reached"),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-  });
-
-  it("hides Retry from those who may not start one", () => {
-    render(<EstimateHeader version={null} draft={failed} canStart={false} />);
-    expect(screen.queryByRole("button")).toBeNull();
+  it("shows nothing before a version when no run is in progress", () => {
+    const { container } = render(<EstimateHeader version={null} />);
+    expect(container.textContent).toBe("");
   });
 
   it("says to reload instead of the running dot once polling has stopped", () => {
-    render(<EstimateHeader version={null} draft={running} stalled />);
-    expect(screen.getByText("Still drafting — reload to check.")).toBeTruthy();
+    render(<EstimateHeader version={null} assessmentRunning stalled />);
+    expect(screen.getByText("Still waiting for the agents — reload to check.")).toBeTruthy();
     expect(screen.queryByTestId("running-dot")).toBeNull();
+  });
+});
+
+describe("Open Conflict markers (Story 8.3)", () => {
+  function withConflict(): EstimateVersion {
+    const v = fromAssessments(2, 1);
+    const integration = v.sections[1];
+    v.sections = [
+      v.sections[0],
+      {
+        ...integration,
+        lines: [
+          {
+            ...integration.lines[0],
+            edited: true,
+            edited_by_name: "[OWNER]",
+            edited_at: "2026-10-05T10:00:00Z",
+            edit_reason: "[REASON]",
+            conflicts: [
+              { id: "00000000-0000-7000-8000-0000000000c1", type: "effort" },
+              { id: "00000000-0000-7000-8000-0000000000c2", type: "scope" },
+            ],
+          },
+          integration.lines[1],
+        ],
+      },
+    ];
+    return v;
+  }
+
+  it("marks the line next to Edited, linking to the Conflicts tab", async () => {
+    const { container } = renderSection(view(withConflict(), null));
+
+    const row = lineButton(2).closest("tr") as HTMLElement;
+    const marker = within(row).getByRole("link", { name: /^Open Conflict/ });
+    expect(marker.textContent).toBe("Open Conflict");
+    expect(marker.getAttribute("href")).toBe(`/opportunities/${OPP_ID}/conflicts`);
+    expect(marker.className).toContain("text-blocker");
+    expect(marker.querySelector("svg")).toBeTruthy(); // an icon plus the label
+    expect(marker.previousElementSibling?.textContent).toBe("Edited");
+    const other = lineButton(3).closest("tr") as HTMLElement;
+    expect(within(other).queryByText("Open Conflict")).toBeNull();
+    // The marker is not a Tab stop: the lines stay one.
+    expect(screen.getAllByRole("button").filter((b) => b.tabIndex === 0)).toEqual([
+      lineButton(1),
+    ]);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the inspector names each Conflict's type and links to the Conflicts tab", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSection(view(withConflict(), null));
+
+    await user.click(lineButton(2));
+
+    const conflicts = pane().querySelector("[data-line-conflicts]") as HTMLElement;
+    expect(within(conflicts).getByRole("heading", { level: 4 }).textContent).toBe(
+      "Open Conflict",
+    );
+    expect(
+      within(conflicts)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["Effort Conflict", "Scope Conflict"]);
+    const link = within(conflicts).getByRole("link", { name: "View on the Conflicts tab" });
+    expect(link.getAttribute("href")).toBe(`/opportunities/${OPP_ID}/conflicts`);
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(lineButton(3));
+    expect(pane().querySelector("[data-line-conflicts]")).toBeNull();
   });
 });
 
@@ -351,19 +444,41 @@ describe("EstimateSection", () => {
     expect(screen.queryByRole("button", { name: /^Export/ })).toBeNull();
   });
 
-  it("shows the empty sentence before any draft", () => {
+  it("shows the empty sentence when there is no version and no run", () => {
     renderSection(view(null, null));
-    expect(screen.getByText("The Estimate is drafted after Gaps are detected.")).toBeTruthy();
+    expect(
+      screen.getByText("No Estimate yet. Run assessment on the Assessments tab to build it."),
+    ).toBeTruthy();
   });
 
-  it("polls every 2 s while drafting, then shows the new version", async () => {
+  it("offers no draft Retry, even after a model draft failed", async () => {
+    const { container } = renderSection(view(null, failed));
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByText(/Estimate draft failed/)).toBeNull();
+    expect(
+      screen.getByText("No Estimate yet. Run assessment on the Assessments tab to build it."),
+    ).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the waiting state passes axe", async () => {
+    const { container } = renderSection(building());
+    expect(
+      screen.getByText(
+        "The Estimate is built when the Engineering, PM and Security Agents finish.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/No Estimate yet/)).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("polls every 2 s while an assessment run is in progress, then shows the new version", async () => {
     vi.useFakeTimers();
     loadEstimate
-      .mockResolvedValueOnce({ kind: "ok", estimate: view(null, running) })
-      .mockResolvedValue({ kind: "ok", estimate: view(version(1), succeeded) });
-    renderSection(view(null, queued));
-    expect(screen.getByText("Drafting Estimate")).toBeTruthy();
-    expect(screen.queryByText("The Estimate is drafted after Gaps are detected.")).toBeNull();
+      .mockResolvedValueOnce({ kind: "ok", estimate: building() })
+      .mockResolvedValue({ kind: "ok", estimate: view(fromAssessments(1, 1), null) });
+    renderSection(building());
+    expect(screen.getByTestId("running-dot")).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1999);
@@ -377,19 +492,19 @@ describe("EstimateSection", () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(screen.getByText("[LINE 1]")).toBeTruthy();
-    expect(screen.getByText("Draft v1")).toBeTruthy();
-    expect(screen.queryByText("Drafting Estimate")).toBeNull();
+    expect(screen.getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
+    expect(screen.queryByTestId("running-dot")).toBeNull();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(screen.getByRole("status").textContent).toBe("Draft v1");
+    expect(screen.getByRole("status").textContent).toBe("Estimate v1 · from Assessments (run 1)");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
     expect(loadEstimate).toHaveBeenCalledTimes(2);
   });
 
-  it("polls while the Assumption proposals run after the draft succeeded", async () => {
+  it("polls while the Assumption proposals run after the version was stored", async () => {
     vi.useFakeTimers();
     const proposed: EstimateVersion = {
       ...version(1),
@@ -445,14 +560,16 @@ describe("EstimateSection", () => {
     expect(loadEstimate).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps showing the current version while a re-draft runs", () => {
-    renderSection(view(version(1), running));
-    expect(screen.getByText("Draft v1")).toBeTruthy();
-    expect(screen.getByText("Drafting Estimate")).toBeTruthy();
+  it("keeps showing the current version while a new run is in progress", async () => {
+    const { container } = renderSection(building(fromAssessments(1, 1)));
+    expect(screen.getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
     expect(screen.getByText("[LINE 1]")).toBeTruthy();
+    expect(screen.getByText("Rebuilding from the Assessments when the run finishes.")).toBeTruthy();
+    expect(screen.getByTestId("running-dot")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("does not poll when no draft is running", async () => {
+  it("does not poll when nothing is running", async () => {
     vi.useFakeTimers();
     renderSection(view(version(), succeeded));
     await act(async () => {
@@ -463,11 +580,11 @@ describe("EstimateSection", () => {
 
   it("pauses polling while the tab is hidden", async () => {
     vi.useFakeTimers();
-    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(null, running) });
+    loadEstimate.mockResolvedValue({ kind: "ok", estimate: building() });
     let hidden = true;
     const spy = vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
     try {
-      renderSection(view(null, running));
+      renderSection(building());
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10_000);
       });
@@ -487,8 +604,8 @@ describe("EstimateSection", () => {
 
   it("stops polling after 15 minutes and says to reload", async () => {
     vi.useFakeTimers();
-    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(null, running) });
-    renderSection(view(null, running));
+    loadEstimate.mockResolvedValue({ kind: "ok", estimate: building() });
+    renderSection(building());
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
@@ -504,17 +621,17 @@ describe("EstimateSection", () => {
     });
     expect(loadEstimate).toHaveBeenCalledTimes(calls);
     expect(calls).toBeLessThanOrEqual(2);
-    expect(screen.getByText("Still drafting — reload to check.")).toBeTruthy();
+    expect(screen.getByText("Still waiting for the agents — reload to check.")).toBeTruthy();
     expect(screen.queryByTestId("running-dot")).toBeNull();
   });
 
   it("says to reload when shown again after being hidden past the 15-minute limit", async () => {
     vi.useFakeTimers();
-    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(null, running) });
+    loadEstimate.mockResolvedValue({ kind: "ok", estimate: building() });
     let hidden = true;
     const spy = vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
     try {
-      renderSection(view(null, running));
+      renderSection(building());
       vi.setSystemTime(Date.now() + 16 * 60 * 1000);
       hidden = false;
       act(() => {
@@ -524,62 +641,16 @@ describe("EstimateSection", () => {
         await vi.advanceTimersByTimeAsync(10_000);
       });
       expect(loadEstimate).not.toHaveBeenCalled();
-      expect(screen.getByText("Still drafting — reload to check.")).toBeTruthy();
+      expect(screen.getByText("Still waiting for the agents — reload to check.")).toBeTruthy();
       expect(screen.queryByTestId("running-dot")).toBeNull();
     } finally {
       spy.mockRestore();
     }
   });
 
-  it("Retry starts a new draft, which then polls to done", async () => {
+  it("a sales representative sees the same Estimate, read-only", async () => {
     const user = userEvent.setup();
-    startEstimateDraft.mockResolvedValue({ kind: "ok", draft: queued });
-    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(version(1), succeeded) });
-    const { container } = renderSection(view(null, failed));
-    expect(
-      screen.getByText("Estimate draft failed: the model service couldn't be reached"),
-    ).toBeTruthy();
-    expect(await axeViolations(container)).toEqual([]);
-
-    await user.click(screen.getByRole("button", { name: "Retry" }));
-
-    expect(startEstimateDraft).toHaveBeenCalledWith(OPP_ID);
-    expect(screen.getByText("Drafting Estimate")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
-    await waitFor(() => expect(screen.getByText("[LINE 1]")).toBeTruthy(), { timeout: 4000 });
-  });
-
-  it("a Retry answered 409 re-reads the tab", async () => {
-    const user = userEvent.setup();
-    startEstimateDraft.mockResolvedValue({ kind: "conflict" });
-    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(null, running) });
-    renderSection(view(null, failed));
-
-    await user.click(screen.getByRole("button", { name: "Retry" }));
-
-    await waitFor(() => expect(screen.getByText("Drafting Estimate")).toBeTruthy());
-  });
-
-  it.each([
-    [{ kind: "error" } as const, "The retry failed. Try again."],
-    [
-      { kind: "forbidden" } as const,
-      "Only the owner and collaborators, except sales representatives, can draft the Estimate.",
-    ],
-  ])("a failed Retry says so and keeps the button (%#)", async (result, sentence) => {
-    const user = userEvent.setup();
-    startEstimateDraft.mockResolvedValue(result);
-    renderSection(view(null, failed));
-
-    await user.click(screen.getByRole("button", { name: "Retry" }));
-
-    expect(await screen.findByText(sentence)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-  });
-
-  it("a sales representative sees the same Estimate, read-only, and no Retry", async () => {
-    const user = userEvent.setup();
-    renderSection(view(version(), failed, false));
+    renderSection(view(version(), succeeded, false));
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 
     await user.click(lineButton(1));
@@ -590,10 +661,13 @@ describe("EstimateSection", () => {
 
   it("clears the inspector when a new version replaces the selected line", async () => {
     vi.useFakeTimers();
-    const next = version(3, 0);
-    next.sections = [{ ...next.sections[0], lines: [line(9, "functional", 24.5, [14.7, 4.9, 4.9])] }];
-    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(next, succeeded) });
-    renderSection(view(version(), running));
+    const next = fromAssessments(3, 2);
+    next.uncovered_count = 0;
+    next.sections = [
+      { ...next.sections[0], lines: [line(9, "functional", 24.5, [14.7, 4.9, 4.9])] },
+    ];
+    loadEstimate.mockResolvedValue({ kind: "ok", estimate: view(next, null) });
+    renderSection(building(version()));
     act(() => {
       lineButton(1).click();
     });
@@ -606,11 +680,6 @@ describe("EstimateSection", () => {
     expect(screen.getByText("[LINE 9]")).toBeTruthy();
     expect(within(pane()).queryByText("[LINE 1]")).toBeNull();
     expect(within(pane()).getByText("Nothing selected.")).toBeTruthy();
-  });
-
-  it("says so when a finished draft had nothing to estimate", () => {
-    renderSection(view(null, succeeded));
-    expect(screen.getByText("There were no active Requirements to estimate.")).toBeTruthy();
   });
 });
 

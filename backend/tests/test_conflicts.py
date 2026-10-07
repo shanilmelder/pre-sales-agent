@@ -40,9 +40,8 @@ from tests.test_assessments_specialists import (
     run_rows,
     started,
 )
-from tests.test_estimates_draft import est_line, lines_out
 from tests.test_gaps_detection import requirement_rows, rows
-from tests.test_intake_extraction import ASSESS, BASE, DRAFT, FakeGateway, drain
+from tests.test_intake_extraction import ASSESS, BASE, FakeGateway, drain
 from tests.test_opportunities import PSE, _add, _user
 
 storage_dir = extraction_tests.storage_dir
@@ -473,18 +472,36 @@ def test_proceed_against_do_not_proceed_is_an_opportunity_level_conflict(
 # --- agents vs Estimate ---------------------------------------------------------------------
 
 
-def _drafted(
+def _edit_line(
+    client: TestClient, headers: dict[str, str], opp_id: str, requirement: str, hours: float
+) -> None:
+    """A person sets the hours of the current Estimate's line covering `requirement` (R<n>)."""
+    estimate = client.get(f"{BASE}/{opp_id}/estimate", headers=headers).json()
+    (line,) = [
+        line
+        for section in estimate["version"]["sections"]
+        for line in section["lines"]
+        if [r["label"] for r in line["requirements"]] == [requirement]
+    ]
+    edited = client.patch(
+        f"{BASE}/{opp_id}/estimate-lines/{line['id']}",
+        headers={**headers, "If-Match": f'"{line["row_version"]}"'},
+        json={"effort_hours": hours, "reason": "Our own figure"},
+    )
+    assert edited.status_code == 200, edited.text
+
+
+def _edited(
     client: TestClient, engine: Engine, db_url: str, gateway: FakeGateway, hours: float
 ) -> tuple[dict[str, str], dict[str, Any]]:
-    """An Opportunity whose Estimate v1 puts `hours` on R2 (and 5 h on R1)."""
+    """An Opportunity whose Estimate v1, built from a first run of the EFFORT agents (R1 6 h,
+    R2 100 h), has R2's line edited to `hours`. Story 8.3: the next run builds v2 from the
+    agents and carries the edit, so it differs from the agents only by that edit."""
     headers, opp = prepared(client, engine, db_url, gateway)
-    gateway.replies = [
-        lines_out(
-            est_line("SAP order interface", ["R1"], effort=5),
-            est_line("Uptime", ["R2"], effort=hours),
-        )
-    ]
-    assert drain(db_url, DRAFT) == ["succeeded"]
+    install(AgentGateway(EFFORT))
+    run(client, headers, opp["id"], db_url)
+    assert conflict_rows(engine, opp["id"]) == []  # v1 is the agents' own hours
+    _edit_line(client, headers, opp["id"], "R2", hours)
     return headers, opp
 
 
@@ -498,8 +515,7 @@ EFFORT = replies(
 def test_the_estimate_30_percent_above_the_agents_is_no_conflict(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
-    headers, opp = _drafted(client, sync_engine, db_url, gateway, 130)
-    install(AgentGateway(EFFORT))
+    headers, opp = _edited(client, sync_engine, db_url, gateway, 130)
     run(client, headers, opp["id"], db_url)
 
     assert conflict_rows(sync_engine, opp["id"]) == []
@@ -508,15 +524,14 @@ def test_the_estimate_30_percent_above_the_agents_is_no_conflict(
 def test_the_estimate_more_than_30_percent_above_is_an_effort_conflict(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
-    headers, opp = _drafted(client, sync_engine, db_url, gateway, 131)
+    headers, opp = _edited(client, sync_engine, db_url, gateway, 131)
     reqs = requirement_rows(sync_engine, opp["id"])
-    (version,) = rows(
-        sync_engine,
-        "SELECT * FROM estimates_estimate_versions WHERE opportunity_id = :o",
-        o=opp["id"],
-    )
-    install(AgentGateway(EFFORT))
     run(client, headers, opp["id"], db_url)
+    version = rows(
+        sync_engine,
+        "SELECT * FROM estimates_estimate_versions WHERE opportunity_id = :o AND version = 2",
+        o=opp["id"],
+    )[0]
 
     (conflict,) = conflict_rows(sync_engine, opp["id"])
     assert (conflict["type"], conflict["severity"], conflict["fingerprint"]) == (
@@ -531,11 +546,11 @@ def test_the_estimate_more_than_30_percent_above_is_an_effort_conflict(
         ("estimate", None, "131.0"),
     ]
     estimate = positions[-1]
-    assert (estimate["estimate_version_id"], estimate["estimate_version"]) == (version["id"], 1)
+    assert (estimate["estimate_version_id"], estimate["estimate_version"]) == (version["id"], 2)
     assert (estimate["assessment_id"], estimate["assessment_version"]) == (None, None)
 
     (view,) = get(client, headers, opp["id"]).json()["conflicts"]
-    assert view["positions"][-1]["estimate_version"] == 1
+    assert view["positions"][-1]["estimate_version"] == 2
     assert view["positions"][-1]["requirement"]["label"] == "R2"
 
 
@@ -567,12 +582,12 @@ def test_open_conflicts_come_first_then_by_severity(
 def test_same_severity_conflicts_list_newest_first_then_in_requirement_order(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
-    # Estimate v1: R1 5 h (the agents size it at 18 h: an effort Conflict on R1), R2 10 h.
-    headers, opp = _drafted(client, sync_engine, db_url, gateway, 10)
-    fake = install(AgentGateway(SCOPE))  # run 1: scope on R4
+    headers, opp = prepared(client, sync_engine, db_url, gateway)
+    fake = install(AgentGateway(SCOPE))  # run 1: scope on R4; Estimate v1 R1 18 h
     run(client, headers, opp["id"], db_url)
+    _edit_line(client, headers, opp["id"], "R1", 5)  # carried on: an effort Conflict on R1
     fake.replies["engineering_agent"] = [agent_out(effort("R1", 10), effort("R3", 5))]
-    run(client, headers, opp["id"], db_url)  # run 2: scope on R3; R4 resolved
+    run(client, headers, opp["id"], db_url)  # run 2: scope on R3, effort on R1; R4 resolved
     fake.replies["engineering_agent"] = [
         agent_out(effort("R1", 10), effort("R2", 10), effort("R5", 5))
     ]

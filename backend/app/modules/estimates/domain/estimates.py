@@ -81,6 +81,14 @@ class VersionStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class VersionSource(StrEnum):
+    """Where an Estimate Version's lines came from (Story 8.3): an accepted model draft, or
+    the specialist Assessments when an assessment run finished."""
+
+    MODEL = "model"
+    ASSESSMENTS = "assessments"
+
+
 class DraftStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"

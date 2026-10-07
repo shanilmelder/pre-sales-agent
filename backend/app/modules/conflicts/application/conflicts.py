@@ -12,6 +12,8 @@
   naming the source that changed ("No longer present in PM Assessment v2").
 - `list_open`: the Opportunity's open and escalated Conflicts (no authorization; for other
   modules).
+- `open_by_requirement`: its open and escalated `effort` and `scope` Conflicts by Requirement
+  (no authorization; Story 8.3, the Estimate's Open Conflict markers).
 - `get_conflicts`: the Conflicts tab (anyone who can read the Opportunity).
 
 Trace payloads and logs carry ids, kinds and counts only, never Requirement or Finding text.
@@ -69,6 +71,14 @@ from app.platform.uow import UnitOfWork
 INACTIVE_LABEL = "Superseded"
 _SYSTEM = Actor(type="system", id="conflicts.detect_conflicts")
 _log = get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementConflict:
+    """An open or escalated Conflict about a Requirement: its id and type."""
+
+    id: UUID
+    type: ConflictType
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,6 +270,36 @@ async def list_open(uow: UnitOfWork, opportunity_id: UUID) -> list[OpenConflict]
         )
         for c in records
     ]
+
+
+REQUIREMENT_TYPES = frozenset({ConflictType.EFFORT, ConflictType.SCOPE})
+"""The Conflict types marked on the Estimate lines covering their Requirement (Story 8.3)."""
+
+
+async def open_by_requirement(
+    uow: UnitOfWork, opportunity_id: UUID
+) -> dict[UUID, list[RequirementConflict]]:
+    """The Opportunity's open and escalated `effort` and `scope` Conflicts by the Requirement
+    their positions cite (Story 8.3: the Estimate's Open Conflict markers), oldest first. No
+    authorization; for other modules."""
+    records = [
+        c
+        for c in await repo.open_conflicts(
+            uow, opportunity_id, statuses=tuple(sorted(s.value for s in BLOCKING))
+        )
+        if c.type in REQUIREMENT_TYPES
+    ]
+    by_id = {c.id: c for c in records}
+    found: dict[UUID, list[RequirementConflict]] = defaultdict(list)
+    for p in await repo.positions_of(uow, list(by_id)):
+        if p.requirement_id is None:
+            continue
+        conflict = by_id[p.conflict_id]
+        marker = RequirementConflict(id=conflict.id, type=ConflictType(conflict.type))
+        if marker not in found[p.requirement_id]:
+            found[p.requirement_id].append(marker)
+    order = {c.id: n for n, c in enumerate(records)}
+    return {rid: sorted(items, key=lambda m: order[m.id]) for rid, items in found.items()}
 
 
 def _order(conflict: ConflictRecord, requirement_rank: int) -> tuple[int, int, float, int, str]:

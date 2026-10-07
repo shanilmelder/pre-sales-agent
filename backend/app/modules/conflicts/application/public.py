@@ -6,9 +6,11 @@ The detector's inputs (`AssessmentSnapshot`, `EffortSnapshot`, `EstimateSnapshot
 
 from app.modules.conflicts.application.conflicts import (
     RaisedConflict,
+    RequirementConflict,
     detect_for_run,
     get_conflicts,
     list_open,
+    open_by_requirement,
     raise_conflict,
 )
 from app.modules.conflicts.application.models import (
@@ -18,7 +20,7 @@ from app.modules.conflicts.application.models import (
     ConflictView,
     OpenConflict,
 )
-from app.modules.conflicts.domain.conflicts import DetectedBy
+from app.modules.conflicts.domain.conflicts import ConflictType, DetectedBy
 from app.modules.conflicts.domain.rules import (
     AssessmentSnapshot,
     ConflictCandidate,
@@ -33,6 +35,7 @@ __all__ = [
     "ConflictCandidate",
     "ConflictPosition",
     "ConflictRequirement",
+    "ConflictType",
     "ConflictView",
     "ConflictsView",
     "DetectedBy",
@@ -42,8 +45,10 @@ __all__ = [
     "OpenConflict",
     "PositionCandidate",
     "RaisedConflict",
+    "RequirementConflict",
     "detect_for_run",
     "get_conflicts",
     "list_open",
+    "open_by_requirement",
     "raise_conflict",
 ]

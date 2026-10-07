@@ -135,6 +135,7 @@ def drafted(
     headers, opp = extracted(client, engine, db_url, gateway)
     gateway.replies = [gaps_out(*found)]
     assert drain(db_url, DETECT) == ["succeeded"]
+    draft_tests.requeue(db_url, opp["id"])  # Story 8.3: Gap detection queues no draft
     gateway.replies = [lines_out(*SIX)]
     assert drain(db_url, DRAFT) == ["succeeded"]
     return headers, opp
@@ -721,9 +722,10 @@ def test_redetection_between_drafts_keeps_the_carried_origins(
     detection_tests.requeue(db_url, opp["id"])
     gateway.replies = [gaps_out(gap("Uptime target", ["R2"]))]
     assert drain(db_url, DETECT) == ["succeeded"]
+    draft_tests.requeue(db_url, opp["id"])
     gateway.replies = [lines_out(*SIX)]
 
-    assert drain(db_url, DRAFT) == ["succeeded"]  # the detection queued a re-draft
+    assert drain(db_url, DRAFT) == ["succeeded"]
 
     gaps = gap_rows(sync_engine, opp["id"])
     assert gaps["WMS version unknown"]["status"] == "converted"

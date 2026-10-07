@@ -1,11 +1,13 @@
 """The Estimate query and the draft start command (Stories 8.1 and 8.4).
 
-- `get_estimate`: the Opportunity's current `draft` Estimate Version, with its sections,
-  lines, covered Requirements, its Assumptions Register (Conditions and Contingencies with
-  their origin Gaps, linked lines, who accepted them and the version a carried one came
-  from; the open Gaps left without one) and
-  every server-calculated total, Contingency included; and its latest draft run (anyone who
-  can read the Opportunity). Superseded versions are hidden.
+- `get_estimate`: the Opportunity's current `draft` Estimate Version, with its source (a
+  model draft, or the specialist Assessments of run n: Story 8.3), sections, lines, covered
+  Requirements, each line's open `effort` and `scope` Conflicts (Story 8.3), its Assumptions
+  Register (Conditions and Contingencies with their origin Gaps, linked lines, who accepted
+  them and the version a carried one came from; the open Gaps left without one) and every
+  server-calculated total, Contingency included; its latest draft run, and whether an
+  assessment run is in progress (anyone who can read the Opportunity). Superseded versions
+  are hidden.
 - `edit_line`: a person's edit of a draft line's hours and role mix (Story 8.2; see
   `line_edits`), answered with the whole Estimate so every total refreshes.
 - `start_draft`: queue a new draft, e.g. to retry a failed one (`estimates.draft.start`: the
@@ -21,6 +23,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
+from app.modules.conflicts.application import public as conflicts
 from app.modules.estimates.adapters import repository as repo
 from app.modules.estimates.adapters.repository import (
     AssumptionRecord,
@@ -43,6 +46,7 @@ from app.modules.estimates.application.models import (
     EstimateSection,
     EstimateVersion,
     EstimateView,
+    LineConflict,
     LineRequirement,
     OriginGap,
     RoleHours,
@@ -59,6 +63,7 @@ from app.modules.estimates.domain.estimates import (
     DraftStatus,
     EstimateRole,
     Section,
+    VersionSource,
     VersionStatus,
 )
 from app.modules.gaps.application import public as gaps
@@ -204,6 +209,44 @@ def _origin(summary: GapSummary | None, gap_id: UUID) -> OriginGap:
     )
 
 
+async def _conflicts(
+    uow: UnitOfWork, opportunity_id: UUID, covered: Mapping[UUID, list[LineRequirement]]
+) -> dict[UUID, list[LineConflict]]:
+    """Story 8.3: each line's open `effort` and `scope` Conflicts about a Requirement it
+    covers, read now."""
+    by_requirement = await conflicts.open_by_requirement(uow, opportunity_id)
+    if not by_requirement:
+        return {}
+    markers: dict[UUID, list[LineConflict]] = {}
+    for line_id, requirements in covered.items():
+        seen: dict[UUID, LineConflict] = {}
+        for requirement in requirements:
+            for found in by_requirement.get(UUID(requirement.id), []):
+                seen.setdefault(found.id, LineConflict(id=str(found.id), type=found.type))
+        if seen:
+            markers[line_id] = list(seen.values())
+    return markers
+
+
+async def _run_number(uow: UnitOfWork, record: VersionRecord) -> int | None:
+    """Story 8.3: the number of the assessment run a version from the Assessments was built
+    for. Imported here, not at the top: assessments imports `estimates.application.public`,
+    which imports this module, so a top-level import would be circular."""
+    if record.source_run_id is None:
+        return None
+    from app.modules.assessments.application import public as assessments
+
+    return await assessments.run_number(uow, record.opportunity_id, record.source_run_id)
+
+
+async def _assessment_running(uow: UnitOfWork, opportunity_id: UUID) -> bool:
+    """Story 8.3: whether an assessment run is queued or running (imported here for the
+    same reason as in `_run_number`)."""
+    from app.modules.assessments.application import public as assessments
+
+    return await assessments.run_in_progress(uow, opportunity_id)
+
+
 async def _register(
     uow: UnitOfWork,
     record: VersionRecord,
@@ -303,6 +346,7 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
     editors = await identity.user_names(
         uow, {line.edited_by for line in lines if line.edited_by is not None}
     )
+    markers = await _conflicts(uow, record.opportunity_id, covered)
     by_section: dict[Section, list[EstimateLine]] = defaultdict(list)
     for line, given, totals in zip(lines, inputs, calculated.lines, strict=True):
         by_section[given.section].append(
@@ -330,6 +374,7 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
                 edited_at=line.edited_at,
                 edit_reason=line.edit_reason,
                 edit_carried_from_version=line.edit_carried_from_version,
+                conflicts=markers.get(line.id, []),
             )
         )
     return EstimateVersion(
@@ -361,6 +406,8 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
         uncarried_edit_count=record.uncarried_edit_count,
         # The superseded draft is always the version just before (Story 8.1 numbering).
         uncarried_edits_from_version=record.version - 1 if record.uncarried_edit_count else None,
+        source=VersionSource(record.source),
+        source_run=await _run_number(uow, record),
     )
 
 
@@ -374,6 +421,7 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         can_accept_assumptions=identity.can(actor, Action.ASSUMPTION_ACCEPT, resource),
         can_export=identity.can(actor, Action.ESTIMATE_EXPORT, resource),
         can_edit_lines=identity.can(actor, Action.ESTIMATE_LINE_EDIT, resource),
+        assessment_running=await _assessment_running(uow, opportunity_id),
     )
 
 

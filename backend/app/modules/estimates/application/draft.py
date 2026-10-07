@@ -1,12 +1,17 @@
 """Estimate drafting (Story 8.1): the `estimates.draft_estimate` job and
 `estimates.accept_draft`.
 
-**Queueing.** `gaps.accept_gap_detection` calls `enqueue_draft` (through
-`estimates.application.public`) in its Unit of Work: it inserts a `queued` `estimates_drafts`
-row and its job (background priority), unless one of the Opportunity's drafts is still
-`queued` (its job not yet started), in which case nothing is added. `start_draft` (the Retry
-API) does the same, but refuses (409) while one is `queued` or `running`. Both hold the
-Opportunity's draft lock until commit.
+**Story 8.3: the model path is kept but no longer triggered.** The Estimate is built from
+the specialist Assessments when an assessment run finishes (`from_assessments`), and Gap
+detection no longer queues a model draft. Once a version from the Assessments exists, a model
+draft finishing (a job left over from before) stores nothing.
+
+**Queueing.** `enqueue_draft` (through `estimates.application.public`) inserts a `queued`
+`estimates_drafts` row and its job (background priority) in the caller's Unit of Work, unless
+one of the Opportunity's drafts is still `queued` (its job not yet started), in which case
+nothing is added. `start_draft` (the Retry API, no longer offered on the Estimate tab) does
+the same, but refuses (409) while one is `queued` or `running`. Both hold the Opportunity's
+draft lock until commit.
 
 **The handler.**
 
@@ -16,7 +21,8 @@ Opportunity's draft lock until commit.
 2. No active Requirements: no model call, no version; the draft `succeeded`.
 3. No Unit of Work open: `estimating_agent` proposes work items through the ModelGateway.
 4. `accept_draft`, one Unit of Work: validates every line (its covers labels must resolve to
-   Requirements still active at the version read), supersedes the Opportunity's `draft`
+   Requirements still active at the version read), then `store_version` (shared with the
+   Estimate from the Assessments) supersedes the Opportunity's `draft`
    Estimate Version, stores the new `draft` version (numbered one past the latest, template
    `demo-1`) with its lines and their Requirement links, carries the superseded draft's
    accepted Assumptions into it (Story 8.7) and the edits people made to its lines onto the
@@ -63,6 +69,8 @@ from app.modules.estimates.domain.estimates import (
     DraftStatus,
     LineCandidate,
     Validation,
+    ValidLine,
+    VersionSource,
     uncovered,
     validate_lines,
 )
@@ -213,6 +221,12 @@ async def accept_draft(
         await _succeed(uow, record.id)
         _log.info("estimates.draft_outdated", extra=ids)
         return Validation((), 0)
+    if await repo.has_version_from(uow, record.opportunity_id, VersionSource.ASSESSMENTS.value):
+        # Story 8.3: the Estimate is built from the Assessments now; a model draft left over
+        # from before stores nothing.
+        await _succeed(uow, record.id)
+        _log.info("estimates.draft_replaced_by_assessments", extra=ids)
+        return Validation((), 0)
     proposed = candidates(proposal(result))
     active = [
         (s.id, s.version)
@@ -232,21 +246,68 @@ async def accept_draft(
         )
         raise ModelOutputInvalidError("No proposed Estimate line was valid.")
 
+    stored = await store_version(
+        uow,
+        record.opportunity_id,
+        validation.lines,
+        active=active,
+        dropped=validation.dropped,
+        requirement_count=len(requirements),
+        actor=actor,
+    )
+    await _succeed(uow, record.id)
+    _log.info(
+        "estimates.draft_accepted",
+        extra={**ids, "version_id": str(stored.version_id), **stored.created.model_dump()},
+    )
+    return validation
+
+
+@dataclass(frozen=True, slots=True)
+class StoredVersion:
+    version_id: UUID
+    created: EstimatesEstimateVersionCreated
+
+
+async def store_version(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    lines: Sequence[ValidLine[tuple[UUID, int]]],
+    *,
+    active: Sequence[tuple[UUID, int]],
+    dropped: int,
+    requirement_count: int,
+    actor: Actor,
+    uncovered_count: int | None = None,
+    source: VersionSource = VersionSource.MODEL,
+    source_run_id: UUID | None = None,
+) -> StoredVersion:
+    """Store `lines` as the Opportunity's new `draft` Estimate Version, superseding its
+    current draft, and do what follows every new version: carry the superseded draft's
+    accepted Assumptions (Story 8.7) and line edits (Story 8.2) onto it, trace
+    `estimates.estimate_version.created`, queue its Assumption proposals (Story 8.4) and the
+    Opportunity's Red Team Review (Story 6.5). No model call. The caller holds the
+    Opportunity's draft lock (`repo.lock_opportunity`).
+
+    `active`: the active Requirements (id, current version) the lines were checked against;
+    `uncovered_count` defaults to how many of them no line covers."""
     # Story 8.7: the draft version being superseded, whose accepted Assumptions are carried.
-    previous = await repo.current_version(uow, record.opportunity_id)
-    superseded = await repo.supersede_drafts(uow, record.opportunity_id)
-    number = await repo.latest_version_number(uow, record.opportunity_id) + 1
+    previous = await repo.current_version(uow, opportunity_id)
+    superseded = await repo.supersede_drafts(uow, opportunity_id)
+    number = await repo.latest_version_number(uow, opportunity_id) + 1
     version_id = new_id()
-    missing = uncovered(validation.lines, active)
+    missing = uncovered(lines, active) if uncovered_count is None else uncovered_count
     await repo.insert_version(
         uow,
         version_id=version_id,
-        opportunity_id=record.opportunity_id,
+        opportunity_id=opportunity_id,
         version=number,
         template_version=TEMPLATE_VERSION,
         uncovered_count=missing,
-        dropped_count=validation.dropped,
+        dropped_count=dropped,
         proposal_status=ProposalStatus.QUEUED.value,
+        source=source.value,
+        source_run_id=source_run_id,
         lines=[
             repo.NewLine(
                 line_id=new_id(),
@@ -258,7 +319,7 @@ async def accept_draft(
                 basis=line.basis,
                 requirements=list(line.covers),
             )
-            for position, line in enumerate(validation.lines, start=1)
+            for position, line in enumerate(lines, start=1)
         ],
     )
     carried = (
@@ -275,14 +336,16 @@ async def accept_draft(
     created = EstimatesEstimateVersionCreated(
         version=number,
         template_version=TEMPLATE_VERSION,
-        line_count=len(validation.lines),
-        dropped_count=validation.dropped,
+        line_count=len(lines),
+        dropped_count=dropped,
         uncovered_count=missing,
-        requirement_count=len(requirements),
+        requirement_count=requirement_count,
         superseded_count=superseded,
         carried_assumption_count=carried,
         carried_edit_count=edits.carried,
         uncarried_edit_count=edits.uncarried,
+        source=source.value,
+        source_run_id=None if source_run_id is None else str(source_run_id),
     )
     await trace.append(
         uow,
@@ -290,22 +353,17 @@ async def accept_draft(
         payload=created,
         subject_type=VERSION_SUBJECT_TYPE,
         subject_id=version_id,
-        opportunity_id=record.opportunity_id,
+        opportunity_id=opportunity_id,
     )
-    await enqueue_proposals(uow, version_id=version_id, opportunity_id=record.opportunity_id)
-    # Story 6.5: every accepted draft is reviewed by the Red Team, queued in this Unit of
-    # Work. Imported here, not at the top: assessments reads Estimate lines through
+    await enqueue_proposals(uow, version_id=version_id, opportunity_id=opportunity_id)
+    # Story 6.5: every new version is reviewed by the Red Team, queued in this Unit of Work.
+    # Imported here, not at the top: assessments reads Estimate lines through
     # `estimates.application.public`, which imports this module, so a top-level import would
     # be circular.
     from app.modules.assessments.application import public as assessments
 
-    await assessments.enqueue_review(uow, record.opportunity_id)
-    await _succeed(uow, record.id)
-    _log.info(
-        "estimates.draft_accepted",
-        extra={**ids, "version_id": str(version_id), **created.model_dump()},
-    )
-    return validation
+    await assessments.enqueue_review(uow, opportunity_id)
+    return StoredVersion(version_id=version_id, created=created)
 
 
 async def _succeed(uow: UnitOfWork, draft_id: UUID) -> None:

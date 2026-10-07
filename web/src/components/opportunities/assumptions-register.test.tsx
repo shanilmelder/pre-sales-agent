@@ -6,15 +6,11 @@ import type {
   AcceptAllAssumptionsResult,
   AssumptionAcceptInput,
   AssumptionAcceptResult,
-  StartEstimateDraftResult,
 } from "@/app/opportunities/actions";
 import type { EstimateResult } from "@/app/opportunities/data";
 import type { Assumption, EstimateLine, EstimateVersion, EstimateView } from "@/lib/estimates";
 import { axeViolations } from "@/test/axe";
 
-const startEstimateDraft = vi.hoisted(() =>
-  vi.fn<(opportunityId: string) => Promise<StartEstimateDraftResult>>(),
-);
 const loadEstimate = vi.hoisted(() => vi.fn<(opportunityId: string) => Promise<EstimateResult>>());
 const acceptAssumption = vi.hoisted(() =>
   vi.fn<(input: AssumptionAcceptInput) => Promise<AssumptionAcceptResult>>(),
@@ -23,7 +19,6 @@ const acceptAllAssumptions = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<AcceptAllAssumptionsResult>>(),
 );
 vi.mock("@/app/opportunities/actions", () => ({
-  startEstimateDraft,
   loadEstimate,
   acceptAssumption,
   acceptAllAssumptions,
@@ -64,13 +59,19 @@ function line(contingency: number): EstimateLine {
     edited_at: null,
     edit_reason: null,
     edit_carried_from_version: null,
+    conflicts: [],
   };
 }
 
 function assumption(
   n: number,
   kind: "condition" | "contingency",
-  options: { hours?: number; line?: boolean; accepted?: boolean; carriedFrom?: number } = {},
+  options: {
+    hours?: number;
+    line?: boolean;
+    accepted?: boolean;
+    carriedFrom?: number;
+  } = {},
 ): Assumption {
   return {
     id: `00000000-0000-7000-8000-0000000000a${n}`,
@@ -148,6 +149,8 @@ function version(
     unallocated_contingency_hours: unallocated,
     uncarried_edit_count: 0,
     uncarried_edits_from_version: null,
+    source: "assessments",
+    source_run: 1,
     ...overrides,
   };
 }
@@ -167,6 +170,7 @@ function view(v: EstimateVersion, canAccept = true): EstimateView {
     can_accept_assumptions: canAccept,
     can_export: false,
     can_edit_lines: false,
+    assessment_running: false,
   };
 }
 
@@ -184,7 +188,6 @@ const row = (n: number) =>
   register().querySelector<HTMLElement>(`[data-assumption-id$="a${n}"]`) as HTMLElement;
 
 beforeEach(() => {
-  startEstimateDraft.mockReset();
   loadEstimate.mockReset();
   acceptAssumption.mockReset();
   acceptAllAssumptions.mockReset();
@@ -236,7 +239,12 @@ describe("the Assumptions Register", () => {
   it("marks an Assumption a re-draft carried forward, next to who accepted it", async () => {
     const carried = [
       assumption(1, "condition", { accepted: true, carriedFrom: 1 }),
-      assumption(2, "contingency", { hours: 8, line: true, accepted: true, carriedFrom: 1 }),
+      assumption(2, "contingency", {
+        hours: 8,
+        line: true,
+        accepted: true,
+        carriedFrom: 1,
+      }),
       assumption(3, "condition"),
     ];
     const { container } = renderSection(view(version(carried, { version: 2 }, 0)));
@@ -400,30 +408,13 @@ describe("the Assumptions Register", () => {
     ["failed", "Assumptions couldn't be proposed."],
     [null, "No Assumptions were proposed for this version."],
   ] as const)(
-    "with proposals %s, Retry re-drafts the Estimate for a collaborator",
-    async (status, sentence) => {
-      const user = userEvent.setup();
-      startEstimateDraft.mockResolvedValue({
-        kind: "ok",
-        draft: { status: "queued", error_code: null },
-      });
+    "with proposals %s, the Register says so and offers no re-draft Retry (Story 8.3)",
+    (status, sentence) => {
       renderSection(view(version([], { proposal_status: status }, 0)));
 
       const note = within(register()).getByTestId("proposals-failed");
       expect(within(note).getByText(sentence)).toBeTruthy();
-      await user.click(within(note).getByRole("button", { name: "Retry" }));
-
-      expect(startEstimateDraft).toHaveBeenCalledWith(OPP_ID);
-      expect(await screen.findByText("Drafting Estimate")).toBeTruthy();
-      // While the re-draft runs, Retry isn't offered again.
-      expect(within(register()).queryByRole("button", { name: "Retry" })).toBeNull();
+      expect(within(note).queryByRole("button")).toBeNull();
     },
   );
-
-  it("hides the proposals Retry from sales representatives", () => {
-    renderSection(view(version([], { proposal_status: "failed" }, 0), false));
-    const note = within(register()).getByTestId("proposals-failed");
-    expect(within(note).getByText("Assumptions couldn't be proposed.")).toBeTruthy();
-    expect(within(note).queryByRole("button")).toBeNull();
-  });
 });

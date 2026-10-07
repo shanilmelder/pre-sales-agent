@@ -51,6 +51,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_accept_assumptions": True,
         "can_export": True,
         "can_edit_lines": True,
+        "assessment_running": False,
     }
     assert theirs.json() == {
         "version": None,
@@ -59,6 +60,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_accept_assumptions": False,
         "can_export": False,
         "can_edit_lines": False,
+        "assessment_running": False,
     }
 
 

@@ -1387,6 +1387,11 @@ export interface components {
             edit_reason: string | null;
             /** Edit Carried From Version */
             edit_carried_from_version: number | null;
+            /**
+             * Conflicts
+             * @description Story 8.3: the open Conflicts about the Requirements it covers.
+             */
+            conflicts: components["schemas"]["LineConflict"][];
         };
         /**
          * EstimateLineChanges
@@ -1444,6 +1449,10 @@ export interface components {
          *     Story 8.2: `uncarried_edit_count` is how many edited lines of the superseded draft (number
          *     `uncarried_edits_from_version`, null when the count is 0) had no matching line here; they
          *     stay in that version and the Trace.
+         *
+         *     Story 8.3: `source` is `assessments` for a version built from the specialist Assessments
+         *     when an assessment run finished (`source_run`, that run's number), `model` for an
+         *     accepted model draft.
          */
         EstimateVersion: {
             /** Id */
@@ -1480,6 +1489,12 @@ export interface components {
             uncarried_edit_count: number;
             /** Uncarried Edits From Version */
             uncarried_edits_from_version: number | null;
+            source: components["schemas"]["VersionSource"];
+            /**
+             * Source Run
+             * @description Story 8.3: for a version from the Assessments, the number of the assessment run it was built for (the Opportunity's runs, oldest first).
+             */
+            source_run: number | null;
         };
         /**
          * EstimateView
@@ -1487,7 +1502,8 @@ export interface components {
          *     latest draft run, null before the first. `can_start_draft`: whether the caller may start
          *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
          *     `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
-         *     whether the caller may edit the draft's lines (Story 8.2). The UI only uses them to hide
+         *     whether the caller may edit the draft's lines (Story 8.2); `assessment_running` (Story
+         *     8.3): whether an assessment run is queued or running. The UI only uses them to hide
          *     controls; the API decides.
          */
         EstimateView: {
@@ -1501,6 +1517,11 @@ export interface components {
             can_export: boolean;
             /** Can Edit Lines */
             can_edit_lines: boolean;
+            /**
+             * Assessment Running
+             * @description Story 8.3: whether an assessment run of the Opportunity is queued or running (the Estimate is built when it finishes).
+             */
+            assessment_running: boolean;
         };
         /**
          * ExportFormat
@@ -1713,6 +1734,17 @@ export interface components {
              * @default false
              */
             industry_inferred: boolean;
+        };
+        /**
+         * LineConflict
+         * @description An open or escalated `effort` or `scope` Conflict whose positions cite a Requirement
+         *     the line covers (Story 8.3): its id and type. The UI marks the line "Open Conflict" and
+         *     links to the Conflicts tab.
+         */
+        LineConflict: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["ConflictType"];
         };
         /**
          * LineRequirement
@@ -2453,6 +2485,13 @@ export interface components {
             /** Email */
             email: string;
         };
+        /**
+         * VersionSource
+         * @description Where an Estimate Version's lines came from (Story 8.3): an accepted model draft, or
+         *     the specialist Assessments when an assessment run finished.
+         * @enum {string}
+         */
+        VersionSource: "model" | "assessments";
         /**
          * VersionStatus
          * @enum {string}
