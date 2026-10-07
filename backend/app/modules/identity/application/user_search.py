@@ -40,6 +40,10 @@ async def search_users(
     uow: UnitOfWork, actor: Principal, q: str, limit: int = SEARCH_DEFAULT_LIMIT
 ) -> UserSearchResult:
     authorize(actor, Action.USER_SEARCH)
+    return await _search(uow, q, limit)
+
+
+async def _search(uow: UnitOfWork, q: str, limit: int) -> UserSearchResult:
     q = q.strip()
     if len(q) < SEARCH_MIN_QUERY:
         return UserSearchResult(items=[])
@@ -48,6 +52,16 @@ async def search_users(
     return UserSearchResult(
         items=[UserSummary(id=str(r.id), name=r.name, email=r.email) for r in records]
     )
+
+
+async def search_owner_candidates(
+    uow: UnitOfWork, actor: Principal, q: str, limit: int = SEARCH_DEFAULT_LIMIT
+) -> UserSearchResult:
+    """Users an administrator may pick as a Knowledge Source's owner (Story 3.2): the same
+    search as `search_users`, for platform administrators (the only ones who may name an
+    owner other than themselves)."""
+    authorize(actor, Action.KNOWLEDGE_SOURCE_RETAG)
+    return await _search(uow, q, limit)
 
 
 async def user_names(

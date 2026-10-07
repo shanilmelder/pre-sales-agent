@@ -9,6 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.platform.model_gateway.profiles import MODEL_PROFILES
 
+DEFAULT_DOWNLOAD_SIGNING_KEY = "local-dev-download-signing-key-change-me"
+"""The local-only signing key; `prod` refuses to start with it."""
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PSA_", extra="ignore")
@@ -54,6 +57,26 @@ class Settings(BaseSettings):
         default=50 * 1024 * 1024,
         gt=0,
         description="Largest accepted upload in bytes (50 MB). Enforced by the API only.",
+    )
+    knowledge_stale_months: int = Field(
+        default=12,
+        ge=1,
+        le=120,
+        description=(
+            "A Knowledge Source whose last-reviewed date is more than this many months ago "
+            "is flagged stale. The flag is derived, never stored."
+        ),
+    )
+    download_signing_key: str = Field(
+        default=DEFAULT_DOWNLOAD_SIGNING_KEY,
+        min_length=16,
+        description=(
+            "Secret that signs short-lived download links (`platform.downloads`, e.g. for "
+            "earlier Knowledge Source versions). Set a random value outside local."
+        ),
+    )
+    download_link_ttl_s: int = Field(
+        default=300, ge=1, le=3600, description="How long a signed download link works."
     )
     worker_poll_s: float = Field(
         default=1.0,
@@ -126,6 +149,12 @@ class Settings(BaseSettings):
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], BeforeValidator(str.upper)
     ] = "INFO"
+
+    @model_validator(mode="after")
+    def _download_key_set_in_prod(self) -> "Settings":
+        if self.env == "prod" and self.download_signing_key == DEFAULT_DOWNLOAD_SIGNING_KEY:
+            raise ValueError("download_signing_key must be set to a secret value when env is prod")
+        return self
 
     @model_validator(mode="after")
     def _heartbeat_inside_lease(self) -> "Settings":

@@ -21,9 +21,11 @@ from app.modules.identity.application.public import TokenValidator
 from app.modules.intake.api.routes import requirements_router as intake_requirements_router
 from app.modules.intake.api.routes import router as intake_router
 from app.modules.knowledge.api.routes import router as knowledge_router
+from app.modules.knowledge.api.source_routes import router as knowledge_sources_router
 from app.modules.opportunities.api.routes import router as opportunities_router
 from app.platform.config import Settings, get_settings
 from app.platform.db import create_engine, ping
+from app.platform.downloads import router as downloads_router
 from app.platform.errors import (
     PROBLEM_JSON,
     Problem,
@@ -122,6 +124,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(estimates_router, prefix=API_PREFIX)
     app.include_router(assessments_router, prefix=API_PREFIX)
     app.include_router(knowledge_router, prefix=API_PREFIX)
+    app.include_router(knowledge_sources_router, prefix=API_PREFIX)
+    app.include_router(downloads_router, prefix=API_PREFIX)
     return app
 
 

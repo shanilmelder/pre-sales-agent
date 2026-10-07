@@ -213,6 +213,13 @@ class CatalogueDuplicateError(ConflictError):
     title = "Catalogue entry already exists"
 
 
+class SourceRetiredError(ConflictError):
+    """A write targeted a retired Knowledge Source (Story 3.2)."""
+
+    code = "knowledge_source_retired"
+    title = "Knowledge Source retired"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""

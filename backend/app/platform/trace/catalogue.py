@@ -492,3 +492,89 @@ class KnowledgeCatalogueEntryReactivated(TracePayload):
 
     kind: str
     version: int
+
+
+# Story 3.2. Knowledge Source events have no Opportunity (subject `knowledge.source`).
+# Payloads hold ids, counts, kinds and version numbers only, never a title, product, file
+# name, owner or text.
+
+
+@register
+class KnowledgeSourceRegistered(TracePayload):
+    """A Knowledge Source was registered with its first file (version 1). Subject: the
+    Source. `owner_id`: the user who owns it."""
+
+    event_type: ClassVar[str] = "knowledge.source.registered"
+
+    version: int
+    owner_id: str
+    tag_count: int
+    size_bytes: int
+
+
+@register
+class KnowledgeSourceVersionAdded(TracePayload):
+    """A new file was uploaded as the next version of a Knowledge Source. Subject: the
+    Source. Earlier versions stay readable."""
+
+    event_type: ClassVar[str] = "knowledge.source.version_added"
+
+    from_version: int
+    to_version: int
+    size_bytes: int
+
+
+@register
+class KnowledgeSourceRetagged(TracePayload):
+    """A Knowledge Source's tags, product, title or owner changed. Subject: the Source.
+    `tag_ids_added` / `tag_ids_removed`: Integration Type ids; the other flags say which
+    plain fields changed."""
+
+    event_type: ClassVar[str] = "knowledge.source.retagged"
+
+    tag_ids_added: list[str]
+    tag_ids_removed: list[str]
+    product_changed: bool
+    title_changed: bool
+    owner_changed: bool
+
+
+@register
+class KnowledgeSourceReviewed(TracePayload):
+    """Someone marked a Knowledge Source reviewed today. Subject: the Source.
+    `was_stale`: it was flagged stale beforehand."""
+
+    event_type: ClassVar[str] = "knowledge.source.reviewed"
+
+    was_stale: bool
+
+
+@register
+class KnowledgeSourceRetired(TracePayload):
+    """A Knowledge Source was retired. Subject: the Source. The reason is not traced."""
+
+    event_type: ClassVar[str] = "knowledge.source.retired"
+
+    version: int
+
+
+@register
+class KnowledgeSourceParsed(TracePayload):
+    """The worker extracted the text of a Knowledge Source version. Subject: the Source.
+    Actor: the system (`knowledge.parse_source`)."""
+
+    event_type: ClassVar[str] = "knowledge.source.parsed"
+
+    version: int
+    char_count: int
+
+
+@register
+class KnowledgeSourceParseRetried(TracePayload):
+    """Someone queued a failed Knowledge Source version's parse again. Subject: the Source.
+    `error_code` is the failure being retried."""
+
+    event_type: ClassVar[str] = "knowledge.source.parse_retried"
+
+    version: int
+    error_code: str

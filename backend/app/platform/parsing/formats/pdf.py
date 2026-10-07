@@ -7,7 +7,7 @@ import io
 import pypdf
 from pypdf.errors import PdfReadError
 
-from app.modules.intake.domain.parsing import ParseError, ParseErrorCode
+from app.platform.parsing.rules import ParseError, ParseErrorCode
 
 NAME = f"pypdf@{pypdf.__version__}"
 

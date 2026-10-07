@@ -1,6 +1,6 @@
 """`.txt` (and pasted text): the UTF-8 text as is, without a leading byte order mark."""
 
-from app.modules.intake.domain.parsing import ParseError, ParseErrorCode
+from app.platform.parsing.rules import ParseError, ParseErrorCode
 
 NAME = "text@1"
 

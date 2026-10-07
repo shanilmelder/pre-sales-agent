@@ -3,11 +3,20 @@ import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Me, MeResult } from "@/lib/api/server";
+import { EMPTY_STATE as NO_KNOWLEDGE_SOURCES } from "@/lib/knowledge-sources";
 import type { Role } from "@/lib/navigation";
 import { axeViolations } from "@/test/axe";
 
 const getMe = vi.hoisted(() => vi.fn<() => Promise<MeResult>>());
-vi.mock("@/lib/api/server", () => ({ getMe }));
+const api = vi.hoisted(() => ({
+  GET: vi.fn(async () => ({ data: { items: [] }, response: new Response(null, { status: 200 }) })),
+}));
+vi.mock("@/lib/api/server", () => ({ getMe, createServerApiClient: async () => api }));
+// The Knowledge page lists Sources through its own server actions.
+vi.mock("@/app/knowledge/actions", () => ({
+  loadSources: async () => ({ kind: "ok", sources: [], staleMonths: 12 }),
+}));
+vi.mock("@/app/opportunities/actions", () => ({ loadSources: vi.fn(), retryParse: vi.fn() }));
 vi.mock("@/lib/preferences", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/preferences")>()),
   getPreferences: async () => ({
@@ -61,7 +70,7 @@ function signedIn(roles: Role[]) {
 
 const SHELL_PAGES: [string, () => Promise<ReactElement>, string, string][] = [
   ["/inbox", InboxPage, "Inbox", "Nothing waiting for you."],
-  ["/knowledge", KnowledgePage, "Knowledge", "Not available yet."],
+  ["/knowledge", KnowledgePage, "Knowledge", NO_KNOWLEDGE_SOURCES],
   ["/reports", ReportsPage, "Reports", "Not available yet."],
   ["/settings", SettingsPage, "Settings", "Saved in this browser."],
 ];

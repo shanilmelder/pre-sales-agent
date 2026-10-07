@@ -111,3 +111,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-integration-type-and-work-package-catalogue.md`
   summary: Add a partial unique index on active catalogue entries (kind, lower(code)) and (kind, lower(name)) and a concurrent-create test.
   evidence: The duplicate rule is enforced only by a per-kind advisory lock in `knowledge/application/catalogue.py`; a writer that skips `lock_kind` could create duplicates, and no test races two creates (unverified, medium if real).
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-register-knowledge-sources-by-upload.md`
+  summary: Blobs stored before a later write fails (register, add_version, parse text) stay on disk unreferenced; add a sweep.
+  evidence: Same store-before-record pattern exists in intake uploads, so it is not new to 3.2.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-register-knowledge-sources-by-upload.md`
+  summary: Concurrent retry_parse vs add_version could re-queue an older version.
+  evidence: Unverified medium; settle with a concurrent test.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-register-knowledge-sources-by-upload.md`
+  summary: Parse sandbox on Windows has no memory/CPU rlimits and a killed child is recorded as unreadable.
+  evidence: Platform limit shared with intake.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-register-knowledge-sources-by-upload.md`
+  summary: Add a vitest for the knowledge download proxy route.
+  evidence: Route handler has no test of its own.
