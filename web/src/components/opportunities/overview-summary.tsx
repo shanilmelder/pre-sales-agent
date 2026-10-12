@@ -1,4 +1,5 @@
 import {
+  ArrowUpIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   ClipboardListIcon,
@@ -18,6 +19,7 @@ import {
   runStatusLabel,
   type AssessmentsView,
 } from "@/lib/assessments";
+import type { ConflictsView } from "@/lib/conflicts";
 import { hours, versionStatusLabel, type EstimateView } from "@/lib/estimates";
 import type { GapList } from "@/lib/gaps";
 import {
@@ -59,6 +61,8 @@ export type OverviewData = {
   assessments: AssessmentsView | null;
   redTeam: RedTeamView | null;
   trace: TraceEvent[] | null;
+  /** Story 6.3: for the escalated Conflicts (left out by older callers). */
+  conflicts?: ConflictsView | null;
 };
 
 const RECENT_ACTIVITY_LIMIT = 5;
@@ -118,6 +122,7 @@ const ATTENTION_DISPLAY: Record<
   { type: string | null; icon: LucideIcon; tone: string }
 > = {
   "critical-finding": { type: "Critical", icon: OctagonAlertIcon, tone: "text-blocker" },
+  "escalated-conflict": { type: "Escalated", icon: ArrowUpIcon, tone: "text-gap" },
   "high-finding": { type: "High", icon: TriangleAlertIcon, tone: "text-gap" },
   gap: { type: "High impact", icon: CircleAlertIcon, tone: "text-gap" },
   assumption: { type: null, icon: ClipboardListIcon, tone: "text-gap" },
@@ -129,7 +134,11 @@ function NeedsAttention({ id, data }: { id: string; data: OverviewData }) {
   const items = attentionItems(data);
   const { shown, more, moreTab } = cutAttention(items);
   const incomplete =
-    data.redTeam === null || data.assessments === null || data.gaps === null || data.estimate === null;
+    data.redTeam === null ||
+    data.assessments === null ||
+    data.gaps === null ||
+    data.estimate === null ||
+    data.conflicts === null;
   return (
     <Card
       id="overview-attention"

@@ -13,6 +13,7 @@ from app.modules.estimates.application.estimates import (
 from app.modules.estimates.application.export import ExportFile, export_estimate
 from app.modules.estimates.application.export_content import ExportFormat
 from app.modules.estimates.application.from_assessments import build_from_assessments
+from app.modules.estimates.application.line_edits import apply_decision, lock_for_decision
 from app.modules.estimates.application.line_refs import (
     LineRef,
     VersionLines,
@@ -78,12 +79,14 @@ __all__ = [
     "VersionLines",
     "accept_all_assumptions",
     "accept_assumption",
+    "apply_decision",
     "build_from_assessments",
     "current_version_lines",
     "edit_line",
     "enqueue_draft",
     "export_estimate",
     "get_estimate",
+    "lock_for_decision",
     "start_draft",
     "version_lines",
 ]

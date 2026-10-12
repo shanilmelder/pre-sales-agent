@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { permissionsFor } from "@/test/permissions";
@@ -10,6 +11,7 @@ import { axeViolations } from "@/test/axe";
 
 const getMe = vi.hoisted(() => vi.fn<() => Promise<MeResult>>());
 const apiGet = vi.hoisted(() => vi.fn());
+const resolveConflict = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/server", () => ({
   getMe,
   createServerApiClient: async () => ({ GET: apiGet }),
@@ -33,6 +35,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   startEstimateDraft: vi.fn(),
   loadRedTeam: vi.fn(),
   startRedTeamReview: vi.fn(),
+  resolveConflict,
+  escalateConflict: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -65,10 +69,62 @@ import OpportunityPage from "@/app/opportunities/[id]/page";
 import NewOpportunityPage from "@/app/opportunities/new/page";
 import OpportunitiesPage from "@/app/opportunities/page";
 import MyOpportunitiesPage from "@/app/my-opportunities/page";
+import { RightPane } from "@/components/shell/right-pane";
 import { ShellProviders } from "@/components/shell/shell-context";
 
 function renderPage(page: ReactElement) {
   return render(<ShellProviders singleKeyShortcuts>{page}</ShellProviders>);
+}
+
+/** An effort Conflict on R2 as the Conflicts read returns it (Story 6.3 fields included). */
+function conflictFixture(overrides: Record<string, unknown> = {}) {
+  const requirement = {
+    id: "00000000-0000-7000-8000-0000000000e2",
+    version: 1,
+    label: "R2",
+    excerpt: "[EXCERPT]",
+  };
+  const agent = (n: number, name: string, hours: number) => ({
+    position: n,
+    source: "assessment",
+    agent: name,
+    assessment_id: `00000000-0000-7000-8000-0000000000a${n}`,
+    assessment_version: 1,
+    estimate_version_id: null,
+    estimate_version: null,
+    summary: `${hours} h`,
+    value: hours,
+    requirement,
+  });
+  return {
+    id: "00000000-0000-7000-8000-0000000000c2",
+    type: "effort",
+    severity: "medium",
+    status: "open",
+    detected_by: "rule",
+    summary: "[SUMMARY]",
+    run_id: "00000000-0000-7000-8000-0000000000c9",
+    previous_conflict_id: null,
+    resolution_reason: null,
+    resolved_at: null,
+    created_at: "2026-10-07T09:00:00Z",
+    requirement,
+    positions: [agent(1, "engineering_agent", 60), agent(2, "pm_agent", 40)],
+    row_version: 1,
+    resolved_by_name: null,
+    chosen_position: null,
+    entered_position: null,
+    applied_hours: null,
+    not_applied: null,
+    previous_decision: null,
+    escalated_to: null,
+    escalated_by: null,
+    escalation_reason: null,
+    escalated_at: null,
+    can_resolve: false,
+    can_escalate: false,
+    ...overrides,
+  };
 }
 
 const NO_ACCESS =
@@ -808,6 +864,41 @@ describe("/opportunities/[id] workspace", () => {
       ).toBeTruthy();
       expect(within(card("Assessments")).getByText("Proceed")).toBeTruthy();
       expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+    });
+
+    it("Escalated Conflicts are listed naming the reviewer, linking to the Conflicts tab", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, {
+        "/conflicts": {
+          conflicts: [
+            conflictFixture({
+              status: "escalated",
+              escalated_to: { id: "00000000-0000-7000-8000-0000000000e1", name: "Sam" },
+            }),
+          ],
+          open_count: 1,
+          reviewers: [],
+        },
+      });
+      const { container } = await renderWorkspace();
+      const attention = card("Needs attention");
+      const link = within(attention).getByRole("link", {
+        name: /Effort Conflict on R2 escalated to Sam/,
+      });
+      expect(link.getAttribute("href")).toBe(href("conflicts"));
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Partial failure: Conflicts says the list may be incomplete", async () => {
+      signedIn(["presales_engineer"]);
+      found(OPPORTUNITY, { "/conflicts": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      expect(
+        within(card("Needs attention")).getByText(
+          "Some items could not be loaded, so this list may be incomplete.",
+        ),
+      ).toBeTruthy();
     });
 
     it("Partial failure: Gaps with nothing else to attend to says the list may be incomplete", async () => {
@@ -1743,6 +1834,43 @@ describe("/opportunities/[id] workspace", () => {
     ]);
     expect(within(panel).queryByRole("textbox")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /conflicts: the owner resolves from the inspector, for this Opportunity", async () => {
+    signedIn(["presales_engineer"]);
+    resolveConflict.mockResolvedValue({ kind: "ok", conflict: conflictFixture() });
+    found(OPPORTUNITY, {
+      "/conflicts": {
+        conflicts: [conflictFixture({ can_resolve: true })],
+        open_count: 1,
+        reviewers: [],
+      },
+    });
+    const page = await WorkspaceTabPage({
+      params: Promise.resolve({ id: OPP_ID, tab: "conflicts" }),
+      searchParams: Promise.resolve({}),
+    });
+    segment.current = "conflicts";
+    const layout = await OpportunityLayout({ children: page, params: Promise.resolve({ id: OPP_ID }) });
+    render(
+      <ShellProviders singleKeyShortcuts>
+        {layout}
+        <RightPane />
+      </ShellProviders>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Engineering: 60 h/ }));
+    const form = await screen.findByRole("form", { name: "Resolve the Conflict" });
+    await user.click(within(form).getAllByRole("radio")[0]!);
+    await user.type(within(form).getByLabelText("Reason"), "Matches the interface list.");
+    await user.click(within(form).getByRole("button", { name: "Resolve" }));
+    await waitFor(() => expect(resolveConflict).toHaveBeenCalled());
+    expect(resolveConflict.mock.calls[0]![0]).toMatchObject({
+      opportunityId: OPP_ID,
+      conflictId: conflictFixture().id,
+      rowVersion: 1,
+      choice: { position: 1 },
+    });
   });
 
   it("an unknown slug is the not-found page", async () => {

@@ -43,7 +43,16 @@ ADMIN_ONLY = (
     Action.CATALOGUE_ENTRY_RETIRE,
     Action.CATALOGUE_ENTRY_REACTIVATE,
 )
-MODULES = {"identity", "opportunities", "intake", "gaps", "estimates", "assessments", "knowledge"}
+MODULES = {
+    "identity",
+    "opportunities",
+    "intake",
+    "gaps",
+    "estimates",
+    "assessments",
+    "conflicts",
+    "knowledge",
+}
 
 
 def _user(
@@ -152,6 +161,8 @@ def test_resource_scoped_grants() -> None:
         Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
         Action.ESTIMATE_LINE_EDIT,
+        Action.CONFLICT_RESOLVE,
+        Action.CONFLICT_ESCALATE,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -166,6 +177,8 @@ def test_resource_scoped_grants() -> None:
         Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
         Action.ESTIMATE_LINE_EDIT,
+        Action.CONFLICT_RESOLVE,
+        Action.CONFLICT_ESCALATE,
     }
     assert RELATION_EXCLUDED_ROLES == {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -177,6 +190,8 @@ def test_resource_scoped_grants() -> None:
         Action.ASSESSMENT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_EXPORT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_LINE_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CONFLICT_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CONFLICT_ESCALATE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -208,6 +223,10 @@ def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) ->
     assert can(member, Action.ESTIMATE_EXPORT, opportunity) is allowed
     assert can(owner, Action.ESTIMATE_LINE_EDIT, opportunity) is allowed
     assert can(member, Action.ESTIMATE_LINE_EDIT, opportunity) is allowed
+    assert can(owner, Action.CONFLICT_RESOLVE, opportunity) is allowed
+    assert can(member, Action.CONFLICT_RESOLVE, opportunity) is allowed
+    assert can(owner, Action.CONFLICT_ESCALATE, opportunity) is allowed
+    assert can(member, Action.CONFLICT_ESCALATE, opportunity) is allowed
     assert can(member, Action.SOURCE_ADD, opportunity) is True
 
 

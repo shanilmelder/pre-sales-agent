@@ -35,3 +35,5 @@ class Action(StrEnum):
     CATALOGUE_ENTRY_RETIRE = "knowledge.catalogue_entry.retire"
     CATALOGUE_ENTRY_REACTIVATE = "knowledge.catalogue_entry.reactivate"
     ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"
+    CONFLICT_RESOLVE = "conflicts.conflict.resolve"
+    CONFLICT_ESCALATE = "conflicts.conflict.escalate"

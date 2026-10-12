@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssessmentsView } from "./assessments";
+import type { ConflictsView } from "./conflicts";
 import type { Assumption, EstimateView } from "./estimates";
 import type { Gap, GapList } from "./gaps";
 import {
@@ -99,6 +100,45 @@ function estimate(
     },
   } as unknown as EstimateView;
 }
+
+describe("escalated Conflicts (Story 6.3)", () => {
+  it("lists each escalated Conflict naming the reviewer, linking to the Conflicts tab", () => {
+    const conflicts = {
+      conflicts: [
+        {
+          id: "c1",
+          type: "effort",
+          status: "escalated",
+          requirement: { label: "R2" },
+          escalated_to: { id: "u1", name: "Sam" },
+        },
+        { id: "c2", type: "scope", status: "open", requirement: null, escalated_to: null },
+        {
+          id: "c3",
+          type: "assumption",
+          status: "escalated",
+          requirement: null,
+          escalated_to: { id: "u2", name: "Kim" },
+        },
+      ],
+      open_count: 3,
+      reviewers: [],
+    } as unknown as ConflictsView;
+    const items = attentionItems({
+      redTeam: redTeam([finding("critical", "ERP fields"), finding("high", "No SSO")]),
+      assessments: null,
+      gaps: null,
+      estimate: null,
+      conflicts,
+    });
+    expect(items.map((i) => [i.kind, i.label, i.tab])).toEqual([
+      ["critical-finding", "Red Team: ERP fields", "assessments"],
+      ["high-finding", "Red Team: No SSO", "assessments"],
+      ["escalated-conflict", "Effort Conflict on R2 escalated to Sam", "conflicts"],
+      ["escalated-conflict", "Assumption Conflict escalated to Kim", "conflicts"],
+    ]);
+  });
+});
 
 describe("attentionItems", () => {
   it("is empty when nothing needs attention or every read failed", () => {

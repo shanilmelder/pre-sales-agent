@@ -562,13 +562,53 @@ class ConflictsConflictDetected(TracePayload):
     position_count: int
 
 
+class ConflictPositionSummary(BaseModel):
+    """One original position of a Conflict as a decision records it (Story 6.3): its number,
+    where it comes from (an agent's Assessment or the Estimate) and its summary (hours, a
+    label or "Not sized")."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    position: int
+    source: Literal["assessment", "estimate"]
+    agent: str | None
+    summary: str
+
+
 @register
 class ConflictsConflictResolved(TracePayload):
-    """The system resolved a Conflict after a later run (Story 6.1): `no_longer_present` when
-    the run no longer raises it, `carried_forward` when it raises it again as a new Conflict
-    that links this one. Subject: the Conflict. Actor: the system. `run_id`: that later run."""
+    """A Conflict was resolved. Subject: the Conflict (`conflicts.conflict`).
+
+    - By the system after a later run (Story 6.1; actor: the system; `run_id`: that run):
+      `no_longer_present` when the run no longer raises it, `carried_forward` when it raises
+      it again as a new Conflict that links this one.
+    - By a person (Story 6.3; `decided`; actor: that person; no run): the `reason`, the
+      choice (`chosen_position` or `entered_position`), every original position's summary,
+      and for an `effort` decision the Estimate line it set (`line_id`, `applied_hours`) or
+      why it set none (`not_applied`: `no_line`, `shared_line`, `several_lines`,
+      `not_permitted`). The reason and the entered position are the person's words (FR-31)."""
 
     event_type: ClassVar[str] = "conflicts.conflict.resolved"
 
-    run_id: str
-    reason_kind: Literal["no_longer_present", "carried_forward"]
+    run_id: str | None = None
+    reason_kind: Literal["no_longer_present", "carried_forward", "decided"]
+    reason: str | None = None
+    chosen_position: int | None = None
+    entered_position: str | None = None
+    positions: list[ConflictPositionSummary] | None = None
+    line_id: str | None = None
+    applied_hours: float | None = None
+    not_applied: Literal["no_line", "shared_line", "several_lines", "not_permitted"] | None = None
+
+
+@register
+class ConflictsConflictEscalated(TracePayload):
+    """A person escalated an open Conflict to a named reviewer on the Opportunity (Story
+    6.3). Subject: the Conflict. Actor: that person. `reviewer_id`: the reviewer's user id;
+    `reason`: the person's words. `run_id`: none (a person's action)."""
+
+    event_type: ClassVar[str] = "conflicts.conflict.escalated"
+
+    run_id: str | None = None
+    reviewer_id: str
+    reason: str

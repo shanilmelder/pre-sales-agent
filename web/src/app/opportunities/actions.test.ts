@@ -27,6 +27,7 @@ import {
   editClarificationQuestion,
   editEstimateLine,
   editRequirement,
+  escalateConflict,
   getPassage,
   importFile,
   loadAssessments,
@@ -36,6 +37,7 @@ import {
   loadRedTeam,
   loadRequirements,
   loadSources,
+  resolveConflict,
   retryAssessmentTask,
   retryParse,
   searchUsers,
@@ -1472,5 +1474,166 @@ describe("editEstimateLine", () => {
     api.PATCH.mockRejectedValueOnce(new Error("network"));
     expect(await editEstimateLine(INPUT)).toEqual({ kind: "error" });
     expect(JSON.stringify(log.mock.calls)).not.toContain("[REASON]");
+  });
+});
+
+describe("resolveConflict and escalateConflict", () => {
+  const CID = "00000000-0000-7000-8000-0000000000c1";
+  const REVIEWER = "00000000-0000-7000-8000-0000000000e1";
+  const RESOLVE = {
+    opportunityId: OPP_ID,
+    conflictId: CID,
+    rowVersion: 1,
+    choice: { position: 1 },
+    reason: "[REASON]",
+  };
+  const ESCALATE = {
+    opportunityId: OPP_ID,
+    conflictId: CID,
+    rowVersion: 2,
+    reviewerId: REVIEWER,
+    reason: "[REASON]",
+  };
+  const CONFLICT = { id: CID, status: "resolved", row_version: 2 };
+  const PATH = "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}";
+
+  beforeEach(() => {
+    api.POST.mockReset();
+  });
+
+  function answer(status: number, error?: Record<string, string>) {
+    api.POST.mockResolvedValueOnce({
+      error,
+      response: new Response(null, { status }),
+    });
+  }
+
+  it("posts a chosen position with If-Match and returns the Conflict", async () => {
+    api.POST.mockResolvedValue({
+      data: CONFLICT,
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await resolveConflict(RESOLVE)).toEqual({
+      kind: "ok",
+      conflict: CONFLICT,
+    });
+    expect(api.POST).toHaveBeenCalledWith(`${PATH}/resolution`, {
+      params: {
+        path: { opportunity_id: OPP_ID, conflict_id: CID },
+        header: { "If-Match": '"1"' },
+      },
+      body: { choice: 1, reason: "[REASON]" },
+    });
+  });
+
+  it("posts an entered position as {entered}", async () => {
+    api.POST.mockResolvedValue({
+      data: CONFLICT,
+      response: new Response(null, { status: 200 }),
+    });
+    await resolveConflict({ ...RESOLVE, choice: { entered: "48" } });
+    expect(api.POST.mock.calls[0][1].body).toEqual({
+      choice: { entered: "48" },
+      reason: "[REASON]",
+    });
+  });
+
+  it("posts an escalation with If-Match", async () => {
+    api.POST.mockResolvedValue({
+      data: CONFLICT,
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await escalateConflict(ESCALATE)).toEqual({
+      kind: "ok",
+      conflict: CONFLICT,
+    });
+    expect(api.POST).toHaveBeenCalledWith(`${PATH}/escalation`, {
+      params: {
+        path: { opportunity_id: OPP_ID, conflict_id: CID },
+        header: { "If-Match": '"2"' },
+      },
+      body: { reviewer_id: REVIEWER, reason: "[REASON]" },
+    });
+  });
+
+  it.each([
+    ["resolve", () => resolveConflict(RESOLVE)],
+    ["escalate", () => escalateConflict(ESCALATE)],
+  ])("%s: 412 passes the API's sentence on", async (_, call) => {
+    answer(412, {
+      code: "row_version_mismatch",
+      detail: "Changed by [OTHER] since you opened it.",
+    });
+    expect(await call()).toEqual({
+      kind: "stale",
+      message: "Changed by [OTHER] since you opened it.",
+    });
+    answer(412, { code: "row_version_mismatch" });
+    expect(await call()).toEqual({
+      kind: "stale",
+      message: "Changed by someone else since you opened it.",
+    });
+  });
+
+  it("tells already escalated from already resolved on 409", async () => {
+    answer(409, { code: "conflict_not_open" });
+    expect(await escalateConflict(ESCALATE)).toEqual({
+      kind: "conflict",
+      detail: "This Conflict is already escalated.",
+    });
+    answer(409, { code: "conflict_already_resolved" });
+    expect(await resolveConflict(RESOLVE)).toEqual({
+      kind: "conflict",
+      detail: "This Conflict is already resolved.",
+    });
+  });
+
+  it("on 422 passes the API's sentence on, but not a field list", async () => {
+    answer(422, {
+      code: "validation_error",
+      detail: "Give a reason of 1 to 1,000 characters.",
+    });
+    expect(await resolveConflict(RESOLVE)).toEqual({
+      kind: "invalid",
+      detail: "Give a reason of 1 to 1,000 characters.",
+    });
+    answer(422, {
+      code: "validation_error",
+      detail: "Invalid fields: body.reason",
+    });
+    expect(await escalateConflict(ESCALATE)).toEqual({
+      kind: "invalid",
+      detail: "The decision was not accepted.",
+    });
+  });
+
+  it.each([
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    answer(status, { code: "x" });
+    expect(await resolveConflict(RESOLVE)).toEqual({ kind });
+    answer(status, { code: "x" });
+    expect(await escalateConflict(ESCALATE)).toEqual({ kind });
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    for (const bad of [
+      { ...RESOLVE, conflictId: "nope" },
+      { ...RESOLVE, choice: { position: 0 } },
+      { ...RESOLVE, choice: 1 },
+      { ...RESOLVE, reason: undefined },
+      null,
+    ]) {
+      expect(await resolveConflict(bad)).toEqual({ kind: "error" });
+    }
+    expect(await escalateConflict({ ...ESCALATE, reviewerId: "nope" })).toEqual(
+      {
+        kind: "error",
+      },
+    );
+    expect(api.POST).not.toHaveBeenCalled();
   });
 });

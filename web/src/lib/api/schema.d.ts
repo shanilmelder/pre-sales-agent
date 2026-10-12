@@ -979,12 +979,57 @@ export interface paths {
          * @description The Conflicts between the Opportunity's specialist Assessments (and its Estimate): open
          *     ones first, then resolved, each section critical to low and newest first, each with its
          *     positions (the agent and Assessment version, or the Estimate version; the value; the
-         *     Requirement chip); and the open-plus-escalated count. Conflicts carried forward to a later
-         *     run are left out. Anyone who can read the Opportunity.
+         *     Requirement chip), the decision or escalation, and what the caller may do; the
+         *     open-plus-escalated count; and whom the caller may escalate to. Conflicts carried forward
+         *     to a later run are left out. Anyone who can read the Opportunity.
          */
         get: operations["get_conflicts"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/resolution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Conflict
+         * @description Resolve an open or escalated Conflict by choosing one of its positions or entering a
+         *     different one, with a reason. Every original position is kept and traced. An `effort`
+         *     decision also sets the Estimate line covering only that Requirement (as an edit with the
+         *     reason); `applied_hours` or `not_applied` say what happened.
+         */
+        post: operations["resolve_conflict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/escalation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate Conflict
+         * @description Escalate an open Conflict to a named reviewer on the Opportunity, with a reason. The
+         *     reviewer can then resolve it.
+         */
+        post: operations["escalate_conflict"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1376,6 +1421,20 @@ export interface components {
             count: number;
         };
         /**
+         * ConflictEscalation
+         * @description Escalate to `reviewer_id` (the Opportunity's owner or a collaborator, not the caller)
+         *     with a `reason` (1-1,000 characters).
+         */
+        ConflictEscalation: {
+            /**
+             * Reviewer Id
+             * Format: uuid
+             */
+            reviewer_id: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * ConflictPosition
          * @description One side of a Conflict. From an agent's Assessment (`agent`, `assessment_id`,
          *     `assessment_version`) or the Estimate (`estimate_version_id`, `estimate_version`).
@@ -1419,6 +1478,17 @@ export interface components {
             excerpt: string;
         };
         /**
+         * ConflictResolution
+         * @description A person's decision: `choice` is one of the Conflict's position numbers or
+         *     `{"entered": text}`; `reason` (1-1,000 characters) is required.
+         */
+        ConflictResolution: {
+            /** Choice */
+            choice: number | components["schemas"]["EnteredPosition"];
+            /** Reason */
+            reason: string;
+        };
+        /**
          * ConflictSeverity
          * @enum {string}
          */
@@ -1436,7 +1506,16 @@ export interface components {
         /**
          * ConflictView
          * @description A Conflict with its positions in order. `requirement`: the Requirement it is about
-         *     (null for an Opportunity-level Conflict).
+         *     (null for an Opportunity-level Conflict). `row_version`: for `If-Match` on a resolution
+         *     or escalation.
+         *
+         *     Story 6.3, a person's decision: `resolved_by_name` (null when the system resolved it),
+         *     `chosen_position` (a position number) or `entered_position`, `applied_hours` (the hours
+         *     an `effort` decision set on the Estimate line) or `not_applied` (why it set none:
+         *     `no_line`, `shared_line`, `several_lines`). `previous_decision`: for a Conflict raised
+         *     again after a person resolved it, who and when. An escalation: `escalated_to`,
+         *     `escalated_by`, `escalation_reason`, `escalated_at`. `can_resolve` / `can_escalate`:
+         *     whether the viewer may.
          */
         ConflictView: {
             /** Id */
@@ -1463,18 +1542,45 @@ export interface components {
             requirement: components["schemas"]["ConflictRequirement"] | null;
             /** Positions */
             positions: components["schemas"]["ConflictPosition"][];
+            /** Row Version */
+            row_version: number;
+            /** Resolved By Name */
+            resolved_by_name: string | null;
+            /** Chosen Position */
+            chosen_position: number | null;
+            /** Entered Position */
+            entered_position: string | null;
+            /** Applied Hours */
+            applied_hours: number | null;
+            /** Not Applied */
+            not_applied: string | null;
+            previous_decision: components["schemas"]["PreviousDecision"] | null;
+            escalated_to: components["schemas"]["Person"] | null;
+            escalated_by: components["schemas"]["Person"] | null;
+            /** Escalation Reason */
+            escalation_reason: string | null;
+            /** Escalated At */
+            escalated_at: string | null;
+            /** Can Resolve */
+            can_resolve: boolean;
+            /** Can Escalate */
+            can_escalate: boolean;
         };
         /**
          * ConflictsView
          * @description The Opportunity's Conflicts: open (and negotiating, escalated) before resolved, then
-         *     critical to low, then newest first; those carried forward to a later run are left out.
-         *     `open_count`: open plus escalated.
+         *     critical to low, then newest first; those carried forward to a later run are left out
+         *     (a Conflict a person resolved stays listed). `open_count`: open plus escalated.
+         *     `reviewers`: who the viewer may escalate to (the Opportunity's owner and collaborators,
+         *     without the viewer), by name.
          */
         ConflictsView: {
             /** Conflicts */
             conflicts: components["schemas"]["ConflictView"][];
             /** Open Count */
             open_count: number;
+            /** Reviewers */
+            reviewers: components["schemas"]["Person"][];
         };
         /**
          * ConvertedTo
@@ -1515,6 +1621,15 @@ export interface components {
          * @enum {string}
          */
         DraftStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * EnteredPosition
+         * @description A different position than the Conflict's own, in words (1-200 characters; for an
+         *     `effort` Conflict, hours from 0 to 2,000 to 0.1 h, e.g. "48").
+         */
+        EnteredPosition: {
+            /** Entered */
+            entered: string;
+        };
         /**
          * EntryChanges
          * @description Fields to change; a field left out stays as it is.
@@ -2212,10 +2327,34 @@ export interface components {
             after: string;
         };
         /**
+         * Person
+         * @description A user by id and name.
+         */
+        Person: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
          * PositionSource
          * @enum {string}
          */
         PositionSource: "assessment" | "estimate";
+        /**
+         * PreviousDecision
+         * @description Story 6.3: who resolved an earlier Conflict with this fingerprint, and when, before
+         *     the positions changed and it was raised again.
+         */
+        PreviousDecision: {
+            /** Name */
+            name: string;
+            /**
+             * Resolved At
+             * Format: date-time
+             */
+            resolved_at: string;
+        };
         /**
          * ProposalStatus
          * @description The state of an Estimate Version's `estimates.propose_assumptions` job.
@@ -9898,6 +10037,422 @@ export interface operations {
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    resolve_conflict: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Conflict as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConflictResolution"];
+            };
+        };
+        responses: {
+            /** @description The Conflict as it is now */
+            200: {
+                headers: {
+                    /** @description The Conflict's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConflictView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may read the Opportunity but not resolve its Conflicts: only the owner and collaborators except sales representatives, or the reviewer an escalated Conflict was escalated to (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Conflict with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict cannot be resolved: it is already resolved (`conflict_already_resolved`) or already escalated (`conflict_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason, a position number the Conflict does not have, an entered position that is blank or over 200 characters (for an `effort` Conflict, not hours from 0 to 2,000 to 0.1 h); the `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    escalate_conflict: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Conflict as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConflictEscalation"];
+            };
+        };
+        responses: {
+            /** @description The Conflict as it is now */
+            200: {
+                headers: {
+                    /** @description The Conflict's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConflictView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may read the Opportunity but not escalate its Conflicts: only the owner and collaborators except sales representatives (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Conflict with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict cannot be escalated: it is already resolved (`conflict_already_resolved`) or already escalated (`conflict_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason, or a reviewer who is not the Opportunity's owner or a collaborator, or is the caller; the `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

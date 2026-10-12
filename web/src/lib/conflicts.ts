@@ -116,3 +116,94 @@ export function positionsSummary(positions: readonly ConflictPosition[]): string
 export function openCountLabel(n: number): string {
   return `${n} open`;
 }
+
+// --- decisions (Story 6.3) ------------------------------------------------------------------
+
+export type Person = components["schemas"]["Person"];
+
+/** The API's limits, in characters (code points). */
+export const DECISION_REASON_MAX = 1000;
+export const ENTERED_MAX = 200;
+
+export const REASON_REQUIRED = "Give a reason for the decision.";
+export const CHOICE_REQUIRED = "Choose a position, or enter a different one.";
+export const ENTERED_REQUIRED = "Enter the different position.";
+export const HOURS_REQUIRED =
+  "Enter hours from 0 to 2,000, to 0.1 h (for example 48).";
+export const REVIEWER_REQUIRED = "Choose a reviewer.";
+export const DIFFERENT_POSITION = "A different position";
+
+/** Whether an entered position reads as hours the API accepts for an effort Conflict:
+ * "48", "48.5", "48 h", 0 to 2,000. */
+export function isEnteredHours(text: string): boolean {
+  const match = /^(\d{1,4}(?:\.\d)?)\s*h?$/.exec(text.trim());
+  return match !== null && Number(match[1]) <= 2000;
+}
+
+/** "Engineering's position" or "Estimate v3's position". */
+export function positionName(position: ConflictPosition): string {
+  return `${positionRole(position)}'s position`;
+}
+
+/** The decision on a resolved Conflict a person resolved: "Resolved by Alex: Engineering's
+ * position, 64 h" or "Resolved by Alex: In scope: PM to size in v2"; null otherwise. */
+export function decisionLabel(conflict: Conflict): string | null {
+  if (conflict.status !== "resolved" || !conflict.resolved_by_name) return null;
+  const by = `Resolved by ${conflict.resolved_by_name}`;
+  if (conflict.entered_position) return `${by}: ${conflict.entered_position}`;
+  const chosen = conflict.positions.find(
+    (p) => p.position === conflict.chosen_position,
+  );
+  return chosen ? `${by}: ${positionName(chosen)}, ${chosen.summary}` : by;
+}
+
+const NOT_APPLIED: Record<string, string> = {
+  shared_line: "Not applied: the Estimate line covers several Requirements.",
+  several_lines: "Not applied: several Estimate lines cover it.",
+  no_line: "Not applied: no Estimate line covers it.",
+  not_permitted: "Not applied: you can't edit the Estimate.",
+};
+
+/** What an effort decision did to the Estimate: "Estimate line set to 100 h." or why it did
+ * nothing; null when there is nothing to say. */
+export function estimateEffect(conflict: Conflict): string | null {
+  if (conflict.applied_hours !== null) {
+    return `Estimate line set to ${formatHours(conflict.applied_hours)}.`;
+  }
+  if (conflict.not_applied) return NOT_APPLIED[conflict.not_applied] ?? null;
+  return null;
+}
+
+/** Before resolving an effort Conflict with an agent's position: "Choosing an agent's position
+ * sets the Estimate line to the agents' total, 100 h." (the figure the API applies). */
+export function agentsTotalEffect(
+  positions: readonly ConflictPosition[],
+): string {
+  const total = positions
+    .filter((p) => p.source === "assessment" && p.value !== null)
+    .reduce((sum, p) => sum + (p.value ?? 0), 0);
+  return `Choosing an agent's position sets the Estimate line to the agents' total, ${formatHours(Math.round(total * 10) / 10)}.`;
+}
+
+function formatHours(hours: number): string {
+  const text = hours.toFixed(1);
+  return `${text.endsWith(".0") ? text.slice(0, -2) : text} h`;
+}
+
+/** "Escalated to Sam", or null. */
+export function escalatedLabel(
+  conflict: Pick<Conflict, "escalated_to">,
+): string | null {
+  return conflict.escalated_to
+    ? `Escalated to ${conflict.escalated_to.name}`
+    : null;
+}
+
+/** "Resolved earlier by Alex; positions have changed.", or null. */
+export function previousDecisionLabel(
+  conflict: Pick<Conflict, "previous_decision">,
+): string | null {
+  return conflict.previous_decision
+    ? `Resolved earlier by ${conflict.previous_decision.name}; positions have changed.`
+    : null;
+}

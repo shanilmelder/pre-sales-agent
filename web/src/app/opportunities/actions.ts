@@ -17,6 +17,7 @@ import {
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
+import type { Conflict } from "@/lib/conflicts";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
 import type { ClarificationQuestion, Detection } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
@@ -1565,6 +1566,177 @@ export async function editEstimateLine(input: unknown): Promise<EstimateLineEdit
   } catch (thrown) {
     console.error(
       `edit estimate line failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- resolving and escalating a Conflict (Story 6.3) ----------------------------------------
+
+export type ConflictChoice = { position: number } | { entered: string };
+
+export type ResolveConflictInput = {
+  opportunityId: string;
+  conflictId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  choice: ConflictChoice;
+  reason: string;
+};
+
+export type EscalateConflictInput = {
+  opportunityId: string;
+  conflictId: string;
+  rowVersion: number;
+  reviewerId: string;
+  reason: string;
+};
+
+export type ConflictDecisionResult =
+  /** The Conflict as it is now. */
+  | { kind: "ok"; conflict: Conflict }
+  /** 412: someone changed it first; `message` is the API's "Changed by {name} since you
+   * opened it." */
+  | { kind: "stale"; message: string }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  /** 409: already resolved, or already escalated. */
+  | { kind: "conflict"; detail: string }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the Conflict is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isChoice(value: unknown): value is ConflictChoice {
+  if (typeof value !== "object" || value === null) return false;
+  const choice = value as Record<string, unknown>;
+  if ("position" in choice) {
+    return (
+      typeof choice.position === "number" &&
+      Number.isSafeInteger(choice.position) &&
+      choice.position >= 1
+    );
+  }
+  return typeof choice.entered === "string";
+}
+
+function isDecisionBase(input: Record<string, unknown>): boolean {
+  const { opportunityId, conflictId, rowVersion, reason } = input;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof conflictId === "string" &&
+    UUID_RE.test(conflictId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0 &&
+    typeof reason === "string"
+  );
+}
+
+function isResolveInput(input: unknown): input is ResolveConflictInput {
+  if (typeof input !== "object" || input === null) return false;
+  const record = input as Record<string, unknown>;
+  return isDecisionBase(record) && isChoice(record.choice);
+}
+
+function isEscalateInput(input: unknown): input is EscalateConflictInput {
+  if (typeof input !== "object" || input === null) return false;
+  const record = input as Record<string, unknown>;
+  return (
+    isDecisionBase(record) &&
+    typeof record.reviewerId === "string" &&
+    UUID_RE.test(record.reviewerId)
+  );
+}
+
+function decisionFailure(
+  label: string,
+  status: number,
+  error: unknown,
+): ConflictDecisionResult {
+  const { detail, code } = problem(error);
+  switch (status) {
+    case 412:
+      return {
+        kind: "stale",
+        message: detail ?? "Changed by someone else since you opened it.",
+      };
+    case 422:
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The decision was not accepted.",
+      };
+    case 409:
+      return {
+        kind: "conflict",
+        detail:
+          code === "conflict_not_open"
+            ? "This Conflict is already escalated."
+            : "This Conflict is already resolved.",
+      };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${status} code=${String(code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/conflicts/{cid}/resolution` with `If-Match`: choose a
+ * position or enter one, with a reason. Never retries or overwrites on 412. Logs ids and
+ * statuses only (never the reason or a position). */
+export async function resolveConflict(input: unknown): Promise<ConflictDecisionResult> {
+  if (!isResolveInput(input)) return { kind: "error" };
+  const { opportunityId, conflictId, rowVersion, choice, reason } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/resolution",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, conflict_id: conflictId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: {
+          choice: "position" in choice ? choice.position : { entered: choice.entered },
+          reason,
+        },
+      },
+    );
+    if (data) return { kind: "ok", conflict: data };
+    return decisionFailure("resolve conflict", response.status, error);
+  } catch (thrown) {
+    console.error(`resolve conflict failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/conflicts/{cid}/escalation` with `If-Match`: escalate to
+ * a named reviewer on the Opportunity, with a reason. Logs ids and statuses only. */
+export async function escalateConflict(input: unknown): Promise<ConflictDecisionResult> {
+  if (!isEscalateInput(input)) return { kind: "error" };
+  const { opportunityId, conflictId, rowVersion, reviewerId, reason } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/escalation",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, conflict_id: conflictId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { reviewer_id: reviewerId, reason },
+      },
+    );
+    if (data) return { kind: "ok", conflict: data };
+    return decisionFailure("escalate conflict", response.status, error);
+  } catch (thrown) {
+    console.error(
+      `escalate conflict failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

@@ -204,7 +204,7 @@ forbidden_modules = [
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "conflicts uses identity, opportunities and intake only through their public APIs, and never imports assessments or estimates (AD-2)"
+name = "conflicts uses identity, opportunities and intake only through their public APIs, and never imports assessments or estimates except its routes passing the Estimate decision functions (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.conflicts"]
 forbidden_modules = [
@@ -221,6 +221,8 @@ forbidden_modules = [
     "app.modules.estimates",
     "app.modules.assessments",
 ]
+# Story 6.3: only the routes hand estimates' public decision functions to the commands.
+ignore_imports = ["app.modules.conflicts.api.routes -> app.modules.estimates.application.public"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
