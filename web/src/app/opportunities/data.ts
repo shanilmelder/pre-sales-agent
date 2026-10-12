@@ -8,6 +8,7 @@ import { createServerApiClient } from "@/lib/api/server";
 import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
 import { UUID_RE } from "@/lib/opportunities";
 import type { AssessmentsView } from "@/lib/assessments";
+import type { ConflictsView } from "@/lib/conflicts";
 import type { EstimateView } from "@/lib/estimates";
 import type { GapList } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
@@ -26,6 +27,7 @@ export type GapsResult = { kind: "ok"; list: GapList } | { kind: "error" };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
 export type TraceResult = { kind: "ok"; page: TracePage } | { kind: "error" };
 export type RedTeamResult = { kind: "ok"; redTeam: RedTeamView } | { kind: "error" };
+export type ConflictsResult = { kind: "ok"; conflicts: ConflictsView } | { kind: "error" };
 export type AssessmentsResult =
   | { kind: "ok"; assessments: AssessmentsView }
   | { kind: "error" };
@@ -185,6 +187,26 @@ export async function getRedTeam(id: string): Promise<RedTeamResult> {
     return { kind: "error" };
   }
 }
+
+/** `GET /api/v1/opportunities/{id}/conflicts`: the Conflicts between the specialist
+ * Assessments, open first, and the open-plus-escalated count (Story 6.1). Cached per
+ * request, so the workspace layout's tab badge and the Conflicts tab share one fetch. Logs
+ * statuses only. */
+export const getConflicts = cache(async (id: string): Promise<ConflictsResult> => {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/conflicts", {
+      params: { path: { opportunity_id: id } },
+    });
+    if (data) return { kind: "ok", conflicts: data };
+    console.error(`GET conflicts failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET conflicts failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+});
 
 /** `GET /api/v1/opportunities/{id}/assessments`: the latest assessment run with its tasks and
  * each specialist agent's current Assessment (Epic 5 slice 5A). Logs statuses only. */

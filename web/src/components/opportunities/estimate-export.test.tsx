@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { EstimateDraft, EstimateVersion } from "@/lib/estimates";
+import type { EstimateVersion } from "@/lib/estimates";
 import { axeViolations } from "@/test/axe";
 
 vi.mock("@/app/opportunities/actions", () => ({
@@ -178,7 +178,6 @@ describe("EstimateExport", () => {
 });
 
 describe("EstimateHeader's Export", () => {
-  const succeeded: EstimateDraft = { status: "succeeded", error_code: null };
   const version = {
     id: "00000000-0000-7000-8000-000000000002",
     version: 2,
@@ -188,7 +187,7 @@ describe("EstimateHeader's Export", () => {
 
   it("shows Export when the caller may export a version", () => {
     render(
-      <EstimateHeader version={version} draft={succeeded} opportunityId={OPP_ID} canExport />,
+      <EstimateHeader version={version} opportunityId={OPP_ID} canExport />,
     );
     expect(screen.getByRole("button", { name: /Export/ })).toBeTruthy();
   });
@@ -200,7 +199,6 @@ describe("EstimateHeader's Export", () => {
     render(
       <EstimateHeader
         version={v}
-        draft={{ status: "failed", error_code: "model_unavailable" }}
         opportunityId={OPP_ID}
         canExport={canExport}
       />,

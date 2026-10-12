@@ -53,7 +53,7 @@ context:
 - `backend/app/modules/gaps/` -- structure to copy (`adapters/{models,repository}.py`, `application/{public,...}.py`, `domain`, `api/routes.py`); `RowVersioned` from `app/platform/concurrency.py`, `new_id()` from `app/platform/ids.py`.
 - `backend/app/modules/gaps/application/questions.py` and `intake/application/requirement_edits.py` -- command shape: `authorize` → rules → `row_version` check → write → `trace.append`.
 - `backend/app/modules/gaps/api/routes.py` -- route helpers (`_responses`, `If-Match` header, `etag`); register the new router in `backend/app/main_api.py` after `assessments_router`.
-- `backend/migrations/versions/20261005_0018_assessments_cancel.py` -- latest; new `0019_knowledge_catalogue` revises it (template for grants: `0013_estimates_assumptions.py`). Add the models import in `backend/migrations/env.py`.
+- `backend/migrations/versions/20261005_0018_assessments_cancel.py` -- latest; new `0019_knowledge_catalogue` revises it (renumbered `0023_knowledge_catalogue` on `0022_estimates_from_assessments` when main was merged in) (template for grants: `0013_estimates_assumptions.py`). Add the models import in `backend/migrations/env.py`.
 - `backend/app/modules/identity/actions.py`, `identity/domain/policy.py` (admin-only like `USER_LIST`); update `tests/test_authorize.py`.
 - `backend/app/platform/trace/catalogue.py` -- add four payloads; `tests/test_trace_catalogue.py` checks them.
 - `backend/pyproject.toml` -- add a `knowledge` import-linter contract (identity public API only).
@@ -62,7 +62,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `backend/migrations/versions/20261006_0019_knowledge_catalogue.py` -- two tables, constraints, grants -- schema
+- [x] `backend/migrations/versions/20261012_0023_knowledge_catalogue.py` -- two tables, constraints, grants -- schema
 - [x] `backend/app/modules/knowledge/{domain,adapters,application,api}` -- rules (pure, unit-tested), models, repository, commands, public API, routes -- module
 - [x] identity `actions.py` + `policy.py`, trace `catalogue.py`, `main_api.py`, `migrations/env.py`, `pyproject.toml` -- wiring
 - [x] `backend/tests/test_knowledge_*.py` -- the I/O matrix, 403, 412/428, retired resolution, architecture and trace catalogue tests

@@ -1,0 +1,101 @@
+WEBVTT
+
+NOTE
+Microsoft Teams meeting transcript (sample data for the demo; all names and companies are fictional).
+Harbourline Home & Garden — Elmbridge fulfilment centre retrofit — kick-off call, 29 September 2026.
+
+1
+00:00:03.200 --> 00:00:10.900
+<v Jordan Lee>Thanks for making the time. The goal today is to understand the Elmbridge site well enough to put a proposal together for the automation.
+
+2
+00:00:11.400 --> 00:00:24.800
+<v Hannah Reid>Happy to. I'm head of operations at Harbourline Home & Garden. Elmbridge is our online fulfilment centre. We sell garden furniture, tools, lighting and homeware, about twenty-two thousand SKUs, and we ship parcels straight to consumers.
+
+3
+00:00:25.300 --> 00:00:38.600
+<v Hannah Reid>Today it's all manual: pickers walk the aisles with handheld scanners. We want an automated storage and retrieval system with goods-to-person pick stations, plus automatic packing with an auto-bagger and a carton erector, and sortation to the carrier lanes.
+
+4
+00:00:39.100 --> 00:00:46.200
+<v Alex Chen>Understood. What volumes do you see today, and at peak?
+
+5
+00:00:46.700 --> 00:01:01.300
+<v Hannah Reid>A normal day is about eighteen thousand order lines. Black Friday week we hit around forty-five thousand a day. And honestly, the new marketplace channel launches next spring and nobody here can tell you what that will add. Could be ten percent, could be double. We just don't know yet.
+
+6
+00:01:01.800 --> 00:01:09.400
+<v Alex Chen>That's an important one for sizing. Is there any forecast at all for the marketplace?
+
+7
+00:01:09.900 --> 00:01:20.100
+<v Hannah Reid>No. Finance has tried, but there's no history to base it on. We'd rather you build in some headroom and price that in than wait for a forecast that won't exist before we sign.
+
+8
+00:01:20.600 --> 00:01:33.200
+<v Marcus Bell>I'm the IT lead. On systems: our ERP is Microsoft Dynamics 365 Finance and Operations. We haven't decided yet whether you integrate through the standard data entities or with file-based batches. That's our decision, our architects and our D365 partner are discussing it.
+
+9
+00:01:33.700 --> 00:01:40.900
+<v Alex Chen>Understood. And a sandbox environment for our development and testing?
+
+10
+00:01:41.400 --> 00:01:49.800
+<v Marcus Bell>That's on us too. We haven't ordered it, and we haven't decided whether it's a dedicated one or shared with our finance upgrade. I'll come back to you.
+
+11
+00:01:50.300 --> 00:02:06.700
+<v Marcus Bell>The harder part is the old warehouse system. It's an in-house WMS a contractor built for us in 2009. He left years ago and there's no documentation. Over the years people bolted interfaces onto it, to the label printers, the old conveyor, a returns tool, some spreadsheets. Nobody actually knows how many interfaces there are.
+
+12
+00:02:07.200 --> 00:02:15.900
+<v Jordan Lee>So we'd have to trace them as we go during the migration?
+
+13
+00:02:16.400 --> 00:02:27.300
+<v Marcus Bell>Exactly. We can't give you a list because we don't have one. You'll only find out what's really hanging off it once your team is in the code and the database. Please assume there will be surprises.
+
+14
+00:02:27.800 --> 00:02:36.400
+<v Marcus Bell>For logins, your system has to use single sign-on. We're moving from Okta to Microsoft Entra ID, and security hasn't decided yet which one the automation starts on.
+
+15
+00:02:36.900 --> 00:02:49.600
+<v Grace Okoye>I look after facilities. The building is a 1990s warehouse we're leasing. The old tenant leaves in January. Until then we can't drill into the floor, so we don't know the slab thickness or whether it will take the racking loads and the anchors.
+
+16
+00:02:50.100 --> 00:03:00.300
+<v Grace Okoye>The landlord has no drawings of the slab. We'll only know when core samples are taken after the tenant moves out. If it's thin in places, there'll be extra work to strengthen it or change the anchoring.
+
+17
+00:03:00.800 --> 00:03:10.200
+<v Grace Okoye>Then there's the sprinklers. The fire authority has to approve in-rack sprinklers for a high-bay system, and they only give their decision once they've reviewed the final design. We can't tell you in advance what they'll ask for.
+
+18
+00:03:10.700 --> 00:03:20.900
+<v Grace Okoye>Power is our decision too. We haven't decided whether our own electrical contractor brings the three-phase supply to your equipment, or whether you include it. We'll decide once we see your power requirements.
+
+19
+00:03:21.400 --> 00:03:34.800
+<v Hannah Reid>One more thing on packing. We haven't decided the carton range yet: how many box sizes and which ones. That's our decision, our packaging team is working on it, and we'll send you the final list.
+
+20
+00:03:35.300 --> 00:03:48.100
+<v Hannah Reid>And product data. The dimensions and weights in the ERP are unreliable. Someone did a spot check last year and a lot were wrong, but we don't know how many. We'll only find out when every SKU goes over the measuring machine during the data load.
+
+21
+00:03:48.600 --> 00:03:57.400
+<v Alex Chen>So the clean-up effort is open until the measuring is done.
+
+22
+00:03:57.900 --> 00:04:06.300
+<v Hannah Reid>Yes. I'd rather you carry an allowance for that than promise a number nobody can check.
+
+23
+00:04:06.800 --> 00:04:19.200
+<v Jordan Lee>Thank you, this is really useful. We'll send a summary, and I'd suggest each of you follows up in writing on your area, especially anything you can't answer yet.
+
+24
+00:04:19.700 --> 00:04:25.100
+<v Hannah Reid>Will do. Our procurement team will also send the commercial framework this week.

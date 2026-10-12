@@ -64,7 +64,10 @@ class IdentityUserProvisioned(TracePayload):
 
 @register
 class IdentityUserRoleAssigned(TracePayload):
-    """An administrator assigned a role. Actor: the administrator; subject: the user."""
+    """An administrator assigned a role. Actor: the administrator; subject: the user.
+
+    Historical only: roles are managed in Auth0 since Story 1.9, so nothing appends this
+    any more. Kept registered so existing rows stay readable."""
 
     event_type: ClassVar[str] = "identity.user.role_assigned"
 
@@ -73,7 +76,9 @@ class IdentityUserRoleAssigned(TracePayload):
 
 @register
 class IdentityUserRoleRemoved(TracePayload):
-    """An administrator removed a role. Actor: the administrator; subject: the user."""
+    """An administrator removed a role. Actor: the administrator; subject: the user.
+
+    Historical only (see `IdentityUserRoleAssigned`)."""
 
     event_type: ClassVar[str] = "identity.user.role_removed"
 
@@ -87,9 +92,13 @@ class IdentityUserRoleRemoved(TracePayload):
 
 @register
 class OpportunitiesOpportunityCreated(TracePayload):
-    """A presales engineer created an Opportunity. Actor: the creator (its owner)."""
+    """A presales engineer created an Opportunity. Actor: the creator (its owner).
+    `from_import`: started from an imported file (Story 1.7 import), which was added as its
+    first Source (traced as `intake.source.added`)."""
 
     event_type: ClassVar[str] = "opportunities.opportunity.created"
+
+    from_import: bool = False
 
 
 @register
@@ -285,11 +294,13 @@ class GapsGapConverted(TracePayload):
 
 @register
 class EstimatesEstimateVersionCreated(TracePayload):
-    """An accepted draft created an Estimate Version. Subject: the version
-    (`estimates.estimate_version`). Actor: the agent (`estimating_agent@<semver>`). Counts
-    only: lines stored, lines dropped, active Requirements no line covers, Requirements read,
-    earlier draft versions superseded, and accepted Assumptions carried from the superseded
-    draft (Story 8.7)."""
+    """An accepted draft, or a finished assessment run (Story 8.3), created an Estimate
+    Version. Subject: the version (`estimates.estimate_version`). Actor: the agent
+    (`estimating_agent@<semver>`), or the system for a version from the Assessments. Counts,
+    the source and ids only: lines stored, lines dropped, active Requirements no line covers,
+    Requirements read, earlier draft versions superseded, accepted Assumptions and line
+    edits carried from the superseded draft (Stories 8.7, 8.2), where the lines came from
+    and the assessment run's id (Story 8.3)."""
 
     event_type: ClassVar[str] = "estimates.estimate_version.created"
 
@@ -301,6 +312,15 @@ class EstimatesEstimateVersionCreated(TracePayload):
     requirement_count: int
     superseded_count: int
     carried_assumption_count: int = 0
+    carried_edit_count: int = 0
+    """Story 8.2: edited lines of the superseded draft carried onto a matching line."""
+    uncarried_edit_count: int = 0
+    """Story 8.2: edited lines of the superseded draft with no matching line."""
+    source: Literal["model", "assessments"] = "model"
+    """Story 8.3: `assessments` when built from the specialist Assessments as an assessment
+    run finished (actor `system`), else `model`."""
+    source_run_id: str | None = None
+    """Story 8.3: that assessment run's id."""
 
 
 # Story 8.4. Payloads hold ids, kinds and hours only, never Assumption wording or Gap text.
@@ -336,6 +356,26 @@ class EstimatesAssumptionAccepted(TracePayload):
     line_id: str | None
     gap_id: str
     accepted_by: str
+
+
+# Story 8.2. A person's edit of a line: the before and after values and the person's own
+# reason; never the line's title or any Requirement text.
+
+
+@register
+class EstimatesEstimateLineEdited(TracePayload):
+    """A person changed an Estimate line's effort and/or role mix on a draft version.
+    Subject: the line (`estimates.estimate_line`). Actor: the person. `version`: the Estimate
+    Version's number. Role mixes are `{engineer, project_manager, qa}` in whole percent."""
+
+    event_type: ClassVar[str] = "estimates.estimate_line.edited"
+
+    version: int
+    before_hours: float
+    after_hours: float
+    before_role_mix: dict[str, int]
+    after_role_mix: dict[str, int]
+    reason: str
 
 
 # Story 8.8. The version and the format only, never any line, Assumption or question text.
@@ -492,3 +532,43 @@ class KnowledgeCatalogueEntryReactivated(TracePayload):
 
     kind: str
     version: int
+
+
+# --- conflicts ------------------------------------------------------------------------------
+
+
+@register
+class ConflictsConflictDetected(TracePayload):
+    """A rule (or later a detector) raised a Conflict between Assessments (Story 6.1).
+    Subject: the Conflict (`conflicts.conflict`). Actor: the system. The run that raised it,
+    the Conflict's type, severity and detector, and how many positions it has; no Requirement
+    or Finding text."""
+
+    event_type: ClassVar[str] = "conflicts.conflict.detected"
+
+    run_id: str
+    type: Literal[
+        "timeline",
+        "effort",
+        "resource",
+        "architecture",
+        "security",
+        "scope",
+        "assumption",
+        "evidence",
+    ]
+    severity: Literal["low", "medium", "high", "critical"]
+    detected_by: Literal["rule", "semantic", "critic", "red_team"]
+    position_count: int
+
+
+@register
+class ConflictsConflictResolved(TracePayload):
+    """The system resolved a Conflict after a later run (Story 6.1): `no_longer_present` when
+    the run no longer raises it, `carried_forward` when it raises it again as a new Conflict
+    that links this one. Subject: the Conflict. Actor: the system. `run_id`: that later run."""
+
+    event_type: ClassVar[str] = "conflicts.conflict.resolved"
+
+    run_id: str
+    reason_kind: Literal["no_longer_present", "carried_forward"]

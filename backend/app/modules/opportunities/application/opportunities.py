@@ -243,8 +243,12 @@ async def facets(uow: UnitOfWork, actor: Principal) -> OpportunityFacets:
 # --- commands -------------------------------------------------------------------------------
 
 
-async def create(uow: UnitOfWork, actor: Principal, new: NewOpportunity) -> Opportunity:
-    """Create an Opportunity owned by the caller (`presales_engineer` only)."""
+async def create(
+    uow: UnitOfWork, actor: Principal, new: NewOpportunity, *, from_import: bool = False
+) -> Opportunity:
+    """Create an Opportunity owned by the caller (`presales_engineer` only). `from_import`:
+    started from an Opportunity import (`application.imports`), recorded on the trace
+    event; the import itself is checked and consumed by the caller."""
     identity.authorize(actor, Action.OPPORTUNITY_CREATE)
     owner_id = actor.user_id
     if owner_id is None:
@@ -263,7 +267,7 @@ async def create(uow: UnitOfWork, actor: Principal, new: NewOpportunity) -> Oppo
     await trace.append(
         uow,
         actor=actor.actor,
-        payload=OpportunitiesOpportunityCreated(),
+        payload=OpportunitiesOpportunityCreated(from_import=from_import),
         subject_type=SUBJECT_TYPE,
         subject_id=opportunity_id,
         opportunity_id=opportunity_id,
@@ -395,10 +399,8 @@ async def _change_member(
             raise _stale()
         return await _detail(uow, actor, record, members, resource)
 
-    if not removing and user_id not in await identity.user_names(
-        uow, [user_id], with_roles_only=True
-    ):
-        raise InvalidCollaboratorError("Only users who hold a role can be collaborators.")
+    if not removing and user_id not in await identity.user_names(uow, [user_id]):
+        raise InvalidCollaboratorError("Only users who have signed in can be collaborators.")
 
     new_version = await repository.bump_row_version(uow, opportunity_id, expected)
     if new_version is None:

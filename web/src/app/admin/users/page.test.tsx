@@ -1,12 +1,13 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AdminUser } from "@/app/admin/users/actions";
+import type { AdminUser } from "@/lib/admin";
 import type { MeResult } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
 import { axeViolations } from "@/test/axe";
+import { permissionsFor } from "@/test/permissions";
 
 const getMe = vi.hoisted(() => vi.fn<() => Promise<MeResult>>());
 const apiGet = vi.hoisted(() => vi.fn());
@@ -14,8 +15,6 @@ vi.mock("@/lib/api/server", () => ({
   getMe,
   createServerApiClient: async () => ({ GET: apiGet }),
 }));
-const changeRole = vi.hoisted(() => vi.fn());
-vi.mock("@/app/admin/users/actions", () => ({ changeRole, loadUser: vi.fn() }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
     throw new Error(`NEXT_REDIRECT ${href}`);
@@ -42,6 +41,7 @@ function signedIn(roles: Role[]) {
       name: "[ADMIN]",
       email: "admin@example.invalid",
       roles,
+      permissions: permissionsFor(roles),
     },
   });
 }
@@ -52,7 +52,6 @@ const TARGET: AdminUser = {
   email: "target@example.invalid",
   roles: ["commercial"],
   row_version: 2,
-  last_changed_by: null,
 };
 
 function listed(items: AdminUser[], total = items.length, page = 1) {
@@ -67,7 +66,6 @@ const searchParams = (page?: string) => Promise.resolve(page ? { page } : {});
 beforeEach(() => {
   getMe.mockReset();
   apiGet.mockReset();
-  changeRole.mockReset();
   redirect.mockClear();
 });
 
@@ -121,35 +119,48 @@ describe("/admin/users", () => {
     listed([], 0);
     renderPage(await AdminUsersPage({ searchParams: searchParams() }));
     expect(screen.getByText("No users yet.")).toBeTruthy();
-    expect(screen.queryByText(/ of /)).toBeNull();
+    expect(screen.queryByText(/^\d+–\d+ of \d+$/)).toBeNull();
     expect(redirect).not.toHaveBeenCalled();
   });
 
-  it("opens the inspector in the right pane and saves a toggle", async () => {
+  it("opens a read-only inspector with the roles as of last sign-in and an Auth0 link", async () => {
     signedIn(["platform_administrator"]);
     listed([TARGET]);
-    changeRole.mockResolvedValue({
-      kind: "ok",
-      user: { ...TARGET, roles: ["commercial", "pm_reviewer"], row_version: 3 },
-    });
+    vi.stubEnv("AUTH0_DOMAIN", "psa-test.eu.auth0.com");
     const user = userEvent.setup();
     const { container } = renderPage(await AdminUsersPage({ searchParams: searchParams() }));
+    vi.unstubAllEnvs();
 
+    expect(screen.getByText(/shown as of each person's last sign-in/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "[TARGET]" }));
     const pane = await screen.findByRole("complementary", { name: "Details" });
     expect(within(pane).queryByText("Nothing selected.")).toBeNull();
-    expect(within(pane).getAllByRole("switch")).toHaveLength(9);
-
-    await user.click(within(pane).getByRole("switch", { name: "PM reviewer" }));
-    expect(changeRole).toHaveBeenCalledWith({
-      userId: TARGET.id,
-      role: "pm_reviewer",
-      assigned: true,
-      rowVersion: 2,
-    });
-    // The list row reflects the stored user.
-    await waitFor(() => expect(screen.getByText("Commercial, PM reviewer")).toBeTruthy());
+    expect(within(pane).getByRole("heading", { name: "Roles as of last sign-in" })).toBeTruthy();
+    expect(within(pane).getByText("Commercial")).toBeTruthy();
+    expect(within(pane).queryAllByRole("switch")).toHaveLength(0);
+    expect(within(pane).queryAllByRole("checkbox")).toHaveLength(0);
+    const links = screen.getAllByRole("link", { name: /Manage roles in Auth0/ });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toBe("https://manage.auth0.com/dashboard/eu/psa-test/users");
+    }
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the Admin gate is the identity.user.list permission, not the role", async () => {
+    getMe.mockResolvedValue({
+      kind: "ok",
+      me: {
+        id: "00000000-0000-7000-8000-000000000000",
+        name: "[ADMIN]",
+        email: "admin@example.invalid",
+        roles: ["platform_administrator"],
+        permissions: [],
+      },
+    });
+    renderPage(await AdminUsersPage({ searchParams: searchParams() }));
+    expect(screen.getByText("You don't have access to this page")).toBeTruthy();
+    expect(apiGet).not.toHaveBeenCalled();
   });
 
   it("non-admins see the access message and the API is never called", async () => {

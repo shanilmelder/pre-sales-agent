@@ -294,7 +294,7 @@ describe("the inspector's focus", () => {
   function renderWithToggle(initial: TracePage) {
     return render(
       <ShellProviders singleKeyShortcuts>
-        <KeyboardShortcuts roles={["presales_engineer"]} />
+        <KeyboardShortcuts permissions={["opportunities.opportunity.create"]} />
         <PaneToggle />
         <TraceSection opportunityId={OPP_ID} page={initial} filters={{}} now={NOW} />
         <RightPane />

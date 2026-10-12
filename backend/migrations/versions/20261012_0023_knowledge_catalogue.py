@@ -6,8 +6,8 @@
 - `knowledge_catalogue_entry_versions`: immutable name and definition per version, unique
   `(entry_id, version)`. `psa_app`: SELECT, INSERT only.
 
-Revision ID: 0019_knowledge_catalogue
-Revises: 0018_assessments_cancel
+Revision ID: 0023_knowledge_catalogue
+Revises: 0022_estimates_from_assessments
 Create Date: 2026-10-06
 """
 
@@ -16,8 +16,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0019_knowledge_catalogue"
-down_revision: str | None = "0018_assessments_cancel"
+revision: str = "0023_knowledge_catalogue"
+down_revision: str | None = "0022_estimates_from_assessments"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

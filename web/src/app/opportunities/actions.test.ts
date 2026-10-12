@@ -25,11 +25,14 @@ import {
   confirmRequirement,
   createOpportunity,
   editClarificationQuestion,
+  editEstimateLine,
   editRequirement,
   getPassage,
+  importFile,
   loadAssessments,
   loadEstimate,
   loadGaps,
+  loadImport,
   loadRedTeam,
   loadRequirements,
   loadSources,
@@ -109,6 +112,91 @@ describe("createOpportunity", () => {
     api.POST.mockRejectedValueOnce(new Error("network"));
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await createOpportunity(INPUT)).toEqual({ kind: "error" });
+  });
+});
+
+describe("createOpportunity with an import", () => {
+  const IMPORT_ID = "00000000-0000-7000-8000-0000000000e1";
+
+  it("sends the import id", async () => {
+    api.POST.mockResolvedValue({ data: OPPORTUNITY, response: status(201) });
+    expect(await createOpportunity({ ...INPUT, importId: IMPORT_ID })).toEqual({
+      kind: "ok",
+      id: OPP_ID,
+    });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities", {
+      body: { ...INPUT, title: null, import_id: IMPORT_ID },
+    });
+  });
+
+  it.each([404, 409, 410])("maps %i for the import to import-unusable", async (code) => {
+    api.POST.mockResolvedValueOnce({ error: { code: "x" }, response: status(code) });
+    expect(await createOpportunity({ ...INPUT, importId: IMPORT_ID })).toEqual({
+      kind: "import-unusable",
+    });
+  });
+
+  it("refuses a malformed import id without calling the API", async () => {
+    expect(await createOpportunity({ ...INPUT, importId: "nope" })).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("importFile and loadImport", () => {
+  const IMPORTED = {
+    id: "00000000-0000-7000-8000-0000000000e1",
+    filename: "follow-up.eml",
+    size_bytes: 10,
+    status: "queued",
+    error_code: null,
+    suggestions: null,
+    created_at: "2026-10-06T10:00:00Z",
+  };
+
+  function form(file: File | null = new File(["From: x"], "follow-up.eml")) {
+    const data = new FormData();
+    if (file !== null) data.append("file", file);
+    return data;
+  }
+
+  it("posts the file as multipart to the imports", async () => {
+    api.POST.mockResolvedValue({ data: IMPORTED, response: status(202) });
+    expect(await importFile(form())).toEqual({ kind: "ok", import: IMPORTED });
+    const [path, init] = api.POST.mock.calls[0];
+    expect(path).toBe("/api/v1/opportunity-imports");
+    const file = (init.bodySerializer(init.body) as FormData).get("file") as File;
+    expect(file.name).toBe("follow-up.eml");
+    expect(await file.text()).toBe("From: x");
+  });
+
+  it("passes on the API's rejection sentence for 413, 415 and 422", async () => {
+    for (const [code, detail] of [
+      [415, "Rejected: .exe files aren't allowed"],
+      [413, "Rejected: larger than 50 MB"],
+      [422, "Rejected: this file is empty"],
+    ] as const) {
+      api.POST.mockResolvedValueOnce({ error: { code: "x", detail }, response: status(code) });
+      expect(await importFile(form())).toEqual({ kind: "rejected", reason: detail });
+    }
+    api.POST.mockResolvedValueOnce({ error: { code: "forbidden" }, response: status(403) });
+    expect(await importFile(form())).toEqual({ kind: "forbidden" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await importFile(form())).toEqual({ kind: "error" });
+    expect(await importFile(form(null))).toEqual({ kind: "error" });
+  });
+
+  it("reads an import, and 404/410 are gone", async () => {
+    api.GET.mockResolvedValueOnce({ data: IMPORTED, response: status(200) });
+    expect(await loadImport(IMPORTED.id)).toEqual({ kind: "ok", import: IMPORTED });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunity-imports/{import_id}", {
+      params: { path: { import_id: IMPORTED.id } },
+    });
+    api.GET.mockResolvedValueOnce({ error: { code: "import_expired" }, response: status(410) });
+    expect(await loadImport(IMPORTED.id)).toEqual({ kind: "gone" });
+    api.GET.mockResolvedValueOnce({ error: { code: "not_found" }, response: status(404) });
+    expect(await loadImport(IMPORTED.id)).toEqual({ kind: "gone" });
+    expect(await loadImport("nope")).toEqual({ kind: "error" });
   });
 });
 
@@ -1256,5 +1344,133 @@ describe("editClarificationQuestion / approveClarificationQuestion / approveAll"
         },
       ],
     ]);
+  });
+});
+
+describe("editEstimateLine", () => {
+  const LID = "00000000-0000-7000-8000-0000000000b1";
+  const INPUT = {
+    opportunityId: OPP_ID,
+    lineId: LID,
+    rowVersion: 1,
+    effortHours: 32,
+    reason: "[REASON]",
+  };
+  const ESTIMATE = { version: { sections: [] }, draft: null };
+
+  beforeEach(() => {
+    api.PATCH.mockReset();
+    api.GET.mockReset();
+  });
+
+  it("patches with If-Match and only the given values, and returns the Estimate", async () => {
+    api.PATCH.mockResolvedValue({
+      data: ESTIMATE,
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "ok",
+      estimate: ESTIMATE,
+    });
+    expect(api.PATCH).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, line_id: LID },
+          header: { "If-Match": '"1"' },
+        },
+        body: { effort_hours: 32, reason: "[REASON]" },
+      },
+    );
+  });
+
+  it("sends a role mix on its own", async () => {
+    api.PATCH.mockResolvedValue({
+      data: ESTIMATE,
+      response: new Response(null, { status: 200 }),
+    });
+    const roleMix = { engineer: 40, project_manager: 40, qa: 20 };
+    await editEstimateLine({ ...INPUT, effortHours: undefined, roleMix });
+    expect(api.PATCH.mock.calls[0][1].body).toEqual({
+      role_mix: roleMix,
+      reason: "[REASON]",
+    });
+  });
+
+  it("on 412 passes the API's sentence on, without reading anything again", async () => {
+    api.PATCH.mockResolvedValueOnce({
+      error: {
+        code: "row_version_mismatch",
+        detail: "Changed by [OTHER] since you opened it.",
+      },
+      response: new Response(null, { status: 412 }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "stale",
+      message: "Changed by [OTHER] since you opened it.",
+    });
+    api.PATCH.mockResolvedValueOnce({
+      error: { code: "row_version_mismatch" },
+      response: new Response(null, { status: 412 }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "stale",
+      message: "Changed by someone else since you opened it.",
+    });
+    expect(api.GET).not.toHaveBeenCalled();
+  });
+
+  it("on 422 passes the API's sentence on, but not a field list", async () => {
+    const reject = (detail: string) =>
+      api.PATCH.mockResolvedValueOnce({
+        error: { code: "validation_error", detail },
+        response: new Response(null, { status: 422 }),
+      });
+    reject("Role mix must name every role and add up to 100%.");
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "invalid",
+      detail: "Role mix must name every role and add up to 100%.",
+    });
+    reject("Invalid fields: body.reason");
+    expect(await editEstimateLine(INPUT)).toEqual({
+      kind: "invalid",
+      detail: "The change was not accepted.",
+    });
+  });
+
+  it.each([
+    [409, "not-draft"],
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.PATCH.mockResolvedValue({
+      error: { code: "x" },
+      response: new Response(null, { status }),
+    });
+    expect(await editEstimateLine(INPUT)).toEqual({ kind });
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    for (const bad of [
+      { ...INPUT, lineId: "nope" },
+      { ...INPUT, rowVersion: 1.5 },
+      { ...INPUT, effortHours: undefined },
+      { ...INPUT, effortHours: Number.NaN },
+      { ...INPUT, reason: undefined },
+      { ...INPUT, roleMix: { engineer: 100 } },
+      null,
+    ]) {
+      expect(await editEstimateLine(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.PATCH).not.toHaveBeenCalled();
+  });
+
+  it("is an error when the call throws, logging no reason", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    api.PATCH.mockRejectedValueOnce(new Error("network"));
+    expect(await editEstimateLine(INPUT)).toEqual({ kind: "error" });
+    expect(JSON.stringify(log.mock.calls)).not.toContain("[REASON]");
   });
 });

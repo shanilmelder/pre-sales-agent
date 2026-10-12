@@ -7,6 +7,12 @@ before the request's Unit of Work opens: no network I/O happens inside an open U
 
 Name and email come from namespaced claims a Post-Login Action adds (see README). A token
 without the email claim is rejected; a missing name falls back to the email.
+
+Authorization data also comes from the token (AD-15): Auth0 RBAC's `permissions` claim
+("Add Permissions in the Access Token") and the namespaced roles claim the Post-Login Action
+adds. Both must be lists of strings. A missing claim grants nothing (never a 401); a
+malformed claim, or a non-string item in one, is dropped here and reported in
+`TokenIdentity.malformed_claims`, so provisioning can log it with the platform user id.
 """
 
 import asyncio
@@ -30,6 +36,8 @@ ALGORITHM = "RS256"
 CLAIM_NAMESPACE = "https://pre-sales-agent/"
 NAME_CLAIM = f"{CLAIM_NAMESPACE}name"
 EMAIL_CLAIM = f"{CLAIM_NAMESPACE}email"
+ROLES_CLAIM = f"{CLAIM_NAMESPACE}roles"
+PERMISSIONS_CLAIM = "permissions"
 REQUIRED_CLAIMS = ["exp", "iss", "aud", "sub"]
 
 _log = get_logger(__name__)
@@ -48,6 +56,12 @@ class TokenIdentity:
     sub: str
     name: str
     email: str
+    roles: tuple[str, ...] = ()
+    """Raw role names from the roles claim; unknown values are filtered by provisioning."""
+    permissions: tuple[str, ...] = ()
+    """Raw permission names from the `permissions` claim; filtered by provisioning."""
+    malformed_claims: tuple[str, ...] = ()
+    """Claims that were not lists of strings (wholly or partly dropped)."""
 
 
 class TokenValidator:
@@ -116,7 +130,32 @@ def _identity(claims: dict[str, Any]) -> TokenIdentity:
     name = claims.get(NAME_CLAIM)
     if not isinstance(name, str) or not name.strip():
         name = email
-    return TokenIdentity(sub=sub, name=name.strip(), email=email.strip())
+    malformed: list[str] = []
+    roles = _string_list(claims, ROLES_CLAIM, malformed)
+    permissions = _string_list(claims, PERMISSIONS_CLAIM, malformed)
+    return TokenIdentity(
+        sub=sub,
+        name=name.strip(),
+        email=email.strip(),
+        roles=roles,
+        permissions=permissions,
+        malformed_claims=tuple(malformed),
+    )
+
+
+def _string_list(claims: dict[str, Any], claim: str, malformed: list[str]) -> tuple[str, ...]:
+    """The claim's string items. Absent: empty. Not a list, or holding non-strings: the
+    strings it has (none if not a list), and the claim is recorded as malformed."""
+    value = claims.get(claim)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        malformed.append(claim)
+        return ()
+    items = tuple(item for item in value if isinstance(item, str))
+    if len(items) != len(value):
+        malformed.append(claim)
+    return items
 
 
 _bearer = HTTPBearer(auto_error=False, description="Auth0 access token for the API audience.")

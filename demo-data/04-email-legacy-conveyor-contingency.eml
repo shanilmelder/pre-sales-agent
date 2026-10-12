@@ -1,0 +1,36 @@
+From: Priya Raman <priya.raman@meridianfresh.example>
+To: Alex Chen <alex.chen@vendor.example>
+Subject: RE: Riverside DC - existing conveyor and sortation gear
+Date: Mon, 28 Sep 2026 11:05:44 +0100
+Message-ID: <riverside-conveyor-0928@meridianfresh.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+Following up on your question about the existing conveyor and sortation line at
+Riverside.
+
+- The conveyor and sortation equipment was installed in 2011 by a supplier that no
+  longer exists, and nobody on our side has opened its control cabinet in years.
+  It's old enough, and been patched enough times by different contractors over
+  the years, that we genuinely don't know what's in there any more.
+- We'd like your system to drive diverts on this conveyor for the new
+  goods-to-person zone rather than replace it, since replacing it isn't in this
+  phase's budget.
+- Even once your engineers get hands-on with the cabinet, we'd expect how much
+  rework your team finds to vary a lot: on a straightforward day it might just be
+  a single modern PLC talking a standard protocol; on a bad day it might turn out
+  to be two or three generations of patched-together controls with custom relay
+  logic that takes far more effort to interface with safely. Nobody, including us,
+  will know which it is until your team is actually in there working on it.
+- So this isn't really something we can answer for you in advance — we'd expect
+  your price to carry some built-in allowance for that uncertainty rather than
+  assume the easy case.
+
+Let us know if you need anything else from us before you price this.
+
+Regards,
+Priya Raman
+Operations, Meridian Fresh Foods

@@ -40,6 +40,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "estimates.assumption.proposed": "Assumptions proposed",
   "estimates.assumption.accepted": "Assumption accepted",
   "estimates.estimate_version.exported": "Estimate exported",
+  "estimates.estimate_line.edited": "Estimate line edited",
   "assessments.red_team_review.completed": "Red Team Review completed",
   "assessments.assessment_run.started": "Assessment run started",
   "assessments.assessment.completed": "Assessment completed",
@@ -49,6 +50,8 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "knowledge.catalogue_entry.updated": "Catalogue entry updated",
   "knowledge.catalogue_entry.retired": "Catalogue entry retired",
   "knowledge.catalogue_entry.reactivated": "Catalogue entry reactivated",
+  "conflicts.conflict.detected": "Conflict detected",
+  "conflicts.conflict.resolved": "Conflict resolved",
 };
 
 /** An event type in plain words, or the raw type for one this build doesn't know. */
@@ -73,10 +76,12 @@ export const SUBJECTS: Readonly<
   },
   "estimates.estimate_version": { label: "Estimate Version", tab: "estimate" },
   "estimates.assumption": { label: "Assumption", tab: "estimate" },
+  "estimates.estimate_line": { label: "Estimate line", tab: "estimate" },
   "assessments.review": { label: "Red Team Review", tab: "assessments" },
   "assessments.assessment_run": { label: "Assessment run", tab: "assessments" },
   "assessments.assessment": { label: "Assessment", tab: "assessments" },
   "knowledge.catalogue_entry": { label: "Catalogue entry", tab: null },
+  "conflicts.conflict": { label: "Conflict", tab: "conflicts" },
 };
 
 export function subjectLabel(subjectType: string): string {
@@ -130,6 +135,10 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   version_id: "Estimate Version id",
   requirement_ids: "Requirement ids",
   approved_by: "Approved by (user id)",
+  before_hours: "Before (hours)",
+  after_hours: "After (hours)",
+  before_role_mix: "Before (role mix %)",
+  after_role_mix: "After (role mix %)",
 };
 
 /** A payload field name in words: `gap_count` -> "Gap count", `line_id` -> "Line id". */

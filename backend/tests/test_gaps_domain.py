@@ -19,11 +19,13 @@ from app.modules.gaps.domain.gaps import (
     QUESTION_MAX,
     TITLE_MAX,
     TOPIC_MAX,
+    UNKNOWN_TO_CUSTOMER,
     WHY_MAX,
     Candidate,
     GapCategory,
     Impact,
     impact_rank,
+    mark_unknown_to_customer,
     trigger,
     validate_candidate,
     validate_candidates,
@@ -181,3 +183,21 @@ def test_the_output_schema_lists_every_category_and_impact() -> None:
         assert category.value in schema
     for impact in Impact:
         assert impact.value in schema
+
+
+def test_a_gap_the_customer_cannot_answer_is_marked() -> None:
+    assert mark_unknown_to_customer("  Nobody knows the slab thickness. ") == (
+        "Unknown to the customer: Nobody knows the slab thickness."
+    )
+
+
+def test_an_already_marked_gap_is_not_marked_twice() -> None:
+    why = "unknown to the customer: nobody knows the slab thickness."
+    assert mark_unknown_to_customer(why) == why
+
+
+def test_a_mark_that_would_break_the_limit_is_left_off() -> None:
+    longest = "x" * (WHY_MAX - len(UNKNOWN_TO_CUSTOMER))
+    assert mark_unknown_to_customer(longest) == longest
+    fits = "x" * (WHY_MAX - len(UNKNOWN_TO_CUSTOMER) - 1)
+    assert mark_unknown_to_customer(fits) == f"{UNKNOWN_TO_CUSTOMER} {fits}"

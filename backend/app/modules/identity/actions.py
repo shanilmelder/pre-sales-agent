@@ -1,7 +1,8 @@
 """The action catalogue (AD-15): every authorizable action, in one place.
 
 Names follow `<module>.<entity>.<verb>` and match the command that performs them. The
-Agent Registry reuses these names later.
+Agent Registry reuses these names later. Auth0 RBAC permissions use the same names: a token
+whose `permissions` claim holds an action's value is granted that action.
 """
 
 import re
@@ -13,8 +14,6 @@ ACTION_NAME_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 
 class Action(StrEnum):
     USER_LIST = "identity.user.list"
-    USER_ASSIGN_ROLE = "identity.user.assign_role"
-    USER_REMOVE_ROLE = "identity.user.remove_role"
     USER_SEARCH = "identity.user.search"
     OPPORTUNITY_CREATE = "opportunities.opportunity.create"
     OPPORTUNITY_READ = "opportunities.opportunity.read"
@@ -35,3 +34,4 @@ class Action(StrEnum):
     CATALOGUE_ENTRY_EDIT = "knowledge.catalogue_entry.edit"
     CATALOGUE_ENTRY_RETIRE = "knowledge.catalogue_entry.retire"
     CATALOGUE_ENTRY_REACTIVATE = "knowledge.catalogue_entry.reactivate"
+    ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"

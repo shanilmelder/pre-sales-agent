@@ -1,7 +1,7 @@
 """User search and name lookup (Story 1.7).
 
-`search_users` backs the collaborator picker (presales engineers): it matches the name or
-email of users who hold at least one role, for queries of at least two characters.
+`search_users` backs the collaborator picker (callers with `identity.user.search`): it
+matches the name or email of any provisioned user, for queries of at least two characters.
 `user_names` lets other modules (through `public.py`) show names for user ids they store,
 without reading identity's tables.
 """
@@ -51,8 +51,8 @@ async def search_users(
 
 
 async def user_names(
-    uow: UnitOfWork, ids: list[UUID] | set[UUID] | frozenset[UUID], *, with_roles_only: bool = False
+    uow: UnitOfWork, ids: list[UUID] | set[UUID] | frozenset[UUID]
 ) -> dict[UUID, str]:
-    """`{user_id: name}` for the ids that exist; with `with_roles_only`, only for users who
-    hold at least one role. No authorization: callers decide what they may show."""
-    return await repository.user_names(uow, sorted(set(ids)), with_roles_only=with_roles_only)
+    """`{user_id: name}` for the ids that exist. No authorization: callers decide what they
+    may show."""
+    return await repository.user_names(uow, sorted(set(ids)))

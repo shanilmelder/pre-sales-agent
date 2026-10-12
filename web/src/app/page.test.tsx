@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { permissionsFor } from "@/test/permissions";
 
 import type { Me, MeResult } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
@@ -52,6 +53,7 @@ function me(roles: Role[]): Me {
     name: "[USER]",
     email: "user@example.invalid",
     roles,
+    permissions: permissionsFor(roles),
   };
 }
 
