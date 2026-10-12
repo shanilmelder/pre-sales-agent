@@ -224,3 +224,19 @@ forbidden_modules = [
 # Story 6.3: only the routes hand estimates' public decision functions to the commands.
 ignore_imports = ["app.modules.conflicts.api.routes -> app.modules.estimates.application.public"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "knowledge uses identity only through its public API (AD-2)"
+type = "forbidden"
+source_modules = ["app.modules.knowledge"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities",
+    "app.modules.intake",
+    "app.modules.gaps",
+    "app.modules.estimates",
+    "app.modules.assessments",
+]
+allow_indirect_imports = true

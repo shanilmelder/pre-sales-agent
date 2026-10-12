@@ -21,6 +21,7 @@ from app.modules.identity.api.user_routes import router as identity_user_router
 from app.modules.identity.application.public import TokenValidator
 from app.modules.intake.api.routes import requirements_router as intake_requirements_router
 from app.modules.intake.api.routes import router as intake_router
+from app.modules.knowledge.api.routes import router as knowledge_router
 from app.modules.opportunities.api.imports_routes import router as opportunity_imports_router
 from app.modules.opportunities.api.routes import router as opportunities_router
 from app.platform.config import Settings, get_settings
@@ -123,6 +124,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(gaps_router, prefix=API_PREFIX)
     app.include_router(estimates_router, prefix=API_PREFIX)
     app.include_router(assessments_router, prefix=API_PREFIX)
+    app.include_router(knowledge_router, prefix=API_PREFIX)
     app.include_router(conflicts_router, prefix=API_PREFIX)
     return app
 

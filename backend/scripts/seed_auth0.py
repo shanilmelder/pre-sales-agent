@@ -33,7 +33,18 @@ from app.modules.identity.actions import Action
 from app.modules.identity.domain.roles import Role
 
 ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
-    Role.PLATFORM_ADMINISTRATOR: frozenset({Action.USER_LIST, Action.OPPORTUNITY_READ}),
+    Role.PLATFORM_ADMINISTRATOR: frozenset(
+        {
+            Action.USER_LIST,
+            Action.OPPORTUNITY_READ,
+            # Writing the Integration Type and Work Package catalogue (Story 3.1): platform
+            # administrators only. Reading it needs only a role.
+            Action.CATALOGUE_ENTRY_CREATE,
+            Action.CATALOGUE_ENTRY_EDIT,
+            Action.CATALOGUE_ENTRY_RETIRE,
+            Action.CATALOGUE_ENTRY_REACTIVATE,
+        }
+    ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
     Role.HEAD_OF_DELIVERY: frozenset({Action.OPPORTUNITY_READ}),
 }
@@ -46,6 +57,10 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.USER_LIST: "List users and their roles (Admin > Users & roles)",
     Action.USER_SEARCH: "Search users to pick Opportunity collaborators",
     Action.OPPORTUNITY_CREATE: "Create Opportunities",
+    Action.CATALOGUE_ENTRY_CREATE: "Create Integration Type and Work Package catalogue entries",
+    Action.CATALOGUE_ENTRY_EDIT: "Edit catalogue entries",
+    Action.CATALOGUE_ENTRY_RETIRE: "Retire catalogue entries",
+    Action.CATALOGUE_ENTRY_REACTIVATE: "Reactivate retired catalogue entries",
     Action.OPPORTUNITY_READ: "Read every Opportunity",
 }
 

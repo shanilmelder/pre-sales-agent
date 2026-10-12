@@ -3,7 +3,14 @@
 import type { Permission, Role } from "@/lib/navigation";
 
 const SEED: Partial<Record<Role, readonly Permission[]>> = {
-  platform_administrator: ["identity.user.list", "opportunities.opportunity.read"],
+  platform_administrator: [
+    "identity.user.list",
+    "knowledge.catalogue_entry.create",
+    "knowledge.catalogue_entry.edit",
+    "knowledge.catalogue_entry.reactivate",
+    "knowledge.catalogue_entry.retire",
+    "opportunities.opportunity.read",
+  ],
   presales_engineer: ["identity.user.search", "opportunities.opportunity.create"],
   head_of_delivery: ["opportunities.opportunity.read"],
 };

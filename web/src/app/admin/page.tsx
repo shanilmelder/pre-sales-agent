@@ -8,7 +8,7 @@ import { isAdmin } from "@/lib/navigation";
 
 export const metadata: Metadata = { title: "Admin · Pre-Sales Agent" };
 
-/** Admin's only section so far is Users & roles: administrators go straight there. */
+/** Administrators go straight to the first section, Users & roles (Catalogue is next to it). */
 export default async function AdminPage() {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;

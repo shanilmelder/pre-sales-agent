@@ -218,7 +218,9 @@ session and the Auth0 session.
 5. **APIs > (your API) > Permissions.** Add one permission per API action that a role
    grants on its own (the name must equal the action exactly):
    `identity.user.list`, `identity.user.search`, `opportunities.opportunity.create`,
-   `opportunities.opportunity.read`.
+   `opportunities.opportunity.read`, `knowledge.catalogue_entry.create`,
+   `knowledge.catalogue_entry.edit`, `knowledge.catalogue_entry.retire`,
+   `knowledge.catalogue_entry.reactivate`.
 6. **User Management > Roles.** Create the nine roles with these exact names (the API
    ignores any other name): `presales_engineer`, `sales_representative`,
    `engineering_reviewer`, `pm_reviewer`, `security_reviewer`, `commercial`,
@@ -228,7 +230,7 @@ session and the Auth0 session.
 
    | Role | Permissions |
    | --- | --- |
-   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read` |
+   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*` permissions |
    | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
    | `head_of_delivery` | `opportunities.opportunity.read` |
 

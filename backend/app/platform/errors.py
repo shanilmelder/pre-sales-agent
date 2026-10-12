@@ -206,6 +206,14 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
+class CatalogueDuplicateError(ConflictError):
+    """A catalogue entry's code or name equals that of an active entry of the same kind
+    (Story 3.1)."""
+
+    code = "catalogue_duplicate"
+    title = "Catalogue entry already exists"
+
+
 class ConflictAlreadyResolvedError(ConflictError):
     """A Conflict was resolved or escalated after it was already resolved (Story 6.3)."""
 

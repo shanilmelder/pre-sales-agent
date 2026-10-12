@@ -36,8 +36,23 @@ def _principal(actor: Actor, roles: set[Role]) -> Principal:
 
 ADMIN = _principal(Actor("user", "u-admin"), {Role.PLATFORM_ADMINISTRATOR})
 ENGINEER = _principal(Actor("user", "u-pse"), {Role.PRESALES_ENGINEER})
-ADMIN_ONLY = (Action.USER_LIST,)
-MODULES = {"identity", "opportunities", "intake", "gaps", "estimates", "assessments", "conflicts"}
+ADMIN_ONLY = (
+    Action.USER_LIST,
+    Action.CATALOGUE_ENTRY_CREATE,
+    Action.CATALOGUE_ENTRY_EDIT,
+    Action.CATALOGUE_ENTRY_RETIRE,
+    Action.CATALOGUE_ENTRY_REACTIVATE,
+)
+MODULES = {
+    "identity",
+    "opportunities",
+    "intake",
+    "gaps",
+    "estimates",
+    "assessments",
+    "conflicts",
+    "knowledge",
+}
 
 
 def _user(
