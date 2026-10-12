@@ -89,3 +89,38 @@ describe("conflicts display", () => {
     expect(resolved.map((x) => x.id)).toEqual(["c"]);
   });
 });
+
+describe("decision display (Story 6.3)", () => {
+  it("reads entered hours as the API does", async () => {
+    const { isEnteredHours } = await import("@/lib/conflicts");
+    for (const ok of ["48", "48.5", "48 h", "0", "2000"]) expect(isEnteredHours(ok)).toBe(true);
+    for (const bad of ["about two days", "48.25", "-4", "2001", ""]) {
+      expect(isEnteredHours(bad)).toBe(false);
+    }
+  });
+
+  it("labels an escalation and an earlier decision", async () => {
+    const { escalatedLabel, previousDecisionLabel } = await import("@/lib/conflicts");
+    expect(escalatedLabel({ escalated_to: { id: "x", name: "Sam" } })).toBe("Escalated to Sam");
+    expect(escalatedLabel({ escalated_to: null })).toBeNull();
+    expect(
+      previousDecisionLabel({ previous_decision: { name: "Alex", resolved_at: "2026-10-07" } }),
+    ).toBe("Resolved earlier by Alex; positions have changed.");
+  });
+});
+
+describe("estimateEffect (Story 6.3)", () => {
+  it("says why a decision did not change the Estimate", async () => {
+    const { estimateEffect } = await import("@/lib/conflicts");
+    const base = { applied_hours: null } as unknown as Parameters<typeof estimateEffect>[0];
+    expect(estimateEffect({ ...base, not_applied: "not_permitted" })).toBe(
+      "Not applied: you can't edit the Estimate.",
+    );
+    expect(estimateEffect({ ...base, not_applied: "no_line" })).toBe(
+      "Not applied: no Estimate line covers it.",
+    );
+    expect(estimateEffect({ ...base, applied_hours: 100, not_applied: null })).toBe(
+      "Estimate line set to 100 h.",
+    );
+  });
+});

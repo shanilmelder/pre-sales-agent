@@ -206,6 +206,21 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
+class ConflictAlreadyResolvedError(ConflictError):
+    """A Conflict was resolved or escalated after it was already resolved (Story 6.3)."""
+
+    code = "conflict_already_resolved"
+    title = "Conflict already resolved"
+
+
+class ConflictNotOpenError(ConflictError):
+    """A Conflict was escalated that is no longer `open`: it is already escalated (Story
+    6.3)."""
+
+    code = "conflict_not_open"
+    title = "Conflict not open"
+
+
 class ImportConsumedError(ConflictError):
     """An Opportunity import was already used to create an Opportunity (Story 1.7 import)."""
 

@@ -28,6 +28,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from app.modules.conflicts.application.public import AppliedDecision, NotApplied
 from app.modules.estimates.adapters import repository as repo
 from app.modules.estimates.adapters.repository import LineRecord, VersionRecord
 from app.modules.estimates.application.models import EstimateLineChanges
@@ -37,10 +38,12 @@ from app.modules.estimates.domain.estimates import (
     LINE_SUBJECT_TYPE,
     MIX_RULE,
     NOTHING_RULE,
+    REASON_MAX,
     REASON_RULE,
     ROLES,
     VersionStatus,
     edit_reason,
+    round_effort,
     valid_edit_effort,
     valid_mix,
 )
@@ -48,6 +51,7 @@ from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.opportunities.application import public as opportunities
 from app.platform import trace
+from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
     EstimateVersionNotDraftError,
@@ -233,3 +237,93 @@ async def carry_edits(
     if uncarried:
         await repo.set_uncarried_edit_count(uow, target_version_id, uncarried)
     return CarriedEdits(carried, uncarried)
+
+
+# --- a Conflict decision (Story 6.3) --------------------------------------------------------
+
+
+async def lock_for_decision(uow: UnitOfWork, opportunity_id: UUID) -> None:
+    """Take the Opportunity's draft lock until commit, before a Conflict decision that may
+    edit a line (the order an assessment run's end takes the Estimate and Conflicts locks)."""
+    await repo.lock_opportunity(uow, opportunity_id)
+
+
+async def apply_decision(
+    uow: UnitOfWork,
+    actor: Actor,
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    hours: Decimal,
+    reason: str,
+) -> AppliedDecision:
+    """Story 6.3: an `effort` Conflict decision sets `hours` on the current draft's line
+    covering the Requirement, as a line edit by `actor` with the decision's `reason` (the same
+    columns, trace and carrying as `edit_line`; the role mix is unchanged). Only when exactly
+    one line covers the Requirement and it covers nothing else; otherwise nothing changes and
+    the result says why. No authorization: the caller has authorized the decision and holds
+    the draft lock (`lock_for_decision`)."""
+    version = await repo.current_version(uow, opportunity_id)
+    if version is None:
+        return AppliedDecision(line_id=None, not_applied=NotApplied.NO_LINE)
+    lines = await repo.lines_of(uow, version.id)
+    covered: dict[UUID, set[UUID]] = {}
+    for link in await repo.links_for(uow, [line.id for line in lines]):
+        covered.setdefault(link.line_id, set()).add(link.requirement_id)
+    covering = [line for line in lines if requirement_id in covered.get(line.id, set())]
+    if not covering:
+        return AppliedDecision(line_id=None, not_applied=NotApplied.NO_LINE)
+    if len(covering) > 1:
+        return AppliedDecision(line_id=None, not_applied=NotApplied.SEVERAL_LINES)
+    (line,) = covering
+    if covered[line.id] != {requirement_id}:
+        return AppliedDecision(line_id=None, not_applied=NotApplied.SHARED_LINE)
+    # The agents' total is applied as is (to 0.1 h), even beyond the 2,000 h a typed edit allows.
+    rounded = round_effort(hours)
+    effort = line.effort_hours if rounded is None else rounded
+    user_id = UUID(actor.id)
+    if effort == line.effort_hours:
+        return AppliedDecision(line_id=line.id)
+    mix = _stored_mix(line.role_mix)
+    # A line edit's reason is at most 300 characters (8.2); the Conflict keeps the full one.
+    line_reason = reason if len(reason) <= REASON_MAX else reason[: REASON_MAX - 1].rstrip() + "…"
+    updated = await repo.edit_line(
+        uow,
+        line.id,
+        expected_row_version=line.row_version,
+        effort_hours=effort,
+        role_mix=mix,
+        user_id=user_id,
+        reason=line_reason,
+    )
+    if updated is None:  # pragma: no cover - the draft lock serialises edits
+        raise await _stale(uow, line)
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=EstimatesEstimateLineEdited(
+            version=version.version,
+            before_hours=float(line.effort_hours),
+            after_hours=float(effort),
+            before_role_mix=mix,
+            after_role_mix=mix,
+            reason=line_reason,
+        ),
+        subject_type=LINE_SUBJECT_TYPE,
+        subject_id=line.id,
+        opportunity_id=opportunity_id,
+        subject_version=updated.row_version,
+    )
+    _log.info(
+        "estimates.line_edited",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "version_id": str(version.id),
+            "line_id": str(line.id),
+            "actor_id": str(user_id),
+            "row_version": updated.row_version,
+            "effort_changed": True,
+            "mix_changed": False,
+            "from_conflict": True,
+        },
+    )
+    return AppliedDecision(line_id=line.id)

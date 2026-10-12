@@ -1,5 +1,5 @@
-"""Persistence for Conflicts and their positions (Story 6.1). Runs inside the caller's Unit
-of Work."""
+"""Persistence for Conflicts and their positions (Stories 6.1 and 6.3). Runs inside the
+caller's Unit of Work."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -7,11 +7,11 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, exists, func, insert, select, text, update
+from sqlalchemy import and_, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import aliased
 
 from app.modules.conflicts.adapters.models import ConflictRow, PositionRow
+from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork
 
 
@@ -32,6 +32,19 @@ class ConflictRecord:
     created_at: datetime
     summary: str = field(repr=False)
     resolution_reason: str | None = field(default=None, repr=False)
+    resolved_by: UUID | None = None
+    chosen_position: int | None = None
+    entered_position: str | None = field(default=None, repr=False)
+    applied_hours: Decimal | None = None
+    escalated_to: UUID | None = None
+    escalated_by: UUID | None = None
+    escalated_at: datetime | None = None
+    escalation_reason: str | None = field(default=None, repr=False)
+
+    @property
+    def decided(self) -> bool:
+        """Resolved by a person (Story 6.3), not by the system."""
+        return self.status == "resolved" and self.resolved_by is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +102,14 @@ def _conflict(row: ConflictRow) -> ConflictRecord:
         created_at=row.created_at,
         summary=row.summary,
         resolution_reason=row.resolution_reason,
+        resolved_by=row.resolved_by,
+        chosen_position=row.chosen_position,
+        entered_position=row.entered_position,
+        applied_hours=row.applied_hours,
+        escalated_to=row.escalated_to,
+        escalated_by=row.escalated_by,
+        escalated_at=row.escalated_at,
+        escalation_reason=row.escalation_reason,
     )
 
 
@@ -106,9 +127,12 @@ async def insert_conflict(
     summary: str,
     previous_conflict_id: UUID | None,
     positions: Sequence[NewPosition],
+    escalation: ConflictRecord | None = None,
 ) -> bool:
     """Insert an `open` Conflict with its positions unless the run's detection pass already
-    has one with this fingerprint. True when inserted."""
+    has one with this fingerprint. True when inserted. With `escalation` (Story 6.3: an
+    escalated Conflict re-raised with changed positions), it is inserted `escalated` with
+    that Conflict's reviewer, reason, who and when."""
     inserted = (
         await uow.session.execute(
             pg_insert(ConflictRow)
@@ -119,7 +143,11 @@ async def insert_conflict(
                 detection_pass=detection_pass,
                 type=type,
                 severity=severity,
-                status="open",
+                status="open" if escalation is None else "escalated",
+                escalated_to=None if escalation is None else escalation.escalated_to,
+                escalated_by=None if escalation is None else escalation.escalated_by,
+                escalated_at=None if escalation is None else escalation.escalated_at,
+                escalation_reason=None if escalation is None else escalation.escalation_reason,
                 detected_by=detected_by,
                 fingerprint=fingerprint,
                 summary=summary,
@@ -204,10 +232,11 @@ async def open_conflicts(
 
 
 async def resolve(uow: UnitOfWork, conflict_id: UUID, *, reason: str) -> bool:
-    """Mark an `open` Conflict `resolved` with the reason; True when it changed."""
+    """The system marks an `open` or `escalated` Conflict `resolved` with the reason; True
+    when it changed. An escalation's columns stay as they were."""
     changed = await uow.session.execute(
         update(ConflictRow)
-        .where(ConflictRow.id == conflict_id, ConflictRow.status == "open")
+        .where(ConflictRow.id == conflict_id, ConflictRow.status.in_(["open", "escalated"]))
         .values(
             status="resolved",
             resolution_reason=reason,
@@ -220,16 +249,139 @@ async def resolve(uow: UnitOfWork, conflict_id: UUID, *, reason: str) -> bool:
     return changed.scalar_one_or_none() is not None
 
 
-async def listed_conflicts(uow: UnitOfWork, opportunity_id: UUID) -> list[ConflictRecord]:
-    """The Opportunity's Conflicts, except those carried forward (a newer Conflict links
-    them as its previous one)."""
-    newer = aliased(ConflictRow)
+async def get(uow: UnitOfWork, conflict_id: UUID) -> ConflictRecord | None:
+    row = (
+        await uow.session.execute(
+            select(ConflictRow)
+            .where(ConflictRow.id == conflict_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _conflict(row)
+
+
+async def latest_with_fingerprint(
+    uow: UnitOfWork, opportunity_id: UUID, fingerprint: str, *, besides: tuple[UUID, int]
+) -> ConflictRecord | None:
+    """The Opportunity's newest Conflict with this fingerprint, in any status, from another
+    run or detection pass than `besides` (run id, pass)."""
+    run_id, detection_pass = besides
+    row = (
+        await uow.session.execute(
+            select(ConflictRow)
+            .where(
+                ConflictRow.opportunity_id == opportunity_id,
+                ConflictRow.fingerprint == fingerprint,
+                ~and_(
+                    ConflictRow.run_id == run_id,
+                    ConflictRow.detection_pass == detection_pass,
+                ),
+            )
+            .order_by(ConflictRow.created_at.desc(), ConflictRow.detection_pass.desc())
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _conflict(row)
+
+
+async def decide(
+    uow: UnitOfWork,
+    conflict_id: UUID,
+    *,
+    expected_row_version: int,
+    user_id: UUID,
+    reason: str,
+    chosen_position: int | None,
+    entered_position: str | None,
+    applied_hours: Decimal | None,
+) -> int | None:
+    """A person resolves an `open` or `escalated` Conflict at `expected_row_version` with
+    their decision. The new row version, or None (and no change) when it is at another
+    version or already resolved."""
+    changed = await uow.session.execute(
+        update(ConflictRow)
+        .where(
+            ConflictRow.id == conflict_id,
+            ConflictRow.row_version == expected_row_version,
+            ConflictRow.status.in_(["open", "escalated"]),
+        )
+        .values(
+            status="resolved",
+            resolution_reason=reason,
+            resolved_at=func.now(),
+            resolved_by=user_id,
+            chosen_position=chosen_position,
+            entered_position=entered_position,
+            applied_hours=applied_hours,
+            row_version=ConflictRow.row_version + 1,
+        )
+        .returning(ConflictRow.row_version)
+        .execution_options(synchronize_session=False)
+    )
+    return changed.scalar_one_or_none()
+
+
+async def escalate(
+    uow: UnitOfWork,
+    conflict_id: UUID,
+    *,
+    expected_row_version: int,
+    user_id: UUID,
+    reviewer_id: UUID,
+    reason: str,
+) -> int | None:
+    """A person escalates an `open` Conflict at `expected_row_version` to a reviewer. The new
+    row version, or None (and no change) when it is at another version or not open."""
+    changed = await uow.session.execute(
+        update(ConflictRow)
+        .where(
+            ConflictRow.id == conflict_id,
+            ConflictRow.row_version == expected_row_version,
+            ConflictRow.status == "open",
+        )
+        .values(
+            status="escalated",
+            escalated_to=reviewer_id,
+            escalated_by=user_id,
+            escalated_at=func.now(),
+            escalation_reason=reason,
+            row_version=ConflictRow.row_version + 1,
+        )
+        .returning(ConflictRow.row_version)
+        .execution_options(synchronize_session=False)
+    )
+    return changed.scalar_one_or_none()
+
+
+async def not_applied_kinds(uow: UnitOfWork, conflict_ids: Sequence[UUID]) -> dict[UUID, str]:
+    """Per Conflict a person resolved, why its `effort` decision changed no Estimate line,
+    as its `conflicts.conflict.resolved` trace event records it (only those it names)."""
+    if not conflict_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(TraceEvent.subject_id, TraceEvent.payload).where(
+            TraceEvent.subject_type == "conflicts.conflict",
+            TraceEvent.subject_id.in_(list(conflict_ids)),
+            TraceEvent.event_type == "conflicts.conflict.resolved",
+        )
+    )
+    found: dict[UUID, str] = {}
+    for subject_id, payload in rows:
+        if not isinstance(payload, dict) or payload.get("reason_kind") != "decided":
+            continue
+        kind = payload.get("not_applied")
+        if isinstance(kind, str):
+            found[subject_id] = kind
+    return found
+
+
+async def all_conflicts(uow: UnitOfWork, opportunity_id: UUID) -> list[ConflictRecord]:
+    """Every Conflict of the Opportunity, oldest first."""
     rows = await uow.session.execute(
         select(ConflictRow)
-        .where(
-            ConflictRow.opportunity_id == opportunity_id,
-            ~exists().where(and_(newer.previous_conflict_id == ConflictRow.id)),
-        )
+        .where(ConflictRow.opportunity_id == opportunity_id)
+        .order_by(ConflictRow.created_at, ConflictRow.id)
         .execution_options(populate_existing=True)
     )
     return [_conflict(row) for row in rows.scalars()]

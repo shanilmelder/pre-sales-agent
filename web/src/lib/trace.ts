@@ -48,6 +48,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "assessments.assessment_run.cancelled": "Assessment run cancelled",
   "conflicts.conflict.detected": "Conflict detected",
   "conflicts.conflict.resolved": "Conflict resolved",
+  "conflicts.conflict.escalated": "Conflict escalated",
 };
 
 /** An event type in plain words, or the raw type for one this build doesn't know. */

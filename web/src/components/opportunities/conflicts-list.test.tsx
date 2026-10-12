@@ -9,6 +9,10 @@ import type {
 } from "@/lib/conflicts";
 import { axeViolations } from "@/test/axe";
 
+vi.mock("@/app/opportunities/actions", () => ({
+  resolveConflict: vi.fn(),
+  escalateConflict: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
@@ -69,6 +73,19 @@ function conflict(n: number, overrides: Partial<Conflict>): Conflict {
       agentPosition(1, "engineering_agent", "24 h", 24),
       agentPosition(2, "pm_agent", "Not sized", null),
     ],
+    row_version: 1,
+    resolved_by_name: null,
+    chosen_position: null,
+    entered_position: null,
+    applied_hours: null,
+    not_applied: null,
+    previous_decision: null,
+    escalated_to: null,
+    escalated_by: null,
+    escalation_reason: null,
+    escalated_at: null,
+    can_resolve: false,
+    can_escalate: false,
     ...overrides,
   };
 }
@@ -88,7 +105,7 @@ const GONE = conflict(3, {
   resolution_reason: "No longer present in PM Assessment v2",
   resolved_at: "2026-10-07T10:00:00Z",
 });
-const VIEW: ConflictsView = { conflicts: [CLASH, SCOPE, GONE], open_count: 2 };
+const VIEW: ConflictsView = { conflicts: [CLASH, SCOPE, GONE], open_count: 2, reviewers: [] };
 
 function renderSection(
   initial: ConflictsView = VIEW,
@@ -151,7 +168,7 @@ describe("ConflictsSection", () => {
   });
 
   it("shows the empty sentence without Conflicts", async () => {
-    const { container } = renderSection({ conflicts: [], open_count: 0 });
+    const { container } = renderSection({ conflicts: [], open_count: 0, reviewers: [] });
     expect(
       screen.getByText("No Conflicts between the specialist Assessments."),
     ).toBeTruthy();

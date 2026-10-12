@@ -34,7 +34,9 @@ class ConflictRow(Base):
     (1, then 2, … each time the run finishes again after a task retry) and fingerprint.
     Inserted `open`; the system resolves it (`resolution_reason`, `resolved_at`) when a later
     run no longer raises it or raises it again (the newer one links it through
-    `previous_conflict_id`). `row_version` counts its changes."""
+    `previous_conflict_id`). Story 6.3: a person resolves it with a decision (`resolved_by`,
+    the chosen or entered position, `applied_hours`) or escalates it to a reviewer.
+    `row_version` counts its changes."""
 
     __tablename__ = "conflicts_conflicts"
     __table_args__ = (
@@ -54,6 +56,13 @@ class ConflictRow(Base):
         ),
         CheckConstraint("row_version >= 1", name="row_version"),
         CheckConstraint("detection_pass >= 1", name="detection_pass"),
+        CheckConstraint(
+            "(escalated_to IS NULL) = (escalated_by IS NULL) AND "
+            "(escalated_to IS NULL) = (escalated_at IS NULL) AND "
+            "(escalated_to IS NULL) = (escalation_reason IS NULL)",
+            name="escalation",
+        ),
+        CheckConstraint("chosen_position IS NULL OR entered_position IS NULL", name="one_choice"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -73,6 +82,16 @@ class ConflictRow(Base):
     resolution_reason: Mapped[str | None] = mapped_column(Text)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     detection_pass: Mapped[int] = mapped_column(Integer)
+    # Story 6.3: a person's decision (`resolved_by` null when the system resolved it).
+    resolved_by: Mapped[UUID | None] = mapped_column(Uuid)
+    chosen_position: Mapped[int | None] = mapped_column(Integer)
+    entered_position: Mapped[str | None] = mapped_column(Text)
+    applied_hours: Mapped[Decimal | None] = mapped_column(Numeric(10, 1))
+    # Story 6.3: an escalation to a named reviewer (all four set or none).
+    escalated_to: Mapped[UUID | None] = mapped_column(Uuid)
+    escalated_by: Mapped[UUID | None] = mapped_column(Uuid)
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    escalation_reason: Mapped[str | None] = mapped_column(Text)
     row_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 
