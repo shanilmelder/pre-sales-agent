@@ -12,7 +12,7 @@ import io
 import zipfile
 from xml.etree import ElementTree as ET
 
-from app.modules.intake.domain.parsing import ParseError, ParseErrorCode
+from app.platform.parsing.rules import ParseError, ParseErrorCode
 
 NAME = "docx@1"
 DOCUMENT = "word/document.xml"

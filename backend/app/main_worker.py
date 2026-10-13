@@ -39,6 +39,7 @@ _log = get_logger("app.worker")
 # Modules whose import registers job types (e.g. `app.modules.intake.application.jobs`).
 _JOB_MODULES: tuple[str, ...] = (
     "app.modules.intake.application.jobs",
+    "app.modules.knowledge.application.jobs",
     "app.modules.intake.application.extraction",
     "app.modules.gaps.application.detection",
     "app.modules.estimates.application.draft",

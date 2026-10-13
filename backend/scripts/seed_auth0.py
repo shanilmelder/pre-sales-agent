@@ -43,6 +43,14 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.CATALOGUE_ENTRY_EDIT,
             Action.CATALOGUE_ENTRY_RETIRE,
             Action.CATALOGUE_ENTRY_REACTIVATE,
+            # Knowledge Sources (Story 3.2): platform administrators on every Source; a
+            # Source's owner gets the actions on it through the relation, not a permission.
+            Action.KNOWLEDGE_SOURCE_REGISTER,
+            Action.KNOWLEDGE_SOURCE_ADD_VERSION,
+            Action.KNOWLEDGE_SOURCE_RETAG,
+            Action.KNOWLEDGE_SOURCE_REVIEW,
+            Action.KNOWLEDGE_SOURCE_RETIRE,
+            Action.KNOWLEDGE_SOURCE_RETRY_PARSE,
         }
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
@@ -61,6 +69,12 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.CATALOGUE_ENTRY_EDIT: "Edit catalogue entries",
     Action.CATALOGUE_ENTRY_RETIRE: "Retire catalogue entries",
     Action.CATALOGUE_ENTRY_REACTIVATE: "Reactivate retired catalogue entries",
+    Action.KNOWLEDGE_SOURCE_REGISTER: "Register Knowledge Sources",
+    Action.KNOWLEDGE_SOURCE_ADD_VERSION: "Upload a new version of any Knowledge Source",
+    Action.KNOWLEDGE_SOURCE_RETAG: "Retag any Knowledge Source or change its owner",
+    Action.KNOWLEDGE_SOURCE_REVIEW: "Mark any Knowledge Source reviewed",
+    Action.KNOWLEDGE_SOURCE_RETIRE: "Retire any Knowledge Source",
+    Action.KNOWLEDGE_SOURCE_RETRY_PARSE: "Retry a failed Knowledge Source parse",
     Action.OPPORTUNITY_READ: "Read every Opportunity",
 }
 

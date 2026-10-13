@@ -214,6 +214,13 @@ class CatalogueDuplicateError(ConflictError):
     title = "Catalogue entry already exists"
 
 
+class SourceRetiredError(ConflictError):
+    """A write targeted a retired Knowledge Source (Story 3.2)."""
+
+    code = "knowledge_source_retired"
+    title = "Knowledge Source retired"
+
+
 class ConflictAlreadyResolvedError(ConflictError):
     """A Conflict was resolved or escalated after it was already resolved (Story 6.3)."""
 

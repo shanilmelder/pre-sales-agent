@@ -9,8 +9,9 @@ Customer files are untrusted: nothing here follows links, runs macros or fetches
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.modules.intake.adapters.parsers import docx, eml, pdf, txt, vtt
-from app.modules.intake.domain.parsing import ParseError, ParseErrorCode, finish
+from app.modules.intake.adapters.parsers import eml, vtt
+from app.platform.parsing.formats import docx, pdf, txt
+from app.platform.parsing.rules import ParseError, ParseErrorCode, finish
 
 
 @dataclass(frozen=True, slots=True)

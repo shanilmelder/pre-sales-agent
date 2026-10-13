@@ -56,6 +56,8 @@ services:
       # Uploaded files (content-addressed blobs) live on the `files` volume.
       PSA_STORAGE_DIR: /var/lib/psa/files
       PSA_UPLOAD_MAX_BYTES: ${PSA_UPLOAD_MAX_BYTES:-52428800}
+      PSA_KNOWLEDGE_STALE_MONTHS: ${PSA_KNOWLEDGE_STALE_MONTHS:-12}
+      PSA_DOWNLOAD_SIGNING_KEY: ${PSA_DOWNLOAD_SIGNING_KEY:-local-dev-download-signing-key-change-me}
       # Host Ollama (ModelGateway, Story 2.4). The api never calls a model itself.
       PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
     extra_hosts:

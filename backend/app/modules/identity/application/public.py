@@ -25,10 +25,12 @@ from app.modules.identity.application.user_search import (
     SEARCH_MIN_QUERY,
     UserSearchResult,
     UserSummary,
+    search_owner_candidates,
     search_users,
     user_names,
 )
 from app.modules.identity.domain.policy import (
+    KNOWLEDGE_SOURCE_RESOURCE,
     MEMBER_GRANTS,
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
@@ -41,6 +43,7 @@ from app.modules.identity.domain.roles import Role
 __all__ = [
     "ACTION_NAME_RE",
     "DEFAULT_PAGE_SIZE",
+    "KNOWLEDGE_SOURCE_RESOURCE",
     "MAX_PAGE",
     "MAX_PAGE_SIZE",
     "MEMBER_GRANTS",
@@ -69,6 +72,7 @@ __all__ = [
     "can",
     "get_user",
     "list_users",
+    "search_owner_candidates",
     "search_users",
     "user_names",
 ]

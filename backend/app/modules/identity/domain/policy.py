@@ -61,7 +61,9 @@ class Resource:
 
 
 OPPORTUNITY_RESOURCE = "opportunities.opportunity"
-"""The only resource type the owner/member rules apply to."""
+"""The resource type the owner/member rules (`OWNER_GRANTS`, `MEMBER_GRANTS`) apply to."""
+KNOWLEDGE_SOURCE_RESOURCE = "knowledge.source"
+"""The resource type whose owner gets `KNOWLEDGE_SOURCE_OWNER_GRANTS` (Story 3.2)."""
 
 RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
     {
@@ -121,19 +123,41 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
 )
 
 
+KNOWLEDGE_SOURCE_OWNER_GRANTS: frozenset[Action] = frozenset(
+    {
+        Action.KNOWLEDGE_SOURCE_ADD_VERSION,
+        Action.KNOWLEDGE_SOURCE_RETAG,
+        Action.KNOWLEDGE_SOURCE_REVIEW,
+        Action.KNOWLEDGE_SOURCE_RETIRE,
+        Action.KNOWLEDGE_SOURCE_RETRY_PARSE,
+    }
+)
+"""What the owner of a Knowledge Source may do to it, whatever their role, as long as they
+hold one. Registering has no Source yet, so it is granted by role only."""
+
+
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:
     """True if the principal holds the action as a permission, or the principal is the
     resource's owner or a member and that relation grants it. Relations count only on an
-    Opportunity and only for principals holding at least one role (a user whose roles were
-    all removed loses access), and not for a principal whose roles are all excluded for the
-    action (`RELATION_EXCLUDED_ROLES`). Agent and system actors follow the same rules: with
-    no granting permission or relation they are denied."""
+    Opportunity (or, for its owner, a Knowledge Source) and only for principals holding at
+    least one role (a user whose roles were all removed loses access), and not for a
+    principal whose roles are all excluded for the action (`RELATION_EXCLUDED_ROLES`). Agent
+    and system actors follow the same rules: with no granting permission or relation they
+    are denied."""
     if action in principal.permissions:
         return True
-    if resource is None or resource.type != OPPORTUNITY_RESOURCE or not principal.roles:
+    if resource is None or not principal.roles:
         return False
     user_id = principal.user_id
     if user_id is None:
+        return False
+    if resource.type == KNOWLEDGE_SOURCE_RESOURCE:
+        return (
+            action in KNOWLEDGE_SOURCE_OWNER_GRANTS
+            and resource.owner_id is not None
+            and user_id == resource.owner_id
+        )
+    if resource.type != OPPORTUNITY_RESOURCE:
         return False
     if principal.roles <= RELATION_EXCLUDED_ROLES.get(action, frozenset()):
         return False
