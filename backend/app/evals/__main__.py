@@ -57,6 +57,10 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    # The report prints ≥ and ≤, which a Windows console's legacy code page can't encode.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     settings = get_settings()
     configure_logging("WARNING")
     try:
