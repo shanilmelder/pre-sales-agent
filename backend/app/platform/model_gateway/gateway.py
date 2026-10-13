@@ -17,7 +17,7 @@ or `async with`. Only the worker makes model calls; the `api` process never does
 
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import TracebackType
 from typing import Self
 from uuid import UUID
@@ -120,6 +120,16 @@ class ModelGateway:
         }
         self._semaphore = PrioritySemaphore(settings.model_slots)
 
+    def _profile(self, name: str) -> ModelProfile:
+        """The named profile, with `PSA_OPENAI_MODEL` (when set) as the model of an `openai`
+        provider profile, so the request, the call record and the logs all name the model
+        actually called."""
+        profile = get_profile(name)
+        override = self._settings.openai_model
+        if override and profile.provider == "openai":
+            return replace(profile, model=override)
+        return profile
+
     @property
     def semaphore(self) -> PrioritySemaphore:
         return self._semaphore
@@ -142,7 +152,7 @@ class ModelGateway:
     async def complete_structured[T: BaseModel](
         self, request: StructuredRequest[T]
     ) -> StructuredResult[T]:
-        profile = get_profile(request.profile or self._settings.model_profile_chat)
+        profile = self._profile(request.profile or self._settings.model_profile_chat)
         timeout_s = request.timeout_s or self._settings.model_timeout_s
         call_id = new_id()
         async with self._semaphore.slot(request.priority):
