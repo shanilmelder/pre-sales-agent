@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, insert, select, text, update
+from sqlalchemy import func, insert, select, text, tuple_, update
 
 from app.modules.assessments.adapters.models import (
     AssessmentEffortRow,
@@ -204,6 +204,30 @@ async def run_in_progress(uow: UnitOfWork, opportunity_id: UUID) -> UUID | None:
             .limit(1)
         )
     ).scalar_one_or_none()
+
+
+async def run_number(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> int | None:
+    """The run's position among the Opportunity's runs, oldest first (1-based); None if it
+    isn't one of them (Story 8.3)."""
+    run = (
+        await uow.session.execute(
+            select(AssessmentRunRow.created_at, AssessmentRunRow.id).where(
+                AssessmentRunRow.id == run_id,
+                AssessmentRunRow.opportunity_id == opportunity_id,
+            )
+        )
+    ).one_or_none()
+    if run is None:
+        return None
+    return (
+        await uow.session.execute(
+            select(func.count()).where(
+                AssessmentRunRow.opportunity_id == opportunity_id,
+                tuple_(AssessmentRunRow.created_at, AssessmentRunRow.id)
+                <= (run.created_at, run.id),
+            )
+        )
+    ).scalar_one()
 
 
 async def stale_runs(uow: UnitOfWork, opportunity_id: UUID, *, older_than: timedelta) -> list[UUID]:

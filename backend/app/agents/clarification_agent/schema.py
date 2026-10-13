@@ -39,6 +39,16 @@ class DraftQuestion(_Output):
 class GapCandidate(_Output):
     title: str = Field(description="A short title naming the missing information.")
     category: CategoryName
+    customer_can_answer: bool = Field(
+        description=(
+            "False only when nobody can answer this before the work starts: the customer says "
+            "it is unknown, uncertain or undocumented, or asks for an allowance for it. True for "
+            "information the customer holds and for any decision they still have to make."
+        )
+    )
+    """Comes before `why_it_matters` so the model decides it first; the gaps module marks the
+    stored `why_it_matters` of a Gap the customer cannot answer, which the estimating agent
+    reads to propose a Contingency."""
     why_it_matters: str = Field(description="Which part of the estimate this would change.")
     impact: ImpactName
     impact_basis: str = Field(description="Why the impact is high, medium or low.")

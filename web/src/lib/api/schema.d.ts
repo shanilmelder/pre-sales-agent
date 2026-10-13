@@ -27,7 +27,8 @@ export interface paths {
         };
         /**
          * Get Me
-         * @description The signed-in user, provisioned with no roles on their first valid token.
+         * @description The signed-in user, provisioned on their first valid token, with the roles and
+         *     permissions that token carries.
          */
         get: operations["get_me"];
         put?: never;
@@ -47,7 +48,8 @@ export interface paths {
         };
         /**
          * List Admin Users
-         * @description Users and their roles, ordered by name, one page at a time.
+         * @description Users and their roles (as of each user's last sign-in), ordered by name, one page at
+         *     a time.
          */
         get: operations["list_admin_users"];
         put?: never;
@@ -67,37 +69,12 @@ export interface paths {
         };
         /**
          * Get Admin User
-         * @description One user with their roles and who last changed them.
+         * @description One user with their roles as of their last sign-in.
          */
         get: operations["get_admin_user"];
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/users/{user_id}/roles/{role}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Assign Role
-         * @description Give the user a role. Assigning a role they already hold changes nothing.
-         */
-        put: operations["assign_role"];
-        post?: never;
-        /**
-         * Remove Role
-         * @description Take a role from the user. Removing a role they don't hold changes nothing; removing
-         *     the last platform administrator is rejected with 409.
-         */
-        delete: operations["remove_role"];
         options?: never;
         head?: never;
         patch?: never;
@@ -112,8 +89,8 @@ export interface paths {
         };
         /**
          * Search Users
-         * @description Users who hold at least one role and whose name or email contains `q`
-         *     (case-insensitive), ordered by name.
+         * @description Provisioned users whose name or email contains `q` (case-insensitive), ordered by
+         *     name.
          */
         get: operations["search_users"];
         put?: never;
@@ -141,7 +118,9 @@ export interface paths {
         put?: never;
         /**
          * Create Opportunity
-         * @description Create an Opportunity owned by the caller. Presales engineers only.
+         * @description Create an Opportunity owned by the caller. Presales engineers only. With `import_id`,
+         *     the import's file becomes the Opportunity's first Source (parsed as any upload) and the
+         *     import can't be used again.
          */
         post: operations["create_opportunity"];
         delete?: never;
@@ -207,7 +186,7 @@ export interface paths {
         get?: never;
         /**
          * Add Collaborator
-         * @description Share the Opportunity with a user who holds a role. Owner only; adding an existing
+         * @description Share the Opportunity with a provisioned user. Owner only; adding an existing
          *     collaborator changes nothing.
          */
         put: operations["add_collaborator"];
@@ -239,6 +218,48 @@ export interface paths {
          *     200 characters. Anyone who can read the Opportunity can read its trace.
          */
         get: operations["list_opportunity_trace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Opportunity Import
+         * @description Upload one file to start a New Opportunity from. The worker reads it and suggests the
+         *     form's fields; poll `GET /opportunity-imports/{id}`. Presales engineers only.
+         */
+        post: operations["create_opportunity_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunity-imports/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Opportunity Import
+         * @description The import's status (`queued`, `running`, `succeeded`, `failed`) and, once
+         *     `succeeded`, its suggestions, each with the quote it came from. Its uploader only.
+         */
+        get: operations["get_opportunity_import"];
         put?: never;
         post?: never;
         delete?: never;
@@ -649,6 +670,30 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit Estimate Line
+         * @description Change a line of the current draft Estimate's effort hours and/or role mix, with a
+         *     reason. Recorded with who and when, and traced with the before and after values. Values
+         *     equal to the stored ones change nothing. The answer is the whole Estimate, so line role
+         *     hours, subtotals and totals come from the server. The owner and collaborators, except
+         *     sales representatives.
+         */
+        patch: operations["edit_estimate_line"];
         trace?: never;
     };
     "/api/v1/opportunities/{opportunity_id}/estimate/export": {
@@ -1140,6 +1185,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Conflicts
+         * @description The Conflicts between the Opportunity's specialist Assessments (and its Estimate): open
+         *     ones first, then resolved, each section critical to low and newest first, each with its
+         *     positions (the agent and Assessment version, or the Estimate version; the value; the
+         *     Requirement chip), the decision or escalation, and what the caller may do; the
+         *     open-plus-escalated count; and whom the caller may escalate to. Conflicts carried forward
+         *     to a later run are left out. Anyone who can read the Opportunity.
+         */
+        get: operations["get_conflicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/resolution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Conflict
+         * @description Resolve an open or escalated Conflict by choosing one of its positions or entering a
+         *     different one, with a reason. Every original position is kept and traced. An `effort`
+         *     decision also sets the Estimate line covering only that Requirement (as an edit with the
+         *     reason); `applied_hours` or `not_applied` say what happened.
+         */
+        post: operations["resolve_conflict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/escalation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate Conflict
+         * @description Escalate an open Conflict to a named reviewer on the Opportunity, with a reason. The
+         *     reviewer can then resolve it.
+         */
+        post: operations["escalate_conflict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1154,10 +1268,8 @@ export interface components {
         };
         /**
          * AdminUser
-         * @description A platform user as administrators see it. `row_version` is also the `ETag`.
-         *
-         *     `last_changed_by` is the name of whoever made the latest role change, or null when no
-         *     role change is recorded (the UI then says "another administrator").
+         * @description A platform user as administrators see it. `roles` are as of the user's last sign-in
+         *     (managed in Auth0). `row_version` is also the `ETag`.
          */
         AdminUser: {
             /** Id */
@@ -1170,8 +1282,6 @@ export interface components {
             roles: components["schemas"]["Role"][];
             /** Row Version */
             row_version: number;
-            /** Last Changed By */
-            last_changed_by: string | null;
         };
         /**
          * AdminUserPage
@@ -1529,11 +1639,178 @@ export interface components {
             count: number;
         };
         /**
+         * ConflictEscalation
+         * @description Escalate to `reviewer_id` (the Opportunity's owner or a collaborator, not the caller)
+         *     with a `reason` (1-1,000 characters).
+         */
+        ConflictEscalation: {
+            /**
+             * Reviewer Id
+             * Format: uuid
+             */
+            reviewer_id: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * ConflictPosition
+         * @description One side of a Conflict. From an agent's Assessment (`agent`, `assessment_id`,
+         *     `assessment_version`) or the Estimate (`estimate_version_id`, `estimate_version`).
+         *     `summary`: e.g. "24 h", "Not sized", "Do not proceed". `value`: hours to 0.1, or null.
+         */
+        ConflictPosition: {
+            /** Position */
+            position: number;
+            source: components["schemas"]["PositionSource"];
+            /** Agent */
+            agent: string | null;
+            /** Assessment Id */
+            assessment_id: string | null;
+            /** Assessment Version */
+            assessment_version: number | null;
+            /** Estimate Version Id */
+            estimate_version_id: string | null;
+            /** Estimate Version */
+            estimate_version: number | null;
+            /** Summary */
+            summary: string;
+            /** Value */
+            value: number | null;
+            requirement: components["schemas"]["ConflictRequirement"] | null;
+        };
+        /**
+         * ConflictRequirement
+         * @description The Requirement a position is about, at the version it names. `label` is `R<n>`, its
+         *     position among the Opportunity's active Requirements (oldest first), or `Superseded` once
+         *     it is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
+         *     when cut.
+         */
+        ConflictRequirement: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /**
+         * ConflictResolution
+         * @description A person's decision: `choice` is one of the Conflict's position numbers or
+         *     `{"entered": text}`; `reason` (1-1,000 characters) is required.
+         */
+        ConflictResolution: {
+            /** Choice */
+            choice: number | components["schemas"]["EnteredPosition"];
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * ConflictSeverity
+         * @enum {string}
+         */
+        ConflictSeverity: "critical" | "high" | "medium" | "low";
+        /**
+         * ConflictStatus
+         * @enum {string}
+         */
+        ConflictStatus: "open" | "negotiating" | "resolved" | "escalated";
+        /**
+         * ConflictType
+         * @enum {string}
+         */
+        ConflictType: "timeline" | "effort" | "resource" | "architecture" | "security" | "scope" | "assumption" | "evidence";
+        /**
+         * ConflictView
+         * @description A Conflict with its positions in order. `requirement`: the Requirement it is about
+         *     (null for an Opportunity-level Conflict). `row_version`: for `If-Match` on a resolution
+         *     or escalation.
+         *
+         *     Story 6.3, a person's decision: `resolved_by_name` (null when the system resolved it),
+         *     `chosen_position` (a position number) or `entered_position`, `applied_hours` (the hours
+         *     an `effort` decision set on the Estimate line) or `not_applied` (why it set none:
+         *     `no_line`, `shared_line`, `several_lines`). `previous_decision`: for a Conflict raised
+         *     again after a person resolved it, who and when. An escalation: `escalated_to`,
+         *     `escalated_by`, `escalation_reason`, `escalated_at`. `can_resolve` / `can_escalate`:
+         *     whether the viewer may.
+         */
+        ConflictView: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["ConflictType"];
+            severity: components["schemas"]["ConflictSeverity"];
+            status: components["schemas"]["ConflictStatus"];
+            detected_by: components["schemas"]["DetectedBy"];
+            /** Summary */
+            summary: string;
+            /** Run Id */
+            run_id: string;
+            /** Previous Conflict Id */
+            previous_conflict_id: string | null;
+            /** Resolution Reason */
+            resolution_reason: string | null;
+            /** Resolved At */
+            resolved_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            requirement: components["schemas"]["ConflictRequirement"] | null;
+            /** Positions */
+            positions: components["schemas"]["ConflictPosition"][];
+            /** Row Version */
+            row_version: number;
+            /** Resolved By Name */
+            resolved_by_name: string | null;
+            /** Chosen Position */
+            chosen_position: number | null;
+            /** Entered Position */
+            entered_position: string | null;
+            /** Applied Hours */
+            applied_hours: number | null;
+            /** Not Applied */
+            not_applied: string | null;
+            previous_decision: components["schemas"]["PreviousDecision"] | null;
+            escalated_to: components["schemas"]["Person"] | null;
+            escalated_by: components["schemas"]["Person"] | null;
+            /** Escalation Reason */
+            escalation_reason: string | null;
+            /** Escalated At */
+            escalated_at: string | null;
+            /** Can Resolve */
+            can_resolve: boolean;
+            /** Can Escalate */
+            can_escalate: boolean;
+        };
+        /**
+         * ConflictsView
+         * @description The Opportunity's Conflicts: open (and negotiating, escalated) before resolved, then
+         *     critical to low, then newest first; those carried forward to a later run are left out
+         *     (a Conflict a person resolved stays listed). `open_count`: open plus escalated.
+         *     `reviewers`: who the viewer may escalate to (the Opportunity's owner and collaborators,
+         *     without the viewer), by name.
+         */
+        ConflictsView: {
+            /** Conflicts */
+            conflicts: components["schemas"]["ConflictView"][];
+            /** Open Count */
+            open_count: number;
+            /** Reviewers */
+            reviewers: components["schemas"]["Person"][];
+        };
+        /**
          * ConvertedTo
          * @description The kind of Assumption a converted Gap became.
          * @enum {string}
          */
         ConvertedTo: "condition" | "contingency";
+        /**
+         * DetectedBy
+         * @enum {string}
+         */
+        DetectedBy: "rule" | "semantic" | "critic" | "red_team";
         /**
          * Detection
          * @description The Opportunity's latest Gap detection. `error_code` is set only when `failed`.
@@ -1577,6 +1854,15 @@ export interface components {
          */
         DraftStatus: "queued" | "running" | "succeeded" | "failed";
         /**
+         * EnteredPosition
+         * @description A different position than the Conflict's own, in words (1-200 characters; for an
+         *     `effort` Conflict, hours from 0 to 2,000 to 0.1 h, e.g. "48").
+         */
+        EnteredPosition: {
+            /** Entered */
+            entered: string;
+        };
+        /**
          * EntryChanges
          * @description Fields to change; a field left out stays as it is.
          */
@@ -1596,9 +1882,14 @@ export interface components {
         };
         /**
          * EstimateLine
-         * @description A work item: its effort and role mix as drafted, and its server-calculated role
-         *     hours, Contingency (the sum of its linked Contingency Assumptions' hours, accepted or
-         *     not) and total (effort plus Contingency).
+         * @description A work item: its effort and role mix (as drafted, or as a person last edited them),
+         *     and its server-calculated role hours, Contingency (the sum of its linked Contingency
+         *     Assumptions' hours, accepted or not) and total (effort plus Contingency).
+         *
+         *     Story 8.2: `row_version` goes back in `If-Match` to edit it. `edited` is true once a
+         *     person changed its effort or role mix (here, or on the earlier version a re-draft
+         *     carried the edit from: `edit_carried_from_version`); `edited_by_name`, `edited_at` and
+         *     `edit_reason` say who, when and why (null when not edited).
          */
         EstimateLine: {
             /** Id */
@@ -1620,6 +1911,47 @@ export interface components {
             role_hours: components["schemas"]["RoleHours"];
             /** Requirements */
             requirements: components["schemas"]["LineRequirement"][];
+            /** Row Version */
+            row_version: number;
+            /** Edited */
+            edited: boolean;
+            /** Edited By Name */
+            edited_by_name: string | null;
+            /** Edited At */
+            edited_at: string | null;
+            /** Edit Reason */
+            edit_reason: string | null;
+            /** Edit Carried From Version */
+            edit_carried_from_version: number | null;
+            /**
+             * Conflicts
+             * @description Story 8.3: the open Conflicts about the Requirements it covers.
+             */
+            conflicts: components["schemas"]["LineConflict"][];
+        };
+        /**
+         * EstimateLineChanges
+         * @description A person's edit of an Estimate line (Story 8.2): new effort and/or role mix (at least
+         *     one), and why. Fields left out stay as they are.
+         */
+        EstimateLineChanges: {
+            /**
+             * Effort Hours
+             * @description The new effort in hours, 0 to 2,000; rounded half up to 0.1.
+             */
+            effort_hours?: number | null;
+            /**
+             * Role Mix
+             * @description The new role mix: a whole percentage (0-100) for exactly each of the template's roles (`engineer`, `project_manager`, `qa`), summing to 100.
+             */
+            role_mix?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Reason
+             * @description Why. Trimmed, it must be 1 to 300 characters.
+             */
+            reason: string;
         };
         /**
          * EstimateRole
@@ -1649,6 +1981,14 @@ export interface components {
          *     Story 8.4: `proposal_status` is the state of the version's Assumption proposals (null
          *     when none were queued); `assumptions` and `counts` its Assumptions; `unconverted_gaps`
          *     the open Gaps without an Assumption in it, once proposals have finished (empty before).
+         *
+         *     Story 8.2: `uncarried_edit_count` is how many edited lines of the superseded draft (number
+         *     `uncarried_edits_from_version`, null when the count is 0) had no matching line here; they
+         *     stay in that version and the Trace.
+         *
+         *     Story 8.3: `source` is `assessments` for a version built from the specialist Assessments
+         *     when an assessment run finished (`source_run`, that run's number), `model` for an
+         *     accepted model draft.
          */
         EstimateVersion: {
             /** Id */
@@ -1681,14 +2021,26 @@ export interface components {
             unconverted_gaps: components["schemas"]["UnconvertedGap"][];
             /** Unallocated Contingency Hours */
             unallocated_contingency_hours: number;
+            /** Uncarried Edit Count */
+            uncarried_edit_count: number;
+            /** Uncarried Edits From Version */
+            uncarried_edits_from_version: number | null;
+            source: components["schemas"]["VersionSource"];
+            /**
+             * Source Run
+             * @description Story 8.3: for a version from the Assessments, the number of the assessment run it was built for (the Opportunity's runs, oldest first).
+             */
+            source_run: number | null;
         };
         /**
          * EstimateView
          * @description The Opportunity's current (draft) Estimate Version, null before the first, and its
          *     latest draft run, null before the first. `can_start_draft`: whether the caller may start
          *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
-         *     `can_export`: whether the caller may export the Estimate (Story 8.8). The UI only uses
-         *     them to hide controls; the API decides.
+         *     `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
+         *     whether the caller may edit the draft's lines (Story 8.2); `assessment_running` (Story
+         *     8.3): whether an assessment run is queued or running. The UI only uses them to hide
+         *     controls; the API decides.
          */
         EstimateView: {
             version: components["schemas"]["EstimateVersion"] | null;
@@ -1699,6 +2051,13 @@ export interface components {
             can_accept_assumptions: boolean;
             /** Can Export */
             can_export: boolean;
+            /** Can Edit Lines */
+            can_edit_lines: boolean;
+            /**
+             * Assessment Running
+             * @description Story 8.3: whether an assessment run of the Opportunity is queued or running (the Estimate is built when it finishes).
+             */
+            assessment_running: boolean;
         };
         /**
          * ExportFormat
@@ -1883,6 +2242,36 @@ export interface components {
          */
         Impact: "high" | "medium" | "low";
         /**
+         * ImportErrorCode
+         * @enum {string}
+         */
+        ImportErrorCode: "unreadable" | "model_unavailable" | "model_timeout" | "output_invalid";
+        /**
+         * ImportStatus
+         * @enum {string}
+         */
+        ImportStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * ImportSuggestions
+         * @description The New Opportunity fields suggested from the file. A field the file doesn't support
+         *     is null (or `products` empty); every value already passes the form's rules.
+         *     `target_proposal_date` is `YYYY-MM-DD`.
+         */
+        ImportSuggestions: {
+            title?: components["schemas"]["SuggestedValue"] | null;
+            customer_name?: components["schemas"]["SuggestedValue"] | null;
+            industry?: components["schemas"]["SuggestedValue"] | null;
+            /** Products */
+            products?: components["schemas"]["SuggestedValue"][];
+            target_proposal_date?: components["schemas"]["SuggestedValue"] | null;
+            /**
+             * Industry Inferred
+             * @description The industry isn't named in the file: it was inferred from what the customer does, quoting the passage it was inferred from.
+             * @default false
+             */
+            industry_inferred: boolean;
+        };
+        /**
          * IntegrationTypeTag
          * @description An Integration Type a Source is tagged with. `retired` tags keep resolving.
          */
@@ -2015,6 +2404,17 @@ export interface components {
             name: string;
         };
         /**
+         * LineConflict
+         * @description An open or escalated `effort` or `scope` Conflict whose positions cite a Requirement
+         *     the line covers (Story 8.3): its id and type. The UI marks the line "Open Conflict" and
+         *     links to the Conflicts tab.
+         */
+        LineConflict: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["ConflictType"];
+        };
+        /**
          * LineRequirement
          * @description A Requirement the line covers, at the version it was drafted against. `label` is
          *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
@@ -2082,6 +2482,11 @@ export interface components {
              * @description A calendar date, not in the past.
              */
             target_proposal_date: string;
+            /**
+             * Import Id
+             * @description An Opportunity import of the caller's, not used yet and under 24 hours old: its file becomes the new Opportunity's first Source.
+             */
+            import_id?: string | null;
         };
         /**
          * Opportunity
@@ -2158,6 +2563,27 @@ export interface components {
             owners: components["schemas"]["UserRef"][];
             /** Products */
             products: string[];
+        };
+        /**
+         * OpportunityImport
+         * @description An uploaded file being read for New Opportunity suggestions. `suggestions` is set once
+         *     `succeeded`; `error_code` once `failed`.
+         */
+        OpportunityImport: {
+            /** Id */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            status: components["schemas"]["ImportStatus"];
+            error_code: components["schemas"]["ImportErrorCode"] | null;
+            suggestions: components["schemas"]["ImportSuggestions"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * OpportunityPage
@@ -2258,6 +2684,35 @@ export interface components {
             text: string;
             /** After */
             after: string;
+        };
+        /**
+         * Person
+         * @description A user by id and name.
+         */
+        Person: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * PositionSource
+         * @enum {string}
+         */
+        PositionSource: "assessment" | "estimate";
+        /**
+         * PreviousDecision
+         * @description Story 6.3: who resolved an earlier Conflict with this fingerprint, and when, before
+         *     the positions changed and it was raised again.
+         */
+        PreviousDecision: {
+            /** Name */
+            name: string;
+            /**
+             * Resolved At
+             * Format: date-time
+             */
+            resolved_at: string;
         };
         /**
          * ProposalStatus
@@ -2625,6 +3080,16 @@ export interface components {
          */
         Status: "active" | "retired";
         /**
+         * SuggestedValue
+         * @description A suggested field value and the short quote of the file it came from.
+         */
+        SuggestedValue: {
+            /** Value */
+            value: string;
+            /** Quote */
+            quote: string;
+        };
+        /**
          * Totals
          * @description Effort, Contingency and total hours, and the effort per role.
          */
@@ -2733,7 +3198,8 @@ export interface components {
         };
         /**
          * UserProfile
-         * @description The signed-in user. `roles` is empty until an administrator assigns one.
+         * @description The signed-in user, with the roles and permissions their access token carries
+         *     (assigned in Auth0). Both are empty until an administrator assigns a role there.
          */
         UserProfile: {
             /** Id */
@@ -2744,6 +3210,8 @@ export interface components {
             email: string;
             /** Roles */
             roles: components["schemas"]["Role"][];
+            /** Permissions */
+            permissions: string[];
         };
         /**
          * UserRef
@@ -2775,6 +3243,13 @@ export interface components {
             /** Email */
             email: string;
         };
+        /**
+         * VersionSource
+         * @description Where an Estimate Version's lines came from (Story 8.3): an accepted model draft, or
+         *     the specialist Assessments when an assessment run finished.
+         * @enum {string}
+         */
+        VersionSource: "model" | "assessments";
         /**
          * VersionStatus
          * @enum {string}
@@ -2938,7 +3413,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not a platform administrator (`forbidden`) */
+            /** @description No `identity.user.list` permission (`forbidden`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2960,7 +3435,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
+            /** @description Invalid path or query parameter (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3050,7 +3525,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not a platform administrator (`forbidden`) */
+            /** @description No `identity.user.list` permission (`forbidden`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3094,416 +3569,8 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
+            /** @description Invalid path or query parameter (`validation_error`) */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-        };
-    };
-    assign_role: {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description The ETag of the user as last read, e.g. `"3"`. */
-                "If-Match"?: string | null;
-            };
-            path: {
-                user_id: string;
-                role: components["schemas"]["Role"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The user after the change */
-            200: {
-                headers: {
-                    /** @description The user's row version, for `If-Match`. */
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminUser"];
-                };
-            };
-            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Not a platform administrator (`forbidden`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description No user with this id (`not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Would leave no platform administrator (`last_administrator`) */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The user changed since it was read (`row_version_mismatch`) */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The write has no `If-Match` header (`if_match_required`) */
-            428: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-        };
-    };
-    remove_role: {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description The ETag of the user as last read, e.g. `"3"`. */
-                "If-Match"?: string | null;
-            };
-            path: {
-                user_id: string;
-                role: components["schemas"]["Role"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The user after the change */
-            200: {
-                headers: {
-                    /** @description The user's row version, for `If-Match`. */
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminUser"];
-                };
-            };
-            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Not a platform administrator (`forbidden`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description No user with this id (`not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Would leave no platform administrator (`last_administrator`) */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The user changed since it was read (`row_version_mismatch`) */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description Invalid path or query parameter, e.g. an unknown role (`validation_error`) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Code */
-                        code: string;
-                        /** Detail */
-                        detail?: string | null;
-                        /** Instance */
-                        instance?: string | null;
-                    };
-                };
-            };
-            /** @description The write has no `If-Match` header (`if_match_required`) */
-            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3591,7 +3658,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not a presales engineer (`forbidden`) */
+            /** @description No `identity.user.search` permission (`forbidden`) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3806,8 +3873,74 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity import with this `import_id` of the caller's (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The import was already used (`import_consumed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The import is older than 24 hours (`import_expired`) */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4101,7 +4234,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4283,7 +4416,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4465,7 +4598,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the presales engineer role, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4673,6 +4806,300 @@ export interface operations {
                 };
             };
             /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_opportunity_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description One file: .eml, .vtt, .txt, .docx or .pdf (any Source type), at most `PSA_UPLOAD_MAX_BYTES` (50 MB).
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The import, `queued` for reading */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityImport"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only presales engineers create Opportunities */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: larger than the upload limit (`file_too_large`; the `detail` is the sentence to show) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: a type not allowed (`file_type_not_allowed`; the `detail` is the sentence to show) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: `file_content_mismatch`, `file_empty` (the `detail` is the sentence to show), or `validation_error` (no `file` part, an unusable file name, or an id that is not a UUID) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_opportunity_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityImport"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No import with this id of the caller's (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The import is older than 24 hours (`import_expired`) */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: `file_content_mismatch`, `file_empty` (the `detail` is the sentence to show), or `validation_error` (no `file` part, an unusable file name, or an id that is not a UUID) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7531,6 +7958,212 @@ export interface operations {
                 };
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    edit_estimate_line: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Estimate line as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                line_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EstimateLineChanges"];
+            };
+        };
+        responses: {
+            /** @description The Estimate as it is now, every total recalculated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate line with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The line's Estimate Version is no longer the draft: a re-draft replaced it (`estimate_version_not_draft`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The line changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: neither effort nor role mix given, effort not 0-2,000 hours, a role mix that doesn't name every role with whole percentages adding up to 100, a blank or over-300-character reason (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -11678,6 +12311,532 @@ export interface operations {
             };
             /** @description The token is not usable (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_conflicts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConflictsView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    resolve_conflict: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Conflict as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConflictResolution"];
+            };
+        };
+        responses: {
+            /** @description The Conflict as it is now */
+            200: {
+                headers: {
+                    /** @description The Conflict's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConflictView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may read the Opportunity but not resolve its Conflicts: only the owner and collaborators except sales representatives, or the reviewer an escalated Conflict was escalated to (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Conflict with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict cannot be resolved: it is already resolved (`conflict_already_resolved`) or already escalated (`conflict_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason, a position number the Conflict does not have, an entered position that is blank or over 200 characters (for an `effort` Conflict, not hours from 0 to 2,000 to 0.1 h); the `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    escalate_conflict: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Conflict as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                conflict_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConflictEscalation"];
+            };
+        };
+        responses: {
+            /** @description The Conflict as it is now */
+            200: {
+                headers: {
+                    /** @description The Conflict's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConflictView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may read the Opportunity but not escalate its Conflicts: only the owner and collaborators except sales representatives (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Conflict with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict cannot be escalated: it is already resolved (`conflict_already_resolved`) or already escalated (`conflict_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Conflict changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason, or a reviewer who is not the Opportunity's owner or a collaborator, or is the caller; the `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

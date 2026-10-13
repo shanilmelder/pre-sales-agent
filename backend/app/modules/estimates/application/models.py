@@ -4,14 +4,16 @@ server by `domain/arithmetic.py`; hours are person-hours with one decimal place.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 
+from app.modules.conflicts.application.public import ConflictType
 from app.modules.estimates.domain.assumptions import AssumptionKind, ProposalStatus
 from app.modules.estimates.domain.estimates import (
     DraftErrorCode,
     DraftStatus,
     EstimateRole,
     Section,
+    VersionSource,
     VersionStatus,
 )
 from app.modules.gaps.application.public import GapCategory, Impact
@@ -55,10 +57,24 @@ class LineRequirement(BaseModel):
     excerpt: str
 
 
+class LineConflict(BaseModel):
+    """An open or escalated `effort` or `scope` Conflict whose positions cite a Requirement
+    the line covers (Story 8.3): its id and type. The UI marks the line "Open Conflict" and
+    links to the Conflicts tab."""
+
+    id: str
+    type: ConflictType
+
+
 class EstimateLine(BaseModel):
-    """A work item: its effort and role mix as drafted, and its server-calculated role
-    hours, Contingency (the sum of its linked Contingency Assumptions' hours, accepted or
-    not) and total (effort plus Contingency)."""
+    """A work item: its effort and role mix (as drafted, or as a person last edited them),
+    and its server-calculated role hours, Contingency (the sum of its linked Contingency
+    Assumptions' hours, accepted or not) and total (effort plus Contingency).
+
+    Story 8.2: `row_version` goes back in `If-Match` to edit it. `edited` is true once a
+    person changed its effort or role mix (here, or on the earlier version a re-draft
+    carried the edit from: `edit_carried_from_version`); `edited_by_name`, `edited_at` and
+    `edit_reason` say who, when and why (null when not edited)."""
 
     id: str
     position: int = Field(ge=1)
@@ -71,6 +87,15 @@ class EstimateLine(BaseModel):
     total_hours: float
     role_hours: RoleHours
     requirements: list[LineRequirement]
+    row_version: int = Field(ge=1)
+    edited: bool
+    edited_by_name: str | None
+    edited_at: datetime | None
+    edit_reason: str | None
+    edit_carried_from_version: int | None
+    conflicts: list[LineConflict] = Field(
+        description="Story 8.3: the open Conflicts about the Requirements it covers."
+    )
 
 
 class EstimateSection(BaseModel):
@@ -155,7 +180,15 @@ class EstimateVersion(BaseModel):
 
     Story 8.4: `proposal_status` is the state of the version's Assumption proposals (null
     when none were queued); `assumptions` and `counts` its Assumptions; `unconverted_gaps`
-    the open Gaps without an Assumption in it, once proposals have finished (empty before)."""
+    the open Gaps without an Assumption in it, once proposals have finished (empty before).
+
+    Story 8.2: `uncarried_edit_count` is how many edited lines of the superseded draft (number
+    `uncarried_edits_from_version`, null when the count is 0) had no matching line here; they
+    stay in that version and the Trace.
+
+    Story 8.3: `source` is `assessments` for a version built from the specialist Assessments
+    when an assessment run finished (`source_run`, that run's number), `model` for an
+    accepted model draft."""
 
     id: str
     version: int = Field(ge=1)
@@ -173,6 +206,13 @@ class EstimateVersion(BaseModel):
     counts: AssumptionCounts
     unconverted_gaps: list[UnconvertedGap]
     unallocated_contingency_hours: float
+    uncarried_edit_count: int = Field(ge=0)
+    uncarried_edits_from_version: int | None
+    source: VersionSource
+    source_run: int | None = Field(
+        description="Story 8.3: for a version from the Assessments, the number of the "
+        "assessment run it was built for (the Opportunity's runs, oldest first).",
+    )
 
 
 class EstimateDraft(BaseModel):
@@ -186,14 +226,39 @@ class EstimateView(BaseModel):
     """The Opportunity's current (draft) Estimate Version, null before the first, and its
     latest draft run, null before the first. `can_start_draft`: whether the caller may start
     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
-    `can_export`: whether the caller may export the Estimate (Story 8.8). The UI only uses
-    them to hide controls; the API decides."""
+    `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
+    whether the caller may edit the draft's lines (Story 8.2); `assessment_running` (Story
+    8.3): whether an assessment run is queued or running. The UI only uses them to hide
+    controls; the API decides."""
 
     version: EstimateVersion | None
     draft: EstimateDraft | None
     can_start_draft: bool
     can_accept_assumptions: bool
     can_export: bool
+    can_edit_lines: bool
+    assessment_running: bool = Field(
+        description="Story 8.3: whether an assessment run of the Opportunity is queued or "
+        "running (the Estimate is built when it finishes).",
+    )
+
+
+class EstimateLineChanges(BaseModel):
+    """A person's edit of an Estimate line (Story 8.2): new effort and/or role mix (at least
+    one), and why. Fields left out stay as they are."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    effort_hours: StrictInt | StrictFloat | None = Field(
+        default=None,
+        description="The new effort in hours, 0 to 2,000; rounded half up to 0.1.",
+    )
+    role_mix: dict[str, object] | None = Field(
+        default=None,
+        description="The new role mix: a whole percentage (0-100) for exactly each of the "
+        "template's roles (`engineer`, `project_manager`, `qa`), summing to 100.",
+    )
+    reason: StrictStr = Field(description="Why. Trimmed, it must be 1 to 300 characters.")
 
 
 class AcceptAllResult(BaseModel):

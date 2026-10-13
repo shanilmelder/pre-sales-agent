@@ -2,6 +2,7 @@
 // Every number is counted from what the tabs' reads return; Estimate totals come from the
 // server and are never added up here.
 import { agentLabel, type AssessmentsView } from "@/lib/assessments";
+import { typeLabel, type ConflictsView } from "@/lib/conflicts";
 import { hours, type Assumption, type EstimateView } from "@/lib/estimates";
 import type { Gap, GapList } from "@/lib/gaps";
 import type { RedTeamView, Severity } from "@/lib/red-team";
@@ -23,25 +24,44 @@ export function couldNotLoad(what: string): string {
   return `${what} could not be loaded. Try again in a moment.`;
 }
 
-export type AttentionKind = "critical-finding" | "high-finding" | "gap" | "assumption";
+export type AttentionKind =
+  | "critical-finding"
+  | "escalated-conflict"
+  | "high-finding"
+  | "gap"
+  | "assumption";
 
 export type AttentionItem = {
   /** Unique within the list. */
   key: string;
   kind: AttentionKind;
-  /** "Red Team: <title>", "Open Gap: <title>", "Unaccepted Assumption: <wording> — 80.0 h". */
+  /** "Red Team: <title>", "Open Gap: <title>", "Unaccepted Assumption: <wording> — 80.0 h",
+   * "Effort Conflict on R2 escalated to Sam". */
   label: string;
   tab: WorkspaceTabSlug;
 };
 
-/** Most severe first: critical Findings, then high Findings and high-impact Gaps, then
- * unaccepted Assumptions. */
+/** Most severe first: critical Findings, then escalated Conflicts (Story 6.3), high Findings
+ * and high-impact Gaps, then unaccepted Assumptions. */
 const RANK: Record<AttentionKind, number> = {
   "critical-finding": 0,
+  "escalated-conflict": 1,
   "high-finding": 1,
   gap: 2,
   assumption: 3,
 };
+
+/** The escalated Conflicts, naming the reviewer: "Effort Conflict on R2 escalated to Sam". */
+export function escalatedConflictItems(conflicts: ConflictsView | null | undefined): AttentionItem[] {
+  return (conflicts?.conflicts ?? [])
+    .filter((c) => c.status === "escalated" && c.escalated_to !== null)
+    .map((c) => ({
+      key: `conflict:${c.id}`,
+      kind: "escalated-conflict",
+      label: `${typeLabel(c.type)} Conflict${c.requirement ? ` on ${c.requirement.label}` : ""} escalated to ${c.escalated_to!.name}`,
+      tab: "conflicts",
+    }));
+}
 
 type Sourced = { severity: Severity; title: string; id: string };
 
@@ -69,21 +89,24 @@ export function openGaps(list: GapList | null | undefined): Gap[] {
 }
 
 /** Everything that needs attention, most severe first (a read that failed is `null` and
- * contributes nothing). Within a rank the order is: Red Team, then the Engineering, PM and
- * Security Agents, keeping each source's own order. Read-only; it blocks nothing. */
+ * contributes nothing). Within a rank the order is: Red Team, escalated Conflicts, then the
+ * Engineering, PM and Security Agents, keeping each source's own order. Read-only; it blocks nothing. */
 export function attentionItems({
   redTeam,
   assessments,
   gaps,
   estimate,
+  conflicts = null,
 }: {
   redTeam: RedTeamView | null;
   assessments: AssessmentsView | null;
   gaps: GapList | null;
   estimate: EstimateView | null;
+  conflicts?: ConflictsView | null;
 }): AttentionItem[] {
   const items: AttentionItem[] = [
     ...findingItems("Red Team", redTeam?.review?.findings ?? []),
+    ...escalatedConflictItems(conflicts),
     ...(assessments?.assessments ?? []).flatMap((slot) =>
       findingItems(agentLabel(slot.agent), slot.assessment?.findings ?? []),
     ),

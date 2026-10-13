@@ -17,8 +17,10 @@ import {
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
-import type { Assumption, EstimateDraft } from "@/lib/estimates";
+import type { Conflict } from "@/lib/conflicts";
+import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
 import type { ClarificationQuestion, Detection } from "@/lib/gaps";
+import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
 import {
   codePointLength,
@@ -54,13 +56,30 @@ export type CreateInput = {
   products: string[];
   industry: string;
   target_proposal_date: string;
+  /** An Opportunity import whose file becomes the first Source. */
+  importId?: string;
 };
 
 export type CreateResult =
   | { kind: "ok"; id: string }
   /** 422: the fields the API rejected (empty when it named none we know). */
   | { kind: "invalid"; fields: CreateField[] }
+  /** 404 / 409 / 410 for the import: not the caller's, already used, or expired. */
+  | { kind: "import-unusable" }
   | { kind: "forbidden" }
+  | { kind: "error" };
+
+export type ImportFileResult =
+  | { kind: "ok"; import: OpportunityImport }
+  /** 413 / 415 / 422: the API's sentence for the UI ("Rejected: .exe files aren't allowed"). */
+  | { kind: "rejected"; reason: string }
+  | { kind: "forbidden" }
+  | { kind: "error" };
+
+export type LoadImportResult =
+  | { kind: "ok"; import: OpportunityImport }
+  /** 404 / 410: not the caller's, or expired. */
+  | { kind: "gone" }
   | { kind: "error" };
 
 export type LoadResult =
@@ -201,7 +220,9 @@ function isCreateInput(input: unknown): input is CreateInput {
     string,
     unknown
   >;
+  const { importId } = input as Record<string, unknown>;
   return (
+    (importId === undefined || (typeof importId === "string" && UUID_RE.test(importId))) &&
     typeof title === "string" &&
     typeof customer_name === "string" &&
     Array.isArray(products) &&
@@ -223,15 +244,72 @@ export async function createOpportunity(input: unknown): Promise<CreateResult> {
         products: input.products,
         industry: input.industry,
         target_proposal_date: input.target_proposal_date,
+        ...(input.importId ? { import_id: input.importId } : {}),
       },
     });
     if (data) return { kind: "ok", id: data.id };
     if (response.status === 422) return { kind: "invalid", fields: invalidFields(problem(error).detail) };
     if (response.status === 403) return { kind: "forbidden" };
+    if (input.importId && [404, 409, 410].includes(response.status)) {
+      return { kind: "import-unusable" };
+    }
     console.error(`create opportunity failed: status=${response.status}`);
     return { kind: "error" };
   } catch (thrown) {
     console.error(`create opportunity failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunity-imports` with the `file` from `formData`: one file to start a
+ * New Opportunity from. The API checks who may import, the type, the size and the content;
+ * this only forwards the file. */
+export async function importFile(formData: unknown): Promise<ImportFileResult> {
+  if (!(formData instanceof FormData)) return { kind: "error" };
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { kind: "error" };
+  const upload = new FormData();
+  upload.append("file", file, file.name);
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST("/api/v1/opportunity-imports", {
+      // The generated type describes the multipart field; the body sent is the FormData.
+      body: { file: "" },
+      bodySerializer: () => upload,
+    });
+    if (data) return { kind: "ok", import: data };
+    switch (response.status) {
+      case 413:
+      case 415:
+      case 422:
+        return { kind: "rejected", reason: rejectionReason(problem(error).detail, FILE_UNREADABLE) };
+      case 403:
+        return { kind: "forbidden" };
+      default:
+        console.error(`import file failed: status=${response.status} code=${String(problem(error).code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`import file failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunity-imports/{id}`: the import's status and suggestions (the New
+ * Opportunity form polls this while the file is read). */
+export async function loadImport(importId: unknown): Promise<LoadImportResult> {
+  if (typeof importId !== "string" || !UUID_RE.test(importId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.GET("/api/v1/opportunity-imports/{import_id}", {
+      params: { path: { import_id: importId } },
+    });
+    if (data) return { kind: "ok", import: data };
+    if (response.status === 404 || response.status === 410) return { kind: "gone" };
+    console.error(`load import failed: status=${response.status} code=${String(problem(error).code)}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`load import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }
@@ -1369,6 +1447,296 @@ export async function acceptAllAssumptions(
   } catch (thrown) {
     console.error(
       `accept all assumptions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- editing an Estimate line (Story 8.2) ---------------------------------------------------
+
+export type EstimateLineEditInput = {
+  opportunityId: string;
+  lineId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  effortHours?: number;
+  roleMix?: RoleMix;
+  reason: string;
+};
+
+export type EstimateLineEditResult =
+  /** The whole Estimate as it is now, every total recalculated by the server. */
+  | { kind: "ok"; estimate: EstimateView }
+  /** 412: someone changed the line first; `message` is the API's "Changed by {name} since you
+   * opened it." */
+  | { kind: "stale"; message: string }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  /** 409 `estimate_version_not_draft`: a re-draft replaced the version. */
+  | { kind: "not-draft" }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the line is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+const ROLE_KEYS = ["engineer", "project_manager", "qa"] as const;
+
+function isRoleMix(value: unknown): value is RoleMix {
+  if (typeof value !== "object" || value === null) return false;
+  const mix = value as Record<string, unknown>;
+  return (
+    Object.keys(mix).length === ROLE_KEYS.length &&
+    ROLE_KEYS.every((key) => typeof mix[key] === "number" && Number.isFinite(mix[key]))
+  );
+}
+
+function isLineEditInput(input: unknown): input is EstimateLineEditInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, lineId, rowVersion, effortHours, roleMix, reason } = input as Record<
+    string,
+    unknown
+  >;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof lineId === "string" &&
+    UUID_RE.test(lineId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0 &&
+    (effortHours === undefined ||
+      (typeof effortHours === "number" && Number.isFinite(effortHours))) &&
+    (roleMix === undefined || isRoleMix(roleMix)) &&
+    (effortHours !== undefined || roleMix !== undefined) &&
+    typeof reason === "string"
+  );
+}
+
+/** `PATCH /api/v1/opportunities/{id}/estimate-lines/{lid}` with `If-Match`: a draft line's
+ * effort hours and/or role mix, with a reason. Never retries or overwrites on 412. Logs ids
+ * and statuses only (never the reason). */
+export async function editEstimateLine(input: unknown): Promise<EstimateLineEditResult> {
+  if (!isLineEditInput(input)) return { kind: "error" };
+  const { opportunityId, lineId, rowVersion, effortHours, roleMix, reason } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH(
+      "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, line_id: lineId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: {
+          ...(effortHours !== undefined ? { effort_hours: effortHours } : {}),
+          ...(roleMix !== undefined ? { role_mix: { ...roleMix } } : {}),
+          reason,
+        },
+      },
+    );
+    if (data) return { kind: "ok", estimate: data };
+    switch (response.status) {
+      case 412:
+        return {
+          kind: "stale",
+          message: problem(error).detail ?? "Changed by someone else since you opened it.",
+        };
+      case 422: {
+        const { detail } = problem(error);
+        return {
+          kind: "invalid",
+          detail:
+            detail && !detail.startsWith("Invalid fields:")
+              ? detail
+              : "The change was not accepted.",
+        };
+      }
+      case 409:
+        return { kind: "not-draft" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `edit estimate line failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `edit estimate line failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- resolving and escalating a Conflict (Story 6.3) ----------------------------------------
+
+export type ConflictChoice = { position: number } | { entered: string };
+
+export type ResolveConflictInput = {
+  opportunityId: string;
+  conflictId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  choice: ConflictChoice;
+  reason: string;
+};
+
+export type EscalateConflictInput = {
+  opportunityId: string;
+  conflictId: string;
+  rowVersion: number;
+  reviewerId: string;
+  reason: string;
+};
+
+export type ConflictDecisionResult =
+  /** The Conflict as it is now. */
+  | { kind: "ok"; conflict: Conflict }
+  /** 412: someone changed it first; `message` is the API's "Changed by {name} since you
+   * opened it." */
+  | { kind: "stale"; message: string }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  /** 409: already resolved, or already escalated. */
+  | { kind: "conflict"; detail: string }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the Conflict is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isChoice(value: unknown): value is ConflictChoice {
+  if (typeof value !== "object" || value === null) return false;
+  const choice = value as Record<string, unknown>;
+  if ("position" in choice) {
+    return (
+      typeof choice.position === "number" &&
+      Number.isSafeInteger(choice.position) &&
+      choice.position >= 1
+    );
+  }
+  return typeof choice.entered === "string";
+}
+
+function isDecisionBase(input: Record<string, unknown>): boolean {
+  const { opportunityId, conflictId, rowVersion, reason } = input;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof conflictId === "string" &&
+    UUID_RE.test(conflictId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0 &&
+    typeof reason === "string"
+  );
+}
+
+function isResolveInput(input: unknown): input is ResolveConflictInput {
+  if (typeof input !== "object" || input === null) return false;
+  const record = input as Record<string, unknown>;
+  return isDecisionBase(record) && isChoice(record.choice);
+}
+
+function isEscalateInput(input: unknown): input is EscalateConflictInput {
+  if (typeof input !== "object" || input === null) return false;
+  const record = input as Record<string, unknown>;
+  return (
+    isDecisionBase(record) &&
+    typeof record.reviewerId === "string" &&
+    UUID_RE.test(record.reviewerId)
+  );
+}
+
+function decisionFailure(
+  label: string,
+  status: number,
+  error: unknown,
+): ConflictDecisionResult {
+  const { detail, code } = problem(error);
+  switch (status) {
+    case 412:
+      return {
+        kind: "stale",
+        message: detail ?? "Changed by someone else since you opened it.",
+      };
+    case 422:
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The decision was not accepted.",
+      };
+    case 409:
+      return {
+        kind: "conflict",
+        detail:
+          code === "conflict_not_open"
+            ? "This Conflict is already escalated."
+            : "This Conflict is already resolved.",
+      };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${status} code=${String(code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/conflicts/{cid}/resolution` with `If-Match`: choose a
+ * position or enter one, with a reason. Never retries or overwrites on 412. Logs ids and
+ * statuses only (never the reason or a position). */
+export async function resolveConflict(input: unknown): Promise<ConflictDecisionResult> {
+  if (!isResolveInput(input)) return { kind: "error" };
+  const { opportunityId, conflictId, rowVersion, choice, reason } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/resolution",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, conflict_id: conflictId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: {
+          choice: "position" in choice ? choice.position : { entered: choice.entered },
+          reason,
+        },
+      },
+    );
+    if (data) return { kind: "ok", conflict: data };
+    return decisionFailure("resolve conflict", response.status, error);
+  } catch (thrown) {
+    console.error(`resolve conflict failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/conflicts/{cid}/escalation` with `If-Match`: escalate to
+ * a named reviewer on the Opportunity, with a reason. Logs ids and statuses only. */
+export async function escalateConflict(input: unknown): Promise<ConflictDecisionResult> {
+  if (!isEscalateInput(input)) return { kind: "error" };
+  const { opportunityId, conflictId, rowVersion, reviewerId, reason } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/conflicts/{conflict_id}/escalation",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, conflict_id: conflictId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { reviewer_id: reviewerId, reason },
+      },
+    );
+    if (data) return { kind: "ok", conflict: data };
+    return decisionFailure("escalate conflict", response.status, error);
+  } catch (thrown) {
+    console.error(
+      `escalate conflict failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

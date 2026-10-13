@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 from tests.auth_tokens import auth_app
 from tests.conftest import make_client
 from tests.test_health import assert_problem
-from tests.test_role_admin import _grant, _signed_in
+from tests.test_role_admin import _signed_in
 
 SEARCH = "/api/v1/users/search"
 
@@ -26,33 +26,29 @@ def _ids(body: dict[str, list[dict[str, str]]]) -> list[str]:
 
 
 def _searcher(client: TestClient, engine: Engine) -> dict[str, str]:
-    headers, user_id = _signed_in(client, "Searcher Person")
-    _grant(engine, user_id, "presales_engineer")
+    headers, _ = _signed_in(client, "Searcher Person", "presales_engineer")
     return headers
 
 
-def test_matches_name_or_email_of_users_with_a_role(
+def test_matches_name_or_email_of_any_provisioned_user(
     client: TestClient, sync_engine: Engine
 ) -> None:
     headers = _searcher(client, sync_engine)
     tag = uuid4().hex[:10]
-    _, with_role = _signed_in(client, f"Findable {tag}")
-    _grant(sync_engine, with_role, "commercial")
+    _, with_role = _signed_in(client, f"Findable {tag}", "commercial")
     _, without_role = _signed_in(client, f"Roleless {tag}")
 
     resp = client.get(SEARCH, headers=headers, params={"q": tag.upper()})
 
     assert resp.status_code == 200, resp.text
-    assert _ids(resp.json()) == [str(with_role)]
+    assert _ids(resp.json()) == [str(with_role), str(without_role)]  # by name
     item = resp.json()["items"][0]
     assert set(item) == {"id", "name", "email"}
-    assert str(without_role) not in _ids(resp.json())
 
 
 def test_matches_email(client: TestClient, sync_engine: Engine) -> None:
     headers = _searcher(client, sync_engine)
-    _, user_id = _signed_in(client, "Email Match")
-    _grant(sync_engine, user_id, "pm_reviewer")
+    _, user_id = _signed_in(client, "Email Match", "pm_reviewer")
     email = client.get(SEARCH, headers=headers, params={"q": "Email Match", "limit": 50}).json()[
         "items"
     ]
@@ -66,8 +62,7 @@ def test_matches_email(client: TestClient, sync_engine: Engine) -> None:
 def test_like_wildcards_are_literal(client: TestClient, sync_engine: Engine) -> None:
     headers = _searcher(client, sync_engine)
     tag = uuid4().hex[:10]
-    _, plain = _signed_in(client, f"Wild {tag} x")
-    _grant(sync_engine, plain, "commercial")
+    _, plain = _signed_in(client, f"Wild {tag} x", "commercial")
     for q in ("%%", "__", f"{tag}%x", "\\\\"):
         resp = client.get(SEARCH, headers=headers, params={"q": q})
         assert resp.status_code == 200
@@ -78,8 +73,7 @@ def test_limit_and_validation(client: TestClient, sync_engine: Engine) -> None:
     headers = _searcher(client, sync_engine)
     tag = uuid4().hex[:10]
     for i in range(3):
-        _, user_id = _signed_in(client, f"Limited {tag} {i}")
-        _grant(sync_engine, user_id, "commercial")
+        _signed_in(client, f"Limited {tag} {i}")
     assert (
         len(client.get(SEARCH, headers=headers, params={"q": tag, "limit": 2}).json()["items"]) == 2
     )
@@ -106,7 +100,6 @@ def test_orders_by_name_case_insensitively_then_id(client: TestClient, sync_engi
     ids: dict[str, str] = {}
     for name in names:
         _, user_id = _signed_in(client, name)
-        _grant(sync_engine, user_id, "commercial")
         ids[name] = str(user_id)
     alphas = sorted([ids[f"ZZ{tag} Alpha"], ids[f"ZZ{tag} ALPHA"]])  # same name: by id
     expected = [*alphas, ids[names[0]], ids[names[2]]]
@@ -122,9 +115,7 @@ def test_orders_by_name_case_insensitively_then_id(client: TestClient, sync_engi
 def test_non_presales_engineers_are_forbidden(
     client: TestClient, sync_engine: Engine, role: str | None
 ) -> None:
-    headers, user_id = _signed_in(client, "Not An Engineer")
-    if role:
-        _grant(sync_engine, user_id, role)
+    headers, _ = _signed_in(client, "Not An Engineer", *([role] if role else []))
     resp = client.get(SEARCH, headers=headers, params={"q": "ab"})
     assert resp.status_code == 403
     assert_problem(resp.json(), 403, "forbidden")

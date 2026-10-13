@@ -1,0 +1,43 @@
+From: Hannah Reid <hannah.reid@harbourline.example>
+To: Alex Chen <alex.chen@vendor.example>
+Cc: Jordan Lee <jordan.lee@vendor.example>
+Subject: Elmbridge FC - volumes, product data and packing
+Date: Fri, 02 Oct 2026 09:05:31 +0100
+Message-ID: <elmbridge-ops-1002@harbourline.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+Here are the operations points from the call.
+
+Volumes
+- Normal day: about 18,000 order lines. Black Friday week: about 45,000 order lines
+  a day, with the busiest hour around 4,000 lines.
+- Our marketplace channel goes live in April 2027. We have no history for it and no
+  forecast, and we won't have one before contract signature. It could add 10% or it
+  could double our volume. Please size with headroom for it and price that headroom
+  as an allowance, rather than waiting for a number from us that won't come.
+
+Product data
+- Dimensions and weights in Dynamics 365 are unreliable. A spot check of 300 SKUs
+  last year found a lot of errors, but we never measured the rest.
+- We don't know how many of the 22,000 SKUs are wrong. We'll only find out when every
+  SKU goes over the measuring machine during the data load, and some will need
+  re-measuring, photos or a new storage profile. Please allow for that clean-up
+  effort; we can't tell you its size in advance.
+
+Decisions that are ours, still open
+- Carton range: our packaging team decides the carton sizes for the carton erector
+  and the auto-bagger. They haven't settled on how many sizes or which ones yet; we'll
+  send you the list once they have.
+- Returns: we haven't decided whether returns processing is in this phase or the
+  next. The board decides that with the budget.
+- Acceptance testing: we haven't agreed internally who prepares the test orders and
+  expected results for acceptance testing, or how many super-users we can release
+  for testing. We'll come back to you.
+
+Thanks,
+Hannah Reid
+Head of Operations, Harbourline Home & Garden

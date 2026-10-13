@@ -7,7 +7,7 @@ paradigm: 'Modular monolith with hexagonal (ports and adapters) modules; agents 
 scope: 'Whole platform, Releases R1–R4, per PRD prd-pre-sales-agent-2026-10-01'
 status: final
 created: '2026-10-01'
-updated: '2026-10-01'  # amended: Auth0
+updated: '2026-10-06'  # amended: Auth0; AD-15 reversed by Story 1.9 (Auth0 RBAC)
 binds: ['FR-1..FR-65', 'NFR-1..NFR-8']
 sources:
   - '../../prds/prd-pre-sales-agent-2026-10-01/prd.md'
@@ -202,7 +202,9 @@ graph TD
 - **Rule:**
   - Authentication uses **Auth0** (EU tenant). The web app signs users in with `@auth0/nextjs-auth0` (v4 `Auth0Client`, Next.js 16 `proxy.ts`) and requests access tokens for the API audience.
   - The API validates the Auth0 access token on every request with PyJWT `PyJWKClient`: RS256, JWKS, `iss`, `aud` (the API identifier) and `exp`. It maps `sub` to a platform user.
-  - Auth0 provides identity only. Auth0 RBAC is not used, so roles and Opportunity membership live in `identity`. The user's first login provisions a platform user with no roles until an admin assigns them.
+  - **Auth0 RBAC is the single place where roles and permissions are managed** (reversed in Story 1.9; previously roles lived in `identity`). Each Auth0 permission name equals an action name. The access token carries the `permissions` claim (RBAC "Add Permissions in the Access Token") and a namespaced roles claim (`https://pre-sales-agent/roles`) added by the Post-Login Action. The API authorizes from the token alone: a missing claim grants nothing (never a 401), and unknown or malformed values are ignored and logged with the user id. Changes apply when the user's next token is issued. No Auth0 Management API is used.
+  - Opportunity membership (owner, collaborators) stays in the platform, never in Auth0. Owner/member grants and the sales-representative exclusions are code in `identity/domain/policy.py`, evaluated against the token's roles.
+  - The user's first login provisions a platform user. `identity_user_roles` is only a display cache of each user's roles as of their last sign-in (rewritten when the token's roles differ), shown read-only on Users & roles; it is never read for authorization or filtering. Roles are not edited in the app.
   - All decisions go through `identity.authorize(actor, action, resource)`, called inside commands and queries.
   - Action names follow `<module>.<entity>.<verb>`, matching the command name, and live in one catalogue (`identity/actions.py`). The Agent Registry uses the same names.
   - Agents act with `actor_id = "<agent_id>@<semver>"`.
@@ -580,7 +582,7 @@ pre-sales-agent/
 | NFR-3: 50 concurrent runs, horizontal API scaling | Runs queue on one GPU; single VPS | User decision: one VPS. Revise after load test |
 | NFR-4: managed vault | sops/age encrypted secrets (AD-32) | Single-server deployment |
 | Addendum: LangSmith, WebSockets | OTel to a local collector; SSE only | Data locality; one streaming mechanism |
-| §11 and FR-58: company SSO (Entra ID assumed) | Auth0 for authentication; roles in the platform | User decision |
+| §11 and FR-58: company SSO (Entra ID assumed) | Auth0 for authentication, roles and permissions (RBAC); Opportunity membership in the platform | User decision (roles moved to Auth0 in Story 1.9) |
 
 ## Deferred
 

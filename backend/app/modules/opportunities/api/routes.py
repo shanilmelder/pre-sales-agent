@@ -14,6 +14,7 @@ from fastapi import APIRouter, Header, Query, Response
 from fastapi.exceptions import RequestValidationError
 
 from app.modules.identity.application.public import CurrentPrincipal
+from app.modules.opportunities.application import imports
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import (
     NewOpportunity,
@@ -33,7 +34,8 @@ from app.platform.uow import UoW
 PROBLEM_CONTENT = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
 _DESCRIBED: dict[int, str] = {
     401: "No valid access token (`token_missing`, `token_expired`, `token_invalid`)",
-    403: "Not allowed (`forbidden`): creating without the presales engineer role, or "
+    403: "Not allowed (`forbidden`): creating without the "
+    "`opportunities.opportunity.create` permission, or "
     "editing the Opportunity or changing collaborators without being the owner",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
     412: "The Opportunity changed since it was read (`row_version_mismatch`)",
@@ -82,14 +84,29 @@ def _with_etag(response: Response, opportunity: Opportunity) -> Opportunity:
     status_code=201,
     responses={
         **_responses(403, 422),
+        404: {
+            "description": "No Opportunity import with this `import_id` of the caller's "
+            "(`not_found`)",
+            "content": PROBLEM_CONTENT,
+        },
+        409: {
+            "description": "The import was already used (`import_consumed`)",
+            "content": PROBLEM_CONTENT,
+        },
+        410: {
+            "description": "The import is older than 24 hours (`import_expired`)",
+            "content": PROBLEM_CONTENT,
+        },
         201: {"description": "The new Opportunity", "headers": _ETAG_HEADER},
     },
 )
 async def create_opportunity(
     body: NewOpportunity, actor: CurrentPrincipal, uow: UoW, response: Response
 ) -> Opportunity:
-    """Create an Opportunity owned by the caller. Presales engineers only."""
-    created = await opportunities.create(uow, actor, body)
+    """Create an Opportunity owned by the caller. Presales engineers only. With `import_id`,
+    the import's file becomes the Opportunity's first Source (parsed as any upload) and the
+    import can't be used again."""
+    created = await imports.create(uow, actor, body)
     response.headers["Location"] = f"/api/v1/opportunities/{created.id}"
     return _with_etag(response, created)
 
@@ -274,7 +291,7 @@ async def add_collaborator(
     response: Response,
     if_match: IfMatchHeader = None,
 ) -> Opportunity:
-    """Share the Opportunity with a user who holds a role. Owner only; adding an existing
+    """Share the Opportunity with a provisioned user. Owner only; adding an existing
     collaborator changes nothing."""
     changed = await opportunities.add_collaborator(uow, actor, opportunity_id, user_id, if_match)
     return _with_etag(response, changed)

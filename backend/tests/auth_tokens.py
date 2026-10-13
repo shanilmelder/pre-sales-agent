@@ -2,6 +2,7 @@
 
 import json
 import time
+from collections.abc import Iterable
 from typing import Any
 
 import jwt
@@ -11,6 +12,7 @@ from fastapi import FastAPI
 from app.main_api import create_app
 from app.modules.identity.application.public import TokenValidator
 from app.platform.config import Settings
+from scripts.seed_auth0 import ROLE_PERMISSIONS
 
 DOMAIN = "psa-test.eu.auth0.com"
 ISSUER = f"https://{DOMAIN}/"
@@ -18,6 +20,22 @@ AUDIENCE = "https://api.pre-sales-agent.test"
 KID = "test-key-1"
 NAME_CLAIM = "https://pre-sales-agent/name"
 EMAIL_CLAIM = "https://pre-sales-agent/email"
+ROLES_CLAIM = "https://pre-sales-agent/roles"
+PERMISSIONS_CLAIM = "permissions"
+
+SEED_PERMISSIONS: dict[str, frozenset[str]] = {
+    role.value: frozenset(action.value for action in actions)
+    for role, actions in ROLE_PERMISSIONS.items()
+}
+"""What Auth0 RBAC puts in a token's `permissions` claim for each role, as plain strings,
+derived from `scripts.seed_auth0.ROLE_PERMISSIONS` (what is written to Auth0) so the two
+cannot drift. Other roles carry no permissions."""
+
+
+def permissions_for(roles: Iterable[str]) -> list[str]:
+    """The `permissions` claim Auth0 issues for these roles under `SEED_PERMISSIONS`."""
+    return sorted(set().union(*(SEED_PERMISSIONS.get(role, frozenset()) for role in roles)))
+
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)

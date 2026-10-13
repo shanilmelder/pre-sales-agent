@@ -1,0 +1,101 @@
+WEBVTT
+
+NOTE
+Microsoft Teams meeting transcript (sample data for the demo; all names and companies are fictional).
+Meridian Fresh Foods — Riverside DC automation — discovery call, 22 September 2026.
+
+1
+00:00:04.120 --> 00:00:11.480
+<v Jordan Lee>Thanks everyone for joining. Today is about understanding the Riverside distribution centre so we can put together a proposal for the automation.
+
+2
+00:00:12.010 --> 00:00:20.640
+<v Priya Raman>Great. I run operations at Meridian Fresh Foods. Riverside is our new DC. We take over the building in March next year, and we must be live before the November peak.
+
+3
+00:00:21.200 --> 00:00:33.900
+<v Priya Raman>The core of it is a goods-to-person picking system for the ambient area, plus a chilled zone that has to stay between two and five degrees. Today everything is picked manually with paper lists and it doesn't scale.
+
+4
+00:00:34.400 --> 00:00:41.250
+<v Alex Chen>Understood. How many SKUs are we talking about, and what volumes do you see at peak?
+
+5
+00:00:41.900 --> 00:00:55.300
+<v Priya Raman>Around eighteen thousand SKUs, about fourteen thousand ambient and four thousand chilled. Normal peak is roughly three and a half thousand order lines per hour. In December it can go higher, maybe five thousand, but I'd have to check with planning.
+
+6
+00:00:55.800 --> 00:01:04.100
+<v Alex Chen>That December number matters a lot for how we size the system, so a confirmed forecast would really help.
+
+7
+00:01:04.600 --> 00:01:14.900
+<v Priya Raman>Noted. We run two shifts, sometimes three, from five in the morning to eleven at night, six days a week. The system has to be available during those hours — I'd say ninety-nine and a half percent at least.
+
+8
+00:01:15.300 --> 00:01:26.700
+<v Priya Raman>We also need order batching and wave release, automatic replenishment from the reserve racking into the pick system, and supervisor dashboards showing throughput and backlog per zone.
+
+9
+00:01:27.200 --> 00:01:33.800
+<v Alex Chen>And outbound? Labels, carriers?
+
+10
+00:01:34.300 --> 00:01:45.600
+<v Priya Raman>Every order gets a shipping label and goes to one of our three carriers. Today we print labels from the carriers' own websites, which is painful. We want that integrated.
+
+11
+00:01:46.200 --> 00:01:54.900
+<v Daniel Okafor>I'm Daniel, IT manager. On the systems side, orders come from SAP and we need confirmations back into SAP when an order is picked and shipped.
+
+12
+00:01:55.400 --> 00:02:02.300
+<v Alex Chen>Which SAP version are you on, and is the warehouse managed in SAP today or in a separate WMS?
+
+13
+00:02:02.900 --> 00:02:17.400
+<v Daniel Okafor>That's the complicated part. We're mid-way through moving from ECC to S/4HANA. The plan says S/4 before the Riverside go-live, but honestly it might still be ECC on day one. And we have a separate WMS from a vendor we're phasing out, so we haven't decided whether your system replaces it or sits underneath it.
+
+14
+00:02:18.000 --> 00:02:24.600
+<v Alex Chen>Okay. Do you have a preference for how we integrate — IDocs, APIs, files?
+
+15
+00:02:25.100 --> 00:02:33.700
+<v Daniel Okafor>Not decided. Our SAP partner prefers APIs, but the old WMS uses IDocs. I'll send you what we have after this call.
+
+16
+00:02:34.200 --> 00:02:45.900
+<v Daniel Okafor>Security-wise: users must sign in with single sign-on through our identity provider. And your support team will need remote access, but our security team is strict about vendor access to the warehouse network.
+
+17
+00:02:46.400 --> 00:02:52.100
+<v Alex Chen>Which identity provider do you use?
+
+18
+00:02:52.600 --> 00:02:58.900
+<v Daniel Okafor>I'd have to confirm with the infrastructure team. We're consolidating that too.
+
+19
+00:02:59.400 --> 00:03:12.200
+<v Priya Raman>For food safety we need temperature monitoring in the chilled zone with alarms if it goes out of range, and an audit log of every pick and every temperature reading kept for two years.
+
+20
+00:03:12.700 --> 00:03:22.500
+<v Sofia Marques>Sofia from finance. The board has approved an envelope of roughly two point four million for the whole project. We'd like fixed pricing where possible and milestone payments, not everything up front.
+
+21
+00:03:23.000 --> 00:03:31.300
+<v Sofia Marques>And all our operational data has to stay in-country. That's a hard requirement from our data protection officer.
+
+22
+00:03:31.800 --> 00:03:41.600
+<v Priya Raman>One more thing — training. We'll have about forty operators across the shifts, plus six supervisors. They need training before go-live, ideally on site.
+
+23
+00:03:42.100 --> 00:03:50.400
+<v Alex Chen>That's very helpful. To summarise the open points: the December volume, the SAP version at go-live, the role of the existing WMS, the integration method and the identity provider.
+
+24
+00:03:50.900 --> 00:03:58.700
+<v Jordan Lee>We'll send a follow-up with questions. Thanks all, this was a great start.

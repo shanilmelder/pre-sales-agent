@@ -17,7 +17,10 @@ router = APIRouter(prefix="/users", tags=["identity"])
     operation_id="search_users",
     responses={
         **AUTH_RESPONSES,
-        403: {"description": "Not a presales engineer (`forbidden`)", "content": PROBLEM_CONTENT},
+        403: {
+            "description": "No `identity.user.search` permission (`forbidden`)",
+            "content": PROBLEM_CONTENT,
+        },
         422: {
             "description": "Invalid query parameter (`validation_error`)",
             "content": PROBLEM_CONTENT,
@@ -34,6 +37,6 @@ async def search_users(
         int, Query(ge=1, le=identity.SEARCH_MAX_LIMIT)
     ] = identity.SEARCH_DEFAULT_LIMIT,
 ) -> UserSearchResult:
-    """Users who hold at least one role and whose name or email contains `q`
-    (case-insensitive), ordered by name."""
+    """Provisioned users whose name or email contains `q` (case-insensitive), ordered by
+    name."""
     return await identity.search_users(uow, actor, q, limit)

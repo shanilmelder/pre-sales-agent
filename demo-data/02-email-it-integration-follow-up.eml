@@ -1,0 +1,36 @@
+From: Daniel Okafor <daniel.okafor@meridianfresh.example>
+To: Alex Chen <alex.chen@vendor.example>
+Cc: Priya Raman <priya.raman@meridianfresh.example>
+Subject: RE: Riverside DC - systems and security information
+Date: Wed, 23 Sep 2026 16:42:10 +0100
+Message-ID: <riverside-it-0923@meridianfresh.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+As promised, here is what I could pull together after yesterday's call.
+
+SAP and WMS
+- Order release: today our WMS receives deliveries from SAP as IDocs (DELVRY). For Riverside we would prefer REST APIs if your system supports them, but it has to work with both ECC and S/4HANA, because the S/4 cut-over date is still not fixed.
+- We need goods-issue confirmations back into SAP within 5 minutes of an order being shipped, and stock adjustments at least every 15 minutes.
+- We have not decided yet whether the existing WMS stays. Please price both options: your system replacing the WMS, and your system working underneath it.
+
+Master data
+- Item master data is a known weak spot. Roughly 30% of our SKUs have no dimensions or weights in SAP. Someone will need to measure and load them before go-live — we don't have the people for that internally.
+
+Environments
+- We can provide an SAP test system, but only from January, and it is shared with the S/4 programme, so availability is limited.
+
+Security
+- Single sign-on is mandatory. The infrastructure team still hasn't confirmed the identity provider; it is either our current on-premises directory or the new cloud one.
+- Vendor remote access must go through our privileged access gateway with named accounts and session recording. No permanent VPN tunnels.
+- Our security policy requires ISO 27001 certification from suppliers and an independent penetration test before go-live. I've attached our supplier security questionnaire — please return it with the proposal.
+- The warehouse control network must be separated from the office network.
+
+Happy to set up a call with our SAP partner if that helps.
+
+Regards,
+Daniel Okafor
+IT Manager, Meridian Fresh Foods

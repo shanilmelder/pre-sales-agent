@@ -1,6 +1,6 @@
 // The one definition of the shell's keyboard shortcuts. The key handler matches events
 // against it and the cheat sheet lists it, so the two cannot drift apart.
-import { NAV_ITEMS, type NavItem, type Role } from "@/lib/navigation";
+import { NAV_ITEMS, type NavItem, type Permission } from "@/lib/navigation";
 
 export type ShortcutId =
   | "open-palette"
@@ -32,9 +32,12 @@ export type Shortcut = {
 /** Where `c` (and New Opportunity) goes. */
 export const NEW_OPPORTUNITY_HREF = "/opportunities/new";
 
-/** Presales engineers create Opportunities. Display only: the API decides. */
-export function canCreateOpportunity(roles: readonly Role[]): boolean {
-  return roles.includes("presales_engineer");
+/** The permission that creates Opportunities. */
+export const CREATE_OPPORTUNITY_PERMISSION = "opportunities.opportunity.create";
+
+/** Whether the user may create Opportunities. Display only: the API decides. */
+export function canCreateOpportunity(permissions: readonly Permission[]): boolean {
+  return permissions.includes(CREATE_OPPORTUNITY_PERMISSION);
 }
 
 /** How long the second key of a `g` sequence may take. */
@@ -109,7 +112,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
 ];
 
 /** The shortcuts this user has: those that need a permission only when they hold it. */
-export function shortcutsFor(roles: readonly Role[]): readonly Shortcut[] {
-  const canCreate = canCreateOpportunity(roles);
+export function shortcutsFor(permissions: readonly Permission[]): readonly Shortcut[] {
+  const canCreate = canCreateOpportunity(permissions);
   return SHORTCUTS.filter((s) => s.requires !== "create-opportunity" || canCreate);
 }

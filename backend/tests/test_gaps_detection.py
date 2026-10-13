@@ -81,10 +81,12 @@ def gap(
     impact: str = "high",
     question: str | None = None,
     topic: str = "Interfaces",
+    customer_can_answer: bool = True,
 ) -> dict[str, Any]:
     return {
         "title": title,
         "category": category,
+        "customer_can_answer": customer_can_answer,
         "why_it_matters": f"Changes the effort for {title.lower()}.",
         "impact": impact,
         "impact_basis": "Drives the integration work package.",
@@ -332,6 +334,26 @@ def test_detection_stores_ranked_gaps_with_drafted_questions(
     for leak in ("SAP", "sign-on", "EUR", "Peak growth", "interface do you use"):
         assert leak not in logged
         assert leak not in str(trace)
+
+
+def test_a_gap_the_customer_cannot_answer_is_stored_marked_for_a_contingency(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    _, opp = extracted(client, sync_engine, db_url, gateway)
+    gateway.replies = [
+        gaps_out(
+            gap("Unknown legacy WMS interfaces", ["R1"], customer_can_answer=False),
+            gap("SSO provider", ["R4"], category="security_and_compliance", impact="low"),
+        )
+    ]
+
+    assert drain(db_url, DETECT) == ["succeeded"]
+
+    unknown, sso = gap_rows(sync_engine, opp["id"])
+    assert unknown["why_it_matters"] == (
+        "Unknown to the customer: Changes the effort for unknown legacy wms interfaces."
+    )
+    assert sso["why_it_matters"] == "Changes the effort for sso provider."
 
 
 def test_a_candidate_citing_an_unknown_requirement_is_dropped(
@@ -720,7 +742,8 @@ def test_a_successful_detection_queues_an_assessment_run(
     ]
     (job,) = _jobs(sync_engine, opp["id"], ASSESS)
     assert job["payload"] == {"run_id": str(run["id"])}
-    assert len(_jobs(sync_engine, opp["id"], DRAFT)) == 1  # the Estimate draft still queued
+    # Story 8.3: no model Estimate draft; the Estimate is built when the run finishes.
+    assert _jobs(sync_engine, opp["id"], DRAFT) == []
     (event,) = rows(
         sync_engine,
         "SELECT * FROM platform_trace_events WHERE opportunity_id = :o "

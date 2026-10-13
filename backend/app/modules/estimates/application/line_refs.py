@@ -14,13 +14,15 @@ from app.platform.uow import UnitOfWork
 
 @dataclass(frozen=True, slots=True)
 class LineRef:
-    """A line of an Estimate Version: its section, effort (0.1 h) and title."""
+    """A line of an Estimate Version: its section, effort (0.1 h), title and the ids of the
+    Requirements it covers (Story 6.1: the Conflicts' Estimate allocation)."""
 
     id: UUID
     position: int
     section: str
     effort_hours: Decimal
     title: str = field(repr=False)
+    requirement_ids: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +37,9 @@ class VersionLines:
 
 async def _lines(uow: UnitOfWork, version_id: UUID) -> list[LineRef]:
     records = await repo.lines_of(uow, version_id)
+    covered: dict[UUID, list[UUID]] = {}
+    for link in await repo.links_for(uow, [r.id for r in records]):
+        covered.setdefault(link.line_id, []).append(link.requirement_id)
     return [
         LineRef(
             id=r.id,
@@ -42,6 +47,7 @@ async def _lines(uow: UnitOfWork, version_id: UUID) -> list[LineRef]:
             section=r.section,
             effort_hours=r.effort_hours,
             title=r.title,
+            requirement_ids=tuple(sorted(set(covered.get(r.id, ())), key=str)),
         )
         for r in sorted(records, key=lambda r: (section_rank(r.section), r.position))
     ]

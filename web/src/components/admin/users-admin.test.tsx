@@ -1,10 +1,8 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import type { AdminUser } from "@/app/admin/users/actions";
-
-vi.mock("@/app/admin/users/actions", () => ({ changeRole: vi.fn(), loadUser: vi.fn() }));
+import type { AdminUser } from "@/lib/admin";
 
 import { RightPane } from "../shell/right-pane";
 import { RIGHT_PANE_TOGGLE_ID, ShellProviders } from "../shell/shell-context";
@@ -17,7 +15,6 @@ function user(n: number, roles: AdminUser["roles"] = [], rowVersion = 1): AdminU
     email: `user${n}@example.invalid`,
     roles,
     row_version: rowVersion,
-    last_changed_by: null,
   };
 }
 
@@ -27,7 +24,7 @@ function ui(users: AdminUser[]) {
       <button type="button" id={RIGHT_PANE_TOGGLE_ID}>
         Toggle
       </button>
-      <UsersAdmin initialUsers={users} />
+      <UsersAdmin initialUsers={users} manageRolesUrl="https://manage.auth0.com/" />
       <RightPane />
     </ShellProviders>
   );

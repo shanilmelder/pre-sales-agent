@@ -100,7 +100,7 @@ function PaneToggle() {
 function ui(initial: RequirementList) {
   return (
     <ShellProviders singleKeyShortcuts>
-      <KeyboardShortcuts roles={["presales_engineer"]} />
+      <KeyboardShortcuts permissions={["opportunities.opportunity.create"]} />
       <PaneToggle />
       <RequirementsSection opportunityId={OPP_ID} initial={initial} />
       <RightPane />

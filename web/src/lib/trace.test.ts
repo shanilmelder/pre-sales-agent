@@ -37,6 +37,7 @@ describe("labels", () => {
     expect(eventLabel("knowledge.catalogue_entry.updated")).toBe("Catalogue entry updated");
     expect(eventLabel("knowledge.catalogue_entry.reactivated")).toBe("Catalogue entry reactivated");
     expect(subjectLabel("knowledge.catalogue_entry")).toBe("Catalogue entry");
+    expect(eventLabel("conflicts.conflict.escalated")).toBe("Conflict escalated");
     expect(eventLabel("brand.new.happened")).toBe("brand.new.happened");
     for (const [type, label] of Object.entries(EVENT_LABELS)) {
       expect(type).toMatch(/^[a-z_]+\.[a-z_]+\.[a-z_]+$/);
@@ -53,6 +54,7 @@ describe("labels", () => {
     ["estimates.estimate_version", "estimate"],
     ["estimates.assumption", "estimate"],
     ["assessments.review", "assessments"],
+    ["conflicts.conflict", "conflicts"],
     ["intake.source", "sources"],
     ["opportunities.opportunity", "overview"],
   ])("links %s to the %s tab", (type, tab) => {

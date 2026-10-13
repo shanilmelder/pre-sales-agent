@@ -6,6 +6,7 @@ import type { MeResult } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
 import { entry } from "@/test/catalogue-fixtures";
 import { axeViolations } from "@/test/axe";
+import { permissionsFor } from "@/test/permissions";
 
 const getMe = vi.hoisted(() => vi.fn<() => Promise<MeResult>>());
 const apiGet = vi.hoisted(() => vi.fn());
@@ -45,6 +46,7 @@ function signedIn(roles: Role[]) {
       name: "[ADMIN]",
       email: "admin@example.invalid",
       roles,
+      permissions: permissionsFor(roles),
     },
   });
 }

@@ -14,6 +14,12 @@ import type { components } from "@/lib/api/client";
 
 export type Role = components["schemas"]["Role"];
 
+/** An Auth0 permission name, equal to an API action (e.g. `identity.user.list`). */
+export type Permission = string;
+
+/** The permission that lists users: it opens Admin. */
+export const USER_LIST_PERMISSION = "identity.user.list";
+
 export type NavItem = {
   id: "inbox" | "my-opportunities" | "opportunities" | "knowledge" | "reports" | "admin";
   label: string;
@@ -21,6 +27,7 @@ export type NavItem = {
   icon: LucideIcon;
   /** The second key of the `g` sequence, if the item has one. */
   gKey?: string;
+  /** Shown only to users holding `identity.user.list`. */
   adminOnly?: boolean;
 };
 
@@ -45,13 +52,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: "admin", label: "Admin", href: "/admin", icon: ShieldCheckIcon, adminOnly: true },
 ];
 
-export function isAdmin(roles: readonly Role[]): boolean {
-  return roles.includes("platform_administrator");
+/** Whether the user may open Admin (Users & roles). Display only: the API decides. */
+export function isAdmin(permissions: readonly Permission[]): boolean {
+  return permissions.includes(USER_LIST_PERMISSION);
 }
 
 /** The nav items this user sees. Display only: each page still gates itself. */
-export function visibleNav(roles: readonly Role[]): NavItem[] {
-  const admin = isAdmin(roles);
+export function visibleNav(permissions: readonly Permission[]): NavItem[] {
+  const admin = isAdmin(permissions);
   return NAV_ITEMS.filter((item) => !item.adminOnly || admin);
 }
 

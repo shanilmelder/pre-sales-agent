@@ -6,12 +6,23 @@ import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
 
 import { useShell, useWorkspaceTabKeys } from "@/components/shell/shell-context";
 import { cn } from "@/lib/utils";
-import { activeTab, tabHref, WORKSPACE_TABS } from "@/lib/workspace";
+import { openCountLabel } from "@/lib/conflicts";
+import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
 
 /** The workspace tab strip and the selected tab's panel. A `tablist` of links (each tab has
  * its own URL), the selected one marked by the route; `1`–`9` reach the tabs through the
- * shell's key handler, and Left/Right/Home/End move focus along the strip. */
-export function WorkspaceTabs({ id, children }: { id: string; children: ReactNode }) {
+ * shell's key handler, and Left/Right/Home/End move focus along the strip. A tab with a
+ * count above 0 shows it after its label ("Conflicts 3", read as "Conflicts, 3 open"). */
+export function WorkspaceTabs({
+  id,
+  counts = {},
+  children,
+}: {
+  id: string;
+  /** A count shown after a tab's label when above 0 (the Conflicts tab's open count). */
+  counts?: Partial<Record<WorkspaceTabSlug, number>>;
+  children: ReactNode;
+}) {
   const segment = useSelectedLayoutSegment();
   const { singleKeyShortcuts } = useShell();
   const selected = activeTab(segment);
@@ -84,6 +95,15 @@ export function WorkspaceTabs({ id, children }: { id: string; children: ReactNod
                 {tab.key}
               </span>
               {tab.label}
+              {(counts[tab.slug] ?? 0) > 0 ? (
+                <span
+                  data-testid={`tab-count-${tab.slug}`}
+                  className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border px-1 text-meta text-foreground [font-variant-numeric:tabular-nums]"
+                >
+                  <span aria-hidden="true">{counts[tab.slug]}</span>
+                  <span className="sr-only">, {openCountLabel(counts[tab.slug] ?? 0)}</span>
+                </span>
+              ) : null}
             </Link>
           );
         })}

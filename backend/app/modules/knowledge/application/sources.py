@@ -96,7 +96,7 @@ RETIRED_DETAIL = "A retired Knowledge Source can't be changed."
 NOT_FAILED_DETAIL = "Only a Source whose parse failed can be retried."
 NO_TEXT_DETAIL = "The extracted text of this version isn't available."
 UNKNOWN_USER = "Unknown user"
-OWNER_INVALID_DETAIL = "The owner must be a user with a role."
+OWNER_INVALID_DETAIL = "The owner must be a user who has signed in."
 _log = get_logger(__name__)
 
 
@@ -278,7 +278,7 @@ def _uuid(raw: str) -> UUID:
 
 
 async def _valid_owner(uow: UnitOfWork, owner_id: UUID) -> UUID:
-    if owner_id not in await identity.user_names(uow, {owner_id}, with_roles_only=True):
+    if owner_id not in await identity.user_names(uow, {owner_id}):
         raise UnprocessableError(OWNER_INVALID_DETAIL)
     return owner_id
 

@@ -34,6 +34,7 @@ function me(roles: string[]): Me {
     name: "[USER]",
     email: "user@example.invalid",
     roles,
+    permissions: [],
   } as Me;
 }
 

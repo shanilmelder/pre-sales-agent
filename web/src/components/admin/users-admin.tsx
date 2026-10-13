@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { AdminUser } from "@/app/admin/users/actions";
 import { UserInspector } from "@/components/admin/user-inspector";
 import { UsersTable } from "@/components/admin/users-table";
 import {
@@ -10,24 +9,24 @@ import {
   RightPaneContent,
   useShell,
 } from "@/components/shell/shell-context";
+import type { AdminUser } from "@/lib/admin";
 
-/** Users & roles: the list in the main pane and the selected user's inspector in the right
- * pane. Saved changes update the list row in place; new server data replaces the rows. */
-export function UsersAdmin({ initialUsers }: { initialUsers: readonly AdminUser[] }) {
+/** Users & roles (read-only): the list in the main pane and the selected user's roles in
+ * the right pane. */
+export function UsersAdmin({
+  initialUsers,
+  manageRolesUrl,
+}: {
+  initialUsers: readonly AdminUser[];
+  /** The Auth0 dashboard page where roles are managed. */
+  manageRolesUrl: string;
+}) {
   const { rightPaneOpen, setRightPaneOpen } = useShell();
-  const [users, setUsers] = useState<readonly AdminUser[]>(initialUsers);
-  const [syncedFrom, setSyncedFrom] = useState(initialUsers);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
 
-  // A server refresh (e.g. router.refresh or revisiting the page) brings new rows.
-  if (initialUsers !== syncedFrom) {
-    setSyncedFrom(initialUsers);
-    setUsers(initialUsers);
-  }
-
-  const selected = users.find((user) => user.id === selectedId) ?? null;
+  const selected = initialUsers.find((user) => user.id === selectedId) ?? null;
 
   // When the pane closes after a keyboard open, focus goes back to the row, not the toggle.
   useEffect(() => {
@@ -47,19 +46,15 @@ export function UsersAdmin({ initialUsers }: { initialUsers: readonly AdminUser[
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
 
-  function replace(next: AdminUser) {
-    setUsers((current) => current.map((user) => (user.id === next.id ? next : user)));
-  }
-
   return (
     <>
-      <UsersTable users={users} selectedId={selectedId} onOpen={open} />
+      <UsersTable users={initialUsers} selectedId={selectedId} onOpen={open} />
       {selected ? (
         <RightPaneContent>
           <UserInspector
             key={selected.id}
             user={selected}
-            onChange={replace}
+            manageRolesUrl={manageRolesUrl}
             focusRequest={focusRequest}
           />
         </RightPaneContent>

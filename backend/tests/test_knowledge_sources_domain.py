@@ -25,6 +25,7 @@ from app.platform import downloads
 from app.platform.actor import Actor
 from app.platform.errors import ForbiddenError
 from app.platform.upload_validation import content_matches, extension
+from tests.auth_tokens import permissions_for
 from tests.conftest import run_async
 
 KEY = "a-test-signing-key-long-enough"
@@ -159,7 +160,11 @@ def test_signing_rejects_a_non_hash() -> None:
 
 
 def _principal(user_id, *roles: Role) -> Principal:  # type: ignore[no-untyped-def]
-    return Principal(actor=Actor(type="user", id=str(user_id)), roles=frozenset(roles))
+    """A user holding `roles` and the permissions Auth0 issues for them (README seed)."""
+    permissions = frozenset(Action(p) for p in permissions_for(r.value for r in roles))
+    return Principal(
+        actor=Actor(type="user", id=str(user_id)), roles=frozenset(roles), permissions=permissions
+    )
 
 
 def test_the_owner_may_write_their_source_but_not_register_for_others() -> None:

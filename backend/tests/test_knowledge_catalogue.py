@@ -17,7 +17,7 @@ from app.platform.uow import unit_of_work
 from tests.auth_tokens import auth_app
 from tests.conftest import make_client, run_async
 from tests.test_health import assert_problem
-from tests.test_role_admin import _admin, _grant, _signed_in
+from tests.test_role_admin import _admin, _reissue, _signed_in
 
 BASE = "/api/v1/catalogue/entries"
 CODES = {
@@ -74,7 +74,7 @@ def _events(engine: Engine, entry_id: str) -> list[dict[str, Any]]:
 
 
 def test_create_is_version_one_with_one_event(client: TestClient, sync_engine: Engine) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     resp = client.post(BASE, headers=admin, json=_body(name="  Padded  ", code=" PAD "))
     assert resp.status_code == 201, resp.text
     entry = resp.json()
@@ -95,7 +95,7 @@ def test_create_is_version_one_with_one_event(client: TestClient, sync_engine: E
 def test_duplicate_name_or_code_is_409_and_saves_nothing(
     client: TestClient, sync_engine: Engine
 ) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     first = _create(client, admin)
     for field, body in (
         ("name", _body(name=first["name"].upper())),
@@ -130,14 +130,14 @@ def test_duplicate_name_or_code_is_409_and_saves_nothing(
 def test_invalid_fields_are_422(
     client: TestClient, sync_engine: Engine, overrides: dict[str, Any]
 ) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     _problem(client.post(BASE, headers=admin, json=_body(**overrides)), 422)
 
 
 def test_edit_saves_a_new_version_and_keeps_the_old_readable(
     client: TestClient, sync_engine: Engine
 ) -> None:
-    admin, _ = _admin(client, sync_engine, "Edit Admin")
+    admin, _ = _admin(client, "Edit Admin")
     entry = _create(client, admin, definition="First")
     url = f"{BASE}/{entry['id']}"
     resp = client.patch(url, headers={**admin, **_if_match(1)}, json={"definition": "Second"})
@@ -157,7 +157,7 @@ def test_edit_saves_a_new_version_and_keeps_the_old_readable(
 
 
 def test_unchanged_edit_is_a_200_no_op(client: TestClient, sync_engine: Engine) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     resp = client.patch(
         f"{BASE}/{entry['id']}",
@@ -170,7 +170,7 @@ def test_unchanged_edit_is_a_200_no_op(client: TestClient, sync_engine: Engine) 
 
 
 def test_stale_and_missing_if_match(client: TestClient, sync_engine: Engine) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     url = f"{BASE}/{entry['id']}"
     client.patch(url, headers={**admin, **_if_match(1)}, json={"name": f"New {uuid4().hex}"})
@@ -183,7 +183,7 @@ def test_stale_and_missing_if_match(client: TestClient, sync_engine: Engine) -> 
 
 
 def test_edit_to_an_active_name_is_409(client: TestClient, sync_engine: Engine) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     a, b = _create(client, admin), _create(client, admin)
     resp = client.patch(
         f"{BASE}/{b['id']}", headers={**admin, **_if_match(1)}, json={"name": a["name"].lower()}
@@ -194,7 +194,7 @@ def test_edit_to_an_active_name_is_409(client: TestClient, sync_engine: Engine) 
 def test_retire_resolves_but_does_not_validate_then_reactivate(
     client: TestClient, sync_engine: Engine, db_url: str
 ) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     url = f"{BASE}/{entry['id']}"
     blank = client.post(f"{url}/retire", headers={**admin, **_if_match(1)}, json={"reason": "  "})
@@ -245,7 +245,7 @@ def test_retire_resolves_but_does_not_validate_then_reactivate(
 def test_reactivate_is_409_when_an_active_entry_took_the_name(
     client: TestClient, sync_engine: Engine
 ) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     url = f"{BASE}/{entry['id']}"
     client.post(f"{url}/retire", headers={**admin, **_if_match(1)}, json={"reason": "Old"})
@@ -255,15 +255,13 @@ def test_reactivate_is_409_when_an_active_entry_took_the_name(
     assert client.get(url, headers=admin).json()["status"] == "retired"
 
 
-def test_non_admin_writes_are_403_but_any_role_reads(
-    client: TestClient, sync_engine: Engine
-) -> None:
-    admin, _ = _admin(client, sync_engine)
+def test_non_admin_writes_are_403_but_any_role_reads(client: TestClient) -> None:
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     url = f"{BASE}/{entry['id']}"
     reader, reader_id = _signed_in(client, "Reader")
     _problem(client.get(BASE, headers=reader), 403)  # no role yet
-    _grant(sync_engine, reader_id, "sales_representative")
+    reader = _reissue(reader_id, "sales_representative")
     assert client.get(BASE, headers=reader).status_code == 200
     assert client.get(url, headers=reader).status_code == 200
     assert client.get(f"{url}/versions", headers=reader).status_code == 200
@@ -279,7 +277,7 @@ def test_non_admin_writes_are_403_but_any_role_reads(
 
 
 def test_unknown_entry_is_404(client: TestClient, sync_engine: Engine) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     _problem(client.get(f"{BASE}/{uuid4()}", headers=admin), 404)
     patched = client.patch(
         f"{BASE}/{uuid4()}", headers={**admin, **_if_match(1)}, json={"name": "x"}
@@ -288,7 +286,7 @@ def test_unknown_entry_is_404(client: TestClient, sync_engine: Engine) -> None:
 
 
 def test_trace_never_carries_text(client: TestClient, sync_engine: Engine) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin, name="Secret name", definition="Secret definition")
     url = f"{BASE}/{entry['id']}"
     client.patch(url, headers={**admin, **_if_match(1)}, json={"definition": "Secret two"})
@@ -311,7 +309,7 @@ def test_psa_app_cannot_change_or_delete_versions(sync_engine: Engine) -> None:
 def test_rename_to_own_name_in_other_case_is_allowed(
     client: TestClient, sync_engine: Engine
 ) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     resp = client.patch(
         f"{BASE}/{entry['id']}",
@@ -325,7 +323,7 @@ def test_rename_to_own_name_in_other_case_is_allowed(
 def test_repeated_retire_and_reactivate_are_no_ops_and_stale_still_412(
     client: TestClient, sync_engine: Engine
 ) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     url = f"{BASE}/{entry['id']}"
     again = client.post(f"{url}/reactivate", headers={**admin, **_if_match(1)})
@@ -350,7 +348,7 @@ def test_repeated_retire_and_reactivate_are_no_ops_and_stale_still_412(
 
 
 def test_version_query_is_bounded(client: TestClient, sync_engine: Engine) -> None:
-    admin, _ = _admin(client, sync_engine)
+    admin, _ = _admin(client)
     entry = _create(client, admin)
     for bad in ("0", "99999999999"):
         _problem(client.get(f"{BASE}/{entry['id']}", headers=admin, params={"version": bad}), 422)

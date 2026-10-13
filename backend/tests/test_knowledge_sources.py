@@ -31,7 +31,7 @@ from tests.conftest import make_client, run_async
 from tests.test_health import assert_problem
 from tests.test_intake_filetypes import DOCX
 from tests.test_intake_parsers import FIXTURES
-from tests.test_role_admin import _admin, _grant, _signed_in
+from tests.test_role_admin import _admin, _reissue, _signed_in
 
 BASE = "/api/v1/knowledge/sources"
 CATALOGUE = "/api/v1/catalogue/entries"
@@ -248,16 +248,14 @@ def _drain(db_url: str, *, max_runs: int = 10) -> list[str]:
 def _admin_and_tag(
     client: TestClient, engine: Engine, name: str = "Knowledge Admin"
 ) -> tuple[dict[str, str], UUID, dict[str, Any]]:
-    admin, admin_id = _admin(client, engine, name)
+    admin, admin_id = _admin(client, name)
     return admin, admin_id, _tag(client, admin)
 
 
 def _expert(
     client: TestClient, engine: Engine, name: str = "Expert"
 ) -> tuple[dict[str, str], UUID]:
-    headers, user_id = _signed_in(client, name)
-    _grant(engine, user_id, "engineering_reviewer")
-    return headers, user_id
+    return _signed_in(client, name, "engineering_reviewer")
 
 
 # --- register ---------------------------------------------------------------------------------
@@ -328,17 +326,15 @@ def test_an_administrator_owns_by_default_and_experts_cannot_register(
 
 def test_roles_without_a_registering_role_are_403(client: TestClient, sync_engine: Engine) -> None:
     _, _, tag = _admin_and_tag(client, sync_engine)
-    headers, user_id = _signed_in(client, "Sales Person")
-    _grant(sync_engine, user_id, "sales_representative")
+    headers, _ = _signed_in(client, "Sales Person", "sales_representative")
     _problem(_register(client, headers, [tag["id"]]), 403)
     nobody, _ = _signed_in(client, "No Role")
     _problem(_register(client, nobody, [tag["id"]]), 403)
 
 
-def test_an_owner_with_no_role_is_422(client: TestClient, sync_engine: Engine) -> None:
+def test_an_owner_who_never_signed_in_is_422(client: TestClient, sync_engine: Engine) -> None:
     admin, _, tag = _admin_and_tag(client, sync_engine)
-    _, roleless = _signed_in(client, "Roleless")
-    _problem(_register(client, admin, [tag["id"]], owner_id=roleless), 422)
+    _problem(_register(client, admin, [tag["id"]], owner_id=uuid4()), 422)
 
 
 def test_a_retired_tag_is_422_and_nothing_is_stored(
@@ -446,9 +442,9 @@ def test_the_list_filters_and_the_empty_list(client: TestClient, sync_engine: En
     stale = _registered(client, admin, [other_tag["id"]], product=product, title="Old guide")
     _backdate(sync_engine, stale["id"], 13)
 
-    reader, _ = _signed_in(client, "Reader")
+    reader, reader_id = _signed_in(client, "Reader")
     _problem(client.get(BASE, headers=reader), 403)  # a role is needed to read
-    _grant(sync_engine, UUID(client.get("/api/v1/me", headers=reader).json()["id"]), "commercial")
+    reader = _reissue(reader_id, "commercial")
 
     def ids(**params: Any) -> list[str]:
         resp = client.get(BASE, headers=reader, params={"product": product, **params})

@@ -213,7 +213,7 @@ def prepared(
 ) -> tuple[dict[str, str], dict[str, Any]]:
     """An Opportunity with `count` Requirements (R1…) and one open Gap about R1 (and, only
     for a test that requests `auto_run`, the assessment run that detection queued)."""
-    return detected(client, engine, db_url, gateway, count=count)
+    return detected(client, engine, db_url, gateway, count=count, queue_draft=False)
 
 
 def install(fake: AgentGateway) -> AgentGateway:
@@ -1459,6 +1459,6 @@ def test_a_second_detection_while_the_automatic_run_is_queued_adds_no_run(
         "succeeded",
         "succeeded",
     ]
-    assert "queued" in [j["status"] for j in draft_tests.draft_jobs(sync_engine, opp["id"])]
+    assert draft_tests.draft_jobs(sync_engine, opp["id"]) == []  # Story 8.3: no model draft
     assert [r["id"] for r in run_rows(sync_engine, opp["id"])] == [run["id"]]
     assert len(assess_jobs(sync_engine, opp["id"])) == 1

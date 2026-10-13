@@ -1,0 +1,52 @@
+From: Oliver Grant <oliver.grant@harbourline.example>
+To: Jordan Lee <jordan.lee@vendor.example>
+Cc: Hannah Reid <hannah.reid@harbourline.example>
+Subject: Elmbridge FC automation - proposal requirements and commercial terms
+Date: Mon, 05 Oct 2026 11:30:17 +0100
+Message-ID: <elmbridge-proc-1005@harbourline.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear Jordan,
+
+Please find the framework for your proposal below.
+
+Timeline
+- Proposal due: 30 October 2026. Contract award: mid-December 2026.
+- Installation from 1 February 2027. Go-live before 1 October 2027, so we are stable
+  well before Black Friday.
+
+Commercial terms
+- Fixed price for hardware, software, installation and project management.
+- Milestone payments: 25% at signature, 35% at mechanical completion, 40% at go-live
+  acceptance.
+- Budget: around 6.5 million, including all allowances.
+
+Allowances
+Several areas cannot be known before signature: the legacy WMS interfaces, the
+floor slab, the fire authority's sprinkler decision, the product data clean-up and
+the marketplace volumes. For each of these, show a separate, clearly named allowance
+in your price with the hours behind it. Do not hide them in your rates, and do not
+exclude them: we would rather see the risk priced than find it later as a change
+request.
+
+Customer responsibilities
+Please list in your proposal everything you assume we provide or decide, with the
+date you need it. Several of these are still open on our side: the D365 sandbox and
+integration method, single sign-on, power to the drop positions, the carton range,
+building access, the mezzanine, returns, and acceptance testing.
+
+Parcel carriers
+- Our parcel carrier contract is out to tender. We will choose two carriers in the
+  first quarter of 2027, so we can't yet tell you which carriers, or their label
+  and API formats. We will request test and production credentials from the winners
+  and pass them on.
+
+Support
+- 24/7 support with a 2-hour response time from October to December, business hours
+  for the rest of the year.
+
+Kind regards,
+Oliver Grant
+Procurement Manager, Harbourline Home & Garden

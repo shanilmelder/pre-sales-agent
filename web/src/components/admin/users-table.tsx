@@ -2,11 +2,11 @@
 
 import { useRef, useState, type KeyboardEvent } from "react";
 
-import type { AdminUser } from "@/app/admin/users/actions";
 import { useShell } from "@/components/shell/shell-context";
+import type { AdminUser } from "@/lib/admin";
 import { roleLabel } from "@/lib/roles";
 
-/** Users with their roles, one page at a time. Each row's name is a button. The list is one
+/** Users with their roles as of their last sign-in, one page at a time. Each row's name is a button. The list is one
  * Tab stop (roving tabindex: the last focused, else the selected, else the first row);
  * j/k (or the arrow keys) move between rows and Enter opens the row's inspector. */
 export function UsersTable({

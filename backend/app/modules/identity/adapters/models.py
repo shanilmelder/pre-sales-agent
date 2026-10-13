@@ -1,6 +1,8 @@
 """identity's tables: platform users and their roles.
 
-Roles live here, not in Auth0 RBAC. `identity_user_roles.role` holds `Role` values.
+Roles are managed in Auth0 RBAC. `identity_user_roles` is a display-only cache of each
+user's roles as of their last sign-in (refreshed from the access token), shown on the
+Users & roles page. It is never read for authorization or filtering.
 """
 
 from datetime import datetime

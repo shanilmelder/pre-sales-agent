@@ -42,7 +42,7 @@ function NoAccess() {
 export default async function AdminCataloguePage() {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
-  if (!isAdmin(result.me.roles)) {
+  if (!isAdmin(result.me.permissions)) {
     return (
       <AppShell me={result.me}>
         <NoAccess />

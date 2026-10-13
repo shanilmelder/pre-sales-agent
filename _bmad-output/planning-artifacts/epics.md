@@ -578,6 +578,40 @@ So that I have one place to work on a deal and always know where it stands.
 **When** they edit the title or target proposal date inline and blur
 **Then** the change saves with `If-Match`, a stale version shows the 412 concurrent-edit message, and the change is traced
 
+### Story 1.9: Auth0 roles and permissions
+
+As a platform administrator,
+I want roles and permissions managed only in Auth0,
+So that access is granted and revoked in one place instead of two.
+
+This story reverses AD-15 ("Auth0 RBAC is not used") and replaces Story 1.6's role editing. Opportunity owner and collaborator access stays in the platform.
+
+**Acceptance Criteria:**
+
+**Given** a user whose Auth0 roles grant `opportunities.opportunity.create`
+**When** they sign in
+**Then** the API authorizes from the access token's `permissions` and roles claims alone, `/api/v1/me` returns both, and they can create an Opportunity
+
+**Given** a user with a role but without the matching permission, or with no roles or permissions claims at all
+**When** they call a role-granted endpoint
+**Then** the API returns 403 (never 401), unknown claim values are ignored and logged, and their owner and collaborator access to Opportunities is unchanged
+
+**Given** a sales representative who is a collaborator
+**When** they try to edit Requirements
+**Then** the API returns 403, because the sales-representative exclusions still apply from the token's roles
+
+**Given** an admin on Admin → Users & roles
+**When** the page loads
+**Then** it lists users with their roles as of each user's last sign-in, has no edit controls, and links to Auth0 for role changes; the assign and remove role endpoints no longer exist
+
+**Given** an Opportunity owner adding a collaborator
+**When** they search for any user who has signed in, with or without roles
+**Then** the user can be found and added
+
+**Given** a role change in Auth0
+**When** the user's next access token is issued
+**Then** the new access applies, and the display cache updates, without any Auth0 Management API call
+
 ## Epic 2: From customer input to structured Requirements
 
 Ravi or a sales representative uploads emails, notes and transcripts. The platform extracts classified, cited Requirements that Ravi can edit, and never overwrites his edits. Introduces the job queue, the worker, the ModelGateway (Ollama) and the first agent.

@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, pool
 
 # Model imports register their tables on Base.metadata.
 import app.modules.assessments.adapters.models
+import app.modules.conflicts.adapters.models
 import app.modules.estimates.adapters.models
 import app.modules.gaps.adapters.models
 import app.modules.identity.adapters.models

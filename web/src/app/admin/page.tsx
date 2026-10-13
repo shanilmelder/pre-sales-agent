@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Admin · Pre-Sales Agent" };
 export default async function AdminPage() {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
-  if (isAdmin(result.me.roles)) redirect("/admin/users");
+  if (isAdmin(result.me.permissions)) redirect("/admin/users");
 
   return (
     <AppShell me={result.me}>

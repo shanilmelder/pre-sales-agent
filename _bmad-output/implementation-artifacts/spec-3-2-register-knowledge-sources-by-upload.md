@@ -43,7 +43,7 @@ context:
 ## Code Map
 
 - `backend/app/modules/knowledge/{adapters,application,api,domain}` -- 3.1 layout; add Source rows/repo/commands/routes. Mirror `CatalogueEntryRow`/`CatalogueEntryVersionRow`; export via `application/public.py` (`validate_catalogue_ref` reused).
-- `backend/migrations/versions/20261006_0019_knowledge_catalogue.py` -- pattern and grants (header SELECT/INSERT/UPDATE, versions SELECT/INSERT). New `20261007_0020_knowledge_sources.py`, down_revision `0019_knowledge_catalogue`; `alembic check` must pass.
+- `backend/migrations/versions/20261012_0024_knowledge_catalogue.py` -- pattern and grants (header SELECT/INSERT/UPDATE, versions SELECT/INSERT). New `20261013_0025_knowledge_sources.py`, down_revision `0024_knowledge_catalogue`; `alembic check` must pass.
 - `backend/app/platform/trace/catalogue.py` (knowledge section ~448) -- register `source.registered/reviewed/version_added/retagged/retired` payloads (ids only); `test_trace_catalogue.py`.
 - `backend/app/modules/identity/{actions.py,domain/policy.py}` -- add `KNOWLEDGE_SOURCE_*` actions (admin or owner); check how `authorize` resolves resource ownership before adding a grant.
 - `backend/app/modules/intake/domain/sources.py` -- `EXTENSION_KINDS`, `content_matches`, `too_large_message`: extract generic helpers to new `app/platform/upload_validation.py`, intake imports it unchanged in behaviour.
@@ -57,7 +57,7 @@ context:
 
 **Execution:**
 - [x] `backend/app/platform/upload_validation.py` -- shared extension/magic/size checks, `.md` text check -- avoids knowledge→intake import
-- [x] `backend/migrations/versions/20261007_0020_knowledge_sources.py` + knowledge `adapters/models.py` -- sources, versions, tags, parse state
+- [x] `backend/migrations/versions/20261013_0025_knowledge_sources.py` + knowledge `adapters/models.py` -- sources, versions, tags, parse state
 - [x] knowledge `domain/` + `application/` -- register, re-version, retag, retire, mark reviewed, list/get with derived stale, filters
 - [x] knowledge `application/jobs.py`, parse child, `main_worker.py` -- `knowledge.parse_source`, retry, extracted-text artifact
 - [x] knowledge `api/routes.py`, identity actions/policy, trace payloads, config -- endpoints, authz, events

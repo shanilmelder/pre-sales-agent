@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { permissionsFor } from "@/test/permissions";
 
 import type { Me } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
@@ -33,6 +34,7 @@ function me(roles: Role[]): Me {
     name: "[USER]",
     email: "user@example.invalid",
     roles,
+    permissions: permissionsFor(roles),
   };
 }
 

@@ -9,8 +9,8 @@
 - `knowledge_source_parses`: the parse state per version (`queued`, `parsing`, `parsed`,
   `failed`). SELECT, INSERT, UPDATE.
 
-Revision ID: 0020_knowledge_sources
-Revises: 0019_knowledge_catalogue
+Revision ID: 0025_knowledge_sources
+Revises: 0024_knowledge_catalogue
 Create Date: 2026-10-07
 """
 
@@ -19,8 +19,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0020_knowledge_sources"
-down_revision: str | None = "0019_knowledge_catalogue"
+revision: str = "0025_knowledge_sources"
+down_revision: str | None = "0024_knowledge_catalogue"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

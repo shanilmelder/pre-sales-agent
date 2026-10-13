@@ -124,13 +124,6 @@ class ConflictError(ProblemError):
     title = "Conflict"
 
 
-class LastAdministratorError(ConflictError):
-    """Removing the role would leave the platform without a platform administrator."""
-
-    code = "last_administrator"
-    title = "Last administrator"
-
-
 class ParseNotFailedError(ConflictError):
     """A Source parse retry asked for a version whose parse has not failed."""
 
@@ -198,6 +191,14 @@ class EstimateNotFoundError(ConflictError):
     title = "No Estimate yet"
 
 
+class EstimateVersionNotDraftError(ConflictError):
+    """An Estimate line was edited whose version is no longer the Opportunity's `draft`: a
+    re-draft replaced it (Story 8.2)."""
+
+    code = "estimate_version_not_draft"
+    title = "Estimate Version not draft"
+
+
 class GapNotOpenError(ConflictError):
     """An Assumption was accepted whose origin Gap is no longer `open` (Story 8.4)."""
 
@@ -218,6 +219,61 @@ class SourceRetiredError(ConflictError):
 
     code = "knowledge_source_retired"
     title = "Knowledge Source retired"
+
+
+class ConflictAlreadyResolvedError(ConflictError):
+    """A Conflict was resolved or escalated after it was already resolved (Story 6.3)."""
+
+    code = "conflict_already_resolved"
+    title = "Conflict already resolved"
+
+
+class ConflictNotOpenError(ConflictError):
+    """A Conflict was escalated that is no longer `open`: it is already escalated (Story
+    6.3)."""
+
+    code = "conflict_not_open"
+    title = "Conflict not open"
+
+
+class ImportConsumedError(ConflictError):
+    """An Opportunity import was already used to create an Opportunity (Story 1.7 import)."""
+
+    code = "import_consumed"
+    title = "Import already used"
+
+
+class GoneError(ProblemError):
+    """The resource existed but no longer can be used (410)."""
+
+    status = 410
+    code = "gone"
+    title = "Gone"
+
+
+class ImportExpiredError(GoneError):
+    """An Opportunity import is older than its 24-hour lifetime (Story 1.7 import)."""
+
+    code = "import_expired"
+    title = "Import expired"
+
+
+class UploadTooLargeError(ProblemError):
+    """An Opportunity import file is larger than `upload_max_bytes` (413). Same `code` and
+    sentence as a Source upload's 422 `file_too_large`."""
+
+    status = 413
+    code = "file_too_large"
+    title = "File too large"
+
+
+class UploadTypeNotAllowedError(ProblemError):
+    """An Opportunity import file's extension is not on the allowlist (415). Same `code`
+    and sentence as a Source upload's 422 `file_type_not_allowed`."""
+
+    status = 415
+    code = "file_type_not_allowed"
+    title = "File type not allowed"
 
 
 class UnprocessableError(ProblemError):
