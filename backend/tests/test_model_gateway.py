@@ -720,6 +720,71 @@ def test_openai_cloud_profile_sends_the_openai_model_id(db_url: str, sync_engine
     assert _row(sync_engine, result.call_id)["profile"] == "openai-chat"
 
 
+def test_openai_model_setting_overrides_the_profiles_model(
+    db_url: str, sync_engine: Engine
+) -> None:
+    stub = StubOllama([VALID])
+    result = _call(db_url, stub, model_profile_chat="openai-chat", openai_model="gpt-4.1")
+    assert isinstance(result, StructuredResult)
+    assert stub.chat_bodies[0]["model"] == "gpt-4.1"
+    assert result.model == "gpt-4.1"
+    row = _row(sync_engine, result.call_id)
+    assert (row["profile"], row["model"]) == ("openai-chat", "gpt-4.1")
+
+
+def test_openai_model_setting_leaves_ollama_profiles_alone(db_url: str) -> None:
+    stub = StubOllama([VALID])
+    _call(db_url, stub, model_profile_chat="local-chat", openai_model="gpt-4.1")
+    assert stub.chat_bodies[0]["model"] == "qwen3:8b"
+
+
+def test_blank_openai_settings_mean_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PSA_OPENAI_MODEL", "  ")
+    monkeypatch.setenv("PSA_OPENAI_REASONING_EFFORT", "")
+    settings = Settings()
+    assert (settings.openai_model, settings.openai_reasoning_effort) == (None, None)
+    monkeypatch.setenv("PSA_OPENAI_MODEL", " gpt-4.1 ")
+    monkeypatch.setenv("PSA_OPENAI_REASONING_EFFORT", " low ")
+    settings = Settings()
+    assert (settings.openai_model, settings.openai_reasoning_effort) == ("gpt-4.1", "low")
+
+
+def test_reasoning_effort_replaces_temperature_for_an_openai_reasoning_model(
+    db_url: str, sync_engine: Engine
+) -> None:
+    stub = StubOllama([VALID])
+    result = _call(
+        db_url,
+        stub,
+        model_profile_chat="openai-chat",
+        openai_model="o4-mini",
+        openai_reasoning_effort="medium",
+    )
+    assert isinstance(result, StructuredResult)
+    [body] = stub.chat_bodies
+    assert body["model"] == "o4-mini"
+    assert body["reasoning_effort"] == "medium"
+    assert "temperature" not in body
+    assert body["response_format"]["type"] == "json_schema"
+    assert _row(sync_engine, result.call_id)["model"] == "o4-mini"
+
+
+def test_without_reasoning_effort_openai_requests_send_temperature(db_url: str) -> None:
+    stub = StubOllama([VALID])
+    _call(db_url, stub, model_profile_chat="openai-chat")
+    [body] = stub.chat_bodies
+    assert body["temperature"] == 0.1
+    assert "reasoning_effort" not in body
+
+
+def test_reasoning_effort_leaves_ollama_profiles_alone(db_url: str) -> None:
+    stub = StubOllama([VALID])
+    _call(db_url, stub, model_profile_chat="local-chat", openai_reasoning_effort="high")
+    [body] = stub.chat_bodies
+    assert body["options"]["temperature"] == 0.1
+    assert "reasoning_effort" not in body
+
+
 def test_openai_request_body_has_response_format_and_no_context_options(db_url: str) -> None:
     stub = StubOllama([VALID])
     _call(db_url, stub, provider="openai")

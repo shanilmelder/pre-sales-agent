@@ -40,6 +40,10 @@ class ModelProfile:
     provider: Provider = "ollama"
     """Which adapter serves the profile: `ollama` (`/api/chat`) or `openai`
     (`/chat/completions` at `PSA_OPENAI_BASE_URL`)."""
+    reasoning_effort: str | None = None
+    """`openai` provider only: set for a reasoning model (OpenAI's o-series, GPT-5), which
+    rejects `temperature`. The request then sends `reasoning_effort` (e.g. `low`, `medium`,
+    `high`) and no `temperature`. None: a regular model, sent `temperature`."""
 
     def options(self) -> dict[str, float | int]:
         """The `options` object of an Ollama `/api/chat` request (Ollama provider only)."""

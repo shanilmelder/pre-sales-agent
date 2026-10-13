@@ -1,8 +1,9 @@
 """The OpenAI-compatible adapter: one `POST {PSA_OPENAI_BASE_URL}/chat/completions` request
 per attempt, for vLLM or any server speaking `/v1/chat/completions` (Ollama's `/v1` too).
 
-Each request sets `stream: false`, the profile's `temperature` and `response_format` to a
-`json_schema` carrying the output model's JSON Schema. There is no `num_ctx` and no
+Each request sets `stream: false`, the profile's `temperature` (or, for a reasoning model,
+its `reasoning_effort` and no `temperature`) and `response_format` to a `json_schema`
+carrying the output model's JSON Schema. There is no `num_ctx` and no
 `options`: OpenAI-style endpoints can't set the context size per request, so for this
 provider the profile's `num_ctx` states what the server must be configured with (vLLM
 `--max-model-len`, Ollama `OLLAMA_CONTEXT_LENGTH` or a Modelfile).
@@ -56,16 +57,20 @@ class OpenAICompatAdapter:
         schema: dict[str, Any],
         timeout_s: float,
     ) -> ChatReply:
-        body = {
+        body: dict[str, Any] = {
             "model": profile.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": False,
-            "temperature": profile.temperature,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": schema_name(schema), "schema": schema},
             },
         }
+        # Reasoning models reject any `temperature` but the default.
+        if profile.reasoning_effort:
+            body["reasoning_effort"] = profile.reasoning_effort
+        else:
+            body["temperature"] = profile.temperature
         response = await post_json(self._client, "chat/completions", body, timeout_s)
         try:
             data = response.json()

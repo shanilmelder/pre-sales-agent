@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field, SecretStr, model_validator
+from pydantic import BeforeValidator, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.platform.model_gateway.profiles import MODEL_PROFILES
@@ -139,6 +139,22 @@ class Settings(BaseSettings):
             "sends `Authorization: Bearer <key>`; when unset, no auth header is sent."
         ),
     )
+    openai_model: str | None = Field(
+        default=None,
+        description=(
+            "Optional model id that every profile with provider `openai` sends instead of its "
+            "own (e.g. `gpt-4.1` with `openai-chat`), so the model is a `.env` change. Empty "
+            "or unset keeps the profile's model. Ollama profiles ignore it."
+        ),
+    )
+    openai_reasoning_effort: str | None = Field(
+        default=None,
+        description=(
+            "Set when the `openai`-provider model is a reasoning model (OpenAI's o-series, "
+            "GPT-5): requests then send this `reasoning_effort` (e.g. `low`, `medium`, `high`) "
+            "and no `temperature`, which those models reject. Empty or unset: a regular model."
+        ),
+    )
     model_profile_chat: str = Field(
         default="demo-chat",
         description=(
@@ -176,6 +192,14 @@ class Settings(BaseSettings):
         if self.job_heartbeat_s > self.job_lease_s / 2:
             raise ValueError("job_heartbeat_s must be at most half of job_lease_s")
         return self
+
+    @field_validator("openai_model", "openai_reasoning_effort", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        # An empty value in `.env` (`PSA_OPENAI_MODEL=`) means "use the profile's own".
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @model_validator(mode="after")
     def _known_model_profile(self) -> "Settings":
