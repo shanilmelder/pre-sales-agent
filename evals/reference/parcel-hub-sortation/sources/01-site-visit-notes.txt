@@ -1,0 +1,26 @@
+[SITE] parcel hub - site visit notes
+Customer: [CUSTOMER] (regional parcel carrier)
+Visited by: [PERSON_1] (solutions engineer), with [PERSON_2] (hub manager)
+Note: fictional reference data for the eval set.
+
+Operation
+- The hub runs 24/7 except Sunday morning. Parcels arrive from 60 depots overnight and
+  leave on line-haul trucks by 05:30.
+- Target: a cross-belt sorter for 18,000 parcels per hour with 220 destination chutes.
+- Every parcel must be scanned, weighed and dimensioned in flight before induction.
+- Non-conveyables (tyres, long items over 1.2 m) are handled manually and stay out of scope.
+
+Systems
+- The sorter must receive sort plans from the carrier's host system and report every scan
+  back within 2 seconds. The host interface is a proprietary socket protocol; [PERSON_2] could
+  not find a written specification.
+- Unreadable labels go to a video-coding station where an operator keys the postcode.
+
+Building
+- Existing mezzanine steel is from 1998; the structural engineer has not checked whether it
+  can carry the sorter loop.
+- Power: the hub has one 1,600 kVA transformer, already at about 70% load.
+
+Open points from the visit
+- Peak season volume: [PERSON_2] expects "maybe 25,000 an hour" in December but has no forecast.
+- Downtime window for cut-over: none agreed yet; the hub cannot stop for more than one night.

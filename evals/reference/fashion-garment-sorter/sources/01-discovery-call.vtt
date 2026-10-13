@@ -1,0 +1,36 @@
+WEBVTT
+
+NOTE
+Fictional reference data for the eval set; all names are placeholders.
+
+1
+00:00:01.500 --> 00:00:09.000
+<v [PERSON_1]>Thanks all. Today we want to understand the garment flows at [SITE].
+
+2
+00:00:09.500 --> 00:00:22.000
+<v [PERSON_2]>I'm the logistics director at [CUSTOMER], a fashion retailer with two hundred and ten stores and a growing web shop. [SITE] serves both.
+
+3
+00:00:22.500 --> 00:00:36.000
+<v [PERSON_2]>We want a pocket sorter for hanging garments, about twelve thousand pockets, buffering store orders and sequencing web orders by customer.
+
+4
+00:00:36.500 --> 00:00:48.000
+<v [PERSON_2]>Returns are huge for the web shop, around thirty-five percent. Returned items must be inspected, re-tagged and back in stock within twenty-four hours.
+
+5
+00:00:48.500 --> 00:01:01.000
+<v [PERSON_3]>IT. Every garment carries an RFID tag. We want tunnel readers at goods-in and at the store dispatch so we never count by hand again.
+
+6
+00:01:01.500 --> 00:01:14.000
+<v [PERSON_3]>Our merchandising system allocates stock to stores overnight. The interface to the new system has not been designed; our merchandising vendor quotes six months for any change.
+
+7
+00:01:14.500 --> 00:01:25.000
+<v [PERSON_2]>Peak is the four weeks before Christmas and the January sale. We do not know yet how big the web share will be next year; marketing is still planning.
+
+8
+00:01:25.500 --> 00:01:35.000
+<v [PERSON_4]>Facilities. The pocket sorter would go on a new mezzanine. We have not decided whether we build it or you include it in your scope.

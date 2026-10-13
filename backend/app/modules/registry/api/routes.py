@@ -1,8 +1,9 @@
-"""Agent Registry routes (Story 7.1) under `/api/v1/registry/agents`. Platform
-administrators only: anyone else gets 403. Writes to an existing Agent take its `ETag` back
-in `If-Match`."""
+"""Agent Registry routes (Story 7.1) under `/api/v1/registry/agents`, and the read-only
+evaluation results (Story 7.6) under `/api/v1/registry/evals`. Platform administrators
+only: anyone else gets 403. Writes to an existing Agent take its `ETag` back in `If-Match`."""
 
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Header, Path, Response
 
@@ -11,6 +12,8 @@ from app.modules.registry.application import public as registry
 from app.modules.registry.application.public import (
     AgentConfigVersionList,
     AgentStatusChange,
+    EvalResult,
+    EvalResultList,
     NewAgent,
     NewAgentConfig,
     RegistryAgent,
@@ -157,3 +160,36 @@ async def set_agent_status(
     running tasks finish. The same status changes nothing."""
     changed = await registry.set_status(uow, actor, agent_id, body, if_match)
     return _with_etag(response, changed)
+
+
+# --- evaluation results (Story 7.6): read-only -------------------------------------------
+
+evals_router = APIRouter(prefix="/registry/evals", tags=["registry"])
+_RESULT_ID = Annotated[UUID, Path(description="The evaluation result's id.")]
+_EVAL_DESCRIBED = {
+    **_DESCRIBED,
+    404: "No evaluation result with this id (`not_found`)",
+    422: "The id is not a UUID (`validation_error`)",
+}
+
+
+def _eval_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    return {
+        code: {"description": _EVAL_DESCRIBED[code], "content": PROBLEM_CONTENT}
+        for code in (401, 503, *codes)
+    }
+
+
+@evals_router.get("", operation_id="list_eval_results", responses=_eval_responses(403))
+async def list_eval_results(actor: CurrentPrincipal, uow: UoW) -> EvalResultList:
+    """The newest evaluation results (at most 100), newest first. Results are written only by
+    `make eval`; nothing here changes them."""
+    return await registry.read_evals(uow, actor)
+
+
+@evals_router.get(
+    "/{result_id}", operation_id="get_eval_result", responses=_eval_responses(403, 404, 422)
+)
+async def get_eval_result(result_id: _RESULT_ID, actor: CurrentPrincipal, uow: UoW) -> EvalResult:
+    """One evaluation result."""
+    return await registry.read_eval(uow, actor, result_id)

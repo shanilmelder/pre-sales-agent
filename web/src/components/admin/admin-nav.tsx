@@ -3,6 +3,7 @@ import Link from "next/link";
 const SECTIONS = [
   { href: "/admin/users", label: "Users & roles" },
   { href: "/admin/catalogue", label: "Catalogue" },
+  { href: "/admin/evals", label: "Evals" },
 ] as const;
 
 /** Admin's sub-navigation: the sections side by side, the current one marked. */

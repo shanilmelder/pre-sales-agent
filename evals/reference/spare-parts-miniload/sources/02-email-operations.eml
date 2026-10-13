@@ -1,0 +1,27 @@
+From: [PERSON_2] <person2@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Subject: [SITE] spare parts miniload - operations details
+Date: Tue, 13 Oct 2026 09:30:00 +0100
+Message-ID: <site-parts-1013@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hello [PERSON_1],
+
+A few more points for your proposal.
+
+- Volumes: 1,400 order lines a day on average, 2,600 on Mondays.
+- Every bin must be cycle-counted at least once a year without stopping operations.
+- Serial-numbered parts must have their serial number scanned at picking.
+- We pack into our own branded cartons; the carton erector must handle five sizes.
+- The building's sprinkler system is rated for 7 m storage; the miniload would be 11 m. We
+  have not asked the insurer what they require.
+- Go-live in the summer shutdown, weeks 30 to 32 of 2027.
+
+The structure of the distributor portal orders is still changing; our e-business team
+expects to finish it by spring.
+
+Best regards,
+[PERSON_2]
+Aftermarket Logistics, [CUSTOMER]

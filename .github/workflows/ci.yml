@@ -35,6 +35,9 @@ jobs:
       # Tests run as the least-privileged app role; Alembic runs as the owner.
       PSA_DATABASE_URL: postgresql+psycopg://psa_app:psa-app-ci@localhost:5432/psa
       PSA_MIGRATIONS_DATABASE_URL: postgresql+psycopg://psa:psa-ci@localhost:5432/psa
+      # The eval harness smoke test (Story 7.6) resets this separate database.
+      PSA_EVAL_DATABASE_URL: postgresql+psycopg://psa_app:psa-app-ci@localhost:5432/psa_eval
+      PSA_EVAL_MIGRATIONS_DATABASE_URL: postgresql+psycopg://psa:psa-ci@localhost:5432/psa_eval
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -59,6 +62,13 @@ jobs:
           POSTGRES_DB: psa
           PSA_APP_DB_PASSWORD: psa-app-ci
         run: sh ../ops/postgres/init/10-app-role.sh
+      - name: create the eval database the harness smoke test resets (Story 7.6)
+        env:
+          PGHOST: localhost
+          PGPASSWORD: psa-ci
+        run: |
+          psql -U psa -d psa -v ON_ERROR_STOP=1 -c "CREATE DATABASE psa_eval"
+          psql -U psa -d psa -v ON_ERROR_STOP=1 -c "GRANT CONNECT, TEMP ON DATABASE psa_eval TO psa_app"
       - name: migrations apply, roll back and re-apply
         run: |
           uv run alembic upgrade head

@@ -1,0 +1,73 @@
+slug: fashion-garment-sorter
+title: "[SITE] hanging garment pocket sorter"
+customer: "[CUSTOMER]"
+industry: Fashion retail
+products: [Pocket sorter, RFID, Returns handling]
+annotator: draft
+requirements:
+  - id: R1
+    text: Pocket sorter for hanging garments with about 12,000 pockets
+    source: 01-discovery-call.vtt
+    quote: "a pocket sorter for hanging garments, about twelve thousand pockets"
+  - id: R2
+    text: Returns inspected, re-tagged and back in stock within 24 hours
+    source: 01-discovery-call.vtt
+    quote: "Returned items must be inspected, re-tagged and back in stock within twenty-four hours"
+  - id: R3
+    text: RFID tunnel readers at goods-in and store dispatch
+    source: 01-discovery-call.vtt
+    quote: "tunnel readers at goods-in and at the store dispatch"
+  - id: R4
+    text: Interface with the merchandising system's overnight allocation
+    source: 01-discovery-call.vtt
+    quote: "Our merchandising system allocates stock to stores overnight"
+  - id: R5
+    text: Go-live by 1 August 2027
+    source: 02-email-commercial.eml
+    quote: "Go-live by 1 August 2027"
+  - id: R6
+    text: 9,000 garments per hour at peak
+    source: 02-email-commercial.eml
+    quote: "9,000 garments per hour into the sorter at peak"
+  - id: R7
+    text: Store deliveries in store-layout sequence
+    source: 02-email-commercial.eml
+    quote: "Store deliveries must be sorted in store-layout sequence"
+  - id: R8
+    text: Screens in two languages
+    source: 02-email-commercial.eml
+    quote: "operable in two languages on all screens"
+  - id: R9
+    text: Five-year service contract with quarterly preventive maintenance
+    source: 02-email-commercial.eml
+    quote: "Five-year service contract with preventive maintenance four times a year"
+gaps:
+  - id: G1
+    keywords: [merchandising, interface design, six months]
+    mandatory: true
+  - id: G2
+    keywords: [mezzanine]
+    mandatory: true
+  - id: G3
+    keywords: [web share, web-shop volume, e-commerce volume, web volume]
+  - id: G4
+    keywords: [packing area, second site]
+  - id: G5
+    keywords: [languages, which languages]
+irrelevant_gaps:
+  - label: RFID already on every garment
+    keywords: [RFID tagging coverage, garments without RFID]
+  - label: Office and staff facilities
+    keywords: [canteen, car park, parking]
+integration_risks:
+  - id: I1
+    keywords: [merchandising, allocation, vendor]
+  - id: I2
+    keywords: [RFID, tunnel]
+evidence:
+  - requirement: R4
+    finding_keywords: [merchandising, allocation]
+    supported: true
+  - requirement: R2
+    finding_keywords: [returns, 24 hours, re-tag]
+    supported: true

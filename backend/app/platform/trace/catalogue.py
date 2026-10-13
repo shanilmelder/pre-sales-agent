@@ -774,3 +774,25 @@ class RegistryAgentDisabled(TracePayload):
     to_status: Literal["disabled", "eval_only"]
     from_config_version_id: str
     to_config_version_id: str
+
+
+@register
+class RegistryEvalCompleted(TracePayload):
+    """`make eval` finished and stored a result (Story 7.6). Subject: the result
+    (`registry.eval_result`). Actor: the eval harness (system). Ids, counts and pass/fail
+    only: the config version ids it evaluated (by agent id), the reference-set version, how
+    many Opportunities ran, bars that failed or were not measured, pending Evidence pairs,
+    stage failures, and whether it passed and was accepted."""
+
+    event_type: ClassVar[str] = "registry.eval.completed"
+
+    result_id: str
+    reference_set_version: str
+    config_version_ids: dict[str, str]
+    opportunity_count: int
+    failed_bar_count: int
+    not_measured_bar_count: int
+    pending_count: int
+    failure_count: int
+    passed: bool
+    accepted: bool

@@ -1,0 +1,72 @@
+slug: hospital-supply-centre
+title: "[SITE] hospital supply centre automation"
+customer: "[CUSTOMER]"
+industry: Healthcare
+products: [Tote shuttle, Kitting stations]
+annotator: draft
+requirements:
+  - id: R1
+    text: Shuttle system for medical consumables in totes
+    source: 01-kickoff-call.vtt
+    quote: "a shuttle system for medical consumables in totes"
+  - id: R2
+    text: Theatre kitting from the next day's theatre schedule
+    source: 01-kickoff-call.vtt
+    quote: "kitting stations where theatre kits are put together per operation"
+  - id: R3
+    text: Patient names never leave the patient administration system
+    source: 01-kickoff-call.vtt
+    quote: "Patient names must never leave that system"
+  - id: R4
+    text: Six ward rounds a day; urgent theatre requests ready in 30 minutes
+    source: 01-kickoff-call.vtt
+    quote: "urgent requests from theatres must be ready within thirty minutes"
+  - id: R5
+    text: Price system, installation and five years of maintenance separately
+    source: 02-email-procurement.eml
+    quote: "Price the system, installation and five years of maintenance separately"
+  - id: R6
+    text: Meet the information security standard; data stays in-country
+    source: 02-email-procurement.eml
+    quote: "all data stays"
+  - id: R7
+    text: Accessible screens for staff with visual impairments
+    source: 02-email-procurement.eml
+    quote: "accessible screens for staff with visual impairments"
+  - id: R8
+    text: Business continuity for a full-day stoppage
+    source: 02-email-procurement.eml
+    quote: "the hospitals must still receive supplies if the"
+  - id: R9
+    text: Expected yearly energy consumption
+    source: 02-email-procurement.eml
+    quote: "Show expected energy consumption per year"
+gaps:
+  - id: G1
+    keywords: [materials management, replace, supplier support]
+    mandatory: true
+  - id: G2
+    keywords: [floor, drawings, load]
+    mandatory: true
+  - id: G3
+    keywords: [theatre schedule, patient administration, interface]
+    mandatory: true
+  - id: G4
+    keywords: [weighting, evaluation criteria]
+irrelevant_gaps:
+  - label: Laundry is not part of the scope
+    keywords: [laundry]
+  - label: Office and staff facilities
+    keywords: [canteen, car park, parking]
+integration_risks:
+  - id: I1
+    keywords: [patient administration, theatre schedule]
+  - id: I2
+    keywords: [materials management]
+evidence:
+  - requirement: R3
+    finding_keywords: [patient, privacy, personal data]
+    supported: true
+  - requirement: R8
+    finding_keywords: [continuity, stoppage, fallback]
+    supported: true

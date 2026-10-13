@@ -177,6 +177,36 @@ class Settings(BaseSettings):
         gt=0,
         description="Default timeout for one model request (each attempt), in seconds.",
     )
+    eval_database_url: str | None = Field(
+        default=None,
+        description=(
+            "The isolated evaluation database `make eval` runs the reference set in, as the "
+            "app role (Story 7.6). Must name a different database from database_url; the "
+            "harness refuses to run without it. Every eval resets it."
+        ),
+    )
+    eval_migrations_database_url: str | None = Field(
+        default=None,
+        description=(
+            "URL Alembic uses to reset the evaluation database (`downgrade base`, then "
+            "`upgrade head`), as its schema owner. Required by `make eval`."
+        ),
+    )
+    cost_per_gpu_second_minor: int = Field(
+        default=0,
+        ge=0,
+        description="Cost of one GPU second in minor units of cost_currency (evals, Story 7.6).",
+    )
+    cost_per_1k_tokens_minor: int = Field(
+        default=0,
+        ge=0,
+        description="Cost of 1,000 tokens (input + output) in minor units of cost_currency.",
+    )
+    cost_currency: str = Field(
+        default="EUR",
+        pattern=r"^[A-Z]{3}$",
+        description="ISO-4217 currency of the cost rates.",
+    )
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], BeforeValidator(str.upper)
     ] = "INFO"

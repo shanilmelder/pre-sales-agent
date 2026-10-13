@@ -1344,6 +1344,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registry/evals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Eval Results
+         * @description The newest evaluation results (at most 100), newest first. Results are written only by
+         *     `make eval`; nothing here changes them.
+         */
+        get: operations["list_eval_results"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/evals/{result_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Eval Result
+         * @description One evaluation result.
+         */
+        get: operations["get_eval_result"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2210,6 +2251,144 @@ export interface components {
              * @description Story 8.3: whether an assessment run of the Opportunity is queued or running (the Estimate is built when it finishes).
              */
             assessment_running: boolean;
+        };
+        /**
+         * EvalBar
+         * @description One release bar. `comparator` `min`: the value must be at least `threshold`; `max`:
+         *     at most. `delta`: the value minus the last accepted result's, in points (null on the
+         *     first eval or when either is unmeasured). `regressed`: more than 5 points worse than the
+         *     last accepted result, which fails the bar. `not_measured` is a warning, never a fail.
+         */
+        EvalBar: {
+            /**
+             * Metric
+             * @enum {string}
+             */
+            metric: "extraction_recall" | "citation_validity" | "gap_recall" | "irrelevant_gaps" | "mandatory_gap_recall" | "evidence_support" | "schema_valid_rate" | "integration_risk_recall";
+            /** Label */
+            label: string;
+            /** Requirement */
+            requirement: string;
+            /** Agent Ids */
+            agent_ids: string[];
+            /**
+             * Comparator
+             * @enum {string}
+             */
+            comparator: "min" | "max";
+            /** Threshold */
+            threshold: number;
+            /** Value */
+            value: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pass" | "fail" | "not_measured";
+            /** Delta */
+            delta: number | null;
+            /** Regressed */
+            regressed: boolean;
+        };
+        /** EvalCost */
+        EvalCost: {
+            /** Amount Minor */
+            amount_minor: number;
+            /** Currency */
+            currency: string;
+        };
+        /**
+         * EvalFailure
+         * @description A pipeline stage that failed for one reference Opportunity: its later metrics score
+         *     0 and the result does not pass. `code`: the stage's error code or job status.
+         */
+        EvalFailure: {
+            /** Slug */
+            slug: string;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "parse" | "extraction" | "gap_detection" | "specialists" | "estimate" | "red_team";
+            /** Code */
+            code: string;
+        };
+        /**
+         * EvalResult
+         * @description One stored evaluation result. `accepted`: it passed and is the comparison point for
+         *     later results. `config_version_ids`, `model_digests` (the digests the model calls
+         *     reported) and `prompt_versions` are keyed by agent id.
+         */
+        EvalResult: {
+            /** Id */
+            id: string;
+            /** Reference Set Version */
+            reference_set_version: string;
+            /** Config Version Ids */
+            config_version_ids: {
+                [key: string]: string;
+            };
+            /** Model Digests */
+            model_digests: {
+                [key: string]: string[];
+            };
+            /** Prompt Versions */
+            prompt_versions: {
+                [key: string]: number;
+            };
+            scores: components["schemas"]["EvalScores"];
+            /** Bars */
+            bars: components["schemas"]["EvalBar"][];
+            /** Failures */
+            failures: components["schemas"]["EvalFailure"][];
+            /** Opportunity Count */
+            opportunity_count: number;
+            /** Draft Count */
+            draft_count: number;
+            /** Pending Count */
+            pending_count: number;
+            /** Tokens */
+            tokens: number;
+            /** Gpu Seconds */
+            gpu_seconds: number;
+            cost: components["schemas"]["EvalCost"];
+            /** Passed */
+            passed: boolean;
+            /** Accepted */
+            accepted: boolean;
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * EvalResultList
+         * @description Evaluation results, newest first.
+         */
+        EvalResultList: {
+            /** Items */
+            items: components["schemas"]["EvalResult"][];
+        };
+        /**
+         * EvalScores
+         * @description Metric values in percent (0-100), null when there was nothing to measure: `overall`
+         *     across the reference set, and `per_agent` (agent id → metric → value) for the Agents
+         *     each metric belongs to.
+         */
+        EvalScores: {
+            /** Overall */
+            overall: {
+                [key: string]: number | null;
+            };
+            /** Per Agent */
+            per_agent: {
+                [key: string]: {
+                    [key: string]: number | null;
+                };
+            };
         };
         /**
          * ExportFormat
@@ -13922,6 +14101,225 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_eval_results: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalResultList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_eval_result: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The evaluation result's id. */
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No evaluation result with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The id is not a UUID (`validation_error`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

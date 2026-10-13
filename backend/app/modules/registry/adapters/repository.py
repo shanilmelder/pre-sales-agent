@@ -1,4 +1,5 @@
-"""Persistence for the Agent Registry (Story 7.1). Runs inside the caller's Unit of Work."""
+"""Persistence for the Agent Registry (Story 7.1) and its evaluation results (Story 7.6). Runs
+inside the caller's Unit of Work."""
 
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -7,12 +8,13 @@ from uuid import UUID
 from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.sql.expression import ScalarSelect
 
-from app.modules.registry.adapters.models import AgentRow, ConfigVersionRow
+from app.modules.registry.adapters.models import AgentRow, ConfigVersionRow, EvalResultRow
 from app.modules.registry.domain.registry import AgentStatus, ConfigVersion, RegisteredAgent
 from app.platform.uow import UnitOfWork
 
 A = AgentRow
 V = ConfigVersionRow
+E = EvalResultRow
 
 
 async def lock_registry(uow: UnitOfWork) -> None:
@@ -196,3 +198,45 @@ async def bump(
         )
     ).one_or_none()
     return None if row is None else row[0]
+
+
+async def max_version(uow: UnitOfWork, agent_id: str) -> int:
+    """The Agent's highest config version number, 0 when it has none."""
+    found = await uow.session.execute(select(func.max(V.version)).where(V.agent_id == agent_id))
+    return int(found.scalar_one() or 0)
+
+
+async def version_exists(uow: UnitOfWork, config_version_id: UUID) -> bool:
+    found = await uow.session.execute(select(V.id).where(V.id == config_version_id))
+    return found.first() is not None
+
+
+# --- evaluation results (Story 7.6) ---------------------------------------------------------
+
+
+async def insert_eval_result(uow: UnitOfWork, values: Mapping[str, Any]) -> None:
+    await uow.session.execute(insert(E).values(**values))
+
+
+async def get_eval_result(uow: UnitOfWork, result_id: UUID) -> EvalResultRow | None:
+    found = await uow.session.execute(select(E).where(E.id == result_id))
+    return found.scalar_one_or_none()
+
+
+async def list_eval_results(uow: UnitOfWork, limit: int) -> list[EvalResultRow]:
+    """The newest `limit` results, newest first."""
+    rows = await uow.session.execute(
+        select(E).order_by(E.created_at.desc(), E.id.desc()).limit(limit)
+    )
+    return list(rows.scalars())
+
+
+async def latest_accepted_eval(uow: UnitOfWork, reference_set_version: str) -> EvalResultRow | None:
+    """The newest accepted result of this reference-set version."""
+    rows = await uow.session.execute(
+        select(E)
+        .where(E.accepted.is_(True), E.reference_set_version == reference_set_version)
+        .order_by(E.created_at.desc(), E.id.desc())
+        .limit(1)
+    )
+    return rows.scalar_one_or_none()

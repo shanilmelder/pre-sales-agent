@@ -417,7 +417,7 @@ graph TD
 | Scenario (metadata, constraint deltas) | `scenarios` |
 | Proposal | `proposals` |
 | Actual, Calibration suggestion | `actuals` |
-| Agent, agent config version, eval result | `registry` |
+| Agent, agent config version, eval result (`registry_eval_results`, insert-only) | `registry` |
 | User, role, action catalogue | `identity` |
 | Notification, delivery | `notifications` |
 | Integration connection, sync state, pricing rule set | `integrations` |

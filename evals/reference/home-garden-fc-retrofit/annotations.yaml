@@ -1,0 +1,101 @@
+# Anonymised from demo-data/elmbridge-fc-scenario (home & garden fulfilment centre retrofit).
+slug: home-garden-fc-retrofit
+title: "[SITE] automation"
+customer: "[CUSTOMER]"
+industry: E-commerce fulfilment (home & garden)
+products: [AS/RS, Goods-to-person picking, Automated packing, Sortation]
+annotator: draft
+requirements:
+  - id: R1
+    text: AS/RS with goods-to-person pick stations
+    source: 01-kickoff-call-teams-transcript.vtt
+    quote: "an automated storage and retrieval system with goods-to-person pick stations"
+  - id: R2
+    text: Automatic packing with an auto-bagger and a carton erector
+    source: 01-kickoff-call-teams-transcript.vtt
+    quote: "automatic packing with an auto-bagger and a carton erector"
+  - id: R3
+    text: Sortation to the carrier lanes
+    source: 01-kickoff-call-teams-transcript.vtt
+    quote: "sortation to the carrier lanes"
+  - id: R4
+    text: Integrate with Dynamics 365 Finance and Operations
+    source: 02-email-it-systems-and-integration.eml
+    quote: "you'll need a Dynamics 365 Finance and Operations sandbox for"
+  - id: R5
+    text: Single sign-on is required
+    source: 02-email-it-systems-and-integration.eml
+    quote: "your system must use single sign-on"
+  - id: R6
+    text: Black Friday peak of about 45,000 order lines a day
+    source: 04-email-operations-data-and-volumes.eml
+    quote: "Black Friday week: about 45,000 order lines"
+  - id: R7
+    text: Replace the legacy WMS and migrate its interfaces
+    source: 02-email-it-systems-and-integration.eml
+    quote: "We genuinely do not know how many interfaces there are"
+  - id: R8
+    text: Fixed price for hardware, software, installation and project management
+    source: 05-email-procurement-commercial-terms.eml
+    quote: "Fixed price for hardware, software, installation and project management"
+  - id: R9
+    text: Separate named allowances for the unknowns
+    source: 05-email-procurement-commercial-terms.eml
+    quote: "show a separate, clearly named allowance"
+  - id: R10
+    text: Go-live before 1 October 2027
+    source: 05-email-procurement-commercial-terms.eml
+    quote: "Go-live before 1 October 2027"
+  - id: R11
+    text: 24/7 support with 2-hour response from October to December
+    source: 05-email-procurement-commercial-terms.eml
+    quote: "24/7 support with a 2-hour response time from October to December"
+  - id: R12
+    text: In-rack sprinklers approved by the fire authority
+    source: 03-email-facilities-building-and-site.eml
+    quote: "A high-bay storage system needs in-rack sprinklers"
+gaps:
+  - id: G1
+    keywords: [legacy WMS, interfaces, interface list]
+    mandatory: true
+  - id: G2
+    keywords: [floor slab, slab, core sample, core samples]
+    mandatory: true
+  - id: G3
+    keywords: [sprinkler, sprinklers, fire authority]
+    mandatory: true
+  - id: G4
+    keywords: [marketplace]
+  - id: G5
+    keywords: [product data, dimensions, weights]
+  - id: G6
+    keywords: [integration method, data entities, file-based, batch integration]
+    mandatory: true
+  - id: G7
+    keywords: [sandbox]
+  - id: G8
+    keywords: [single sign-on, Okta, Entra, SSO]
+    mandatory: true
+  - id: G9
+    keywords: [carton range, carton sizes, box sizes]
+  - id: G10
+    keywords: [carrier, carriers, tender]
+irrelevant_gaps:
+  - label: Office and staff facilities
+    keywords: [canteen, car park, parking, office furniture]
+  - label: Settled number of dock doors
+    keywords: [number of dock doors]
+integration_risks:
+  - id: I1
+    keywords: [legacy WMS, undocumented, interface, interfaces]
+  - id: I2
+    keywords: [Dynamics 365, D365, data entities]
+  - id: I3
+    keywords: [carrier, carriers, label, labels, API format]
+evidence:
+  - requirement: R7
+    finding_keywords: [legacy WMS, interface, interfaces, undocumented]
+    supported: true
+  - requirement: R4
+    finding_keywords: [Dynamics, D365, sandbox, data entities]
+    supported: true

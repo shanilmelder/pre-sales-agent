@@ -1,0 +1,33 @@
+From: [PERSON_2] <person2@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Subject: [SITE] tyre storage - building and data
+Date: Mon, 12 Oct 2026 13:10:00 +0100
+Message-ID: <site-tyres-1012@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi [PERSON_1],
+
+Some more detail after the call.
+
+Building
+- Clear height is 10.5 metres. The floor is a 2005 slab rated for 5 tonnes per square metre.
+- We would like the system installed in two halves so the warehouse keeps running.
+
+Data
+- Every stored set must be photographed at intake so we can show tread condition to the
+  customer. Photos are kept for the season and then deleted.
+- About 8% of the tyres in stock today have no readable DOT code; we are not sure how the
+  system should handle those.
+
+Integration
+- Garage bookings come from an external booking platform with a REST API. We have not
+  asked the platform provider yet whether they allow outbound webhooks.
+
+Other
+- The system must run two shifts, 06:00 to 22:00, Monday to Saturday.
+
+Regards,
+[PERSON_2]
+Site Manager, [CUSTOMER]

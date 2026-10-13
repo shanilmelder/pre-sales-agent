@@ -18,6 +18,13 @@ input or output schema, or model profile it doesn't list is 422
 
 Reads (`read_agents`, `read_agent`, `read_versions`) are for platform administrators too.
 
+Evaluation results (Story 7.6): `record_eval_result` (the eval harness, a system actor; no
+authorization) judges the scores against the bars and the last accepted result of the same
+reference-set version, inserts the
+insert-only row and traces `registry.eval.completed` (no Opportunity) in one Unit of Work.
+`read_evals` and `read_eval` are for platform administrators. `install_eval_config` copies a
+config version into the eval database as its Agent's newest version (harness only).
+
 For other modules (no authorization): `current_config`, `get_config_version`, `list_agents`,
 `require_enabled` (409 `registry_agent_disabled` for a `disabled` or `eval_only` Agent) and
 `agent_config` (the `AgentConfig` an agent runs with, applying the local-dev profile
@@ -25,6 +32,7 @@ override: when `PSA_MODEL_PROFILE_CHAT` is explicitly set it replaces the versio
 profile, and the model call records the profile actually used).
 """
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -35,15 +43,24 @@ from app.agents.contract import CONTRACT_VERSION, AgentConfig
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal, Role
 from app.modules.registry.adapters import repository as repo
+from app.modules.registry.adapters.models import EvalResultRow
 from app.modules.registry.application.models import (
     AgentConfigVersion,
     AgentConfigVersionList,
     AgentStatusChange,
+    EvalBar,
+    EvalCost,
+    EvalFailure,
+    EvalResult,
+    EvalResultList,
+    EvalScores,
     NewAgent,
     NewAgentConfig,
+    NewEvalResult,
     RegistryAgent,
     RegistryAgentList,
 )
+from app.modules.registry.domain import evals as gate
 from app.modules.registry.domain import registry as rules
 from app.modules.registry.domain.registry import (
     AgentStatus,
@@ -51,6 +68,7 @@ from app.modules.registry.domain.registry import (
     RegisteredAgent,
 )
 from app.platform import trace
+from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
 from app.platform.config import Settings
 from app.platform.errors import (
@@ -70,11 +88,15 @@ from app.platform.trace.catalogue import (
     RegistryAgentDisabled,
     RegistryAgentEnabled,
     RegistryAgentRegistered,
+    RegistryEvalCompleted,
 )
 from app.platform.uow import UnitOfWork
 
 MAX_ROW_VERSION = 2**31 - 1
 NOT_FOUND_DETAIL = "No Agent with this id."
+EVAL_NOT_FOUND_DETAIL = "No evaluation result with this id."
+EVAL_LIST_LIMIT = 100
+_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 _log = get_logger(__name__)
 
 
@@ -470,3 +492,195 @@ def agent_config(version: ConfigVersion, settings: Settings) -> AgentConfig:
         profile=effective_profile(version, settings),
         config_version_id=version.id,
     )
+
+
+# --- evaluation results (Story 7.6) ---------------------------------------------------------
+
+
+def eval_view(row: EvalResultRow) -> EvalResult:
+    return EvalResult(
+        id=str(row.id),
+        reference_set_version=row.reference_set_version,
+        config_version_ids=dict(row.config_version_ids),
+        model_digests={k: list(v) for k, v in row.model_digests.items()},
+        prompt_versions={k: int(v) for k, v in row.prompt_versions.items()},
+        scores=EvalScores.model_validate(row.scores),
+        bars=[EvalBar.model_validate(bar) for bar in row.bars],
+        failures=[EvalFailure.model_validate(f) for f in row.failures],
+        opportunity_count=row.opportunity_count,
+        draft_count=row.draft_count,
+        pending_count=row.pending_count,
+        tokens=row.tokens,
+        gpu_seconds=row.gpu_seconds,
+        cost=EvalCost(amount_minor=row.cost_minor, currency=row.cost_currency),
+        passed=row.passed,
+        accepted=row.accepted,
+        created_by=row.created_by,
+        created_at=row.created_at,
+    )
+
+
+def bar_view(result: gate.BarResult) -> EvalBar:
+    spec = result.spec
+    return EvalBar(
+        metric=spec.metric.value,
+        label=spec.label,
+        requirement=spec.requirement,
+        agent_ids=list(spec.agent_ids),
+        comparator=spec.comparator,
+        threshold=spec.threshold,
+        value=result.value,
+        status=result.status.value,
+        delta=result.delta,
+        regressed=result.regressed,
+    )
+
+
+def judge_eval(
+    scores: EvalScores, previous: EvalResult | None, *, failure_count: int
+) -> tuple[list[EvalBar], bool]:
+    """The bars of `scores` against their thresholds and the last accepted result, and
+    whether the result passes (see `domain.evals.judge`)."""
+    results, passed = gate.judge(
+        scores.overall,
+        None if previous is None else previous.scores.overall,
+        failure_count=failure_count,
+    )
+    return [bar_view(r) for r in results], passed
+
+
+async def last_accepted_eval(uow: UnitOfWork, reference_set_version: str) -> EvalResult | None:
+    """The newest accepted result of the same reference-set version: the comparison point
+    for the next eval of that set (like with like; another version is never compared)."""
+    row = await repo.latest_accepted_eval(uow, reference_set_version)
+    return None if row is None else eval_view(row)
+
+
+async def record_eval_result(uow: UnitOfWork, actor: Actor, new: NewEvalResult) -> EvalResult:
+    """Judge the result against the bars and the last accepted result, insert it (`accepted`
+    when it passed) and trace `registry.eval.completed`, in the caller's Unit of Work."""
+    version = _invalid(new.reference_set_version, gate.reference_set_version)
+    currency = new.cost.currency.strip().upper()
+    if not _CURRENCY_RE.match(currency):
+        raise UnprocessableError("The cost currency must be an ISO-4217 code, e.g. `EUR`.")
+    previous = await last_accepted_eval(uow, version)
+    bars, passed = judge_eval(new.scores, previous, failure_count=len(new.failures))
+    result_id = new_id()
+    await repo.insert_eval_result(
+        uow,
+        {
+            "id": result_id,
+            "reference_set_version": version,
+            "config_version_ids": dict(new.config_version_ids),
+            "model_digests": {k: list(v) for k, v in new.model_digests.items()},
+            "prompt_versions": dict(new.prompt_versions),
+            "scores": new.scores.model_dump(mode="json"),
+            "bars": [bar.model_dump(mode="json") for bar in bars],
+            "failures": [f.model_dump(mode="json") for f in new.failures],
+            "opportunity_count": new.opportunity_count,
+            "draft_count": new.draft_count,
+            "pending_count": new.pending_count,
+            "tokens": new.tokens,
+            "gpu_seconds": new.gpu_seconds,
+            "cost_minor": new.cost.amount_minor,
+            "cost_currency": currency,
+            "passed": passed,
+            "accepted": passed,
+            "created_by": actor.id,
+        },
+    )
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=RegistryEvalCompleted(
+            result_id=str(result_id),
+            reference_set_version=version,
+            config_version_ids=dict(new.config_version_ids),
+            opportunity_count=new.opportunity_count,
+            failed_bar_count=sum(1 for b in bars if b.status == "fail"),
+            not_measured_bar_count=sum(1 for b in bars if b.status == "not_measured"),
+            pending_count=new.pending_count,
+            failure_count=len(new.failures),
+            passed=passed,
+            accepted=passed,
+        ),
+        subject_type=gate.SUBJECT_TYPE,
+        subject_id=result_id,
+    )
+    _log.info(
+        "registry.eval_completed",
+        extra={"result_id": str(result_id), "passed": passed, "actor_id": actor.id},
+    )
+    row = await repo.get_eval_result(uow, result_id)
+    if row is None:  # pragma: no cover - inserted just above in this transaction
+        raise NotFoundError(EVAL_NOT_FOUND_DETAIL)
+    return eval_view(row)
+
+
+async def read_evals(uow: UnitOfWork, actor: Principal) -> EvalResultList:
+    """The newest evaluation results (at most 100), newest first."""
+    _require_admin(actor)
+    rows = await repo.list_eval_results(uow, EVAL_LIST_LIMIT)
+    return EvalResultList(items=[eval_view(row) for row in rows])
+
+
+async def read_eval(uow: UnitOfWork, actor: Principal, result_id: UUID) -> EvalResult:
+    _require_admin(actor)
+    row = await repo.get_eval_result(uow, result_id)
+    if row is None:
+        raise NotFoundError(EVAL_NOT_FOUND_DETAIL)
+    return eval_view(row)
+
+
+async def install_eval_config(
+    uow: UnitOfWork, agent: RegisteredAgent, version: ConfigVersion
+) -> None:
+    """Eval harness only, in the eval database: make `version` (read from the main database)
+    the Agent's newest config version there, so the job chain picks it up. Registers the
+    Agent when the eval database lacks it, keeps the version's id, and sets the Agent
+    `active` unless it is `disabled` (an `eval_only` Agent runs in evals)."""
+    status = AgentStatus.DISABLED if agent.status == AgentStatus.DISABLED else AgentStatus.ACTIVE
+    if not await repo.agent_exists(uow, agent.agent_id):
+        await repo.insert_agent(
+            uow,
+            row_id=agent.id,
+            agent_id=agent.agent_id,
+            name=agent.name,
+            status=status,
+            user_id=None,
+        )
+    else:
+        current = await repo.get_agent(uow, agent.agent_id)
+        if current is not None and current.status != status:
+            await repo.bump(
+                uow, agent.agent_id, expected_row_version=current.row_version, status=status
+            )
+    newest = await repo.get_agent(uow, agent.agent_id)
+    if newest is not None and newest.current.id == version.id:
+        return
+    if await repo.version_exists(uow, version.id):
+        raise UnprocessableError(
+            f"Config version {version.id} of {agent.agent_id} is already in the eval database "
+            "but not its newest; reset the eval database first."
+        )
+    await repo.insert_version(
+        uow,
+        config_version_id=version.id,
+        agent_id=agent.agent_id,
+        version=await repo.max_version(uow, agent.agent_id) + 1,
+        semver=version.semver,
+        model_profile=version.model_profile,
+        model_digest=version.model_digest,
+        prompt_version=version.prompt_version,
+        input_schema_version=version.input_schema_version,
+        output_schema_version=version.output_schema_version,
+        contract_version=version.contract_version,
+        tool_permissions=version.tool_permissions,
+        budgets=version.budgets,
+        user_id=version.created_by,
+    )
+
+
+async def config_versions_of(uow: UnitOfWork, agent_id: str) -> list[ConfigVersion]:
+    """The Agent's config versions, newest first (no authorization; the eval harness)."""
+    return await repo.list_versions(uow, agent_id)

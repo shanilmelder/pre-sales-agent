@@ -2,3 +2,5 @@
 *.sh text eol=lf
 # Parser fixtures are compared byte for byte (CRLF on purpose in some): never convert them.
 backend/tests/fixtures/sources/** -text
+# The eval reference set is hashed into its version (Story 7.6): keep LF on every checkout.
+evals/reference/** text eol=lf

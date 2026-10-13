@@ -1,0 +1,28 @@
+From: [PERSON_3] <person3@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Subject: [SITE] sorter tender - requirements summary
+Date: Thu, 08 Oct 2026 08:45:00 +0100
+Message-ID: <site-tender-1008@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear [PERSON_1],
+
+Our tender requirements in short:
+
+- Sorter availability of at least 99.7% measured per operating week.
+- Read rate of at least 99.5% for the 1D and 2D barcodes on the top and sides.
+- Mis-sort rate below 0.05%.
+- Installation must happen while the hub keeps running; any shutdown is limited to one
+  Saturday night.
+- Remote support 24/7 with a 30-minute response and an engineer on site within 4 hours.
+- The sorter controls must be on a network segment separated from our office network.
+- Pricing: fixed price, plus a separate 7-year maintenance contract.
+
+We cannot yet tell you which postcode database version we will license next year; the
+contract with the provider is under negotiation.
+
+Kind regards,
+[PERSON_3]
+Procurement, [CUSTOMER]
