@@ -121,14 +121,17 @@ class ModelGateway:
         self._semaphore = PrioritySemaphore(settings.model_slots)
 
     def _profile(self, name: str) -> ModelProfile:
-        """The named profile, with `PSA_OPENAI_MODEL` (when set) as the model of an `openai`
-        provider profile, so the request, the call record and the logs all name the model
-        actually called."""
+        """The named profile. For an `openai` provider profile, `PSA_OPENAI_MODEL` and
+        `PSA_OPENAI_REASONING_EFFORT` (when set) replace its model and reasoning effort, so
+        the request, the call record and the logs all name the model actually called."""
         profile = get_profile(name)
-        override = self._settings.openai_model
-        if override and profile.provider == "openai":
-            return replace(profile, model=override)
-        return profile
+        if profile.provider != "openai":
+            return profile
+        return replace(
+            profile,
+            model=self._settings.openai_model or profile.model,
+            reasoning_effort=self._settings.openai_reasoning_effort or profile.reasoning_effort,
+        )
 
     @property
     def semaphore(self) -> PrioritySemaphore:

@@ -147,6 +147,14 @@ class Settings(BaseSettings):
             "or unset keeps the profile's model. Ollama profiles ignore it."
         ),
     )
+    openai_reasoning_effort: str | None = Field(
+        default=None,
+        description=(
+            "Set when the `openai`-provider model is a reasoning model (OpenAI's o-series, "
+            "GPT-5): requests then send this `reasoning_effort` (e.g. `low`, `medium`, `high`) "
+            "and no `temperature`, which those models reject. Empty or unset: a regular model."
+        ),
+    )
     model_profile_chat: str = Field(
         default="demo-chat",
         description=(
@@ -185,10 +193,10 @@ class Settings(BaseSettings):
             raise ValueError("job_heartbeat_s must be at most half of job_lease_s")
         return self
 
-    @field_validator("openai_model", mode="before")
+    @field_validator("openai_model", "openai_reasoning_effort", mode="before")
     @classmethod
-    def _blank_openai_model_is_unset(cls, value: object) -> object:
-        # `PSA_OPENAI_MODEL=` in `.env` means "use the profile's model".
+    def _blank_is_unset(cls, value: object) -> object:
+        # An empty value in `.env` (`PSA_OPENAI_MODEL=`) means "use the profile's own".
         if isinstance(value, str):
             return value.strip() or None
         return value

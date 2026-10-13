@@ -162,8 +162,13 @@ prompt text to a cloud: sample or anonymised Opportunities only until IT approve
 To change the OpenAI model without a code change, set `PSA_OPENAI_MODEL` (e.g. `gpt-4.1`) and
 restart `api` and `worker`. It replaces the model id of every `openai`-provider profile, and
 call records, logs and the smoke output name the model actually called; empty keeps each
-profile's own. The model must accept `temperature` and `json_schema` output: the adapter
-always sends `temperature`, which OpenAI's reasoning models (o-series) reject.
+profile's own. The model must support `json_schema` output.
+
+For a reasoning model (`o3`, `o4-mini`, `gpt-5`, ...) also set
+`PSA_OPENAI_REASONING_EFFORT` (`low`, `medium`, `high`; `minimal` on GPT-5): requests then
+send `reasoning_effort` and no `temperature`, which those models reject. Leave it empty for a
+regular model. Reasoning calls are slower, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if
+they time out; their `output_tokens` include the reasoning tokens.
 
 Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
 `api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama

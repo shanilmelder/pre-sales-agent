@@ -108,10 +108,12 @@ services:
       # OpenAI-compatible server for `openai` profiles (local-chat-openai, openai-chat): host
       # Ollama's /v1 by default; https://api.openai.com/v1 for openai-chat. Its context size
       # is set server-side, not per request. PSA_OPENAI_MODEL, when set, replaces those
-      # profiles' model id (e.g. gpt-4.1); empty keeps each profile's own.
+      # profiles' model id (e.g. gpt-4.1); empty keeps each profile's own. Set
+      # PSA_OPENAI_REASONING_EFFORT (low/medium/high) for a reasoning model (o4-mini, gpt-5).
       PSA_OPENAI_BASE_URL: ${PSA_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       PSA_OPENAI_API_KEY: ${PSA_OPENAI_API_KEY:-}
       PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
+      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
       PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
       PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
