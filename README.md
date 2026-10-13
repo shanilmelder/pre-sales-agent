@@ -144,6 +144,16 @@ assessment run's three specialist agents can call at once),
 `PSA_MODEL_MAX_RETRIES` and `PSA_MODEL_TIMEOUT_S`. `demo-chat` sends prompt text to Ollama's
 cloud: until IT approves it, use it only with sample or anonymised Opportunities.
 
+Each profile names its provider. `demo-chat` and `local-chat` use Ollama's native API;
+`local-chat-openai` (`qwen3:8b`) uses the OpenAI-compatible adapter: `POST
+{PSA_OPENAI_BASE_URL}/chat/completions` with `response_format` set to the JSON Schema, for
+vLLM or any `/v1` server. `PSA_OPENAI_BASE_URL` defaults to host Ollama's own `/v1`
+(`http://127.0.0.1:11434/v1`); `PSA_OPENAI_API_KEY` (optional) is sent as a bearer token.
+OpenAI-style endpoints can't set the context size per request, so for this provider the
+profile's `num_ctx` is what the server must be configured with (vLLM `--max-model-len`,
+Ollama `OLLAMA_CONTEXT_LENGTH` or a Modelfile). Its model digest is recorded as `unknown`.
+Switching provider is a config change: `PSA_MODEL_PROFILE_CHAT=local-chat-openai`.
+
 Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
 `api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama
 must listen beyond loopback for that (`OLLAMA_HOST=0.0.0.0`). Host-side commands (smoke,
@@ -156,6 +166,12 @@ cd backend
 PSA_OLLAMA_URL=http://127.0.0.1:11434 \
 PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
   uv run python -m app.platform.model_gateway.smoke   # prints `ok` with tokens and latency
+# The OpenAI-compatible adapter against host Ollama's /v1 (prints `ok ... digest=unknown`):
+# Start host Ollama with OLLAMA_CONTEXT_LENGTH=16384 for this profile (/v1 can't set it per request).
+PSA_MODEL_PROFILE_CHAT=local-chat-openai \
+PSA_OPENAI_BASE_URL=http://127.0.0.1:11434/v1 \
+PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
+  uv run python -m app.platform.model_gateway.smoke
 ```
 
 ## Authentication (Auth0)
