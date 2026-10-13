@@ -8,7 +8,9 @@ that data handling, only sample or anonymised Opportunities may use it. `local-c
 Each profile names its provider: `ollama` (native `/api/chat`, the default) or `openai`
 (any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`, e.g. vLLM). `local-chat-openai`
 is `qwen3:8b` over the OpenAI-compatible adapter; with the default base URL it is served by
-host Ollama's own `/v1` endpoint.
+host Ollama's own `/v1` endpoint. `openai-chat` (`gpt-4.1-mini`) is OpenAI's cloud API
+(`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` plus `PSA_OPENAI_API_KEY`); like
+`demo-chat` it sends prompt text off the host, so the same data rule applies.
 
 This module has no imports from the app: `app.platform.config` validates the configured
 profile name against `MODEL_PROFILES` at startup.
@@ -28,7 +30,7 @@ Provider = Literal["ollama", "openai"]
 class ModelProfile:
     name: str
     model: str
-    """The model name the provider serves (an Ollama tag for both providers today)."""
+    """The model name the provider serves: an Ollama tag, or an OpenAI model id."""
     num_ctx: int
     """Context window. `ollama`: set explicitly on every request (Ollama's default is much
     smaller). `openai`: OpenAI-style endpoints can't set it per request, so this declares
@@ -50,9 +52,15 @@ LOCAL_CHAT = ModelProfile(name="local-chat", model="qwen3:8b", num_ctx=16384)
 LOCAL_CHAT_OPENAI = ModelProfile(
     name="local-chat-openai", model="qwen3:8b", num_ctx=16384, provider="openai"
 )
+# OpenAI's cloud API. A non-reasoning model: the adapter always sends `temperature`, which
+# OpenAI's reasoning models reject unless it is 1. `num_ctx` is not sent (the model's own
+# window is far larger); it sizes intake's extraction chunks, kept equal to `demo-chat`.
+OPENAI_CHAT = ModelProfile(
+    name="openai-chat", model="gpt-4.1-mini", num_ctx=32768, provider="openai"
+)
 
 MODEL_PROFILES: Mapping[str, ModelProfile] = MappingProxyType(
-    {profile.name: profile for profile in (DEMO_CHAT, LOCAL_CHAT, LOCAL_CHAT_OPENAI)}
+    {profile.name: profile for profile in (DEMO_CHAT, LOCAL_CHAT, LOCAL_CHAT_OPENAI, OPENAI_CHAT)}
 )
 
 

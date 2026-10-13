@@ -105,8 +105,8 @@ services:
       # sends prompt text to Ollama's cloud: sample or anonymised Opportunities only.
       PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
       PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
-      # OpenAI-compatible server for `openai` profiles (local-chat-openai): host Ollama's /v1
-      # by default. Its context size is set server-side, not per request.
+      # OpenAI-compatible server for `openai` profiles (local-chat-openai, openai-chat): host
+      # Ollama's /v1 by default; https://api.openai.com/v1 for openai-chat. Its context size is set server-side, not per request.
       PSA_OPENAI_BASE_URL: ${PSA_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       PSA_OPENAI_API_KEY: ${PSA_OPENAI_API_KEY:-}
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
