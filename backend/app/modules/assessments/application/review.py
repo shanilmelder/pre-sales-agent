@@ -41,14 +41,12 @@ from uuid import UUID
 
 from app.agents.contract import AgentResult
 from app.agents.red_team_agent.agent import (
-    AGENT_ID,
     GapBlock,
     LineBlock,
     RedTeamAgent,
     RedTeamTask,
     RequirementBlock,
 )
-from app.agents.red_team_agent.agent import config as agent_config
 from app.agents.red_team_agent.schema import RedTeamOutput
 from app.modules.assessments.adapters import repository as repo
 from app.modules.assessments.domain.reviews import (
@@ -66,6 +64,7 @@ from app.modules.assessments.domain.reviews import (
 from app.modules.estimates.application import public as estimates
 from app.modules.gaps.application import public as gaps
 from app.modules.intake.application import public as intake
+from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
@@ -78,6 +77,8 @@ from app.platform.trace.catalogue import AssessmentsRedTeamReviewCompleted
 from app.platform.uow import UnitOfWork, unit_of_work
 
 RED_TEAM_REVIEW = "assessments.red_team_review"
+RED_TEAM_AGENT = "red_team_agent"
+"""The Agent that argues the Opportunity is harder; its config comes from the Agent Registry."""
 _KIND = ReviewKind.RED_TEAM.value
 _IN_PROGRESS = tuple(sorted(s.value for s in IN_PROGRESS))
 _QUEUED = (RunStatus.QUEUED.value,)
@@ -183,7 +184,7 @@ class ReviewInputs:
 def proposal(result: AgentResult) -> RedTeamOutput:
     """The agent's proposed Findings, re-validated (AD-4). Raises `ModelOutputInvalidError`
     when the extension is missing or malformed."""
-    raw = result.extensions.get(AGENT_ID)
+    raw = result.extensions.get(RED_TEAM_AGENT)
     try:
         return RedTeamOutput.model_validate(raw)
     except ValueError:
@@ -401,13 +402,15 @@ async def _mark_failed_shielded(ctx: JobContext, run_id: UUID, ids: dict[str, st
 class _Started:
     opportunity_id: UUID
     inputs: ReviewInputs
+    version: registry.ConfigVersion
     gaps: list[GapBlock] = field(repr=False)
 
 
 async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
     """Read the Opportunity's active Requirements, open Gaps and current Estimate lines and
     mark the run `running`; None if it is no longer queued or running (a duplicate or late
-    run)."""
+    run). While the agent is disabled (or `eval_only`) in the Agent Registry the run is marked
+    `failed` / `registry_agent_disabled` instead, with no retry."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_run(uow, run_id)
         if record is None:
@@ -415,6 +418,21 @@ async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
         await repo.lock_opportunity(uow, record.opportunity_id)
         record = await repo.get_run(uow, run_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:
+            return None
+        agent = await registry.current_config(uow, RED_TEAM_AGENT)
+        if not agent.runs_tasks:
+            await repo.update_run(
+                uow,
+                run_id,
+                from_statuses=_IN_PROGRESS,
+                status=RunStatus.FAILED.value,
+                error_code=RunErrorCode.AGENT_DISABLED.value,
+                finished=True,
+            )
+            _log.info(
+                "assessments.red_team_agent_disabled",
+                extra={"run_id": str(run_id), "agent_id": RED_TEAM_AGENT},
+            )
             return None
         snapshots = await intake.active_requirement_snapshots(uow, record.opportunity_id)
         open_gaps = await gaps.open_gap_summaries(uow, record.opportunity_id)
@@ -427,6 +445,7 @@ async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
         )
         return _Started(
             opportunity_id=record.opportunity_id,
+            version=agent.current,
             inputs=ReviewInputs(
                 requirements=[
                     ReviewRequirement(
@@ -483,7 +502,8 @@ async def _review(ctx: JobContext, payload: RedTeamReview) -> None:
         _log.info("assessments.red_team_empty", extra=ids)
         return
 
-    agent = RedTeamAgent(provider.current(), profile=settings.model_profile_chat)
+    config = registry.agent_config(started.version, settings)
+    agent = RedTeamAgent(provider.current(), config=config)
     result = await agent.run(
         RedTeamTask(
             opportunity_id=started.opportunity_id,
@@ -498,7 +518,7 @@ async def _review(ctx: JobContext, payload: RedTeamReview) -> None:
             ],
         )
     )
-    actor = Actor(type="agent", id=agent_config(settings.model_profile_chat).actor_id)
+    actor = Actor(type="agent", id=config.actor_id)
     async with unit_of_work(ctx.engine) as uow:
         accepted = await accept_red_team_review(
             uow, run_id=run_id, result=result, inputs=inputs, actor=actor

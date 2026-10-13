@@ -56,6 +56,8 @@ class ExtractionErrorCode(StrEnum):
     MODEL_TIMEOUT = "model_timeout"
     OUTPUT_INVALID = "output_invalid"
     INPUT_TOO_LARGE = "input_too_large"
+    AGENT_DISABLED = "registry_agent_disabled"
+    """The Agent is `disabled` or `eval_only` in the Agent Registry (Story 7.1)."""
 
 
 CHARS_PER_TOKEN = 3.5

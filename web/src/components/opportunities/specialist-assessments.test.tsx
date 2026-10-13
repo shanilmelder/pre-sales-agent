@@ -119,6 +119,7 @@ function assessment(
     version,
     status: "current",
     run_id: RUN_ID,
+    config_version_id: "00000000-0000-7000-8000-0000000c0001",
     recommendation: "proceed_with_conditions",
     confidence: "medium",
     confidence_basis: "[BASIS]",
@@ -882,6 +883,27 @@ describe("one Finding selected across the tab", () => {
     expect(redRow.closest("[role=row]")?.getAttribute("aria-selected")).toBe(
       "false",
     );
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("a disabled Agent (Story 7.1)", () => {
+  it("shows its skipped task as 'Agent disabled — assess manually', with no Retry", async () => {
+    const skipped = run("partially_failed", [
+      task("engineering_agent", "succeeded"),
+      task("pm_agent", "succeeded"),
+      {
+        ...task("security_agent", "skipped", null, { started_at: null }),
+        skip_reason: "agent_disabled",
+      },
+    ]);
+    const { container } = renderSection(view(skipped, FULL));
+    expect(panelRows()).toEqual([
+      ["Engineering Agent", "Done", "0:40"],
+      ["PM Agent", "Done", "0:40"],
+      ["Security Agent", "Skipped", "Agent disabled — assess manually"],
+    ]);
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 });

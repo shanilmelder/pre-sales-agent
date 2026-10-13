@@ -42,6 +42,9 @@ ADMIN_ONLY = (
     Action.CATALOGUE_ENTRY_EDIT,
     Action.CATALOGUE_ENTRY_RETIRE,
     Action.CATALOGUE_ENTRY_REACTIVATE,
+    Action.REGISTRY_AGENT_REGISTER,
+    Action.REGISTRY_AGENT_CONFIG_CREATE,
+    Action.REGISTRY_AGENT_SET_STATUS,
 )
 MODULES = {
     "identity",
@@ -52,6 +55,7 @@ MODULES = {
     "assessments",
     "conflicts",
     "knowledge",
+    "registry",
 }
 
 

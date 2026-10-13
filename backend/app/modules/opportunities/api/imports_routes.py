@@ -26,6 +26,8 @@ _DESCRIBED: dict[int, str] = {
     401: "No valid access token (`token_missing`, `token_expired`, `token_invalid`)",
     403: "Not allowed (`forbidden`): only presales engineers create Opportunities",
     404: "No import with this id of the caller's (`not_found`)",
+    409: "The Opportunity Intake Agent is disabled in the Agent Registry "
+    "(`registry_agent_disabled`); nothing is stored",
     410: "The import is older than 24 hours (`import_expired`)",
     413: "Rejected file: larger than the upload limit (`file_too_large`; the `detail` is the "
     "sentence to show)",
@@ -82,7 +84,7 @@ def _content_length(request: Request) -> int | None:
     operation_id="create_opportunity_import",
     status_code=202,
     responses={
-        **_responses(403, 413, 415, 422),
+        **_responses(403, 409, 413, 415, 422),
         202: {"description": "The import, `queued` for reading"},
     },
     openapi_extra=_UPLOAD_BODY,

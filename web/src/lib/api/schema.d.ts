@@ -1254,6 +1254,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registry/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Registry Agents
+         * @description Every Agent with its status and current config version, by agent id.
+         */
+        get: operations["list_registry_agents"];
+        put?: never;
+        /**
+         * Register Agent
+         * @description Register an Agent (`active`) with its config version 1.
+         */
+        post: operations["register_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Registry Agent
+         * @description One Agent with its status and current config version.
+         */
+        get: operations["get_registry_agent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/agents/{agent_id}/config-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Config Versions
+         * @description Every config version of the Agent, newest first.
+         */
+        get: operations["list_agent_config_versions"];
+        put?: never;
+        /**
+         * Create Agent Config Version
+         * @description Create the Agent's next config version; it becomes current for new runs. Runs in
+         *     progress keep the version they pinned.
+         */
+        post: operations["create_agent_config_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/agents/{agent_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Agent Status
+         * @description Set the Agent `active`, `disabled` or `eval_only`. Only active Agents get new tasks;
+         *     running tasks finish. The same status changes nothing.
+         */
+        post: operations["set_agent_status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1304,6 +1394,63 @@ export interface components {
         AgentAssessment: {
             agent: components["schemas"]["AssessmentAgent"];
             assessment: components["schemas"]["AssessmentView"] | null;
+        };
+        /**
+         * AgentConfigVersion
+         * @description One immutable config version of an Agent. `model_digest` is `unpinned` until digests
+         *     are pinned (Story 7.2); `created_by_id` is null for the versions the migration seeded.
+         */
+        AgentConfigVersion: {
+            /** Id */
+            id: string;
+            /** Agent Id */
+            agent_id: string;
+            /** Version */
+            version: number;
+            /** Semver */
+            semver: string;
+            /** Model Profile */
+            model_profile: string;
+            /** Model Digest */
+            model_digest: string;
+            /** Prompt Version */
+            prompt_version: number;
+            /** Input Schema Version */
+            input_schema_version: number;
+            /** Output Schema Version */
+            output_schema_version: number;
+            /** Contract Version */
+            contract_version: string;
+            /** Tool Permissions */
+            tool_permissions: string[];
+            /** Budgets */
+            budgets: {
+                [key: string]: unknown;
+            };
+            /** Created By Id */
+            created_by_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AgentConfigVersionList
+         * @description An Agent's config versions, newest first.
+         */
+        AgentConfigVersionList: {
+            /** Items */
+            items: components["schemas"]["AgentConfigVersion"][];
+        };
+        /**
+         * AgentStatus
+         * @enum {string}
+         */
+        AgentStatus: "active" | "disabled" | "eval_only";
+        /** AgentStatusChange */
+        AgentStatusChange: {
+            status: components["schemas"]["AgentStatus"];
         };
         /**
          * ApproveAllResult
@@ -1386,7 +1533,9 @@ export interface components {
         AssessmentStatus: "current" | "superseded";
         /**
          * AssessmentTask
-         * @description One agent's task in an assessment run. `error_code` is set only when `failed`.
+         * @description One agent's task in an assessment run. `error_code` is set only when `failed`;
+         *     `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
+         *     panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
          *     `started_at` / `finished_at`: when the task last started and finished (null before
          *     either); the panel derives elapsed time from them.
          */
@@ -1394,6 +1543,7 @@ export interface components {
             agent: components["schemas"]["AssessmentAgent"];
             status: components["schemas"]["AssessmentTaskStatus"];
             error_code: components["schemas"]["RunErrorCode"] | null;
+            skip_reason?: components["schemas"]["TaskSkipReason"] | null;
             /** Started At */
             started_at: string | null;
             /** Finished At */
@@ -1420,6 +1570,8 @@ export interface components {
             status: components["schemas"]["AssessmentStatus"];
             /** Run Id */
             run_id: string;
+            /** Config Version Id */
+            config_version_id: string;
             recommendation: components["schemas"]["Recommendation"];
             confidence: components["schemas"]["Confidence"];
             /** Confidence Basis */
@@ -1823,7 +1975,7 @@ export interface components {
          * DetectionErrorCode
          * @enum {string}
          */
-        DetectionErrorCode: "model_unavailable" | "model_timeout" | "output_invalid";
+        DetectionErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled";
         /**
          * DetectionStatus
          * @enum {string}
@@ -1847,7 +1999,7 @@ export interface components {
          * DraftErrorCode
          * @enum {string}
          */
-        DraftErrorCode: "model_unavailable" | "model_timeout" | "output_invalid";
+        DraftErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled";
         /**
          * DraftStatus
          * @enum {string}
@@ -2079,7 +2231,7 @@ export interface components {
          * ExtractionErrorCode
          * @enum {string}
          */
-        ExtractionErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "input_too_large";
+        ExtractionErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "input_too_large" | "registry_agent_disabled";
         /**
          * ExtractionStatus
          * @enum {string}
@@ -2245,7 +2397,7 @@ export interface components {
          * ImportErrorCode
          * @enum {string}
          */
-        ImportErrorCode: "unreadable" | "model_unavailable" | "model_timeout" | "output_invalid";
+        ImportErrorCode: "unreadable" | "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled";
         /**
          * ImportStatus
          * @enum {string}
@@ -2430,6 +2582,44 @@ export interface components {
             label: string;
             /** Excerpt */
             excerpt: string;
+        };
+        /**
+         * NewAgent
+         * @description Register an Agent with its config version 1. `agent_id`: unique, lowercase snake_case
+         *     ending in `_agent`; `name`: 1-120 characters.
+         */
+        NewAgent: {
+            /** Agent Id */
+            agent_id: string;
+            /** Name */
+            name: string;
+            config: components["schemas"]["NewAgentConfig"];
+        };
+        /**
+         * NewAgentConfig
+         * @description A config version. The prompt, both schema versions and the model profile must be in
+         *     the deployed manifest (422 `registry_config_not_deployed`), and the output schema must be
+         *     written for the deployed `AgentResult` contract version (422
+         *     `registry_config_incompatible_contract`). `tool_permissions`: action names
+         *     (`<module>.<entity>.<verb>`), at most 50; `budgets`: at most 20 keys.
+         */
+        NewAgentConfig: {
+            /** Semver */
+            semver: string;
+            /** Model Profile */
+            model_profile: string;
+            /** Prompt Version */
+            prompt_version: number;
+            /** Input Schema Version */
+            input_schema_version: number;
+            /** Output Schema Version */
+            output_schema_version: number;
+            /** Tool Permissions */
+            tool_permissions?: string[];
+            /** Budgets */
+            budgets?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * NewEntry
@@ -2830,6 +3020,33 @@ export interface components {
             can_start: boolean;
         };
         /**
+         * RegistryAgent
+         * @description An Agent with its status and current (newest) config version. Only an `active` Agent
+         *     gets new tasks; `disabled` and `eval_only` don't.
+         */
+        RegistryAgent: {
+            /** Id */
+            id: string;
+            /** Agent Id */
+            agent_id: string;
+            /** Name */
+            name: string;
+            status: components["schemas"]["AgentStatus"];
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            current_config: components["schemas"]["AgentConfigVersion"];
+        };
+        /** RegistryAgentList */
+        RegistryAgentList: {
+            /** Items */
+            items: components["schemas"]["RegistryAgent"][];
+        };
+        /**
          * Requirement
          * @description An active Requirement of the Opportunity with the passages it cites. `origin` is
          *     `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
@@ -2965,7 +3182,7 @@ export interface components {
          * RunErrorCode
          * @enum {string}
          */
-        RunErrorCode: "model_unavailable" | "model_timeout" | "output_invalid";
+        RunErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled";
         /**
          * RunStatus
          * @enum {string}
@@ -3089,6 +3306,12 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /**
+         * TaskSkipReason
+         * @description Why a task was skipped other than by a cancel (Story 7.1).
+         * @enum {string}
+         */
+        TaskSkipReason: "agent_disabled";
         /**
          * Totals
          * @description Effort, Contingency and total hours, and the effort per role.
@@ -4923,6 +5146,28 @@ export interface operations {
                     };
                 };
             };
+            /** @description The Opportunity Intake Agent is disabled in the Agent Registry (`registry_agent_disabled`); nothing is stored */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
             /** @description Rejected file: larger than the upload limit (`file_too_large`; the `detail` is the sentence to show) */
             413: {
                 headers: {
@@ -5890,7 +6135,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An extraction is already queued or running (`extraction_in_progress`) */
+            /** @description An extraction is already queued or running (`extraction_in_progress`), or the Intake Agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6765,7 +7010,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A Gap detection is already queued or running (`gap_detection_in_progress`) */
+            /** @description A Gap detection is already queued or running (`gap_detection_in_progress`), or the Clarification Agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7599,7 +7844,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An Estimate draft is already queued or running (`estimate_draft_in_progress`) */
+            /** @description An Estimate draft is already queued or running (`estimate_draft_in_progress`), or the Estimating Agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8587,7 +8832,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A Red Team review is already queued or running (`red_team_review_in_progress`) */
+            /** @description A Red Team review is already queued or running (`red_team_review_in_progress`), or the Red Team Agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9007,7 +9252,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An assessment run is already queued or running (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`) */
+            /** @description An assessment run is already queued or running (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`), or its agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12814,6 +13059,868 @@ export interface operations {
                 };
             };
             /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_registry_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryAgentList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    register_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewAgent"];
+            };
+        };
+        responses: {
+            /** @description The new Agent, with config version 1 */
+            201: {
+                headers: {
+                    /** @description The Agent's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryAgent"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An Agent with this id is already registered (`registry_agent_duplicate`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_registry_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Agent's id, e.g. `pm_agent`. */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Agent */
+            200: {
+                headers: {
+                    /** @description The Agent's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryAgent"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Agent with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_agent_config_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Agent's id, e.g. `pm_agent`. */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigVersionList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Agent with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_agent_config_version: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Agent as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                /** @description The Agent's id, e.g. `pm_agent`. */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewAgentConfig"];
+            };
+        };
+        responses: {
+            /** @description The Agent, at its new current version */
+            201: {
+                headers: {
+                    /** @description The Agent's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryAgent"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Agent with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Agent changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    set_agent_status: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Agent as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                /** @description The Agent's id, e.g. `pm_agent`. */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentStatusChange"];
+            };
+        };
+        responses: {
+            /** @description The Agent */
+            200: {
+                headers: {
+                    /** @description The Agent's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryAgent"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Agent with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Agent changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
                 headers: {
                     [name: string]: unknown;

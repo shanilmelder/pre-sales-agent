@@ -57,6 +57,7 @@ from app.modules.estimates.application.models import (
 from app.modules.estimates.domain import arithmetic
 from app.modules.estimates.domain.assumptions import AssumptionKind, ProposalStatus
 from app.modules.estimates.domain.estimates import (
+    ESTIMATING_AGENT,
     IN_PROGRESS,
     ROLES,
     DraftErrorCode,
@@ -73,6 +74,7 @@ from app.modules.identity.application.public import Action, Principal
 from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import UserRef
+from app.modules.registry.application import public as registry
 from app.platform.errors import EstimateDraftInProgressError
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
@@ -429,6 +431,7 @@ async def start_draft(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -
     """Queue a new Estimate draft of the Opportunity (the Retry of a failed one)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.ESTIMATE_DRAFT_START, resource)
+    await registry.require_enabled(uow, ESTIMATING_AGENT)  # 409 while it is disabled
     await repo.lock_opportunity(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     busy = await repo.draft_in(uow, opportunity_id, tuple(s.value for s in IN_PROGRESS))

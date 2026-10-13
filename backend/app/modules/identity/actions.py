@@ -43,3 +43,6 @@ class Action(StrEnum):
     ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"
     CONFLICT_RESOLVE = "conflicts.conflict.resolve"
     CONFLICT_ESCALATE = "conflicts.conflict.escalate"
+    REGISTRY_AGENT_REGISTER = "registry.agent.register"
+    REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
+    REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"

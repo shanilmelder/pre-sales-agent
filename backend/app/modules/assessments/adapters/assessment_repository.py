@@ -43,6 +43,19 @@ class TaskRecord:
     error_code: str | None
     started_at: datetime | None
     finished_at: datetime | None
+    config_version_id: UUID
+    skip_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NewTask:
+    """A task of a new run: `queued`, or `skipped` with a `skip_reason` when its Agent was
+    not active. `config_version_id`: the registry config version it pins."""
+
+    id: UUID
+    agent: str
+    config_version_id: UUID
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +71,7 @@ class AssessmentRecord:
     confidence_basis: str = field(repr=False)
     dropped_count: int
     created_at: datetime
+    config_version_id: UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,19 +164,31 @@ def _task(row: AssessmentTaskRow) -> TaskRecord:
         error_code=row.error_code,
         started_at=row.started_at,
         finished_at=row.finished_at,
+        config_version_id=row.config_version_id,
+        skip_reason=row.skip_reason,
     )
 
 
 async def insert_run(
-    uow: UnitOfWork, *, run_id: UUID, opportunity_id: UUID, agents: Sequence[str]
+    uow: UnitOfWork, *, run_id: UUID, opportunity_id: UUID, tasks: Sequence[NewTask]
 ) -> None:
-    """A `queued` run with one `queued` task per agent."""
+    """A `queued` run with its tasks: `queued`, or `skipped` when they have a skip reason."""
     await uow.session.execute(
         insert(AssessmentRunRow).values(id=run_id, opportunity_id=opportunity_id, status="queued")
     )
     await uow.session.execute(
         insert(AssessmentTaskRow),
-        [{"id": new_id(), "run_id": run_id, "agent": a, "status": "queued"} for a in agents],
+        [
+            {
+                "id": t.id,
+                "run_id": run_id,
+                "agent": t.agent,
+                "status": "queued" if t.skip_reason is None else "skipped",
+                "config_version_id": t.config_version_id,
+                "skip_reason": t.skip_reason,
+            }
+            for t in tasks
+        ],
     )
 
 
@@ -302,14 +328,20 @@ async def update_tasks(
     from_statuses: tuple[str, ...],
     status: str,
     error_code: str | None = None,
+    skip_reason: str | None = None,
     started: bool = False,
     finished: bool = False,
     reset: bool = False,
 ) -> list[str]:
     """Move the run's tasks (only `agents`' when given) that are in one of `from_statuses`
-    to `status`. `started` / `finished` stamp `started_at` / `finished_at`; `reset` clears
-    both. Returns the agents whose task changed."""
-    values: dict[str, object] = {"status": status, "error_code": error_code}
+    to `status`, with `error_code` and `skip_reason` (both cleared when None). `started` /
+    `finished` stamp `started_at` / `finished_at`; `reset` clears both. Returns the agents
+    whose task changed."""
+    values: dict[str, object] = {
+        "status": status,
+        "error_code": error_code,
+        "skip_reason": skip_reason,
+    }
     if started:
         values["started_at"] = func.now()
     if finished:
@@ -349,6 +381,7 @@ def _assessment(row: AssessmentRow) -> AssessmentRecord:
         confidence_basis=row.confidence_basis,
         dropped_count=row.dropped_count,
         created_at=row.created_at,
+        config_version_id=row.config_version_id,
     )
 
 
@@ -389,6 +422,7 @@ async def insert_assessment(
     agent: str,
     version: int,
     run_id: UUID,
+    config_version_id: UUID,
     recommendation: str,
     confidence: str,
     confidence_basis: str,
@@ -404,6 +438,7 @@ async def insert_assessment(
             agent=agent,
             version=version,
             run_id=run_id,
+            config_version_id=config_version_id,
             status="current",
             recommendation=recommendation,
             confidence=confidence,

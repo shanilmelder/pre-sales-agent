@@ -34,6 +34,7 @@ from app.modules.gaps.application import detection as gaps_detection
 from app.modules.intake.application import extraction as intake_extraction
 from app.modules.intake.application import jobs as intake_jobs
 from app.modules.intake.application import public as intake
+from app.modules.registry.domain.registry import seed_config_version_id
 from app.platform.actor import Actor
 from app.platform.config import Settings
 from app.platform.db import create_engine
@@ -494,13 +495,13 @@ def test_extraction_stores_cited_requirements(
     # One model call: instructions as the system message, Sources only as data blocks.
     (request,) = gateway.requests
     system, user = request.messages
-    assert (system.role, system.content) == ("system", prompt())
+    assert (system.role, system.content) == ("system", prompt(1))
     assert call not in system.content and mail not in system.content
     assert user.role == "user"
     assert "<<<SOURCE S1 kind=note token=" in user.content and call in user.content
     assert "<<<SOURCE S2 kind=note token=" in user.content and mail in user.content
     assert request.caller.agent_id == "intake_agent"
-    assert request.caller.config_version == "0.1.0"
+    assert request.caller.config_version == str(seed_config_version_id("intake_agent"))
     assert request.caller.run_id == extraction["id"]
     assert str(request.caller.opportunity_id) == opp["id"]
     assert (request.profile, request.priority) == ("demo-chat", "background")

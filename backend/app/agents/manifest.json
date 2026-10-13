@@ -1,0 +1,178 @@
+{
+  "contract_version": "1",
+  "profiles": {
+    "demo-chat": {
+      "model": "gpt-oss:120b-cloud",
+      "provider": "ollama"
+    },
+    "local-chat": {
+      "model": "qwen3:8b",
+      "provider": "ollama"
+    },
+    "local-chat-openai": {
+      "model": "qwen3:8b",
+      "provider": "openai"
+    },
+    "openai-chat": {
+      "model": "gpt-4.1-mini",
+      "provider": "openai"
+    }
+  },
+  "prompts": {
+    "clarification_agent": {
+      "1": {
+        "v1.md": "49c51ac4b2b721f923f87229db88723d5a5b49ce6552d6b8bf7db69c01b72a8c"
+      }
+    },
+    "engineering_agent": {
+      "1": {
+        "v1.md": "9ca6fbf7f03046ecf5d0a391671736989328ae1d9ddbb7d6cbffd09e448c5b9f"
+      }
+    },
+    "estimating_agent": {
+      "1": {
+        "v1-assumptions.md": "36bf7ecfe3e031b9c98a0e74269b3ccf4331c57bfde0a9c085388b0eb8bfa03a",
+        "v1.md": "e1164624581afe6478a1cd6c1fe7aea7ade8fa39ae88516752868a12fa500ba7"
+      }
+    },
+    "intake_agent": {
+      "1": {
+        "v1.md": "8da56c7ab86128cfe1084e425e40f62ca6a41a864ee72d177867fd443d11aab5"
+      }
+    },
+    "opportunity_intake_agent": {
+      "1": {
+        "v1.md": "9798721a0df63154f5132ba64a2ccbf18b1856bf938ed095a5d39efe287cbb07"
+      }
+    },
+    "pm_agent": {
+      "1": {
+        "v1.md": "c8745d53f375e96a8685f2e51af3991ec3c998814f3672b39e9f60e5c8728b16"
+      }
+    },
+    "red_team_agent": {
+      "1": {
+        "v1.md": "254d6138df563c2cce362fd6738a6ac2e8fe72078e7ed62f7e9e9eeb72d99daa"
+      }
+    },
+    "security_agent": {
+      "1": {
+        "v1.md": "015049dd8f992290d0d67773a30a905d1cf777348bdf4ce2d99e93067b790656"
+      }
+    }
+  },
+  "schemas": {
+    "clarification_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "8b91f29cab0af9be20e0c80a436d3220c90ef4c36ba647762879e120588ab37a"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "7e635527addfbaa68a4769955c9040fb99566d8682f4762fcd40648a0afd538f"
+        }
+      }
+    },
+    "engineering_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "7ab481abdd2f45f7841eb1caddbf20ceabffe689ce57c0f799d5595958dec2f6"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "9d0aa3e5070438d4beaa85bce98ab57d3efcc109fde36f48ed073b9c93b1ca2f"
+        }
+      }
+    },
+    "estimating_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "524baf24b0d8cf6e2d66b1b51d2db030875f2800647194e0d1d2f164d329dc0d"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "c29c466ce788b36fe54039162b4c68d9b6254e66d448025cb0192650c70ae5a4"
+        }
+      }
+    },
+    "intake_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "e5d541aec7b4869ed3b9b3e626e3cd6434bc001deabca96116af5390f1f9aa39"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "adfc8f295d6ad6d834f9586e877a10cc213fecce110645149e2d8f7fb92e1e46"
+        }
+      }
+    },
+    "opportunity_intake_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "e7028c3c2dbda124873e6820565b73d43659f4fa5bac875a536c06e2d357bad2"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "6589eca58f4923012b444dd26042a33a66fd6acbb4278f19b564bcefccd13fad"
+        }
+      }
+    },
+    "pm_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "7ab481abdd2f45f7841eb1caddbf20ceabffe689ce57c0f799d5595958dec2f6"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "9993fb8024a2fb4f99d9af77dd5d5f73e5fc26b7e392dd72a8a150b2292fea0f"
+        }
+      }
+    },
+    "red_team_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "5c0dc9fad4abcdcc27bdec3c2202d45f1d3e880f0c4624352637042a1ac5640c"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "f980aced287de1df31584989befe76c87c8f2f9f53a76d131755a5f6806f0282"
+        }
+      }
+    },
+    "security_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "7ab481abdd2f45f7841eb1caddbf20ceabffe689ce57c0f799d5595958dec2f6"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "4053043fa38128f965616df135a5f3e4f1c16603fce51499ae9204a466e56c5c"
+        }
+      }
+    }
+  }
+}

@@ -51,6 +51,10 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.KNOWLEDGE_SOURCE_REVIEW,
             Action.KNOWLEDGE_SOURCE_RETIRE,
             Action.KNOWLEDGE_SOURCE_RETRY_PARSE,
+            # The Agent Registry (Story 7.1): platform administrators only.
+            Action.REGISTRY_AGENT_REGISTER,
+            Action.REGISTRY_AGENT_CONFIG_CREATE,
+            Action.REGISTRY_AGENT_SET_STATUS,
         }
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
@@ -76,6 +80,9 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.KNOWLEDGE_SOURCE_RETIRE: "Retire any Knowledge Source",
     Action.KNOWLEDGE_SOURCE_RETRY_PARSE: "Retry a failed Knowledge Source parse",
     Action.OPPORTUNITY_READ: "Read every Opportunity",
+    Action.REGISTRY_AGENT_REGISTER: "Register Agents in the Agent Registry",
+    Action.REGISTRY_AGENT_CONFIG_CREATE: "Create a new config version of an Agent",
+    Action.REGISTRY_AGENT_SET_STATUS: "Enable, disable or set an Agent to eval only",
 }
 
 TIMEOUT = 30.0

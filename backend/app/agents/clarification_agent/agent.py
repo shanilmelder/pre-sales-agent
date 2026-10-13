@@ -27,9 +27,6 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
 )
 
-AGENT_ID = "clarification_agent"
-SEMVER = "0.1.0"
-PROMPT_VERSION = 1
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 CONFIDENCE = 0.5
 CONFIDENCE_BASIS = (
@@ -37,15 +34,8 @@ CONFIDENCE_BASIS = (
 )
 
 
-def config(profile: str) -> AgentConfig:
-    """`clarification_agent`'s config for a chat profile (`PSA_MODEL_PROFILE_CHAT`)."""
-    return AgentConfig(
-        agent_id=AGENT_ID, semver=SEMVER, prompt_version=PROMPT_VERSION, profile=profile
-    )
-
-
 @cache
-def prompt(version: int = PROMPT_VERSION) -> str:
+def prompt(version: int) -> str:
     """The instructions, `prompts/v<version>.md`."""
     return (PROMPTS_DIR / f"v{version}.md").read_text(encoding="utf-8")
 
@@ -86,9 +76,9 @@ def requirement_blocks(requirements: Sequence[RequirementBlock], token: str) -> 
 class ClarificationAgent:
     """Stateless across runs; one instance may serve many tasks."""
 
-    def __init__(self, gateway: ModelGatewayPort, *, profile: str) -> None:
+    def __init__(self, gateway: ModelGatewayPort, *, config: AgentConfig) -> None:
         self._gateway = gateway
-        self._config = config(profile)
+        self._config = config
 
     @property
     def config(self) -> AgentConfig:
@@ -108,7 +98,7 @@ class ClarificationAgent:
                 output_model=ClarificationOutput,
                 caller=CallerMetadata(
                     agent_id=self._config.agent_id,
-                    config_version=self._config.semver,
+                    config_version=str(self._config.config_version_id),
                     run_id=task.run_id,
                     opportunity_id=task.opportunity_id,
                 ),
@@ -120,5 +110,5 @@ class ClarificationAgent:
             confidence=CONFIDENCE,
             confidence_basis=CONFIDENCE_BASIS,
             needs_human_review=True,
-            extensions={AGENT_ID: result.value},
+            extensions={self._config.agent_id: result.value},
         )

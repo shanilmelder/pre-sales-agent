@@ -28,9 +28,6 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
 )
 
-AGENT_ID = "opportunity_intake_agent"
-SEMVER = "0.1.0"
-PROMPT_VERSION = 1
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 MAX_TEXT_CHARS = 40_000
 """The most characters of the file's text sent to the model (the start of the text: an
@@ -43,15 +40,8 @@ CONFIDENCE_BASIS = (
 )
 
 
-def config(profile: str) -> AgentConfig:
-    """`opportunity_intake_agent`'s config for a chat profile (`PSA_MODEL_PROFILE_CHAT`)."""
-    return AgentConfig(
-        agent_id=AGENT_ID, semver=SEMVER, prompt_version=PROMPT_VERSION, profile=profile
-    )
-
-
 @cache
-def prompt(version: int = PROMPT_VERSION) -> str:
+def prompt(version: int) -> str:
     """The instructions, `prompts/v<version>.md`."""
     return (PROMPTS_DIR / f"v{version}.md").read_text(encoding="utf-8")
 
@@ -77,9 +67,9 @@ def data_block(text: str, today: date, token: str) -> str:
 class OpportunityIntakeAgent:
     """Stateless across runs; one instance may serve many tasks."""
 
-    def __init__(self, gateway: ModelGatewayPort, *, profile: str) -> None:
+    def __init__(self, gateway: ModelGatewayPort, *, config: AgentConfig) -> None:
         self._gateway = gateway
-        self._config = config(profile)
+        self._config = config
 
     @property
     def config(self) -> AgentConfig:
@@ -99,7 +89,7 @@ class OpportunityIntakeAgent:
                 output_model=OpportunityIntakeOutput,
                 caller=CallerMetadata(
                     agent_id=self._config.agent_id,
-                    config_version=self._config.semver,
+                    config_version=str(self._config.config_version_id),
                     run_id=task.import_id,
                 ),
                 profile=self._config.profile,
@@ -110,5 +100,5 @@ class OpportunityIntakeAgent:
             confidence=CONFIDENCE,
             confidence_basis=CONFIDENCE_BASIS,
             needs_human_review=True,
-            extensions={AGENT_ID: result.value},
+            extensions={self._config.agent_id: result.value},
         )

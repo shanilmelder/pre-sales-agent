@@ -47,6 +47,10 @@ jobs:
         run: uv run mypy app
       - name: architecture contracts (import-linter)
         run: uv run lint-imports
+      - name: agent deploy manifest is up to date (Story 7.1)
+        run: |
+          uv run python -m app.agents.manifest
+          git diff --exit-code -- app/agents/manifest.json
       - name: create app role (same script the compose postgres runs at init)
         env:
           PGHOST: localhost

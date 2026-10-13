@@ -135,3 +135,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1-conflicts-tab.md`
   summary: Web suite timing flakes under full parallel load — a different untouched test fails per run (`estimate-grid.test.tsx` "a refused change rolls back…", `specialist-assessments.test.tsx` "a cancel answered 409…", `create-form.test.tsx` "says so when the user may not create (403)…"); each passes alone.
   evidence: Seen in two full `npm test` runs during Story 6.1 verification (2026-10-07); none of these files changed in 6.1. Likely waitFor timeouts under load; raise timeouts or limit vitest workers.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-1-db-agent-registry.md`
+  summary: Enforce that a pinned prompt or schema version's content hash never changes (store hashes on config versions, or compare the manifest against the base branch in CI).
+  evidence: `manifest.json` records sha256s but `has_prompt`/`schema` only check the version key exists, so editing `prompts/v1.md` in place silently changes every config version pinning prompt 1.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-1-db-agent-registry.md`
+  summary: Record `registry_agent_disabled` as the reason when Assumption proposals fail because the Estimating Agent is disabled.
+  evidence: `estimates/application/assumptions.py` `_start` sets `proposal_status = failed` with no error code (no column exists), so the UI can't say why; decision 3 of Story 7.1 expects the code.

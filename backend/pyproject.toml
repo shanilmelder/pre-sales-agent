@@ -245,3 +245,41 @@ forbidden_modules = [
     "app.modules.assessments",
 ]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "registry uses identity only through its public API and never imports another business module (AD-2, Story 7.1)"
+type = "forbidden"
+source_modules = ["app.modules.registry"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities",
+    "app.modules.intake",
+    "app.modules.gaps",
+    "app.modules.estimates",
+    "app.modules.assessments",
+    "app.modules.conflicts",
+    "app.modules.knowledge",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Other modules read Agent config only through registry's public API (AD-2, Story 7.1)"
+type = "forbidden"
+source_modules = [
+    "app.modules.identity",
+    "app.modules.opportunities",
+    "app.modules.intake",
+    "app.modules.gaps",
+    "app.modules.estimates",
+    "app.modules.assessments",
+    "app.modules.conflicts",
+    "app.modules.knowledge",
+]
+forbidden_modules = [
+    "app.modules.registry.domain",
+    "app.modules.registry.adapters",
+    "app.modules.registry.api",
+]
+allow_indirect_imports = true

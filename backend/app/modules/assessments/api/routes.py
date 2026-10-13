@@ -31,12 +31,14 @@ _DESCRIBED: dict[int, str] = {
     403: "Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner "
     "or a collaborator, or is a sales representative",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
-    409: "A Red Team review is already queued or running (`red_team_review_in_progress`)",
+    409: "A Red Team review is already queued or running (`red_team_review_in_progress`), or "
+    "the Red Team Agent is disabled in the Agent Registry (`registry_agent_disabled`)",
     422: "The Opportunity id is not a UUID (`validation_error`)",
     4091: "An assessment run is already queued or running (`assessment_in_progress`)",
     4092: "An assessment run is already queued or running (`assessment_in_progress`), or the "
     "task is not a failed task of the latest run, or that run was cancelled "
-    "(`assessment_task_not_failed`)",
+    "(`assessment_task_not_failed`), or its agent is disabled in the Agent Registry "
+    "(`registry_agent_disabled`)",
     4093: "The run is not the Opportunity's latest, or is no longer queued or running "
     "(`assessment_not_in_progress`)",
     4041: "No Opportunity with this id, or the caller may not see it, or no such assessment "

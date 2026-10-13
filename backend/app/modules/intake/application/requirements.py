@@ -19,7 +19,12 @@ from app.modules.intake.adapters.requirements_repository import (
     ExtractionRecord,
     RequirementRecord,
 )
-from app.modules.intake.application.extraction import fail_stale, queue_extraction, stale_after
+from app.modules.intake.application.extraction import (
+    INTAKE_AGENT,
+    fail_stale,
+    queue_extraction,
+    stale_after,
+)
 from app.modules.intake.application.models import (
     Extraction,
     Requirement,
@@ -35,6 +40,7 @@ from app.modules.intake.domain.requirements import (
 )
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import UserRef
+from app.modules.registry.application import public as registry
 from app.platform.errors import ExtractionInProgressError
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
@@ -157,6 +163,7 @@ async def start_extraction(uow: UnitOfWork, actor: Principal, opportunity_id: UU
     """Queue a new extraction of the Opportunity (the Retry of a failed one)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.EXTRACTION_START, resource)
+    await registry.require_enabled(uow, INTAKE_AGENT)  # 409 while it is disabled
     await repo.lock_opportunity(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     busy = await repo.extraction_in(uow, opportunity_id, tuple(s.value for s in IN_PROGRESS))

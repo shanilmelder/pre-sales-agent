@@ -39,13 +39,11 @@ from uuid import UUID
 
 from app.agents.contract import AgentResult
 from app.agents.intake_agent.agent import (
-    AGENT_ID,
     IntakeAgent,
     IntakeTask,
     RetryRequest,
     SourceBlock,
 )
-from app.agents.intake_agent.agent import config as agent_config
 from app.agents.intake_agent.schema import IntakeOutput
 from app.modules.intake.adapters import requirements_repository as repo
 from app.modules.intake.application.texts import extracted_text
@@ -60,6 +58,7 @@ from app.modules.intake.domain.requirements import (
     input_budget_chars,
     resolve_requirements,
 )
+from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
@@ -78,6 +77,8 @@ from app.platform.trace.catalogue import IntakeExtractionCompleted
 from app.platform.uow import UnitOfWork, unit_of_work
 
 EXTRACT_REQUIREMENTS = "intake.extract_requirements"
+INTAKE_AGENT = "intake_agent"
+"""The Agent that extracts Requirements; its config comes from the Agent Registry (Story 7.1)."""
 _IN_PROGRESS = tuple(sorted(s.value for s in IN_PROGRESS))
 _QUEUED = (ExtractionStatus.QUEUED.value,)
 _RUNNING = (ExtractionStatus.RUNNING.value,)
@@ -168,7 +169,7 @@ class ExtractionSource:
 def proposal(result: AgentResult) -> IntakeOutput:
     """The agent's proposed Requirements, re-validated (AD-4). Raises
     `ModelOutputInvalidError` when the extension is missing or malformed."""
-    raw = result.extensions.get(AGENT_ID)
+    raw = result.extensions.get(INTAKE_AGENT)
     try:
         return IntakeOutput.model_validate(raw)
     except ValueError:
@@ -406,9 +407,11 @@ async def _mark_failed_shielded(ctx: JobContext, extraction_id: UUID, ids: dict[
 
 async def _start(
     ctx: JobContext, extraction_id: UUID, store: BlobStore
-) -> tuple[UUID, list[ExtractionSource]] | None:
-    """Read the extraction's Sources and mark it `running` with their count; None if it is
-    no longer queued or running (a duplicate or late run)."""
+) -> tuple[UUID, list[ExtractionSource], registry.ConfigVersion] | None:
+    """Read the extraction's Sources and the agent's current config version, and mark it
+    `running` with their count; None if it is no longer queued or running (a duplicate or
+    late run). While the agent is disabled (or `eval_only`) in the Agent Registry the
+    extraction is marked `failed` / `registry_agent_disabled` instead, with no retry."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_extraction(uow, extraction_id)
         if record is None:
@@ -416,6 +419,21 @@ async def _start(
         await repo.lock_opportunity(uow, record.opportunity_id)
         record = await repo.get_extraction(uow, extraction_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:
+            return None
+        agent = await registry.current_config(uow, INTAKE_AGENT)
+        if not agent.runs_tasks:
+            await repo.update_extraction(
+                uow,
+                extraction_id,
+                from_statuses=_IN_PROGRESS,
+                status=ExtractionStatus.FAILED.value,
+                error_code=ExtractionErrorCode.AGENT_DISABLED.value,
+                finished=True,
+            )
+            _log.info(
+                "intake.extraction_agent_disabled",
+                extra={"extraction_id": str(extraction_id), "agent_id": INTAKE_AGENT},
+            )
             return None
         sources: list[ExtractionSource] = []
         for version in await repo.newest_parsed_versions(uow, record.opportunity_id):
@@ -438,7 +456,7 @@ async def _start(
             status=ExtractionStatus.RUNNING.value,
             source_count=len(sources),
         )
-        return record.opportunity_id, sources
+        return record.opportunity_id, sources, agent.current
 
 
 async def _extract(ctx: JobContext, payload: ExtractRequirements) -> None:
@@ -449,10 +467,11 @@ async def _extract(ctx: JobContext, payload: ExtractRequirements) -> None:
     if started is None:
         _log.info("intake.extraction_skipped", extra=ids)
         return
-    opportunity_id, sources = started
+    opportunity_id, sources, version = started
     ids["opportunity_id"] = str(opportunity_id)
+    config = registry.agent_config(version, settings)
     chars = sum(len(s.text) for s in sources)
-    budget = input_budget_chars(get_profile(settings.model_profile_chat).num_ctx)
+    budget = input_budget_chars(get_profile(config.profile).num_ctx)
     if chars > budget:
         await _mark_failed(ctx, extraction_id, ExtractionErrorCode.INPUT_TOO_LARGE, len(sources))
         _log.info(
@@ -468,7 +487,7 @@ async def _extract(ctx: JobContext, payload: ExtractRequirements) -> None:
         return
 
     if sources:
-        agent = IntakeAgent(provider.current(), profile=settings.model_profile_chat)
+        agent = IntakeAgent(provider.current(), config=config)
         task = IntakeTask(
             opportunity_id=opportunity_id,
             run_id=extraction_id,
@@ -498,10 +517,10 @@ async def _extract(ctx: JobContext, payload: ExtractRequirements) -> None:
             confidence=1.0,
             confidence_basis="No parsed Sources.",
             needs_human_review=False,
-            extensions={AGENT_ID: IntakeOutput(requirements=[])},
+            extensions={INTAKE_AGENT: IntakeOutput(requirements=[])},
         )
 
-    actor = Actor(type="agent", id=agent_config(settings.model_profile_chat).actor_id)
+    actor = Actor(type="agent", id=config.actor_id)
     async with unit_of_work(ctx.engine) as uow:
         accepted = await accept_extraction(
             uow, extraction_id=extraction_id, result=result, sources=sources, actor=actor

@@ -26,7 +26,12 @@ from app.modules.assessments.application.models import (
     RedTeamView,
     SeverityCounts,
 )
-from app.modules.assessments.application.review import fail_stale, queue_review, stale_after
+from app.modules.assessments.application.review import (
+    RED_TEAM_AGENT,
+    fail_stale,
+    queue_review,
+    stale_after,
+)
 from app.modules.assessments.domain.reviews import (
     IN_PROGRESS,
     FindingCategory,
@@ -44,6 +49,7 @@ from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
+from app.modules.registry.application import public as registry
 from app.platform.errors import RedTeamReviewInProgressError
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
@@ -180,6 +186,7 @@ async def start_review(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
     """Queue a new Red Team run of the Opportunity (the Retry of a failed one)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.RED_TEAM_START, resource)
+    await registry.require_enabled(uow, RED_TEAM_AGENT)  # 409 while it is disabled
     await repo.lock_opportunity(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     busy = await repo.run_in(uow, opportunity_id, tuple(s.value for s in IN_PROGRESS))

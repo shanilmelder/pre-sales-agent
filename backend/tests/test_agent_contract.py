@@ -1,6 +1,6 @@
 """The agent contract (Story 2.4): `AgentResult`, `AgentConfig` and the `Agent` Protocol."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -115,24 +115,43 @@ def test_span_must_be_ordered() -> None:
 
 
 def test_agent_config_actor_id_and_validation() -> None:
+    version_id = uuid4()
     config = AgentConfig(
-        agent_id="intake_agent", semver="1.2.0", prompt_version=1, profile="demo-chat"
+        agent_id="intake_agent",
+        semver="1.2.0",
+        prompt_version=1,
+        profile="demo-chat",
+        config_version_id=version_id,
     )
     assert config.actor_id == "intake_agent@1.2.0"
+    assert config.config_version_id == version_id
+    common = {"config_version_id": version_id}
     with pytest.raises(ValueError, match="snake_case"):
-        AgentConfig(agent_id="IntakeAgent", semver="1.0.0", prompt_version=1, profile="demo-chat")
+        AgentConfig(
+            agent_id="IntakeAgent", semver="1.0.0", prompt_version=1, profile="demo-chat", **common
+        )
     with pytest.raises(ValueError, match="semver"):
-        AgentConfig(agent_id="intake_agent", semver="v1", prompt_version=1, profile="demo-chat")
+        AgentConfig(
+            agent_id="intake_agent", semver="v1", prompt_version=1, profile="demo-chat", **common
+        )
     with pytest.raises(UnknownModelProfileError):
-        AgentConfig(agent_id="intake_agent", semver="1.0.0", prompt_version=1, profile="gpt-9")
+        AgentConfig(
+            agent_id="intake_agent", semver="1.0.0", prompt_version=1, profile="gpt-9", **common
+        )
     with pytest.raises(ValueError, match="prompt_version"):
-        AgentConfig(agent_id="intake_agent", semver="1.0.0", prompt_version=0, profile="demo-chat")
+        AgentConfig(
+            agent_id="intake_agent", semver="1.0.0", prompt_version=0, profile="demo-chat", **common
+        )
 
 
 class _EchoAgent:
     def __init__(self) -> None:
         self._config = AgentConfig(
-            agent_id="echo_agent", semver="0.1.0", prompt_version=1, profile="local-chat"
+            agent_id="echo_agent",
+            semver="0.1.0",
+            prompt_version=1,
+            profile="local-chat",
+            config_version_id=uuid4(),
         )
 
     @property

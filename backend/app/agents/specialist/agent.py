@@ -127,7 +127,7 @@ class SpecialistAgent:
                 output_model=self._output_model,
                 caller=CallerMetadata(
                     agent_id=self._config.agent_id,
-                    config_version=self._config.semver,
+                    config_version=str(self._config.config_version_id),
                     run_id=task.run_id,
                     opportunity_id=task.opportunity_id,
                 ),

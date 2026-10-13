@@ -4,9 +4,11 @@ Agents only propose. An agent's `run(task)` returns an `AgentResult`; the owning
 `accept_*` command validates it (including that every Evidence ref resolves) and writes it.
 Agent-specific output goes in `extensions[<agent_id>]`.
 
-`AgentConfig` is defined in code per agent; its `actor_id` (`<agent_id>@<semver>`) is the
-actor recorded in trace events. Prompts live at `agents/<agent_id>/prompts/v<N>.md`, where N
-is `prompt_version`.
+`AgentConfig` is one immutable config version of an agent, resolved from the DB-owned Agent
+Registry (`registry.application.public`, Story 7.1); agents receive it and never define their
+own. Its `actor_id` (`<agent_id>@<semver>`) is the actor recorded in trace events, and its
+`config_version_id` the `config_version` recorded on every model call. Prompts live at
+`agents/<agent_id>/prompts/v<N>.md` (plus `v<N>-<name>.md`), where N is `prompt_version`.
 """
 
 import re
@@ -105,7 +107,9 @@ class AgentResult(_Contract):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AgentConfig:
-    """An agent's configuration, defined in code (the DB-owned registry comes later)."""
+    """An agent's configuration: one config version from the Agent Registry, with the model
+    profile actually used (the version's, or the local-dev `PSA_MODEL_PROFILE_CHAT`
+    override)."""
 
     agent_id: str
     semver: str
@@ -113,6 +117,8 @@ class AgentConfig:
     """N in `agents/<agent_id>/prompts/v<N>.md`."""
     profile: str
     """The ModelGateway profile name the agent calls; must be a defined profile."""
+    config_version_id: UUID
+    """The registry config version's id; sent to the ModelGateway as `config_version`."""
 
     def __post_init__(self) -> None:
         if not AGENT_ID_RE.match(self.agent_id):

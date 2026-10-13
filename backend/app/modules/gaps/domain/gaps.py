@@ -106,6 +106,8 @@ class DetectionErrorCode(StrEnum):
     MODEL_UNAVAILABLE = "model_unavailable"
     MODEL_TIMEOUT = "model_timeout"
     OUTPUT_INVALID = "output_invalid"
+    AGENT_DISABLED = "registry_agent_disabled"
+    """The Agent is `disabled` or `eval_only` in the Agent Registry (Story 7.1)."""
 
 
 def trigger(category: GapCategory) -> dict[str, str]:

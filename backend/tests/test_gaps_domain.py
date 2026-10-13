@@ -30,6 +30,7 @@ from app.modules.gaps.domain.gaps import (
     validate_candidate,
     validate_candidates,
 )
+from tests.agent_configs import seed_config
 
 LABELS = {"R1": "req-1", "R2": "req-2", "R3": "req-3"}
 
@@ -152,11 +153,11 @@ def test_requirements_enter_the_prompt_only_as_labelled_data_blocks() -> None:
         async def complete_structured(self, request: object) -> object:
             raise AssertionError("not called")
 
-    agent = ClarificationAgent(_Unused(), profile="demo-chat")  # type: ignore[arg-type]
+    agent = ClarificationAgent(_Unused(), config=seed_config("clarification_agent"))  # type: ignore[arg-type]
     task = ClarificationTask(opportunity_id=uuid4(), run_id=uuid4(), requirements=blocks)
     system, user = agent.messages(task, token="tok")
 
-    assert (system.role, system.content) == ("system", prompt())
+    assert (system.role, system.content) == ("system", prompt(1))
     assert "SAP EWM" not in system.content
     assert user.content == requirement_blocks(blocks, "tok")
     assert "<<<REQUIREMENT R1 classification=integration token=tok>>>\nConnect to SAP EWM.\n" in (
@@ -170,7 +171,7 @@ def test_requirements_enter_the_prompt_only_as_labelled_data_blocks() -> None:
 def test_the_prompt_asks_for_estimate_changing_customer_ready_questions_without_duplicates() -> (
     None
 ):
-    text = prompt()
+    text = prompt(1)
     for phrase in ("change the estimate", "customer-ready", "**once**", "already states"):
         assert phrase in text
     for category in GapCategory:

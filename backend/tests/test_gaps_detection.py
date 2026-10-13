@@ -319,7 +319,7 @@ def test_detection_stores_ranked_gaps_with_drafted_questions(
     # One model call: instructions as the system message, Requirements only as data blocks.
     (request,) = gateway.requests[-1:]
     system, user = request.messages
-    assert (system.role, system.content) == ("system", prompt())
+    assert (system.role, system.content) == ("system", prompt(1))
     assert "Connect to SAP." not in system.content
     assert "<<<REQUIREMENT R1 classification=integration token=" in user.content
     assert "<<<REQUIREMENT R5 classification=commercial token=" in user.content

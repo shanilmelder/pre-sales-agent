@@ -111,7 +111,8 @@ class ExtractionRow(Base):
         CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed')", name="status"),
         CheckConstraint(
             "error_code IS NULL OR error_code IN "
-            "('model_unavailable', 'model_timeout', 'output_invalid', 'input_too_large')",
+            "('model_unavailable', 'model_timeout', 'output_invalid', 'input_too_large', "
+            "'registry_agent_disabled')",
             name="error_code",
         ),
         CheckConstraint("(status = 'failed') = (error_code IS NOT NULL)", name="failed_has_code"),

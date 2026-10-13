@@ -59,7 +59,15 @@ class AssessmentTaskStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     SKIPPED = "skipped"
-    """Unfinished when its run was cancelled (Story 5.5)."""
+    """Unfinished when its run was cancelled (Story 5.5), or its Agent was not active in the
+    Agent Registry before it started (Story 7.1, with a `skip_reason`)."""
+
+
+class TaskSkipReason(StrEnum):
+    """Why a task was skipped other than by a cancel (Story 7.1)."""
+
+    AGENT_DISABLED = "agent_disabled"
+    """Its Agent was `disabled` or `eval_only`: assess that part manually."""
 
 
 TASK_IN_PROGRESS = frozenset({AssessmentTaskStatus.QUEUED, AssessmentTaskStatus.RUNNING})

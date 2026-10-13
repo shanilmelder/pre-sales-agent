@@ -314,7 +314,7 @@ def test_a_draft_stores_version_1_with_lines_links_and_one_event(
     # data blocks.
     request = gateway.requests[-1]
     system, user = request.messages
-    assert (system.role, system.content) == ("system", prompt())
+    assert (system.role, system.content) == ("system", prompt(1))
     assert "<<<REQUIREMENT R1 classification=integration token=" in user.content
     assert "<<<REQUIREMENT R5 classification=commercial token=" in user.content
     assert "<<<GAP G1 category=integration_details impact=high token=" in user.content

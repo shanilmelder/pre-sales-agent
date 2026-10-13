@@ -48,6 +48,7 @@ import {
   CANCEL_RUN_TITLE,
   confidenceLabel,
   failureReason,
+  skipNote,
   isAssessing,
   kindLabel,
   NO_AGENT_ASSESSMENT,
@@ -403,7 +404,8 @@ function useNow(ticking: boolean): number {
  * second while it runs, its final duration once done or failed, blank before it starts) and a
  * running dot (static under reduced motion). Queued rows say "Waiting for the worker"; failed
  * rows give the reason and **Retry** for those who may start one (never in a cancelled run;
- * skipped rows keep a duration if they had started). Elapsed time comes from the
+ * skipped rows keep a duration if they had started; a task skipped because its Agent is
+ * disabled says "Agent disabled — assess manually"). Elapsed time comes from the
  * task's timestamps and the browser's clock, so it ticks without a fetch. */
 export function AgentRunPanel({
   run,
@@ -430,7 +432,7 @@ export function AgentRunPanel({
             ? WAITING_FOR_WORKER
             : failed
               ? failureReason(task.error_code)
-              : null;
+              : skipNote(task);
         return (
           <li
             key={task.agent}

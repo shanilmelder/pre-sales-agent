@@ -473,6 +473,22 @@ class AssessmentsAssessmentCompleted(TracePayload):
 
 
 @register
+class AssessmentsTaskSkipped(TracePayload):
+    """An assessment run's task was skipped before it started because its Agent is not
+    active in the Agent Registry (Story 7.1): when the run was queued, or when its job
+    started. Subject: the run (`assessments.assessment_run`). Actor: whoever queued the run,
+    or the system when the job skipped it. Ids and the reason only; nobody is notified."""
+
+    event_type: ClassVar[str] = "assessments.task.skipped"
+
+    run_id: str
+    task_id: str
+    agent: str
+    config_version_id: str
+    reason: Literal["agent_disabled"]
+
+
+@register
 class AssessmentsAssessmentRunCompleted(TracePayload):
     """Every task of an assessment run has finished. Subject: the run
     (`assessments.assessment_run`). Actor: the system (`assessments.run_assessment`)."""
@@ -698,3 +714,63 @@ class ConflictsConflictEscalated(TracePayload):
     run_id: str | None = None
     reviewer_id: str
     reason: str
+
+
+# --- registry -----------------------------------------------------------------------------
+# Story 7.1. Registry events have no Opportunity. Subject: the Agent (`registry.agent`), with
+# its config version number as the subject version. Payloads hold the agent id, statuses and
+# config version ids only: `from_config_version_id` is the current config version before the
+# change (null when registering) and `to_config_version_id` the one after.
+
+RegistryStatus = Literal["active", "disabled", "eval_only"]
+
+
+@register
+class RegistryAgentRegistered(TracePayload):
+    """An administrator registered an Agent with its config version 1."""
+
+    event_type: ClassVar[str] = "registry.agent.registered"
+
+    agent_id: str
+    status: RegistryStatus
+    from_config_version_id: None = None
+    to_config_version_id: str
+
+
+@register
+class RegistryAgentConfigVersionCreated(TracePayload):
+    """An administrator created a new config version of an Agent; it is now current. Runs
+    already in progress keep the version they pinned."""
+
+    event_type: ClassVar[str] = "registry.agent_config.version_created"
+
+    agent_id: str
+    version: int
+    from_config_version_id: str
+    to_config_version_id: str
+
+
+@register
+class RegistryAgentEnabled(TracePayload):
+    """An administrator set an Agent `active`."""
+
+    event_type: ClassVar[str] = "registry.agent.enabled"
+
+    agent_id: str
+    from_status: RegistryStatus
+    to_status: Literal["active"]
+    from_config_version_id: str
+    to_config_version_id: str
+
+
+@register
+class RegistryAgentDisabled(TracePayload):
+    """An administrator set an Agent `disabled` or `eval_only`: it gets no new tasks."""
+
+    event_type: ClassVar[str] = "registry.agent.disabled"
+
+    agent_id: str
+    from_status: RegistryStatus
+    to_status: Literal["disabled", "eval_only"]
+    from_config_version_id: str
+    to_config_version_id: str

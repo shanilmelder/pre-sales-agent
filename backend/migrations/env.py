@@ -19,6 +19,7 @@ import app.modules.identity.adapters.models
 import app.modules.intake.adapters.models
 import app.modules.knowledge.adapters.models
 import app.modules.opportunities.adapters.models
+import app.modules.registry.adapters.models
 import app.platform.files
 import app.platform.jobs.models
 import app.platform.model_gateway.models
