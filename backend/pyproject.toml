@@ -83,7 +83,12 @@ forbidden_modules = ["app.platform.jobs.runner", "app.main_worker"]
 name = "The api process never calls a model (AD-8)"
 type = "forbidden"
 source_modules = ["app.main_api"]
-forbidden_modules = ["app.platform.model_gateway.gateway", "app.platform.model_gateway.ollama"]
+forbidden_modules = [
+    "app.platform.model_gateway.gateway",
+    "app.platform.model_gateway.adapter",
+    "app.platform.model_gateway.ollama",
+    "app.platform.model_gateway.openai_compat",
+]
 
 [[tool.importlinter.contracts]]
 name = "opportunities uses identity, intake, assessments and conflicts only through their public APIs (AD-2)"

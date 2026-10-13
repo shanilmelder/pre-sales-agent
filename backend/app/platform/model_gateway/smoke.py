@@ -2,7 +2,8 @@
 
     uv run python -m app.platform.model_gateway.smoke
 
-Needs a reachable Ollama (`PSA_OLLAMA_URL`, signed in for cloud profiles) and a migrated
+Needs a reachable Ollama (`PSA_OLLAMA_URL`, signed in for cloud profiles; for an `openai`
+profile such as `local-chat-openai`, the server at `PSA_OPENAI_BASE_URL`) and a migrated
 database (`PSA_DATABASE_URL`) for the call row. The prompt is a fixed, non-customer text.
 Prints the outcome, tokens and latency only, never the model's reply. Exit code 0 on `ok`.
 """

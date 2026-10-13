@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field, model_validator
+from pydantic import BeforeValidator, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.platform.model_gateway.profiles import MODEL_PROFILES
@@ -100,6 +100,21 @@ class Settings(BaseSettings):
     ollama_url: str = Field(
         default="http://127.0.0.1:11434",
         description="Base URL of the Ollama server the ModelGateway calls (host Ollama in R1).",
+    )
+    openai_base_url: str = Field(
+        default="http://127.0.0.1:11434/v1",
+        description=(
+            "Base URL (the `/v1` root) of the OpenAI-compatible server that profiles with "
+            "provider `openai` call at `/chat/completions`, e.g. vLLM. The default is host "
+            "Ollama's own `/v1` endpoint."
+        ),
+    )
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Optional bearer key for the OpenAI-compatible server. When set, every request "
+            "sends `Authorization: Bearer <key>`; when unset, no auth header is sent."
+        ),
     )
     model_profile_chat: str = Field(
         default="demo-chat",

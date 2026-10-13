@@ -1,14 +1,15 @@
 """`ModelGateway`: the governed path to a model (AD-8).
 
 One call = wait for a slot on the priority semaphore, then up to `1 + PSA_MODEL_MAX_RETRIES`
-attempts against the adapter, validating each reply with `T.model_validate_json`. An
-invalid reply is retried with that reply (as the assistant turn) plus a corrective user
-message naming only the failing field paths; neither is logged or stored. A truncated reply
-(`done_reason: "length"`) fails at once as `invalid_output` / `truncated`. The slot is
-released, then the `platform_model_calls` row is written in its own Unit of Work (none is
-open during the HTTP call, AD-25), then the result is returned or the typed error raised.
-If the row write fails it is logged (`model_call.record_failed`) and the call's own result
-or error still wins. A caller cancelled mid-call gets no row.
+attempts against the profile's adapter (`ModelProfile.provider`: `ollama` or `openai`),
+validating each reply with `T.model_validate_json`. An invalid reply is retried with that
+reply (as the assistant turn) plus a corrective user message naming only the failing field
+paths; neither is logged or stored. A truncated reply (`done_reason` / `finish_reason`
+`length`) fails at once as `invalid_output` / `truncated`. The slot is released, then the
+`platform_model_calls` row is written in its own Unit of Work (none is open during the HTTP
+call, AD-25), then the result is returned or the typed error raised. If the row write fails
+it is logged (`model_call.record_failed`) and the call's own result or error still wins.
+A caller cancelled mid-call gets no row.
 
 Create one gateway per process (the semaphore is per gateway) and close it with `aclose()`
 or `async with`. Only the worker makes model calls; the `api` process never does.
@@ -28,8 +29,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.platform.config import Settings
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
+from app.platform.model_gateway.adapter import ChatAdapter
 from app.platform.model_gateway.models import PlatformModelCall
 from app.platform.model_gateway.ollama import OllamaAdapter
+from app.platform.model_gateway.openai_compat import OpenAICompatAdapter
 from app.platform.model_gateway.port import (
     Message,
     ModelGatewayError,
@@ -38,7 +41,7 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
     StructuredResult,
 )
-from app.platform.model_gateway.profiles import ModelProfile, get_profile
+from app.platform.model_gateway.profiles import ModelProfile, Provider, get_profile
 from app.platform.model_gateway.semaphore import PrioritySemaphore
 from app.platform.uow import unit_of_work
 
@@ -102,8 +105,19 @@ class ModelGateway:
         self._settings = settings
         self._engine = engine
         get_profile(settings.model_profile_chat)  # fail fast on an unknown profile
-        self._client = httpx.AsyncClient(base_url=settings.ollama_url, transport=transport)
-        self._adapter = OllamaAdapter(self._client)
+        ollama_client = httpx.AsyncClient(base_url=settings.ollama_url, transport=transport)
+        key = settings.openai_api_key
+        api_key = key.get_secret_value().strip() if key else ""  # whitespace-only = unset
+        openai_client = httpx.AsyncClient(
+            base_url=settings.openai_base_url,
+            headers={"Authorization": f"Bearer {api_key}"} if api_key else None,
+            transport=transport,
+        )
+        self._clients = (ollama_client, openai_client)
+        self._adapters: dict[Provider, ChatAdapter] = {
+            "ollama": OllamaAdapter(ollama_client),
+            "openai": OpenAICompatAdapter(openai_client),
+        }
         self._semaphore = PrioritySemaphore(settings.model_slots)
 
     @property
@@ -111,7 +125,8 @@ class ModelGateway:
         return self._semaphore
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        for client in self._clients:
+            await client.aclose()
 
     async def __aenter__(self) -> Self:
         return self
@@ -132,7 +147,7 @@ class ModelGateway:
         call_id = new_id()
         async with self._semaphore.slot(request.priority):
             run = await self._attempt_all(request, profile, timeout_s)
-        digest = await self._adapter.digest(profile.model)
+        digest = await self._adapters[profile.provider].digest(profile.model)
         outcome: Outcome = run.error.outcome if run.error else "ok"
         error_code = run.error.error_code if run.error else None
         log_fields = {
@@ -181,6 +196,7 @@ class ModelGateway:
     async def _attempt_all[T: BaseModel](
         self, request: StructuredRequest[T], profile: ModelProfile, timeout_s: float
     ) -> _Run[T]:
+        adapter = self._adapters[profile.provider]
         schema = request.output_model.model_json_schema()
         run: _Run[T] = _Run()
         retry: list[Message] = []  # the invalid reply and the corrective message
@@ -192,7 +208,7 @@ class ModelGateway:
                 messages.extend(retry)
                 run.attempts += 1
                 try:
-                    reply = await self._adapter.chat(profile, messages, schema, timeout_s)
+                    reply = await adapter.chat(profile, messages, schema, timeout_s)
                 except ModelGatewayError as exc:
                     run.error = exc
                     return run
