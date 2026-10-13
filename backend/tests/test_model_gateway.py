@@ -667,6 +667,8 @@ def test_profiles_are_defined() -> None:
     openai_profile = MODEL_PROFILES["local-chat-openai"]
     assert (openai_profile.model, openai_profile.num_ctx) == ("qwen3:8b", 16384)
     assert openai_profile.provider == "openai"
+    cloud = MODEL_PROFILES["openai-chat"]
+    assert (cloud.model, cloud.provider) == ("gpt-4.1-mini", "openai")
     assert MODEL_PROFILES["demo-chat"].provider == MODEL_PROFILES["local-chat"].provider == "ollama"
     assert all(p.temperature == 0.1 for p in MODEL_PROFILES.values())
     with pytest.raises(UnknownModelProfileError):
@@ -706,6 +708,16 @@ def test_openai_profile_routes_to_the_openai_base_url(db_url: str, sync_engine: 
     assert (request.method, str(request.url)) == ("POST", OPENAI_URL)
     assert stub.chat_bodies[0]["model"] == "qwen3:8b"
     assert _row(sync_engine, result.call_id)["profile"] == "local-chat-openai"
+
+
+def test_openai_cloud_profile_sends_the_openai_model_id(db_url: str, sync_engine: Engine) -> None:
+    stub = StubOllama([VALID])
+    result = _call(db_url, stub, model_profile_chat="openai-chat")
+    assert isinstance(result, StructuredResult)
+    [request] = stub.requests
+    assert (request.method, str(request.url)) == ("POST", OPENAI_URL)
+    assert stub.chat_bodies[0]["model"] == "gpt-4.1-mini"
+    assert _row(sync_engine, result.call_id)["profile"] == "openai-chat"
 
 
 def test_openai_request_body_has_response_format_and_no_context_options(db_url: str) -> None:

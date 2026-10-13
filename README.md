@@ -154,6 +154,13 @@ profile's `num_ctx` is what the server must be configured with (vLLM `--max-mode
 Ollama `OLLAMA_CONTEXT_LENGTH` or a Modelfile). Its model digest is recorded as `unknown`.
 Switching provider is a config change: `PSA_MODEL_PROFILE_CHAT=local-chat-openai`.
 
+`openai-chat` (`gpt-4.1-mini`) is OpenAI's cloud API through the same adapter: set
+`PSA_MODEL_PROFILE_CHAT=openai-chat`, `PSA_OPENAI_BASE_URL=https://api.openai.com/v1` and
+`PSA_OPENAI_API_KEY=sk-...`, then restart `api` and `worker`. It is a non-reasoning model on
+purpose: the adapter always sends `temperature`, which OpenAI's reasoning models reject. Like
+`demo-chat` it sends prompt text to a cloud: sample or anonymised Opportunities only until IT
+approves it.
+
 Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
 `api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama
 must listen beyond loopback for that (`OLLAMA_HOST=0.0.0.0`). Host-side commands (smoke,
@@ -172,6 +179,8 @@ PSA_MODEL_PROFILE_CHAT=local-chat-openai \
 PSA_OPENAI_BASE_URL=http://127.0.0.1:11434/v1 \
 PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
   uv run python -m app.platform.model_gateway.smoke
+# OpenAI's cloud API (prints `ok ... digest=unknown`):
+PSA_MODEL_PROFILE_CHAT=openai-chat PSA_OPENAI_BASE_URL=https://api.openai.com/v1 PSA_OPENAI_API_KEY=sk-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke
 ```
 
 ## Authentication (Auth0)
