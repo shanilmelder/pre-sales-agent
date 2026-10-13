@@ -27,7 +27,8 @@ _DESCRIBED: dict[int, str] = {
     403: "Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner "
     "or a collaborator, or is a sales representative",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
-    409: "A Gap detection is already queued or running (`gap_detection_in_progress`)",
+    409: "A Gap detection is already queued or running (`gap_detection_in_progress`), or the "
+    "Clarification Agent is disabled in the Agent Registry (`registry_agent_disabled`)",
     422: "The Opportunity id is not a UUID (`validation_error`)",
     503: "Sign-in service unavailable (`auth_unavailable`)",
 }

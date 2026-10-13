@@ -142,6 +142,17 @@ export function taskStatusLabel(status: AssessmentTask["status"]): string {
 /** What a queued task's row says. */
 export const WAITING_FOR_WORKER = "Waiting for the worker";
 
+/** What a task skipped because its Agent is disabled in the Agent Registry says (Story 7.1). */
+export const AGENT_DISABLED = "Agent disabled — assess manually";
+
+/** The note on a skipped task's row: why it was skipped, when the API says (a cancel's
+ * skipped tasks have no reason, and no note). */
+export function skipNote(task: Pick<AssessmentTask, "status" | "skip_reason">): string | null {
+  return task.status === "skipped" && task.skip_reason === "agent_disabled"
+    ? AGENT_DISABLED
+    : null;
+}
+
 /** A duration as `m:ss` (minutes keep counting past an hour; negative reads as 0:00). */
 export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));

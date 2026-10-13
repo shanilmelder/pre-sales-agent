@@ -353,7 +353,7 @@ def test_a_review_stores_v1_with_ranked_findings_links_and_one_event(
     # as data blocks.
     request = gateway.requests[-1]
     system, user = request.messages
-    assert (system.role, system.content) == ("system", prompt())
+    assert (system.role, system.content) == ("system", prompt(1))
     assert "<<<REQUIREMENT R1 classification=integration token=" in user.content
     assert "<<<REQUIREMENT R5 classification=commercial token=" in user.content
     assert "<<<GAP G1 category=integration_details impact=high token=" in user.content

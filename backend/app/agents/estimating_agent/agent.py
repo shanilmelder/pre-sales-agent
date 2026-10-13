@@ -15,7 +15,7 @@ blocks each fenced by a line with a random per-call token so their text can't cl
 block.
 
 Assumption proposals (`propose_assumptions(task)`) use the second prompt file,
-`prompts/v1-assumptions.md`, with the open Gaps (`G1…Gn`: title, category, why it matters,
+`prompts/v<N>-assumptions.md`, with the open Gaps (`G1…Gn`: title, category, why it matters,
 impact and drafted question) and the version's lines (`L1…Ln`: section, title, effort) as
 fenced data blocks; the reply is an `AssumptionsOutput` in
 `extensions["estimating_agent"]`.
@@ -37,11 +37,8 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
 )
 
-AGENT_ID = "estimating_agent"
-SEMVER = "0.1.0"
-PROMPT_VERSION = 1
-ASSUMPTIONS_PROMPT = "v1-assumptions"
-"""The Assumption proposals' prompt file, `prompts/v1-assumptions.md`."""
+ASSUMPTIONS_PROMPT = "assumptions"
+"""The Assumption proposals' prompt file is `prompts/v<N>-assumptions.md`."""
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 CONFIDENCE = 0.5
 CONFIDENCE_BASIS = (
@@ -54,15 +51,8 @@ ASSUMPTIONS_CONFIDENCE_BASIS = (
 )
 
 
-def config(profile: str) -> AgentConfig:
-    """`estimating_agent`'s config for a chat profile (`PSA_MODEL_PROFILE_CHAT`)."""
-    return AgentConfig(
-        agent_id=AGENT_ID, semver=SEMVER, prompt_version=PROMPT_VERSION, profile=profile
-    )
-
-
 @cache
-def prompt(version: int = PROMPT_VERSION) -> str:
+def prompt(version: int) -> str:
     """The instructions, `prompts/v<version>.md`."""
     return (PROMPTS_DIR / f"v{version}.md").read_text(encoding="utf-8")
 
@@ -180,9 +170,9 @@ def data_blocks(
 class EstimatingAgent:
     """Stateless across runs; one instance may serve many tasks."""
 
-    def __init__(self, gateway: ModelGatewayPort, *, profile: str) -> None:
+    def __init__(self, gateway: ModelGatewayPort, *, config: AgentConfig) -> None:
         self._gateway = gateway
-        self._config = config(profile)
+        self._config = config
 
     @property
     def config(self) -> AgentConfig:
@@ -202,7 +192,7 @@ class EstimatingAgent:
                 output_model=EstimatingOutput,
                 caller=CallerMetadata(
                     agent_id=self._config.agent_id,
-                    config_version=self._config.semver,
+                    config_version=str(self._config.config_version_id),
                     run_id=task.run_id,
                     opportunity_id=task.opportunity_id,
                 ),
@@ -214,7 +204,7 @@ class EstimatingAgent:
             confidence=CONFIDENCE,
             confidence_basis=CONFIDENCE_BASIS,
             needs_human_review=True,
-            extensions={AGENT_ID: result.value},
+            extensions={self._config.agent_id: result.value},
         )
 
     def assumption_messages(
@@ -222,7 +212,10 @@ class EstimatingAgent:
     ) -> list[Message]:
         fence = token if token is not None else secrets.token_hex(8)
         return [
-            Message(role="system", content=named_prompt(ASSUMPTIONS_PROMPT)),
+            Message(
+                role="system",
+                content=named_prompt(f"v{self._config.prompt_version}-{ASSUMPTIONS_PROMPT}"),
+            ),
             Message(role="user", content=assumption_blocks(task.gaps, task.lines, fence)),
         ]
 
@@ -234,7 +227,7 @@ class EstimatingAgent:
                 output_model=AssumptionsOutput,
                 caller=CallerMetadata(
                     agent_id=self._config.agent_id,
-                    config_version=self._config.semver,
+                    config_version=str(self._config.config_version_id),
                     run_id=task.run_id,
                     opportunity_id=task.opportunity_id,
                 ),
@@ -246,5 +239,5 @@ class EstimatingAgent:
             confidence=CONFIDENCE,
             confidence_basis=ASSUMPTIONS_CONFIDENCE_BASIS,
             needs_human_review=True,
-            extensions={AGENT_ID: result.value},
+            extensions={self._config.agent_id: result.value},
         )

@@ -1,0 +1,63 @@
+"""registry's public API. Other modules read Agent config only from here (Story 7.1)."""
+
+from app.modules.registry.application.models import (
+    AgentConfigVersion,
+    AgentConfigVersionList,
+    AgentStatusChange,
+    NewAgent,
+    NewAgentConfig,
+    RegistryAgent,
+    RegistryAgentList,
+)
+from app.modules.registry.application.registry import (
+    UnknownAgentError,
+    agent_config,
+    create_config_version,
+    current_config,
+    disabled_error,
+    effective_profile,
+    get_config_version,
+    get_config_versions,
+    list_agents,
+    read_agent,
+    read_agents,
+    read_versions,
+    register_agent,
+    require_enabled,
+    set_status,
+)
+from app.modules.registry.domain.registry import (
+    AgentStatus,
+    ConfigVersion,
+    RegisteredAgent,
+    runs_tasks,
+)
+
+__all__ = [
+    "AgentConfigVersion",
+    "AgentConfigVersionList",
+    "AgentStatus",
+    "AgentStatusChange",
+    "ConfigVersion",
+    "NewAgent",
+    "NewAgentConfig",
+    "RegisteredAgent",
+    "RegistryAgent",
+    "RegistryAgentList",
+    "UnknownAgentError",
+    "agent_config",
+    "create_config_version",
+    "current_config",
+    "disabled_error",
+    "effective_profile",
+    "get_config_version",
+    "get_config_versions",
+    "list_agents",
+    "read_agent",
+    "read_agents",
+    "read_versions",
+    "register_agent",
+    "require_enabled",
+    "runs_tasks",
+    "set_status",
+]

@@ -49,19 +49,18 @@ from uuid import UUID
 
 from app.agents.contract import AgentResult
 from app.agents.estimating_agent.agent import (
-    AGENT_ID,
     EstimatingAgent,
     EstimatingTask,
     GapBlock,
     RequirementBlock,
 )
-from app.agents.estimating_agent.agent import config as agent_config
 from app.agents.estimating_agent.schema import EstimatingOutput
 from app.modules.estimates.adapters import repository as repo
 from app.modules.estimates.application.assumptions import carry_accepted, enqueue_proposals
 from app.modules.estimates.application.line_edits import CarriedEdits, carry_edits
 from app.modules.estimates.domain.assumptions import ProposalStatus
 from app.modules.estimates.domain.estimates import (
+    ESTIMATING_AGENT,
     IN_PROGRESS,
     TEMPLATE_VERSION,
     VERSION_SUBJECT_TYPE,
@@ -76,6 +75,7 @@ from app.modules.estimates.domain.estimates import (
 )
 from app.modules.gaps.application import public as gaps
 from app.modules.intake.application import public as intake
+from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
@@ -170,7 +170,7 @@ class DraftRequirement:
 def proposal(result: AgentResult) -> EstimatingOutput:
     """The agent's proposed lines, re-validated (AD-4). Raises `ModelOutputInvalidError` when
     the extension is missing or malformed."""
-    raw = result.extensions.get(AGENT_ID)
+    raw = result.extensions.get(ESTIMATING_AGENT)
     try:
         return EstimatingOutput.model_validate(raw)
     except ValueError:
@@ -460,12 +460,15 @@ async def _mark_failed_shielded(ctx: JobContext, draft_id: UUID, ids: dict[str, 
 class _Started:
     opportunity_id: UUID
     requirements: list[DraftRequirement]
+    version: registry.ConfigVersion
     gaps: list[GapBlock] = field(repr=False)
 
 
 async def _start(ctx: JobContext, draft_id: UUID) -> _Started | None:
     """Read the Opportunity's active Requirements and open Gaps and mark the draft
-    `running`; None if it is no longer queued or running (a duplicate or late run)."""
+    `running`; None if it is no longer queued or running (a duplicate or late run). While the
+    agent is disabled (or `eval_only`) in the Agent Registry the draft is marked `failed` /
+    `registry_agent_disabled` instead, with no retry."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_draft(uow, draft_id)
         if record is None:
@@ -473,6 +476,21 @@ async def _start(ctx: JobContext, draft_id: UUID) -> _Started | None:
         await repo.lock_opportunity(uow, record.opportunity_id)
         record = await repo.get_draft(uow, draft_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:
+            return None
+        agent = await registry.current_config(uow, ESTIMATING_AGENT)
+        if not agent.runs_tasks:
+            await repo.update_draft(
+                uow,
+                draft_id,
+                from_statuses=_IN_PROGRESS,
+                status=DraftStatus.FAILED.value,
+                error_code=DraftErrorCode.AGENT_DISABLED.value,
+                finished=True,
+            )
+            _log.info(
+                "estimates.draft_agent_disabled",
+                extra={"draft_id": str(draft_id), "agent_id": ESTIMATING_AGENT},
+            )
             return None
         snapshots = await intake.active_requirement_snapshots(uow, record.opportunity_id)
         open_gaps = await gaps.open_gap_summaries(uow, record.opportunity_id)
@@ -484,6 +502,7 @@ async def _start(ctx: JobContext, draft_id: UUID) -> _Started | None:
         )
         return _Started(
             opportunity_id=record.opportunity_id,
+            version=agent.current,
             requirements=[
                 DraftRequirement(
                     label=f"R{s.number}",
@@ -523,7 +542,8 @@ async def _draft(ctx: JobContext, payload: DraftEstimate) -> None:
         _log.info("estimates.draft_empty", extra=ids)
         return
 
-    agent = EstimatingAgent(provider.current(), profile=settings.model_profile_chat)
+    config = registry.agent_config(started.version, settings)
+    agent = EstimatingAgent(provider.current(), config=config)
     result = await agent.run(
         EstimatingTask(
             opportunity_id=started.opportunity_id,
@@ -534,7 +554,7 @@ async def _draft(ctx: JobContext, payload: DraftEstimate) -> None:
             gaps=started.gaps,
         )
     )
-    actor = Actor(type="agent", id=agent_config(settings.model_profile_chat).actor_id)
+    actor = Actor(type="agent", id=config.actor_id)
     async with unit_of_work(ctx.engine) as uow:
         accepted = await accept_draft(
             uow,

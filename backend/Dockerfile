@@ -21,6 +21,8 @@ WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY alembic.ini ./
 COPY migrations ./migrations
+# `app` includes the deploy manifest (`app/agents/manifest.json`): the Agent Registry checks
+# every config version against it at runtime (Story 7.1).
 COPY app ./app
 USER app
 EXPOSE 8000

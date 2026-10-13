@@ -31,7 +31,8 @@ _DESCRIBED: dict[int, str] = {
     403: "Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner "
     "or a collaborator, or is a sales representative",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
-    409: "An Estimate draft is already queued or running (`estimate_draft_in_progress`)",
+    409: "An Estimate draft is already queued or running (`estimate_draft_in_progress`), or "
+    "the Estimating Agent is disabled in the Agent Registry (`registry_agent_disabled`)",
     422: "The Opportunity id is not a UUID (`validation_error`)",
     412: "The Assumption changed since the caller read it (`row_version_mismatch`)",
     428: "The write has no `If-Match` header (`if_match_required`)",

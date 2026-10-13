@@ -16,6 +16,10 @@ from enum import StrEnum
 VERSION_SUBJECT_TYPE = "estimates.estimate_version"
 """The trace subject of an Estimate Version."""
 
+ESTIMATING_AGENT = "estimating_agent"
+"""The Agent that drafts lines and proposes Assumptions; its config comes from the Agent
+Registry (Story 7.1)."""
+
 LINE_SUBJECT_TYPE = "estimates.estimate_line"
 """The trace subject of an Estimate line (Story 8.2)."""
 
@@ -103,6 +107,8 @@ class DraftErrorCode(StrEnum):
     MODEL_UNAVAILABLE = "model_unavailable"
     MODEL_TIMEOUT = "model_timeout"
     OUTPUT_INVALID = "output_invalid"
+    AGENT_DISABLED = "registry_agent_disabled"
+    """The Agent is `disabled` or `eval_only` in the Agent Registry (Story 7.1)."""
 
 
 # --- validating the agent's lines -----------------------------------------------------------

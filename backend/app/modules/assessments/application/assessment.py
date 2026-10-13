@@ -3,9 +3,15 @@
 
 **Queueing.** `start_run` (the Run assessment API) inserts a `queued` run with one `queued`
 task per specialist agent (`engineering_agent`, `pm_agent`, `security_agent`) and one job
-(background priority). `retry_task` puts one `failed` task of the latest run back to
-`queued`, queues the run again and enqueues a job for it. Both hold the Opportunity's run
-lock until commit and refuse (409) while one of its runs is queued or running.
+(background priority). Each task pins its agent's current config version from the Agent
+Registry (Story 7.1): the run uses those versions even if a new one is created meanwhile. A
+task whose agent is `disabled` or `eval_only` is inserted `skipped` with `skip_reason`
+`agent_disabled` ("Agent disabled — assess manually" in the run panel) and
+`assessments.task.skipped` is traced; nobody is notified. `retry_task` puts one `failed`
+task of the latest run back to `queued` (keeping its pinned version; 409
+`registry_agent_disabled` while its agent is not active), queues the run again and enqueues
+a job for it. Both hold the Opportunity's run lock until commit and refuse (409) while one of
+its runs is queued or running.
 `enqueue_run` (Story 5.1: after every successful Gap detection, in its Unit of Work) queues a
 run the same way, attributed to the system, but never refuses with a conflict: while one of
 the Opportunity's runs is queued or running it adds nothing and returns that run's id. Any
@@ -16,7 +22,8 @@ hand-off does.
 
 1. Short Unit of Work: reads the Opportunity's active Requirements at their current versions
    (`intake.active_requirement_snapshots`), labelled `R<n>`, and its open Gaps
-   (`gaps.open_gap_summaries`), labelled `G<n>`; marks the run and its tasks still queued or
+   (`gaps.open_gap_summaries`), labelled `G<n>`; skips (as at queueing) each task still
+   `queued` whose agent is no longer active; marks the run and its tasks still queued or
    running `running`. A job attempt only runs tasks not yet finished, so a retried attempt
    never re-runs a task that succeeded.
 2. No active Requirements: no model call and no Assessment; the tasks and the run succeed.
@@ -57,16 +64,16 @@ from datetime import timedelta
 from uuid import UUID
 
 from app.agents.contract import AgentConfig, AgentResult
-from app.agents.engineering_agent import agent as engineering_agent
+from app.agents.engineering_agent.agent import EngineeringAgent
 from app.agents.engineering_agent.schema import EngineeringOutput
-from app.agents.pm_agent import agent as pm_agent
+from app.agents.pm_agent.agent import PmAgent
 from app.agents.pm_agent.schema import PmOutput
-from app.agents.security_agent import agent as security_agent
+from app.agents.security_agent.agent import SecurityAgent
 from app.agents.security_agent.schema import SecurityOutput
 from app.agents.specialist.agent import GapBlock, RequirementBlock, SpecialistAgent, SpecialistTask
 from app.agents.specialist.schema import SpecialistOutput
 from app.modules.assessments.adapters import assessment_repository as repo
-from app.modules.assessments.adapters.assessment_repository import RunRecord
+from app.modules.assessments.adapters.assessment_repository import NewTask, RunRecord
 from app.modules.assessments.domain.assessments import (
     AGENTS,
     ASSESSMENT_SUBJECT_TYPE,
@@ -80,6 +87,7 @@ from app.modules.assessments.domain.assessments import (
     AssessmentTaskStatus,
     AssessmentValidation,
     EffortCandidate,
+    TaskSkipReason,
     run_status,
     validate_assessment,
 )
@@ -88,6 +96,7 @@ from app.modules.conflicts.application import public as conflicts
 from app.modules.estimates.application import public as estimates
 from app.modules.gaps.application import public as gaps
 from app.modules.intake.application import public as intake
+from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
@@ -105,6 +114,7 @@ from app.platform.trace.catalogue import (
     AssessmentsAssessmentRunCancelled,
     AssessmentsAssessmentRunCompleted,
     AssessmentsAssessmentRunStarted,
+    AssessmentsTaskSkipped,
 )
 from app.platform.uow import UnitOfWork, unit_of_work
 
@@ -130,33 +140,24 @@ def assessment_settings() -> Settings:
 
 @dataclass(frozen=True, slots=True)
 class _AgentSpec:
-    config: Callable[[str], AgentConfig]
-    build: Callable[[ModelGatewayPort, str], SpecialistAgent]
+    build: Callable[[ModelGatewayPort, AgentConfig], SpecialistAgent]
     output: type[SpecialistOutput]
 
 
 _SPECS: dict[AssessmentAgent, _AgentSpec] = {
     AssessmentAgent.ENGINEERING: _AgentSpec(
-        config=engineering_agent.config,
-        build=lambda gateway, profile: engineering_agent.EngineeringAgent(gateway, profile=profile),
+        build=lambda gateway, config: EngineeringAgent(gateway, config=config),
         output=EngineeringOutput,
     ),
     AssessmentAgent.PM: _AgentSpec(
-        config=pm_agent.config,
-        build=lambda gateway, profile: pm_agent.PmAgent(gateway, profile=profile),
+        build=lambda gateway, config: PmAgent(gateway, config=config),
         output=PmOutput,
     ),
     AssessmentAgent.SECURITY: _AgentSpec(
-        config=security_agent.config,
-        build=lambda gateway, profile: security_agent.SecurityAgent(gateway, profile=profile),
+        build=lambda gateway, config: SecurityAgent(gateway, config=config),
         output=SecurityOutput,
     ),
 }
-
-
-def agent_actor(agent: AssessmentAgent, profile: str) -> Actor:
-    """The trace actor of an agent: `<agent_id>@<semver>`."""
-    return Actor(type="agent", id=_SPECS[agent].config(profile).actor_id)
 
 
 # --- queueing -------------------------------------------------------------------------------
@@ -171,15 +172,66 @@ def stale_after() -> timedelta:
 
 
 async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID:
-    """Insert a `queued` run with one task per agent, its job, and the trace event. The
-    caller holds the Opportunity's run lock."""
+    """Insert a `queued` run with one task per agent, its job, and the trace event. Each task
+    pins its agent's current config version; an agent that is not active gets a `skipped`
+    task (`agent_disabled`, traced). The caller holds the Opportunity's run lock."""
     run_id = new_id()
-    await repo.insert_run(
-        uow, run_id=run_id, opportunity_id=opportunity_id, agents=[a.value for a in AGENTS]
-    )
+    tasks: list[NewTask] = []
+    for agent in AGENTS:
+        current = await registry.current_config(uow, agent.value)
+        tasks.append(
+            NewTask(
+                id=new_id(),
+                agent=agent.value,
+                config_version_id=current.current.id,
+                skip_reason=None if current.runs_tasks else TaskSkipReason.AGENT_DISABLED.value,
+            )
+        )
+    await repo.insert_run(uow, run_id=run_id, opportunity_id=opportunity_id, tasks=tasks)
     await enqueue(uow, RunAssessment(run_id=run_id), opportunity_id=opportunity_id)
     await _trace_started(uow, run_id, opportunity_id, actor, agent_count=len(AGENTS))
+    for task in tasks:
+        if task.skip_reason is not None:
+            await _trace_skipped(
+                uow,
+                run_id,
+                opportunity_id,
+                actor,
+                task_id=task.id,
+                agent=task.agent,
+                config_version_id=task.config_version_id,
+            )
     return run_id
+
+
+async def _trace_skipped(
+    uow: UnitOfWork,
+    run_id: UUID,
+    opportunity_id: UUID,
+    actor: Actor,
+    *,
+    task_id: UUID,
+    agent: str,
+    config_version_id: UUID,
+) -> None:
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=AssessmentsTaskSkipped(
+            run_id=str(run_id),
+            task_id=str(task_id),
+            agent=agent,
+            config_version_id=str(config_version_id),
+            reason=TaskSkipReason.AGENT_DISABLED.value,
+        ),
+        subject_type=RUN_SUBJECT_TYPE,
+        subject_id=run_id,
+        opportunity_id=opportunity_id,
+    )
+    _log.info(
+        "assessments.assessment_task_skipped_disabled",
+        extra={"run_id": str(run_id), "agent": agent, "config_version_id": str(config_version_id)},
+    )
 
 
 async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
@@ -542,6 +594,7 @@ async def accept_assessment(
         agent=agent.value,
         version=number,
         run_id=run_id,
+        config_version_id=task.config_version_id,
         recommendation=validation.recommendation.value,
         confidence=validation.confidence.value,
         confidence_basis=validation.confidence_basis,
@@ -705,7 +758,38 @@ class _Started:
     opportunity_id: UUID
     agents: tuple[AssessmentAgent, ...]
     inputs: AssessmentInputs
+    versions: dict[AssessmentAgent, registry.ConfigVersion]
+    """The config version each started task pinned when its run was queued."""
     gaps: list[GapBlock] = field(repr=False)
+
+
+async def _skip_disabled(uow: UnitOfWork, run: RunRecord) -> None:
+    """Skip the run's tasks still `queued` whose agent is no longer active in the Agent
+    Registry (`agent_disabled`, traced as the system). Running tasks finish."""
+    for task in await repo.tasks_of(uow, run.id):
+        if task.status != AssessmentTaskStatus.QUEUED:
+            continue
+        current = await registry.current_config(uow, task.agent)
+        if current.runs_tasks:
+            continue
+        skipped = await repo.update_tasks(
+            uow,
+            run.id,
+            agents=[task.agent],
+            from_statuses=_QUEUED,
+            status=AssessmentTaskStatus.SKIPPED.value,
+            skip_reason=TaskSkipReason.AGENT_DISABLED.value,
+        )
+        if skipped:
+            await _trace_skipped(
+                uow,
+                run.id,
+                run.opportunity_id,
+                _SYSTEM,
+                task_id=task.id,
+                agent=task.agent,
+                config_version_id=task.config_version_id,
+            )
 
 
 async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
@@ -720,6 +804,7 @@ async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
         record = await repo.get_run(uow, run_id, for_update=True)
         if record is None or AssessmentRunStatus(record.status) not in RUN_IN_PROGRESS:
             return None
+        await _skip_disabled(uow, record)
         snapshots = await intake.active_requirement_snapshots(uow, record.opportunity_id)
         open_gaps = await gaps.open_gap_summaries(uow, record.opportunity_id)
         started = await repo.update_tasks(
@@ -738,9 +823,16 @@ async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
             from_statuses=_RUN_IN_PROGRESS,
             status=AssessmentRunStatus.RUNNING.value,
         )
+        pinned = {
+            AssessmentAgent(t.agent): t.config_version_id
+            for t in await repo.tasks_of(uow, run_id)
+            if t.agent in started
+        }
+        versions = await registry.get_config_versions(uow, list(pinned.values()))
         return _Started(
             opportunity_id=record.opportunity_id,
             agents=tuple(a for a in AGENTS if a.value in started),
+            versions={agent: versions[version_id] for agent, version_id in pinned.items()},
             inputs=AssessmentInputs(
                 requirements=[
                     AssessedRequirement(
@@ -779,9 +871,9 @@ async def _task(
     attempt a failed task is marked `failed`; before that it stays `running` for the next
     attempt."""
     ids = {"run_id": str(run_id), "agent": agent.value}
-    profile = settings.model_profile_chat
+    config = registry.agent_config(started.versions[agent], settings)
     try:
-        specialist = _SPECS[agent].build(provider.current(), profile)
+        specialist = _SPECS[agent].build(provider.current(), config)
         result = await specialist.run(
             SpecialistTask(
                 opportunity_id=started.opportunity_id,
@@ -800,7 +892,7 @@ async def _task(
                 agent=agent,
                 result=result,
                 inputs=started.inputs,
-                actor=agent_actor(agent, profile),
+                actor=Actor(type="agent", id=config.actor_id),
             )
         if accepted is None:
             _log.info("assessments.assessment_task_skipped", extra=ids)

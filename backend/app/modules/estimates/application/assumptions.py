@@ -53,13 +53,11 @@ from uuid import UUID
 
 from app.agents.contract import AgentResult
 from app.agents.estimating_agent.agent import (
-    AGENT_ID,
     AssumptionsTask,
     EstimatingAgent,
     GapBlock,
     LineBlock,
 )
-from app.agents.estimating_agent.agent import config as agent_config
 from app.agents.estimating_agent.schema import AssumptionsOutput
 from app.modules.estimates.adapters import repository as repo
 from app.modules.estimates.adapters.repository import (
@@ -78,11 +76,16 @@ from app.modules.estimates.domain.assumptions import (
     carried_line,
     validate_proposals,
 )
-from app.modules.estimates.domain.estimates import VERSION_SUBJECT_TYPE, VersionStatus
+from app.modules.estimates.domain.estimates import (
+    ESTIMATING_AGENT,
+    VERSION_SUBJECT_TYPE,
+    VersionStatus,
+)
 from app.modules.gaps.application import public as gaps
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.opportunities.application import public as opportunities
+from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
@@ -187,7 +190,7 @@ class ProposalLine:
 def proposal(result: AgentResult) -> AssumptionsOutput:
     """The agent's proposals, re-validated (AD-4). Raises `ModelOutputInvalidError` when the
     extension is missing or malformed."""
-    raw = result.extensions.get(AGENT_ID)
+    raw = result.extensions.get(ESTIMATING_AGENT)
     try:
         return AssumptionsOutput.model_validate(raw)
     except ValueError:
@@ -352,6 +355,7 @@ async def propose_assumptions(ctx: JobContext, payload: ProposeAssumptions) -> N
 @dataclass(frozen=True, slots=True)
 class _Started:
     opportunity_id: UUID
+    version: registry.ConfigVersion
     gaps: list[ProposalGap] = field(repr=False)
     lines: list[ProposalLine] = field(repr=False)
 
@@ -377,6 +381,16 @@ async def _start(ctx: JobContext, version_id: UUID) -> _Started | None:
                 uow, version_id, from_statuses=_PROPOSING, status=ProposalStatus.SUCCEEDED.value
             )
             return None
+        agent = await registry.current_config(uow, ESTIMATING_AGENT)
+        if not agent.runs_tasks:  # disabled or eval_only: the proposals fail, no retry
+            await repo.set_proposal_status(
+                uow, version_id, from_statuses=_PROPOSING, status=ProposalStatus.FAILED.value
+            )
+            _log.info(
+                "estimates.proposals_agent_disabled",
+                extra={"version_id": str(version_id), "agent_id": ESTIMATING_AGENT},
+            )
+            return None
         open_gaps = await gaps.open_gap_summaries(uow, version.opportunity_id)
         lines = await repo.lines_of(uow, version_id)
         await repo.set_proposal_status(
@@ -384,6 +398,7 @@ async def _start(ctx: JobContext, version_id: UUID) -> _Started | None:
         )
         return _Started(
             opportunity_id=version.opportunity_id,
+            version=agent.current,
             gaps=[
                 ProposalGap(
                     label=f"G{n}",
@@ -427,7 +442,8 @@ async def _propose(ctx: JobContext, payload: ProposeAssumptions) -> None:
         _log.info("estimates.proposals_empty", extra=ids)
         return
 
-    agent = EstimatingAgent(provider.current(), profile=settings.model_profile_chat)
+    config = registry.agent_config(started.version, settings)
+    agent = EstimatingAgent(provider.current(), config=config)
     result = await agent.propose_assumptions(
         AssumptionsTask(
             opportunity_id=started.opportunity_id,
@@ -454,7 +470,7 @@ async def _propose(ctx: JobContext, payload: ProposeAssumptions) -> None:
             ],
         )
     )
-    actor = Actor(type="agent", id=agent_config(settings.model_profile_chat).actor_id)
+    actor = Actor(type="agent", id=config.actor_id)
     async with unit_of_work(ctx.engine) as uow:
         accepted = await accept_assumption_proposals(
             uow,

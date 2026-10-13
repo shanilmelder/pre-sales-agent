@@ -447,9 +447,9 @@ def test_a_run_stores_three_assessments_with_findings_effort_and_trace(
     # Gaps only as data blocks.
     assert sorted(r.caller.agent_id for r in fake.requests) == list(AGENTS)
     prompts = {
-        "engineering_agent": engineering_prompt(),
-        "pm_agent": pm_prompt(),
-        "security_agent": security_prompt(),
+        "engineering_agent": engineering_prompt(1),
+        "pm_agent": pm_prompt(1),
+        "security_agent": security_prompt(1),
     }
     for request in fake.requests:
         system, user = request.messages

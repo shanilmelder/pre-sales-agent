@@ -256,7 +256,8 @@ async def list_requirements(
 
 _START_RESPONSES = _responses(403, 404)
 _START_RESPONSES[409] = {
-    "description": "An extraction is already queued or running (`extraction_in_progress`)",
+    "description": "An extraction is already queued or running (`extraction_in_progress`), "
+    "or the Intake Agent is disabled in the Agent Registry (`registry_agent_disabled`)",
     "content": PROBLEM_CONTENT,
 }
 _START_RESPONSES[422] = _LIST_RESPONSES[422]

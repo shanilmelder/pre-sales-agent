@@ -13,6 +13,7 @@ from app.modules.assessments.domain.assessments import (
     Confidence,
     FindingKind,
     Recommendation,
+    TaskSkipReason,
 )
 from app.modules.assessments.domain.reviews import (
     FindingCategory,
@@ -103,13 +104,16 @@ class RedTeamView(BaseModel):
 
 
 class AssessmentTask(BaseModel):
-    """One agent's task in an assessment run. `error_code` is set only when `failed`.
+    """One agent's task in an assessment run. `error_code` is set only when `failed`;
+    `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
+    panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
     `started_at` / `finished_at`: when the task last started and finished (null before
     either); the panel derives elapsed time from them."""
 
     agent: AssessmentAgent
     status: AssessmentTaskStatus
     error_code: RunErrorCode | None
+    skip_reason: TaskSkipReason | None = None
     started_at: datetime | None
     finished_at: datetime | None
 
@@ -159,6 +163,8 @@ class AssessmentView(BaseModel):
     version: int = Field(ge=1)
     status: AssessmentStatus
     run_id: str
+    config_version_id: str
+    """The Agent Registry config version that produced it (Story 7.1)."""
     recommendation: Recommendation
     confidence: Confidence
     confidence_basis: str

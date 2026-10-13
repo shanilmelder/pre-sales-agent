@@ -42,12 +42,10 @@ from datetime import timedelta
 from uuid import UUID
 
 from app.agents.clarification_agent.agent import (
-    AGENT_ID,
     ClarificationAgent,
     ClarificationTask,
     RequirementBlock,
 )
-from app.agents.clarification_agent.agent import config as agent_config
 from app.agents.clarification_agent.schema import ClarificationOutput
 from app.agents.contract import AgentResult
 from app.modules.gaps.adapters import repository as repo
@@ -65,6 +63,7 @@ from app.modules.gaps.domain.gaps import (
     validate_candidates,
 )
 from app.modules.intake.application import public as intake
+from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
@@ -81,6 +80,8 @@ from app.platform.trace.catalogue import (
 from app.platform.uow import UnitOfWork, unit_of_work
 
 DETECT_GAPS = "gaps.detect_gaps"
+CLARIFICATION_AGENT = "clarification_agent"
+"""The Agent that proposes the Gaps; its config comes from the Agent Registry (Story 7.1)."""
 _IN_PROGRESS = tuple(sorted(s.value for s in IN_PROGRESS))
 _QUEUED = (DetectionStatus.QUEUED.value,)
 _RUNNING = (DetectionStatus.RUNNING.value,)
@@ -163,7 +164,7 @@ class DetectionRequirement:
 def proposal(result: AgentResult) -> ClarificationOutput:
     """The agent's proposed Gaps, re-validated (AD-4). Raises `ModelOutputInvalidError` when
     the extension is missing or malformed."""
-    raw = result.extensions.get(AGENT_ID)
+    raw = result.extensions.get(CLARIFICATION_AGENT)
     try:
         return ClarificationOutput.model_validate(raw)
     except ValueError:
@@ -419,9 +420,11 @@ async def _mark_failed_shielded(ctx: JobContext, detection_id: UUID, ids: dict[s
 
 async def _start(
     ctx: JobContext, detection_id: UUID
-) -> tuple[UUID, list[DetectionRequirement]] | None:
-    """Read the Opportunity's active Requirements and mark the detection `running`; None if
-    it is no longer queued or running (a duplicate or late run)."""
+) -> tuple[UUID, list[DetectionRequirement], registry.ConfigVersion] | None:
+    """Read the Opportunity's active Requirements and the agent's current config version, and
+    mark the detection `running`; None if it is no longer queued or running (a duplicate or
+    late run). While the agent is disabled (or `eval_only`) in the Agent Registry the
+    detection is marked `failed` / `registry_agent_disabled` instead, with no retry."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_detection(uow, detection_id)
         if record is None:
@@ -429,6 +432,21 @@ async def _start(
         await repo.lock_opportunity(uow, record.opportunity_id)
         record = await repo.get_detection(uow, detection_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:
+            return None
+        agent = await registry.current_config(uow, CLARIFICATION_AGENT)
+        if not agent.runs_tasks:
+            await repo.update_detection(
+                uow,
+                detection_id,
+                from_statuses=_IN_PROGRESS,
+                status=DetectionStatus.FAILED.value,
+                error_code=DetectionErrorCode.AGENT_DISABLED.value,
+                finished=True,
+            )
+            _log.info(
+                "gaps.detection_agent_disabled",
+                extra={"detection_id": str(detection_id), "agent_id": CLARIFICATION_AGENT},
+            )
             return None
         snapshots = await intake.active_requirement_snapshots(uow, record.opportunity_id)
         await repo.update_detection(
@@ -447,7 +465,7 @@ async def _start(
             )
             for s in snapshots
         ]
-        return record.opportunity_id, read
+        return record.opportunity_id, read, agent.current
 
 
 async def _detect(ctx: JobContext, payload: DetectGaps) -> None:
@@ -458,11 +476,12 @@ async def _detect(ctx: JobContext, payload: DetectGaps) -> None:
     if started is None:
         _log.info("gaps.detection_skipped", extra=ids)
         return
-    opportunity_id, requirements = started
+    opportunity_id, requirements, version = started
     ids["opportunity_id"] = str(opportunity_id)
+    config = registry.agent_config(version, settings)
 
     if requirements:
-        agent = ClarificationAgent(provider.current(), profile=settings.model_profile_chat)
+        agent = ClarificationAgent(provider.current(), config=config)
         result = await agent.run(
             ClarificationTask(
                 opportunity_id=opportunity_id,
@@ -477,10 +496,10 @@ async def _detect(ctx: JobContext, payload: DetectGaps) -> None:
             confidence=1.0,
             confidence_basis="No active Requirements.",
             needs_human_review=False,
-            extensions={AGENT_ID: ClarificationOutput(gaps=[])},
+            extensions={CLARIFICATION_AGENT: ClarificationOutput(gaps=[])},
         )
 
-    actor = Actor(type="agent", id=agent_config(settings.model_profile_chat).actor_id)
+    actor = Actor(type="agent", id=config.actor_id)
     async with unit_of_work(ctx.engine) as uow:
         accepted = await accept_gap_detection(
             uow,

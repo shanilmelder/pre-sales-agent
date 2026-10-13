@@ -63,6 +63,7 @@ from app.modules.assessments.domain.assessments import (
     Confidence,
     FindingKind,
     Recommendation,
+    TaskSkipReason,
     run_status,
     total_hours,
 )
@@ -77,6 +78,7 @@ from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
+from app.modules.registry.application import public as registry
 from app.platform.errors import (
     AssessmentInProgressError,
     AssessmentNotInProgressError,
@@ -123,6 +125,9 @@ def run_view(record: RunRecord, tasks: Sequence[TaskRecord]) -> AssessmentRun:
                 agent=AssessmentAgent(task.agent),
                 status=status,
                 error_code=code,
+                skip_reason=(
+                    None if task.skip_reason is None else TaskSkipReason(task.skip_reason)
+                ),
                 started_at=task.started_at,
                 finished_at=task.finished_at,
             )
@@ -196,6 +201,7 @@ async def _views(
             version=record.version,
             status=AssessmentStatus(record.status),
             run_id=str(record.run_id),
+            config_version_id=str(record.config_version_id),
             recommendation=Recommendation(record.recommendation),
             confidence=Confidence(record.confidence),
             confidence_basis=record.confidence_basis,
@@ -303,6 +309,7 @@ async def retry_task(
         or task.status != AssessmentTaskStatus.FAILED
     ):
         raise AssessmentTaskNotFailedError(NOT_FAILED_DETAIL)
+    await registry.require_enabled(uow, agent.value)  # 409 while the agent is disabled
     await requeue_task(uow, latest, agent, actor.actor)
     _log.info(
         "assessments.assessment_task_retried",

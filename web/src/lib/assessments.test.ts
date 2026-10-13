@@ -9,6 +9,7 @@ import {
   kindLabel,
   recommendationInfo,
   runStatusLabel,
+  skipNote,
   taskElapsed,
   taskStatusLabel,
 } from "@/lib/assessments";
@@ -158,5 +159,16 @@ describe("elapsed time", () => {
         at(5),
       ),
     ).toBe("");
+  });
+});
+
+describe("skipNote (Story 7.1)", () => {
+  it("explains a task skipped because its Agent is disabled, and nothing else", () => {
+    expect(skipNote({ status: "skipped", skip_reason: "agent_disabled" })).toBe(
+      "Agent disabled — assess manually",
+    );
+    expect(skipNote({ status: "skipped", skip_reason: null })).toBeNull(); // a cancel's
+    expect(skipNote({ status: "skipped" })).toBeNull();
+    expect(skipNote({ status: "failed", skip_reason: null })).toBeNull();
   });
 });

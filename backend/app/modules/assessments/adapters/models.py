@@ -36,7 +36,7 @@ class RedTeamRunRow(Base):
         CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed')", name="status"),
         CheckConstraint(
             "error_code IS NULL OR error_code IN "
-            "('model_unavailable', 'model_timeout', 'output_invalid')",
+            "('model_unavailable', 'model_timeout', 'output_invalid', 'registry_agent_disabled')",
             name="error_code",
         ),
         CheckConstraint("(status = 'failed') = (error_code IS NOT NULL)", name="failed_has_code"),
@@ -179,7 +179,10 @@ class AssessmentRunRow(Base):
 
 class AssessmentTaskRow(Base):
     """One agent's task in an assessment run. `error_code` is set only when `failed`;
-    `skipped` when its run was cancelled before it finished (Story 5.5)."""
+    `skipped` when its run was cancelled before it finished (Story 5.5), or when its Agent was
+    not active in the Agent Registry before it started (`skip_reason` `agent_disabled`, Story
+    7.1). `config_version_id`: the registry config version pinned when the run was queued
+    (a foreign key into the registry, as Story 7.1 specifies)."""
 
     __tablename__ = "assessments_tasks"
     __table_args__ = (
@@ -190,6 +193,10 @@ class AssessmentTaskRow(Base):
         ),
         CheckConstraint(f"error_code IS NULL OR error_code IN {_ERROR_CODES}", name="error_code"),
         CheckConstraint("(status = 'failed') = (error_code IS NOT NULL)", name="failed_has_code"),
+        CheckConstraint(
+            "skip_reason IS NULL OR (status = 'skipped' AND skip_reason IN ('agent_disabled'))",
+            name="skip_reason",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -200,6 +207,13 @@ class AssessmentTaskRow(Base):
     agent: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
     error_code: Mapped[str | None] = mapped_column(Text)
+    config_version_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "registry_agent_config_versions.id", name="fk_assessments_tasks_config_version_id"
+        ),
+    )
+    skip_reason: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -207,7 +221,8 @@ class AssessmentTaskRow(Base):
 class AssessmentRow(Base):
     """A specialist agent's Assessment of an Opportunity. A succeeded task inserts a
     `current` one numbered one past the agent's latest, and marks the earlier `current` one
-    `superseded`. At most one `current` per Opportunity and agent."""
+    `superseded`. At most one `current` per Opportunity and agent. `config_version_id`: the
+    registry config version that produced it (Story 7.1)."""
 
     __tablename__ = "assessments_assessments"
     __table_args__ = (
@@ -238,6 +253,13 @@ class AssessmentRow(Base):
     version: Mapped[int] = mapped_column(Integer)
     run_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("assessments_runs.id", name="fk_assessments_assessments_run_id")
+    )
+    config_version_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "registry_agent_config_versions.id",
+            name="fk_assessments_assessments_config_version_id",
+        ),
     )
     status: Mapped[str] = mapped_column(Text)
     recommendation: Mapped[str] = mapped_column(Text)

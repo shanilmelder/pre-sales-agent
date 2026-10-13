@@ -34,7 +34,6 @@ from uuid import UUID
 
 from app.agents.contract import AgentResult
 from app.agents.opportunity_intake_agent.agent import (
-    AGENT_ID,
     OpportunityIntakeAgent,
     OpportunityIntakeTask,
 )
@@ -64,6 +63,7 @@ from app.modules.opportunities.domain.imports import (
     suggestion_count,
     validate_suggestions,
 )
+from app.modules.registry.application import public as registry
 from app.platform import files
 from app.platform.config import Settings, get_settings
 from app.platform.errors import (
@@ -85,6 +85,8 @@ from app.platform.storage import BlobStore
 from app.platform.uow import UnitOfWork, unit_of_work
 
 READ_IMPORT = "opportunities.read_import"
+OPPORTUNITY_INTAKE_AGENT = "opportunity_intake_agent"
+"""The Agent that suggests the fields; its config comes from the Agent Registry (Story 7.1)."""
 IMPORT_NOT_FOUND = "No import with this id."
 IMPORT_CONSUMED = "This import was already used to create an Opportunity."
 IMPORT_EXPIRED = "This import is older than 24 hours. Import the file again."
@@ -155,8 +157,10 @@ async def upload_import(
     max_bytes: int,
     content_length: int | None = None,
 ) -> OpportunityImport:
-    """Store one uploaded file as a `queued` import of the caller's and queue its reading."""
+    """Store one uploaded file as a `queued` import of the caller's and queue its reading.
+    409 `registry_agent_disabled` (nothing stored) while the agent is not active."""
     uploader = _uploader(actor)
+    await registry.require_enabled(uow, OPPORTUNITY_INTAKE_AGENT)
     try:
         upload = await intake.store_upload(
             incoming, store=store, max_bytes=max_bytes, content_length=content_length
@@ -260,7 +264,9 @@ def proposal(result: AgentResult) -> OpportunityIntakeOutput:
     """The agent's proposed suggestions, re-validated (AD-4). Raises
     `ModelOutputInvalidError` when the extension is missing or malformed."""
     try:
-        return OpportunityIntakeOutput.model_validate(result.extensions.get(AGENT_ID))
+        return OpportunityIntakeOutput.model_validate(
+            result.extensions.get(OPPORTUNITY_INTAKE_AGENT)
+        )
     except ValueError:
         raise ModelOutputInvalidError(
             "The opportunity_intake_agent extension is not valid."
@@ -364,6 +370,21 @@ async def _read(ctx: JobContext, payload: ReadImport) -> None:
         if record is None or record.status not in _IN_PROGRESS:
             _log.info("opportunities.import_skipped", extra=ids)
             return
+        agent = await registry.current_config(uow, OPPORTUNITY_INTAKE_AGENT)
+        if not agent.runs_tasks:  # disabled or eval_only: failed, no retry
+            await repo.update_status(
+                uow,
+                import_id,
+                from_statuses=_IN_PROGRESS,
+                status=ImportStatus.FAILED.value,
+                error_code=ImportErrorCode.AGENT_DISABLED.value,
+            )
+            _log.info(
+                "opportunities.import_agent_disabled",
+                extra={**ids, "agent_id": OPPORTUNITY_INTAKE_AGENT},
+            )
+            return
+        version = agent.current
         await repo.update_status(
             uow, import_id, from_statuses=_IN_PROGRESS, status=ImportStatus.RUNNING.value
         )
@@ -385,8 +406,10 @@ async def _read(ctx: JobContext, payload: ReadImport) -> None:
         return
 
     today = datetime.now(UTC).date()
-    agent = OpportunityIntakeAgent(provider.current(), profile=settings.model_profile_chat)
-    result = await agent.run(OpportunityIntakeTask(import_id=import_id, today=today, text=text))
+    config = registry.agent_config(version, settings)
+    result = await OpportunityIntakeAgent(provider.current(), config=config).run(
+        OpportunityIntakeTask(import_id=import_id, today=today, text=text)
+    )
     suggestions = checked(proposal(result), text, today)
     async with unit_of_work(ctx.engine) as uow:
         recorded = await repo.update_status(

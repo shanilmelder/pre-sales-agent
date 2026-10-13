@@ -14,31 +14,20 @@ from app.agents.pm_agent.schema import PmOutput
 from app.agents.specialist.agent import SpecialistAgent, read_prompt
 from app.platform.model_gateway.port import ModelGatewayPort
 
-AGENT_ID = "pm_agent"
-SEMVER = "0.1.0"
-PROMPT_VERSION = 1
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 
-def config(profile: str) -> AgentConfig:
-    """`pm_agent`'s config for a chat profile (`PSA_MODEL_PROFILE_CHAT`)."""
-    return AgentConfig(
-        agent_id=AGENT_ID, semver=SEMVER, prompt_version=PROMPT_VERSION, profile=profile
-    )
-
-
 @cache
-def prompt(version: int = PROMPT_VERSION) -> str:
+def prompt(version: int) -> str:
     """The instructions, `prompts/v<version>.md`."""
     return read_prompt(PROMPTS_DIR, version)
 
 
 class PmAgent(SpecialistAgent):
-    def __init__(self, gateway: ModelGatewayPort, *, profile: str) -> None:
-        agent_config = config(profile)
+    def __init__(self, gateway: ModelGatewayPort, *, config: AgentConfig) -> None:
         super().__init__(
             gateway,
-            config=agent_config,
-            instructions=prompt(agent_config.prompt_version),
+            config=config,
+            instructions=prompt(config.prompt_version),
             output_model=PmOutput,
         )

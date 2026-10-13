@@ -243,6 +243,21 @@ class ImportConsumedError(ConflictError):
     title = "Import already used"
 
 
+class RegistryAgentDisabledError(ConflictError):
+    """An agent step was triggered while its Agent is `disabled` or `eval_only` in the Agent
+    Registry (Story 7.1). The `detail` is the sentence to show: "<Agent> is disabled"."""
+
+    code = "registry_agent_disabled"
+    title = "Agent disabled"
+
+
+class RegistryAgentDuplicateError(ConflictError):
+    """An Agent was registered with an id that is already registered (Story 7.1)."""
+
+    code = "registry_agent_duplicate"
+    title = "Agent already registered"
+
+
 class GoneError(ProblemError):
     """The resource existed but no longer can be used (410)."""
 
@@ -318,6 +333,22 @@ class FileEmptyError(UnprocessableError):
 
     code = "file_empty"
     title = "File empty"
+
+
+class RegistryConfigNotDeployedError(UnprocessableError):
+    """A config version references a prompt, schema or model profile that is not in the
+    deployed manifest (Story 7.1)."""
+
+    code = "registry_config_not_deployed"
+    title = "Config not deployed"
+
+
+class RegistryConfigIncompatibleContractError(UnprocessableError):
+    """A config version's output schema was written for another `AgentResult` contract
+    version than the one deployed (Story 7.1)."""
+
+    code = "registry_config_incompatible_contract"
+    title = "Incompatible contract version"
 
 
 class IfMatchRequiredError(ProblemError):

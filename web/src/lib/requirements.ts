@@ -121,6 +121,7 @@ export const EXTRACTION_FAILURE_REASONS: Record<ExtractionErrorCode, string> = {
   model_unavailable: "the model service couldn't be reached",
   model_timeout: "the model took too long to answer",
   output_invalid: "the model's answer couldn't be used",
+  registry_agent_disabled: "its agent is disabled",
   input_too_large: "the Sources are too long to process in one go",
 };
 
