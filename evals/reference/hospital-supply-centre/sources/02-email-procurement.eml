@@ -1,0 +1,26 @@
+From: [PERSON_5] <person5@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Subject: [SITE] supply centre - procurement requirements
+Date: Mon, 12 Oct 2026 10:00:00 +0100
+Message-ID: <site-hsc-1012@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear [PERSON_1],
+
+As a public body we have to follow a formal procurement process. Your proposal must:
+
+- Price the system, installation and five years of maintenance separately.
+- Confirm that the system meets our information security standard and that all data stays
+  within the country.
+- Provide the system with accessible screens for staff with visual impairments.
+- Include a business continuity plan: the hospitals must still receive supplies if the
+  automation stops for a full day.
+- Show expected energy consumption per year.
+
+Our evaluation committee has not yet fixed the weighting between price and quality.
+
+Kind regards,
+[PERSON_5]
+Procurement, [CUSTOMER]

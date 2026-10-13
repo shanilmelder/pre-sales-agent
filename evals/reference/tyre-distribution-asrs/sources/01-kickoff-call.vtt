@@ -1,0 +1,36 @@
+WEBVTT
+
+NOTE
+Fictional reference data for the eval set; all names are placeholders.
+
+1
+00:00:01.000 --> 00:00:08.000
+<v [PERSON_1]>Thanks for having us. Let's go through the tyre warehouse at [SITE].
+
+2
+00:00:08.500 --> 00:00:22.000
+<v [PERSON_2]>I run the [SITE] site for [CUSTOMER]. We store car and van tyres for about three hundred garages and for consumers who store their winter tyres with us between seasons.
+
+3
+00:00:22.500 --> 00:00:35.000
+<v [PERSON_2]>We want an automated tyre storage system for around one hundred and twenty thousand tyres, stored horizontally in stacks of up to four, with automatic stacking and destacking at the outfeed.
+
+4
+00:00:35.500 --> 00:00:48.000
+<v [PERSON_2]>The seasonal change in spring and autumn is our peak: around six thousand tyres a day go out and the same number come in, for about six weeks.
+
+5
+00:00:48.500 --> 00:01:00.000
+<v [PERSON_3]>IT here. Customer tyre sets must stay together as a set, with the licence plate as the key. The garage booking system sends us the fitting appointments, and we must deliver the set to the right garage the day before.
+
+6
+00:01:00.500 --> 00:01:12.000
+<v [PERSON_3]>Our warehouse system is a ten-year-old package. We don't know yet whether the vendor will still support it after next year, so we may need your software to take over.
+
+7
+00:01:12.500 --> 00:01:24.000
+<v [PERSON_2]>Tyre sizes go from thirteen to twenty-two inch rims. Some SUV tyres are over thirty kilos, so manual handling must be reduced for health and safety.
+
+8
+00:01:24.500 --> 00:01:33.000
+<v [PERSON_4]>Finance. We'd like a lease option alongside the purchase price, and the project should pay back within five years.

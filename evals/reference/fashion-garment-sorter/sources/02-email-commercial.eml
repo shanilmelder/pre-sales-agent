@@ -1,0 +1,27 @@
+From: [PERSON_5] <person5@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Cc: [PERSON_2] <person2@customer.example>
+Subject: [SITE] pocket sorter - commercial framework
+Date: Wed, 07 Oct 2026 16:00:00 +0100
+Message-ID: <site-fashion-1007@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear [PERSON_1],
+
+Please base your proposal on the following.
+
+- Go-live by 1 August 2027, before the autumn collection arrives.
+- Throughput: 9,000 garments per hour into the sorter at peak.
+- Store deliveries must be sorted in store-layout sequence (by department and size).
+- The system must be operable in two languages on all screens.
+- Payment: 30% at order, 50% at delivery to site, 20% at acceptance.
+- Five-year service contract with preventive maintenance four times a year.
+
+We have not decided yet whether the web-shop packing area moves into the same building or
+stays at our second site.
+
+Kind regards,
+[PERSON_5]
+Procurement, [CUSTOMER]

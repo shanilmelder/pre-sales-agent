@@ -1,0 +1,35 @@
+From: [PERSON_3] <person3@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Cc: [PERSON_4] <person4@customer.example>
+Subject: [SITE] - quality and IT follow-up
+Date: Tue, 06 Oct 2026 10:20:00 +0100
+Message-ID: <site-qa-1006@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hello [PERSON_1],
+
+Following our call, the points from quality and IT.
+
+Quality
+- The cold room and the packing area must be temperature-mapped before go-live, and the
+  system must record the temperature every five minutes and alarm when it leaves 2-8 degrees.
+- Full audit trail of every user action, kept for five years, with electronic signatures
+  for any release of quarantined stock.
+- The temperature mapping study itself will be done by our own validation contractor.
+
+IT
+- Integration with SAP S/4HANA: order release, goods receipt and stock reconciliation once
+  an hour. We are open to IDocs or APIs; our SAP team has not chosen yet.
+- The system must be hosted in our own data centre. No public cloud for GDP data.
+- Users sign in with our corporate directory; we have not decided whether to use the
+  existing on-premises domain or the new cloud tenant.
+
+Volumes
+- Today: 2,800 order lines per hour at the morning peak. The hospital tender may add
+  between 10% and 40%; we will only know in February.
+
+Best regards,
+[PERSON_3]
+Quality Assurance, [CUSTOMER]

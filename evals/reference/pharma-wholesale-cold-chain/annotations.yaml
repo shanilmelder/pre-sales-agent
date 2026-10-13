@@ -1,0 +1,78 @@
+slug: pharma-wholesale-cold-chain
+title: "[SITE] pharmaceutical wholesale automation"
+customer: "[CUSTOMER]"
+industry: Pharmaceutical wholesale
+products: [Miniload, Pick-to-light, Cold chain packing]
+annotator: draft
+requirements:
+  - id: R1
+    text: Miniload for fast-moving totes and pick-to-light for about 6,000 SKUs
+    source: 01-discovery-call.vtt
+    quote: "a miniload for the fast-moving totes and a pick-to-light area"
+  - id: R2
+    text: Check-weigh every tote at the end of the line
+    source: 01-discovery-call.vtt
+    quote: "Each tote must be weighed at the end of the line"
+  - id: R3
+    text: Cold chain orders packed in validated boxes within 20 minutes
+    source: 01-discovery-call.vtt
+    quote: "packed in validated insulated boxes within twenty minutes"
+  - id: R4
+    text: Computer system validation with IQ, OQ and PQ documentation
+    source: 01-discovery-call.vtt
+    quote: "The system needs computer system validation"
+  - id: R5
+    text: Serial numbers verified before dispatch
+    source: 01-discovery-call.vtt
+    quote: "Every pack must have its serial number verified against the national verification system"
+  - id: R6
+    text: First-expiry-first-out and recalled batches blocked within minutes
+    source: 01-discovery-call.vtt
+    quote: "always first-expiry-first-out, and recalled batches must be blocked within minutes"
+  - id: R7
+    text: Temperature recorded every five minutes with alarms outside 2-8 degrees
+    source: 02-email-quality-and-it.eml
+    quote: "record the temperature every five minutes and alarm when it leaves 2-8 degrees"
+  - id: R8
+    text: Audit trail kept five years with electronic signatures
+    source: 02-email-quality-and-it.eml
+    quote: "Full audit trail of every user action, kept for five years"
+  - id: R9
+    text: SAP S/4HANA integration for order release, goods receipt and stock reconciliation
+    source: 02-email-quality-and-it.eml
+    quote: "Integration with SAP S/4HANA: order release, goods receipt and stock reconciliation"
+  - id: R10
+    text: Hosted in the customer's own data centre
+    source: 02-email-quality-and-it.eml
+    quote: "The system must be hosted in our own data centre"
+gaps:
+  - id: G1
+    keywords: [serial number, serialisation, verification system]
+    mandatory: true
+  - id: G2
+    keywords: [IDoc, IDocs, integration method, API, APIs]
+    mandatory: true
+  - id: G3
+    keywords: [hospital, tender, volume, volumes]
+  - id: G4
+    keywords: [directory, identity provider, sign-on, cloud tenant]
+    mandatory: true
+  - id: G5
+    keywords: [validation, IQ, OQ, PQ]
+irrelevant_gaps:
+  - label: Cut-off time already fixed
+    keywords: [cut-off time, order cut-off]
+  - label: Mapping study is the customer's
+    keywords: [who performs the temperature mapping]
+integration_risks:
+  - id: I1
+    keywords: [SAP, S/4HANA, IDoc, IDocs]
+  - id: I2
+    keywords: [verification system, serialisation, serial number]
+evidence:
+  - requirement: R5
+    finding_keywords: [serial, verification]
+    supported: true
+  - requirement: R4
+    finding_keywords: [validation, GDP, IQ]
+    supported: true

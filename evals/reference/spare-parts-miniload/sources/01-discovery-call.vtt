@@ -1,0 +1,36 @@
+WEBVTT
+
+NOTE
+Fictional reference data for the eval set; all names are placeholders.
+
+1
+00:00:01.000 --> 00:00:07.500
+<v [PERSON_1]>Good morning. Let's talk about the spare parts centre at [SITE].
+
+2
+00:00:08.000 --> 00:00:21.000
+<v [PERSON_2]>I manage aftermarket logistics at [CUSTOMER]. We make industrial compressors and ship spare parts to service engineers and distributors in forty countries.
+
+3
+00:00:21.500 --> 00:00:34.000
+<v [PERSON_2]>We have about sixty-five thousand part numbers, mostly small. We want a miniload with sixty thousand bin locations and two goods-to-person workstations.
+
+4
+00:00:34.500 --> 00:00:46.000
+<v [PERSON_2]>Emergency orders, when a customer's compressor is down, must ship the same day if they arrive before four p.m. That's our main promise to customers.
+
+5
+00:00:46.500 --> 00:00:58.000
+<v [PERSON_3]>IT. Our ERP is IFS. It also produces the export documents. Dangerous goods, like oils and refrigerant, need special labels and paperwork on every shipment.
+
+6
+00:00:58.500 --> 00:01:10.000
+<v [PERSON_3]>We would like the new system to print the dangerous goods labels itself, but we have not checked whether our ERP can send the hazard data per part number.
+
+7
+00:01:10.500 --> 00:01:20.000
+<v [PERSON_2]>Heavy parts over twenty-five kilos stay in the existing pallet racking and are picked manually.
+
+8
+00:01:20.500 --> 00:01:30.000
+<v [PERSON_4]>Finance. Our budget is about three million, and we'd like the system to be extendable by a third aisle later.

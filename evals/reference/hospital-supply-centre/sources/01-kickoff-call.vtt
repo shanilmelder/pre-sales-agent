@@ -1,0 +1,32 @@
+WEBVTT
+
+NOTE
+Fictional reference data for the eval set; all names are placeholders.
+
+1
+00:00:01.000 --> 00:00:08.000
+<v [PERSON_1]>Thank you for inviting us. Let's start with the supply centre at [SITE].
+
+2
+00:00:08.500 --> 00:00:22.000
+<v [PERSON_2]>I'm director of logistics for [CUSTOMER], a group of four hospitals. The [SITE] supply centre replenishes about three hundred wards and theatres every day.
+
+3
+00:00:22.500 --> 00:00:35.000
+<v [PERSON_2]>We want a shuttle system for medical consumables in totes, and kitting stations where theatre kits are put together per operation from the next day's theatre schedule.
+
+4
+00:00:35.500 --> 00:00:47.000
+<v [PERSON_3]>Clinical IT. The theatre schedule comes from our patient administration system. Patient names must never leave that system; kits are referenced by procedure and theatre only.
+
+5
+00:00:47.500 --> 00:01:00.000
+<v [PERSON_3]>Our materials management system is old and the supplier will stop supporting it in 2028. We haven't decided whether to replace it before or after this project.
+
+6
+00:01:00.500 --> 00:01:12.000
+<v [PERSON_2]>Ward deliveries leave in trolleys at fixed times, six rounds a day, and urgent requests from theatres must be ready within thirty minutes.
+
+7
+00:01:12.500 --> 00:01:22.000
+<v [PERSON_4]>Estates. The centre is in a building we share with the hospital laundry. We don't know whether the floor can take a shuttle system; nobody has the original drawings.

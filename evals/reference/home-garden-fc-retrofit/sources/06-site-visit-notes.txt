@@ -1,0 +1,32 @@
+[SITE] fulfilment centre - site visit notes
+Date: 2 October 2026
+Visited by: [PERSON_2] (solutions engineer), with [PERSON_5] (facilities) and [PERSON_4] (IT)
+Note: sample data for the demo; all names and companies are fictional.
+
+Building
+- 1994 steel-frame warehouse, about 18,000 m2, clear height under the haunch about 12.5 m.
+- The current tenant's pallet racking covers the whole floor, so the slab could not be
+  inspected. Two visible cracks near dock doors 4 and 5. [PERSON_5] confirmed again that the
+  slab thickness is unknown and that core samples are only possible after 15 January 2027.
+- Existing ceiling sprinklers only, no in-rack sprinklers. The fire authority decision on
+  in-rack sprinklers will only come after the final design review; nobody can predict it.
+- Eight dock doors, all to be handed over working by the landlord.
+
+IT room
+- The legacy WMS runs on a single on-premise server under the IT desk. [PERSON_4] showed us the
+  database: about 140 tables, many without clear names, and at least three scheduled jobs
+  nobody could explain. He could not say which other systems read or write to it.
+- The server has no test copy. [PERSON_4] confirmed the customer cannot produce an interface
+  list; we will only learn the real number of interfaces by tracing them during migration.
+- Wi-Fi coverage in the current building is poor at the back wall. [PERSON_4] said IT will
+  provide the network, but has not decided whether the automation gets its own VLAN.
+
+Packing area
+- Current packing benches will be removed. The carton range is still open; [PERSON_3]'s team
+  decides it. Whether the mezzanine over docks 1 to 3 stays is also still their decision.
+
+Follow-ups
+- Send power requirements and drop positions to [PERSON_5], so they can decide who does the supply.
+- Send network requirements and Wi-Fi coverage plan to [PERSON_4].
+- Price separate allowances for: legacy WMS interfaces, floor slab, sprinkler redesign,
+  product data clean-up, marketplace volume headroom.

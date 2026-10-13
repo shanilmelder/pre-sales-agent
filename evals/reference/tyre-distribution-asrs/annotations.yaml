@@ -1,0 +1,68 @@
+slug: tyre-distribution-asrs
+title: "[SITE] tyre storage automation"
+customer: "[CUSTOMER]"
+industry: Automotive aftermarket
+products: [Tyre AS/RS, Stacking and destacking]
+annotator: draft
+requirements:
+  - id: R1
+    text: Automated storage for about 120,000 tyres in stacks of up to four
+    source: 01-kickoff-call.vtt
+    quote: "an automated tyre storage system for around one hundred and twenty thousand tyres"
+  - id: R2
+    text: Automatic stacking and destacking at the outfeed
+    source: 01-kickoff-call.vtt
+    quote: "with automatic stacking and destacking at the outfeed"
+  - id: R3
+    text: Seasonal peak of about 6,000 tyres a day in and out
+    source: 01-kickoff-call.vtt
+    quote: "around six thousand tyres a day go out and the same number come in"
+  - id: R4
+    text: Keep customer tyre sets together keyed by licence plate
+    source: 01-kickoff-call.vtt
+    quote: "Customer tyre sets must stay together as a set, with the licence plate as the key"
+  - id: R5
+    text: Deliver the set to the right garage the day before the appointment
+    source: 01-kickoff-call.vtt
+    quote: "we must deliver the set to the right garage the day before"
+  - id: R6
+    text: Handle rims from 13 to 22 inch and tyres over 30 kg
+    source: 01-kickoff-call.vtt
+    quote: "Tyre sizes go from thirteen to twenty-two inch rims"
+  - id: R7
+    text: Install in two halves while the warehouse keeps running
+    source: 02-email-building-and-data.eml
+    quote: "installed in two halves so the warehouse keeps running"
+  - id: R8
+    text: Photograph every set at intake
+    source: 02-email-building-and-data.eml
+    quote: "Every stored set must be photographed at intake"
+  - id: R9
+    text: Lease option alongside the purchase price
+    source: 01-kickoff-call.vtt
+    quote: "We'd like a lease option alongside the purchase price"
+gaps:
+  - id: G1
+    keywords: [warehouse system, WMS, vendor support, take over]
+    mandatory: true
+  - id: G2
+    keywords: [DOT code, unreadable]
+  - id: G3
+    keywords: [webhook, booking platform, booking system]
+    mandatory: true
+  - id: G4
+    keywords: [photo, photos, retention, image storage]
+irrelevant_gaps:
+  - label: Clear height already given
+    keywords: [clear height]
+  - label: Floor rating already given
+    keywords: [floor load, slab rating]
+integration_risks:
+  - id: I1
+    keywords: [booking, REST, webhook]
+  - id: I2
+    keywords: [warehouse system, legacy, WMS]
+evidence:
+  - requirement: R5
+    finding_keywords: [booking, garage, appointment]
+    supported: true

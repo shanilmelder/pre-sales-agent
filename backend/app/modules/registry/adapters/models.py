@@ -1,14 +1,18 @@
-"""The registry module's tables (Story 7.1). `created_by` holds identity's user ids without
-foreign keys (AD-2)."""
+"""The registry module's tables (Stories 7.1 and 7.6). An Agent's `created_by` holds
+identity's user ids without foreign keys (AD-2)."""
 
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
+    Index,
     Integer,
     Text,
     UniqueConstraint,
@@ -73,4 +77,42 @@ class ConfigVersionRow(Base):
     tool_permissions: Mapped[list[str]] = mapped_column(JSONB)
     budgets: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_by: Mapped[UUID | None] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class EvalResultRow(Base):
+    """One evaluation result (Story 7.6). Insert-only: the app role has no UPDATE or DELETE.
+    A passed row is `accepted` and becomes the comparison point for the next eval."""
+
+    __tablename__ = "registry_eval_results"
+    __table_args__ = (
+        Index(None, "accepted", "created_at"),
+        CheckConstraint("reference_set_version ~ '^[0-9a-f]{12}$'", name="reference_set_version"),
+        CheckConstraint(
+            "opportunity_count >= 0 AND draft_count >= 0 AND pending_count >= 0 "
+            "AND tokens >= 0 AND gpu_seconds >= 0 AND cost_minor >= 0",
+            name="counts",
+        ),
+        CheckConstraint("cost_currency ~ '^[A-Z]{3}$'", name="cost_currency"),
+        CheckConstraint("passed OR NOT accepted", name="accepted"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    reference_set_version: Mapped[str] = mapped_column(Text)
+    config_version_ids: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    model_digests: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    prompt_versions: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    scores: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    bars: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    failures: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    opportunity_count: Mapped[int] = mapped_column(Integer)
+    draft_count: Mapped[int] = mapped_column(Integer)
+    pending_count: Mapped[int] = mapped_column(Integer)
+    tokens: Mapped[int] = mapped_column(BigInteger)
+    gpu_seconds: Mapped[float] = mapped_column(Float)
+    cost_minor: Mapped[int] = mapped_column(BigInteger)
+    cost_currency: Mapped[str] = mapped_column(Text)
+    passed: Mapped[bool] = mapped_column(Boolean)
+    accepted: Mapped[bool] = mapped_column(Boolean)
+    created_by: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

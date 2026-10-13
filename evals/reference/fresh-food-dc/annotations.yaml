@@ -1,0 +1,111 @@
+# Anonymised from demo-data/ (the fresh-food distribution centre scenario).
+slug: fresh-food-dc
+title: "[SITE] automation"
+customer: "[CUSTOMER]"
+industry: Food & grocery distribution
+products: [Goods-to-person picking, WMS integration]
+annotator: draft
+requirements:
+  - id: R1
+    text: Goods-to-person picking for the ambient area
+    source: 01-discovery-call-teams-transcript.vtt
+    quote: "a goods-to-person picking system for the ambient area"
+  - id: R2
+    text: Chilled zone kept between two and five degrees
+    source: 01-discovery-call-teams-transcript.vtt
+    quote: "a chilled zone that has to stay between two and five degrees"
+  - id: R3
+    text: 99.5% availability during operating hours
+    source: 01-discovery-call-teams-transcript.vtt
+    quote: "ninety-nine and a half percent at least"
+  - id: R4
+    text: Order batching, wave release, automatic replenishment and supervisor dashboards
+    source: 01-discovery-call-teams-transcript.vtt
+    quote: "order batching and wave release, automatic replenishment from the reserve racking"
+  - id: R5
+    text: Integrated shipping labels for three carriers
+    source: 01-discovery-call-teams-transcript.vtt
+    quote: "Every order gets a shipping label and goes to one of our three carriers"
+  - id: R6
+    text: Goods-issue confirmations into SAP within 5 minutes
+    source: 02-email-it-integration-follow-up.eml
+    quote: "goods-issue confirmations back into SAP within 5 minutes of an order being shipped"
+  - id: R7
+    text: Single sign-on is mandatory
+    source: 02-email-it-integration-follow-up.eml
+    quote: "Single sign-on is mandatory"
+  - id: R8
+    text: Vendor remote access through the privileged access gateway with session recording
+    source: 02-email-it-integration-follow-up.eml
+    quote: "Vendor remote access must go through our privileged access gateway"
+  - id: R9
+    text: ISO 27001 certification and an independent penetration test
+    source: 02-email-it-integration-follow-up.eml
+    quote: "requires ISO 27001 certification from suppliers and an independent penetration test"
+  - id: R10
+    text: Audit log of picks and temperature readings kept for two years
+    source: 01-discovery-call-teams-transcript.vtt
+    quote: "an audit log of every pick and every temperature reading kept for two years"
+  - id: R11
+    text: Operational data stays in-country
+    source: 01-discovery-call-teams-transcript.vtt
+    quote: "all our operational data has to stay in-country"
+  - id: R12
+    text: Size for 4,200 order lines per hour with 20% growth
+    source: 03-email-procurement-rfp-terms.eml
+    quote: "please size for 4,200 order lines per hour, with 20% growth"
+  - id: R13
+    text: Milestone payments 20/40/40
+    source: 03-email-procurement-rfp-terms.eml
+    quote: "Payment by milestones: 20% at contract signature"
+  - id: R14
+    text: Drive diverts on the existing 2011 conveyor
+    source: 04-email-legacy-conveyor-contingency.eml
+    quote: "We'd like your system to drive diverts on this conveyor"
+  - id: R15
+    text: On-site training for 40 operators and 6 supervisors
+    source: 03-email-procurement-rfp-terms.eml
+    quote: "On-site training for 40 operators and 6 supervisors before go-live"
+gaps:
+  - id: G1
+    keywords: [SAP version, S/4HANA, S/4, ECC]
+    mandatory: true
+  - id: G2
+    keywords: [existing WMS, current WMS, role of the WMS, replace the WMS, WMS role]
+    mandatory: true
+  - id: G3
+    keywords: [identity provider, IdP, SSO provider]
+    mandatory: true
+  - id: G4
+    keywords: [master data, dimensions, weights]
+  - id: G5
+    keywords: [IDoc, IDocs, integration method, API or IDoc]
+    mandatory: true
+  - id: G6
+    keywords: [conveyor, control cabinet, legacy controls]
+  - id: G7
+    keywords: [December, peak volume, peak forecast, "5,000"]
+  - id: G8
+    keywords: [test system, SAP test, test environment]
+irrelevant_gaps:
+  - label: Office and staff facilities
+    keywords: [canteen, car park, parking, office furniture]
+  - label: Settled budget figure
+    keywords: [budget envelope unknown, budget not confirmed]
+integration_risks:
+  - id: I1
+    keywords: [SAP, ECC, S/4HANA, IDoc, IDocs]
+  - id: I2
+    keywords: [conveyor, PLC, divert]
+  - id: I3
+    keywords: [carrier, carriers, label format, manifest]
+evidence:
+  - requirement: R6
+    finding_keywords: [SAP, confirmation, goods-issue]
+    supported: true
+  - requirement: R14
+    finding_keywords: [conveyor, PLC, divert, diverts, cabinet]
+    supported: true
+  - requirement: R7
+    finding_keywords: [single sign-on, SSO, identity provider]
+    supported: true

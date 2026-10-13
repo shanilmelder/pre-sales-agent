@@ -1,0 +1,72 @@
+slug: spare-parts-miniload
+title: "[SITE] spare parts centre miniload"
+customer: "[CUSTOMER]"
+industry: Industrial equipment aftermarket
+products: [Miniload, Goods-to-person workstations]
+annotator: draft
+requirements:
+  - id: R1
+    text: Miniload with 60,000 bin locations and two goods-to-person workstations
+    source: 01-discovery-call.vtt
+    quote: "a miniload with sixty thousand bin locations and two goods-to-person workstations"
+  - id: R2
+    text: Emergency orders before 4 p.m. ship the same day
+    source: 01-discovery-call.vtt
+    quote: "must ship the same day if they arrive before four p.m."
+  - id: R3
+    text: Dangerous goods labels and paperwork on shipments
+    source: 01-discovery-call.vtt
+    quote: "Dangerous goods, like oils and refrigerant, need special labels and paperwork"
+  - id: R4
+    text: Integration with the IFS ERP
+    source: 01-discovery-call.vtt
+    quote: "Our ERP is IFS"
+  - id: R5
+    text: Extendable by a third aisle later
+    source: 01-discovery-call.vtt
+    quote: "extendable by a third aisle later"
+  - id: R6
+    text: Yearly cycle count of every bin without stopping
+    source: 02-email-operations.eml
+    quote: "Every bin must be cycle-counted at least once a year"
+  - id: R7
+    text: Scan serial numbers at picking
+    source: 02-email-operations.eml
+    quote: "Serial-numbered parts must have their serial number scanned at picking"
+  - id: R8
+    text: Carton erector handling five sizes
+    source: 02-email-operations.eml
+    quote: "the carton erector must handle five sizes"
+  - id: R9
+    text: Go-live in the summer shutdown, weeks 30-32 of 2027
+    source: 02-email-operations.eml
+    quote: "Go-live in the summer shutdown, weeks 30 to 32 of 2027"
+gaps:
+  - id: G1
+    keywords: [hazard data, dangerous goods data, hazardous]
+    mandatory: true
+  - id: G2
+    keywords: [sprinkler, sprinklers, insurer, fire protection]
+    mandatory: true
+  - id: G3
+    keywords: [distributor portal, portal orders]
+  - id: G4
+    keywords: [IFS, integration method, interface]
+    mandatory: true
+irrelevant_gaps:
+  - label: Heavy parts stay manual
+    keywords: [heavy parts, over 25 kg, pallet racking]
+  - label: Office and staff facilities
+    keywords: [canteen, car park, parking]
+integration_risks:
+  - id: I1
+    keywords: [IFS, ERP]
+  - id: I2
+    keywords: [dangerous goods, hazard]
+evidence:
+  - requirement: R3
+    finding_keywords: [dangerous goods, hazard]
+    supported: true
+  - requirement: R2
+    finding_keywords: [same day, emergency]
+    supported: true

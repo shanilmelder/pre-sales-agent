@@ -1,0 +1,74 @@
+slug: beverage-pallet-warehouse
+title: "[SITE] finished goods pallet warehouse"
+customer: "[CUSTOMER]"
+industry: Food & beverage manufacturing
+products: [Pallet shuttle, AGVs, Warehouse control system]
+annotator: draft
+requirements:
+  - id: R1
+    text: Multi-deep pallet shuttle warehouse with 14,000 positions
+    source: 01-site-visit-notes.txt
+    quote: "Automated pallet warehouse with a multi-deep shuttle system for 14,000 pallet positions"
+  - id: R2
+    text: AGVs from the line end to the warehouse infeed
+    source: 01-site-visit-notes.txt
+    quote: "automated guided vehicles take them"
+  - id: R3
+    text: Ship strictly first-expiry-first-out
+    source: 01-site-visit-notes.txt
+    quote: "the warehouse must ship strictly first-expiry-first-out"
+  - id: R4
+    text: 40 trucks a day pre-staged in loading sequence
+    source: 01-site-visit-notes.txt
+    quote: "40 trucks a day, pre-staged at the dock in loading sequence"
+  - id: R5
+    text: Integrate with SAP ECC now, EWM later
+    source: 02-email-it-and-quality.eml
+    quote: "Our ERP is SAP ECC with SAP EWM planned for 2028"
+  - id: R6
+    text: Block quality-hold batches from loading
+    source: 02-email-it-and-quality.eml
+    quote: "Blocked batches (quality hold) must be prevented from loading automatically"
+  - id: R7
+    text: Traceability from line and batch to truck and customer
+    source: 02-email-it-and-quality.eml
+    quote: "full traceability from production line and batch to the truck and customer"
+  - id: R8
+    text: Control system on customer virtual servers
+    source: 02-email-it-and-quality.eml
+    quote: "must run on a virtual server in our data centre"
+  - id: R9
+    text: 99.5% availability; no single failure stops more than one aisle
+    source: 02-email-it-and-quality.eml
+    quote: "no single failure stopping more than one aisle"
+gaps:
+  - id: G1
+    keywords: [PLC, PLCs, canning line, communication spec, communication specs, line interface]
+    mandatory: true
+  - id: G2
+    keywords: [AGV, AGVs, guided vehicle, guided vehicles]
+    mandatory: true
+  - id: G3
+    keywords: [fourth line, expansion]
+  - id: G4
+    keywords: [EWM]
+    mandatory: true
+  - id: G5
+    keywords: [temperature, condensation, unheated]
+irrelevant_gaps:
+  - label: Empty pallets are out of scope
+    keywords: [empty pallet]
+  - label: Office and staff facilities
+    keywords: [canteen, car park, parking]
+integration_risks:
+  - id: I1
+    keywords: [PLC, PLCs, line, lines, canning]
+  - id: I2
+    keywords: [SAP, ECC, EWM]
+evidence:
+  - requirement: R5
+    finding_keywords: [ECC, EWM, SAP]
+    supported: true
+  - requirement: R2
+    finding_keywords: [AGV, AGVs, guided vehicle, guided vehicles]
+    supported: true

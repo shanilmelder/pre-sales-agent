@@ -1,0 +1,21 @@
+[CUSTOMER] - [SITE] brewery finished goods warehouse - site visit notes
+Visited by: [PERSON_1] (vendor), with [PERSON_2] (supply chain) and [PERSON_3] (engineering)
+Note: fictional reference data for the eval set.
+
+Scope discussed
+- Automated pallet warehouse with a multi-deep shuttle system for 14,000 pallet positions.
+- Pallets come from three bottling and canning lines; automated guided vehicles take them
+  from the line end to the warehouse infeed.
+- Every pallet is labelled at the line end with an SSCC label and its batch and best-before
+  date; the warehouse must ship strictly first-expiry-first-out.
+- Truck loading: 40 trucks a day, pre-staged at the dock in loading sequence.
+
+Conditions on site
+- The warehouse runs at 4 to 30 degrees, unheated in winter; condensation at the doors.
+- The lines' PLCs are from two different suppliers; [PERSON_3] does not have the
+  communication specs for the older canning line.
+- Empty pallet returns are sorted manually by a contractor and stay out of scope.
+
+Business
+- Peak in June and December, about 1,100 pallets a day out.
+- The site is planning a fourth line in 2028, size not yet decided.

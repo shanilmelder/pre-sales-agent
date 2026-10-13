@@ -1,0 +1,28 @@
+From: [PERSON_4] <person4@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Cc: [PERSON_2] <person2@customer.example>
+Subject: [SITE] pallet warehouse - IT and quality points
+Date: Thu, 08 Oct 2026 14:15:00 +0100
+Message-ID: <site-brew-1008@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi [PERSON_1],
+
+From the IT and quality side:
+
+- Our ERP is SAP ECC with SAP EWM planned for 2028. Please make the integration work with
+  ECC now and say what changes when EWM arrives.
+- Blocked batches (quality hold) must be prevented from loading automatically.
+- We need full traceability from production line and batch to the truck and customer.
+- The warehouse control system must run on a virtual server in our data centre; we provide
+  the virtual machines and the backups.
+- Availability: 99.5% over the year, with no single failure stopping more than one aisle.
+
+We are still discussing internally whether the AGV fleet should be bought by the plant or
+included in your contract.
+
+Regards,
+[PERSON_4]
+IT Manager, [CUSTOMER]

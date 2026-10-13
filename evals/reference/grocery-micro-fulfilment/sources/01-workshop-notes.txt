@@ -1,0 +1,28 @@
+[CUSTOMER] - urban micro-fulfilment workshop notes
+Location: [SITE] store, back-of-store area
+Attendees: [PERSON_1] (vendor), [PERSON_2] (e-commerce operations), [PERSON_3] (store IT)
+Note: fictional reference data for the eval set.
+
+Goals
+- Online grocery orders picked from a compact cube storage grid behind the store, with
+  three pick ports, so customers can collect within one hour of ordering.
+- Ambient and chilled totes in the same grid; frozen items stay in the store freezers and
+  are added at the collection point.
+- Target 120 orders per hour at the evening peak, average 35 items per order.
+
+Systems
+- Orders come from the e-commerce platform. Substitutions are decided by the platform, not
+  by the warehouse system.
+- Store stock and grid stock must be one stock figure in the merchandising system, updated
+  every 10 minutes.
+- [PERSON_3] is not sure the store's network can carry the grid robots' Wi-Fi alongside the
+  store's handheld scanners.
+
+Constraints
+- The back-of-store area has a ceiling height of 5.2 m and a floor that has never been
+  surveyed for flatness.
+- Installation only at night; the store stays open 07:00-22:00.
+- Noise at the collection point must stay below 70 dB.
+
+Open
+- Whether a second store will follow in the same year is not yet decided by the board.

@@ -28,6 +28,8 @@ dev = [
     "import-linter==2.15",
     "hypothesis==6.168.3",  # property-based tests of the Estimate arithmetic (Story 8.1)
     "types-openpyxl==3.1.5.20260827",  # Apache-2.0; type stubs for openpyxl (Story 8.8)
+    "pyyaml==6.0.3",  # MIT; evals/ annotations and reports (Story 7.6, `make eval` only)
+    "types-pyyaml==6.0.12.20250915",  # Apache-2.0; type stubs for pyyaml
 ]
 
 [tool.uv]
@@ -281,5 +283,19 @@ forbidden_modules = [
     "app.modules.registry.domain",
     "app.modules.registry.adapters",
     "app.modules.registry.api",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "The eval harness uses business modules only through their public APIs and never imports agents or orchestration (Story 7.6)"
+type = "forbidden"
+source_modules = ["app.evals"]
+forbidden_modules = [
+    "app.modules.*.domain",
+    "app.modules.*.adapters",
+    "app.modules.*.api",
+    "app.agents",
+    "app.orchestration",
+    "app.main_api",
 ]
 allow_indirect_imports = true

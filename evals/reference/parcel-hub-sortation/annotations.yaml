@@ -1,0 +1,80 @@
+slug: parcel-hub-sortation
+title: "[SITE] parcel hub sorter"
+customer: "[CUSTOMER]"
+industry: Parcel and express logistics
+products: [Cross-belt sorter, Dimensioning, Video coding]
+annotator: draft
+requirements:
+  - id: R1
+    text: Cross-belt sorter for 18,000 parcels per hour with 220 chutes
+    source: 01-site-visit-notes.txt
+    quote: "a cross-belt sorter for 18,000 parcels per hour with 220 destination chutes"
+  - id: R2
+    text: Scan, weigh and dimension every parcel before induction
+    source: 01-site-visit-notes.txt
+    quote: "Every parcel must be scanned, weighed and dimensioned in flight"
+  - id: R3
+    text: Receive sort plans and report scans to the host within 2 seconds
+    source: 01-site-visit-notes.txt
+    quote: "receive sort plans from the carrier's host system and report every scan"
+  - id: R4
+    text: Video-coding station for unreadable labels
+    source: 01-site-visit-notes.txt
+    quote: "Unreadable labels go to a video-coding station"
+  - id: R5
+    text: Sorter availability of at least 99.7%
+    source: 02-email-tender-requirements.eml
+    quote: "Sorter availability of at least 99.7%"
+  - id: R6
+    text: Read rate of at least 99.5%
+    source: 02-email-tender-requirements.eml
+    quote: "Read rate of at least 99.5%"
+  - id: R7
+    text: Mis-sort rate below 0.05%
+    source: 02-email-tender-requirements.eml
+    quote: "Mis-sort rate below 0.05%"
+  - id: R8
+    text: Install while the hub runs; shutdown limited to one Saturday night
+    source: 02-email-tender-requirements.eml
+    quote: "any shutdown is limited to one Saturday night"
+  - id: R9
+    text: 24/7 remote support with 30-minute response
+    source: 02-email-tender-requirements.eml
+    quote: "Remote support 24/7 with a 30-minute response"
+  - id: R10
+    text: Sorter controls on a separate network segment
+    source: 02-email-tender-requirements.eml
+    quote: "The sorter controls must be on a network segment separated from our office network"
+gaps:
+  - id: G1
+    keywords: [host interface, socket, protocol, specification]
+    mandatory: true
+  - id: G2
+    keywords: [mezzanine, structural]
+    mandatory: true
+  - id: G3
+    keywords: [power, transformer, kVA]
+    mandatory: true
+  - id: G4
+    keywords: [peak season, December, "25,000"]
+  - id: G5
+    keywords: [postcode database]
+  - id: G6
+    keywords: [cut-over, downtime, shutdown]
+irrelevant_gaps:
+  - label: Non-conveyables are out of scope
+    keywords: [non-conveyable, tyres, long items]
+  - label: Office and staff facilities
+    keywords: [canteen, car park, parking]
+integration_risks:
+  - id: I1
+    keywords: [host, socket, proprietary protocol]
+  - id: I2
+    keywords: [video coding, postcode]
+evidence:
+  - requirement: R3
+    finding_keywords: [host, socket, protocol]
+    supported: true
+  - requirement: R8
+    finding_keywords: [shutdown, cut-over, live operation]
+    supported: true

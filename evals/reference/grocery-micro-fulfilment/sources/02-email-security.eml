@@ -1,0 +1,26 @@
+From: [PERSON_3] <person3@customer.example>
+To: [PERSON_1] <person1@vendor.example>
+Subject: [SITE] micro-fulfilment - security requirements
+Date: Fri, 09 Oct 2026 11:00:00 +0100
+Message-ID: <site-mfc-1009@customer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi [PERSON_1],
+
+Security asked me to pass these on:
+
+- Customer names and addresses must never be stored in the warehouse system; orders are
+  referenced by order number only.
+- All remote access by the vendor must use multi-factor authentication and be logged.
+- The system must pass our annual penetration test; findings rated high must be fixed
+  within 30 days.
+- Card payment data never touches your system; payment stays in the e-commerce platform.
+
+We have not chosen yet which cloud region the grid's control software will run in, if it
+runs in the cloud at all.
+
+Thanks,
+[PERSON_3]
+Store IT, [CUSTOMER]

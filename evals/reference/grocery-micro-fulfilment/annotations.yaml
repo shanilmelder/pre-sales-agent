@@ -1,0 +1,69 @@
+slug: grocery-micro-fulfilment
+title: "[SITE] micro-fulfilment centre"
+customer: "[CUSTOMER]"
+industry: Grocery retail
+products: [Cube storage grid, Pick ports]
+annotator: draft
+requirements:
+  - id: R1
+    text: Cube storage grid with three pick ports for one-hour collection
+    source: 01-workshop-notes.txt
+    quote: "picked from a compact cube storage grid behind the store, with three pick ports"
+  - id: R2
+    text: Ambient and chilled totes in the same grid
+    source: 01-workshop-notes.txt
+    quote: "Ambient and chilled totes in the same grid"
+  - id: R3
+    text: 120 orders per hour at the evening peak
+    source: 01-workshop-notes.txt
+    quote: "Target 120 orders per hour at the evening peak"
+  - id: R4
+    text: One stock figure in the merchandising system, updated every 10 minutes
+    source: 01-workshop-notes.txt
+    quote: "Store stock and grid stock must be one stock figure in the merchandising system"
+  - id: R5
+    text: Installation only at night
+    source: 01-workshop-notes.txt
+    quote: "Installation only at night"
+  - id: R6
+    text: Noise at the collection point below 70 dB
+    source: 01-workshop-notes.txt
+    quote: "Noise at the collection point must stay below 70 dB"
+  - id: R7
+    text: No customer names or addresses in the warehouse system
+    source: 02-email-security.eml
+    quote: "Customer names and addresses must never be stored in the warehouse system"
+  - id: R8
+    text: Vendor remote access with MFA and logging
+    source: 02-email-security.eml
+    quote: "All remote access by the vendor must use multi-factor authentication"
+  - id: R9
+    text: Pass the annual penetration test; fix high findings in 30 days
+    source: 02-email-security.eml
+    quote: "The system must pass our annual penetration test"
+gaps:
+  - id: G1
+    keywords: [Wi-Fi, wireless, network capacity]
+    mandatory: true
+  - id: G2
+    keywords: [floor, flatness, survey]
+    mandatory: true
+  - id: G3
+    keywords: [cloud region, hosting, cloud]
+    mandatory: true
+  - id: G4
+    keywords: [second store, roll-out]
+irrelevant_gaps:
+  - label: Substitutions belong to the platform
+    keywords: [substitution]
+  - label: Payment data is out of scope
+    keywords: [card payment, PCI]
+integration_risks:
+  - id: I1
+    keywords: [e-commerce platform, order interface]
+  - id: I2
+    keywords: [merchandising, stock figure, stock sync]
+evidence:
+  - requirement: R4
+    finding_keywords: [stock, merchandising, 10 minutes]
+    supported: true
