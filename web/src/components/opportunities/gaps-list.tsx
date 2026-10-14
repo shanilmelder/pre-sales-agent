@@ -199,7 +199,7 @@ export function GapsList({
         <span className="w-[4.75rem] shrink-0">Impact</span>
         <span className="hidden w-36 shrink-0 md:block">Affects</span>
         <span className="hidden w-56 shrink-0 lg:block">Trigger</span>
-        <span className="w-24 shrink-0">Question</span>
+        <span className="w-44 shrink-0">Question</span>
       </div>
       <div
         ref={container}
@@ -273,7 +273,7 @@ export function GapsList({
                   <span className="hidden w-56 shrink-0 truncate text-meta text-muted-foreground lg:block">
                     {triggerLabel(item)}
                   </span>
-                  <span className="flex w-24 shrink-0">
+                  <span className="flex w-44 shrink-0">
                     {converted ? (
                       <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full border border-border px-2 text-label text-muted-foreground">
                         {convertedLabel(item.converted_to)}

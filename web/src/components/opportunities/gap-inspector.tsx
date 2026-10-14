@@ -368,7 +368,7 @@ function ImpactForm({ gap, edit }: { gap: Gap; edit: GapEditing }) {
   return (
     <form aria-label="Change impact" onSubmit={onSubmit} className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
-        <label htmlFor={selectId} className="text-meta text-muted-foreground">
+        <label htmlFor={selectId} className="shrink-0 whitespace-nowrap text-meta text-muted-foreground">
           New impact
         </label>
         <select
