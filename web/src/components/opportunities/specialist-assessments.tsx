@@ -71,6 +71,7 @@ import {
   type Recommendation,
 } from "@/lib/assessments";
 import { hours } from "@/lib/estimates";
+import { useOpportunityEvents } from "@/lib/opportunity-events";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import {
   countsLabel,
@@ -623,9 +624,11 @@ function failureMessage(
 }
 
 /** The Assessments tab's Specialist Assessments section: the header, then one card per
- * agent; the selected Finding's inspector goes in the right pane (opened if closed). While a
- * run is queued or running the section is re-read every 2 s: paused while the tab is
- * hidden, and stopped after 15 minutes. Inside a `FindingSelectionProvider` its selection is
+ * agent; the selected Finding's inspector goes in the right pane (opened if closed). It
+ * follows the Opportunity's event stream (Story 5.2) and is re-read as each task starts and
+ * ends, a run is queued or ends, and whenever the stream (re)connects. While the stream is
+ * not connected and a run is queued or running, it falls back to re-reading every 2 s:
+ * paused while the tab is hidden, and stopped after 15 minutes. Inside a `FindingSelectionProvider` its selection is
  * shared with the tab's other sections. Read-only for sales representatives (no Run
  * assessment, Retry or Cancel run). */
 export function SpecialistAssessmentsSection({
@@ -660,6 +663,52 @@ export function SpecialistAssessmentsSection({
   const assessingSince = useRef<number | null>(null);
   const [visible, setVisible] = useState(true);
   const assessing = isAssessing(view.run);
+  /** Whether the shown run is in progress, for re-reads that land later. */
+  const assessingRef = useRef(assessing);
+  useEffect(() => {
+    assessingRef.current = assessing;
+  });
+
+  /** Numbers each re-read; the newest one applied, so an older answer landing later is
+   * dropped (stream events can start re-reads that overlap). */
+  const readSeq = useRef(0);
+  const appliedSeq = useRef(0);
+
+  /** Re-read the section; a read that started before a local change, or before a re-read
+   * already applied, is dropped. When the
+   * run it showed in progress has finished, the tab's server reads (e.g. the Effort
+   * comparison) re-render with its results and the outcome is announced. */
+  const reload = useRef(async (): Promise<boolean> => false);
+  useEffect(() => {
+    reload.current = async () => {
+      const startedAt = mutation.current;
+      readSeq.current += 1;
+      const seq = readSeq.current;
+      const result = await loadAssessments(opportunityId);
+      if (result.kind !== "ok" || mutation.current !== startedAt) return false;
+      if (seq < appliedSeq.current) return false;
+      appliedSeq.current = seq;
+      const wasAssessing = assessingRef.current;
+      setView(result.assessments);
+      const { run, assessments } = result.assessments;
+      if (wasAssessing && run && !isAssessing(run)) {
+        routerRef.current.refresh();
+        announce(
+          run.status === "succeeded" &&
+            assessments.every((s) => s.assessment === null)
+            ? NOTHING_TO_ASSESS
+            : runStatusLabel(run),
+        );
+      }
+      return true;
+    };
+  });
+
+  const live = useOpportunityEvents(opportunityId, () => {
+    reload.current().catch(() => {
+      // A failed re-read is retried on the next event (or poll).
+    });
+  });
 
   // New data from the server (e.g. a navigation refresh) replaces the local copy.
   if (initial !== syncedFrom) {
@@ -717,35 +766,24 @@ export function SpecialistAssessmentsSection({
     }
     assessingSince.current ??= Date.now();
     if (!visible) return;
-    if (Date.now() - assessingSince.current >= REVIEW_POLL_LIMIT_MS) {
+    const elapsed = Date.now() - assessingSince.current;
+    if (elapsed >= REVIEW_POLL_LIMIT_MS) {
       // Past the limit (e.g. hidden through it): say so instead of pulsing forever.
       setStalled(true);
       return;
     }
+    if (live) {
+      // The stream re-reads on events, but a lost run sends none: keep the same limit.
+      const limit = setTimeout(
+        () => setStalled(true),
+        REVIEW_POLL_LIMIT_MS - elapsed,
+      );
+      return () => clearTimeout(limit);
+    }
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const startedAt = mutation.current;
       try {
-        const result = await loadAssessments(opportunityId);
-        if (
-          !cancelled &&
-          result.kind === "ok" &&
-          mutation.current === startedAt
-        ) {
-          setView(result.assessments);
-          const { run, assessments } = result.assessments;
-          if (run && !isAssessing(run)) {
-            // The run this section was polling finished: re-render the tab's server reads
-            // (e.g. the Effort comparison) with its results.
-            routerRef.current.refresh();
-            announce(
-              run.status === "succeeded" &&
-                assessments.every((s) => s.assessment === null)
-                ? NOTHING_TO_ASSESS
-                : runStatusLabel(run),
-            );
-          }
-        }
+        await reload.current();
       } catch {
         // A failed poll is retried on the next tick.
       }
@@ -759,7 +797,7 @@ export function SpecialistAssessmentsSection({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [assessing, visible, opportunityId, pollTick, announce]);
+  }, [assessing, visible, live, pollTick]);
 
   const sectionRef = useRef<HTMLElement>(null);
 

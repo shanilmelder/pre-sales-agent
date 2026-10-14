@@ -99,6 +99,8 @@ services:
       PSA_WORKER_ALIVE_FILE: /tmp/worker-alive
       PSA_JOB_LEASE_S: ${PSA_JOB_LEASE_S:-30}
       PSA_JOB_HEARTBEAT_S: ${PSA_JOB_HEARTBEAT_S:-10}
+      # LangGraph checkpoints deserialize known types only (AD-6, Story 5.2).
+      LANGGRAPH_STRICT_MSGPACK: "true"
       PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
       PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
       # ModelGateway (Story 2.4): host Ollama, reached through host-gateway. `demo-chat`

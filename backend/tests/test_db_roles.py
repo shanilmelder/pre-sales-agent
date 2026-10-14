@@ -1,4 +1,5 @@
-"""The least-privileged app role (migration 0002): default privileges and no DDL."""
+"""The least-privileged app role (migration 0002): default privileges and no DDL outside the
+checkpointer's schema (migration 0028)."""
 
 import psycopg
 import pytest
@@ -32,5 +33,19 @@ def test_app_role_cannot_create_tables_in_public(sync_engine: Engine) -> None:
         assert role == "psa_app", "DB-backed tests must run as psa_app (see README)"
         with pytest.raises(sa.exc.ProgrammingError) as info:
             conn.execute(sa.text("CREATE TABLE public.psa_app_must_not_create (id int)"))
+        assert isinstance(info.value.orig, psycopg.errors.InsufficientPrivilege)
+        conn.rollback()
+
+
+def test_app_role_can_create_the_checkpointer_tables_in_their_own_schema(
+    sync_engine: Engine,
+) -> None:
+    """Story 5.2: the migrations create `orchestration_checkpoints` and grant `psa_app` USAGE
+    and CREATE there, so the worker's checkpointer `setup()` can create its tables."""
+    with sync_engine.connect() as conn:
+        conn.execute(sa.text("CREATE TABLE orchestration_checkpoints.psa_app_probe (id int)"))
+        conn.rollback()
+        with pytest.raises(sa.exc.ProgrammingError) as info:
+            conn.execute(sa.text("CREATE SCHEMA psa_app_must_not_create"))
         assert isinstance(info.value.orig, psycopg.errors.InsufficientPrivilege)
         conn.rollback()

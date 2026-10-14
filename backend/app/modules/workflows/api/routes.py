@@ -1,0 +1,167 @@
+"""Workflows routes (Story 5.2). The assessment run paths and response shapes are unchanged
+from when `assessments` served them (Epic 5 slice 5A, Story 5.5):
+
+- `GET …/assessments`, `POST …/assessment-runs`, `POST …/assessment-runs/{run_id}/tasks/
+  {agent}/retry`, `POST …/assessment-runs/{run_id}/cancel`;
+- `GET …/events`: the Opportunity's event stream (Server-Sent Events, AD-30)."""
+
+from typing import Annotated, Any
+from uuid import UUID
+
+from fastapi import APIRouter, Header, Request
+from fastapi.responses import StreamingResponse
+
+from app.modules.assessments.application.public import AssessmentAgent
+from app.modules.identity.application.public import CurrentPrincipal
+from app.modules.workflows.application import events
+from app.modules.workflows.application import public as workflows
+from app.modules.workflows.application.public import (
+    AssessmentRun,
+    AssessmentsView,
+    ProgressEventData,
+)
+from app.platform.config import Settings
+from app.platform.errors import PROBLEM_JSON, Problem
+from app.platform.uow import UoW
+
+PROBLEM_CONTENT = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
+_DESCRIBED: dict[int, str] = {
+    401: "No valid access token (`token_missing`, `token_expired`, `token_invalid`)",
+    403: "Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner "
+    "or a collaborator, or is a sales representative",
+    404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
+    422: "The Opportunity id is not a UUID (`validation_error`)",
+    4091: "An assessment run is already queued or running (`assessment_in_progress`)",
+    4092: "An assessment run is already queued or running (`assessment_in_progress`), or the "
+    "task is not a failed task of the latest run, or that run was cancelled "
+    "(`assessment_task_not_failed`), or its agent is disabled in the Agent Registry "
+    "(`registry_agent_disabled`)",
+    4093: "The run is not the Opportunity's latest, or is no longer queued or running "
+    "(`assessment_not_in_progress`)",
+    4041: "No Opportunity with this id, or the caller may not see it, or no such assessment "
+    "run for it (`not_found`)",
+    4221: "An id is not a UUID, or the agent is unknown (`validation_error`)",
+    4222: "An id is not a UUID (`validation_error`)",
+    503: "Sign-in service unavailable (`auth_unavailable`)",
+}
+
+
+def _responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    """Problem responses by status; a variant description is keyed status x 10 + n."""
+    return {
+        (code if code < 1000 else code // 10): {
+            "description": _DESCRIBED[code],
+            "content": PROBLEM_CONTENT,
+        }
+        for code in (401, 503, *codes)
+    }
+
+
+router = APIRouter(prefix="/opportunities/{opportunity_id}", tags=["workflows"])
+
+
+@router.get("/assessments", operation_id="get_assessments", responses=_responses(404, 422))
+async def get_assessments(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> AssessmentsView:
+    """The Opportunity's latest assessment run (null before the first) with one task per
+    agent, and per agent (Engineering, PM, Security) its current Assessment or null: the
+    recommendation, confidence with its basis, the Findings critical first (then high, medium
+    and low) with the Requirements they cite, and the effort per Requirement with its total.
+    Anyone who can read the Opportunity."""
+    return await workflows.get_assessments(uow, actor, opportunity_id)
+
+
+@router.post(
+    "/assessment-runs",
+    operation_id="start_assessment_run",
+    status_code=201,
+    responses={
+        **_responses(403, 404, 4091, 422),
+        201: {"description": "The new assessment run, `queued`, with one task per agent"},
+    },
+)
+async def start_assessment_run(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> AssessmentRun:
+    """Start an assessment run: the Engineering, PM and Security Agents assess the
+    Opportunity's active Requirements and open Gaps in parallel. The owner and
+    collaborators, except sales representatives."""
+    return await workflows.start_run(uow, actor, opportunity_id)
+
+
+@router.post(
+    "/assessment-runs/{run_id}/tasks/{agent}/retry",
+    operation_id="retry_assessment_task",
+    status_code=201,
+    responses={
+        **_responses(403, 4041, 4092, 4221),
+        201: {"description": "The run, `queued` again, with the retried task `queued`"},
+    },
+)
+async def retry_assessment_task(
+    opportunity_id: UUID,
+    run_id: UUID,
+    agent: AssessmentAgent,
+    actor: CurrentPrincipal,
+    uow: UoW,
+) -> AssessmentRun:
+    """Re-run one failed task of the Opportunity's latest assessment run; the other tasks
+    keep their results. The owner and collaborators, except sales representatives."""
+    return await workflows.retry_task(uow, actor, opportunity_id, run_id, agent)
+
+
+@router.post(
+    "/assessment-runs/{run_id}/cancel",
+    operation_id="cancel_assessment_run",
+    responses={
+        **_responses(403, 4041, 4093, 4222),
+        200: {"description": "The run, `cancelled`, with its unfinished tasks `skipped`"},
+    },
+)
+async def cancel_assessment_run(
+    opportunity_id: UUID, run_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> AssessmentRun:
+    """Cancel the Opportunity's latest assessment run while it is queued or running: its
+    unfinished tasks are skipped and the Assessments already completed are kept. A cancelled
+    run can't be retried; start a new one instead. The owner and collaborators, except sales
+    representatives."""
+    return await workflows.cancel_run(uow, actor, opportunity_id, run_id)
+
+
+@router.get(
+    "/events",
+    operation_id="stream_opportunity_events",
+    response_class=StreamingResponse,
+    responses={
+        **_responses(404, 422),
+        200: {
+            "description": "Server-Sent Events: `id: <event_id>`, `event: <event_type>`, "
+            "`data:` the JSON below; a comment line every 15 s keeps the connection open",
+            "content": {"text/event-stream": {"schema": ProgressEventData.model_json_schema()}},
+        },
+    },
+)
+async def stream_opportunity_events(
+    opportunity_id: UUID,
+    request: Request,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    last_event_id: Annotated[str | None, Header()] = None,
+) -> StreamingResponse:
+    """The Opportunity's live progress: a run queued, each task started and ended, a run
+    ended. Reconnect with `Last-Event-ID` to replay what was missed. Anyone who can read the
+    Opportunity."""
+    await events.authorize_stream(uow, actor, opportunity_id)
+    settings: Settings = request.app.state.settings
+    stream = events.event_stream(
+        request.app.state.engine,
+        settings.database_url,
+        opportunity_id,
+        events.parse_event_id(last_event_id),
+    )
+    return StreamingResponse(
+        stream,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )

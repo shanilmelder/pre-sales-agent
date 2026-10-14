@@ -712,7 +712,7 @@ def _jobs(engine: Engine, opp_id: str, job_type: str) -> list[dict[str, Any]]:
 def _assessment_runs(engine: Engine, opp_id: str) -> list[dict[str, Any]]:
     return rows(
         engine,
-        "SELECT * FROM assessments_runs WHERE opportunity_id = :o ORDER BY created_at, id",
+        "SELECT * FROM workflows_runs WHERE opportunity_id = :o ORDER BY created_at, id",
         o=opp_id,
     )
 
@@ -734,7 +734,7 @@ def test_a_successful_detection_queues_an_assessment_run(
     assert detection["gap_count"] == len(found)
     (run,) = _assessment_runs(sync_engine, opp["id"])
     assert run["status"] == "queued"
-    tasks = rows(sync_engine, "SELECT * FROM assessments_tasks WHERE run_id = :r", r=run["id"])
+    tasks = rows(sync_engine, "SELECT * FROM workflows_tasks WHERE run_id = :r", r=run["id"])
     assert sorted((t["agent"], t["status"]) for t in tasks) == [
         ("engineering_agent", "queued"),
         ("pm_agent", "queued"),
@@ -750,7 +750,7 @@ def test_a_successful_detection_queues_an_assessment_run(
         "AND event_type = 'assessments.assessment_run.started'",
         o=opp["id"],
     )
-    assert (event["actor_type"], event["actor_id"]) == ("system", "assessments.run_assessment")
+    assert (event["actor_type"], event["actor_id"]) == ("system", "workflows.execute")
     assert (event["subject_id"], event["payload"]) == (run["id"], {"agent_count": 3})
 
 

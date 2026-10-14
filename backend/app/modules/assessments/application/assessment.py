@@ -1,405 +1,269 @@
-"""Specialist assessment runs (Epic 5 slice 5A): the `assessments.run_assessment` job and
+"""Specialist Assessments (Epic 5 slice 5A): the inputs an assessment task reads, and
 `assessments.accept_assessment`.
 
-**Queueing.** `start_run` (the Run assessment API) inserts a `queued` run with one `queued`
-task per specialist agent (`engineering_agent`, `pm_agent`, `security_agent`) and one job
-(background priority). Each task pins its agent's current config version from the Agent
-Registry (Story 7.1): the run uses those versions even if a new one is created meanwhile. A
-task whose agent is `disabled` or `eval_only` is inserted `skipped` with `skip_reason`
-`agent_disabled` ("Agent disabled — assess manually" in the run panel) and
-`assessments.task.skipped` is traced; nobody is notified. `retry_task` puts one `failed`
-task of the latest run back to `queued` (keeping its pinned version; 409
-`registry_agent_disabled` while its agent is not active), queues the run again and enqueues
-a job for it. Both hold the Opportunity's run lock until commit and refuse (409) while one of
-its runs is queued or running.
-`enqueue_run` (Story 5.1: after every successful Gap detection, in its Unit of Work) queues a
-run the same way, attributed to the system, but never refuses with a conflict: while one of
-the Opportunity's runs is queued or running it adds nothing and returns that run's id. Any
-other error (e.g. the database) fails the detection's Unit of Work, as the Estimate-draft
-hand-off does.
+Since Story 5.2 the runs and tasks belong to `workflows`, which executes each task as a node
+of the run's LangGraph graph (`app.orchestration`): the node loads the inputs through
+`load_inputs`, calls the Agent outside any Unit of Work and, in one Unit of Work, locks its
+still-`running` task (a late reply after a cancel is discarded there), submits the result to
+`accept_assessment` and marks the task done through `workflows`. This module never writes
+run or task status.
 
-**The handler** (one job per run; the agents work concurrently inside it).
+`current_sizings` and `current_assessment_snapshots` give `workflows` each agent's current
+Assessment when a run finishes (the Estimate is built from them, Story 8.3, and the Conflict
+rules run over them, Story 6.1).
 
-1. Short Unit of Work: reads the Opportunity's active Requirements at their current versions
-   (`intake.active_requirement_snapshots`), labelled `R<n>`, and its open Gaps
-   (`gaps.open_gap_summaries`), labelled `G<n>`; skips (as at queueing) each task still
-   `queued` whose agent is no longer active; marks the run and its tasks still queued or
-   running `running`. A job attempt only runs tasks not yet finished, so a retried attempt
-   never re-runs a task that succeeded.
-2. No active Requirements: no model call and no Assessment; the tasks and the run succeed.
-3. No Unit of Work open: the agents' calls start together (asyncio) through the ModelGateway,
-   whose slots (`PSA_MODEL_SLOTS`) bound how many run at once. Each result is accepted as it
-   arrives, in its own Unit of Work (`accept_assessment`), which marks that task `succeeded`.
-4. A task whose call or acceptance failed stays `running` while the job has an attempt left
-   (the job then raises, so the queue runs it once more for the unfinished tasks); on the
-   final attempt it is marked `failed` with its `error_code` (`model_unavailable`,
-   `model_timeout` or `output_invalid`).
-5. When no task is left in progress the run is finished: `succeeded` (all tasks did),
-   `partially_failed` (some did) or `failed` (none did), and
-   `assessments.assessment_run.completed` is traced. In the same Unit of Work, when at least
-   one task succeeded, the Estimate is built from each agent's current Assessment
-   (`estimates.build_from_assessments`, Story 8.3); then the Conflict rules run over each
-   agent's current Assessment and the current Estimate draft (`conflicts.detect_for_run`,
-   Story 6.1). A run finished again after a task retry does both again.
-
-A run stuck past `stale_after()` (its job died without recording it) is failed on the next
-start or retry: its unfinished tasks `failed` / `model_timeout`.
-
-**Cancelling** (Story 5.5). `cancel` (the Cancel run API, under the run lock) marks the
-run's unfinished tasks `skipped` and the run `cancelled`. Nothing moves a cancelled run
-again: a queued job for it is skipped (`_start`), a reply arriving afterwards is discarded
-(`accept_assessment` requires the task to be `running`), and `finish_run`, `fail_stale` and
-the final-attempt failure only touch runs and tasks still in progress. While the agents
-work, the handler re-reads the run every `CANCEL_POLL_S` seconds and, once it is
-`cancelled`, cancels the in-flight calls (freeing their model slots) and ends without error.
-
-Logs, trace and `last_error` carry ids, codes and counts only, never Requirement, Gap or
-Finding text.
+Logs and trace carry ids, codes and counts only, never Requirement, Gap or Finding text.
 """
 
-import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import timedelta
 from uuid import UUID
 
-from app.agents.contract import AgentConfig, AgentResult
-from app.agents.engineering_agent.agent import EngineeringAgent
+from app.agents.contract import AgentResult
 from app.agents.engineering_agent.schema import EngineeringOutput
-from app.agents.pm_agent.agent import PmAgent
 from app.agents.pm_agent.schema import PmOutput
-from app.agents.security_agent.agent import SecurityAgent
 from app.agents.security_agent.schema import SecurityOutput
-from app.agents.specialist.agent import GapBlock, RequirementBlock, SpecialistAgent, SpecialistTask
 from app.agents.specialist.schema import SpecialistOutput
 from app.modules.assessments.adapters import assessment_repository as repo
-from app.modules.assessments.adapters.assessment_repository import NewTask, RunRecord
 from app.modules.assessments.domain.assessments import (
     AGENTS,
     ASSESSMENT_SUBJECT_TYPE,
-    RUN_IN_PROGRESS,
-    RUN_SUBJECT_TYPE,
-    TASK_IN_PROGRESS,
     AssessmentAgent,
     AssessmentCandidate,
     AssessmentFindingCandidate,
-    AssessmentRunStatus,
-    AssessmentTaskStatus,
     AssessmentValidation,
     EffortCandidate,
-    TaskSkipReason,
-    run_status,
     validate_assessment,
 )
-from app.modules.assessments.domain.reviews import RunErrorCode, Severity, severity_counts
+from app.modules.assessments.domain.reviews import Severity, severity_counts
 from app.modules.conflicts.application import public as conflicts
 from app.modules.estimates.application import public as estimates
 from app.modules.gaps.application import public as gaps
 from app.modules.intake.application import public as intake
-from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
-from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
-from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
 from app.platform.logging import get_logger
-from app.platform.model_gateway import provider
-from app.platform.model_gateway.port import (
-    ModelGatewayPort,
-    ModelOutputInvalidError,
-    ModelTimeoutError,
-)
-from app.platform.trace.catalogue import (
-    AssessmentsAssessmentCompleted,
-    AssessmentsAssessmentRunCancelled,
-    AssessmentsAssessmentRunCompleted,
-    AssessmentsAssessmentRunStarted,
-    AssessmentsTaskSkipped,
-)
-from app.platform.uow import UnitOfWork, unit_of_work
+from app.platform.model_gateway.port import ModelOutputInvalidError
+from app.platform.trace.catalogue import AssessmentsAssessmentCompleted
+from app.platform.uow import UnitOfWork
 
-RUN_ASSESSMENT = "assessments.run_assessment"
-_RUN_IN_PROGRESS = tuple(sorted(s.value for s in RUN_IN_PROGRESS))
-_TASK_IN_PROGRESS = tuple(sorted(s.value for s in TASK_IN_PROGRESS))
-_RUNNING = (AssessmentTaskStatus.RUNNING.value,)
-_QUEUED = (AssessmentTaskStatus.QUEUED.value,)
-CANCEL_POLL_S = 2.0
-"""How often the handler re-reads its run to notice a cancel while the agents work."""
-_SYSTEM = Actor(type="system", id=RUN_ASSESSMENT)
 _log = get_logger(__name__)
 
-
-class RunAssessment(JobPayload):
-    run_id: UUID
-
-
-def assessment_settings() -> Settings:
-    """Settings for the handler (the chat profile). Tests replace this."""
-    return get_settings()
-
-
-@dataclass(frozen=True, slots=True)
-class _AgentSpec:
-    build: Callable[[ModelGatewayPort, AgentConfig], SpecialistAgent]
-    output: type[SpecialistOutput]
-
-
-_SPECS: dict[AssessmentAgent, _AgentSpec] = {
-    AssessmentAgent.ENGINEERING: _AgentSpec(
-        build=lambda gateway, config: EngineeringAgent(gateway, config=config),
-        output=EngineeringOutput,
-    ),
-    AssessmentAgent.PM: _AgentSpec(
-        build=lambda gateway, config: PmAgent(gateway, config=config),
-        output=PmOutput,
-    ),
-    AssessmentAgent.SECURITY: _AgentSpec(
-        build=lambda gateway, config: SecurityAgent(gateway, config=config),
-        output=SecurityOutput,
-    ),
+_OUTPUTS: dict[AssessmentAgent, type[SpecialistOutput]] = {
+    AssessmentAgent.ENGINEERING: EngineeringOutput,
+    AssessmentAgent.PM: PmOutput,
+    AssessmentAgent.SECURITY: SecurityOutput,
 }
 
 
-# --- queueing -------------------------------------------------------------------------------
+# --- accepting ------------------------------------------------------------------------------
 
 
-def stale_after() -> timedelta:
-    """How long a run may stay `queued` or `running` after it was last queued before it is
-    taken as lost (its job died without recording it): every attempt's timeout and the
-    longest backoff before it, plus five minutes of queue slack."""
-    spec = RUN_ASSESSMENT_JOB
-    return timedelta(seconds=(spec.timeout_s + spec.backoff_cap_s) * spec.max_attempts + 300)
+@dataclass(frozen=True, slots=True)
+class AssessedRequirement:
+    """A Requirement the run read, with its prompt label `R<n>`."""
+
+    label: str
+    requirement_id: UUID
+    version: int
+    classification: str
+    text: str = field(repr=False)
 
 
-async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID:
-    """Insert a `queued` run with one task per agent, its job, and the trace event. Each task
-    pins its agent's current config version; an agent that is not active gets a `skipped`
-    task (`agent_disabled`, traced). The caller holds the Opportunity's run lock."""
-    run_id = new_id()
-    tasks: list[NewTask] = []
-    for agent in AGENTS:
-        current = await registry.current_config(uow, agent.value)
-        tasks.append(
-            NewTask(
-                id=new_id(),
-                agent=agent.value,
-                config_version_id=current.current.id,
-                skip_reason=None if current.runs_tasks else TaskSkipReason.AGENT_DISABLED.value,
+@dataclass(frozen=True, slots=True)
+class AssessedGap:
+    """An open Gap the run read, with its prompt label `G<n>`."""
+
+    label: str
+    category: str
+    impact: str
+    title: str = field(repr=False)
+    why_it_matters: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class AssessmentInputs:
+    """What a task read: the Requirements, the open Gaps and their number."""
+
+    requirements: Sequence[AssessedRequirement]
+    gap_count: int = 0
+    gaps: Sequence[AssessedGap] = field(default=(), repr=False)
+
+
+async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs:
+    """The Opportunity's active Requirements at their current versions, labelled `R<n>`, and
+    its open Gaps, labelled `G<n>` (queries; no authorization)."""
+    snapshots = await intake.active_requirement_snapshots(uow, opportunity_id)
+    open_gaps = await gaps.open_gap_summaries(uow, opportunity_id)
+    return AssessmentInputs(
+        requirements=[
+            AssessedRequirement(
+                label=f"R{s.number}",
+                requirement_id=s.id,
+                version=s.version,
+                classification=s.classification,
+                text=s.text,
             )
-        )
-    await repo.insert_run(uow, run_id=run_id, opportunity_id=opportunity_id, tasks=tasks)
-    await enqueue(uow, RunAssessment(run_id=run_id), opportunity_id=opportunity_id)
-    await _trace_started(uow, run_id, opportunity_id, actor, agent_count=len(AGENTS))
-    for task in tasks:
-        if task.skip_reason is not None:
-            await _trace_skipped(
-                uow,
-                run_id,
-                opportunity_id,
-                actor,
-                task_id=task.id,
-                agent=task.agent,
-                config_version_id=task.config_version_id,
+            for s in snapshots
+        ],
+        gap_count=len(open_gaps),
+        gaps=[
+            AssessedGap(
+                label=f"G{n}",
+                category=g.category,
+                impact=g.impact,
+                title=g.title,
+                why_it_matters=g.why_it_matters,
             )
-    return run_id
+            for n, g in enumerate(open_gaps, start=1)
+        ],
+    )
 
 
-async def _trace_skipped(
+def proposal(agent: AssessmentAgent, result: AgentResult) -> SpecialistOutput:
+    """The agent's proposed Assessment, re-validated (AD-4). Raises `ModelOutputInvalidError`
+    when the extension is missing or malformed."""
+    raw = result.extensions.get(agent.value)
+    try:
+        return _OUTPUTS[agent].model_validate(raw)
+    except ValueError:
+        raise ModelOutputInvalidError(f"The {agent.value} extension is not valid.") from None
+
+
+def candidate(output: SpecialistOutput) -> AssessmentCandidate:
+    return AssessmentCandidate(
+        recommendation=output.recommendation,
+        confidence=output.confidence,
+        confidence_basis=output.confidence_basis,
+        findings=[
+            AssessmentFindingCandidate(
+                kind=f.kind,
+                severity=f.severity,
+                title=f.title,
+                detail=f.detail,
+                requirements=tuple(f.requirements),
+            )
+            for f in output.findings
+        ],
+        effort=[
+            EffortCandidate(requirement=e.requirement, hours=e.hours, basis=e.basis)
+            for e in output.effort
+        ],
+    )
+
+
+async def accept_assessment(
     uow: UnitOfWork,
-    run_id: UUID,
-    opportunity_id: UUID,
-    actor: Actor,
     *,
-    task_id: UUID,
-    agent: str,
+    opportunity_id: UUID,
+    run_id: UUID,
+    agent: AssessmentAgent,
     config_version_id: UUID,
-) -> None:
-    await trace.append(
-        uow,
-        actor=actor,
-        payload=AssessmentsTaskSkipped(
-            run_id=str(run_id),
-            task_id=str(task_id),
-            agent=agent,
-            config_version_id=str(config_version_id),
-            reason=TaskSkipReason.AGENT_DISABLED.value,
-        ),
-        subject_type=RUN_SUBJECT_TYPE,
-        subject_id=run_id,
-        opportunity_id=opportunity_id,
-    )
-    _log.info(
-        "assessments.assessment_task_skipped_disabled",
-        extra={"run_id": str(run_id), "agent": agent, "config_version_id": str(config_version_id)},
-    )
+    result: AgentResult,
+    inputs: AssessmentInputs,
+    actor: Actor,
+) -> AssessmentValidation[tuple[UUID, int]]:
+    """`assessments.accept_assessment`: validate the agent's reply and store it as the
+    agent's new `current` Assessment of the Opportunity, superseding its earlier one, and
+    trace it. `run_id` and `config_version_id`: the Workflow Run and the registry config
+    version the task pinned (stored with it). The caller (the task's node) has locked the
+    task as still `running` in this Unit of Work and marks it done after.
 
+    Raises `ModelOutputInvalidError` (and writes nothing) when the recommendation or
+    confidence is missing or invalid, or when no Finding is valid, so the task runs again.
+    Invalid Findings and effort rows are dropped and counted."""
+    await repo.lock_agent(uow, opportunity_id, agent.value)
+    ids = {"run_id": str(run_id), "opportunity_id": str(opportunity_id)}
 
-async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
-    """Queue an assessment run of the Opportunity in the caller's Unit of Work, as the
-    system, unless one of its runs is already queued or running: then that run's id is
-    returned and nothing added (a running run keeps the inputs it read). Lost runs are
-    failed first. Never refuses with a conflict; any other error (e.g. the database) fails
-    the caller's Unit of Work."""
-    await repo.lock_runs(uow, opportunity_id)
-    await fail_stale(uow, opportunity_id)
-    ids = {"opportunity_id": str(opportunity_id)}
-    active = await repo.run_in_progress(uow, opportunity_id)
-    if active is not None:
-        _log.info("assessments.assessment_run_coalesced", extra={**ids, "run_id": str(active)})
-        return active
-    run_id = await queue_run(uow, opportunity_id, _SYSTEM)
-    _log.info("assessments.assessment_run_queued", extra={**ids, "run_id": str(run_id)})
-    return run_id
-
-
-async def requeue_task(
-    uow: UnitOfWork, run: RunRecord, agent: AssessmentAgent, actor: Actor
-) -> None:
-    """Put the run's `failed` task of `agent` back to `queued`, queue the run again and
-    enqueue a job for it. The caller holds the Opportunity's run lock and has checked the
-    task is `failed`."""
-    await repo.update_tasks(
-        uow,
-        run.id,
-        agents=[agent.value],
-        from_statuses=(AssessmentTaskStatus.FAILED.value,),
-        status=AssessmentTaskStatus.QUEUED.value,
-        reset=True,
-    )
-    await repo.set_run_status(
-        uow,
-        run.id,
-        from_statuses=tuple(s.value for s in AssessmentRunStatus),
-        status=AssessmentRunStatus.QUEUED.value,
-        requeued=True,
-    )
-    await enqueue(uow, RunAssessment(run_id=run.id), opportunity_id=run.opportunity_id)
-    await _trace_started(uow, run.id, run.opportunity_id, actor, agent_count=1)
-
-
-async def _trace_started(
-    uow: UnitOfWork, run_id: UUID, opportunity_id: UUID, actor: Actor, *, agent_count: int
-) -> None:
-    await trace.append(
-        uow,
-        actor=actor,
-        payload=AssessmentsAssessmentRunStarted(agent_count=agent_count),
-        subject_type=RUN_SUBJECT_TYPE,
-        subject_id=run_id,
-        opportunity_id=opportunity_id,
-    )
-
-
-async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, int]:
-    """Cancel the run: its unfinished tasks `skipped` (a started one keeps when it stopped,
-    for its duration), the run `cancelled` and finished, and the trace event. Assessments
-    already accepted stay current. The caller holds the Opportunity's run lock and has
-    checked the run is queued or running. Returns (skipped, succeeded) task counts."""
-    stopped = await repo.update_tasks(
-        uow,
-        run.id,
-        from_statuses=_RUNNING,
-        status=AssessmentTaskStatus.SKIPPED.value,
-        finished=True,
-    )
-    unstarted = await repo.update_tasks(
-        uow, run.id, from_statuses=_QUEUED, status=AssessmentTaskStatus.SKIPPED.value
-    )
-    await repo.set_run_status(
-        uow,
-        run.id,
-        from_statuses=_RUN_IN_PROGRESS,
-        status=AssessmentRunStatus.CANCELLED.value,
-        finished=True,
-    )
-    tasks = await repo.tasks_of(uow, run.id)
-    succeeded = sum(1 for t in tasks if t.status == AssessmentTaskStatus.SUCCEEDED)
-    skipped = len(stopped) + len(unstarted)
-    await trace.append(
-        uow,
-        actor=actor,
-        payload=AssessmentsAssessmentRunCancelled(skipped_count=skipped, succeeded_count=succeeded),
-        subject_type=RUN_SUBJECT_TYPE,
-        subject_id=run.id,
-        opportunity_id=run.opportunity_id,
-    )
-    if succeeded:
-        # Story 8.3: the Assessments that completed before the cancel are current, so the
-        # Estimate is built from them and the Conflicts re-checked, as `finish_run` does.
-        await estimates.build_from_assessments(
-            uow, run.opportunity_id, run.id, await current_sizings(uow, run.opportunity_id)
-        )
-        await detect_conflicts(uow, run.opportunity_id, run.id)
-    return skipped, succeeded
-
-
-async def fail_stale(uow: UnitOfWork, opportunity_id: UUID) -> None:
-    """Fail the Opportunity's lost runs: their unfinished tasks `failed` / `model_timeout`
-    (with no `finished_at`: when they stopped is unknown), then the run finished. The caller
-    holds the Opportunity's run lock."""
-    lost = await repo.stale_runs(uow, opportunity_id, older_than=stale_after())
-    for run_id in lost:
-        await repo.update_tasks(
-            uow,
-            run_id,
-            from_statuses=_TASK_IN_PROGRESS,
-            status=AssessmentTaskStatus.FAILED.value,
-            error_code=RunErrorCode.MODEL_TIMEOUT.value,
-        )
-        await finish_run(uow, run_id)
-    if lost:
+    proposed = candidate(proposal(agent, result))
+    current = {
+        (s.id, s.version) for s in await intake.active_requirement_snapshots(uow, opportunity_id)
+    }
+    labels = {
+        r.label: (r.requirement_id, r.version)
+        for r in inputs.requirements
+        if (r.requirement_id, r.version) in current
+    }
+    validation = validate_assessment(proposed, labels)
+    if validation is None:
+        _log.info("assessments.assessment_reply_invalid", extra={**ids, "agent": agent.value})
+        raise ModelOutputInvalidError(f"The {agent.value} recommendation or confidence is invalid.")
+    if not validation.findings:
         _log.info(
-            "assessments.assessment_run_stale_failed",
-            extra={"opportunity_id": str(opportunity_id), "count": len(lost)},
+            "assessments.assessment_all_invalid",
+            extra={**ids, "agent": agent.value, "dropped_count": validation.dropped},
         )
+        raise ModelOutputInvalidError(f"No proposed {agent.value} Finding was valid.")
 
-
-async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | None:
-    """When none of the run's tasks is left in progress, record the run's final status
-    (from its tasks') and trace it; None (and no change) otherwise, or when it is already
-    finished."""
-    record = await repo.get_run(uow, run_id, for_update=True)
-    if record is None or AssessmentRunStatus(record.status) not in RUN_IN_PROGRESS:
-        return None
-    tasks = await repo.tasks_of(uow, run_id)
-    statuses = [AssessmentTaskStatus(t.status) for t in tasks]
-    if any(s in TASK_IN_PROGRESS for s in statuses):
-        return None
-    status = run_status(statuses)
-    await repo.set_run_status(
-        uow, run_id, from_statuses=_RUN_IN_PROGRESS, status=status.value, finished=True
+    superseded = await repo.supersede_assessments(uow, opportunity_id, agent.value)
+    number = await repo.latest_assessment_number(uow, opportunity_id, agent.value) + 1
+    assessment_id = new_id()
+    await repo.insert_assessment(
+        uow,
+        assessment_id=assessment_id,
+        opportunity_id=opportunity_id,
+        agent=agent.value,
+        version=number,
+        run_id=run_id,
+        config_version_id=config_version_id,
+        recommendation=validation.recommendation.value,
+        confidence=validation.confidence.value,
+        confidence_basis=validation.confidence_basis,
+        dropped_count=validation.dropped,
+        findings=[
+            repo.NewFinding(
+                position=position,
+                kind=f.kind.value,
+                severity=f.severity.value,
+                title=f.title,
+                detail=f.detail,
+                requirements=list(f.requirements),
+            )
+            for position, f in enumerate(validation.findings, start=1)
+        ],
+        effort=[
+            repo.NewEffort(
+                requirement_id=e.requirement[0],
+                requirement_version=e.requirement[1],
+                hours=e.hours,
+                basis=e.basis,
+            )
+            for e in validation.effort
+        ],
     )
-    succeeded = sum(1 for s in statuses if s == AssessmentTaskStatus.SUCCEEDED)
-    completed = AssessmentsAssessmentRunCompleted(
-        status=status.value,
-        task_count=len(statuses),
-        succeeded_count=succeeded,
-        failed_count=len(statuses) - succeeded,
+    counts = severity_counts(f.severity for f in validation.findings)
+    completed = AssessmentsAssessmentCompleted(
+        run_id=str(run_id),
+        agent=agent.value,
+        version=number,
+        recommendation=validation.recommendation.value,
+        confidence=validation.confidence.value,
+        finding_count=len(validation.findings),
+        critical_count=counts[Severity.CRITICAL],
+        high_count=counts[Severity.HIGH],
+        medium_count=counts[Severity.MEDIUM],
+        low_count=counts[Severity.LOW],
+        effort_count=len(validation.effort),
+        dropped_count=validation.dropped,
+        requirement_count=len(inputs.requirements),
+        gap_count=inputs.gap_count,
+        superseded_count=superseded,
     )
     await trace.append(
         uow,
-        actor=_SYSTEM,
+        actor=actor,
         payload=completed,
-        subject_type=RUN_SUBJECT_TYPE,
-        subject_id=run_id,
-        opportunity_id=record.opportunity_id,
+        subject_type=ASSESSMENT_SUBJECT_TYPE,
+        subject_id=assessment_id,
+        subject_version=number,
+        opportunity_id=opportunity_id,
     )
     _log.info(
-        "assessments.assessment_run_finished",
-        extra={
-            "run_id": str(run_id),
-            "opportunity_id": str(record.opportunity_id),
-            **completed.model_dump(),
-        },
+        "assessments.assessment_accepted",
+        extra={**ids, "assessment_id": str(assessment_id), **completed.model_dump()},
     )
-    if succeeded:
-        # Story 8.3: the Estimate is built from the agents' current Assessments, before the
-        # Conflict detection, which therefore compares against this new version.
-        await estimates.build_from_assessments(
-            uow, record.opportunity_id, run_id, await current_sizings(uow, record.opportunity_id)
-        )
-    await detect_conflicts(uow, record.opportunity_id, run_id)
-    return status
+    return validation
 
 
 async def current_assessment_snapshots(
@@ -458,570 +322,3 @@ async def current_sizings(uow: UnitOfWork, opportunity_id: UUID) -> list[estimat
         )
         for r in records
     ]
-
-
-async def detect_conflicts(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> None:
-    """Run the Conflict rules for the finished run (Story 6.1) over each agent's current
-    Assessment and the current Estimate draft, read now."""
-    snapshots = await current_assessment_snapshots(uow, opportunity_id)
-    lines = await estimates.current_version_lines(uow, opportunity_id)
-    estimate = (
-        None
-        if lines is None
-        else conflicts.EstimateSnapshot(
-            version_id=lines.version_id,
-            version=lines.version,
-            lines=tuple(
-                conflicts.EstimateLineSnapshot(
-                    effort_hours=line.effort_hours, requirement_ids=line.requirement_ids
-                )
-                for line in lines.lines
-            ),
-        )
-    )
-    await conflicts.detect_for_run(uow, opportunity_id, run_id, snapshots, estimate)
-
-
-# --- accepting ------------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class AssessedRequirement:
-    """A Requirement the run read, with its prompt label `R<n>`."""
-
-    label: str
-    requirement_id: UUID
-    version: int
-    classification: str
-    text: str = field(repr=False)
-
-
-@dataclass(frozen=True, slots=True)
-class AssessmentInputs:
-    """What the run read: the Requirements and the number of open Gaps."""
-
-    requirements: Sequence[AssessedRequirement]
-    gap_count: int = 0
-
-
-def proposal(agent: AssessmentAgent, result: AgentResult) -> SpecialistOutput:
-    """The agent's proposed Assessment, re-validated (AD-4). Raises `ModelOutputInvalidError`
-    when the extension is missing or malformed."""
-    raw = result.extensions.get(agent.value)
-    try:
-        return _SPECS[agent].output.model_validate(raw)
-    except ValueError:
-        raise ModelOutputInvalidError(f"The {agent.value} extension is not valid.") from None
-
-
-def candidate(output: SpecialistOutput) -> AssessmentCandidate:
-    return AssessmentCandidate(
-        recommendation=output.recommendation,
-        confidence=output.confidence,
-        confidence_basis=output.confidence_basis,
-        findings=[
-            AssessmentFindingCandidate(
-                kind=f.kind,
-                severity=f.severity,
-                title=f.title,
-                detail=f.detail,
-                requirements=tuple(f.requirements),
-            )
-            for f in output.findings
-        ],
-        effort=[
-            EffortCandidate(requirement=e.requirement, hours=e.hours, basis=e.basis)
-            for e in output.effort
-        ],
-    )
-
-
-async def accept_assessment(
-    uow: UnitOfWork,
-    *,
-    run_id: UUID,
-    agent: AssessmentAgent,
-    result: AgentResult,
-    inputs: AssessmentInputs,
-    actor: Actor,
-) -> AssessmentValidation[tuple[UUID, int]] | None:
-    """`assessments.accept_assessment`: validate the agent's reply and store it as the
-    agent's new `current` Assessment of the Opportunity, superseding its earlier one; mark
-    the task `succeeded` and trace it. Returns None (and writes nothing) unless the task is
-    still `running`.
-
-    Raises `ModelOutputInvalidError` (and writes nothing) when the recommendation or
-    confidence is missing or invalid, or when no Finding is valid, so the task runs again.
-    Invalid Findings and effort rows are dropped and counted."""
-    task = await repo.get_task(uow, run_id, agent.value)
-    record = await repo.get_run(uow, run_id)
-    if task is None or record is None:
-        return None
-    await repo.lock_agent(uow, record.opportunity_id, agent.value)
-    task = await repo.get_task(uow, run_id, agent.value, for_update=True)
-    if task is None or task.status != AssessmentTaskStatus.RUNNING:
-        return None
-    ids = {"run_id": str(run_id), "opportunity_id": str(record.opportunity_id)}
-
-    proposed = candidate(proposal(agent, result))
-    current = {
-        (s.id, s.version)
-        for s in await intake.active_requirement_snapshots(uow, record.opportunity_id)
-    }
-    labels = {
-        r.label: (r.requirement_id, r.version)
-        for r in inputs.requirements
-        if (r.requirement_id, r.version) in current
-    }
-    validation = validate_assessment(proposed, labels)
-    if validation is None:
-        _log.info("assessments.assessment_reply_invalid", extra={**ids, "agent": agent.value})
-        raise ModelOutputInvalidError(f"The {agent.value} recommendation or confidence is invalid.")
-    if not validation.findings:
-        _log.info(
-            "assessments.assessment_all_invalid",
-            extra={**ids, "agent": agent.value, "dropped_count": validation.dropped},
-        )
-        raise ModelOutputInvalidError(f"No proposed {agent.value} Finding was valid.")
-
-    superseded = await repo.supersede_assessments(uow, record.opportunity_id, agent.value)
-    number = await repo.latest_assessment_number(uow, record.opportunity_id, agent.value) + 1
-    assessment_id = new_id()
-    await repo.insert_assessment(
-        uow,
-        assessment_id=assessment_id,
-        opportunity_id=record.opportunity_id,
-        agent=agent.value,
-        version=number,
-        run_id=run_id,
-        config_version_id=task.config_version_id,
-        recommendation=validation.recommendation.value,
-        confidence=validation.confidence.value,
-        confidence_basis=validation.confidence_basis,
-        dropped_count=validation.dropped,
-        findings=[
-            repo.NewFinding(
-                position=position,
-                kind=f.kind.value,
-                severity=f.severity.value,
-                title=f.title,
-                detail=f.detail,
-                requirements=list(f.requirements),
-            )
-            for position, f in enumerate(validation.findings, start=1)
-        ],
-        effort=[
-            repo.NewEffort(
-                requirement_id=e.requirement[0],
-                requirement_version=e.requirement[1],
-                hours=e.hours,
-                basis=e.basis,
-            )
-            for e in validation.effort
-        ],
-    )
-    counts = severity_counts(f.severity for f in validation.findings)
-    completed = AssessmentsAssessmentCompleted(
-        run_id=str(run_id),
-        agent=agent.value,
-        version=number,
-        recommendation=validation.recommendation.value,
-        confidence=validation.confidence.value,
-        finding_count=len(validation.findings),
-        critical_count=counts[Severity.CRITICAL],
-        high_count=counts[Severity.HIGH],
-        medium_count=counts[Severity.MEDIUM],
-        low_count=counts[Severity.LOW],
-        effort_count=len(validation.effort),
-        dropped_count=validation.dropped,
-        requirement_count=len(inputs.requirements),
-        gap_count=inputs.gap_count,
-        superseded_count=superseded,
-    )
-    await trace.append(
-        uow,
-        actor=actor,
-        payload=completed,
-        subject_type=ASSESSMENT_SUBJECT_TYPE,
-        subject_id=assessment_id,
-        subject_version=number,
-        opportunity_id=record.opportunity_id,
-    )
-    await repo.update_tasks(
-        uow,
-        run_id,
-        agents=[agent.value],
-        from_statuses=_RUNNING,
-        status=AssessmentTaskStatus.SUCCEEDED.value,
-        finished=True,
-    )
-    _log.info(
-        "assessments.assessment_accepted",
-        extra={**ids, "assessment_id": str(assessment_id), **completed.model_dump()},
-    )
-    return validation
-
-
-# --- the handler ----------------------------------------------------------------------------
-
-
-def error_code(exc: BaseException) -> RunErrorCode:
-    """A task's `error_code` for the error that failed it."""
-    if isinstance(exc, ModelTimeoutError):
-        return RunErrorCode.MODEL_TIMEOUT
-    if isinstance(exc, ModelOutputInvalidError):
-        return RunErrorCode.OUTPUT_INVALID
-    # The gateway unreachable or missing, or anything else that kept the model from
-    # answering.
-    return RunErrorCode.MODEL_UNAVAILABLE
-
-
-async def _fail_open(ctx: JobContext, run_id: UUID, code: RunErrorCode) -> bool:
-    """Mark the run's unfinished tasks `failed` with `code` and finish the run. True when a
-    task changed. A cancelled run has no unfinished task and is already finished, so it is
-    left alone."""
-    async with unit_of_work(ctx.engine) as uow:
-        record = await repo.get_run(uow, run_id)
-        if record is None:
-            return False
-        await repo.lock_runs(uow, record.opportunity_id)
-        failed = await repo.update_tasks(
-            uow,
-            run_id,
-            from_statuses=_TASK_IN_PROGRESS,
-            status=AssessmentTaskStatus.FAILED.value,
-            error_code=code.value,
-            finished=True,
-        )
-        await finish_run(uow, run_id)
-        return bool(failed)
-
-
-async def run_assessment(ctx: JobContext, payload: RunAssessment) -> None:
-    """The handler. On the job's final attempt any error outside the agents' tasks first
-    marks the unfinished tasks `failed` and finishes the run (best effort), so none is left
-    `running` once its job is dead; then it re-raises."""
-    ids = {"run_id": str(payload.run_id), "job_id": str(ctx.job_id)}
-    try:
-        await _run(ctx, payload)
-    except asyncio.CancelledError:
-        # The job's timeout (or a stopping worker) cancelled the run. On the final attempt
-        # nothing will run it again, so record it as timed out, shielded from the
-        # cancellation, then let the cancellation through.
-        if ctx.attempt >= ctx.max_attempts:
-            await _fail_open_shielded(ctx, payload.run_id, ids)
-        raise
-    except Exception as exc:
-        code = error_code(exc)
-        if ctx.attempt >= ctx.max_attempts:
-            try:
-                recorded = await _fail_open(ctx, payload.run_id, code)
-            except Exception as mark_exc:  # e.g. the database is down: the job still dies
-                _log.warning(
-                    "assessments.assessment_fail_unrecorded",
-                    extra={**ids, "exc_type": type(mark_exc).__name__},
-                )
-            else:
-                _log.info(
-                    "assessments.assessment_failed",
-                    extra={**ids, "error_code": code.value, "recorded": recorded},
-                )
-        else:
-            _log.warning(
-                "assessments.assessment_retrying",
-                extra={**ids, "exc_type": type(exc).__name__, "error_code": code.value},
-            )
-        raise
-
-
-async def _fail_open_shielded(ctx: JobContext, run_id: UUID, ids: dict[str, str]) -> None:
-    write = asyncio.ensure_future(_fail_open(ctx, run_id, RunErrorCode.MODEL_TIMEOUT))
-    try:
-        recorded = await asyncio.shield(write)
-    except asyncio.CancelledError:  # cancelled again: still let the write land
-        await asyncio.wait({write})
-        recorded = not write.cancelled() and write.exception() is None and write.result()
-    except Exception as exc:
-        _log.warning(
-            "assessments.assessment_fail_unrecorded",
-            extra={**ids, "exc_type": type(exc).__name__},
-        )
-        return
-    _log.info(
-        "assessments.assessment_failed",
-        extra={**ids, "error_code": RunErrorCode.MODEL_TIMEOUT.value, "recorded": recorded},
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class _Started:
-    opportunity_id: UUID
-    agents: tuple[AssessmentAgent, ...]
-    inputs: AssessmentInputs
-    versions: dict[AssessmentAgent, registry.ConfigVersion]
-    """The config version each started task pinned when its run was queued."""
-    gaps: list[GapBlock] = field(repr=False)
-
-
-async def _skip_disabled(uow: UnitOfWork, run: RunRecord) -> None:
-    """Skip the run's tasks still `queued` whose agent is no longer active in the Agent
-    Registry (`agent_disabled`, traced as the system). Running tasks finish."""
-    for task in await repo.tasks_of(uow, run.id):
-        if task.status != AssessmentTaskStatus.QUEUED:
-            continue
-        current = await registry.current_config(uow, task.agent)
-        if current.runs_tasks:
-            continue
-        skipped = await repo.update_tasks(
-            uow,
-            run.id,
-            agents=[task.agent],
-            from_statuses=_QUEUED,
-            status=AssessmentTaskStatus.SKIPPED.value,
-            skip_reason=TaskSkipReason.AGENT_DISABLED.value,
-        )
-        if skipped:
-            await _trace_skipped(
-                uow,
-                run.id,
-                run.opportunity_id,
-                _SYSTEM,
-                task_id=task.id,
-                agent=task.agent,
-                config_version_id=task.config_version_id,
-            )
-
-
-async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
-    """Read the Opportunity's active Requirements and open Gaps, and mark the run and its
-    unfinished tasks `running`; None if the run is no longer queued or running (a duplicate
-    or late job)."""
-    async with unit_of_work(ctx.engine) as uow:
-        record = await repo.get_run(uow, run_id)
-        if record is None:
-            return None
-        await repo.lock_runs(uow, record.opportunity_id)
-        record = await repo.get_run(uow, run_id, for_update=True)
-        if record is None or AssessmentRunStatus(record.status) not in RUN_IN_PROGRESS:
-            return None
-        await _skip_disabled(uow, record)
-        snapshots = await intake.active_requirement_snapshots(uow, record.opportunity_id)
-        open_gaps = await gaps.open_gap_summaries(uow, record.opportunity_id)
-        started = await repo.update_tasks(
-            uow,
-            run_id,
-            from_statuses=_TASK_IN_PROGRESS,
-            status=AssessmentTaskStatus.RUNNING.value,
-            started=True,
-        )
-        if not started:  # nothing left to do: finish what an earlier attempt left open
-            await finish_run(uow, run_id)
-            return None
-        await repo.set_run_status(
-            uow,
-            run_id,
-            from_statuses=_RUN_IN_PROGRESS,
-            status=AssessmentRunStatus.RUNNING.value,
-        )
-        pinned = {
-            AssessmentAgent(t.agent): t.config_version_id
-            for t in await repo.tasks_of(uow, run_id)
-            if t.agent in started
-        }
-        versions = await registry.get_config_versions(uow, list(pinned.values()))
-        return _Started(
-            opportunity_id=record.opportunity_id,
-            agents=tuple(a for a in AGENTS if a.value in started),
-            versions={agent: versions[version_id] for agent, version_id in pinned.items()},
-            inputs=AssessmentInputs(
-                requirements=[
-                    AssessedRequirement(
-                        label=f"R{s.number}",
-                        requirement_id=s.id,
-                        version=s.version,
-                        classification=s.classification,
-                        text=s.text,
-                    )
-                    for s in snapshots
-                ],
-                gap_count=len(open_gaps),
-            ),
-            gaps=[
-                GapBlock(
-                    label=f"G{n}",
-                    category=g.category,
-                    impact=g.impact,
-                    title=g.title,
-                    why_it_matters=g.why_it_matters,
-                )
-                for n, g in enumerate(open_gaps, start=1)
-            ],
-        )
-
-
-async def _task(
-    ctx: JobContext,
-    run_id: UUID,
-    agent: AssessmentAgent,
-    started: _Started,
-    settings: Settings,
-) -> BaseException | None:
-    """One agent's task: the model call, then acceptance in its own Unit of Work. Returns
-    the error that failed it (None when it succeeded or was no longer running). On the final
-    attempt a failed task is marked `failed`; before that it stays `running` for the next
-    attempt."""
-    ids = {"run_id": str(run_id), "agent": agent.value}
-    config = registry.agent_config(started.versions[agent], settings)
-    try:
-        specialist = _SPECS[agent].build(provider.current(), config)
-        result = await specialist.run(
-            SpecialistTask(
-                opportunity_id=started.opportunity_id,
-                run_id=run_id,
-                requirements=[
-                    RequirementBlock(r.label, r.classification, r.text)
-                    for r in started.inputs.requirements
-                ],
-                gaps=started.gaps,
-            )
-        )
-        async with unit_of_work(ctx.engine) as uow:
-            accepted = await accept_assessment(
-                uow,
-                run_id=run_id,
-                agent=agent,
-                result=result,
-                inputs=started.inputs,
-                actor=Actor(type="agent", id=config.actor_id),
-            )
-        if accepted is None:
-            _log.info("assessments.assessment_task_skipped", extra=ids)
-        return None
-    except Exception as exc:
-        code = error_code(exc)
-        if ctx.attempt >= ctx.max_attempts:
-            async with unit_of_work(ctx.engine) as uow:
-                await repo.update_tasks(
-                    uow,
-                    run_id,
-                    agents=[agent.value],
-                    from_statuses=_TASK_IN_PROGRESS,
-                    status=AssessmentTaskStatus.FAILED.value,
-                    error_code=code.value,
-                    finished=True,
-                )
-            _log.info("assessments.assessment_task_failed", extra={**ids, "error_code": code.value})
-        else:
-            _log.warning(
-                "assessments.assessment_task_retrying",
-                extra={**ids, "exc_type": type(exc).__name__, "error_code": code.value},
-            )
-        return exc
-
-
-async def _cancelled(ctx: JobContext, run_id: UUID) -> bool:
-    """Whether the run has been cancelled (a short read, no lock)."""
-    async with unit_of_work(ctx.engine) as uow:
-        record = await repo.get_run(uow, run_id)
-    return record is not None and record.status == AssessmentRunStatus.CANCELLED
-
-
-async def _cancelled_or_unknown(ctx: JobContext, run_id: UUID) -> bool:
-    """`_cancelled`, but a failed read is logged and taken as not cancelled, so the task's own
-    error (and its code) still decides what happens to the job."""
-    try:
-        return await _cancelled(ctx, run_id)
-    except Exception as exc:
-        _log.warning(
-            "assessments.assessment_cancel_check_failed",
-            extra={"run_id": str(run_id), "exc_type": type(exc).__name__},
-        )
-        return False
-
-
-async def _watch_cancel(
-    ctx: JobContext, run_id: UUID, tasks: Sequence[asyncio.Task[BaseException | None]]
-) -> bool:
-    """Re-read the run every `CANCEL_POLL_S` seconds; once it is cancelled, cancel the
-    agents' tasks (their in-flight model calls release their slots) and return True. A
-    failed read is logged and tried again at the next tick."""
-    while True:
-        await asyncio.sleep(CANCEL_POLL_S)
-        if await _cancelled_or_unknown(ctx, run_id):
-            for task in tasks:
-                task.cancel()
-            return True
-
-
-async def _run(ctx: JobContext, payload: RunAssessment) -> None:
-    settings = assessment_settings()
-    run_id = payload.run_id
-    ids: dict[str, object] = {"run_id": str(run_id)}
-    started = await _start(ctx, run_id)
-    if started is None:
-        _log.info("assessments.assessment_run_skipped", extra=ids)
-        return
-    ids["opportunity_id"] = str(started.opportunity_id)
-
-    if not started.inputs.requirements:  # nothing to assess: no model call, no Assessment
-        async with unit_of_work(ctx.engine) as uow:
-            await repo.lock_runs(uow, started.opportunity_id)
-            await repo.update_tasks(
-                uow,
-                run_id,
-                from_statuses=_RUNNING,
-                status=AssessmentTaskStatus.SUCCEEDED.value,
-                finished=True,
-            )
-            await finish_run(uow, run_id)
-        _log.info("assessments.assessment_run_empty", extra=ids)
-        return
-
-    tasks = [
-        asyncio.create_task(_task(ctx, run_id, agent, started, settings))
-        for agent in started.agents
-    ]
-    watcher = asyncio.create_task(_watch_cancel(ctx, run_id, tasks))
-    try:
-        # `return_exceptions`: a task whose failure could not even be recorded (e.g. the
-        # database dropped) must not abandon its siblings mid-call; its error is collected
-        # like theirs. A task the watcher cancelled is collected as its CancelledError.
-        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
-    finally:
-        watcher.cancel()
-        await asyncio.wait({watcher})
-    stopped = not watcher.cancelled() and watcher.exception() is None and watcher.result()
-    errors = [error for error in outcomes if isinstance(error, BaseException)]
-    if stopped:
-        # Cancelled by a person: the cancel already recorded the run; nothing to retry.
-        _log.info("assessments.assessment_run_cancelled_stopped", extra=ids)
-        return
-    if errors and ctx.attempt < ctx.max_attempts:
-        if await _cancelled_or_unknown(ctx, run_id):  # cancelled meanwhile: no retry
-            _log.info("assessments.assessment_run_cancelled_stopped", extra=ids)
-            return
-        raise errors[0]  # the queue runs the job again for the unfinished tasks
-    async with unit_of_work(ctx.engine) as uow:
-        await repo.lock_runs(uow, started.opportunity_id)
-        await finish_run(uow, run_id)
-    if errors:
-        if await _cancelled_or_unknown(ctx, run_id):  # cancelled meanwhile: not dead
-            _log.info("assessments.assessment_run_cancelled_stopped", extra=ids)
-            return
-        raise errors[0]  # recorded; the job ends dead, as its tasks did
-
-
-RUN_ASSESSMENT_JOB = register(
-    JobType(
-        name=RUN_ASSESSMENT,
-        payload=RunAssessment,
-        handler=run_assessment,
-        priority="background",
-        # Above the worst case: (1 + PSA_MODEL_MAX_RETRIES) attempts of PSA_MODEL_TIMEOUT_S
-        # (3 x 120 s) for each call, plus the wait for a model slot.
-        timeout_s=900.0,
-        max_attempts=2,
-        backoff_base_s=15.0,
-        backoff_cap_s=120.0,
-    )
-)

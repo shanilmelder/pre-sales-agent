@@ -1,5 +1,6 @@
-"""Specialist assessment runs (Epic 5 slice 5A) against a real, migrated Postgres as psa_app:
-the `assessments.run_assessment` job with a fake ModelGateway that answers per agent and
+"""Specialist assessment runs (Epic 5 slice 5A; Workflow Runs since Story 5.2) against a
+real, migrated Postgres as psa_app: the `workflows.execute` job (its graph run by the
+LangGraph runner the conftest installs) with a fake ModelGateway that answers per agent and
 records each call's time window, `accept_assessment` (validation, versions, links, effort,
 trace), partial failure, task retry, re-runs, cancelling (Story 5.5), privacy and the table
 grants.
@@ -23,16 +24,18 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 from sqlalchemy.engine import Engine
 
-from app.agents.contract import AgentResult
+from app.agents.contract import AgentConfig, AgentResult
 from app.agents.engineering_agent.agent import prompt as engineering_prompt
 from app.agents.engineering_agent.schema import EngineeringOutput
 from app.agents.pm_agent.agent import prompt as pm_prompt
 from app.agents.security_agent.agent import prompt as security_prompt
 from app.agents.specialist.schema import SpecialistOutput
-from app.modules.assessments.application import assessment as assessments_assessment
 from app.modules.assessments.application import public as assessments_public
 from app.modules.assessments.domain.assessments import AssessmentAgent
-from app.platform.actor import Actor
+from app.modules.workflows.application import public as workflows_public
+from app.modules.workflows.application import runs as workflows_runs
+from app.orchestration import executors as orchestration_executors
+from app.orchestration import graph as orchestration_graph
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.jobs import JobContext
@@ -66,8 +69,8 @@ AGENTS = ("engineering_agent", "pm_agent", "security_agent")
 @pytest.fixture(autouse=True)
 def _assessment_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        assessments_assessment,
-        "assessment_settings",
+        orchestration_executors,
+        "executor_settings",
         lambda: Settings(model_profile_chat="demo-chat"),
     )
 
@@ -81,14 +84,14 @@ def auto_run() -> None:
 def _no_auto_run(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """Most tests here start their runs by hand after `prepared`'s Gap detection; the run
     that detection would queue by itself (Story 5.1) is left out unless the test requests
-    `auto_run`. `assessments_assessment.enqueue_run` itself stays real."""
+    `auto_run`. `workflows_runs.enqueue_run` itself stays real."""
     if "auto_run" in request.fixturenames:
         return
 
     async def no_run(uow: Any, opportunity_id: UUID) -> UUID:
         return uuid4()
 
-    monkeypatch.setattr(assessments_public, "enqueue_run", no_run)
+    monkeypatch.setattr(workflows_public, "enqueue_run", no_run)
 
 
 # --- the per-agent fake gateway -------------------------------------------------------------
@@ -238,7 +241,7 @@ def cancel(client: TestClient, headers: dict[str, str], opp_id: str, run_id: str
 def run_rows(engine: Engine, opp_id: str) -> list[dict[str, Any]]:
     return rows(
         engine,
-        "SELECT * FROM assessments_runs WHERE opportunity_id = :o ORDER BY created_at, id",
+        "SELECT * FROM workflows_runs WHERE opportunity_id = :o ORDER BY created_at, id",
         o=opp_id,
     )
 
@@ -246,7 +249,7 @@ def run_rows(engine: Engine, opp_id: str) -> list[dict[str, Any]]:
 def task_rows(engine: Engine, run_id: Any) -> dict[str, dict[str, Any]]:
     return {
         r["agent"]: r
-        for r in rows(engine, "SELECT * FROM assessments_tasks WHERE run_id = :r", r=run_id)
+        for r in rows(engine, "SELECT * FROM workflows_tasks WHERE run_id = :r", r=run_id)
     }
 
 
@@ -303,6 +306,16 @@ def events(engine: Engine, opp_id: str) -> list[dict[str, Any]]:
         "AND event_type LIKE 'assessments.assessment%' ORDER BY occurred_at, id",
         o=opp_id,
     )
+
+
+def progress(engine: Engine, run_id: Any) -> list[tuple[str, str]]:
+    """The run's progress rows (Story 5.2), oldest first: event type and summary."""
+    return [
+        (r["event_type"], r["summary"])
+        for r in rows(
+            engine, "SELECT * FROM workflows_progress WHERE run_id = :r ORDER BY id", r=run_id
+        )
+    ]
 
 
 def started(client: TestClient, headers: dict[str, str], opp_id: str) -> dict[str, Any]:
@@ -550,6 +563,9 @@ def test_a_failing_agent_leaves_the_run_partially_failed_and_the_others_stored(
         "security_agent": "queued",
     }
     assert len(assess_jobs(sync_engine, opp["id"])) == 2
+    queued = [p for p in progress(sync_engine, body["id"]) if p[0] == "workflows.run.queued"]
+    assert queued == [("workflows.run.queued", "run queued")] * 2  # started, then retried
+    assert progress(sync_engine, body["id"])[-1] == ("workflows.run.queued", "run queued")
 
     assert drain(db_url, ASSESS) == ["succeeded"]
 
@@ -765,11 +781,11 @@ def test_a_cancelled_run_is_recorded_as_timed_out_only_on_the_final_attempt(
             opportunity_id=UUID(opp["id"]),
             engine=engine,
         )
-        payload = assessments_assessment.RunAssessment.model_validate(job["payload"])
+        payload = workflows_runs.ExecuteRun.model_validate(job["payload"])
         try:
             with pytest.raises(TimeoutError):  # the runner's job timeout, made short
                 async with asyncio.timeout(1):
-                    await assessments_assessment.run_assessment(ctx, payload)
+                    await workflows_runs.execute_run(ctx, payload)
         finally:
             await engine.dispose()
 
@@ -789,7 +805,7 @@ def test_a_job_whose_run_is_no_longer_in_progress_is_skipped(
     started(client, headers, opp["id"])
     with sync_engine.begin() as conn:  # failed (e.g. as lost) while its job still waits
         conn.execute(
-            sa.text("UPDATE assessments_runs SET status = 'failed' WHERE opportunity_id = :o"),
+            sa.text("UPDATE workflows_runs SET status = 'failed' WHERE opportunity_id = :o"),
             {"o": opp["id"]},
         )
     fake = install(AgentGateway({agent: [ModelUnavailableError("not called")] for agent in AGENTS}))
@@ -810,10 +826,10 @@ def test_starting_fails_a_lost_run_first(
     with sync_engine.begin() as conn:  # its job died without recording it, long ago
         conn.execute(
             sa.text(
-                "UPDATE assessments_runs SET status = 'running', queued_at = now() - :age "
+                "UPDATE workflows_runs SET status = 'running', queued_at = now() - :age "
                 "WHERE opportunity_id = :o"
             ),
-            {"age": assessments_assessment.stale_after() * 2, "o": opp["id"]},
+            {"age": workflows_runs.stale_after() * 2, "o": opp["id"]},
         )
 
     started(client, headers, opp["id"])
@@ -824,6 +840,9 @@ def test_starting_fails_a_lost_run_first(
         (t["status"], t["error_code"]) for t in task_rows(sync_engine, lost["id"]).values()
     } == {("failed", "model_timeout")}
     assert new["status"] == "queued"
+    ended = progress(sync_engine, lost["id"])[1:]  # after its `run queued`
+    assert sorted(ended[:3]) == [("workflows.task.ended", f"{a} failed") for a in AGENTS]
+    assert ended[3:] == [("workflows.run.ended", "run failed")]
 
 
 def test_retry_fails_a_lost_run_first(
@@ -834,17 +853,17 @@ def test_retry_fails_a_lost_run_first(
     with sync_engine.begin() as conn:  # its job died without recording it, long ago
         conn.execute(
             sa.text(
-                "UPDATE assessments_runs SET status = 'running', queued_at = now() - :age "
+                "UPDATE workflows_runs SET status = 'running', queued_at = now() - :age "
                 "WHERE opportunity_id = :o"
             ),
-            {"age": assessments_assessment.stale_after() * 2, "o": opp["id"]},
+            {"age": workflows_runs.stale_after() * 2, "o": opp["id"]},
         )
         conn.execute(  # the Engineering Agent had started
             sa.text(
-                "UPDATE assessments_tasks SET status = 'running', started_at = now() - :age "
+                "UPDATE workflows_tasks SET status = 'running', started_at = now() - :age "
                 "WHERE agent = 'engineering_agent' AND run_id = :r"
             ),
-            {"age": assessments_assessment.stale_after() * 2, "r": body["id"]},
+            {"age": workflows_runs.stale_after() * 2, "r": body["id"]},
         )
 
     retried = retry(client, headers, opp["id"], body["id"], "pm_agent")
@@ -861,10 +880,10 @@ def test_retry_fails_a_lost_run_first(
     assert tasks["security_agent"]["started_at"] is None
 
 
-def _inputs(engine: Engine, opp_id: str) -> assessments_assessment.AssessmentInputs:
-    return assessments_assessment.AssessmentInputs(
+def _inputs(engine: Engine, opp_id: str) -> assessments_public.AssessmentInputs:
+    return assessments_public.AssessmentInputs(
         requirements=[
-            assessments_assessment.AssessedRequirement(
+            assessments_public.AssessedRequirement(
                 label=f"R{n}",
                 requirement_id=r["id"],
                 version=r["version"],
@@ -881,27 +900,42 @@ def _accept(
     run_id: Any,
     agent: AssessmentAgent,
     output: SpecialistOutput,
-    inputs: assessments_assessment.AssessmentInputs,
+    inputs: assessments_public.AssessmentInputs,
 ) -> None:
+    """What a node does with an agent's reply (Story 5.2): in one Unit of Work, lock the task
+    as still `running`, `assessments.accept_assessment`, then mark the task done."""
     result = AgentResult(
         confidence=0.5,
         confidence_basis="test",
         needs_human_review=True,
         extensions={agent.value: output},
     )
+    executor = orchestration_executors.EXECUTORS[agent.value]
 
     async def scenario() -> None:
         engine = create_engine(Settings(database_url=db_url))
         try:
             async with unit_of_work(engine) as uow:
-                await assessments_assessment.accept_assessment(
-                    uow,
-                    run_id=run_id,
-                    agent=agent,
-                    result=result,
-                    inputs=inputs,
-                    actor=Actor(type="agent", id=f"{agent.value}@0.1.0"),
-                )
+                (task_id,) = (
+                    await uow.session.execute(
+                        sa.text("SELECT id FROM workflows_tasks WHERE run_id = :r AND agent = :a"),
+                        {"r": run_id, "a": agent.value},
+                    )
+                ).scalars()
+                task = await workflows_public.node_task(uow, task_id)
+            assert task is not None
+            prepared = orchestration_executors.SpecialistPrepared(
+                task=task,
+                inputs=inputs,
+                config=AgentConfig(
+                    agent_id=agent.value,
+                    semver="0.1.0",
+                    prompt_version=1,
+                    profile="demo-chat",
+                    config_version_id=task.config_version_id,
+                ),
+            )
+            await orchestration_graph.submit(engine, task_id, executor, prepared, result)
         finally:
             await engine.dispose()
 
@@ -915,11 +949,11 @@ def test_a_requirement_changed_after_the_read_does_not_resolve(
     body = started(client, headers, opp["id"])
     with sync_engine.begin() as conn:  # the run has read the Requirements and is mid-call
         conn.execute(
-            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"),
+            sa.text("UPDATE workflows_runs SET status = 'running' WHERE id = :r"),
             {"r": body["id"]},
         )
         conn.execute(
-            sa.text("UPDATE assessments_tasks SET status = 'running' WHERE run_id = :r"),
+            sa.text("UPDATE workflows_tasks SET status = 'running' WHERE run_id = :r"),
             {"r": body["id"]},
         )
     inputs = _inputs(sync_engine, opp["id"])
@@ -958,13 +992,13 @@ def test_an_older_run_accepted_after_a_newer_one_writes_nothing(
     with sync_engine.begin() as conn:  # the older run is lost mid-call
         conn.execute(
             sa.text(
-                "UPDATE assessments_runs SET status = 'running', queued_at = now() - :age "
+                "UPDATE workflows_runs SET status = 'running', queued_at = now() - :age "
                 "WHERE id = :r"
             ),
-            {"age": assessments_assessment.stale_after() * 2, "r": older["id"]},
+            {"age": workflows_runs.stale_after() * 2, "r": older["id"]},
         )
         conn.execute(
-            sa.text("UPDATE assessments_tasks SET status = 'running' WHERE run_id = :r"),
+            sa.text("UPDATE workflows_tasks SET status = 'running' WHERE run_id = :r"),
             {"r": older["id"]},
         )
     install(AgentGateway(replies()))
@@ -1025,10 +1059,10 @@ def test_findings_and_effort_are_insert_only_and_nothing_is_deletable_for_psa_ap
         ),
         ("UPDATE assessments_assessments SET version = 9 WHERE id = :i", engineering["id"]),
         ("DELETE FROM assessments_assessments WHERE id = :i", engineering["id"]),
-        ("UPDATE assessments_tasks SET agent = 'pm_agent' WHERE id = :i", task["id"]),
-        ("DELETE FROM assessments_tasks WHERE id = :i", task["id"]),
-        ("UPDATE assessments_runs SET opportunity_id = id WHERE id = :i", run["id"]),
-        ("DELETE FROM assessments_runs WHERE id = :i", run["id"]),
+        ("UPDATE workflows_tasks SET agent = 'pm_agent' WHERE id = :i", task["id"]),
+        ("DELETE FROM workflows_tasks WHERE id = :i", task["id"]),
+        ("UPDATE workflows_runs SET opportunity_id = id WHERE id = :i", run["id"]),
+        ("DELETE FROM workflows_runs WHERE id = :i", run["id"]),
     ]
     for sql, value in denied:
         with pytest.raises(sa.exc.ProgrammingError), sync_engine.begin() as conn:
@@ -1036,8 +1070,8 @@ def test_findings_and_effort_are_insert_only_and_nothing_is_deletable_for_psa_ap
     # The status columns stay updatable (superseding, run and task states).
     allowed = [
         ("UPDATE assessments_assessments SET status = status WHERE id = :i", engineering["id"]),
-        ("UPDATE assessments_tasks SET status = status WHERE id = :i", task["id"]),
-        ("UPDATE assessments_runs SET status = status WHERE id = :i", run["id"]),
+        ("UPDATE workflows_tasks SET status = status WHERE id = :i", task["id"]),
+        ("UPDATE workflows_runs SET status = status WHERE id = :i", run["id"]),
     ]
     for sql, value in allowed:
         with sync_engine.begin() as conn:
@@ -1053,11 +1087,11 @@ def _mid_run(engine: Engine, run_id: str) -> None:
     """The run has read its inputs and every agent is mid-call."""
     with engine.begin() as conn:
         conn.execute(
-            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"), {"r": run_id}
+            sa.text("UPDATE workflows_runs SET status = 'running' WHERE id = :r"), {"r": run_id}
         )
         conn.execute(
             sa.text(
-                "UPDATE assessments_tasks SET status = 'running', started_at = now() "
+                "UPDATE workflows_tasks SET status = 'running', started_at = now() "
                 "WHERE run_id = :r"
             ),
             {"r": run_id},
@@ -1091,6 +1125,12 @@ def test_cancelling_a_running_run_skips_the_rest_and_keeps_what_completed(
     engineering = current(sync_engine, opp["id"], "engineering_agent")
     assert (engineering["version"], engineering["run_id"]) == (1, run["id"])
     assert assessment_rows(sync_engine, opp["id"], "pm_agent") == []
+    cancelled = progress(sync_engine, run["id"])[-3:]
+    assert sorted(cancelled[:2]) == [
+        ("workflows.task.ended", "pm_agent skipped"),
+        ("workflows.task.ended", "security_agent skipped"),
+    ]
+    assert cancelled[2] == ("workflows.run.ended", "run cancelled")
     last = events(sync_engine, opp["id"])[-1]
     assert last["event_type"] == "assessments.assessment_run.cancelled"
     assert last["actor_type"] == "user"
@@ -1197,16 +1237,14 @@ def test_cancel_stops_the_in_flight_calls_and_the_job_ends_without_error(
     (job,) = assess_jobs(sync_engine, opp["id"])
     fake = _Blocking()
     provider.install(fake)
-    monkeypatch.setattr(assessments_assessment, "CANCEL_POLL_S", 0.2)
+    monkeypatch.setattr(workflows_runs, "CANCEL_POLL_S", 0.2)
 
     async def scenario() -> float:
         engine = create_engine(Settings(database_url=db_url))
-        payload = assessments_assessment.RunAssessment.model_validate(job["payload"])
+        payload = workflows_runs.ExecuteRun.model_validate(job["payload"])
         try:
             handler = asyncio.create_task(
-                assessments_assessment.run_assessment(
-                    _context(engine, job, opp["id"], attempt), payload
-                )
+                workflows_runs.execute_run(_context(engine, job, opp["id"], attempt), payload)
             )
             await _calls_started(fake)
             response = await asyncio.to_thread(cancel, client, headers, opp["id"], body["id"])
@@ -1242,18 +1280,16 @@ def test_a_final_attempt_timing_out_after_the_cancel_leaves_the_run_cancelled(
     (job,) = assess_jobs(sync_engine, opp["id"])
     fake = _Blocking()
     provider.install(fake)
-    monkeypatch.setattr(assessments_assessment, "CANCEL_POLL_S", 60.0)  # the watcher is late
+    monkeypatch.setattr(workflows_runs, "CANCEL_POLL_S", 60.0)  # the watcher is late
 
     async def scenario() -> None:
         engine = create_engine(Settings(database_url=db_url))
-        payload = assessments_assessment.RunAssessment.model_validate(job["payload"])
+        payload = workflows_runs.ExecuteRun.model_validate(job["payload"])
         try:
             with pytest.raises(TimeoutError):  # the runner's job timeout, made short
                 async with asyncio.timeout(3):
                     work = asyncio.ensure_future(
-                        assessments_assessment.run_assessment(
-                            _context(engine, job, opp["id"], 2), payload
-                        )
+                        workflows_runs.execute_run(_context(engine, job, opp["id"], 2), payload)
                     )
                     await _calls_started(fake)
                     response = await asyncio.to_thread(
@@ -1304,16 +1340,14 @@ def test_a_task_failing_after_the_cancel_neither_retries_nor_fails_the_run(
     (job,) = assess_jobs(sync_engine, opp["id"])
     fake = _FailsOnSignal()
     provider.install(fake)
-    monkeypatch.setattr(assessments_assessment, "CANCEL_POLL_S", 60.0)  # the watcher is late
+    monkeypatch.setattr(workflows_runs, "CANCEL_POLL_S", 60.0)  # the watcher is late
 
     async def scenario() -> None:
         engine = create_engine(Settings(database_url=db_url))
-        payload = assessments_assessment.RunAssessment.model_validate(job["payload"])
+        payload = workflows_runs.ExecuteRun.model_validate(job["payload"])
         try:
             handler = asyncio.create_task(
-                assessments_assessment.run_assessment(
-                    _context(engine, job, opp["id"], attempt), payload
-                )
+                workflows_runs.execute_run(_context(engine, job, opp["id"], attempt), payload)
             )
             async with asyncio.timeout(10):
                 await fake.all_started.wait()
@@ -1337,13 +1371,13 @@ def test_a_task_failing_after_the_cancel_neither_retries_nor_fails_the_run(
 
 
 def _enqueue(db_url: str, opp_id: str) -> UUID:
-    """`assessments_assessment.enqueue_run` in its own Unit of Work."""
+    """`workflows_runs.enqueue_run` in its own Unit of Work."""
 
     async def scenario() -> UUID:
         engine = create_engine(Settings(database_url=db_url))
         try:
             async with unit_of_work(engine) as uow:
-                return await assessments_assessment.enqueue_run(uow, UUID(opp_id))
+                return await workflows_runs.enqueue_run(uow, UUID(opp_id))
         finally:
             await engine.dispose()
 
@@ -1373,7 +1407,7 @@ def test_enqueue_coalesces_with_a_running_run(
     (run,) = run_rows(sync_engine, opp["id"])
     with sync_engine.begin() as conn:  # its job has started
         conn.execute(
-            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"),
+            sa.text("UPDATE workflows_runs SET status = 'running' WHERE id = :r"),
             {"r": run["id"]},
         )
 
@@ -1391,10 +1425,10 @@ def test_enqueue_fails_a_lost_run_first_then_queues_one(
     with sync_engine.begin() as conn:  # its job died without recording it, long ago
         conn.execute(
             sa.text(
-                "UPDATE assessments_runs SET status = 'running', queued_at = now() - :age "
+                "UPDATE workflows_runs SET status = 'running', queued_at = now() - :age "
                 "WHERE opportunity_id = :o"
             ),
-            {"age": assessments_assessment.stale_after() * 2, "o": opp["id"]},
+            {"age": workflows_runs.stale_after() * 2, "o": opp["id"]},
         )
 
     new_id = _enqueue(db_url, opp["id"])
@@ -1440,7 +1474,7 @@ def test_extraction_and_detection_assess_the_opportunity_without_anyone_pressing
     assert {r["agent"] for r in assessment_rows(sync_engine, opp["id"])} == set(AGENTS)
     (event, *_) = events(sync_engine, opp["id"])
     assert event["event_type"] == "assessments.assessment_run.started"
-    assert (event["actor_type"], event["actor_id"]) == ("system", "assessments.run_assessment")
+    assert (event["actor_type"], event["actor_id"]) == ("system", "workflows.execute")
     view = client.get(f"{BASE}/{opp['id']}/assessments", headers=headers).json()
     assert [slot["assessment"]["version"] for slot in view["assessments"]] == [1, 1, 1]
 
