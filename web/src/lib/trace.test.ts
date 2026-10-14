@@ -37,6 +37,13 @@ describe("labels", () => {
     expect(eventLabel("gaps.gap.impact_changed")).toBe("Gap impact changed");
     expect(eventLabel("gaps.gap.dismissed")).toBe("Gap dismissed");
     expect(eventLabel("gaps.gap.reopened")).toBe("Gap reopened");
+    expect(eventLabel("gaps.clarification_question.exported")).toBe(
+      "Clarification Questions exported",
+    );
+    expect(eventLabel("gaps.clarification_question.sent")).toBe("Clarification Question sent");
+    expect(eventLabel("gaps.clarification_question.marked_unanswered")).toBe(
+      "Clarification Question marked No answer",
+    );
     expect(eventLabel("knowledge.catalogue_entry.updated")).toBe("Catalogue entry updated");
     expect(eventLabel("knowledge.catalogue_entry.reactivated")).toBe("Catalogue entry reactivated");
     expect(subjectLabel("knowledge.catalogue_entry")).toBe("Catalogue entry");

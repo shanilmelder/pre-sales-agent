@@ -190,16 +190,31 @@ export function requirementCounts(list: RequirementList): RequirementCounts | St
   };
 }
 
-export type GapCounts = { open: number; high: number };
+/** `sent`: questions sent (sent or "No answer"); `awaiting`: sent and not yet answered (Story
+ * 4.6). */
+export type GapCounts = { open: number; high: number; sent: number; awaiting: number };
 
-/** The open Gaps and how many are high impact; the detection's status while there is nothing
- * to count and it hasn't succeeded; null when no detection has run. */
+/** The open Gaps and how many are high impact, and how many questions were sent and still
+ * await an answer; the detection's status while there is nothing to count and it hasn't
+ * succeeded; null when no detection has run. */
 export function gapCounts(list: GapList): GapCounts | StepStatus | null {
   if (list.detection === null && list.items.length === 0) return null;
   const pending = stepStatus(list.detection, list.items.length, "Detecting…");
   if (pending) return pending;
   const open = openGaps(list);
-  return { open: open.length, high: open.filter((g) => g.impact === "high").length };
+  const statuses = open.map((g) => g.question?.status);
+  return {
+    open: open.length,
+    high: open.filter((g) => g.impact === "high").length,
+    sent: statuses.filter((s) => s === "sent" || s === "unanswered").length,
+    awaiting: statuses.filter((s) => s === "sent").length,
+  };
+}
+
+/** "3 questions sent · 2 awaiting an answer". */
+export function sentQuestionsLabel(counts: Pick<GapCounts, "sent" | "awaiting">): string {
+  const sent = `${counts.sent} ${counts.sent === 1 ? "question" : "questions"} sent`;
+  return `${sent} · ${counts.awaiting} awaiting an answer`;
 }
 
 /** True for a step's status rather than its counts. */

@@ -161,11 +161,17 @@ def _gap(title: str, status: str, question: str | None, q_status: str = "drafted
                 "status_changed_at": "2026-10-05T10:00:00Z",
                 "row_version": 1,
                 "approved_by": {"id": "0199b1a0-0000-7000-8000-000000000600", "name": "Owner"}
-                if q_status == "approved"
+                if q_status in ("approved", "sent", "unanswered")
                 else None,
-                "approved_at": "2026-10-05T11:00:00Z" if q_status == "approved" else None,
+                "approved_at": "2026-10-05T11:00:00Z"
+                if q_status in ("approved", "sent", "unanswered")
+                else None,
                 "edited_by_human": False,
                 "last_changed_by": None,
+                "sent_on": "2026-10-06" if q_status in ("sent", "unanswered") else None,
+                "sent_by": {"id": "0199b1a0-0000-7000-8000-000000000600", "name": "Owner"}
+                if q_status in ("sent", "unanswered")
+                else None,
             },
         }
     )
@@ -384,6 +390,23 @@ def test_a_dismissed_gaps_question_stays_out_of_the_export() -> None:
     assert "Peak order volume" in str(questions)
     assert "Canteen hours" not in str(questions)
     assert "When does the canteen open?" not in str(questions)
+
+
+def test_sent_and_unanswered_questions_stay_in_the_export_with_their_status() -> None:
+    sent = _gap("Interface owner", "open", "Who owns the interface?", q_status="sent")
+    unanswered = _gap("Peak growth", "open", "How fast will the peak grow?", q_status="unanswered")
+    document = build_export(
+        opportunity_title="Acme",
+        version=version(),
+        gaps=[sent, unanswered],
+        exported_at=AT,
+    )
+    workbook = load_workbook(BytesIO(render_xlsx(document)))
+    rows = _sheet_rows(workbook["Clarification Questions"])
+
+    by_title = {row[0]: row for row in rows}
+    assert by_title["Interface owner"][4] == "Sent"
+    assert by_title["Peak growth"][4] == "No answer"
 
 
 def _with_title(title: str) -> Any:

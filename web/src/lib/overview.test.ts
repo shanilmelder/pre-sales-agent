@@ -11,6 +11,7 @@ import {
   criticalHighLabel,
   cutAttention,
   gapCounts,
+  sentQuestionsLabel,
   isStepStatus,
   itemCountLabel,
   moreLabel,
@@ -354,7 +355,7 @@ describe("pipeline counts", () => {
           gap("c", "high", "superseded"),
         ]),
       ),
-    ).toEqual({ open: 2, high: 1 });
+    ).toEqual({ open: 2, high: 1, sent: 0, awaiting: 0 });
   });
 
   it("shows the detection's status, not 0, while the first one runs or after it failed", () => {
@@ -376,6 +377,8 @@ describe("pipeline counts", () => {
     ).toEqual({
       open: 0,
       high: 0,
+      sent: 0,
+      awaiting: 0,
     });
     expect(
       gapCounts(
@@ -384,7 +387,31 @@ describe("pipeline counts", () => {
     ).toEqual({
       open: 1,
       high: 1,
+      sent: 0,
+      awaiting: 0,
     });
+  });
+
+  it("counts sent questions and those awaiting an answer (Story 4.6)", () => {
+    const withQuestion = (g: Gap, status: string) =>
+      ({ ...g, question: { status } }) as unknown as Gap;
+    const counts = gapCounts(
+      gaps([
+        withQuestion(gap("a", "high"), "sent"),
+        withQuestion(gap("b", "low"), "unanswered"),
+        withQuestion(gap("c", "low"), "approved"),
+        withQuestion(gap("d", "low"), "sent"),
+        withQuestion(gap("e", "low", "dismissed"), "sent"),
+        withQuestion(gap("f", "low", "converted"), "unanswered"),
+      ]),
+    );
+    expect(counts).toMatchObject({ sent: 3, awaiting: 2 });
+    expect(sentQuestionsLabel({ sent: 3, awaiting: 2 })).toBe(
+      "3 questions sent · 2 awaiting an answer",
+    );
+    expect(sentQuestionsLabel({ sent: 1, awaiting: 0 })).toBe(
+      "1 question sent · 0 awaiting an answer",
+    );
   });
 });
 

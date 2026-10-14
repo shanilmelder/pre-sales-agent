@@ -42,6 +42,7 @@ import {
   NOTHING_NEEDS_ATTENTION,
   parsedLabel,
   requirementCounts,
+  sentQuestionsLabel,
   sourceCounts,
   type AttentionKind,
 } from "@/lib/overview";
@@ -198,11 +199,14 @@ function Stat({
   label,
   value,
   detail,
+  extra,
   href,
 }: {
   label: string;
   value: ReactNode;
   detail?: ReactNode;
+  /** A second detail line. */
+  extra?: ReactNode;
   href?: string;
 }) {
   const body = (
@@ -210,6 +214,7 @@ function Stat({
       <span className="text-meta text-muted-foreground">{label}</span>
       <span className="text-title text-numeric">{value}</span>
       {detail ? <span className="text-meta text-muted-foreground">{detail}</span> : null}
+      {extra ? <span className="text-meta text-muted-foreground">{extra}</span> : null}
     </>
   );
   return href ? (
@@ -263,6 +268,7 @@ function Pipeline({ id, data }: { id: string; data: OverviewData }) {
           detail={
             gaps === null ? null : isStepStatus(gaps) ? gaps.status : highImpactLabel(gaps.high)
           }
+          extra={gaps && !isStepStatus(gaps) ? sentQuestionsLabel(gaps) : null}
         />
       </div>
     </Card>
@@ -275,17 +281,20 @@ function PipelineStat({
   href,
   value,
   detail,
+  extra = null,
 }: {
   label: string;
   failed: boolean;
   href: string;
   value: number | undefined;
   detail: string | null;
+  /** A second detail line (Story 4.6: questions sent and awaiting an answer). */
+  extra?: string | null;
 }) {
   if (failed) {
     return <Stat label={label} value={NOT_RUN} detail={couldNotLoad(label)} href={href} />;
   }
-  return <Stat label={label} value={value ?? NOT_RUN} detail={detail} href={href} />;
+  return <Stat label={label} value={value ?? NOT_RUN} detail={detail} extra={extra} href={href} />;
 }
 
 /** The current Estimate Version's server totals and its Assumptions. */

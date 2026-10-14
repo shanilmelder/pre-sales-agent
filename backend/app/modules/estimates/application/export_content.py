@@ -95,8 +95,13 @@ ASSUMPTION_COLUMNS = (
     "Carried",
 )
 QUESTION_COLUMNS = ("Gap", "Impact", "Topic", "Question", "Question status", "Gap status")
-QUESTION_STATUS_LABELS = {"drafted": "Draft", "approved": "Approved"}
-"""The exported questions' statuses (Story 4.5); superseded questions are left out."""
+QUESTION_STATUS_LABELS = {
+    "drafted": "Draft",
+    "approved": "Approved",
+    "sent": "Sent",
+    "unanswered": "No answer",
+}
+"""The exported questions' statuses (Stories 4.5, 4.6); superseded questions are left out."""
 
 
 _XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")

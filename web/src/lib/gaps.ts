@@ -4,8 +4,10 @@ import {
   ArrowRightIcon,
   CheckIcon,
   CircleHelpIcon,
+  CircleSlashIcon,
   MinusIcon,
   PencilLineIcon,
+  SendIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +28,7 @@ export type GapStatus = components["schemas"]["GapStatus"];
 export type GapDismissal = components["schemas"]["GapDismissal"];
 export type GapHistoryEntry = components["schemas"]["GapHistoryEntry"];
 export type DismissReasonKind = components["schemas"]["DismissReasonKind"];
+export type QuestionExportFormat = components["schemas"]["QuestionExportRequest"]["format"];
 
 /** The categories with their labels. */
 export const GAP_CATEGORIES: readonly { value: GapCategory; label: string }[] = [
@@ -61,18 +64,25 @@ export function impactLevel(value: Impact): 0 | 1 | 2 | 3 {
   return IMPACTS.find((i) => i.value === value)?.level ?? 0;
 }
 
-/** The question pill: a drafted question reads "Draft", an approved one "Approved". */
+/** The question pill: a drafted question reads "Draft", an approved one "Approved", a sent one
+ * "Sent" and one the customer won't answer "No answer" (Story 4.6). */
 export const DRAFT = "Draft";
 export const APPROVED = "Approved";
+export const SENT = "Sent";
+export const NO_ANSWER = "No answer";
+
+type PillStatus = "drafted" | "approved" | "sent" | "unanswered";
 
 /** The question statuses the pill shows, with their label, icon and icon tone (the pill always
- * shows icon and label). */
+ * shows icon and label): Sent is a neutral send icon, No answer is gap amber. */
 export const QUESTION_STATUSES: Record<
-  "drafted" | "approved",
+  PillStatus,
   { label: string; icon: LucideIcon; tone: StatusTone }
 > = {
   drafted: { label: DRAFT, icon: PencilLineIcon, tone: "text-muted-foreground" },
   approved: { label: APPROVED, icon: CheckIcon, tone: "text-resolved" },
+  sent: { label: SENT, icon: SendIcon, tone: "text-muted-foreground" },
+  unanswered: { label: NO_ANSWER, icon: CircleSlashIcon, tone: "text-gap" },
 };
 
 /** A question status's pill (Draft for one this build doesn't know). */
@@ -81,7 +91,14 @@ export function questionStatus(status: QuestionStatus): {
   icon: LucideIcon;
   tone: StatusTone;
 } {
-  return status === "approved" ? QUESTION_STATUSES.approved : QUESTION_STATUSES.drafted;
+  return status in QUESTION_STATUSES
+    ? QUESTION_STATUSES[status as PillStatus]
+    : QUESTION_STATUSES.drafted;
+}
+
+/** Whether a question was sent (sent or "No answer"): it can no longer be edited or approved. */
+export function isSent(status: QuestionStatus): boolean {
+  return status === "sent" || status === "unanswered";
 }
 
 /** The API's longest question text and topic, in code points (trimmed). */
@@ -114,6 +131,12 @@ export function approvedLabel(
     : `Approved by ${name}`;
 }
 
+/** "Sent 14 Oct 2026 by Jane Doe" (Story 4.6). */
+export function sentLabel(question: Pick<ClarificationQuestion, "sent_on" | "sent_by">): string {
+  const date = question.sent_on ? ` ${registerDate(question.sent_on)}` : "";
+  return `Sent${date} by ${question.sent_by?.name ?? "someone"}`;
+}
+
 /** "Draft since 5 Oct 2026" / "Approved since 5 Oct 2026": the last status change. */
 export function statusSince(question: Pick<ClarificationQuestion, "status" | "status_changed_at">) {
   return `${questionStatus(question.status).label} since ${registerDate(question.status_changed_at)}`;
@@ -127,6 +150,72 @@ export function toApprove(items: readonly Gap[]): Gap[] {
 /** "Approve all (3)". */
 export function approveAllLabel(n: number): string {
   return `Approve all (${n})`;
+}
+
+// --- exporting and sending questions (Story 4.6) ----------------------------------------------
+
+/** The open Gaps whose question is approved: what is exported and what **Mark all sent**
+ * marks. */
+export function toSend(items: readonly Gap[]): Gap[] {
+  return items.filter((g) => g.status === "open" && g.question?.status === "approved");
+}
+
+/** "Mark all sent (3)". */
+export function markAllSentLabel(n: number): string {
+  return `Mark all sent (${n})`;
+}
+
+/** "Mark 2 selected sent". */
+export function markSelectedSentLabel(n: number): string {
+  return `Mark ${n} selected sent`;
+}
+
+/** "1 question marked sent", "3 questions marked sent". */
+export function sentCount(n: number): string {
+  return `${n} ${n === 1 ? "question" : "questions"} marked sent`;
+}
+
+/** "1 question copied", "3 questions copied". */
+export function copiedCount(n: number): string {
+  return `${n} ${n === 1 ? "question" : "questions"} copied`;
+}
+
+/** The export formats of the approved questions, in the menu's order. */
+export const QUESTION_EXPORT_FORMATS: readonly { value: QuestionExportFormat; label: string }[] = [
+  { value: "copy", label: "Copy" },
+  { value: "docx", label: "Word (.docx)" },
+  { value: "eml", label: "Email draft (.eml)" },
+];
+
+/** The web route that downloads a `.docx` or `.eml` export (it adds the user's token and fetches
+ * the signed link server-side). */
+export function questionsExportUrl(opportunityId: string, format: "docx" | "eml"): string {
+  return `/api/opportunities/${encodeURIComponent(opportunityId)}/questions-export?format=${format}`;
+}
+
+/** Why an export of questions failed, by HTTP status and problem code. */
+export function questionsExportFailureReason(status: number | null, code?: string | null): string {
+  if (status === null || status === 502) return "the export service couldn't be reached";
+  if (status === 401) return "your session has expired; reload the page";
+  if (status === 403) return "only the owner and collaborators can export questions";
+  if (status === 404) return "you no longer have access to this Opportunity";
+  if (status === 409 || code === "no_approved_questions") {
+    return "there are no approved questions to export";
+  }
+  return "the file couldn't be created";
+}
+
+/** Today's date where the user is, as `YYYY-MM-DD` (the default "date sent"). */
+export function localToday(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** Why a "date sent" can't be sent, or null: required, and not after `today`. */
+export function sentOnProblem(value: string, today: string = localToday()): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "Give the date the questions were sent.";
+  if (value > today) return "The date sent can't be in the future.";
+  return null;
 }
 
 /** "1 question approved", "3 questions approved". */

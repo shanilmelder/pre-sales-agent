@@ -11,20 +11,25 @@ import {
   dismissGap,
   editClarificationQuestion,
   loadGaps,
+  markClarificationQuestionsSent,
+  markClarificationQuestionUnanswered,
   reopenGap,
   startGapDetection,
   type ApproveAllQuestionsResult,
   type GapWriteResult,
+  type MarkSentResult,
   type QuestionWriteResult,
   type StartGapDetectionResult,
 } from "@/app/opportunities/actions";
 import {
   GapInspector,
+  MarkSentForm,
   QuestionPill,
   type GapFormOutcome,
   type QuestionField,
 } from "@/components/opportunities/gap-inspector";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
+import { QuestionsExport } from "@/components/opportunities/questions-export";
 import { isEditableTarget } from "@/components/shell/keyboard-shortcuts";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -48,13 +53,19 @@ import {
   gapStatus,
   impactLabel,
   isDetecting,
+  isSent,
+  markAllSentLabel,
+  markSelectedSentLabel,
+  NO_ANSWER,
   NO_GAPS,
   NONE_FOUND,
   questionTextProblem,
   questionTopicProblem,
   rankGaps,
+  sentCount,
   STILL_DETECTING,
   toApprove,
+  toSend,
   triggerLabel,
   type ClarificationQuestion,
   type Detection,
@@ -86,6 +97,13 @@ export const SAME_IMPACT = "Choose a different impact.";
 const APPROVE_SELECTED_FAILED = "The selected questions could not be approved. Try again.";
 const QUESTION_GONE = "This Clarification Question is no longer available.";
 const RELOAD_FAILED = "The Gaps could not be reloaded. Try again.";
+export const QUESTION_SENT =
+  "This Clarification Question was sent: it can no longer be edited or approved.";
+export const QUESTION_NOT_SENT = "This Clarification Question is no longer sent.";
+export const SEND_NOT_ALLOWED =
+  "Only the owner and collaborators can mark questions sent or “No answer”.";
+const MARK_SENT_FAILED = "The questions could not be marked sent. Try again.";
+const NO_ANSWER_FAILED = "The question could not be marked “No answer”. Try again.";
 const FIELD_NAMES: Record<QuestionField, string> = { text: "Question", topic: "Topic" };
 
 const actionClass =
@@ -168,7 +186,7 @@ export function GapsList({
     }
     if (onEdit && singleKeyShortcuts && event.key === "e") {
       const item = rowItem(event.target);
-      if (item && item.status === "open" && item.question) {
+      if (item && item.status === "open" && item.question && !isSent(item.question.status)) {
         event.preventDefault();
         onEdit(item);
       }
@@ -296,8 +314,15 @@ export function GapsList({
   );
 }
 
-/** The key hints under the list. */
-export function GapsKeyHints({ canEdit }: { canEdit: boolean }) {
+/** The key hints under the list. `canSelect` (default `canEdit`): `x` selects rows (Story 4.6:
+ * those who may send questions select too). */
+export function GapsKeyHints({
+  canEdit,
+  canSelect = canEdit,
+}: {
+  canEdit: boolean;
+  canSelect?: boolean;
+}) {
   const hint = (keys: string[], label: string) => (
     <span key={label} className="inline-flex items-center gap-1">
       {keys.map((k) => (
@@ -314,10 +339,10 @@ export function GapsKeyHints({ canEdit }: { canEdit: boolean }) {
   return (
     <p className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted-foreground">
       {hint(["j", "k"], "move")}
-      {canEdit ? hint(["x"], "select") : null}
+      {canSelect ? hint(["x"], "select") : null}
       {hint(["Enter"], "open")}
       {canEdit ? hint(["e"], "edit question") : null}
-      {hint(["Esc"], canEdit ? "close inspector or clear selection" : "close inspector")}
+      {hint(["Esc"], canSelect ? "close inspector or clear selection" : "close inspector")}
     </p>
   );
 }
@@ -405,7 +430,14 @@ function retryMessage(result: StartGapDetectionResult): string {
  * holds drafted questions of open Gaps (else **Approve all (N)**). For those who may change
  * Gaps (`can_edit_gaps`), the inspector changes an open Gap's impact or dismisses it, and
  * reopens a dismissed one, each with a reason and `If-Match` (a 412 shows the stale notice
- * with Reload). The list keeps the API's order after a change. */
+ * with Reload). The list keeps the API's order after a change.
+ *
+ * Story 4.6: for those who may send questions (`can_send_questions`, sales representatives
+ * included), the header has an **Export** menu (Copy, Word, Email draft) while approved
+ * questions of open Gaps exist, and **Mark N selected sent** while the selection holds approved
+ * questions (else **Mark all sent (N)**); either opens a small form with the date sent (today by
+ * default) and a confirm button. The inspector marks one approved question sent and a sent one
+ * "No answer". A 412 shows the stale notice with Reload. */
 export function GapsSection({
   opportunityId,
   initial,
@@ -450,6 +482,10 @@ export function GapsSection({
   const locked = stale !== null || approvingAll || reloading;
   const canEdit = list.can_edit_questions;
   const canEditGaps = list.can_edit_gaps;
+  const canSend = list.can_send_questions;
+  const canSelect = canEdit || canSend;
+  // Story 4.6: the questions the open "date sent" form will mark (null while it is closed).
+  const [markSentFor, setMarkSentFor] = useState<Gap[] | null>(null);
   // Multi-select (Story 4.4): Gap ids; ids no longer listed drop out.
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const checkedIds = new Set(list.items.filter((g) => checked.has(g.id)).map((g) => g.id));
@@ -653,6 +689,14 @@ export function GapsSection({
         say(GAP_NOT_OPEN);
         void refresh();
         return;
+      case "question-not-editable":
+        say(QUESTION_SENT);
+        void refresh();
+        return;
+      case "question-not-sent":
+        say(QUESTION_NOT_SENT);
+        void refresh();
+        return;
       case "forbidden":
         say(EDIT_NOT_ALLOWED);
         void refresh(); // `can_edit_questions` changed: the controls go away
@@ -828,6 +872,84 @@ export function GapsSection({
     }
   }
 
+  /** Mark these approved questions sent on `sentOn` (Story 4.6); what the form does next. */
+  async function markSent(selection: Gap[], sentOn: string): Promise<GapFormOutcome> {
+    if (locked || busyIds.size > 0 || selection.length === 0) return "failed";
+    setNotice(null);
+    setApprovingAll(true);
+    let result: MarkSentResult;
+    try {
+      result = await markClarificationQuestionsSent(
+        opportunityId,
+        sentOn,
+        selection.map((g) => ({ id: g.question!.id, row_version: g.question!.row_version })),
+      );
+    } catch {
+      result = { kind: "error" };
+    }
+    if (result.kind === "ok") {
+      const reloaded = await refresh();
+      setApprovingAll(false);
+      setChecked(new Set());
+      setMarkSentFor(null);
+      if (!reloaded) setStale({ changedBy: null });
+      announce(sentCount(result.count));
+      return "ok";
+    }
+    setApprovingAll(false);
+    switch (result.kind) {
+      case "invalid":
+        announce(result.detail);
+        return { invalid: result.detail };
+      case "stale":
+        setMarkSentFor(null);
+        setStale({ changedBy: result.changedBy });
+        announce(staleMessage(result.changedBy));
+        return "failed";
+      case "forbidden":
+        setMarkSentFor(null);
+        say(SEND_NOT_ALLOWED);
+        void refresh();
+        return "failed";
+      case "not-found":
+        setMarkSentFor(null);
+        say(NO_ACCESS_TO_OPPORTUNITY);
+        return "failed";
+      default:
+        say(MARK_SENT_FAILED);
+        return "failed";
+    }
+  }
+
+  async function noAnswer(item: Gap) {
+    const question = item.question;
+    if (!question || locked || busyIds.has(question.id) || question.status !== "sent") return;
+    setNotice(null);
+    markBusy(question.id, true);
+    let result: QuestionWriteResult;
+    try {
+      result = await markClarificationQuestionUnanswered({
+        opportunityId,
+        questionId: question.id,
+        rowVersion: question.row_version,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(question.id, false);
+    if (result.kind === "ok") {
+      replaceQuestion(item.id, result.question);
+      announce(`${NO_ANSWER}: ${item.title}`);
+      return;
+    }
+    if (result.kind === "forbidden") {
+      say(SEND_NOT_ALLOWED);
+      void refresh();
+      return;
+    }
+    writeFailed(result, null, NO_ANSWER_FAILED);
+  }
+
   /** Run a Gap write (Story 4.4) and act on its result; what the inspector's form does next. */
   async function writeGap(
     item: Gap,
@@ -949,6 +1071,9 @@ export function GapsSection({
   const succeeded = list.detection?.status === "succeeded";
   const approvable = canEdit ? toApprove(list.items).length : 0;
   const selectedToApprove = canEdit ? toApprove(list.items.filter((g) => checkedIds.has(g.id))) : [];
+  const sendable = canSend ? toSend(list.items) : [];
+  const selectedToSend = canSend ? toSend(list.items.filter((g) => checkedIds.has(g.id))) : [];
+  const toMark = selectedToSend.length > 0 ? selectedToSend : sendable;
   return (
     <div className="flex flex-col gap-4" aria-busy={approvingAll || reloading || undefined}>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -965,26 +1090,62 @@ export function GapsSection({
             {gapsSummary(list.items)}
           </p>
         ) : null}
-        {selectedToApprove.length > 0 ? (
-          <button
-            type="button"
-            disabled={locked || busyIds.size > 0}
-            onClick={() => void approveSelected(selectedToApprove)}
-            className={`${actionClass} ml-auto`}
-          >
-            {approveSelectedLabel(selectedToApprove.length)}
-          </button>
-        ) : approvable > 0 ? (
-          <button
-            type="button"
-            disabled={locked || busyIds.size > 0}
-            onClick={() => void approveAll()}
-            className={`${actionClass} ml-auto`}
-          >
-            {approveAllLabel(approvable)}
-          </button>
+        {selectedToApprove.length > 0 || approvable > 0 || toMark.length > 0 ? (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {selectedToApprove.length > 0 ? (
+              <button
+                type="button"
+                disabled={locked || busyIds.size > 0}
+                onClick={() => void approveSelected(selectedToApprove)}
+                className={actionClass}
+              >
+                {approveSelectedLabel(selectedToApprove.length)}
+              </button>
+            ) : approvable > 0 ? (
+              <button
+                type="button"
+                disabled={locked || busyIds.size > 0}
+                onClick={() => void approveAll()}
+                className={actionClass}
+              >
+                {approveAllLabel(approvable)}
+              </button>
+            ) : null}
+            {toMark.length > 0 ? (
+              <button
+                type="button"
+                aria-expanded={markSentFor !== null}
+                disabled={locked || busyIds.size > 0}
+                onClick={() => setMarkSentFor((current) => (current ? null : toMark))}
+                className={actionClass}
+              >
+                {selectedToSend.length > 0
+                  ? markSelectedSentLabel(selectedToSend.length)
+                  : markAllSentLabel(sendable.length)}
+              </button>
+            ) : null}
+            {sendable.length > 0 ? <QuestionsExport opportunityId={opportunityId} /> : null}
+          </div>
         ) : null}
       </div>
+      {markSentFor && markSentFor.length > 0 ? (
+        <MarkSentForm
+          label="Mark questions sent"
+          confirm={`Mark ${markSentFor.length} sent`}
+          disabled={locked || busyIds.size > 0}
+          onSubmit={(sentOn) => {
+            // The questions as they are now (one may have been marked sent meanwhile).
+            const ids = new Set(markSentFor.map((g) => g.id));
+            const current = toSend(list.items.filter((g) => ids.has(g.id)));
+            if (current.length === 0) {
+              setMarkSentFor(null);
+              return Promise.resolve<GapFormOutcome>("failed");
+            }
+            return markSent(current, sentOn);
+          }}
+          onCancel={() => setMarkSentFor(null)}
+        />
+      ) : null}
       {/* Screen readers hear these through the shell's single live region. */}
       {stale ? (
         <div
@@ -1016,10 +1177,10 @@ export function GapsSection({
             inspectorOpen={rightPaneOpen && selected !== null}
             onOpen={open}
             onEdit={canEdit ? startEdit : undefined}
-            onToggle={canEdit ? toggle : undefined}
+            onToggle={canSelect ? toggle : undefined}
             onClearSelection={clearSelection}
           />
-          <GapsKeyHints canEdit={canEdit} />
+          <GapsKeyHints canEdit={canEdit} canSelect={canSelect} />
         </>
       ) : succeeded ? (
         <p className="text-muted-foreground">{NONE_FOUND}</p>
@@ -1052,6 +1213,16 @@ export function GapsSection({
                     onImpact: (impact, reason) => changeImpact(selected, impact, reason),
                     onDismiss: (kind, note) => dismiss(selected, kind, note),
                     onReopen: (reason) => reopen(selected, reason),
+                  }
+                : undefined
+            }
+            send={
+              canSend && selected.question
+                ? {
+                    busy: busyIds.has(selected.question.id),
+                    locked,
+                    onMarkSent: (sentOn) => markSent([selected], sentOn),
+                    onNoAnswer: () => void noAnswer(selected),
                   }
                 : undefined
             }

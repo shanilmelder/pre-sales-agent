@@ -26,6 +26,7 @@ import {
   dismissGap,
   confirmAllRequirements,
   confirmRequirement,
+  copyClarificationQuestions,
   createOpportunity,
   editClarificationQuestion,
   editEstimateLine,
@@ -40,6 +41,8 @@ import {
   loadRedTeam,
   loadRequirements,
   loadSources,
+  markClarificationQuestionsSent,
+  markClarificationQuestionUnanswered,
   reopenGap,
   resolveConflict,
   retryAssessmentTask,
@@ -1492,6 +1495,146 @@ describe("changeGapImpact / dismissGap / reopenGap / approveSelected (Story 4.4)
     expect(
       await approveSelectedClarificationQuestions(OPP_ID, [{ id: Q_ID, row_version: 3 }]),
     ).toEqual({ kind: "stale", changedBy: "[OTHER]" });
+  });
+});
+
+describe("copy / mark sent / No answer (Story 4.6)", () => {
+  const Q_ID = "00000000-0000-7000-8000-0000000000d1";
+  const ok = (data: unknown) => ({ data, response: new Response(null, { status: 200 }) });
+
+  it("copies: POSTs the export as copy and returns the text and count", async () => {
+    api.POST.mockResolvedValue(
+      ok({ format: "copy", question_count: 2, text: "[TEXT]", url: null, file_name: null }),
+    );
+    expect(await copyClarificationQuestions(OPP_ID)).toEqual({
+      kind: "ok",
+      text: "[TEXT]",
+      count: 2,
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/export",
+      { params: { path: { opportunity_id: OPP_ID } }, body: { format: "copy" } },
+    );
+  });
+
+  it.each([
+    [409, { kind: "nothing-approved" }],
+    [403, { kind: "forbidden" }],
+    [404, { kind: "not-found" }],
+    [500, { kind: "error" }],
+  ])("copy maps %i", async (code, expected) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: status(code) });
+    expect(await copyClarificationQuestions(OPP_ID)).toEqual(expected);
+  });
+
+  it("marks sent: POSTs the date and the shown questions", async () => {
+    api.POST.mockResolvedValue(ok({ count: 1 }));
+    const questions = [{ id: Q_ID, row_version: 3 }];
+    expect(await markClarificationQuestionsSent(OPP_ID, "2026-10-14", questions)).toEqual({
+      kind: "ok",
+      count: 1,
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/mark-sent",
+      {
+        params: { path: { opportunity_id: OPP_ID } },
+        body: { sent_on: "2026-10-14", questions },
+      },
+    );
+  });
+
+  it("refuses bad mark-sent input without calling the API", async () => {
+    const one = [{ id: Q_ID, row_version: 3 }];
+    expect(await markClarificationQuestionsSent("x", "2026-10-14", one)).toEqual({ kind: "error" });
+    expect(await markClarificationQuestionsSent(OPP_ID, "14/10/2026", one)).toEqual({
+      kind: "error",
+    });
+    expect(await markClarificationQuestionsSent(OPP_ID, "2026-10-14", [])).toEqual({
+      kind: "error",
+    });
+    const many = Array.from({ length: 201 }, () => ({ id: Q_ID, row_version: 1 }));
+    expect(await markClarificationQuestionsSent(OPP_ID, "2026-10-14", many)).toEqual({
+      kind: "error",
+    });
+    expect(await markClarificationQuestionUnanswered({ opportunityId: OPP_ID })).toEqual({
+      kind: "error",
+    });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it("maps mark-sent failures; a 412 reads who changed a listed question", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const one = [{ id: Q_ID, row_version: 3 }];
+    api.POST.mockResolvedValueOnce({
+      error: { code: "validation_error", detail: "The date sent can't be in the future." },
+      response: status(422),
+    })
+      .mockResolvedValueOnce({ error: { code: "forbidden" }, response: status(403) })
+      .mockResolvedValueOnce({ error: { code: "row_version_mismatch" }, response: status(412) });
+    api.GET.mockResolvedValue(
+      ok({
+        items: [
+          {
+            id: "g",
+            question: {
+              id: Q_ID,
+              status: "sent",
+              row_version: 4,
+              last_changed_by: { id: USER_ID, name: "[OTHER]" },
+            },
+          },
+        ],
+      }),
+    );
+    expect(await markClarificationQuestionsSent(OPP_ID, "2026-10-14", one)).toEqual({
+      kind: "invalid",
+      detail: "The date sent can't be in the future.",
+    });
+    expect(await markClarificationQuestionsSent(OPP_ID, "2026-10-14", one)).toEqual({
+      kind: "forbidden",
+    });
+    expect(await markClarificationQuestionsSent(OPP_ID, "2026-10-14", one)).toEqual({
+      kind: "stale",
+      changedBy: "[OTHER]",
+    });
+  });
+
+  it("No answer POSTs with If-Match and maps question_not_sent", async () => {
+    const base = { opportunityId: OPP_ID, questionId: Q_ID, rowVersion: 3 };
+    api.POST.mockResolvedValueOnce(ok({ id: Q_ID, status: "unanswered" })).mockResolvedValueOnce({
+      error: { code: "question_not_sent" },
+      response: status(409),
+    });
+    expect(await markClarificationQuestionUnanswered(base)).toEqual({
+      kind: "ok",
+      question: { id: Q_ID, status: "unanswered" },
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/no-answer",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, question_id: Q_ID },
+          header: { "If-Match": '"3"' },
+        },
+      },
+    );
+    expect(await markClarificationQuestionUnanswered(base)).toEqual({ kind: "question-not-sent" });
+  });
+
+  it("an edit of a sent question maps question_not_editable", async () => {
+    api.PATCH.mockResolvedValue({
+      error: { code: "question_not_editable" },
+      response: status(409),
+    });
+    expect(
+      await editClarificationQuestion({
+        opportunityId: OPP_ID,
+        questionId: Q_ID,
+        rowVersion: 3,
+        text: "a",
+      }),
+    ).toEqual({ kind: "question-not-editable" });
   });
 });
 

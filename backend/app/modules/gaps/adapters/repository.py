@@ -2,7 +2,7 @@
 Questions (Story 4.3). Runs inside the caller's Unit of Work."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -86,6 +86,12 @@ class QuestionRecord:
     approved_at: datetime | None = None
     edited_by_human: bool = False
     changed_by: UUID | None = None
+    sent_on: date | None = None
+    sent_by: UUID | None = None
+
+
+TOUCHED_QUESTION_STATUSES = ("approved", "sent", "unanswered")
+"""A question in one of these statuses was touched by a person (Stories 4.5, 4.6)."""
 
 
 # --- detections -----------------------------------------------------------------------------
@@ -225,12 +231,16 @@ async def update_detection(
 
 
 def _untouched_question_or_none() -> ColumnElement[bool]:
-    """True for a Gap whose question (if any) no person has edited or approved."""
+    """True for a Gap whose question (if any) no person has edited, approved, sent or marked
+    "No answer"."""
     touched = (
         select(QuestionRow.id)
         .where(
             QuestionRow.gap_id == GapRow.id,
-            or_(QuestionRow.edited_by_human.is_(True), QuestionRow.status == "approved"),
+            or_(
+                QuestionRow.edited_by_human.is_(True),
+                QuestionRow.status.in_(TOUCHED_QUESTION_STATUSES),
+            ),
         )
         .exists()
     )
@@ -240,9 +250,10 @@ def _untouched_question_or_none() -> ColumnElement[bool]:
 async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> tuple[int, int]:
     """Mark every `open`, `detected` Gap of the Opportunity `superseded`, together with its
     Clarification Question, except those whose question a person has edited or approved
-    (Story 4.5) or whose impact a person changed or that a person reopened
-    (`touched_by_human`, Story 4.4): they stay as they are. Dismissed Gaps are never touched.
-    Returns how many Gaps changed and how many were kept. The caller holds
+    (Story 4.5), sent or marked "No answer" (Story 4.6), or whose impact a person changed
+    or that a person reopened (`touched_by_human`, Story 4.4): they stay as they are.
+    Dismissed Gaps are never touched. Returns how many Gaps changed and how many were kept.
+    The caller holds
     `lock_opportunity`, which question and Gap edits take too."""
     gap_ids = list(
         (
@@ -573,6 +584,8 @@ def _question(row: QuestionRow) -> QuestionRecord:
         approved_at=row.approved_at,
         edited_by_human=row.edited_by_human,
         changed_by=row.changed_by,
+        sent_on=row.sent_on,
+        sent_by=row.sent_by,
     )
 
 
@@ -623,6 +636,25 @@ async def drafted_questions_of_open_gaps(
     return [_question(row) for row in rows.scalars()]
 
 
+async def questions_of_open_gaps(
+    uow: UnitOfWork, opportunity_id: UUID, status: str
+) -> list[tuple[QuestionRecord, GapRecord]]:
+    """The questions in `status` of the Opportunity's `open` Gaps, with their Gaps, oldest
+    Gap first (the caller ranks them)."""
+    found = await uow.session.execute(
+        select(QuestionRow, GapRow)
+        .join(GapRow, GapRow.id == QuestionRow.gap_id)
+        .where(
+            GapRow.opportunity_id == opportunity_id,
+            GapRow.status == "open",
+            QuestionRow.status == status,
+        )
+        .order_by(GapRow.created_at, GapRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return [(_question(question), _gap(gap)) for question, gap in found.all()]
+
+
 async def update_question(
     uow: UnitOfWork,
     question_id: UUID,
@@ -636,6 +668,8 @@ async def update_question(
     edited_by_human: bool,
     changed_by: UUID,
     status_changed_at: datetime | None,
+    sent_on: date | None = None,
+    sent_by: UUID | None = None,
 ) -> QuestionRecord | None:
     """Write the question's new state if it is still at `expected_row_version` and its Gap
     is still `open` (a Gap converted by `estimates` meanwhile doesn't take the gaps lock),
@@ -649,6 +683,8 @@ async def update_question(
         "approved_at": approved_at,
         "edited_by_human": edited_by_human,
         "changed_by": changed_by,
+        "sent_on": sent_on,
+        "sent_by": sent_by,
         "row_version": QuestionRow.row_version + 1,
     }
     if status_changed_at is not None:

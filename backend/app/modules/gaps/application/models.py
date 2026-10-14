@@ -1,6 +1,6 @@
 """Read models for Gaps and their Clarification Questions (Story 4.3)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -43,11 +43,12 @@ class GapRequirement(BaseModel):
 
 
 class ClarificationQuestion(BaseModel):
-    """A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5);
-    `status_changed_at` moves on every status change. `approved_by` / `approved_at` are set
-    only while `approved`. `edited_by_human`: a person changed its text or topic.
-    `last_changed_by`: the person behind its latest edit or approval (null for the agent's
-    draft)."""
+    """A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5), then
+    `sent` and `unanswered` ("No answer", Story 4.6); `status_changed_at` moves on every
+    status change. `approved_by` / `approved_at` are set while `approved`, `sent` or
+    `unanswered`; `sent_on` / `sent_by` while `sent` or `unanswered`. `edited_by_human`: a
+    person changed its text or topic. `last_changed_by`: the person behind its latest change
+    (null for the agent's draft)."""
 
     id: str
     text: str
@@ -59,6 +60,8 @@ class ClarificationQuestion(BaseModel):
     approved_at: datetime | None
     edited_by_human: bool
     last_changed_by: UserRef | None
+    sent_on: date | None
+    sent_by: UserRef | None
 
 
 class QuestionChanges(BaseModel):
@@ -96,6 +99,47 @@ class ApproveSelectedResult(BaseModel):
     """How many questions **Approve N selected** approved (Story 4.4)."""
 
     count: int = Field(ge=0)
+
+
+class MarkSentRequest(BaseModel):
+    """**Mark sent** (Story 4.6): the approved questions the client shows (1 to 200, `id` and
+    `row_version` each) and the date they were sent (not in the future)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sent_on: date = Field(description="The date the questions were sent; not in the future.")
+    questions: list[QuestionVersion] = Field(min_length=1, max_length=200)
+
+
+class MarkSentResult(BaseModel):
+    """How many questions **Mark sent** marked (Story 4.6)."""
+
+    count: int = Field(ge=0)
+
+
+QuestionExportFormat = Literal["copy", "docx", "eml"]
+
+
+class QuestionExportRequest(BaseModel):
+    """An export of the approved Clarification Questions (Story 4.6): `copy` (plain text),
+    `docx` (Word) or `eml` (an unsent email draft)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    format: QuestionExportFormat
+
+
+class QuestionExport(BaseModel):
+    """The exported questions (Story 4.6). For `copy`, `text` is the plain text to paste; for
+    `docx` and `eml`, `url` (relative to the API origin) is a short-lived signed link to the
+    file, downloaded as `file_name`, until `expires_at`. The others are null."""
+
+    format: QuestionExportFormat
+    question_count: int = Field(ge=1)
+    text: str | None = None
+    url: str | None = None
+    file_name: str | None = None
+    expires_at: datetime | None = None
 
 
 class ImpactChange(BaseModel):
@@ -212,11 +256,14 @@ class GapList(BaseModel):
     reopen Gaps (Story 4.4).
     `can_start_detection`: whether the caller may start (retry) a detection;
     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
-    (Story 4.5). The UI only uses them to hide controls; the API decides. A sales
-    representative sees only approved questions: other Gaps come with `question` null."""
+    (Story 4.5); `can_send_questions`: whether the caller may export questions, mark them
+    sent and "No answer" (Story 4.6, sales representatives included). The UI only uses them
+    to hide controls; the API decides. A sales representative sees only approved, sent and
+    unanswered questions: other Gaps come with `question` null."""
 
     items: list[Gap]
     detection: Detection | None
     can_start_detection: bool
     can_edit_questions: bool
     can_edit_gaps: bool
+    can_send_questions: bool

@@ -5,17 +5,29 @@ import {
   approvedCount,
   approvedLabel,
   categoryLabel,
+  copiedCount,
   detectionFailure,
   gapCount,
   GAP_CATEGORIES,
   impactLabel,
   impactLevel,
   isDetecting,
+  isSent,
+  localToday,
+  markAllSentLabel,
+  markSelectedSentLabel,
+  QUESTION_EXPORT_FORMATS,
+  questionsExportFailureReason,
+  questionsExportUrl,
   questionStatus,
   questionTextProblem,
   questionTopicProblem,
+  sentCount,
+  sentLabel,
+  sentOnProblem,
   statusSince,
   toApprove,
+  toSend,
   type Gap,
   type GapCategory,
   type Impact,
@@ -106,5 +118,57 @@ describe("question helpers (Story 4.5)", () => {
     expect(approveAllLabel(2)).toBe("Approve all (2)");
     expect(approvedCount(1)).toBe("1 question approved");
     expect(approvedCount(3)).toBe("3 questions approved");
+  });
+});
+
+describe("sending helpers (Story 4.6)", () => {
+  it("labels Sent (neutral) and No answer (gap amber); both count as sent", () => {
+    expect(questionStatus("sent")).toMatchObject({ label: "Sent", tone: "text-muted-foreground" });
+    expect(questionStatus("unanswered")).toMatchObject({ label: "No answer", tone: "text-gap" });
+    expect([isSent("sent"), isSent("unanswered"), isSent("approved")]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it("says when and by whom a question was sent", () => {
+    expect(sentLabel({ sent_on: "2026-10-14", sent_by: { id: "u", name: "Rep Person" } })).toBe(
+      "Sent 14 Oct 2026 by Rep Person",
+    );
+    expect(sentLabel({ sent_on: null, sent_by: null })).toBe("Sent by someone");
+  });
+
+  it("lists the approved questions of open Gaps as what is sent", () => {
+    const base = { status: "open", question: { status: "approved" } };
+    const items = [
+      base,
+      { ...base, question: { status: "drafted" } },
+      { ...base, question: { status: "sent" } },
+      { ...base, status: "converted" },
+    ] as unknown as Gap[];
+    expect(toSend(items)).toHaveLength(1);
+    expect(markAllSentLabel(3)).toBe("Mark all sent (3)");
+    expect(markSelectedSentLabel(2)).toBe("Mark 2 selected sent");
+    expect(sentCount(1)).toBe("1 question marked sent");
+    expect(copiedCount(3)).toBe("3 questions copied");
+  });
+
+  it("checks the date sent: required, not in the future", () => {
+    expect(localToday(new Date(2026, 9, 4))).toBe("2026-10-04");
+    expect(sentOnProblem("2026-10-14", "2026-10-14")).toBeNull();
+    expect(sentOnProblem("2026-10-15", "2026-10-14")).toBe("The date sent can't be in the future.");
+    expect(sentOnProblem("", "2026-10-14")).toBe("Give the date the questions were sent.");
+  });
+
+  it("names the export formats, its route and its failures", () => {
+    expect(QUESTION_EXPORT_FORMATS.map((f) => f.label)).toEqual([
+      "Copy",
+      "Word (.docx)",
+      "Email draft (.eml)",
+    ]);
+    expect(questionsExportUrl("o 1", "eml")).toBe("/api/opportunities/o%201/questions-export?format=eml");
+    expect(questionsExportFailureReason(409)).toBe("there are no approved questions to export");
+    expect(questionsExportFailureReason(null)).toBe("the export service couldn't be reached");
   });
 });
