@@ -479,10 +479,11 @@ export interface paths {
         /**
          * List Gaps
          * @description The Opportunity's open Gaps, high impact first, then medium, then low (oldest first
-         *     within an impact), then its converted Gaps in the same order, each with the Requirements
-         *     it relates to and its Clarification Question; and its latest Gap detection (null before
-         *     the first). Anyone who can read the Opportunity; a sales representative sees only
-         *     approved questions.
+         *     within an impact), then its converted Gaps, then its dismissed Gaps, each group in the
+         *     same order, each with the Requirements it relates to, its Clarification Question, its
+         *     dismissal and its history; and its latest Gap detection (null before the first). Anyone
+         *     who can read the Opportunity; a sales representative sees only approved questions, and
+         *     no reason or note text.
          */
         get: operations["list_gaps"];
         put?: never;
@@ -576,6 +577,95 @@ export interface paths {
          *     collaborators, except sales representatives.
          */
         post: operations["approve_clarification_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/clarification-questions/approve-selected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Selected Clarification Questions
+         * @description Approve exactly the selected drafted Clarification Questions (`id` and `row_version`
+         *     each, 1 to 200), all or nothing. If one changed, is not drafted, or is not on an open
+         *     Gap, 412 and nothing is approved. The owner and collaborators, except sales
+         *     representatives.
+         */
+        post: operations["approve_selected_clarification_questions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change Gap Impact
+         * @description Change an open Gap's impact, with a reason (kept in its history, never in the trace).
+         *     The same impact: nothing is written. A later Gap detection keeps the Gap. The owner and
+         *     collaborators, except sales representatives.
+         */
+        patch: operations["change_gap_impact"];
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Gap
+         * @description Dismiss an open Gap as `not_relevant` (note optional) or `other` (note required). A
+         *     later Gap detection never reopens it, and drops a Gap with the same category and title.
+         *     The owner and collaborators, except sales representatives.
+         */
+        post: operations["dismiss_gap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Gap
+         * @description Reopen a dismissed Gap, with a reason (kept in its history, never in the trace). A
+         *     later Gap detection keeps it. The owner and collaborators, except sales
+         *     representatives.
+         */
+        post: operations["reopen_gap"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1524,6 +1614,14 @@ export interface components {
             count: number;
         };
         /**
+         * ApproveSelectedResult
+         * @description How many questions **Approve N selected** approved (Story 4.4).
+         */
+        ApproveSelectedResult: {
+            /** Count */
+            count: number;
+        };
+        /**
          * AssessmentAgent
          * @description The specialist agents, in the order they are listed.
          * @enum {string}
@@ -2045,6 +2143,11 @@ export interface components {
          */
         DetectionStatus: "queued" | "running" | "succeeded" | "failed";
         /**
+         * DismissReasonKind
+         * @enum {string}
+         */
+        DismissReasonKind: "not_relevant" | "other";
+        /**
          * DownloadLink
          * @description A short-lived signed link to the original file of a version. `url` is relative to
          *     the API origin.
@@ -2482,8 +2585,11 @@ export interface components {
         /**
          * Gap
          * @description A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
-         *     or `converted` once an Assumption made from it was accepted (Story 8.4); `converted_to`
-         *     then names the Assumption's kind (`condition` or `contingency`), and is null otherwise.
+         *     `converted` once an Assumption made from it was accepted (Story 8.4; `converted_to` then
+         *     names the Assumption's kind, `condition` or `contingency`, and is null otherwise), or
+         *     `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise).
+         *     `history`: its changes, oldest first. `last_changed_by`: the person behind its latest
+         *     change (null until a person changes it).
          */
         Gap: {
             /** Id */
@@ -2510,6 +2616,10 @@ export interface components {
             /** Requirements */
             requirements: components["schemas"]["GapRequirement"][];
             question: components["schemas"]["ClarificationQuestion"] | null;
+            dismissal: components["schemas"]["GapDismissal"] | null;
+            /** History */
+            history: components["schemas"]["GapHistoryEntry"][];
+            last_changed_by: components["schemas"]["UserRef"] | null;
         };
         /**
          * GapCategory
@@ -2517,10 +2627,68 @@ export interface components {
          */
         GapCategory: "data_volumes" | "versions_and_platforms" | "integration_details" | "security_and_compliance" | "non_functional" | "scope_and_ownership" | "commercial" | "other";
         /**
+         * GapDismissal
+         * @description Why, by whom and when a Gap was dismissed (Story 4.4). `note` is null for a sales
+         *     representative, and when none was given.
+         */
+        GapDismissal: {
+            reason_kind: components["schemas"]["DismissReasonKind"];
+            /** Note */
+            note: string | null;
+            by: components["schemas"]["UserRef"];
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+        };
+        /**
+         * GapDismissalRequest
+         * @description A person's dismissal of an open Gap (Story 4.4). `note` is required for `other` and
+         *     optional for `not_relevant`.
+         */
+        GapDismissalRequest: {
+            reason_kind: components["schemas"]["DismissReasonKind"];
+            /**
+             * Note
+             * @description Why it is dismissed. Trimmed, 1 to 500 characters; required for `other`.
+             */
+            note?: string | null;
+        };
+        /**
+         * GapHistoryEntry
+         * @description One change of a Gap (Story 4.4), oldest first; the first is always `raised` by the
+         *     Clarification Agent at the Gap's `created_at`. `actor` is the person, or `"agent"`.
+         *     `old_impact` / `new_impact` are set for `impact_changed`, `reason_kind` for `dismissed`,
+         *     `reason` (the reason, or the dismissal note) for `impact_changed`, `dismissed` and
+         *     `reopened`; it is null for a sales representative.
+         */
+        GapHistoryEntry: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "raised" | "impact_changed" | "dismissed" | "reopened" | "converted";
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Actor */
+            actor: components["schemas"]["UserRef"] | "agent";
+            old_impact: components["schemas"]["Impact"] | null;
+            new_impact: components["schemas"]["Impact"] | null;
+            reason_kind: components["schemas"]["DismissReasonKind"] | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
          * GapList
          * @description The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
-         *     within an impact, followed by its converted Gaps in the same order (Story 8.4); and its
-         *     latest detection (null when none has been queued yet).
+         *     within an impact, followed by its converted Gaps (Story 8.4), then its dismissed Gaps
+         *     (Story 4.4), each group in the same order; and its latest detection (null when none has
+         *     been queued yet). `can_edit_gaps`: whether the caller may change impacts, dismiss and
+         *     reopen Gaps (Story 4.4).
          *     `can_start_detection`: whether the caller may start (retry) a detection;
          *     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
          *     (Story 4.5). The UI only uses them to hide controls; the API decides. A sales
@@ -2534,12 +2702,25 @@ export interface components {
             can_start_detection: boolean;
             /** Can Edit Questions */
             can_edit_questions: boolean;
+            /** Can Edit Gaps */
+            can_edit_gaps: boolean;
         };
         /**
          * GapOrigin
          * @enum {string}
          */
         GapOrigin: "detected";
+        /**
+         * GapReopening
+         * @description A person's reopening of a dismissed Gap (Story 4.4), with the reason.
+         */
+        GapReopening: {
+            /**
+             * Reason
+             * @description Why it is reopened. Trimmed, it must be 1 to 500 characters.
+             */
+            reason: string;
+        };
         /**
          * GapRequirement
          * @description A Requirement the Gap relates to, at the version it was raised against. `label` is
@@ -2561,7 +2742,7 @@ export interface components {
          * GapStatus
          * @enum {string}
          */
-        GapStatus: "open" | "superseded" | "converted";
+        GapStatus: "open" | "superseded" | "converted" | "dismissed";
         /**
          * GapTrigger
          * @description What raised the Gap. In the demo, always the agent, by category.
@@ -2594,6 +2775,18 @@ export interface components {
          * @enum {string}
          */
         Impact: "high" | "medium" | "low";
+        /**
+         * ImpactChange
+         * @description A person's change of an open Gap's impact (Story 4.4), with the reason.
+         */
+        ImpactChange: {
+            impact: components["schemas"]["Impact"];
+            /**
+             * Reason
+             * @description Why the impact changed. Trimmed, it must be 1 to 500 characters.
+             */
+            reason: string;
+        };
         /**
          * ImportErrorCode
          * @enum {string}
@@ -7782,6 +7975,788 @@ export interface operations {
                 };
             };
             /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    approve_selected_clarification_questions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionVersion"][];
+            };
+        };
+        responses: {
+            /** @description How many questions were approved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApproveSelectedResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A selected question changed (row version), is not drafted, or is not on an open Gap of this Opportunity (`row_version_mismatch`); nothing is approved */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID, or the body is not a list of 1 to 200 `{id, row_version}` (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    change_gap_impact: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Gap as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                gap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImpactChange"];
+            };
+        };
+        responses: {
+            /** @description The Gap */
+            200: {
+                headers: {
+                    /** @description The Gap's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gap"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Gap with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Gap is not open: it was dismissed, converted or superseded (`gap_not_open`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Gap changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: an unknown impact, or a reason blank or longer than 500 characters once trimmed, an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    dismiss_gap: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Gap as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                gap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GapDismissalRequest"];
+            };
+        };
+        responses: {
+            /** @description The Gap */
+            200: {
+                headers: {
+                    /** @description The Gap's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gap"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Gap with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Gap is not open: it was dismissed, converted or superseded (`gap_not_open`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Gap changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: an unknown reason kind, no note for `other`, or a note longer than 500 characters once trimmed, an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    reopen_gap: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Gap as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                gap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GapReopening"];
+            };
+        };
+        responses: {
+            /** @description The Gap */
+            200: {
+                headers: {
+                    /** @description The Gap's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gap"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Gap with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Gap is not dismissed (`gap_not_dismissed`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Gap changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a reason blank or longer than 500 characters once trimmed, an unknown field, or an id that is not a UUID */
             422: {
                 headers: {
                     [name: string]: unknown;

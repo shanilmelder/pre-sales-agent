@@ -75,6 +75,9 @@ class GapStatus(StrEnum):
     CONVERTED = "converted"
     """Story 8.4: an Assumption made from it was accepted. Only an `open` Gap converts, and a
     converted Gap is final: a later detection never supersedes it."""
+    DISMISSED = "dismissed"
+    """Story 4.4: a person set it aside with a reason (the domain's `dismissed_with_reason`).
+    It can be reopened; a later detection never supersedes or reopens it."""
 
 
 class ConvertedTo(StrEnum):
@@ -204,8 +207,14 @@ def validate_candidate[K](
     )
 
 
+def gap_key(category: str, title: str) -> tuple[str, str]:
+    """A Gap's identity for duplicate checks: its category and its title, ignoring case and
+    spacing."""
+    return category, " ".join(title.casefold().split())
+
+
 def _key[K](gap: ValidGap[K]) -> tuple[str, str]:
-    return gap.category.value, " ".join(gap.title.casefold().split())
+    return gap_key(gap.category.value, gap.title)
 
 
 def validate_candidates[K](
@@ -307,3 +316,114 @@ def touched(*, status: str, edited_by_human: bool) -> bool:
     """Whether a person has touched the question (edited or approved it): a later detection
     keeps its Gap instead of superseding it."""
     return edited_by_human or status == QuestionStatus.APPROVED
+
+
+# --- changing impact, dismissing and reopening Gaps (Story 4.4) -----------------------------
+
+REASON_MAX = 500
+"""Reasons and dismissal notes, in Unicode code points, on the trimmed text."""
+
+
+class DismissReasonKind(StrEnum):
+    NOT_RELEVANT = "not_relevant"
+    """The FR-11 live irrelevance measure counts these."""
+    OTHER = "other"
+    """Needs a note."""
+
+
+class GapHistoryKind(StrEnum):
+    IMPACT_CHANGED = "impact_changed"
+    DISMISSED = "dismissed"
+    REOPENED = "reopened"
+    CONVERTED = "converted"
+
+
+class GapNotOpenTransitionError(ValueError):
+    """The Gap is not `open`: its impact can't change and it can't be dismissed."""
+
+
+class GapNotDismissedTransitionError(ValueError):
+    """The Gap is not `dismissed`: it can't be reopened."""
+
+
+@dataclass(frozen=True, slots=True)
+class GapState:
+    """What a person's impact change, dismissal and reopening change on a Gap."""
+
+    status: GapStatus
+    impact: Impact
+    dismiss_reason_kind: DismissReasonKind | None = None
+    dismiss_note: str | None = field(default=None, repr=False)
+    dismissed_by: UUID | None = None
+    dismissed_at: datetime | None = None
+    touched_by_human: bool = False
+
+
+def reason_text(raw: str) -> str:
+    """A reason or note trimmed; ValueError (with the sentence to show) unless 1 to
+    `REASON_MAX` characters."""
+    trimmed = _bounded(raw, REASON_MAX)
+    if trimmed is None:
+        raise ValueError(f"The reason must be 1 to {REASON_MAX} characters long once trimmed.")
+    return trimmed
+
+
+def dismiss_note(kind: DismissReasonKind, raw: str | None) -> str | None:
+    """The dismissal note, validated: required for `other`, optional for `not_relevant` (a
+    blank one is then no note); ValueError (with the sentence to show) otherwise."""
+    if raw is None or not raw.strip():
+        if kind == DismissReasonKind.OTHER:
+            raise ValueError('Say why the Gap is dismissed: a note is required for "Other".')
+        return None
+    trimmed = _bounded(raw, REASON_MAX)
+    if trimmed is None:
+        raise ValueError(f"The note must be 1 to {REASON_MAX} characters long once trimmed.")
+    return trimmed
+
+
+def change_impact(state: GapState, impact: Impact) -> GapState:
+    """The Gap with its impact set by a person (`touched_by_human`); `state` itself when the
+    impact is unchanged. Only an `open` Gap's impact changes."""
+    if state.status != GapStatus.OPEN:
+        raise GapNotOpenTransitionError("Only an open Gap's impact can change.")
+    if impact == state.impact:
+        return state
+    return replace(state, impact=impact, touched_by_human=True)
+
+
+def dismiss_gap(
+    state: GapState,
+    *,
+    kind: DismissReasonKind,
+    note: str | None,
+    user_id: UUID,
+    at: datetime,
+) -> GapState:
+    """The `open` Gap dismissed by `user_id` at `at` with its reason. `note` is already
+    validated (`dismiss_note`)."""
+    if state.status != GapStatus.OPEN:
+        raise GapNotOpenTransitionError("Only an open Gap can be dismissed.")
+    return replace(
+        state,
+        status=GapStatus.DISMISSED,
+        dismiss_reason_kind=kind,
+        dismiss_note=note,
+        dismissed_by=user_id,
+        dismissed_at=at,
+    )
+
+
+def reopen_gap(state: GapState) -> GapState:
+    """The `dismissed` Gap open again, its dismissal cleared and marked `touched_by_human`
+    (a later detection keeps it)."""
+    if state.status != GapStatus.DISMISSED:
+        raise GapNotDismissedTransitionError("Only a dismissed Gap can be reopened.")
+    return replace(
+        state,
+        status=GapStatus.OPEN,
+        dismiss_reason_kind=None,
+        dismiss_note=None,
+        dismissed_by=None,
+        dismissed_at=None,
+        touched_by_human=True,
+    )

@@ -206,6 +206,13 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
+class GapNotDismissedError(ConflictError):
+    """A Gap reopen was asked for on a Gap that is not `dismissed` (Story 4.4)."""
+
+    code = "gap_not_dismissed"
+    title = "Gap not dismissed"
+
+
 class CatalogueDuplicateError(ConflictError):
     """A catalogue entry's code or name equals that of an active entry of the same kind
     (Story 3.1)."""

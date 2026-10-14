@@ -34,6 +34,9 @@ describe("labels", () => {
     expect(eventLabel("gaps.clarification_question.approved")).toBe(
       "Clarification Question approved",
     );
+    expect(eventLabel("gaps.gap.impact_changed")).toBe("Gap impact changed");
+    expect(eventLabel("gaps.gap.dismissed")).toBe("Gap dismissed");
+    expect(eventLabel("gaps.gap.reopened")).toBe("Gap reopened");
     expect(eventLabel("knowledge.catalogue_entry.updated")).toBe("Catalogue entry updated");
     expect(eventLabel("knowledge.catalogue_entry.reactivated")).toBe("Catalogue entry reactivated");
     expect(subjectLabel("knowledge.catalogue_entry")).toBe("Catalogue entry");

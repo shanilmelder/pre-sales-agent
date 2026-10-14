@@ -148,6 +148,9 @@ def _gap(title: str, status: str, question: str | None, q_status: str = "drafted
             "row_version": 1,
             "created_at": "2026-10-05T10:00:00Z",
             "requirements": [],
+            "dismissal": None,
+            "history": [],
+            "last_changed_by": None,
             "question": None
             if question is None
             else {
@@ -365,6 +368,22 @@ def test_empty_tables_say_none() -> None:
         "None",
     ]
     assert [r[0] for r in _sheet_rows(workbook["Clarification Questions"])[5:]] == ["None"]
+
+
+def test_a_dismissed_gaps_question_stays_out_of_the_export() -> None:
+    dismissed = _gap("Canteen hours", "dismissed", "When does the canteen open?")
+    document = build_export(
+        opportunity_title="Acme",
+        version=version(),
+        gaps=[*GAPS, dismissed],
+        exported_at=AT,
+    )
+    workbook = load_workbook(BytesIO(render_xlsx(document)))
+    questions = _sheet_rows(workbook["Clarification Questions"])
+
+    assert "Peak order volume" in str(questions)
+    assert "Canteen hours" not in str(questions)
+    assert "When does the canteen open?" not in str(questions)
 
 
 def _with_title(title: str) -> Any:

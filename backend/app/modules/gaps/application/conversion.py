@@ -13,30 +13,49 @@ Gaps) never touches it. Trace and logs carry ids and the Assumption's kind only.
 from uuid import UUID
 
 from app.modules.gaps.adapters import repository as repo
-from app.modules.gaps.domain.gaps import GAP_SUBJECT_TYPE, ConvertedTo
+from app.modules.gaps.domain.gaps import GAP_SUBJECT_TYPE, ConvertedTo, GapHistoryKind
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.errors import GapNotOpenError
+from app.platform.ids import new_id
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import GapsGapConverted
 from app.platform.uow import UnitOfWork
 
 NOT_OPEN_DETAIL = (
-    "The Gap behind this Assumption is no longer open: it was converted or replaced by a "
-    "newer Gap detection."
+    "The Gap behind this Assumption is no longer open: it was dismissed, converted or "
+    "replaced by a newer Gap detection."
 )
 _log = get_logger(__name__)
+
+
+def _person(actor: Actor) -> UUID | None:
+    """The acting person's id; None for an agent or the system."""
+    if actor.type != "user":
+        return None
+    try:
+        return UUID(actor.id)
+    except ValueError:  # pragma: no cover - user actors carry their user id
+        return None
 
 
 async def mark_converted(
     uow: UnitOfWork, gap_id: UUID, *, actor: Actor, assumption_kind: str
 ) -> None:
     """Mark the `open` Gap `converted` to `assumption_kind` (`condition` or `contingency`) and
-    trace `gaps.gap.converted`. Raises `GapNotOpenError` unless the Gap is `open`."""
+    trace `gaps.gap.converted`, with a `converted` entry in its history (Story 4.4). Raises
+    `GapNotOpenError` unless the Gap is `open`."""
     kind = ConvertedTo(assumption_kind)
     converted = await repo.convert_gap(uow, gap_id, converted_to=kind.value)
     if converted is None:
         raise GapNotOpenError(NOT_OPEN_DETAIL)
+    await repo.insert_history(
+        uow,
+        history_id=new_id(),
+        gap_id=gap_id,
+        kind=GapHistoryKind.CONVERTED.value,
+        actor_id=_person(actor),
+    )
     await trace.append(
         uow,
         actor=actor,

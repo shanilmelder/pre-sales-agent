@@ -8,10 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.gaps.domain.gaps import (
     QUESTION_MAX,
+    REASON_MAX,
     TOPIC_MAX,
     ConvertedTo,
     DetectionErrorCode,
     DetectionStatus,
+    DismissReasonKind,
     GapCategory,
     GapOrigin,
     GapStatus,
@@ -90,10 +92,91 @@ class ApproveAllResult(BaseModel):
     count: int = Field(ge=0)
 
 
+class ApproveSelectedResult(BaseModel):
+    """How many questions **Approve N selected** approved (Story 4.4)."""
+
+    count: int = Field(ge=0)
+
+
+class ImpactChange(BaseModel):
+    """A person's change of an open Gap's impact (Story 4.4), with the reason."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    impact: Impact
+    reason: StrictStr = Field(
+        description=f"Why the impact changed. Trimmed, it must be 1 to {REASON_MAX} characters."
+    )
+
+
+class GapDismissalRequest(BaseModel):
+    """A person's dismissal of an open Gap (Story 4.4). `note` is required for `other` and
+    optional for `not_relevant`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason_kind: DismissReasonKind
+    note: StrictStr | None = Field(
+        default=None,
+        description=f"Why it is dismissed. Trimmed, 1 to {REASON_MAX} characters; required "
+        "for `other`.",
+    )
+
+
+class GapReopening(BaseModel):
+    """A person's reopening of a dismissed Gap (Story 4.4), with the reason."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: StrictStr = Field(
+        description=f"Why it is reopened. Trimmed, it must be 1 to {REASON_MAX} characters."
+    )
+
+
+class GapDismissal(BaseModel):
+    """Why, by whom and when a Gap was dismissed (Story 4.4). `note` is null for a sales
+    representative, and when none was given."""
+
+    reason_kind: DismissReasonKind
+    note: str | None
+    by: UserRef
+    at: datetime
+
+
+GapHistoryEntryKind = Literal["raised", "impact_changed", "dismissed", "reopened", "converted"]
+
+
+class GapHistoryEntry(BaseModel):
+    """One change of a Gap (Story 4.4), oldest first; the first is always `raised` by the
+    Clarification Agent at the Gap's `created_at`. `actor` is the person, or `"agent"`.
+    `old_impact` / `new_impact` are set for `impact_changed`, `reason_kind` for `dismissed`,
+    `reason` (the reason, or the dismissal note) for `impact_changed`, `dismissed` and
+    `reopened`; it is null for a sales representative."""
+
+    kind: GapHistoryEntryKind
+    at: datetime
+    actor: UserRef | Literal["agent"]
+    old_impact: Impact | None
+    new_impact: Impact | None
+    reason_kind: DismissReasonKind | None
+    reason: str | None
+
+
+class IrrelevanceShare(BaseModel):
+    """The FR-11 live irrelevance measure (Story 4.4): detected Gaps not superseded, and how
+    many of them are dismissed as "Not relevant"."""
+
+    raised: int = Field(ge=0)
+    dismissed_not_relevant: int = Field(ge=0)
+
+
 class Gap(BaseModel):
     """A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
-    or `converted` once an Assumption made from it was accepted (Story 8.4); `converted_to`
-    then names the Assumption's kind (`condition` or `contingency`), and is null otherwise."""
+    `converted` once an Assumption made from it was accepted (Story 8.4; `converted_to` then
+    names the Assumption's kind, `condition` or `contingency`, and is null otherwise), or
+    `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise).
+    `history`: its changes, oldest first. `last_changed_by`: the person behind its latest
+    change (null until a person changes it)."""
 
     id: str
     title: str
@@ -109,6 +192,9 @@ class Gap(BaseModel):
     created_at: datetime
     requirements: list[GapRequirement]
     question: ClarificationQuestion | None
+    dismissal: GapDismissal | None
+    history: list[GapHistoryEntry]
+    last_changed_by: UserRef | None
 
 
 class Detection(BaseModel):
@@ -120,8 +206,10 @@ class Detection(BaseModel):
 
 class GapList(BaseModel):
     """The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
-    within an impact, followed by its converted Gaps in the same order (Story 8.4); and its
-    latest detection (null when none has been queued yet).
+    within an impact, followed by its converted Gaps (Story 8.4), then its dismissed Gaps
+    (Story 4.4), each group in the same order; and its latest detection (null when none has
+    been queued yet). `can_edit_gaps`: whether the caller may change impacts, dismiss and
+    reopen Gaps (Story 4.4).
     `can_start_detection`: whether the caller may start (retry) a detection;
     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
     (Story 4.5). The UI only uses them to hide controls; the API decides. A sales
@@ -131,3 +219,4 @@ class GapList(BaseModel):
     detection: Detection | None
     can_start_detection: bool
     can_edit_questions: bool
+    can_edit_gaps: bool

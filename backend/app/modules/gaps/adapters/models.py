@@ -27,6 +27,17 @@ _FALSE = text("false")
 """`QuestionRow` has a `text` column, which shadows `text()` inside its class body."""
 
 
+DISMISSED_FIELDS = (
+    "CASE WHEN status = 'dismissed' THEN "
+    "dismiss_reason_kind IS NOT NULL AND dismissed_by IS NOT NULL AND dismissed_at IS NOT NULL "
+    "AND (dismiss_reason_kind = 'not_relevant' OR dismiss_note IS NOT NULL) "
+    "ELSE dismiss_reason_kind IS NULL AND dismiss_note IS NULL AND dismissed_by IS NULL "
+    "AND dismissed_at IS NULL END"
+)
+"""The dismissal fields are set only while a Gap is `dismissed`, and then all of them (the
+note only for `other`, where it is required)."""
+
+
 class DetectionRow(Base):
     """One run of `gaps.detect_gaps` for an Opportunity. Inserted `queued` with its job;
     `error_code` is set only when `failed`. Counts are set when it succeeds."""
@@ -56,7 +67,11 @@ class DetectionRow(Base):
 class GapRow(RowVersioned, Base):
     """A Gap of an Opportunity. Detection inserts `open`, `detected` Gaps, and a later
     detection marks them `superseded`. Accepting an Assumption made from an `open` Gap marks it
-    `converted`, recording the Assumption's kind in `converted_to` (Story 8.4)."""
+    `converted`, recording the Assumption's kind in `converted_to` (Story 8.4). Story 4.4: a
+    person may change an `open` Gap's impact, dismiss it (`dismiss_*` / `dismissed_*`, set only
+    while `dismissed`, a note required for `other`) and reopen it. `changed_by`: the person
+    behind its latest change; `touched_by_human`: set by an impact change or a reopen, so a
+    later detection keeps it."""
 
     __tablename__ = "gaps_gaps"
     __table_args__ = (
@@ -69,7 +84,9 @@ class GapRow(RowVersioned, Base):
         ),
         CheckConstraint("impact IN ('high', 'medium', 'low')", name="impact"),
         CheckConstraint("origin IN ('detected')", name="origin"),
-        CheckConstraint("status IN ('open', 'superseded', 'converted')", name="status"),
+        CheckConstraint(
+            "status IN ('open', 'superseded', 'converted', 'dismissed')", name="status"
+        ),
         CheckConstraint(
             "converted_to IS NULL OR converted_to IN ('condition', 'contingency')",
             name="converted_to",
@@ -77,6 +94,11 @@ class GapRow(RowVersioned, Base):
         CheckConstraint(
             "(status = 'converted') = (converted_to IS NOT NULL)", name="converted_has_kind"
         ),
+        CheckConstraint(
+            "dismiss_reason_kind IS NULL OR dismiss_reason_kind IN ('not_relevant', 'other')",
+            name="dismiss_reason_kind",
+        ),
+        CheckConstraint(DISMISSED_FIELDS, name="dismissed_fields"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -92,6 +114,37 @@ class GapRow(RowVersioned, Base):
     detection_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("gaps_detections.id"))
     converted_to: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    dismiss_reason_kind: Mapped[str | None] = mapped_column(Text)
+    dismiss_note: Mapped[str | None] = mapped_column(Text)
+    dismissed_by: Mapped[UUID | None] = mapped_column(Uuid)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    changed_by: Mapped[UUID | None] = mapped_column(Uuid)
+    touched_by_human: Mapped[bool] = mapped_column(Boolean, server_default=_FALSE)
+
+
+class GapHistoryRow(Base):
+    """One human (or conversion) change of a Gap (Story 4.4). Insert-only. `actor_id`: the
+    person, or null when no person made it. `old_impact` / `new_impact` for
+    `impact_changed`, `reason_kind` for `dismissed`, `reason` (the reason or dismissal note)
+    for `impact_changed`, `dismissed` and `reopened`."""
+
+    __tablename__ = "gaps_gap_history"
+    __table_args__ = (
+        Index(None, "gap_id", "at"),
+        CheckConstraint(
+            "kind IN ('impact_changed', 'dismissed', 'reopened', 'converted')", name="kind"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    gap_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("gaps_gaps.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(Text)
+    actor_id: Mapped[UUID | None] = mapped_column(Uuid)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    old_impact: Mapped[str | None] = mapped_column(Text)
+    new_impact: Mapped[str | None] = mapped_column(Text)
+    reason_kind: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
 
 
 class GapRequirementRow(Base):

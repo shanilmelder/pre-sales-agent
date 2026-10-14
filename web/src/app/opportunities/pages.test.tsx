@@ -1292,7 +1292,9 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["4Gaps"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
-    expect(within(panel).getByRole("row").textContent).toBe("HighIntegration details[GAP]Approved");
+    expect(within(panel).getByRole("row").textContent).toBe(
+      "Open[GAP]HighIntegration detailsClarification Agent · Integration detailsApproved",
+    );
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps", {
       params: { path: { opportunity_id: OPP_ID } },

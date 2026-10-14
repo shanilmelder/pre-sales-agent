@@ -19,7 +19,7 @@ import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
 import type { Conflict } from "@/lib/conflicts";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
-import type { ClarificationQuestion, Detection } from "@/lib/gaps";
+import type { ClarificationQuestion, Detection, Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
 import {
@@ -1104,7 +1104,7 @@ export type QuestionWriteResult =
   | { kind: "stale"; changedBy: string | null }
   /** 422: a readable reason. */
   | { kind: "invalid"; detail: string }
-  /** 409 `gap_not_open`: the Gap was converted or replaced; nothing changed. */
+  /** 409 `gap_not_open`: the Gap was dismissed, converted or replaced; nothing changed. */
   | { kind: "gap-not-open" }
   | { kind: "forbidden" }
   /** 404: the Opportunity can't be read, or the question is gone. */
@@ -1313,6 +1313,215 @@ export async function approveAllClarificationQuestions(
   }
 }
 
+/** `POST /api/v1/opportunities/{id}/clarification-questions/approve-selected` with the
+ * selected drafted questions (`[{id, row_version}]`, 1 to 200): approves exactly those, all
+ * or nothing (Story 4.4). A 412 (one changed, isn't drafted or isn't on an open Gap) approves
+ * nothing. */
+export async function approveSelectedClarificationQuestions(
+  opportunityId: unknown,
+  selected: unknown,
+): Promise<ApproveAllQuestionsResult> {
+  if (
+    typeof opportunityId !== "string" ||
+    !UUID_RE.test(opportunityId) ||
+    !isShownList(selected) ||
+    selected.length < 1 ||
+    selected.length > 200
+  )
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/approve-selected",
+      {
+        params: { path: { opportunity_id: opportunityId } },
+        body: selected.map(({ id, row_version }) => ({ id, row_version })),
+      },
+    );
+    if (data) return { kind: "ok", count: data.count };
+    switch (response.status) {
+      case 412:
+        return { kind: "stale", changedBy: await shownChanger(opportunityId, selected) };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `approve selected questions failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `approve selected questions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- changing impact, dismissing and reopening Gaps (Story 4.4) ------------------------------
+
+export type GapTarget = {
+  opportunityId: string;
+  gapId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+};
+
+export type GapWriteResult =
+  | { kind: "ok"; gap: Gap }
+  /** 412: someone changed the Gap first. `changedBy` is null when unknown. */
+  | { kind: "stale"; changedBy: string | null }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  /** 409 `gap_not_open`: the Gap was dismissed, converted or replaced; nothing changed. */
+  | { kind: "gap-not-open" }
+  /** 409 `gap_not_dismissed`: the Gap was reopened meanwhile; nothing changed. */
+  | { kind: "gap-not-dismissed" }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the Gap is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isGapTarget(input: unknown): input is GapTarget {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, gapId, rowVersion } = input as Record<string, unknown>;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof gapId === "string" &&
+    UUID_RE.test(gapId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0
+  );
+}
+
+/** Who last changed the Gap, read again after a 412 (null when unknown). */
+async function gapChanger(opportunityId: string, gapId: string): Promise<string | null> {
+  const current = await listGaps(opportunityId);
+  if (current.kind !== "ok") return null;
+  return current.list.items.find((g) => g.id === gapId)?.last_changed_by?.name ?? null;
+}
+
+async function gapWriteFailure(
+  action: string,
+  input: GapTarget,
+  status: number,
+  error: unknown,
+): Promise<GapWriteResult> {
+  switch (status) {
+    case 412:
+      return { kind: "stale", changedBy: await gapChanger(input.opportunityId, input.gapId) };
+    case 422: {
+      const { detail } = problem(error);
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
+      };
+    }
+    case 409:
+      return problem(error).code === "gap_not_dismissed"
+        ? { kind: "gap-not-dismissed" }
+        : { kind: "gap-not-open" };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${action} failed: status=${status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
+}
+
+const IMPACT_VALUES: readonly string[] = ["high", "medium", "low"];
+
+/** `PATCH /api/v1/opportunities/{id}/gaps/{gid}/impact` with `If-Match`: an open Gap's
+ * impact, with a reason. Never retries or overwrites on 412. Logs ids and statuses only,
+ * never the reason. */
+export async function changeGapImpact(input: unknown): Promise<GapWriteResult> {
+  if (!isGapTarget(input)) return { kind: "error" };
+  const { impact, reason } = input as Record<string, unknown>;
+  if (typeof impact !== "string" || !IMPACT_VALUES.includes(impact) || typeof reason !== "string")
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH(
+      "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/impact",
+      {
+        params: {
+          path: { opportunity_id: input.opportunityId, gap_id: input.gapId },
+          header: { "If-Match": `"${input.rowVersion}"` },
+        },
+        body: { impact: impact as Gap["impact"], reason },
+      },
+    );
+    if (data) return { kind: "ok", gap: data };
+    return await gapWriteFailure("change impact", input, response.status, error);
+  } catch (thrown) {
+    console.error(`change impact failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/gaps/{gid}/dismiss` with `If-Match`: dismiss an open Gap
+ * as `not_relevant` (note optional) or `other` (note required). */
+export async function dismissGap(input: unknown): Promise<GapWriteResult> {
+  if (!isGapTarget(input)) return { kind: "error" };
+  const { reasonKind, note } = input as Record<string, unknown>;
+  if (
+    (reasonKind !== "not_relevant" && reasonKind !== "other") ||
+    (note !== undefined && typeof note !== "string")
+  )
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/dismiss",
+      {
+        params: {
+          path: { opportunity_id: input.opportunityId, gap_id: input.gapId },
+          header: { "If-Match": `"${input.rowVersion}"` },
+        },
+        body: { reason_kind: reasonKind, ...(note ? { note } : {}) },
+      },
+    );
+    if (data) return { kind: "ok", gap: data };
+    return await gapWriteFailure("dismiss gap", input, response.status, error);
+  } catch (thrown) {
+    console.error(`dismiss gap failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/gaps/{gid}/reopen` with `If-Match`: reopen a dismissed
+ * Gap, with a reason. */
+export async function reopenGap(input: unknown): Promise<GapWriteResult> {
+  if (!isGapTarget(input)) return { kind: "error" };
+  const { reason } = input as Record<string, unknown>;
+  if (typeof reason !== "string") return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/reopen",
+      {
+        params: {
+          path: { opportunity_id: input.opportunityId, gap_id: input.gapId },
+          header: { "If-Match": `"${input.rowVersion}"` },
+        },
+        body: { reason },
+      },
+    );
+    if (data) return { kind: "ok", gap: data };
+    return await gapWriteFailure("reopen gap", input, response.status, error);
+  } catch (thrown) {
+    console.error(`reopen gap failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
 // --- accepting Assumptions (Story 8.4 + 8.5) -------------------------------------------------
 
 export type AssumptionAcceptInput = {
@@ -1326,7 +1535,7 @@ export type AssumptionAcceptResult =
   | { kind: "ok"; assumption: Assumption }
   /** 412: someone changed the Assumption first. `changedBy` is null when unknown. */
   | { kind: "stale"; changedBy: string | null }
-  /** 409 `gap_not_open`: the Gap was converted or replaced; nothing changed. */
+  /** 409 `gap_not_open`: the Gap was dismissed, converted or replaced; nothing changed. */
   | { kind: "gap-not-open" }
   | { kind: "forbidden" }
   /** 404: the Opportunity can't be read, or the Assumption isn't in the current draft. */

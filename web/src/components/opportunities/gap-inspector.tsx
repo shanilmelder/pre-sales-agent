@@ -1,17 +1,32 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from "react";
 
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { InlineField } from "@/components/opportunities/inline-field";
 import {
   approvedLabel,
   categoryLabel,
+  DISMISS_REASONS,
+  dismissedLabel,
+  gapStatus,
+  historyAction,
+  historyByline,
+  IMPACTS,
+  noteProblem,
   questionStatus,
+  REASON_MAX,
+  reasonProblem,
   statusSince,
+  triggerLabel,
+  type DismissReasonKind,
   type Gap,
+  type GapHistoryEntry,
+  type GapStatus,
+  type Impact,
   type QuestionStatus,
 } from "@/lib/gaps";
+import { codePointLength } from "@/lib/opportunities";
 import { cn } from "@/lib/utils";
 
 const actionClass =
@@ -49,21 +64,27 @@ export type QuestionEditing = {
   onApprove: () => void;
 };
 
-/** The selected Gap in the right pane: its title and category, why it matters, its impact
- * and the basis for it, the related Requirements as chips with their excerpts, and its
- * Clarification Question with its topic, status pill and the date of its last status change.
- * With `edit` (and the Gap open), the topic and text are click-to-edit (Enter or blur saves,
- * Esc reverts), a drafted question has **Approve**; an approved one says who approved it and
- * when. Without `edit`, read-only. */
+/** The selected Gap in the right pane: its status, title and category, why it matters, its
+ * trigger, its impact and the basis for it, the related Requirements as chips with their
+ * excerpts, its Clarification Question with its topic, status pill and the date of its last
+ * status change, and its history (Story 4.4). With `edit` (and the Gap open), the topic and
+ * text are click-to-edit (Enter or blur saves, Esc reverts), a drafted question has
+ * **Approve**; an approved one says who approved it and when. With `gapEdit`, an open Gap has
+ * an impact select with a required reason and a **Dismiss** form ("Not relevant" / "Other"
+ * with a note); a dismissed one says why, by whom and when, and has **Reopen** with a reason.
+ * Convert is not offered here (Epic 8 does it from the Estimate). Without them, read-only. */
 export function GapInspector({
   gap,
   focusRequest = 0,
   edit,
+  gapEdit,
 }: {
   gap: Gap;
   focusRequest?: number;
-  /** Left out for those who may not edit. */
+  /** Left out for those who may not edit questions. */
   edit?: QuestionEditing;
+  /** Left out for those who may not change Gaps. */
+  gapEdit?: GapEditing;
 }) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -77,7 +98,10 @@ export function GapInspector({
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-4 p-gutter">
       <div className="flex flex-col gap-1">
-        <p className="text-meta text-muted-foreground">{categoryLabel(gap.category)}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-meta text-muted-foreground">{categoryLabel(gap.category)}</p>
+          <GapStatusPill status={gap.status} />
+        </div>
         <h3
           id={headingId}
           ref={headingRef}
@@ -93,10 +117,27 @@ export function GapInspector({
         <p className="whitespace-pre-wrap break-words text-body">{gap.why_it_matters}</p>
       </div>
 
+      {gap.dismissal ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-meta text-muted-foreground">{dismissedLabel(gap.dismissal)}</p>
+          {gap.dismissal.note ? (
+            <p className="whitespace-pre-wrap break-words text-body">{gap.dismissal.note}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-1">
+        <h4 className="text-label text-muted-foreground">Trigger</h4>
+        <p className="text-body">{triggerLabel(gap)}</p>
+      </div>
+
       <div className="flex flex-col gap-1">
         <h4 className="text-label text-muted-foreground">Impact</h4>
         <ImpactBar impact={gap.impact} />
         <p className="whitespace-pre-wrap break-words text-body">{gap.impact_basis}</p>
+        {gapEdit && gap.status === "open" ? (
+          <ImpactForm key={`${gap.id}-${gap.row_version}`} gap={gap} edit={gapEdit} />
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -183,6 +224,305 @@ export function GapInspector({
           ) : null}
         </div>
       ) : null}
+
+      {gapEdit && gap.status === "open" ? (
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-label text-muted-foreground">Dismiss</h4>
+          <DismissForm edit={gapEdit} />
+        </div>
+      ) : null}
+      {gapEdit && gap.status === "dismissed" ? (
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-label text-muted-foreground">Reopen</h4>
+          <ReopenForm edit={gapEdit} />
+        </div>
+      ) : null}
+
+      <GapHistory history={gap.history} />
     </section>
+  );
+}
+
+// --- Gap status, impact change, dismiss, reopen and history (Story 4.4) ----------------------
+
+/** A Gap's status pill: "Open", "Converted" or "Dismissed", always an icon and a label. */
+export function GapStatusPill({ status }: { status: GapStatus }) {
+  const known = gapStatus(status);
+  const Icon = known.icon;
+  return (
+    <span
+      data-gap-status={status}
+      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
+    >
+      <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
+      {known.label}
+    </span>
+  );
+}
+
+/** How a Gap write ended, as the inspector's forms need it: `ok` clears the form, `invalid`
+ * shows the reason under it; `failed` was handled elsewhere (a notice or the stale view). */
+export type GapFormOutcome = "ok" | "failed" | { invalid: string };
+
+/** What the inspector needs to change the Gap's impact, dismiss and reopen it (Story 4.4). */
+export type GapEditing = {
+  /** A write of this Gap is in flight. */
+  busy: boolean;
+  /** Nothing may be changed (a stale view, or a reload or approval in flight). */
+  locked: boolean;
+  onImpact: (impact: Impact, reason: string) => Promise<GapFormOutcome>;
+  onDismiss: (kind: DismissReasonKind, note: string) => Promise<GapFormOutcome>;
+  onReopen: (reason: string) => Promise<GapFormOutcome>;
+};
+
+const fieldClass =
+  "w-full rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive";
+
+/** A labelled textarea with a code-point counter and its error. */
+function ReasonInput({
+  label,
+  value,
+  onChange,
+  error,
+  disabled,
+  inputRef,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  error: string | null;
+  disabled: boolean;
+  inputRef?: Ref<HTMLTextAreaElement>;
+}) {
+  const id = useId();
+  const countId = useId();
+  const errorId = useId();
+  const length = codePointLength(value.trim());
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-meta text-muted-foreground">
+        {label}
+      </label>
+      <textarea
+        id={id}
+        ref={inputRef}
+        rows={2}
+        value={value}
+        disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${countId} ${errorId}` : countId}
+        onChange={(event) => onChange(event.target.value)}
+        className={`${fieldClass} py-1`}
+      />
+      <span
+        id={countId}
+        className={`text-meta [font-variant-numeric:tabular-nums] ${length > REASON_MAX ? "text-destructive" : "text-muted-foreground"}`}
+      >
+        {`${length}/${REASON_MAX}`}
+      </span>
+      {error ? (
+        <p id={errorId} className="text-meta text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Run a form's write; clear it on success, show a 422 under it. */
+async function submitForm(
+  write: () => Promise<GapFormOutcome>,
+  onOk: () => void,
+  setError: (error: string | null) => void,
+) {
+  const outcome = await write();
+  if (outcome === "ok") onOk();
+  else if (outcome !== "failed") setError(outcome.invalid);
+}
+
+/** Impact: a select plus a required reason, then Save. */
+function ImpactForm({ gap, edit }: { gap: Gap; edit: GapEditing }) {
+  const [impact, setImpact] = useState<Impact>(gap.impact);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const selectId = useId();
+  const disabled = edit.busy || edit.locked;
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    const problem = reasonProblem(reason);
+    setError(problem);
+    if (problem) {
+      reasonRef.current?.focus();
+      return;
+    }
+    void submitForm(
+      () => edit.onImpact(impact, reason.trim()),
+      () => setReason(""),
+      setError,
+    );
+  }
+
+  return (
+    <form aria-label="Change impact" onSubmit={onSubmit} className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <label htmlFor={selectId} className="shrink-0 whitespace-nowrap text-meta text-muted-foreground">
+          New impact
+        </label>
+        <select
+          id={selectId}
+          value={impact}
+          disabled={disabled}
+          onChange={(event) => setImpact(event.target.value as Impact)}
+          className={`${fieldClass} h-6 w-auto`}
+        >
+          {IMPACTS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <ReasonInput
+        label="Reason for the change"
+        value={reason}
+        onChange={setReason}
+        error={error}
+        disabled={disabled}
+        inputRef={reasonRef}
+      />
+      <div>
+        <button type="submit" disabled={disabled} className={actionClass}>
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Dismiss: "Not relevant" / "Other", a note (required for Other), then Dismiss. */
+function DismissForm({ edit }: { edit: GapEditing }) {
+  const [kind, setKind] = useState<DismissReasonKind>("not_relevant");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const groupName = useId();
+  const disabled = edit.busy || edit.locked;
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    const problem = noteProblem(kind, note);
+    setError(problem);
+    if (problem) {
+      noteRef.current?.focus();
+      return;
+    }
+    void submitForm(
+      () => edit.onDismiss(kind, note.trim()),
+      () => setNote(""),
+      setError,
+    );
+  }
+
+  return (
+    <form aria-label="Dismiss the Gap" onSubmit={onSubmit} className="flex flex-col gap-1.5">
+      <fieldset className="flex flex-col gap-1">
+        <legend className="mb-1 text-meta text-muted-foreground">Reason</legend>
+        <div className="flex gap-3">
+          {DISMISS_REASONS.map((option) => (
+            <label key={option.value} className="flex items-center gap-1.5 text-label">
+              <input
+                type="radio"
+                name={groupName}
+                value={option.value}
+                checked={kind === option.value}
+                disabled={disabled}
+                onChange={() => setKind(option.value)}
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <ReasonInput
+        label={kind === "other" ? "Note" : "Note (optional)"}
+        value={note}
+        onChange={setNote}
+        error={error}
+        disabled={disabled}
+        inputRef={noteRef}
+      />
+      <div>
+        <button type="submit" disabled={disabled} className={actionClass}>
+          Dismiss
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Reopen: a required reason, then Reopen. */
+function ReopenForm({ edit }: { edit: GapEditing }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const disabled = edit.busy || edit.locked;
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    const problem = reasonProblem(reason);
+    setError(problem);
+    if (problem) {
+      reasonRef.current?.focus();
+      return;
+    }
+    void submitForm(
+      () => edit.onReopen(reason.trim()),
+      () => setReason(""),
+      setError,
+    );
+  }
+
+  return (
+    <form aria-label="Reopen the Gap" onSubmit={onSubmit} className="flex flex-col gap-1.5">
+      <ReasonInput
+        label="Reason for reopening"
+        value={reason}
+        onChange={setReason}
+        error={error}
+        disabled={disabled}
+        inputRef={reasonRef}
+      />
+      <div>
+        <button type="submit" disabled={disabled} className={actionClass}>
+          Reopen
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** The Gap's history, oldest first: what happened, who and when, and the reason (left out
+ * for sales representatives by the API). */
+function GapHistory({ history }: { history: readonly GapHistoryEntry[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h4 className="text-label text-muted-foreground">History</h4>
+      <ol aria-label="Gap history" className="flex flex-col gap-1.5">
+        {history.map((entry, index) => (
+          <li key={`${entry.kind}-${entry.at}-${index}`} className="flex flex-col">
+            <span className="text-body">{historyAction(entry)}</span>
+            <span className="text-meta text-muted-foreground">{historyByline(entry)}</span>
+            {entry.reason ? (
+              <span className="whitespace-pre-wrap break-words text-meta">{entry.reason}</span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }

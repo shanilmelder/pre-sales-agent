@@ -17,8 +17,11 @@ Opportunity's detection lock until commit.
 4. `accept_gap_detection`, one Unit of Work: validates every candidate (the related labels
    must resolve to Requirements still active at the version read), supersedes the earlier
    open, detected Gaps with their questions (except those whose question a person edited or
-   approved, Story 4.5: they are kept as they are), stores the new Gaps, their Requirement links and
-   their drafted questions, marks the detection `succeeded` with its counts, and traces
+   approved, Story 4.5, or whose impact a person changed or that a person reopened, Story
+   4.4: they are kept as they are; dismissed Gaps are never touched), drops candidates that
+   repeat a dismissed Gap (same category and title, ignoring case and spacing; counted as
+   dropped), stores the new Gaps, their Requirement links and their drafted questions,
+   marks the detection `succeeded` with its counts, and traces
    `gaps.gap.raised` and `gaps.clarification_question.drafted` per Gap and
    `gaps.detection.completed`; and queues the Opportunity's specialist assessment run
    (`workflows.enqueue_run`, Stories 5.1 and 5.2; coalesced with a run already queued or running),
@@ -58,6 +61,8 @@ from app.modules.gaps.domain.gaps import (
     DetectionErrorCode,
     DetectionStatus,
     Validation,
+    ValidGap,
+    gap_key,
     mark_unknown_to_customer,
     trigger,
     validate_candidates,
@@ -206,6 +211,21 @@ async def _resolvable(
     }
 
 
+async def _without_dismissed(
+    uow: UnitOfWork, opportunity_id: UUID, validation: Validation[tuple[UUID, int]]
+) -> Validation[tuple[UUID, int]]:
+    """The validation without candidates that repeat one of the Opportunity's dismissed Gaps
+    (same category and title, ignoring case and spacing), which count as dropped (Story 4.4:
+    a person's dismissal stands)."""
+    dismissed = {gap_key(c, t) for c, t in await repo.dismissed_keys(uow, opportunity_id)}
+    if not dismissed:
+        return validation
+    kept: list[ValidGap[tuple[UUID, int]]] = [
+        g for g in validation.gaps if gap_key(g.category.value, g.title) not in dismissed
+    ]
+    return Validation(tuple(kept), validation.dropped + len(validation.gaps) - len(kept))
+
+
 async def accept_gap_detection(
     uow: UnitOfWork,
     *,
@@ -251,6 +271,7 @@ async def accept_gap_detection(
             extra={**ids, "dropped_count": validation.dropped},
         )
         raise ModelOutputInvalidError("Every proposed Gap was invalid.")
+    validation = await _without_dismissed(uow, record.opportunity_id, validation)
     superseded, kept = await repo.supersede_detected(uow, record.opportunity_id)
     for gap in validation.gaps:
         gap_id = new_id()
