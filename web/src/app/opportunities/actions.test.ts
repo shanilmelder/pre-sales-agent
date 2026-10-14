@@ -20,7 +20,10 @@ import {
   approveAllClarificationQuestions,
   cancelAssessmentRun,
   approveClarificationQuestion,
+  approveSelectedClarificationQuestions,
   changeCollaborator,
+  changeGapImpact,
+  dismissGap,
   confirmAllRequirements,
   confirmRequirement,
   createOpportunity,
@@ -37,6 +40,7 @@ import {
   loadRedTeam,
   loadRequirements,
   loadSources,
+  reopenGap,
   resolveConflict,
   retryAssessmentTask,
   retryParse,
@@ -1346,6 +1350,148 @@ describe("editClarificationQuestion / approveClarificationQuestion / approveAll"
         },
       ],
     ]);
+  });
+});
+
+describe("changeGapImpact / dismissGap / reopenGap / approveSelected (Story 4.4)", () => {
+  const G_ID = "00000000-0000-7000-8000-0000000000e1";
+  const Q_ID = "00000000-0000-7000-8000-0000000000e2";
+  const GAP = { id: G_ID, title: "[GAP]", row_version: 3 };
+  const ok = (data: unknown) => ({ data, response: new Response(null, { status: 200 }) });
+  const base = { opportunityId: OPP_ID, gapId: G_ID, rowVersion: 2 };
+  const target = {
+    params: { path: { opportunity_id: OPP_ID, gap_id: G_ID }, header: { "If-Match": '"2"' } },
+  };
+
+  it("PATCHes the impact with If-Match and the reason", async () => {
+    api.PATCH.mockResolvedValue(ok(GAP));
+    expect(await changeGapImpact({ ...base, impact: "low", reason: "[REASON]" })).toEqual({
+      kind: "ok",
+      gap: GAP,
+    });
+    expect(api.PATCH).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/impact",
+      { ...target, body: { impact: "low", reason: "[REASON]" } },
+    );
+  });
+
+  it("POSTs dismiss (the note left out when empty) and reopen with If-Match", async () => {
+    api.POST.mockResolvedValue(ok(GAP));
+    await dismissGap({ ...base, reasonKind: "not_relevant", note: "" });
+    await dismissGap({ ...base, reasonKind: "other", note: "[NOTE]" });
+    await reopenGap({ ...base, reason: "[BACK]" });
+    expect(api.POST.mock.calls).toEqual([
+      [
+        "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/dismiss",
+        { ...target, body: { reason_kind: "not_relevant" } },
+      ],
+      [
+        "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/dismiss",
+        { ...target, body: { reason_kind: "other", note: "[NOTE]" } },
+      ],
+      [
+        "/api/v1/opportunities/{opportunity_id}/gaps/{gap_id}/reopen",
+        { ...target, body: { reason: "[BACK]" } },
+      ],
+    ]);
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await changeGapImpact({ ...base, impact: "huge", reason: "a" })).toEqual({
+      kind: "error",
+    });
+    expect(await changeGapImpact({ ...base, gapId: "x", impact: "low", reason: "a" })).toEqual({
+      kind: "error",
+    });
+    expect(await dismissGap({ ...base, reasonKind: "duplicate" })).toEqual({ kind: "error" });
+    expect(await reopenGap({ ...base, rowVersion: -1, reason: "a" })).toEqual({ kind: "error" });
+    expect(await approveSelectedClarificationQuestions(OPP_ID, [])).toEqual({ kind: "error" });
+    const many = Array.from({ length: 201 }, () => ({ id: Q_ID, row_version: 1 }));
+    expect(await approveSelectedClarificationQuestions(OPP_ID, many)).toEqual({ kind: "error" });
+    expect(api.PATCH).not.toHaveBeenCalled();
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [409, "gap_not_dismissed", { kind: "gap-not-dismissed" }],
+    [409, "gap_not_open", { kind: "gap-not-open" }],
+    [422, "validation_error", { kind: "invalid", detail: "The reason must be 1 to 500." }],
+    [403, "forbidden", { kind: "forbidden" }],
+    [404, "not_found", { kind: "not-found" }],
+    [500, "x", { kind: "error" }],
+  ])("maps %i %s", async (code, problemCode, expected) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({
+      error: { code: problemCode, detail: "The reason must be 1 to 500." },
+      response: status(code),
+    });
+    expect(await reopenGap({ ...base, reason: "a" })).toEqual(expected);
+  });
+
+  it("a 422 without a readable detail falls back to a general sentence", async () => {
+    api.PATCH.mockResolvedValue({
+      error: { code: "validation_error", detail: "Invalid fields: body.impact" },
+      response: status(422),
+    });
+    expect(await changeGapImpact({ ...base, impact: "low", reason: "a" })).toEqual({
+      kind: "invalid",
+      detail: "The change was not accepted.",
+    });
+  });
+
+  it("on 412 reads who last changed the Gap", async () => {
+    api.POST.mockResolvedValue({ error: { code: "row_version_mismatch" }, response: status(412) });
+    api.GET.mockResolvedValue(
+      ok({ items: [{ ...GAP, last_changed_by: { id: USER_ID, name: "[OTHER]" } }] }),
+    );
+    expect(await dismissGap({ ...base, reasonKind: "not_relevant" })).toEqual({
+      kind: "stale",
+      changedBy: "[OTHER]",
+    });
+  });
+
+  it("POSTs approve-selected with the selected questions and maps its failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValueOnce(ok({ count: 1 }))
+      .mockResolvedValueOnce({ error: { code: "forbidden" }, response: status(403) })
+      .mockResolvedValueOnce({ error: { code: "not_found" }, response: status(404) });
+    const selected = [{ id: Q_ID, row_version: 3 }];
+    expect(await approveSelectedClarificationQuestions(OPP_ID, selected)).toEqual({
+      kind: "ok",
+      count: 1,
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/approve-selected",
+      { params: { path: { opportunity_id: OPP_ID } }, body: selected },
+    );
+    expect(await approveSelectedClarificationQuestions(OPP_ID, selected)).toEqual({
+      kind: "forbidden",
+    });
+    expect(await approveSelectedClarificationQuestions(OPP_ID, selected)).toEqual({
+      kind: "not-found",
+    });
+  });
+
+  it("on 412 for approve-selected reads who changed a selected question", async () => {
+    api.POST.mockResolvedValue({ error: { code: "row_version_mismatch" }, response: status(412) });
+    api.GET.mockResolvedValue(
+      ok({
+        items: [
+          {
+            id: G_ID,
+            question: {
+              id: Q_ID,
+              status: "drafted",
+              row_version: 4,
+              last_changed_by: { id: USER_ID, name: "[OTHER]" },
+            },
+          },
+        ],
+      }),
+    );
+    expect(
+      await approveSelectedClarificationQuestions(OPP_ID, [{ id: Q_ID, row_version: 3 }]),
+    ).toEqual({ kind: "stale", changedBy: "[OTHER]" });
   });
 });
 

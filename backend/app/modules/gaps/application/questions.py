@@ -19,6 +19,8 @@ of `open` Gaps change (409 `gap_not_open` otherwise).
 - `approve_all`: approves exactly the drafted questions the client lists (id and row
   version), one event each, all or nothing; 412 when the list differs from the drafted
   questions of open Gaps (one changed, approved meanwhile, or not listed).
+- `approve_selected` (Story 4.4): approves exactly the listed questions (1 to 200), one event
+  each, all or nothing; 412 when one is stale, not drafted, or not on an open Gap.
 
 Trace and logs carry ids, versions and field names only, never the text.
 """
@@ -32,6 +34,7 @@ from app.modules.gaps.adapters.repository import GapRecord, QuestionRecord
 from app.modules.gaps.application.gaps import question_names, question_view
 from app.modules.gaps.application.models import (
     ApproveAllResult,
+    ApproveSelectedResult,
     ClarificationQuestion,
     QuestionChanges,
     QuestionVersion,
@@ -67,8 +70,8 @@ from app.platform.uow import UnitOfWork
 MAX_ROW_VERSION = 2**31 - 1
 NOT_FOUND_DETAIL = "No Clarification Question with this id."
 NOT_OPEN_DETAIL = (
-    "The Gap of this Clarification Question is no longer open: it was converted or replaced "
-    "by a newer Gap detection."
+    "The Gap of this Clarification Question is no longer open: it was dismissed, converted "
+    "or replaced by a newer Gap detection."
 )
 _log = get_logger(__name__)
 
@@ -281,6 +284,67 @@ async def approve_question(
     return await _view(uow, approved)
 
 
+async def _approve_listed(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    drafted: Sequence[QuestionRecord],
+    *,
+    user_id: UUID,
+) -> None:
+    """Approve these drafted questions of open Gaps, already checked against what the client
+    listed."""
+    gaps = await repo.gaps_by_id(uow, opportunity_id, [q.gap_id for q in drafted])
+    for record in drafted:
+        await _approve(
+            uow,
+            actor,
+            opportunity_id,
+            record,
+            gaps[record.gap_id],
+            expected=record.row_version,
+            user_id=user_id,
+        )
+
+
+async def approve_selected(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    selected: Sequence[QuestionVersion],
+) -> ApproveSelectedResult:
+    """Approve exactly the questions the client selected (`selected`: id and row version) as
+    the caller; how many. All or nothing: if one changed, is not drafted, is not on an open
+    Gap of this Opportunity, or is listed twice with different versions, 412 and nothing is
+    approved."""
+    user_id = await _authorized(uow, actor, opportunity_id)
+    drafted = {q.id: q for q in await repo.drafted_questions_of_open_gaps(uow, opportunity_id)}
+    listed: dict[UUID, int] = {}
+    for q in selected:
+        if listed.setdefault(q.id, q.row_version) != q.row_version:
+            raise _selection_changed()
+    chosen = [drafted.get(qid) for qid in listed]
+    records = [q for q in chosen if q is not None]
+    if len(records) != len(listed) or any(q.row_version != listed[q.id] for q in records):
+        raise _selection_changed()
+    await _approve_listed(uow, actor, opportunity_id, records, user_id=user_id)
+    _log.info(
+        "gaps.clarification_questions_approved_selected",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "actor_id": str(user_id),
+            "count": len(records),
+        },
+    )
+    return ApproveSelectedResult(count=len(records))
+
+
+def _selection_changed() -> RowVersionMismatchError:
+    return RowVersionMismatchError(
+        "The selected Clarification Questions changed since you opened them. Reload and try again."
+    )
+
+
 async def approve_all(
     uow: UnitOfWork,
     actor: Principal,
@@ -299,17 +363,7 @@ async def approve_all(
         raise RowVersionMismatchError(
             "The Clarification Questions changed since you opened them. Reload and try again."
         )
-    gaps = await repo.gaps_by_id(uow, opportunity_id, [q.gap_id for q in drafted])
-    for record in drafted:
-        await _approve(
-            uow,
-            actor,
-            opportunity_id,
-            record,
-            gaps[record.gap_id],
-            expected=record.row_version,
-            user_id=user_id,
-        )
+    await _approve_listed(uow, actor, opportunity_id, drafted, user_id=user_id)
     _log.info(
         "gaps.clarification_questions_approved",
         extra={

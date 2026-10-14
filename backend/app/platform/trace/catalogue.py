@@ -287,6 +287,39 @@ class GapsGapConverted(TracePayload):
     row_version: int
 
 
+@register
+class GapsGapImpactChanged(TracePayload):
+    """A person changed an open Gap's impact (Story 4.4). Subject: the Gap (`gaps.gap`). The
+    reason is never in the trace."""
+
+    event_type: ClassVar[str] = "gaps.gap.impact_changed"
+
+    old_impact: Literal["high", "medium", "low"]
+    new_impact: Literal["high", "medium", "low"]
+    row_version: int
+
+
+@register
+class GapsGapDismissed(TracePayload):
+    """A person dismissed an open Gap (Story 4.4). Subject: the Gap (`gaps.gap`).
+    `reason_kind`: `not_relevant` or `other`; the note is never in the trace."""
+
+    event_type: ClassVar[str] = "gaps.gap.dismissed"
+
+    reason_kind: Literal["not_relevant", "other"]
+    row_version: int
+
+
+@register
+class GapsGapReopened(TracePayload):
+    """A person reopened a dismissed Gap (Story 4.4). Subject: the Gap (`gaps.gap`). The
+    reason is never in the trace."""
+
+    event_type: ClassVar[str] = "gaps.gap.reopened"
+
+    row_version: int
+
+
 # --- estimates ----------------------------------------------------------------------------
 # Story 8.1. Payloads hold the version number and counts only, never line or Requirement
 # text.

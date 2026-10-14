@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ApproveAllQuestionsResult,
+  GapWriteResult,
   QuestionWriteResult,
   StartGapDetectionResult,
 } from "@/app/opportunities/actions";
@@ -13,6 +14,7 @@ import type {
   Detection,
   Gap,
   GapCategory,
+  GapHistoryEntry,
   GapList,
   Impact,
 } from "@/lib/gaps";
@@ -31,12 +33,22 @@ const approveClarificationQuestion = vi.hoisted(() =>
 const approveAllClarificationQuestions = vi.hoisted(() =>
   vi.fn<(opportunityId: string, shown: unknown) => Promise<ApproveAllQuestionsResult>>(),
 );
+const approveSelectedClarificationQuestions = vi.hoisted(() =>
+  vi.fn<(opportunityId: string, selected: unknown) => Promise<ApproveAllQuestionsResult>>(),
+);
+const changeGapImpact = vi.hoisted(() => vi.fn<(input: unknown) => Promise<GapWriteResult>>());
+const dismissGap = vi.hoisted(() => vi.fn<(input: unknown) => Promise<GapWriteResult>>());
+const reopenGap = vi.hoisted(() => vi.fn<(input: unknown) => Promise<GapWriteResult>>());
 vi.mock("@/app/opportunities/actions", () => ({
   startGapDetection,
   loadGaps,
   editClarificationQuestion,
   approveClarificationQuestion,
   approveAllClarificationQuestions,
+  approveSelectedClarificationQuestions,
+  changeGapImpact,
+  dismissGap,
+  reopenGap,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -84,6 +96,19 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
       edited_by_human: false,
       last_changed_by: null,
     },
+    dismissal: null,
+    history: [
+      {
+        kind: "raised",
+        at: "2026-10-05T09:00:00Z",
+        actor: "agent",
+        old_impact: null,
+        new_impact: null,
+        reason_kind: null,
+        reason: null,
+      },
+    ],
+    last_changed_by: null,
   };
 }
 
@@ -97,8 +122,15 @@ function list(
   detection: Detection | null,
   canStart = true,
   canEdit = false,
+  canEditGaps = canEdit,
 ): GapList {
-  return { items, detection, can_start_detection: canStart, can_edit_questions: canEdit };
+  return {
+    items,
+    detection,
+    can_start_detection: canStart,
+    can_edit_questions: canEdit,
+    can_edit_gaps: canEditGaps,
+  };
 }
 
 function renderSection(initial: GapList, singleKeyShortcuts = true) {
@@ -119,6 +151,10 @@ beforeEach(() => {
   editClarificationQuestion.mockReset();
   approveClarificationQuestion.mockReset();
   approveAllClarificationQuestions.mockReset();
+  approveSelectedClarificationQuestions.mockReset();
+  changeGapImpact.mockReset();
+  dismissGap.mockReset();
+  reopenGap.mockReset();
 });
 
 afterEach(() => {
@@ -151,9 +187,15 @@ describe("GapsList", () => {
     );
     const rows = screen.getAllByRole("row");
     expect(rows).toHaveLength(3);
-    expect(rows[0].textContent).toBe("HighIntegration details[GAP 1]Draft");
-    expect(rows[1].textContent).toBe("MediumData volumes[GAP 2]Draft");
-    expect(rows[2].textContent).toBe("LowCommercial[GAP 3]Draft");
+    expect(rows[0].textContent).toBe(
+      "Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsDraft",
+    );
+    expect(rows[1].textContent).toBe(
+      "Open[GAP 2]MediumData volumesClarification Agent · Data volumesDraft",
+    );
+    expect(rows[2].textContent).toBe(
+      "Open[GAP 3]LowCommercialClarification Agent · CommercialDraft",
+    );
     expect(within(rows[0]).getByRole("button").className).toContain("min-h-row");
     const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
     expect(tabStops).toEqual([row(1)]);
@@ -173,10 +215,16 @@ describe("GapsList", () => {
       </ShellProviders>,
     );
     const rows = screen.getAllByRole("row");
-    expect(rows[0].textContent).toBe("MediumIntegration details[GAP 1]Draft");
+    expect(rows[0].textContent).toBe(
+      "Open[GAP 1]MediumIntegration detailsClarification Agent · Integration detailsDraft",
+    );
     expect(rows[0].hasAttribute("data-converted")).toBe(false);
-    expect(rows[1].textContent).toBe("HighIntegration details[GAP 2]Converted to Condition");
-    expect(rows[2].textContent).toBe("LowCommercial[GAP 3]Converted to Contingency");
+    expect(rows[1].textContent).toBe(
+      "Converted[GAP 2]HighIntegration detailsClarification Agent · Integration detailsConverted to Condition",
+    );
+    expect(rows[2].textContent).toBe(
+      "Converted[GAP 3]LowCommercialClarification Agent · CommercialConverted to Contingency",
+    );
     expect(rows[1].hasAttribute("data-converted")).toBe(true);
     expect(rows[1].className).toContain("text-muted-foreground");
     expect(await axeViolations(container)).toEqual([]);
@@ -224,7 +272,7 @@ describe("the inspector", () => {
     const inspector = pane();
     const heading = within(inspector).getByRole("heading", { level: 3, name: "[GAP 2]" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
-    expect(row(2).closest('[role="row"]')?.getAttribute("aria-selected")).toBe("true");
+    expect(row(2).closest('[role="row"]')?.getAttribute("aria-current")).toBe("true");
     expect(within(inspector).getByText("Integration details")).toBeTruthy();
     expect(within(inspector).getByText("[WHY 2]")).toBeTruthy();
     expect(within(inspector).getByText("Low")).toBeTruthy();
@@ -511,8 +559,8 @@ describe("question pills", () => {
     const user = userEvent.setup();
     const { container } = renderSection(list([approvedGap(1, "high"), gap(2, "low")], succeeded));
     const rows = screen.getAllByRole("row");
-    expect(rows[0].textContent).toBe("HighIntegration details[GAP 1]Approved");
-    expect(rows[1].textContent).toBe("LowIntegration details[GAP 2]Draft");
+    expect(rows[0].textContent).toBe("Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsApproved");
+    expect(rows[1].textContent).toBe("Open[GAP 2]LowIntegration detailsClarification Agent · Integration detailsDraft");
     expect(rows[0].querySelector("[data-question-status] svg")).toBeTruthy(); // icon plus label
 
     const inspector = await openRow(user, 1);
@@ -637,7 +685,7 @@ describe("editing questions", () => {
 
     expect(
       await screen.findByText(
-        "This Gap is no longer open: it was converted or replaced by a newer Gap detection.",
+        "This Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection.",
       ),
     ).toBeTruthy();
     expect(loadGaps).toHaveBeenCalled();
@@ -688,7 +736,7 @@ describe("approving questions", () => {
       await within(inspector).findByText("Approved by Owner Person, 5 Oct 2026"),
     ).toBeTruthy();
     expect(screen.getAllByRole("row")[0].textContent).toBe(
-      "HighIntegration details[GAP 1]Approved",
+      "Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsApproved",
     );
     expect(await axeViolations(container)).toEqual([]);
   });
@@ -728,7 +776,7 @@ describe("approving questions", () => {
       expect(screen.getByRole("status").textContent).toBe("2 questions approved"),
     );
     expect(screen.getAllByRole("row")[1].textContent).toBe(
-      "MediumIntegration details[GAP 2]Approved",
+      "Open[GAP 2]MediumIntegration detailsClarification Agent · Integration detailsApproved",
     );
   });
 
@@ -742,7 +790,7 @@ describe("approving questions", () => {
     const reload = await screen.findByRole("button", { name: "Reload" });
     expect(screen.getByText("Changed by Colleague since you opened it.")).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(reload));
-    expect(screen.getAllByRole("row")[0].textContent).toBe("HighIntegration details[GAP 1]Draft");
+    expect(screen.getAllByRole("row")[0].textContent).toBe("Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsDraft");
   });
 
   it("if the re-read after Approve all fails, offers Reload straight away", async () => {
@@ -774,8 +822,8 @@ describe("a sales representative", () => {
       list([approvedGap(1, "high"), hidden], succeeded, false, false),
     );
     const rows = screen.getAllByRole("row");
-    expect(rows[0].textContent).toBe("HighIntegration details[GAP 1]Approved");
-    expect(rows[1].textContent).toBe("LowIntegration details[GAP 2]");
+    expect(rows[0].textContent).toBe("Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsApproved");
+    expect(rows[1].textContent).toBe("Open[GAP 2]LowIntegration detailsClarification Agent · Integration details");
 
     const inspector = await openRow(user, 1);
     expect(
@@ -787,5 +835,375 @@ describe("a sales representative", () => {
 
     await user.click(row(2));
     expect(within(pane()).queryByText("Clarification Question")).toBeNull();
+  });
+});
+
+// --- Story 4.4: status icons, multi-select, impact change, dismiss, reopen, history ------------
+
+function historyEntry(
+  kind: GapHistoryEntry["kind"],
+  extra: Partial<GapHistoryEntry> = {},
+): GapHistoryEntry {
+  return {
+    kind,
+    at: "2026-10-14T10:00:00Z",
+    actor: OWNER,
+    old_impact: null,
+    new_impact: null,
+    reason_kind: null,
+    reason: null,
+    ...extra,
+  };
+}
+
+function dismissedGap(n: number, impact: Impact, note: string | null = null): Gap {
+  const base = gap(n, impact);
+  return {
+    ...base,
+    status: "dismissed",
+    row_version: 2,
+    dismissal: {
+      reason_kind: note ? "other" : "not_relevant",
+      note,
+      by: OWNER,
+      at: "2026-10-14T10:00:00Z",
+    },
+    history: [
+      ...base.history,
+      historyEntry("dismissed", {
+        reason_kind: note ? "other" : "not_relevant",
+        reason: note,
+      }),
+    ],
+    last_changed_by: OWNER,
+  };
+}
+
+describe("Gap status, groups and the header (Story 4.4)", () => {
+  it("greys dismissed Gaps at the bottom, keeps their keys, and labels each status", async () => {
+    const user = userEvent.setup();
+    const converted: Gap = { ...gap(2, "high"), status: "converted", converted_to: "condition" };
+    const { container } = renderSection(
+      list([gap(1, "low"), converted, dismissedGap(3, "high")], succeeded),
+    );
+
+    expect(screen.getByText("3 Gaps · 1 open · ranked by impact")).toBeTruthy();
+    const rows = screen.getAllByRole("row");
+    expect(rows[2].textContent).toBe(
+      "Dismissed[GAP 3]HighIntegration detailsClarification Agent · Integration detailsDismissed · Not relevant",
+    );
+    expect(rows[2].hasAttribute("data-dismissed")).toBe(true);
+    expect(rows[2].className).toContain("text-muted-foreground");
+    await user.tab();
+    await user.keyboard("jj");
+    expect(document.activeElement).toBe(row(3));
+    await user.keyboard("{Enter}");
+    const inspector = pane();
+    expect(
+      within(inspector).getByText("Dismissed · Not relevant · Owner Person, 14 Oct 2026"),
+    ).toBeTruthy();
+    // Read-only for those who may not change Gaps: no Reopen, but the history shows.
+    expect(within(inspector).queryByRole("form", { name: "Reopen the Gap" })).toBeNull();
+    const history = within(inspector).getByRole("list", { name: "Gap history" });
+    expect(within(history).getByText("Raised by Clarification Agent")).toBeTruthy();
+    expect(within(history).getByText("Dismissed: Not relevant")).toBeTruthy();
+    expect(within(history).getByText("Owner Person, 14 Oct 2026")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("shows the key hints under the list", () => {
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    for (const hint of ["move", "select", "open", "edit question"]) {
+      expect(screen.getByText(hint)).toBeTruthy();
+    }
+  });
+});
+
+describe("multi-select (Story 4.4)", () => {
+  it("x selects rows and Approve N selected approves exactly those", async () => {
+    const user = userEvent.setup();
+    approveSelectedClarificationQuestions.mockResolvedValue({ kind: "ok", count: 2 });
+    loadGaps.mockResolvedValue({
+      kind: "ok",
+      list: list(
+        [approvedGap(1, "high"), approvedGap(2, "medium"), gap(3, "low"), gap(4, "low")],
+        succeeded,
+        true,
+        true,
+      ),
+    });
+    const { container } = renderSection(
+      list([gap(1, "high"), gap(2, "medium"), gap(3, "low"), gap(4, "low")], succeeded, true, true),
+    );
+    expect(screen.getByRole("button", { name: "Approve all (4)" })).toBeTruthy();
+
+    row(1).focus();
+    await user.keyboard("x");
+    await user.keyboard("j");
+    await user.keyboard("x");
+
+    const rows = screen.getAllByRole("row");
+    expect(rows.map((r) => r.getAttribute("aria-selected"))).toEqual([
+      "true",
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(screen.getByRole("grid").getAttribute("aria-multiselectable")).toBe("true");
+    expect(screen.queryByRole("button", { name: /Approve all/ })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Approve 2 selected" }));
+
+    expect(approveSelectedClarificationQuestions).toHaveBeenCalledWith(OPP_ID, [
+      { id: gap(1, "high").question!.id, row_version: 1 },
+      { id: gap(2, "medium").question!.id, row_version: 1 },
+    ]);
+    await waitFor(() => expect(screen.getAllByRole("row")[0].textContent).toContain("Approved"));
+    expect(loadGaps).toHaveBeenCalled();
+    expect(screen.getAllByRole("row")[2].textContent).toContain("Draft");
+    expect(screen.getByRole("button", { name: "Approve all (2)" })).toBeTruthy();
+    expect(screen.getAllByRole("row").map((r) => r.getAttribute("aria-selected"))).toEqual([
+      "false",
+      "false",
+      "false",
+      "false",
+    ]);
+  });
+
+  it("the checkbox toggles a row; Esc clears the selection while the inspector is closed", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high"), gap(2, "low")], succeeded, true, true));
+
+    await user.click(screen.getByRole("checkbox", { name: "Select [GAP 2]" }));
+    expect(screen.getByRole("button", { name: "Approve 1 selected" })).toBeTruthy();
+    row(1).focus();
+    await user.keyboard("{Escape}");
+
+    expect(screen.getByRole("button", { name: "Approve all (2)" })).toBeTruthy();
+    expect(screen.getAllByRole("row").map((r) => r.getAttribute("aria-selected"))).toEqual([
+      "false",
+      "false",
+    ]);
+  });
+
+  it("a 412 on Approve N selected approves nothing and offers Reload", async () => {
+    const user = userEvent.setup();
+    approveSelectedClarificationQuestions.mockResolvedValue({
+      kind: "stale",
+      changedBy: "Colleague",
+    });
+    renderSection(list([gap(1, "high"), gap(2, "low")], succeeded, true, true));
+
+    await user.click(screen.getByRole("checkbox", { name: "Select [GAP 1]" }));
+    await user.click(screen.getByRole("button", { name: "Approve 1 selected" }));
+
+    expect(await screen.findByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(screen.getByText("Changed by Colleague since you opened it.")).toBeTruthy();
+  });
+
+  it("no selection for those who may not approve questions", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high")], succeeded, true, false));
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    row(1).focus();
+    await user.keyboard("x");
+    expect(screen.getAllByRole("row")[0].hasAttribute("aria-selected")).toBe(false);
+  });
+});
+
+describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
+  it("changes the impact with a required reason and re-ranks the list", async () => {
+    const user = userEvent.setup();
+    const lowered: Gap = {
+      ...gap(1, "low"),
+      row_version: 2,
+      history: [
+        ...gap(1, "low").history,
+        historyEntry("impact_changed", {
+          old_impact: "high",
+          new_impact: "low",
+          reason: "Lower risk",
+        }),
+      ],
+      last_changed_by: OWNER,
+    };
+    changeGapImpact.mockResolvedValue({ kind: "ok", gap: lowered });
+    const { container } = renderSection(
+      list([gap(1, "high"), gap(2, "medium")], succeeded, true, true),
+    );
+    const inspector = await openRow(user, 1);
+    const form = within(inspector).getByRole("form", { name: "Change impact" });
+
+    // The same impact sends nothing and keeps the reason.
+    const reasonField = within(form).getByLabelText("Reason for the change");
+    await user.type(reasonField, "Same");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+    expect(await within(form).findByText("Choose a different impact.")).toBeTruthy();
+    expect((reasonField as HTMLTextAreaElement).value).toBe("Same");
+    expect(changeGapImpact).not.toHaveBeenCalled();
+    await user.clear(reasonField);
+
+    await user.selectOptions(within(form).getByLabelText("New impact"), "low");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+    expect(within(form).getByText("Give a reason.")).toBeTruthy();
+    expect(changeGapImpact).not.toHaveBeenCalled();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.type(within(form).getByLabelText("Reason for the change"), "Lower risk");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+
+    expect(changeGapImpact).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      gapId: gap(1, "high").id,
+      rowVersion: 1,
+      impact: "low",
+      reason: "Lower risk",
+    });
+    await waitFor(() =>
+      expect(screen.getAllByRole("row").map((r) => r.textContent?.slice(0, 11))).toEqual([
+        "Open[GAP 2]",
+        "Open[GAP 1]",
+      ]),
+    );
+    const history = within(pane()).getByRole("list", { name: "Gap history" });
+    expect(within(history).getByText("Impact changed from High to Low")).toBeTruthy();
+    expect(within(history).getByText("Lower risk")).toBeTruthy();
+  });
+
+  it("dismisses as Other only with a note, then shows it greyed last with Reopen", async () => {
+    const user = userEvent.setup();
+    dismissGap.mockResolvedValue({ kind: "ok", gap: dismissedGap(1, "high", "Covered elsewhere") });
+    const { container } = renderSection(
+      list([gap(1, "high"), gap(2, "low")], succeeded, true, true),
+    );
+    const inspector = await openRow(user, 1);
+    const form = within(inspector).getByRole("form", { name: "Dismiss the Gap" });
+
+    await user.click(within(form).getByRole("radio", { name: "Other" }));
+    await user.click(within(form).getByRole("button", { name: "Dismiss" }));
+    expect(within(form).getByText(/a note is needed/)).toBeTruthy();
+    expect(dismissGap).not.toHaveBeenCalled();
+
+    await user.type(within(form).getByLabelText("Note"), "Covered elsewhere");
+    await user.click(within(form).getByRole("button", { name: "Dismiss" }));
+
+    expect(dismissGap).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      gapId: gap(1, "high").id,
+      rowVersion: 1,
+      reasonKind: "other",
+      note: "Covered elsewhere",
+    });
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[1].hasAttribute("data-dismissed")).toBe(true),
+    );
+    expect(screen.getByText("2 Gaps · 1 open · ranked by impact")).toBeTruthy();
+    const updated = pane();
+    expect(
+      within(updated).getByText("Dismissed · Other · Owner Person, 14 Oct 2026"),
+    ).toBeTruthy();
+    expect(within(updated).getByRole("form", { name: "Reopen the Gap" })).toBeTruthy();
+    expect(within(updated).queryByRole("form", { name: "Dismiss the Gap" })).toBeNull();
+    expect(within(updated).queryByRole("form", { name: "Change impact" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("dismisses as Not relevant without a note", async () => {
+    const user = userEvent.setup();
+    dismissGap.mockResolvedValue({ kind: "ok", gap: dismissedGap(1, "high") });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+    const form = within(inspector).getByRole("form", { name: "Dismiss the Gap" });
+
+    await user.click(within(form).getByRole("button", { name: "Dismiss" }));
+
+    expect(dismissGap).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      gapId: gap(1, "high").id,
+      rowVersion: 1,
+      reasonKind: "not_relevant",
+    });
+  });
+
+  it("reopens a dismissed Gap with a reason", async () => {
+    const user = userEvent.setup();
+    const reopened: Gap = {
+      ...gap(1, "high"),
+      row_version: 3,
+      history: [
+        ...dismissedGap(1, "high").history,
+        historyEntry("reopened", { reason: "Customer asked again" }),
+      ],
+    };
+    reopenGap.mockResolvedValue({ kind: "ok", gap: reopened });
+    renderSection(list([gap(2, "low"), dismissedGap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+    const form = within(inspector).getByRole("form", { name: "Reopen the Gap" });
+
+    await user.click(within(form).getByRole("button", { name: "Reopen" }));
+    expect(within(form).getByText("Give a reason.")).toBeTruthy();
+    await user.type(within(form).getByLabelText("Reason for reopening"), "Customer asked again");
+    await user.click(within(form).getByRole("button", { name: "Reopen" }));
+
+    expect(reopenGap).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      gapId: gap(1, "high").id,
+      rowVersion: 2,
+      reason: "Customer asked again",
+    });
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[0].textContent?.slice(0, 11)).toBe("Open[GAP 1]"),
+    );
+    const history = within(pane()).getByRole("list", { name: "Gap history" });
+    expect(within(history).getByText("Reopened")).toBeTruthy();
+  });
+
+  it("a 412 on a Gap write says who changed it and offers Reload; nothing is overwritten", async () => {
+    const user = userEvent.setup();
+    dismissGap.mockResolvedValue({ kind: "stale", changedBy: "Colleague" });
+    loadGaps.mockResolvedValue({
+      kind: "ok",
+      list: list([dismissedGap(1, "high")], succeeded, true, true),
+    });
+    const { container } = renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Dismiss" }));
+
+    const reload = await screen.findByRole("button", { name: "Reload" });
+    expect(screen.getByText("Changed by Colleague since you opened it.")).toBeTruthy();
+    expect(screen.getAllByRole("row")[0].hasAttribute("data-dismissed")).toBe(false);
+    expect(await axeViolations(container)).toEqual([]);
+    await user.click(reload);
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[0].hasAttribute("data-dismissed")).toBe(true),
+    );
+  });
+
+  it("a 409 on reopen says the Gap is no longer dismissed and re-reads", async () => {
+    const user = userEvent.setup();
+    reopenGap.mockResolvedValue({ kind: "gap-not-dismissed" });
+    loadGaps.mockResolvedValue({ kind: "ok", list: list([gap(1, "high")], succeeded, true, true) });
+    renderSection(list([dismissedGap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+    const form = within(inspector).getByRole("form", { name: "Reopen the Gap" });
+
+    await user.type(within(form).getByLabelText("Reason for reopening"), "x");
+    await user.click(within(form).getByRole("button", { name: "Reopen" }));
+
+    expect(
+      await screen.findByText("This Gap is no longer dismissed: someone reopened it."),
+    ).toBeTruthy();
+    expect(loadGaps).toHaveBeenCalled();
+  });
+
+  it("those who may not change Gaps see no impact, dismiss or reopen controls", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high")], succeeded, true, true, false));
+    const inspector = await openRow(user, 1);
+    expect(within(inspector).queryByRole("form", { name: "Change impact" })).toBeNull();
+    expect(within(inspector).queryByRole("form", { name: "Dismiss the Gap" })).toBeNull();
+    expect(within(inspector).getByRole("list", { name: "Gap history" })).toBeTruthy();
   });
 });

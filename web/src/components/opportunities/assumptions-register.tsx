@@ -41,7 +41,7 @@ const ACCEPT_FAILED = "The Assumption could not be accepted. Try again.";
 const ACCEPT_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can accept Assumptions.";
 const GAP_NOT_OPEN =
-  "Its Gap is no longer open: it was converted or replaced by a newer Gap detection. Reload to see the latest.";
+  "Its Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection. Reload to see the latest.";
 const GONE = "This Assumption is no longer in the current draft. Reload to see the latest.";
 
 const actionClass =

@@ -10,6 +10,7 @@ from sqlalchemy import ColumnElement, func, insert, or_, select, text, tuple_, u
 
 from app.modules.gaps.adapters.models import (
     DetectionRow,
+    GapHistoryRow,
     GapRequirementRow,
     GapRow,
     QuestionRow,
@@ -44,6 +45,25 @@ class GapRecord:
     converted_to: str | None
     row_version: int
     created_at: datetime
+    dismiss_reason_kind: str | None = None
+    dismiss_note: str | None = None
+    dismissed_by: UUID | None = None
+    dismissed_at: datetime | None = None
+    changed_by: UUID | None = None
+    touched_by_human: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GapHistoryRecord:
+    id: UUID
+    gap_id: UUID
+    kind: str
+    actor_id: UUID | None
+    at: datetime
+    old_impact: str | None
+    new_impact: str | None
+    reason_kind: str | None
+    reason: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,8 +240,10 @@ def _untouched_question_or_none() -> ColumnElement[bool]:
 async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> tuple[int, int]:
     """Mark every `open`, `detected` Gap of the Opportunity `superseded`, together with its
     Clarification Question, except those whose question a person has edited or approved
-    (Story 4.5): they stay as they are. Returns how many Gaps changed and how many were
-    kept. The caller holds `lock_opportunity`, which question edits take too."""
+    (Story 4.5) or whose impact a person changed or that a person reopened
+    (`touched_by_human`, Story 4.4): they stay as they are. Dismissed Gaps are never touched.
+    Returns how many Gaps changed and how many were kept. The caller holds
+    `lock_opportunity`, which question and Gap edits take too."""
     gap_ids = list(
         (
             await uow.session.execute(
@@ -230,6 +252,7 @@ async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> tuple[int
                     GapRow.opportunity_id == opportunity_id,
                     GapRow.status == "open",
                     GapRow.origin == "detected",
+                    GapRow.touched_by_human.is_(False),
                     _untouched_question_or_none(),
                 )
                 .values(status="superseded", row_version=GapRow.row_version + 1)
@@ -332,6 +355,12 @@ def _gap(row: GapRow) -> GapRecord:
         converted_to=row.converted_to,
         row_version=row.row_version,
         created_at=row.created_at,
+        dismiss_reason_kind=row.dismiss_reason_kind,
+        dismiss_note=row.dismiss_note,
+        dismissed_by=row.dismissed_by,
+        dismissed_at=row.dismissed_at,
+        changed_by=row.changed_by,
+        touched_by_human=row.touched_by_human,
     )
 
 
@@ -360,6 +389,131 @@ async def gaps_by_id(
         select(GapRow).where(GapRow.opportunity_id == opportunity_id, GapRow.id.in_(gap_ids))
     )
     return {row.id: _gap(row) for row in rows.scalars()}
+
+
+async def dismissed_keys(uow: UnitOfWork, opportunity_id: UUID) -> list[tuple[str, str]]:
+    """The category and title of each of the Opportunity's `dismissed` Gaps."""
+    rows = await uow.session.execute(
+        select(GapRow.category, GapRow.title).where(
+            GapRow.opportunity_id == opportunity_id, GapRow.status == "dismissed"
+        )
+    )
+    return [(category, title) for category, title in rows.all()]
+
+
+async def update_gap(
+    uow: UnitOfWork,
+    gap_id: UUID,
+    *,
+    expected_row_version: int,
+    from_status: str,
+    status: str,
+    impact: str,
+    dismiss_reason_kind: str | None,
+    dismiss_note: str | None,
+    dismissed_by: UUID | None,
+    dismissed_at: datetime | None,
+    touched_by_human: bool,
+    changed_by: UUID,
+) -> GapRecord | None:
+    """Write the Gap's new state if it is still at `expected_row_version` and in
+    `from_status` (a Gap converted by `estimates` meanwhile doesn't take the gaps lock),
+    bumping it; None (and no change) otherwise."""
+    changed = (
+        await uow.session.execute(
+            update(GapRow)
+            .where(
+                GapRow.id == gap_id,
+                GapRow.row_version == expected_row_version,
+                GapRow.status == from_status,
+            )
+            .values(
+                status=status,
+                impact=impact,
+                dismiss_reason_kind=dismiss_reason_kind,
+                dismiss_note=dismiss_note,
+                dismissed_by=dismissed_by,
+                dismissed_at=dismissed_at,
+                touched_by_human=touched_by_human,
+                changed_by=changed_by,
+                row_version=GapRow.row_version + 1,
+            )
+            .returning(GapRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_gap(uow, gap_id)
+
+
+async def insert_history(
+    uow: UnitOfWork,
+    *,
+    history_id: UUID,
+    gap_id: UUID,
+    kind: str,
+    actor_id: UUID | None,
+    at: datetime | None = None,
+    old_impact: str | None = None,
+    new_impact: str | None = None,
+    reason_kind: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Append one entry to the Gap's history; `at` defaults to the transaction's time."""
+    values: dict[str, object] = {
+        "id": history_id,
+        "gap_id": gap_id,
+        "kind": kind,
+        "actor_id": actor_id,
+        "old_impact": old_impact,
+        "new_impact": new_impact,
+        "reason_kind": reason_kind,
+        "reason": reason,
+    }
+    if at is not None:
+        values["at"] = at
+    await uow.session.execute(insert(GapHistoryRow).values(**values))
+
+
+async def history_for(uow: UnitOfWork, gap_ids: list[UUID]) -> dict[UUID, list[GapHistoryRecord]]:
+    """Each Gap's history, oldest first."""
+    if not gap_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(GapHistoryRow)
+        .where(GapHistoryRow.gap_id.in_(gap_ids))
+        .order_by(GapHistoryRow.at, GapHistoryRow.id)
+    )
+    found: dict[UUID, list[GapHistoryRecord]] = {}
+    for row in rows.scalars():
+        found.setdefault(row.gap_id, []).append(
+            GapHistoryRecord(
+                id=row.id,
+                gap_id=row.gap_id,
+                kind=row.kind,
+                actor_id=row.actor_id,
+                at=row.at,
+                old_impact=row.old_impact,
+                new_impact=row.new_impact,
+                reason_kind=row.reason_kind,
+                reason=row.reason,
+            )
+        )
+    return found
+
+
+async def irrelevance_counts(uow: UnitOfWork, opportunity_id: UUID | None) -> tuple[int, int]:
+    """Detected Gaps not superseded, and those dismissed as `not_relevant`, of the
+    Opportunity (or of every Opportunity)."""
+    statement = select(
+        func.count().filter(GapRow.status != "superseded"),
+        func.count().filter(
+            GapRow.status == "dismissed", GapRow.dismiss_reason_kind == "not_relevant"
+        ),
+    ).where(GapRow.origin == "detected")
+    if opportunity_id is not None:
+        statement = statement.where(GapRow.opportunity_id == opportunity_id)
+    raised, dismissed = (await uow.session.execute(statement)).one()
+    return int(raised), int(dismissed)
 
 
 async def get_gap(uow: UnitOfWork, gap_id: UUID) -> GapRecord | None:
