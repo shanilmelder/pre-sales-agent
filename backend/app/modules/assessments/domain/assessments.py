@@ -1,9 +1,10 @@
-"""Specialist Assessment rules (Epic 5 slice 5A): the agents, run and task states, the
-recommendation, confidence, Finding kinds, and the validation of an agent's reply. Pure.
+"""Specialist Assessment rules (Epic 5 slice 5A): the agents, the recommendation,
+confidence, Finding kinds, and the validation of an agent's reply. Pure. (Run and task
+states moved to `workflows` in Story 5.2.)
 
-An assessment run has one task per specialist agent. Each succeeded task stores a new
-Assessment for its agent (a recommendation, a confidence with its basis, Findings citing
-Requirements, and effort per Requirement).
+An assessment run (a Workflow Run) has one task per specialist agent. Each succeeded task
+stores a new Assessment for its agent (a recommendation, a confidence with its basis,
+Findings citing Requirements, and effort per Requirement).
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -19,8 +20,6 @@ from app.modules.assessments.domain.reviews import (
 
 ASSESSMENT_SUBJECT_TYPE = "assessments.assessment"
 """The trace subject of an Assessment."""
-RUN_SUBJECT_TYPE = "assessments.assessment_run"
-"""The trace subject of an assessment run."""
 
 
 class AssessmentAgent(StrEnum):
@@ -37,40 +36,6 @@ AGENTS: tuple[AssessmentAgent, ...] = tuple(AssessmentAgent)
 class AssessmentStatus(StrEnum):
     CURRENT = "current"
     SUPERSEDED = "superseded"
-
-
-class AssessmentRunStatus(StrEnum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    PARTIALLY_FAILED = "partially_failed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    """Stopped by a person (Story 5.5): set directly by `cancel_run`, never derived from the
-    tasks', and final (nothing moves a cancelled run again)."""
-
-
-RUN_IN_PROGRESS = frozenset({AssessmentRunStatus.QUEUED, AssessmentRunStatus.RUNNING})
-
-
-class AssessmentTaskStatus(StrEnum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-    """Unfinished when its run was cancelled (Story 5.5), or its Agent was not active in the
-    Agent Registry before it started (Story 7.1, with a `skip_reason`)."""
-
-
-class TaskSkipReason(StrEnum):
-    """Why a task was skipped other than by a cancel (Story 7.1)."""
-
-    AGENT_DISABLED = "agent_disabled"
-    """Its Agent was `disabled` or `eval_only`: assess that part manually."""
-
-
-TASK_IN_PROGRESS = frozenset({AssessmentTaskStatus.QUEUED, AssessmentTaskStatus.RUNNING})
 
 
 class Recommendation(StrEnum):
@@ -90,23 +55,6 @@ class FindingKind(StrEnum):
     CONSTRAINT = "constraint"
     DEPENDENCY = "dependency"
     OPPORTUNITY = "opportunity"
-
-
-def run_status(tasks: Iterable[AssessmentTaskStatus]) -> AssessmentRunStatus:
-    """A run's status from its tasks': `queued` while every task is queued, `running` while
-    any is still queued or running, then `succeeded` when all succeeded, `failed` when none
-    did, otherwise `partially_failed`. A `cancelled` run is never derived: `cancel_run` sets it."""
-    statuses = list(tasks)
-    if statuses and all(s == AssessmentTaskStatus.QUEUED for s in statuses):
-        return AssessmentRunStatus.QUEUED
-    if any(s in TASK_IN_PROGRESS for s in statuses):
-        return AssessmentRunStatus.RUNNING
-    succeeded = sum(1 for s in statuses if s == AssessmentTaskStatus.SUCCEEDED)
-    if succeeded == len(statuses):
-        return AssessmentRunStatus.SUCCEEDED
-    if succeeded == 0:
-        return AssessmentRunStatus.FAILED
-    return AssessmentRunStatus.PARTIALLY_FAILED
 
 
 # --- validating an agent's reply ------------------------------------------------------------

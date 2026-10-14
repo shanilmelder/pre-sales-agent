@@ -855,6 +855,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Opportunity Events
+         * @description The Opportunity's live progress: a run queued, each task started and ended, a run
+         *     ended. Reconnect with `Last-Event-ID` to replay what was missed. Anyone who can read the
+         *     Opportunity.
+         */
+        get: operations["stream_opportunity_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalogue/entries": {
         parameters: {
             query?: never;
@@ -9609,6 +9631,137 @@ export interface operations {
                 };
             };
             /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    stream_opportunity_events: {
+        parameters: {
+            query?: never;
+            header?: {
+                "last-event-id"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent Events: `id: <event_id>`, `event: <event_type>`, `data:` the JSON below; a comment line every 15 s keeps the connection open */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        /**
+                         * Event Type
+                         * @enum {string}
+                         */
+                        event_type: "workflows.run.queued" | "workflows.task.started" | "workflows.task.ended" | "workflows.run.ended";
+                        /** Subject Type */
+                        subject_type: string;
+                        /** Subject Id */
+                        subject_id: string;
+                        /** Subject Version */
+                        subject_version: number | null;
+                        /**
+                         * Occurred At
+                         * Format: date-time
+                         */
+                        occurred_at: string;
+                        /** Summary */
+                        summary: string;
+                    };
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;

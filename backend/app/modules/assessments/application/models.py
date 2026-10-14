@@ -7,13 +7,10 @@ from pydantic import BaseModel, Field
 
 from app.modules.assessments.domain.assessments import (
     AssessmentAgent,
-    AssessmentRunStatus,
     AssessmentStatus,
-    AssessmentTaskStatus,
     Confidence,
     FindingKind,
     Recommendation,
-    TaskSkipReason,
 )
 from app.modules.assessments.domain.reviews import (
     FindingCategory,
@@ -103,34 +100,6 @@ class RedTeamView(BaseModel):
 # --- specialist Assessments (Epic 5 slice 5A) ----------------------------------------------
 
 
-class AssessmentTask(BaseModel):
-    """One agent's task in an assessment run. `error_code` is set only when `failed`;
-    `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
-    panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
-    `started_at` / `finished_at`: when the task last started and finished (null before
-    either); the panel derives elapsed time from them."""
-
-    agent: AssessmentAgent
-    status: AssessmentTaskStatus
-    error_code: RunErrorCode | None
-    skip_reason: TaskSkipReason | None = None
-    started_at: datetime | None
-    finished_at: datetime | None
-
-
-class AssessmentRun(BaseModel):
-    """An assessment run: its status and one task per agent, in agent order. `queued_at`:
-    when it was last queued (a retry re-queues it); `finished_at`: null while in progress,
-    or for a lost run not yet recorded."""
-
-    id: str
-    status: AssessmentRunStatus
-    created_at: datetime
-    queued_at: datetime
-    finished_at: datetime | None
-    tasks: list[AssessmentTask]
-
-
 class AssessmentFinding(BaseModel):
     """A specialist Finding: its kind, severity, specific title and detail, with the
     Requirements it cites."""
@@ -181,14 +150,3 @@ class AgentAssessment(BaseModel):
 
     agent: AssessmentAgent
     assessment: AssessmentView | None
-
-
-class AssessmentsView(BaseModel):
-    """The Opportunity's latest assessment run (null before the first) with its tasks, and
-    one entry per agent (Engineering, PM, Security) with its current Assessment or null.
-    `can_start`: whether the caller may start a run or retry a task. The UI only uses it to
-    hide controls; the API decides."""
-
-    run: AssessmentRun | None
-    assessments: list[AgentAssessment]
-    can_start: bool

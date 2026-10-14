@@ -18,6 +18,9 @@ dependencies = [
     "httpx==0.28.1",
     "openpyxl==3.1.5",  # MIT; .xlsx Estimate export (Story 8.8)
     "python-docx==1.2.0",  # MIT; .docx Estimate export (Story 8.8)
+    "langgraph==1.2.15",
+    "langgraph-checkpoint-postgres==3.1.3",
+    "psycopg-pool==3.3.3",  # the checkpointer's own pool (AD-6)
 ]
 
 [dependency-groups]
@@ -93,7 +96,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "opportunities uses identity, intake, assessments and conflicts only through their public APIs (AD-2)"
+name = "opportunities uses identity, intake, assessments, conflicts and workflows only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.opportunities"]
 forbidden_modules = [
@@ -108,11 +111,14 @@ forbidden_modules = [
     "app.modules.conflicts.domain",
     "app.modules.conflicts.adapters",
     "app.modules.conflicts.api",
+    "app.modules.workflows.domain",
+    "app.modules.workflows.adapters",
+    "app.modules.workflows.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "intake uses identity, opportunities, gaps, assessments and conflicts only through their public APIs (AD-2)"
+name = "intake uses identity, opportunities, gaps, assessments, conflicts and workflows only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.intake"]
 forbidden_modules = [
@@ -129,11 +135,14 @@ forbidden_modules = [
     "app.modules.conflicts.domain",
     "app.modules.conflicts.adapters",
     "app.modules.conflicts.api",
+    "app.modules.workflows.domain",
+    "app.modules.workflows.adapters",
+    "app.modules.workflows.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "gaps uses identity, opportunities, intake, estimates, assessments and conflicts only through their public APIs (AD-2)"
+name = "gaps uses identity, opportunities, intake, estimates, assessments, conflicts and workflows only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.gaps"]
 forbidden_modules = [
@@ -155,11 +164,14 @@ forbidden_modules = [
     "app.modules.conflicts.domain",
     "app.modules.conflicts.adapters",
     "app.modules.conflicts.api",
+    "app.modules.workflows.domain",
+    "app.modules.workflows.adapters",
+    "app.modules.workflows.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "estimates uses identity, opportunities, intake, gaps, assessments and conflicts only through their public APIs (AD-2)"
+name = "estimates uses identity, opportunities, intake, gaps, assessments, conflicts and workflows only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.estimates"]
 forbidden_modules = [
@@ -181,11 +193,14 @@ forbidden_modules = [
     "app.modules.conflicts.domain",
     "app.modules.conflicts.adapters",
     "app.modules.conflicts.api",
+    "app.modules.workflows.domain",
+    "app.modules.workflows.adapters",
+    "app.modules.workflows.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "assessments uses identity, opportunities, intake, gaps, estimates and conflicts only through their public APIs (AD-2)"
+name = "assessments uses identity, opportunities, intake, gaps, estimates, conflicts and workflows only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.assessments"]
 forbidden_modules = [
@@ -207,6 +222,9 @@ forbidden_modules = [
     "app.modules.conflicts.domain",
     "app.modules.conflicts.adapters",
     "app.modules.conflicts.api",
+    "app.modules.workflows.domain",
+    "app.modules.workflows.adapters",
+    "app.modules.workflows.api",
 ]
 allow_indirect_imports = true
 
@@ -227,6 +245,7 @@ forbidden_modules = [
     "app.modules.gaps",
     "app.modules.estimates",
     "app.modules.assessments",
+    "app.modules.workflows",
 ]
 # Story 6.3: only the routes hand estimates' public decision functions to the commands.
 ignore_imports = ["app.modules.conflicts.api.routes -> app.modules.estimates.application.public"]
@@ -245,6 +264,7 @@ forbidden_modules = [
     "app.modules.gaps",
     "app.modules.estimates",
     "app.modules.assessments",
+    "app.modules.workflows",
 ]
 allow_indirect_imports = true
 
@@ -263,6 +283,7 @@ forbidden_modules = [
     "app.modules.assessments",
     "app.modules.conflicts",
     "app.modules.knowledge",
+    "app.modules.workflows",
 ]
 allow_indirect_imports = true
 
@@ -278,6 +299,7 @@ source_modules = [
     "app.modules.assessments",
     "app.modules.conflicts",
     "app.modules.knowledge",
+    "app.modules.workflows",
 ]
 forbidden_modules = [
     "app.modules.registry.domain",
@@ -285,6 +307,54 @@ forbidden_modules = [
     "app.modules.registry.api",
 ]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "workflows uses identity, opportunities, intake, gaps, estimates, assessments and conflicts only through their public APIs (AD-2, Story 5.2)"
+type = "forbidden"
+source_modules = ["app.modules.workflows"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.intake.domain",
+    "app.modules.intake.adapters",
+    "app.modules.intake.api",
+    "app.modules.gaps.domain",
+    "app.modules.gaps.adapters",
+    "app.modules.gaps.api",
+    "app.modules.estimates.domain",
+    "app.modules.estimates.adapters",
+    "app.modules.estimates.api",
+    "app.modules.assessments.domain",
+    "app.modules.assessments.adapters",
+    "app.modules.assessments.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
+    "app.modules.knowledge",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Orchestration uses business modules only through their public APIs (AD-5, Story 5.2)"
+type = "forbidden"
+source_modules = ["app.orchestration"]
+forbidden_modules = [
+    "app.modules.*.domain",
+    "app.modules.*.adapters",
+    "app.modules.*.api",
+    "app.main_api",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Only the worker builds and runs graphs: the api process and the business modules never import app.orchestration or langgraph (AD-1, AD-5, Story 5.2)"
+type = "forbidden"
+source_modules = ["app.main_api", "app.modules"]
+forbidden_modules = ["app.orchestration", "langgraph"]
 
 [[tool.importlinter.contracts]]
 name = "The eval harness uses business modules only through their public APIs and never imports agents or orchestration (Story 7.6)"

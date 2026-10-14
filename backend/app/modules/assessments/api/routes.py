@@ -2,9 +2,9 @@
 
 - Red Team (Story 6.5): `GET /api/v1/opportunities/{opportunity_id}/red-team` and
   `POST /api/v1/opportunities/{opportunity_id}/red-team-reviews`.
-- Specialist Assessments (Epic 5 slice 5A): `GET …/assessments`, `POST …/assessment-runs`
-  and `POST …/assessment-runs/{run_id}/tasks/{agent}/retry`; `POST …/assessment-runs/
-  {run_id}/cancel` (Story 5.5).
+
+The specialist Assessments' routes (`GET …/assessments` and the assessment run commands)
+are served by `workflows` since Story 5.2, composed with this module's public API.
 
 Read-only for Findings."""
 
@@ -14,13 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from app.modules.assessments.application import public as assessments
-from app.modules.assessments.application.public import (
-    AssessmentAgent,
-    AssessmentRun,
-    AssessmentsView,
-    RedTeamRun,
-    RedTeamView,
-)
+from app.modules.assessments.application.public import RedTeamRun, RedTeamView
 from app.modules.identity.application.public import CurrentPrincipal
 from app.platform.errors import PROBLEM_JSON, Problem
 from app.platform.uow import UoW
@@ -34,17 +28,6 @@ _DESCRIBED: dict[int, str] = {
     409: "A Red Team review is already queued or running (`red_team_review_in_progress`), or "
     "the Red Team Agent is disabled in the Agent Registry (`registry_agent_disabled`)",
     422: "The Opportunity id is not a UUID (`validation_error`)",
-    4091: "An assessment run is already queued or running (`assessment_in_progress`)",
-    4092: "An assessment run is already queued or running (`assessment_in_progress`), or the "
-    "task is not a failed task of the latest run, or that run was cancelled "
-    "(`assessment_task_not_failed`), or its agent is disabled in the Agent Registry "
-    "(`registry_agent_disabled`)",
-    4093: "The run is not the Opportunity's latest, or is no longer queued or running "
-    "(`assessment_not_in_progress`)",
-    4041: "No Opportunity with this id, or the caller may not see it, or no such assessment "
-    "run for it (`not_found`)",
-    4221: "An id is not a UUID, or the agent is unknown (`validation_error`)",
-    4222: "An id is not a UUID (`validation_error`)",
     503: "Sign-in service unavailable (`auth_unavailable`)",
 }
 
@@ -88,72 +71,3 @@ async def start_red_team_review(
     draft Estimate, e.g. to retry a failed one. The owner and collaborators, except sales
     representatives."""
     return await assessments.start_review(uow, actor, opportunity_id)
-
-
-@router.get("/assessments", operation_id="get_assessments", responses=_responses(404, 422))
-async def get_assessments(
-    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
-) -> AssessmentsView:
-    """The Opportunity's latest assessment run (null before the first) with one task per
-    agent, and per agent (Engineering, PM, Security) its current Assessment or null: the
-    recommendation, confidence with its basis, the Findings critical first (then high, medium
-    and low) with the Requirements they cite, and the effort per Requirement with its total.
-    Anyone who can read the Opportunity."""
-    return await assessments.get_assessments(uow, actor, opportunity_id)
-
-
-@router.post(
-    "/assessment-runs",
-    operation_id="start_assessment_run",
-    status_code=201,
-    responses={
-        **_responses(403, 404, 4091, 422),
-        201: {"description": "The new assessment run, `queued`, with one task per agent"},
-    },
-)
-async def start_assessment_run(
-    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
-) -> AssessmentRun:
-    """Start an assessment run: the Engineering, PM and Security Agents assess the
-    Opportunity's active Requirements and open Gaps in parallel. The owner and
-    collaborators, except sales representatives."""
-    return await assessments.start_run(uow, actor, opportunity_id)
-
-
-@router.post(
-    "/assessment-runs/{run_id}/tasks/{agent}/retry",
-    operation_id="retry_assessment_task",
-    status_code=201,
-    responses={
-        **_responses(403, 4041, 4092, 4221),
-        201: {"description": "The run, `queued` again, with the retried task `queued`"},
-    },
-)
-async def retry_assessment_task(
-    opportunity_id: UUID,
-    run_id: UUID,
-    agent: AssessmentAgent,
-    actor: CurrentPrincipal,
-    uow: UoW,
-) -> AssessmentRun:
-    """Re-run one failed task of the Opportunity's latest assessment run; the other tasks
-    keep their results. The owner and collaborators, except sales representatives."""
-    return await assessments.retry_task(uow, actor, opportunity_id, run_id, agent)
-
-
-@router.post(
-    "/assessment-runs/{run_id}/cancel",
-    operation_id="cancel_assessment_run",
-    responses={
-        **_responses(403, 4041, 4093, 4222),
-        200: {"description": "The run, `cancelled`, with its unfinished tasks `skipped`"},
-    },
-)
-async def cancel_assessment_run(
-    opportunity_id: UUID, run_id: UUID, actor: CurrentPrincipal, uow: UoW
-) -> AssessmentRun:
-    """Cancel the Opportunity's latest assessment run while it is queued or running: its
-    unfinished tasks are skipped and the Assessments already completed are kept. A cancelled
-    run can't be retried; start a new one instead. The owner and collaborators, except sales
-    representatives."""
-    return await assessments.cancel_run(uow, actor, opportunity_id, run_id)

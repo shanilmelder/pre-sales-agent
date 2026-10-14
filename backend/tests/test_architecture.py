@@ -7,7 +7,8 @@
 3. Nothing outside `app/platform/uow.py` calls `.commit(` (AD-25: only the edge commits,
    through the Unit of Work).
 4. The `api` process never imports the job claim loop (`app.platform.jobs.runner`,
-   `app.main_worker`): an import-linter contract, plus a runtime check below.
+   `app.main_worker`), nor graphs (`app.orchestration`, `langgraph`; Story 5.2): import-linter
+   contracts, plus a runtime check below.
 
 All rules are checked by an AST scan of `app/`. Rule 1 is also an import-linter contract
 (`[tool.importlinter]` in pyproject.toml), which this test runs as well.
@@ -119,7 +120,8 @@ def test_import_linter_contracts_kept() -> None:
 def test_api_process_does_not_load_the_job_runner() -> None:
     probe = (
         "import sys, app.main_api; "
-        "loaded = [m for m in ('app.platform.jobs.runner', 'app.main_worker') "
+        "loaded = [m for m in ('app.platform.jobs.runner', 'app.main_worker', "
+        "'app.orchestration', 'langgraph') "
         "if m in sys.modules]; "
         "print(loaded); raise SystemExit(1 if loaded else 0)"
     )

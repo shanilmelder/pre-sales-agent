@@ -679,6 +679,219 @@ describe("SpecialistAssessmentsSection", () => {
   });
 });
 
+/** A stand-in for the browser's EventSource (jsdom has none): records its URL and
+ * listeners, and lets a test emit the stream's events. */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readonly listeners = new Map<string, ((event: Event) => void)[]>();
+  closed = false;
+
+  constructor(readonly url: string) {
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  close() {
+    this.closed = true;
+  }
+
+  emit(type: string, data?: Record<string, unknown>) {
+    const event =
+      data === undefined
+        ? new Event(type)
+        : new MessageEvent(type, { data: JSON.stringify(data) });
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+function progress(event_type: string, summary: string) {
+  return {
+    event_type,
+    subject_type: event_type.startsWith("workflows.task")
+      ? "workflows.task"
+      : "workflows.run",
+    subject_id: RUN_ID,
+    subject_version: null,
+    occurred_at: "2026-10-14T09:00:00Z",
+    summary,
+  };
+}
+
+describe("live updates over the event stream (Story 5.2)", () => {
+  beforeEach(() => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    refresh.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const source = () => FakeEventSource.instances[0];
+
+  it("follows the same-origin stream: each task event re-reads the section, with no polling", async () => {
+    vi.useFakeTimers();
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(queued),
+    });
+    const { unmount } = renderSection(view(queued));
+
+    expect(source().url).toBe(`/api/opportunities/${OPP_ID}/events`);
+    await act(async () => {
+      source().emit("open"); // catches up once connected
+    });
+    expect(loadAssessments).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(loadAssessments).toHaveBeenCalledTimes(1); // live: no polling
+
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(running),
+    });
+    await act(async () => {
+      source().emit(
+        "workflows.task.ended",
+        progress("workflows.task.ended", "pm_agent succeeded"),
+      );
+    });
+    expect(panelRows()[1]).toEqual(["PM Agent", "Done", "0:40"]);
+
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(succeeded, FULL),
+    });
+    await act(async () => {
+      source().emit(
+        "workflows.run.ended",
+        progress("workflows.run.ended", "run succeeded"),
+      );
+    });
+    expect(screen.getByText("[FINDING 3]")).toBeTruthy();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(loadAssessments).toHaveBeenCalledTimes(3);
+
+    unmount();
+    expect(source().closed).toBe(true);
+  });
+
+  it("shows a run queued automatically without a page refresh", async () => {
+    loadAssessments.mockResolvedValue({ kind: "ok", assessments: view(null) });
+    renderSection(view(null));
+    await act(async () => {
+      source().emit("open");
+    });
+
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(queued),
+    });
+    await act(async () => {
+      source().emit(
+        "workflows.run.queued",
+        progress("workflows.run.queued", "run queued"),
+      );
+    });
+
+    expect(panelRows().map((r) => r[1])).toEqual([
+      "Queued",
+      "Queued",
+      "Queued",
+    ]);
+  });
+
+  it("ignores frames that are not progress events", async () => {
+    renderSection(view(succeeded, FULL));
+    await act(async () => {
+      source().emit("workflows.task.started", { event_type: "something.else" });
+    });
+    expect(loadAssessments).not.toHaveBeenCalled();
+  });
+
+  it("says to reload after 15 minutes of a run that sends no events, without re-reading", async () => {
+    vi.useFakeTimers();
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(running),
+    });
+    renderSection(view(running));
+    await act(async () => {
+      source().emit("open");
+    });
+    expect(loadAssessments).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    });
+
+    expect(loadAssessments).toHaveBeenCalledTimes(1); // live: no polling
+    expect(screen.getByText("Still assessing — reload to check.")).toBeTruthy();
+    expect(screen.queryByTestId("running-dot")).toBeNull();
+  });
+
+  it("drops an older re-read that lands after a newer one", async () => {
+    let answerFirst: (result: AssessmentsResult) => void = () => {};
+    loadAssessments
+      .mockImplementationOnce(
+        () =>
+          new Promise<AssessmentsResult>((resolve) => {
+            answerFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        kind: "ok",
+        assessments: view(succeeded, FULL),
+      });
+    renderSection(view(queued));
+
+    await act(async () => {
+      source().emit(
+        "workflows.task.started",
+        progress("workflows.task.started", "pm_agent running"),
+      );
+      source().emit(
+        "workflows.run.ended",
+        progress("workflows.run.ended", "run succeeded"),
+      );
+    });
+    expect(screen.getByText("[FINDING 3]")).toBeTruthy();
+
+    await act(async () => {
+      answerFirst({ kind: "ok", assessments: view(running) }); // the older read, late
+    });
+
+    expect(screen.getByText("[FINDING 3]")).toBeTruthy();
+    expect(screen.queryByTestId("running-dot")).toBeNull();
+  });
+
+  it("falls back to polling every 2 s while the stream is down", async () => {
+    vi.useFakeTimers();
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(queued),
+    });
+    renderSection(view(queued));
+    await act(async () => {
+      source().emit("open");
+    });
+    expect(loadAssessments).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      source().emit("error"); // dropped; the browser reconnects by itself
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(loadAssessments).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("SpecialistAssessmentsHeader", () => {
   it("shows nothing but Run assessment before any run", () => {
     render(<SpecialistAssessmentsHeader run={null} canStart />);
@@ -925,10 +1138,14 @@ describe("cancelling a run (Story 5.5)", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Cancel this run?",
     });
-    expect(within(dialog).getByText("Completed results are kept.")).toBeTruthy();
+    expect(
+      within(dialog).getByText("Completed results are kept."),
+    ).toBeTruthy();
     expect(await axeViolations(container.ownerDocument.body)).toEqual([]);
 
-    await user.click(within(dialog).getByRole("button", { name: "Keep running" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Keep running" }),
+    );
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(cancelAssessmentRun).not.toHaveBeenCalled();

@@ -1,5 +1,6 @@
-"""Specialist Assessment rules (Epic 5 slice 5A), without a database: the run status from
-its tasks', the reply validation (recommendation, confidence, Findings, effort) and hours."""
+"""Specialist Assessment rules (Epic 5 slice 5A), without a database: the reply validation
+(recommendation, confidence, Findings, effort) and hours. (The run status from its tasks'
+moved to `workflows`: tests/test_workflows_domain.py.)"""
 
 from decimal import Decimal
 
@@ -8,43 +9,17 @@ import pytest
 from app.modules.assessments.domain.assessments import (
     AssessmentCandidate,
     AssessmentFindingCandidate,
-    AssessmentRunStatus,
-    AssessmentTaskStatus,
     Confidence,
     EffortCandidate,
     FindingKind,
     Recommendation,
     hours_value,
-    run_status,
     total_hours,
     validate_assessment,
 )
 from app.modules.assessments.domain.reviews import Severity
 
-Q, R, S, F = (
-    AssessmentTaskStatus.QUEUED,
-    AssessmentTaskStatus.RUNNING,
-    AssessmentTaskStatus.SUCCEEDED,
-    AssessmentTaskStatus.FAILED,
-)
 LABELS = {"R1": "req-1", "R2": "req-2"}
-
-
-@pytest.mark.parametrize(
-    ("tasks", "expected"),
-    [
-        ((Q, Q, Q), AssessmentRunStatus.QUEUED),
-        ((S, Q, Q), AssessmentRunStatus.RUNNING),
-        ((R, S, F), AssessmentRunStatus.RUNNING),
-        ((S, S, S), AssessmentRunStatus.SUCCEEDED),
-        ((S, F, S), AssessmentRunStatus.PARTIALLY_FAILED),
-        ((F, F, F), AssessmentRunStatus.FAILED),
-    ],
-)
-def test_the_run_status_follows_its_tasks(
-    tasks: tuple[AssessmentTaskStatus, ...], expected: AssessmentRunStatus
-) -> None:
-    assert run_status(tasks) is expected
 
 
 def _finding(

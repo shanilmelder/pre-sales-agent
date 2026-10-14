@@ -84,7 +84,7 @@ EVAL_JOB_TYPES = frozenset(
         "intake.parse_source",
         "intake.extract_requirements",
         "gaps.detect_gaps",
-        "assessments.run_assessment",
+        "workflows.execute",
         "estimates.draft_estimate",
         "assessments.red_team_review",
     }
@@ -95,7 +95,7 @@ _STAGE_OF_JOB = {
     "intake.parse_source": "parse",
     "intake.extract_requirements": "extraction",
     "gaps.detect_gaps": "gap_detection",
-    "assessments.run_assessment": "specialists",
+    "workflows.execute": "specialists",
     "estimates.draft_estimate": "estimate",
     "assessments.red_team_review": "red_team",
 }
@@ -376,7 +376,7 @@ async def _failures(db: AsyncEngine, opportunity_id: UUID) -> list[StageFailure]
         latest = await _latest(db, table, opportunity_id)
         if latest is not None and latest.status == "failed":
             failures.append(StageFailure(stage, latest.error_code or "failed"))
-    run = await _latest(db, "assessments_runs", opportunity_id)
+    run = await _latest(db, "workflows_runs", opportunity_id)
     if run is not None and run.status in ("failed", "partially_failed", "cancelled"):
         failures.append(StageFailure("specialists", run.status))
     if run is not None and run.status == "succeeded":

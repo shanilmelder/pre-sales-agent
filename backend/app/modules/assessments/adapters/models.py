@@ -1,6 +1,7 @@
 """The assessments module's tables: Red Team Reviews (Story 6.5) and specialist Assessments
-(Epic 5 slice 5A). `opportunity_id`, `estimate_version_id`, `requirement_id` and `line_id`
-hold ids owned by other modules without foreign keys (AD-2)."""
+(Epic 5 slice 5A). `opportunity_id`, `estimate_version_id`, `requirement_id`, `line_id` and
+an Assessment's `run_id` (a Workflow Run, owned by `workflows` since Story 5.2) hold ids owned
+by other modules without foreign keys (AD-2)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -149,73 +150,7 @@ class FindingLineRow(Base):
 # --- specialist Assessments (Epic 5 slice 5A) ----------------------------------------------
 
 _AGENTS = "('engineering_agent', 'pm_agent', 'security_agent')"
-_ERROR_CODES = "('model_unavailable', 'model_timeout', 'output_invalid')"
 _SEVERITIES = "('low', 'medium', 'high', 'critical')"
-
-
-class AssessmentRunRow(Base):
-    """One assessment run of an Opportunity: one task per specialist agent. Inserted
-    `queued` with its job; its status follows its tasks', except `cancelled` (Story 5.5),
-    which a person sets. `queued_at`: when it was last queued (a task retry queues it
-    again); staleness counts from there."""
-
-    __tablename__ = "assessments_runs"
-    __table_args__ = (
-        Index(None, "opportunity_id", "created_at"),
-        CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'partially_failed', 'failed', "
-            "'cancelled')",
-            name="status",
-        ),
-    )
-
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    opportunity_id: Mapped[UUID] = mapped_column(Uuid)
-    status: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
-    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class AssessmentTaskRow(Base):
-    """One agent's task in an assessment run. `error_code` is set only when `failed`;
-    `skipped` when its run was cancelled before it finished (Story 5.5), or when its Agent was
-    not active in the Agent Registry before it started (`skip_reason` `agent_disabled`, Story
-    7.1). `config_version_id`: the registry config version pinned when the run was queued
-    (a foreign key into the registry, as Story 7.1 specifies)."""
-
-    __tablename__ = "assessments_tasks"
-    __table_args__ = (
-        UniqueConstraint("run_id", "agent"),
-        CheckConstraint(f"agent IN {_AGENTS}", name="agent"),
-        CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'failed', 'skipped')", name="status"
-        ),
-        CheckConstraint(f"error_code IS NULL OR error_code IN {_ERROR_CODES}", name="error_code"),
-        CheckConstraint("(status = 'failed') = (error_code IS NOT NULL)", name="failed_has_code"),
-        CheckConstraint(
-            "skip_reason IS NULL OR (status = 'skipped' AND skip_reason IN ('agent_disabled'))",
-            name="skip_reason",
-        ),
-    )
-
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    run_id: Mapped[UUID] = mapped_column(
-        Uuid,
-        ForeignKey("assessments_runs.id", ondelete="CASCADE", name="fk_assessments_tasks_run_id"),
-    )
-    agent: Mapped[str] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(Text)
-    error_code: Mapped[str | None] = mapped_column(Text)
-    config_version_id: Mapped[UUID] = mapped_column(
-        Uuid,
-        ForeignKey(
-            "registry_agent_config_versions.id", name="fk_assessments_tasks_config_version_id"
-        ),
-    )
-    skip_reason: Mapped[str | None] = mapped_column(Text)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AssessmentRow(Base):
@@ -251,9 +186,8 @@ class AssessmentRow(Base):
     opportunity_id: Mapped[UUID] = mapped_column(Uuid)
     agent: Mapped[str] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer)
-    run_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("assessments_runs.id", name="fk_assessments_assessments_run_id")
-    )
+    run_id: Mapped[UUID] = mapped_column(Uuid)
+    """The Workflow Run whose task produced it (owned by `workflows`: no foreign key, AD-2)."""
     config_version_id: Mapped[UUID] = mapped_column(
         Uuid,
         ForeignKey(

@@ -1,7 +1,8 @@
 import asyncio
 import os
 import sys
-from collections.abc import Coroutine, Iterator
+from collections.abc import AsyncIterator, Coroutine, Iterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
@@ -70,3 +71,32 @@ def sync_engine(db_url: str) -> Iterator[Engine]:
 def db_app(db_url: str) -> FastAPI:
     """An app wired to the test database; tests add their own routes before starting it."""
     return create_app(Settings(database_url=db_url))
+
+
+# --- the graph runner (Story 5.2) -----------------------------------------------------------
+
+
+@asynccontextmanager
+async def _checkpointer_per_call(url: str) -> AsyncIterator[Any]:
+    """A checkpointer on its own small pool for one graph invocation: each test drains its
+    jobs on a fresh event loop, which a pool can't outlive."""
+    from app.orchestration.checkpointer import open_checkpointer
+
+    async with open_checkpointer(url, min_size=1, max_size=4, setup=False) as saver:
+        yield saver
+
+
+@pytest.fixture(autouse=True)
+def _graph_runner() -> Iterator[None]:
+    """Install the LangGraph runner for `workflows.execute` jobs, as the worker does, when a
+    test database is configured (the checkpoint tables are set up on first use)."""
+    url = os.environ.get("PSA_DATABASE_URL")
+    if not url:
+        yield
+        return
+    from app.modules.workflows.application import public as workflows
+    from app.orchestration.runner import LangGraphRunner
+
+    workflows.install_runner(LangGraphRunner(lambda: _checkpointer_per_call(url)))
+    yield
+    workflows.install_runner(None)

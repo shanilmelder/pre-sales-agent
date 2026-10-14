@@ -142,3 +142,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-1-db-agent-registry.md`
   summary: Record `registry_agent_disabled` as the reason when Assumption proposals fail because the Estimating Agent is disabled.
   evidence: `estimates/application/assumptions.py` `_start` sets `proposal_status = failed` with no error code (no column exists), so the UI can't say why; decision 3 of Story 7.1 expects the code.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2-durable-langgraph-execution.md`
+  summary: Give non-model task failures (missing executor, DB errors, accept rejections) their own error code instead of `model_unavailable`, and don't retry deterministic failures.
+  evidence: `error_code` in `workflows/application/runs.py` (moved unchanged from baseline `assessments/application/assessment.py:668`) maps everything except timeouts and invalid output to `MODEL_UNAVAILABLE`.

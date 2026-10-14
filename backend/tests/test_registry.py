@@ -374,7 +374,7 @@ def test_the_migration_backfills_existing_assessments_to_version_one(
     (assessment,) = rows(
         sync_engine, "SELECT * FROM assessments_assessments WHERE id = :a", a=assessment_id
     )
-    (task,) = rows(sync_engine, "SELECT * FROM assessments_tasks WHERE id = :t", t=task_id)
+    (task,) = rows(sync_engine, "SELECT * FROM workflows_tasks WHERE id = :t", t=task_id)
     assert assessment["config_version_id"] == seeded
     assert (task["config_version_id"], task["skip_reason"]) == (seeded, None)
     assert [a["status"] for a in rows(sync_engine, "SELECT status FROM registry_agents")] == [
@@ -622,7 +622,7 @@ def test_psa_app_cannot_edit_or_delete_versions_or_delete_agents(sync_engine: En
         "UPDATE registry_agent_config_versions SET semver = '9.9.9' WHERE id = :v",
         "DELETE FROM registry_agent_config_versions WHERE id = :v",
         "DELETE FROM registry_agents WHERE agent_id = 'pm_agent' AND :v IS NOT NULL",
-        "UPDATE assessments_tasks SET config_version_id = :v WHERE false",
+        "UPDATE workflows_tasks SET config_version_id = :v WHERE false",
     ):
         with pytest.raises(sa.exc.ProgrammingError, match="permission denied"):
             with sync_engine.begin() as conn:

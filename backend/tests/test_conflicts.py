@@ -15,9 +15,9 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-from app.modules.assessments.application import assessment as assessments_assessment
 from app.modules.conflicts.adapters import repository as conflicts_repo
 from app.modules.conflicts.application import public as conflicts
+from app.modules.workflows.application import runs as workflows_runs
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.model_gateway import provider
@@ -234,7 +234,7 @@ def test_detecting_again_for_the_same_pass_adds_nothing(
         engine = create_engine(Settings(database_url=db_url))
         try:
             async with unit_of_work(engine) as uow:
-                await assessments_assessment.detect_conflicts(uow, UUID(opp["id"]), run_row["id"])
+                await workflows_runs.detect_conflicts(uow, UUID(opp["id"]), run_row["id"])
             async with unit_of_work(engine) as uow:
                 return [UUID(c.id) for c in await conflicts.list_open(uow, UUID(opp["id"]))]
         finally:

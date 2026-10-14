@@ -3,6 +3,7 @@
 import asyncio
 
 from sqlalchemy import MetaData, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -38,6 +39,12 @@ def create_engine(settings: Settings) -> AsyncEngine:
             "options": "-c timezone=UTC",
         },
     )
+
+
+def libpq_url(database_url: str) -> str:
+    """The SQLAlchemy URL as a plain libpq URL (any driver name dropped), for code that
+    connects with psycopg directly: the event stream's LISTEN and the checkpointer's pool."""
+    return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
 async def ping(engine: AsyncEngine, timeout_s: float) -> None:

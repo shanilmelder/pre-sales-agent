@@ -232,21 +232,22 @@ async def _conflicts(
 
 async def _run_number(uow: UnitOfWork, record: VersionRecord) -> int | None:
     """Story 8.3: the number of the assessment run a version from the Assessments was built
-    for. Imported here, not at the top: assessments imports `estimates.application.public`,
-    which imports this module, so a top-level import would be circular."""
+    for (a Workflow Run, Story 5.2). Imported here, not at the top: workflows imports
+    `estimates.application.public`, which imports this module, so a top-level import would
+    be circular."""
     if record.source_run_id is None:
         return None
-    from app.modules.assessments.application import public as assessments
+    from app.modules.workflows.application import public as workflows
 
-    return await assessments.run_number(uow, record.opportunity_id, record.source_run_id)
+    return await workflows.run_number(uow, record.opportunity_id, record.source_run_id)
 
 
 async def _assessment_running(uow: UnitOfWork, opportunity_id: UUID) -> bool:
     """Story 8.3: whether an assessment run is queued or running (imported here for the
     same reason as in `_run_number`)."""
-    from app.modules.assessments.application import public as assessments
+    from app.modules.workflows.application import public as workflows
 
-    return await assessments.run_in_progress(uow, opportunity_id)
+    return await workflows.run_in_progress(uow, opportunity_id)
 
 
 async def _register(

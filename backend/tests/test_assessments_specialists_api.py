@@ -170,7 +170,7 @@ def test_start_is_409_while_a_run_is_queued_or_running(
 
     with sync_engine.begin() as conn:
         conn.execute(
-            sa.text("UPDATE assessments_runs SET status = 'running' WHERE opportunity_id = :o"),
+            sa.text("UPDATE workflows_runs SET status = 'running' WHERE opportunity_id = :o"),
             {"o": opp["id"]},
         )
     running = start(client, headers, opp["id"])
@@ -288,18 +288,18 @@ def test_a_lost_run_reads_as_failed_and_can_be_started_again(
     with sync_engine.begin() as conn:  # its job died without recording it, long ago
         conn.execute(
             sa.text(
-                "UPDATE assessments_runs SET status = 'running', "
+                "UPDATE workflows_runs SET status = 'running', "
                 "queued_at = now() - interval '2 hours' WHERE opportunity_id = :o"
             ),
             {"o": opp["id"]},
         )
         conn.execute(
             sa.text(
-                "UPDATE assessments_tasks SET status = 'succeeded', "
+                "UPDATE workflows_tasks SET status = 'succeeded', "
                 "started_at = now() - interval '2 hours', "
                 "finished_at = now() - interval '2 hours' + interval '65 seconds' "
                 "WHERE agent = 'pm_agent' "
-                "AND run_id IN (SELECT id FROM assessments_runs WHERE opportunity_id = :o)"
+                "AND run_id IN (SELECT id FROM workflows_runs WHERE opportunity_id = :o)"
             ),
             {"o": opp["id"]},
         )
@@ -447,19 +447,19 @@ def test_after_a_cancel_a_new_run_starts_and_the_cancelled_one_cant_be_retried(
     body = started(client, headers, opp["id"])
     with sync_engine.begin() as conn:  # final attempt: Security already failed, the rest run
         conn.execute(
-            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"),
+            sa.text("UPDATE workflows_runs SET status = 'running' WHERE id = :r"),
             {"r": body["id"]},
         )
         conn.execute(
             sa.text(
-                "UPDATE assessments_tasks SET status = 'running', started_at = now() "
+                "UPDATE workflows_tasks SET status = 'running', started_at = now() "
                 "WHERE run_id = :r"
             ),
             {"r": body["id"]},
         )
         conn.execute(
             sa.text(
-                "UPDATE assessments_tasks SET status = 'failed', error_code = 'model_unavailable', "
+                "UPDATE workflows_tasks SET status = 'failed', error_code = 'model_unavailable', "
                 "finished_at = now() WHERE run_id = :r AND agent = 'security_agent'"
             ),
             {"r": body["id"]},
@@ -478,8 +478,8 @@ def test_after_a_cancel_a_new_run_starts_and_the_cancelled_one_cant_be_retried(
     assert_problem(refused.json(), 409, "assessment_task_not_failed")
     with sync_engine.begin() as conn:  # long ago: staleness never touches a cancelled run
         conn.execute(
-            sa.text("UPDATE assessments_runs SET queued_at = now() - :age WHERE id = :r"),
-            {"age": specialist_tests.assessments_assessment.stale_after() * 2, "r": body["id"]},
+            sa.text("UPDATE workflows_runs SET queued_at = now() - :age WHERE id = :r"),
+            {"age": specialist_tests.workflows_runs.stale_after() * 2, "r": body["id"]},
         )
     assert _get(client, headers, opp["id"]).json()["run"]["status"] == "cancelled"
 
@@ -497,12 +497,12 @@ def test_a_run_whose_tasks_all_finished_is_left_for_its_job(
     body = started(client, headers, opp["id"])
     with sync_engine.begin() as conn:  # every task done; the job hasn't finished the run yet
         conn.execute(
-            sa.text("UPDATE assessments_runs SET status = 'running' WHERE id = :r"),
+            sa.text("UPDATE workflows_runs SET status = 'running' WHERE id = :r"),
             {"r": body["id"]},
         )
         conn.execute(
             sa.text(
-                "UPDATE assessments_tasks SET status = 'succeeded', started_at = now(), "
+                "UPDATE workflows_tasks SET status = 'succeeded', started_at = now(), "
                 "finished_at = now() WHERE run_id = :r"
             ),
             {"r": body["id"]},

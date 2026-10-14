@@ -426,7 +426,7 @@ class AssessmentsRedTeamReviewCompleted(TracePayload):
 class AssessmentsAssessmentRunStarted(TracePayload):
     """An assessment run was started (or one of its tasks retried). Subject: the run
     (`assessments.assessment_run`). Actor: the person who started it, or the system
-    (`assessments.run_assessment`) for the automatic run after a Gap detection (Story 5.1).
+    (`workflows.execute`) for the automatic run after a Gap detection (Story 5.1).
     `agent_count`: the agents it runs."""
 
     event_type: ClassVar[str] = "assessments.assessment_run.started"
@@ -491,7 +491,7 @@ class AssessmentsTaskSkipped(TracePayload):
 @register
 class AssessmentsAssessmentRunCompleted(TracePayload):
     """Every task of an assessment run has finished. Subject: the run
-    (`assessments.assessment_run`). Actor: the system (`assessments.run_assessment`)."""
+    (`assessments.assessment_run`). Actor: the system (`workflows.execute`)."""
 
     event_type: ClassVar[str] = "assessments.assessment_run.completed"
 

@@ -21,7 +21,7 @@ Opportunity's detection lock until commit.
    their drafted questions, marks the detection `succeeded` with its counts, and traces
    `gaps.gap.raised` and `gaps.clarification_question.drafted` per Gap and
    `gaps.detection.completed`; and queues the Opportunity's specialist assessment run
-   (`assessments.enqueue_run`, Story 5.1; coalesced with a run already queued or running),
+   (`workflows.enqueue_run`, Stories 5.1 and 5.2; coalesced with a run already queued or running),
    whose finish builds the Estimate (Story 8.3: no model Estimate draft is queued).
 
 When the agent proposed candidates and every one is invalid, acceptance writes nothing and
@@ -303,12 +303,12 @@ async def accept_gap_detection(
     # Story 5.1: every successful Gap detection queues the specialist assessment run
     # (coalesced with one already queued or running), in this Unit of Work; the Estimate is
     # built from its Assessments when it finishes (Story 8.3: no model Estimate draft is
-    # queued any more). Imported here, not at the top: assessments reads Gaps through
-    # `gaps.application.public`, which imports this module, so a top-level import would be
-    # circular.
-    from app.modules.assessments.application import public as assessments
+    # queued any more). The run belongs to `workflows` (Story 5.2). Imported here, not at
+    # the top: workflows reads Gaps (through assessments) via `gaps.application.public`,
+    # which imports this module, so a top-level import would be circular.
+    from app.modules.workflows.application import public as workflows
 
-    await assessments.enqueue_run(uow, record.opportunity_id)
+    await workflows.enqueue_run(uow, record.opportunity_id)
     _log.info("gaps.detection_accepted", extra={**ids, **completed.model_dump()})
     return validation
 

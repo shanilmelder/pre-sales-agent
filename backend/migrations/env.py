@@ -20,9 +20,11 @@ import app.modules.intake.adapters.models
 import app.modules.knowledge.adapters.models
 import app.modules.opportunities.adapters.models
 import app.modules.registry.adapters.models
+import app.modules.workflows.adapters.models
 import app.platform.files
 import app.platform.jobs.models
 import app.platform.model_gateway.models
+import app.platform.schedules.models
 import app.platform.trace.models  # noqa: F401
 from app.platform.config import get_settings
 from app.platform.db import Base
