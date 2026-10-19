@@ -32,6 +32,13 @@ class AssessmentAgent(StrEnum):
 
 AGENTS: tuple[AssessmentAgent, ...] = tuple(AssessmentAgent)
 
+AGENT_LABELS: dict[AssessmentAgent, str] = {
+    AssessmentAgent.ENGINEERING: "Engineering Agent",
+    AssessmentAgent.PM: "PM Agent",
+    AssessmentAgent.SECURITY: "Security Agent",
+}
+"""Each agent's role in words, as the Assessments tab names it."""
+
 
 class AssessmentStatus(StrEnum):
     CURRENT = "current"

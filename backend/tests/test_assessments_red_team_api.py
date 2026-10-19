@@ -215,11 +215,8 @@ def test_a_superseded_requirement_reads_as_superseded(
     headers, opp = drafted(client, sync_engine, db_url, gateway, count=2)
     gateway.replies = [findings_out(finding("SAP custom fields", ["R1"]))]
     assert drain(db_url, RED_TEAM) == ["succeeded"]
-    extraction_tests._requeue(db_url, opp["id"])  # a re-extraction supersedes R1
-    gateway.replies = [
-        extraction_tests.out(("Runs 24/7.", "non_functional", [("S1", "The site runs 24/7")]))
-    ]
-    assert drain(db_url, extraction_tests.EXTRACT) == ["succeeded"]
+    # R1 is no longer active (e.g. merged; extraction keeps it since Story 2.7).
+    extraction_tests.supersede(sync_engine, opp["id"], "Connect to SAP.")
 
     (requirement,) = _get(client, headers, opp["id"]).json()["review"]["findings"][0][
         "requirements"

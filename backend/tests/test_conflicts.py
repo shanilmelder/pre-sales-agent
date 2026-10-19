@@ -20,7 +20,6 @@ from app.modules.conflicts.application import public as conflicts
 from app.modules.workflows.application import runs as workflows_runs
 from app.platform.config import Settings
 from app.platform.db import create_engine
-from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelUnavailableError
 from app.platform.uow import unit_of_work
 from tests import test_assessments_specialists as specialist_tests
@@ -635,12 +634,8 @@ def test_a_requirement_no_longer_active_reads_as_superseded(
         )
     )
     run(client, headers, opp["id"], db_url)  # scope on R2 ("Runs 24/7.")
-    extraction_tests._requeue(db_url, opp["id"])  # a re-extraction supersedes R1 and R2
-    provider.install(gateway)
-    gateway.replies = [
-        extraction_tests.out(("Runs 24/7.", "non_functional", [("S1", "The site runs 24/7")]))
-    ]
-    assert drain(db_url, extraction_tests.EXTRACT) == ["succeeded"]
+    # R1 and R2 are no longer active (e.g. merged; extraction keeps them since Story 2.7).
+    extraction_tests.supersede(sync_engine, opp["id"], "Connect to SAP.", "Runs 24/7.")
 
     (view,) = get(client, headers, opp["id"]).json()["conflicts"]
 

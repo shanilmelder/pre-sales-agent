@@ -11,7 +11,6 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
-from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelUnavailableError
 from tests import test_assessments_specialists as specialist_tests
 from tests import test_estimates_draft as draft_tests
@@ -352,18 +351,14 @@ def test_a_superseded_requirement_reads_as_superseded(
     )
     started(client, headers, opp["id"])
     assert drain(db_url, ASSESS) == ["succeeded"]
-    extraction_tests._requeue(db_url, opp["id"])  # a re-extraction supersedes R1
-    provider.install(gateway)
-    gateway.replies = [
-        extraction_tests.out(("Runs 24/7.", "non_functional", [("S1", "The site runs 24/7")]))
-    ]
-    assert drain(db_url, extraction_tests.EXTRACT) == ["succeeded"]
+    # R1 is no longer active (e.g. merged; extraction keeps it since Story 2.7).
+    extraction_tests.supersede(sync_engine, opp["id"], "Connect to SAP.", "Runs 24/7.")
 
     engineering = _slots(_get(client, headers, opp["id"]).json())["engineering_agent"]
 
     (requirement,) = engineering["findings"][0]["requirements"]
     assert (requirement["label"], requirement["excerpt"]) == ("Superseded", "Connect to SAP.")
-    # The re-extraction supersedes both Requirements the rows sized (its "Runs 24/7." is new).
+    # Both Requirements the rows sized are no longer active.
     assert sorted(
         (e["requirement"]["label"], e["requirement"]["excerpt"]) for e in engineering["effort"]
     ) == [("Superseded", "Connect to SAP."), ("Superseded", "Runs 24/7.")]

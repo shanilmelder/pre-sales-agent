@@ -1,6 +1,7 @@
 """Requirement extraction (Story 2.5 Part A) against a real, migrated Postgres as psa_app:
 auto-queueing on parse, coalescing, the `intake.extract_requirements` job with a fake
-ModelGateway, `accept_extraction` (passages, supersede, evidence, trace) and failures.
+ModelGateway, `accept_extraction` (passages, evidence, trace; the incremental reconciliation
+is in `test_intake_incremental.py`) and failures.
 
 As in `test_intake_parse_job.py`, this module's jobs are scheduled a day ahead so that no
 other claimer (a local `worker` container, another test run) takes them, and `_drain` runs
@@ -628,14 +629,19 @@ def test_a_requirement_merged_across_sources_cites_both_passages(
     assert cited == {s1["id"], s2["id"]}
 
 
-def test_a_rerun_supersedes_extracted_requirements_but_not_locked_ones(
+def test_a_rerun_keeps_unproduced_requirements(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
-    note = f"The site runs 24/7. Peak is 900 orders per hour. {uuid4()}"
+    note = f"The site runs 24/7. Peak is 900 orders per hour. Orders ship same day. {uuid4()}"
     _, opp, _ = parsed(client, sync_engine, db_url, ("n.txt", note))
-    gateway.replies = [out(("Runs 24/7.", "non_functional", [("S1", "The site runs 24/7")]))]
+    gateway.replies = [
+        out(
+            ("Runs 24/7.", "non_functional", [("S1", "The site runs 24/7")]),
+            ("Peak 900 orders/hour.", "functional", [("S1", "Peak is 900 orders per hour")]),
+        )
+    ]
     assert drain(db_url, EXTRACT) == ["succeeded"]
-    (first,) = requirements(sync_engine, opp["id"])
+    first = requirements(sync_engine, opp["id"])
     locked_id = uuid4()
     with sync_engine.begin() as conn:  # a human-locked Requirement (Story 2.6 makes these)
         conn.execute(
@@ -647,36 +653,31 @@ def test_a_rerun_supersedes_extracted_requirements_but_not_locked_ones(
             {"i": locked_id, "o": opp["id"]},
         )
 
-    async def rerun() -> None:
-        engine = create_engine(Settings(database_url=db_url))
-        try:
-            async with unit_of_work(engine) as uow:
-                await intake_extraction.enqueue_extraction(uow, opportunity_id=UUID(opp["id"]))
-        finally:
-            await engine.dispose()
-
-    run_async(rerun())
+    _requeue(db_url, opp["id"])
     gateway.replies = [
         out(
             ("Runs 24/7.", "non_functional", [("S1", "The site runs 24/7")]),
-            ("Peak 900 orders/hour.", "functional", [("S1", "Peak is 900 orders per hour")]),
+            ("Ships same day.", "functional", [("S1", "Orders ship same day")]),
         )
     ]
     assert drain(db_url, EXTRACT) == ["succeeded"]
 
-    (old,) = requirements(sync_engine, opp["id"], "superseded")
-    assert old["id"] == first["id"] and old["row_version"] == 2
+    assert requirements(sync_engine, opp["id"], "superseded") == []
     active = requirements(sync_engine, opp["id"])
-    assert [r["text"] for r in active] == ["Locked one.", "Runs 24/7.", "Peak 900 orders/hour."]
+    assert [r["text"] for r in active] == [
+        "Runs 24/7.",
+        "Peak 900 orders/hour.",
+        "Locked one.",
+        "Ships same day.",
+    ]
+    # Produced again with nothing new, or not produced at all: untouched.
+    for before, after in zip(first, active[:2], strict=True):
+        assert after == before
     locked = next(r for r in active if r["id"] == locked_id)
     assert (locked["row_version"], locked["version"], locked["status"]) == (3, 2, "active")
-    # The same span again reuses its immutable passage.
-    assert (
-        passages(sync_engine, active[1]["id"])[0]["id"]
-        == passages(sync_engine, first["id"])[0]["id"]
-    )
     second = extractions(sync_engine, opp["id"])[1]
     assert (second["status"], second["requirement_count"]) == ("succeeded", 2)
+    assert active[3]["extraction_id"] == second["id"]
 
 
 def test_a_duplicate_job_for_a_finished_extraction_does_nothing(
@@ -828,6 +829,20 @@ def test_with_no_readable_source_nothing_is_asked_or_replaced(
 
 
 # --- review fixes ---------------------------------------------------------------------------
+
+
+def supersede(engine: Engine, opp_id: str, *texts: str) -> None:
+    """Mark the Opportunity's active Requirements with these texts `superseded` (extraction no
+    longer does since Story 2.7; later stories may, e.g. a merge)."""
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "UPDATE intake_requirements SET status = 'superseded', "
+                "row_version = row_version + 1 WHERE opportunity_id = :o AND status = 'active' "
+                "AND text = ANY(:t)"
+            ),
+            {"o": opp_id, "t": list(texts)},
+        )
 
 
 def _requeue(db_url: str, opp_id: str) -> None:

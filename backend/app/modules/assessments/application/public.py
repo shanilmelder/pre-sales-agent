@@ -13,7 +13,10 @@ from app.modules.assessments.application.assessment import (
     current_sizings,
     load_inputs,
 )
-from app.modules.assessments.application.assessments import agent_assessments
+from app.modules.assessments.application.assessments import (
+    agent_assessments,
+    outdated_assessments,
+)
 from app.modules.assessments.application.models import (
     AgentAssessment,
     AssessmentEffort,
@@ -21,6 +24,8 @@ from app.modules.assessments.application.models import (
     AssessmentView,
     FindingLine,
     FindingRequirement,
+    OutdatedAssessment,
+    OutdatedAssessments,
     RedTeamFinding,
     RedTeamReviewView,
     RedTeamRun,
@@ -52,6 +57,8 @@ __all__ = [
     "AssessmentView",
     "FindingLine",
     "FindingRequirement",
+    "OutdatedAssessment",
+    "OutdatedAssessments",
     "RedTeamFinding",
     "RedTeamReviewView",
     "RedTeamRun",
@@ -65,5 +72,6 @@ __all__ = [
     "enqueue_review",
     "get_red_team",
     "load_inputs",
+    "outdated_assessments",
     "start_review",
 ]

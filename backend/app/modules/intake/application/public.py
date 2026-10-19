@@ -6,7 +6,9 @@ from app.modules.intake.application.models import (
     ConfirmAllResult,
     Extraction,
     Passage,
+    PendingChange,
     Requirement,
+    RequirementChangeRejection,
     RequirementChanges,
     RequirementEvidence,
     RequirementList,
@@ -17,9 +19,12 @@ from app.modules.intake.application.models import (
 from app.modules.intake.application.parsing import extracted_text, retry_parse
 from app.modules.intake.application.passages import get_passage
 from app.modules.intake.application.requirement_edits import (
+    accept_requirement_change,
     confirm_all,
     confirm_requirement,
     edit_requirement,
+    propose_requirement_change,
+    reject_requirement_change,
 )
 from app.modules.intake.application.requirement_refs import (
     RequirementSnapshot,
@@ -57,7 +62,9 @@ __all__ = [
     "FileTextUnreadableError",
     "IncomingFile",
     "Passage",
+    "PendingChange",
     "Requirement",
+    "RequirementChangeRejection",
     "RequirementChanges",
     "RequirementEvidence",
     "RequirementList",
@@ -68,6 +75,7 @@ __all__ = [
     "SourceList",
     "SourceParse",
     "StoredUpload",
+    "accept_requirement_change",
     "active_requirement_snapshots",
     "add_file",
     "add_stored_file",
@@ -80,7 +88,9 @@ __all__ = [
     "list_requirements",
     "list_sources",
     "max_body_bytes",
+    "propose_requirement_change",
     "read_stored_text",
+    "reject_requirement_change",
     "requirement_version_texts",
     "retry_parse",
     "start_extraction",

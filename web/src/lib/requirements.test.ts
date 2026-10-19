@@ -28,6 +28,7 @@ function requirement(n: number, classification: Classification): Requirement {
     confirmed_at: null,
     confirmed_by: null,
     last_changed_by: null,
+    pending_change: null,
     evidence: [],
   };
 }

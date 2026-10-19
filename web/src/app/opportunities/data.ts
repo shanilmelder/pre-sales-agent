@@ -12,7 +12,7 @@ import type { ConflictsView } from "@/lib/conflicts";
 import type { EstimateView } from "@/lib/estimates";
 import type { GapList } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
-import type { RequirementList } from "@/lib/requirements";
+import type { OutdatedAssessment, RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 import { TRACE_PAGE_SIZE, type TraceFilters, type TracePage } from "@/lib/trace";
 
@@ -23,6 +23,9 @@ export type ListResult = { kind: "ok"; page: OpportunityPage } | { kind: "error"
 export type FacetsResult = { kind: "ok"; facets: OpportunityFacets } | { kind: "error" };
 export type SourcesResult = { kind: "ok"; sources: Source[] } | { kind: "error" };
 export type RequirementsResult = { kind: "ok"; list: RequirementList } | { kind: "error" };
+export type OutdatedAssessmentsResult =
+  | { kind: "ok"; items: OutdatedAssessment[] }
+  | { kind: "error" };
 export type GapsResult = { kind: "ok"; list: GapList } | { kind: "error" };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
 export type TraceResult = { kind: "ok"; page: TracePage } | { kind: "error" };
@@ -130,6 +133,27 @@ export async function listRequirements(id: string): Promise<RequirementsResult> 
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET requirements failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/assessments/outdated`: the current Assessments that used
+ * Requirement versions that have changed since (Story 2.7). */
+export async function listOutdatedAssessments(id: string): Promise<OutdatedAssessmentsResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/assessments/outdated",
+      { params: { path: { opportunity_id: id } } },
+    );
+    if (data) return { kind: "ok", items: data.items };
+    console.error(`GET outdated assessments failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET outdated assessments failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }

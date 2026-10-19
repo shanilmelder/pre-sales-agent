@@ -9,7 +9,7 @@ import type {
   RequirementConfirmInput,
   RequirementWriteResult,
 } from "@/app/opportunities/actions";
-import type { RequirementsResult } from "@/app/opportunities/data";
+import type { OutdatedAssessmentsResult, RequirementsResult } from "@/app/opportunities/data";
 import type { Classification, Requirement, RequirementList } from "@/lib/requirements";
 import { axeViolations } from "@/test/axe";
 
@@ -28,7 +28,11 @@ const loadRequirements = vi.hoisted(() =>
 const getPassage = vi.hoisted(() =>
   vi.fn<(opportunityId: string, passageId: string) => Promise<PassageResult>>(),
 );
+const loadOutdatedAssessments = vi.hoisted(() =>
+  vi.fn<(opportunityId: string) => Promise<OutdatedAssessmentsResult>>(),
+);
 vi.mock("@/app/opportunities/actions", () => ({
+  loadOutdatedAssessments,
   editRequirement,
   confirmRequirement,
   confirmAllRequirements,
@@ -69,6 +73,7 @@ function requirement(
     confirmed_at: null,
     confirmed_by: null,
     last_changed_by: null,
+    pending_change: null,
     evidence: [],
     ...extra,
   };
@@ -114,6 +119,8 @@ beforeEach(() => {
   confirmAllRequirements.mockReset();
   loadRequirements.mockReset();
   getPassage.mockReset();
+  loadOutdatedAssessments.mockReset();
+  loadOutdatedAssessments.mockResolvedValue({ kind: "ok", items: [] });
 });
 
 describe("editing Requirements inline", () => {
@@ -151,6 +158,36 @@ describe("editing Requirements inline", () => {
     const saved = await screen.findByRole("button", { name: "Fixed wording." });
     await waitFor(() => expect(document.activeElement).toBe(saved));
     expect(within(saved.closest('[role="row"]') as HTMLElement).getByText("Edited")).toBeTruthy();
+  });
+
+  it("a saved edit reads the outdated Assessments notice again", async () => {
+    const user = userEvent.setup();
+    const r1 = requirement(1);
+    renderSection(list([r1]));
+    editRequirement.mockResolvedValue({
+      kind: "ok",
+      requirement: { ...r1, text: "New wording.", origin: "human", version: 2, row_version: 2 },
+    });
+    loadOutdatedAssessments.mockResolvedValue({
+      kind: "ok",
+      items: [
+        {
+          id: "00000000-0000-7000-8000-0000000000a1",
+          agent: "engineering_agent",
+          label: "Engineering Agent",
+          requirement_labels: ["R1"],
+        },
+      ],
+    });
+    expect(screen.queryByTestId("outdated-assessments")).toBeNull();
+
+    await user.dblClick(row(1));
+    const input = screen.getByRole("textbox", { name: "Requirement text" });
+    await user.clear(input);
+    await user.type(input, "New wording.{Enter}");
+
+    await waitFor(() => expect(loadOutdatedAssessments).toHaveBeenCalledWith(OPP_ID));
+    expect(await screen.findByTestId("outdated-assessments")).toBeTruthy();
   });
 
   it("a double-click on the text edits; blur saves; Esc reverts without saving", async () => {

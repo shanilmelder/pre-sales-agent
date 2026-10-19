@@ -1,7 +1,8 @@
-"""Persistence for extractions, Source passages and Requirements (Story 2.5 Part A), and
-Requirement versions and confirmation (Story 2.6). Runs inside the caller's Unit of Work."""
+"""Persistence for extractions, Source passages and Requirements (Story 2.5 Part A),
+Requirement versions and confirmation (Story 2.6), and pending Requirement changes (Story
+2.7). Runs inside the caller's Unit of Work."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.modules.intake.adapters.models import (
     ExtractionRow,
+    RequirementChangeRow,
     RequirementEvidenceRow,
     RequirementRow,
     RequirementVersionRow,
@@ -290,28 +292,6 @@ async def passage(uow: UnitOfWork, *, source_id: UUID, version: int, start: int,
     ).scalar_one()
 
 
-async def supersede_extracted(uow: UnitOfWork, opportunity_id: UUID) -> int:
-    """Mark every `active`, `extracted`, unlocked Requirement of the Opportunity `superseded`.
-    Locked ones are never touched. Returns how many changed."""
-    result = await uow.session.execute(
-        update(RequirementRow)
-        .where(
-            RequirementRow.opportunity_id == opportunity_id,
-            RequirementRow.status == "active",
-            RequirementRow.origin == "extracted",
-            RequirementRow.locked_by_human.is_(False),
-        )
-        .values(
-            status="superseded",
-            updated_at=func.now(),
-            row_version=RequirementRow.row_version + 1,
-        )
-        .returning(RequirementRow.id)
-        .execution_options(synchronize_session=False)
-    )
-    return len(result.all())
-
-
 async def insert_requirement(
     uow: UnitOfWork,
     *,
@@ -446,7 +426,8 @@ async def edit_requirement(
                 updated_at=func.now(),
             )
             .returning(RequirementRow)
-            .execution_options(synchronize_session=False)
+            # Rows read earlier in the session are refreshed, not served stale.
+            .execution_options(synchronize_session=False, populate_existing=True)
         )
     ).scalar_one_or_none()
     return None if row is None else _requirement(row)
@@ -476,7 +457,8 @@ async def confirm_requirement(
             )
             .values(**_CONFIRMED, confirmed_by=user_id)
             .returning(RequirementRow)
-            .execution_options(synchronize_session=False)
+            # Rows read earlier in the session are refreshed, not served stale.
+            .execution_options(synchronize_session=False, populate_existing=True)
         )
     ).scalar_one_or_none()
     return None if row is None else _requirement(row)
@@ -630,3 +612,254 @@ async def version_texts(
         )
     )
     return {(row.requirement_id, row.version): (row.text, row.classification) for row in rows}
+
+
+# --- incremental intake (Story 2.7) ---------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CitedPassage:
+    requirement_id: UUID
+    passage_id: UUID
+    source_id: UUID
+    source_version: int
+    start: int
+    end: int
+
+
+async def active_cited_passages(uow: UnitOfWork, opportunity_id: UUID) -> list[CitedPassage]:
+    """The passages every active Requirement of the Opportunity cites, with their spans."""
+    rows = await uow.session.execute(
+        select(
+            RequirementEvidenceRow.requirement_id,
+            SourcePassageRow.id.label("passage_id"),
+            SourcePassageRow.source_id,
+            SourcePassageRow.source_version,
+            SourcePassageRow.start,
+            SourcePassageRow.end,
+        )
+        .join(SourcePassageRow, SourcePassageRow.id == RequirementEvidenceRow.passage_id)
+        .join(RequirementRow, RequirementRow.id == RequirementEvidenceRow.requirement_id)
+        .where(RequirementRow.opportunity_id == opportunity_id, RequirementRow.status == "active")
+        .order_by(SourcePassageRow.source_id, SourcePassageRow.start, SourcePassageRow.end)
+    )
+    return [
+        CitedPassage(
+            requirement_id=row.requirement_id,
+            passage_id=row.passage_id,
+            source_id=row.source_id,
+            source_version=row.source_version,
+            start=row.start,
+            end=row.end,
+        )
+        for row in rows
+    ]
+
+
+async def version_extracted(
+    uow: UnitOfWork,
+    requirement_id: UUID,
+    *,
+    expected_row_version: int,
+    text_: str,
+    classification: str,
+) -> RequirementRecord | None:
+    """Store extraction's refinement of an unlocked Requirement: the next version, still
+    `extracted` and unlocked. Only while it is `active`, unlocked and at
+    `expected_row_version`; None (and no change) otherwise."""
+    row = (
+        await uow.session.execute(
+            update(RequirementRow)
+            .where(
+                RequirementRow.id == requirement_id,
+                RequirementRow.status == "active",
+                RequirementRow.locked_by_human.is_(False),
+                RequirementRow.row_version == expected_row_version,
+            )
+            .values(
+                text=text_,
+                classification=classification,
+                version=RequirementRow.version + 1,
+                row_version=RequirementRow.row_version + 1,
+                updated_at=func.now(),
+            )
+            .returning(RequirementRow)
+            # Rows read earlier in the session are refreshed, not served stale.
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _requirement(row)
+
+
+async def link_evidence(uow: UnitOfWork, requirement_id: UUID, passage_ids: list[UUID]) -> None:
+    """Make the Requirement cite these passages too (ones it cites already are skipped)."""
+    if not passage_ids:
+        return
+    await uow.session.execute(
+        pg_insert(RequirementEvidenceRow)
+        .values([{"requirement_id": requirement_id, "passage_id": pid} for pid in passage_ids])
+        .on_conflict_do_nothing(index_elements=["requirement_id", "passage_id"])
+    )
+
+
+async def bump_row_version(
+    uow: UnitOfWork, requirement_id: UUID, *, expected_row_version: int | None = None
+) -> RequirementRecord | None:
+    """Bump the active Requirement's `row_version` (its read model changed), only at
+    `expected_row_version` when given; None (and no change) otherwise."""
+    statement = update(RequirementRow).where(
+        RequirementRow.id == requirement_id, RequirementRow.status == "active"
+    )
+    if expected_row_version is not None:
+        statement = statement.where(RequirementRow.row_version == expected_row_version)
+    row = (
+        await uow.session.execute(
+            statement.values(row_version=RequirementRow.row_version + 1, updated_at=func.now())
+            .returning(RequirementRow)
+            # Rows read earlier in the session are refreshed, not served stale.
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _requirement(row)
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeRecord:
+    id: UUID
+    requirement_id: UUID
+    base_version: int
+    text: str = field(repr=False)
+    classification: str
+    passage_ids: tuple[UUID, ...]
+    status: str
+    row_version: int
+    created_at: datetime
+
+
+def _change(row: RequirementChangeRow) -> ChangeRecord:
+    return ChangeRecord(
+        id=row.id,
+        requirement_id=row.requirement_id,
+        base_version=row.base_version,
+        text=row.text,
+        classification=row.classification,
+        passage_ids=tuple(row.passage_ids),
+        status=row.status,
+        row_version=row.row_version,
+        created_at=row.created_at,
+    )
+
+
+async def open_changes(
+    uow: UnitOfWork, requirement_ids: list[UUID], *, for_update: bool = False
+) -> dict[UUID, ChangeRecord]:
+    """The `open` change of each of these Requirements that has one."""
+    if not requirement_ids:
+        return {}
+    statement = select(RequirementChangeRow).where(
+        RequirementChangeRow.requirement_id.in_(requirement_ids),
+        RequirementChangeRow.status == "open",
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    rows = await uow.session.execute(statement)
+    return {row.requirement_id: _change(row) for row in rows.scalars()}
+
+
+async def rejected_passage_sets(uow: UnitOfWork, requirement_id: UUID) -> set[tuple[UUID, ...]]:
+    """The (sorted) passage sets of the Requirement's rejected changes."""
+    rows = await uow.session.execute(
+        select(RequirementChangeRow.passage_ids).where(
+            RequirementChangeRow.requirement_id == requirement_id,
+            RequirementChangeRow.status == "rejected",
+        )
+    )
+    return {tuple(sorted(ids)) for ids in rows.scalars()}
+
+
+async def insert_change(
+    uow: UnitOfWork,
+    *,
+    change_id: UUID,
+    requirement_id: UUID,
+    base_version: int,
+    text_: str,
+    classification: str,
+    passage_ids: list[UUID],
+    extraction_id: UUID | None,
+) -> None:
+    """An `open` change."""
+    await uow.session.execute(
+        insert(RequirementChangeRow).values(
+            id=change_id,
+            requirement_id=requirement_id,
+            base_version=base_version,
+            text=text_,
+            classification=classification,
+            passage_ids=passage_ids,
+            status="open",
+            extraction_id=extraction_id,
+            row_version=1,
+        )
+    )
+
+
+async def close_change(
+    uow: UnitOfWork,
+    change_id: UUID,
+    *,
+    status: str,
+    decided_by: UUID | None = None,
+    reason: str | None = None,
+) -> bool:
+    """Move an `open` change to `status` (`accepted` and `rejected` with who decided, and
+    now). False (and no change) when it is no longer open."""
+    values: dict[str, object] = {
+        "status": status,
+        "reason": reason,
+        "row_version": RequirementChangeRow.row_version + 1,
+    }
+    if decided_by is not None:
+        values["decided_by"] = decided_by
+        values["decided_at"] = func.now()
+    result = await uow.session.execute(
+        update(RequirementChangeRow)
+        .where(RequirementChangeRow.id == change_id, RequirementChangeRow.status == "open")
+        .values(**values)
+        .returning(RequirementChangeRow.id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.one_or_none() is not None
+
+
+async def passages_by_id(uow: UnitOfWork, passage_ids: list[UUID]) -> dict[UUID, PassageRecord]:
+    """These passages with their Source version's file name, keyed by id."""
+    if not passage_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(
+            SourcePassageRow.id,
+            SourcePassageRow.source_id,
+            SourcePassageRow.source_version,
+            SourcePassageRow.start,
+            SourcePassageRow.end,
+            SourceVersionRow.filename,
+        )
+        .join(
+            SourceVersionRow,
+            (SourceVersionRow.source_id == SourcePassageRow.source_id)
+            & (SourceVersionRow.version == SourcePassageRow.source_version),
+        )
+        .where(SourcePassageRow.id.in_(passage_ids))
+    )
+    return {
+        row.id: PassageRecord(
+            id=row.id,
+            source_id=row.source_id,
+            source_version=row.source_version,
+            start=row.start,
+            end=row.end,
+            filename=row.filename,
+        )
+        for row in rows
+    }

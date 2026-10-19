@@ -5,6 +5,10 @@ critical to low (then by position), each with its Requirement chips (label and e
 the effort rows in Requirement order with the total hours. Superseded Assessments are
 hidden. No authorization: `workflows` composes it with the latest run into the Assessments
 tab's view (Story 5.2), behind the Opportunity's read check.
+
+`outdated_assessments` (Story 2.7): the current Assessments that used a Requirement version
+that has changed since, for the Requirements tab's notice (anyone who can read the
+Opportunity).
 """
 
 from collections import defaultdict
@@ -24,9 +28,12 @@ from app.modules.assessments.application.models import (
     AssessmentFinding,
     AssessmentView,
     FindingRequirement,
+    OutdatedAssessment,
+    OutdatedAssessments,
     SeverityCounts,
 )
 from app.modules.assessments.domain.assessments import (
+    AGENT_LABELS,
     AGENTS,
     AssessmentAgent,
     AssessmentStatus,
@@ -41,7 +48,9 @@ from app.modules.assessments.domain.reviews import (
     severity_counts,
     severity_rank,
 )
+from app.modules.identity.application.public import Principal
 from app.modules.intake.application import public as intake
+from app.modules.opportunities.application import public as opportunities
 from app.platform.uow import UnitOfWork
 
 INACTIVE_LABEL = "Superseded"
@@ -146,3 +155,50 @@ async def agent_assessments(uow: UnitOfWork, opportunity_id: UUID) -> list[Agent
     """One slot per agent (Engineering, PM, Security) with its current Assessment or null."""
     views = await _views(uow, opportunity_id, await repo.current_assessments(uow, opportunity_id))
     return [AgentAssessment(agent=agent, assessment=views.get(agent.value)) for agent in AGENTS]
+
+
+async def outdated_assessments(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID
+) -> OutdatedAssessments:
+    """The Opportunity's current Assessments with at least one Requirement pin (a Finding's or
+    an effort row's) older than that Requirement's current version, or whose Requirement is
+    no longer active (Story 2.7). Anyone who can read the Opportunity."""
+    await opportunities.readable_resource(uow, actor, opportunity_id)
+    records = await repo.current_assessments(uow, opportunity_id)
+    if not records:
+        return OutdatedAssessments(items=[])
+    active = {
+        s.id: (s.version, s.number)
+        for s in await intake.active_requirement_snapshots(uow, opportunity_id)
+    }
+    ids = [r.id for r in records]
+    findings = await repo.findings_of(uow, ids)
+    owner = {f.id: f.assessment_id for f in findings}
+    pins: dict[UUID, set[tuple[UUID, int]]] = defaultdict(set)
+    for link in await repo.requirement_links_for(uow, list(owner)):
+        pins[owner[link.finding_id]].add((link.requirement_id, link.requirement_version))
+    for e in await repo.effort_of(uow, ids):
+        pins[e.assessment_id].add((e.requirement_id, e.requirement_version))
+
+    items: list[OutdatedAssessment] = []
+    for record in sorted(records, key=lambda r: AGENTS.index(AssessmentAgent(r.agent))):
+        numbers: set[int] = set()
+        inactive = False
+        for requirement_id, version in pins.get(record.id, set()):
+            current = active.get(requirement_id)
+            if current is None:
+                inactive = True
+            elif version < current[0]:
+                numbers.add(current[1])
+        if not numbers and not inactive:
+            continue
+        labels = [f"R{n}" for n in sorted(numbers)]
+        if inactive:
+            labels.append(INACTIVE_LABEL)
+        agent = AssessmentAgent(record.agent)
+        items.append(
+            OutdatedAssessment(
+                id=str(record.id), agent=agent, label=AGENT_LABELS[agent], requirement_labels=labels
+            )
+        )
+    return OutdatedAssessments(items=items)

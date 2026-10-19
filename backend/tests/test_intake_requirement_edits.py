@@ -530,11 +530,13 @@ def test_edited_and_confirmed_requirements_survive_a_rerun(
     after = {item["id"]: item for item in _list(client, headers, opp["id"])}
     assert after[sap["id"]] == edited
     assert after[uptime["id"]] == confirmed
-    assert peak["id"] not in after
-    assert _row(sync_engine, peak["id"])["status"] == "superseded"
+    # Since Story 2.7 a Requirement the rerun doesn't produce again is kept as it was.
+    assert after[peak["id"]] == peak
+    assert _row(sync_engine, peak["id"])["status"] == "active"
     assert [i["text"] for i in after.values()] == [
         "Connect to SAP S/4.",
         "Runs 24/7.",
+        "Peak 900 orders/hour.",
         "Single sign-on.",
     ]
 

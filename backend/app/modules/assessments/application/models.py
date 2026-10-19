@@ -150,3 +150,22 @@ class AgentAssessment(BaseModel):
 
     agent: AssessmentAgent
     assessment: AssessmentView | None
+
+
+class OutdatedAssessment(BaseModel):
+    """A current Assessment that used a Requirement version that has changed since (Story
+    2.7): a newer version, or the Requirement is no longer active. `label`: the agent's role
+    in words. `requirement_labels`: those Requirements, `R<n>` in Requirement order (one no
+    longer active reads `Superseded`, last)."""
+
+    id: str
+    agent: AssessmentAgent
+    label: str
+    requirement_labels: list[str]
+
+
+class OutdatedAssessments(BaseModel):
+    """The Opportunity's current Assessments that used outdated Requirement versions, in agent
+    order (Story 2.7). Empty when none did. Nothing is rerun automatically."""
+
+    items: list[OutdatedAssessment]

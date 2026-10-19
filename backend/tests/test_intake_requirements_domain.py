@@ -1,7 +1,9 @@
-"""Requirement rules and `intake_agent`'s prompt (Story 2.5 Part A), without a DB or a model."""
+"""Requirement rules and `intake_agent`'s prompt (Story 2.5 Part A), and reconciling an
+extraction's proposals with the active Requirements (Story 2.7), without a DB or a model.
+"""
 
 from typing import Any, get_args
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -15,11 +17,19 @@ from app.agents.intake_agent.agent import (
 )
 from app.agents.intake_agent.schema import ClassificationName, IntakeOutput
 from app.modules.intake.domain.requirements import (
+    REJECT_REASON_MAX,
     Classification,
+    ExistingRequirement,
+    PassageKey,
     ProposedCitation,
     ProposedRequirement,
+    ReconcileOutcome,
+    ReconcileProposal,
     ResolvedSpan,
     input_budget_chars,
+    normalised_text,
+    reconcile,
+    reject_reason,
     resolve_quote,
     resolve_requirements,
 )
@@ -223,3 +233,176 @@ def test_run_returns_the_proposal_in_the_extension() -> None:
 class _Never:
     async def complete_structured(self, request: StructuredRequest[Any]) -> Any:
         raise AssertionError("no model call expected")
+
+
+# --- reconciling with the active Requirements (Story 2.7) -----------------------------------
+
+S1 = uuid4()
+S2 = uuid4()
+
+
+def key(start: int, end: int, source: UUID = S1, version: int = 1) -> PassageKey:
+    return PassageKey(source, version, start, end)
+
+
+def proposal(
+    text: str, *passages: PassageKey, classification: Classification = Classification.FUNCTIONAL
+) -> ReconcileProposal:
+    return ReconcileProposal(text=text, classification=classification, passages=passages)
+
+
+def existing(
+    text: str,
+    *passages: PassageKey,
+    classification: str = "functional",
+    locked: bool = False,
+) -> ExistingRequirement:
+    return ExistingRequirement(
+        id=uuid4(), text=text, classification=classification, locked=locked, passages=passages
+    )
+
+
+def test_overlap_needs_the_same_source_version_and_intersecting_spans() -> None:
+    assert key(0, 10).overlaps(key(5, 15))
+    assert not key(0, 10).overlaps(key(10, 20))  # [start, end): touching is not overlapping
+    assert not key(0, 10).overlaps(key(0, 10, version=2))
+    assert not key(0, 10).overlaps(key(0, 10, source=S2))
+
+
+def test_normalised_text_case_folds_and_collapses_whitespace() -> None:
+    assert normalised_text("  Connect\n to   SAP. ") == normalised_text("connect to sap.")
+    assert normalised_text("STRASSE") == normalised_text("straße")
+
+
+def test_an_unmatched_proposal_is_added_with_all_its_passages() -> None:
+    (step,) = reconcile([proposal("New.", key(0, 4), key(9, 12))], [existing("Old.", key(20, 30))])
+    assert step.outcome is ReconcileOutcome.ADD
+    assert step.requirement_id is None
+    assert step.new_passages == (key(0, 4), key(9, 12))
+
+
+def test_a_match_with_a_new_passage_and_new_text_versions_an_unlocked_requirement() -> None:
+    r1 = existing("Connect to SAP.", key(0, 20))
+    (step,) = reconcile([proposal("Connect to SAP S/4.", key(2, 18), key(0, 9, source=S2))], [r1])
+    assert (step.outcome, step.requirement_id) == (ReconcileOutcome.VERSION, r1.id)
+    assert step.new_passages == (key(0, 9, source=S2),)
+
+
+def test_a_changed_match_of_a_locked_requirement_is_proposed() -> None:
+    r2 = existing("Connect to SAP.", key(0, 20), locked=True)
+    (step,) = reconcile([proposal("Connect to SAP S/4.", key(0, 20), key(30, 40))], [r2])
+    assert (step.outcome, step.requirement_id) == (ReconcileOutcome.PROPOSE, r2.id)
+    assert step.new_passages == (key(30, 40),)
+
+
+def test_a_new_classification_alone_counts_as_changed() -> None:
+    r1 = existing("Connect to SAP.", key(0, 20), classification="functional")
+    (step,) = reconcile(
+        [
+            proposal(
+                "connect to  SAP.",
+                key(0, 20),
+                key(30, 40),
+                classification=Classification.INTEGRATION,
+            )
+        ],
+        [r1],
+    )
+    assert step.outcome is ReconcileOutcome.VERSION
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        # Reworded, but no passage it doesn't cite already (an overlapping span is not new).
+        proposal("We connect to SAP.", key(3, 25)),
+        # A new passage, but the same text (after normalising) and classification.
+        proposal("CONNECT  to sap.", key(0, 20), key(30, 40)),
+    ],
+)
+def test_anything_else_that_matches_is_unchanged(item: ReconcileProposal) -> None:
+    r1 = existing("Connect to SAP.", key(0, 20), locked=True)
+    (step,) = reconcile([item], [r1])
+    assert (step.outcome, step.requirement_id) == (ReconcileOutcome.UNCHANGED, r1.id)
+
+
+def test_a_proposal_matches_the_requirement_it_shares_most_passages_with() -> None:
+    one = existing("A.", key(0, 10))
+    two = existing("B.", key(20, 30), key(40, 50))
+    (step,) = reconcile([proposal("C.", key(5, 8), key(22, 25), key(45, 48))], [one, two])
+    assert step.requirement_id == two.id
+
+
+def test_ties_go_to_the_oldest_requirement() -> None:
+    older = existing("A.", key(0, 10))
+    newer = existing("B.", key(5, 15))
+    (step,) = reconcile([proposal("C.", key(6, 9))], [older, newer])
+    assert step.requirement_id == older.id
+
+
+def test_matching_is_one_to_one() -> None:
+    r1 = existing("A.", key(0, 10))
+    first, second = reconcile([proposal("A.", key(0, 10)), proposal("A again.", key(2, 8))], [r1])
+    assert (first.outcome, first.requirement_id) == (ReconcileOutcome.UNCHANGED, r1.id)
+    assert (second.outcome, second.requirement_id) == (ReconcileOutcome.ADD, None)
+
+
+def test_the_pair_sharing_most_is_matched_first() -> None:
+    r1 = existing("A.", key(0, 10), key(20, 30))
+    weak, strong = reconcile(
+        [proposal("Weak.", key(0, 5)), proposal("Strong.", key(0, 5), key(25, 28))], [r1]
+    )
+    assert strong.requirement_id == r1.id
+    assert weak.outcome is ReconcileOutcome.ADD
+
+
+def test_failing_passages_equal_normalised_text_matches() -> None:
+    r1 = existing("Runs 24/7.", key(0, 10))
+    # The Source has a new version: no passage overlaps, but the text is the same.
+    (step,) = reconcile([proposal("runs  24/7.", key(0, 10, version=2))], [r1])
+    assert (step.outcome, step.requirement_id) == (ReconcileOutcome.UNCHANGED, r1.id)
+
+
+def test_a_text_match_takes_the_oldest_unmatched_requirement() -> None:
+    taken = existing("Runs 24/7.", key(0, 10))
+    free = existing("Runs 24/7.", key(50, 60))
+    by_passage, by_text = reconcile(
+        [proposal("Other.", key(0, 10)), proposal("Runs 24/7.", key(90, 99))], [taken, free]
+    )
+    assert by_passage.requirement_id == taken.id
+    assert by_text.requirement_id == free.id
+
+
+def test_requirements_no_proposal_produces_are_left_alone() -> None:
+    assert reconcile([], [existing("A.", key(0, 10))]) == ()
+
+
+def test_reject_reason_is_trimmed_and_bounded_in_code_points() -> None:
+    assert reject_reason("  Not what they said.\n") == "Not what they said."
+    assert reject_reason("😀" * REJECT_REASON_MAX) == "😀" * REJECT_REASON_MAX
+    for bad in ("", "  \n", "x" * (REJECT_REASON_MAX + 1)):
+        with pytest.raises(ValueError):
+            reject_reason(bad)
+
+
+def test_passages_in_different_versions_share_by_equal_normalised_text() -> None:
+    v1 = PassageKey(S1, 1, 0, 22, normalised_text("We must connect to SAP"))
+    v2 = PassageKey(S1, 2, 40, 62, normalised_text("we must  connect to SAP"))
+    assert v1.overlaps(v2) and v2.overlaps(v1)
+    assert not v1.overlaps(PassageKey(S1, 2, 0, 22, normalised_text("Something else")))
+    assert not v1.overlaps(PassageKey(S1, 2, 0, 22))  # text unknown
+    assert not v1.overlaps(PassageKey(S2, 1, 0, 22, v1.text))  # another Source
+    assert v1 == PassageKey(S1, 1, 0, 22)  # the text is not part of its identity
+
+
+def test_a_re_upload_with_the_same_sentences_maps_onto_the_requirements() -> None:
+    r1 = existing("Connect to SAP.", PassageKey(S1, 1, 0, 22, "we must connect to sap"))
+    (step,) = reconcile(
+        [proposal("Integrate with SAP.", PassageKey(S1, 2, 0, 22, "we must connect to sap"))],
+        [r1],
+    )
+    assert (step.outcome, step.requirement_id, step.new_passages) == (
+        ReconcileOutcome.UNCHANGED,
+        r1.id,
+        (),
+    )

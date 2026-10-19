@@ -146,3 +146,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2-durable-langgraph-execution.md`
   summary: Give non-model task failures (missing executor, DB errors, accept rejections) their own error code instead of `model_unavailable`, and don't retry deterministic failures.
   evidence: `error_code` in `workflows/application/runs.py` (moved unchanged from baseline `assessments/application/assessment.py:668`) maps everything except timeouts and invalid output to `MODEL_UNAVAILABLE`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-7-incremental-intake.md`
+  summary: Test the "locked since it was read" fallback in `_reconcile` (extraction.py), where `version_extracted` misses and the refinement becomes a pending change.
+  evidence: Story 2.7 review, verification-gap layer. No test reaches the branch, because every incremental test locks the Requirement before extraction runs. Hitting it needs a lock injected between `active_requirements` and the UPDATE.

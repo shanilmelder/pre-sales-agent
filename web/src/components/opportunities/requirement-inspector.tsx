@@ -1,20 +1,28 @@
 "use client";
 
-import { CheckIcon, QuoteIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState, type Ref } from "react";
+import { CheckIcon, GitCompareArrowsIcon, QuoteIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from "react";
 
 import { getPassage, type PassageResult } from "@/app/opportunities/actions";
 import { InlineField } from "@/components/opportunities/inline-field";
+import { ReasonInput } from "@/components/opportunities/reason-input";
+import { reasonProblem } from "@/lib/gaps";
 import {
+  ACCEPT_CHANGE,
   CLASSIFICATIONS,
+  classificationChange,
   classificationLabel,
   CONFIRMED,
   LOADING_PASSAGE,
   originLabel,
   PASSAGE_FAILED,
   PASSAGE_GONE,
+  PENDING_CHANGE,
+  REJECT_CHANGE,
+  REJECT_REASON_LABEL,
   type Classification,
   type Passage,
+  type PendingChange,
   type Requirement,
   type RequirementEvidence,
 } from "@/lib/requirements";
@@ -82,6 +90,174 @@ export function PassageView({ passage }: { passage: Passage }) {
 
 type Loaded = { key: string; result: PassageResult };
 
+/** The amber "Pending change" marker (an icon and the words, never colour alone). */
+export function PendingChangeMarker() {
+  return (
+    <span className="inline-flex items-center gap-1 text-meta text-gap">
+      <GitCompareArrowsIcon aria-hidden="true" className="size-3 shrink-0" />
+      {PENDING_CHANGE}
+    </span>
+  );
+}
+
+/** How a pending-change write ended, as the reject form needs it: `ok` closes it, `invalid`
+ * shows the reason under it; `failed` was handled elsewhere (a notice or the stale view). */
+export type ChangeFormOutcome = "ok" | "failed" | { invalid: string };
+
+/** The Pending change section (Story 2.7): the current text as a `−` line and the proposed
+ * text as a `+` line, both on the diff tint; the classification change, if any; the new
+ * Evidence chips; and, with `edit`, **Accept**, and **Reject**, which asks for a reason. */
+function PendingChangeView({
+  requirement,
+  pending,
+  shownId,
+  onSelectPassage,
+  edit,
+}: {
+  requirement: Requirement;
+  pending: PendingChange;
+  shownId: string | null;
+  onSelectPassage: (passageId: string) => void;
+  edit?: InspectorEditing;
+}) {
+  const headingId = useId();
+  const evidenceId = useId();
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const disabled = !edit || edit.locked || edit.busy;
+  const classification = classificationChange(
+    requirement.classification,
+    pending.classification,
+  );
+
+  useEffect(() => {
+    if (rejecting) reasonRef.current?.focus();
+  }, [rejecting]);
+
+  function onReject(event: FormEvent) {
+    event.preventDefault();
+    if (!edit || disabled) return;
+    const problem = reasonProblem(reason);
+    setError(problem);
+    if (problem) {
+      reasonRef.current?.focus();
+      return;
+    }
+    void edit.onReject(reason.trim()).then((outcome) => {
+      if (outcome === "ok") {
+        setRejecting(false);
+        setReason("");
+      } else if (outcome !== "failed") {
+        setError(outcome.invalid);
+      }
+    });
+  }
+
+  return (
+    <section
+      aria-labelledby={headingId}
+      data-testid="pending-change"
+      className="flex flex-col gap-2 rounded-md border border-border p-2"
+    >
+      <h4 id={headingId} className="flex items-center gap-1 text-label text-gap">
+        <GitCompareArrowsIcon aria-hidden="true" className="size-3 shrink-0" />
+        {PENDING_CHANGE}
+      </h4>
+      <div className="flex flex-col gap-0.5 text-body">
+        <p className="flex gap-2 rounded-sm bg-diff-tint px-1.5 py-0.5">
+          <span aria-hidden="true" className="shrink-0 font-mono text-muted-foreground">
+            −
+          </span>
+          <span className="sr-only">Current: </span>
+          <span className="min-w-0 break-words">{requirement.text}</span>
+        </p>
+        <p className="flex gap-2 rounded-sm bg-diff-tint px-1.5 py-0.5">
+          <span aria-hidden="true" className="shrink-0 font-mono text-muted-foreground">
+            +
+          </span>
+          <span className="sr-only">Proposed: </span>
+          <span className="min-w-0 break-words">{pending.text}</span>
+        </p>
+      </div>
+      {classification ? <p className="text-meta">{classification}</p> : null}
+      {pending.evidence.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <span id={evidenceId} className="text-meta text-muted-foreground">
+            New Evidence
+          </span>
+          <div role="group" aria-labelledby={evidenceId} className="flex flex-wrap gap-1.5">
+            {pending.evidence.map((evidence) => (
+              <EvidenceChip
+                key={evidence.passage_id}
+                evidence={evidence}
+                pressed={evidence.passage_id === shownId}
+                onSelect={() => onSelectPassage(evidence.passage_id)}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {edit && !rejecting ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={edit.onAccept}
+            className={`${actionClass} disabled:opacity-60`}
+          >
+            {ACCEPT_CHANGE}
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              setError(null);
+              setRejecting(true);
+            }}
+            className={`${actionClass} disabled:opacity-60`}
+          >
+            {REJECT_CHANGE}
+          </button>
+        </div>
+      ) : null}
+      {edit && rejecting ? (
+        <form onSubmit={onReject} className="flex flex-col gap-2" noValidate>
+          <ReasonInput
+            label={REJECT_REASON_LABEL}
+            value={reason}
+            onChange={setReason}
+            error={error}
+            disabled={edit.busy}
+            inputRef={reasonRef}
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={disabled}
+              className={`${actionClass} disabled:opacity-60`}
+            >
+              Reject change
+            </button>
+            <button
+              type="button"
+              disabled={edit.busy}
+              onClick={() => {
+                setRejecting(false);
+                setError(null);
+              }}
+              className={`${actionClass} disabled:opacity-60`}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
 /** What the inspector needs to edit and confirm the Requirement (Story 2.6). */
 export type InspectorEditing = {
   /** A save or confirmation of this Requirement is in flight. */
@@ -93,12 +269,18 @@ export type InspectorEditing = {
   onCommitText: (text: string) => void;
   onClassify: (classification: Classification) => void;
   onConfirm: () => void;
+  /** Accept the pending change (Story 2.7). */
+  onAccept: () => void;
+  /** Reject the pending change with this (trimmed) reason. */
+  onReject: (reason: string) => Promise<ChangeFormOutcome>;
 };
 
 /** The selected Requirement in the right pane: its text, classification and origin, its
- * Evidence chips in citation order, and the shown chip's passage highlighted in its
- * surrounding text. With `edit`, the text is click-to-edit, the classification a select,
- * and an unconfirmed Requirement has **Confirm**; without it, read-only. */
+ * pending change (Story 2.7), its Evidence chips in citation order, and the shown chip's
+ * passage (one of its own or of the pending change) highlighted in its surrounding text.
+ * With `edit`, the text is click-to-edit, the classification a select, an unconfirmed
+ * Requirement has **Confirm**, and a pending change **Accept** and **Reject**; without it,
+ * read-only. */
 export function RequirementInspector({
   opportunityId,
   requirement,
@@ -124,9 +306,11 @@ export function RequirementInspector({
   const pressedRef = useRef<HTMLButtonElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const pending = requirement.pending_change;
   const shown =
-    requirement.evidence.find((e) => e.passage_id === passageId) ??
-    requirement.evidence[0];
+    [...requirement.evidence, ...(pending?.evidence ?? [])].find(
+      (e) => e.passage_id === passageId,
+    ) ?? requirement.evidence[0];
   const shownId = shown?.passage_id ?? null;
   const key = `${shownId}:${attempt}`;
   const result = loaded?.key === key ? loaded.result : null;
@@ -234,6 +418,16 @@ export function RequirementInspector({
             </button>
           )}
         </div>
+      ) : null}
+      {pending ? (
+        <PendingChangeView
+          key={pending.id}
+          requirement={requirement}
+          pending={pending}
+          shownId={shownId}
+          onSelectPassage={onSelectPassage}
+          edit={edit}
+        />
       ) : null}
       <div className="flex flex-col gap-1.5">
         <h4 id={evidenceId} className="text-label text-muted-foreground">

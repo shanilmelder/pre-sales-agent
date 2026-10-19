@@ -1,22 +1,29 @@
 "use client";
 
 import { CheckIcon, CircleAlertIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import {
+  acceptRequirementChange,
   confirmAllRequirements,
   confirmRequirement,
   editRequirement,
+  loadOutdatedAssessments,
   loadRequirements,
+  rejectRequirementChange,
   startExtraction,
   type ConfirmAllResult,
+  type RequirementChangeResult,
   type RequirementWriteResult,
   type StartExtractionResult,
 } from "@/app/opportunities/actions";
 import { InlineInput } from "@/components/opportunities/inline-field";
 import {
   EvidenceChip,
+  PendingChangeMarker,
   RequirementInspector,
+  type ChangeFormOutcome,
 } from "@/components/opportunities/requirement-inspector";
 import { isEditableTarget } from "@/components/shell/keyboard-shortcuts";
 import { useAnnounce } from "@/components/shell/live-region";
@@ -27,6 +34,7 @@ import {
 } from "@/components/shell/shell-context";
 import { NO_ACCESS_TO_OPPORTUNITY, staleMessage } from "@/lib/opportunities";
 import {
+  CHANGE_DECIDED,
   CONFIRMED,
   confirmAllLabel,
   EXTRACTING,
@@ -38,6 +46,7 @@ import {
   NO_REQUIREMENTS,
   noneFound,
   originLabel,
+  outdatedNotice,
   requirementCount,
   requirementTextProblem,
   STILL_EXTRACTING,
@@ -45,9 +54,11 @@ import {
   unconfirmed,
   type Classification,
   type Extraction,
+  type OutdatedAssessment,
   type Requirement,
   type RequirementList,
 } from "@/lib/requirements";
+import { tabHref } from "@/lib/workspace";
 
 export const RETRY = "Retry";
 const RETRY_FAILED = "The retry failed. Try again.";
@@ -60,6 +71,8 @@ export const EDIT_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can edit Requirements.";
 const REQUIREMENT_GONE = "This Requirement is no longer available.";
 const RELOAD_FAILED = "The Requirements could not be reloaded. Try again.";
+export const OPEN_ASSESSMENTS = "Open the Assessments tab";
+const NO_OUTDATED: readonly OutdatedAssessment[] = [];
 
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
@@ -96,8 +109,9 @@ export function ConfirmedLabel() {
 
 /** The Requirements grouped by classification (Functional, Integration, Data, Security,
  * Non-functional, Commercial), each group headed by its label and count; empty groups are
- * hidden. Each row shows the text, its Evidence chips, "Edited" once a person changed it and
- * "Confirmed" once confirmed.
+ * hidden. Each row shows the text, its Evidence chips, "Edited" once a person changed it,
+ * "Confirmed" once confirmed, and the amber "Pending change" marker while extraction has
+ * proposed a change to it (Story 2.7).
  *
  * The list is one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows across
@@ -240,6 +254,7 @@ export function RequirementsList({
                             {originLabel(item.origin)}
                           </span>
                         ) : null}
+                        {item.pending_change ? <PendingChangeMarker /> : null}
                         {item.confirmed_at ? (
                           <ConfirmedLabel />
                         ) : edit ? (
@@ -337,14 +352,18 @@ function retryMessage(result: StartExtractionResult): string {
 /** The Requirements tab's content: the list in the main pane and the selected Requirement's
  * Evidence inspector in the right pane (opened if closed). While an extraction is queued or
  * running the list is re-read every 2 s: paused while the tab is hidden, and stopped after
- * 15 minutes. A selected Requirement that a re-run superseded leaves the pane showing
- * "Nothing selected." */
+ * 15 minutes. A selected Requirement no longer active leaves the pane showing "Nothing
+ * selected." Above the list, a notice names the Assessments that used Requirement versions
+ * that have changed since (Story 2.7), with a link to the Assessments tab; nothing is rerun. */
 export function RequirementsSection({
   opportunityId,
   initial,
+  initialOutdated = NO_OUTDATED,
 }: {
   opportunityId: string;
   initial: RequirementList;
+  /** The Assessments that used outdated Requirement versions, as the page loaded. */
+  initialOutdated?: readonly OutdatedAssessment[];
 }) {
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
@@ -355,6 +374,8 @@ export function RequirementsSection({
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
+  const [outdated, setOutdated] = useState<readonly OutdatedAssessment[]>(initialOutdated);
+  const [outdatedFrom, setOutdatedFrom] = useState(initialOutdated);
   /** Polling stopped at its limit while still extracting. */
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -394,6 +415,20 @@ export function RequirementsSection({
     setSyncedFrom(initial);
     setList(initial);
     setStalled(false);
+  }
+  if (initialOutdated !== outdatedFrom) {
+    setOutdatedFrom(initialOutdated);
+    setOutdated(initialOutdated);
+  }
+
+  /** Read the outdated Assessments again (a Requirement moved to a new version). */
+  async function refreshOutdated() {
+    try {
+      const loaded = await loadOutdatedAssessments(opportunityId);
+      if (loaded.kind === "ok") setOutdated(loaded.items);
+    } catch {
+      // The notice stays as it is.
+    }
   }
 
   useEffect(() => {
@@ -462,6 +497,15 @@ export function RequirementsSection({
                 ? extractionFailure(result.list.extraction.error_code)
                 : requirementCount(result.list.items.length),
             );
+            // A finished extraction may have moved Requirements to new versions.
+            Promise.resolve()
+              .then(() => loadOutdatedAssessments(opportunityId))
+              .then((loaded) => {
+                if (!cancelled && loaded.kind === "ok") setOutdated(loaded.items);
+              })
+              .catch(() => {
+                // The notice stays as it is.
+              });
           }
         }
       } catch {
@@ -548,6 +592,7 @@ export function RequirementsSection({
       if (loaded.kind !== "ok") return false;
       mutation.current += 1;
       setList(loaded.list);
+      void refreshOutdated(); // the Requirements may be at new versions
       return true;
     } catch {
       return false;
@@ -655,6 +700,7 @@ export function RequirementsSection({
     if (result.kind === "ok") {
       replace(result.requirement);
       announce("Requirement saved");
+      void refreshOutdated(); // a new version may outdate Assessments
       return;
     }
     // Roll the shown value back; a stale view keeps the user's text in the editor.
@@ -720,6 +766,39 @@ export function RequirementsSection({
     } else {
       say(CONFIRM_FAILED);
     }
+  }
+
+  /** Accept or reject the Requirement's pending change (Story 2.7). A 412 shows the stale
+   * notice with Reload; a change already decided reloads the list. */
+  async function decide(item: Requirement, reason: string | null): Promise<ChangeFormOutcome> {
+    if (locked || busyIds.has(item.id) || !item.pending_change) return "failed";
+    setNotice(null);
+    markBusy(item.id, true);
+    let result: RequirementChangeResult;
+    try {
+      const target = { opportunityId, requirementId: item.id, rowVersion: item.row_version };
+      result =
+        reason === null
+          ? await acceptRequirementChange(target)
+          : await rejectRequirementChange({ ...target, reason });
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(item.id, false);
+    if (result.kind === "ok") {
+      replace(result.requirement);
+      announce(reason === null ? "Change accepted" : "Change rejected");
+      if (reason === null) void refreshOutdated();
+      return "ok";
+    }
+    if (result.kind === "no-change") {
+      say(CHANGE_DECIDED);
+      void refresh();
+      return "failed";
+    }
+    if (result.kind === "invalid" && reason !== null) return { invalid: result.detail };
+    writeFailed(item, result, null, "inspector");
+    return "failed";
   }
 
   /** After a 412: read the Requirements again. The inline editor keeps the user's text. */
@@ -812,6 +891,23 @@ export function RequirementsSection({
           {notice}
         </p>
       ) : null}
+      {/* Always mounted, so a notice that appears later is announced. */}
+      <div role="status" className="empty:hidden">
+        {outdated.length > 0 ? (
+          <div
+            data-testid="outdated-assessments"
+            className="flex max-w-2xl flex-col items-start gap-1 rounded-md border border-border p-2"
+          >
+            <p className="text-meta">{outdatedNotice(outdated)}</p>
+            <Link
+              href={tabHref(opportunityId, "assessments")}
+              className="text-meta text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {OPEN_ASSESSMENTS}
+            </Link>
+          </div>
+        ) : null}
+      </div>
       {list.items.length > 0 ? (
         <RequirementsList
           items={list.items}
@@ -845,6 +941,8 @@ export function RequirementsSection({
                     onCommitText: (text) => void save(selected, { text }, "inspector"),
                     onClassify: (classification) => void save(selected, { classification }),
                     onConfirm: () => void confirm(selected),
+                    onAccept: () => void decide(selected, null),
+                    onReject: (reason) => decide(selected, reason),
                   }
                 : undefined
             }

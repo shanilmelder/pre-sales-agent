@@ -3,7 +3,9 @@
 `…/{opportunity_id}/requirements` and `…/{opportunity_id}/extractions`, the cited-passage
 route (Story 2.5 Part B): `…/{opportunity_id}/passages/{passage_id}`, and the Requirement
 edit routes (Story 2.6): `PATCH …/requirements/{requirement_id}`,
-`POST …/requirements/{requirement_id}/confirm` and `POST …/requirements/confirm-all`.
+`POST …/requirements/{requirement_id}/confirm` and `POST …/requirements/confirm-all`, and
+the pending-change routes (Story 2.7): `POST …/requirements/{requirement_id}/change/accept`
+and `…/change/reject`.
 
 Uploads are `multipart/form-data` with the file in the `file` field. The body is read as a
 stream (`app.platform.multipart`), never parsed up front, so a rejected type is answered
@@ -28,6 +30,7 @@ from app.modules.intake.application.public import (
     Extraction,
     Passage,
     Requirement,
+    RequirementChangeRejection,
     RequirementChanges,
     RequirementList,
     Source,
@@ -309,6 +312,7 @@ _EDIT_DESCRIBED: dict[int, str] = {
     "or a collaborator, or is a sales representative",
     404: "No Opportunity with this id, or the caller may not see it, or no active Requirement "
     "with this id in it (`not_found`)",
+    409: "The Requirement has no pending change (`no_pending_change`)",
     412: "The Requirement changed since the caller read it (`row_version_mismatch`)",
     428: "The write has no `If-Match` header (`if_match_required`)",
 }
@@ -423,3 +427,67 @@ async def confirm_requirement(
         uow, actor, opportunity_id, requirement_id, if_match
     )
     return _with_etag(response, confirmed)
+
+
+# --- pending changes (Story 2.7) ------------------------------------------------------------
+
+_CHANGE_RESPONSES = _edit_responses(403, 404, 409, 412, 428)
+_CHANGE_RESPONSES[422] = _CONFIRM_RESPONSES[422]
+_REJECT_RESPONSES = _edit_responses(403, 404, 409, 412, 428)
+_REJECT_RESPONSES[422] = {
+    "description": "`validation_error`: the reason is blank or longer than 500 characters "
+    "once trimmed (the `detail` is the sentence to show), an unknown field, or an id that is "
+    "not a UUID",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@requirements_router.post(
+    "/requirements/{requirement_id}/change/accept",
+    operation_id="accept_requirement_change",
+    responses={
+        **_CHANGE_RESPONSES,
+        200: {"description": "The Requirement at its new version", "headers": _ETAG_HEADER},
+    },
+)
+async def accept_requirement_change(
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> Requirement:
+    """Accept the Requirement's pending change: its proposed text and classification become
+    the next version, its new Evidence is cited, and the Requirement stays locked as
+    `human`. The owner and collaborators, except sales representatives."""
+    accepted = await intake.accept_requirement_change(
+        uow, actor, opportunity_id, requirement_id, if_match
+    )
+    return _with_etag(response, accepted)
+
+
+@requirements_router.post(
+    "/requirements/{requirement_id}/change/reject",
+    operation_id="reject_requirement_change",
+    responses={
+        **_REJECT_RESPONSES,
+        200: {"description": "The Requirement, unchanged", "headers": _ETAG_HEADER},
+    },
+)
+async def reject_requirement_change(
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    body: RequirementChangeRejection,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> Requirement:
+    """Reject the Requirement's pending change with a reason; the Requirement keeps its
+    text, classification and version. The owner and collaborators, except sales
+    representatives."""
+    rejected = await intake.reject_requirement_change(
+        uow, actor, opportunity_id, requirement_id, body, if_match
+    )
+    return _with_etag(response, rejected)

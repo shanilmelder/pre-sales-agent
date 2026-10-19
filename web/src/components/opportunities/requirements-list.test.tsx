@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StartExtractionResult } from "@/app/opportunities/actions";
-import type { RequirementsResult } from "@/app/opportunities/data";
+import type { OutdatedAssessmentsResult, RequirementsResult } from "@/app/opportunities/data";
 import type {
   Classification,
   Extraction,
@@ -19,7 +19,15 @@ const loadRequirements = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<RequirementsResult>>(),
 );
 const getPassage = vi.hoisted(() => vi.fn());
-vi.mock("@/app/opportunities/actions", () => ({ startExtraction, loadRequirements, getPassage }));
+const loadOutdatedAssessments = vi.hoisted(() =>
+  vi.fn<(opportunityId: string) => Promise<OutdatedAssessmentsResult>>(),
+);
+vi.mock("@/app/opportunities/actions", () => ({
+  startExtraction,
+  loadRequirements,
+  getPassage,
+  loadOutdatedAssessments,
+}));
 
 import { ShellProviders } from "../shell/shell-context";
 import { ExtractionStatus, RequirementsList, RequirementsSection } from "./requirements-list";
@@ -39,6 +47,7 @@ function requirement(n: number, classification: Classification, ...labels: strin
     confirmed_at: null,
     confirmed_by: null,
     last_changed_by: null,
+    pending_change: null,
     evidence: labels.map((label, i) => ({
       passage_id: `00000000-0000-7000-8000-0000000${String(n).padStart(3, "0")}${i}aa`,
       source_id: "00000000-0000-7000-8000-0000000000b1",
@@ -74,6 +83,8 @@ function renderSection(initial: RequirementList) {
 beforeEach(() => {
   startExtraction.mockReset();
   loadRequirements.mockReset();
+  loadOutdatedAssessments.mockReset();
+  loadOutdatedAssessments.mockResolvedValue({ kind: "ok", items: [] });
 });
 
 afterEach(() => {
@@ -229,6 +240,38 @@ describe("RequirementsSection", () => {
     expect(loadRequirements).toHaveBeenCalledTimes(2);
   });
 
+  it("a poll that finds the extraction done reads the outdated Assessments notice again", async () => {
+    vi.useFakeTimers();
+    loadRequirements.mockResolvedValueOnce({
+      kind: "ok",
+      list: list([requirement(1, "security", "S1 · call.vtt")], succeeded),
+    });
+    loadOutdatedAssessments.mockResolvedValueOnce({
+      kind: "ok",
+      items: [
+        {
+          id: "00000000-0000-7000-8000-0000000000a1",
+          agent: "engineering_agent",
+          label: "Engineering Agent",
+          requirement_labels: ["R1"],
+        },
+      ],
+    });
+    renderSection(list([requirement(1, "security", "S1 · call.vtt")], running));
+    expect(screen.queryByTestId("outdated-assessments")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(loadOutdatedAssessments).toHaveBeenCalledWith(OPP_ID);
+    const notice = screen.getByTestId("outdated-assessments");
+    expect(notice.parentElement?.getAttribute("role")).toBe("status");
+    expect(notice.textContent).toContain(
+      "These Assessments used Requirements that have changed since: Engineering Agent (R1).",
+    );
+  });
+
   it("keeps the earlier Requirements while a new extraction runs", () => {
     renderSection(list([requirement(1, "data", "S1 · a.txt")], running));
     expect(screen.getByText("Extracting Requirements")).toBeTruthy();
@@ -323,8 +366,13 @@ describe("RequirementsSection", () => {
 });
 
 describe("RequirementsSection after review", () => {
+  /** The shell's live region (the tab also has its own status region for the notice). */
   function liveRegion() {
-    return screen.getByRole("status");
+    const found = screen
+      .getAllByRole("status")
+      .find((el) => el.getAttribute("aria-live") === "polite");
+    if (!found) throw new Error("no live region");
+    return found;
   }
 
   it("stops polling after 15 minutes and says to reload", async () => {

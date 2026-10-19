@@ -20,7 +20,7 @@ from tests.test_gaps_detection import (
     gaps_out,
 )
 from tests.test_health import assert_problem
-from tests.test_intake_extraction import BASE, DETECT, EXTRACT, FakeGateway, drain, out, owner
+from tests.test_intake_extraction import BASE, DETECT, FakeGateway, drain, owner
 from tests.test_opportunities import PSE, _add, _user
 
 storage_dir = extraction_tests.storage_dir
@@ -220,10 +220,8 @@ def test_a_superseded_requirement_reads_as_superseded_with_its_original_excerpt(
     gateway.replies = [gaps_out(gap("SAP interface type", ["R1"]))]
     assert drain(db_url, DETECT) == ["succeeded"]
     (before,) = _get(client, headers, opp["id"]).json()["items"]
-    extraction_tests._requeue(db_url, opp["id"])  # a re-extraction supersedes R1
-    gateway.replies = [out(("Runs 24/7.", "non_functional", [("S1", "The site runs 24/7")]))]
-
-    assert drain(db_url, EXTRACT) == ["succeeded"]
+    # R1 is no longer active (e.g. merged; extraction keeps it since Story 2.7).
+    extraction_tests.supersede(sync_engine, opp["id"], "Connect to SAP.")
 
     (after,) = _get(client, headers, opp["id"]).json()["items"]  # its detection hasn't run
     assert after["requirements"] == [

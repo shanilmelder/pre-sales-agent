@@ -6,11 +6,13 @@ import {
   getOpportunity,
   getRedTeam,
   listGaps,
+  listOutdatedAssessments,
   listRequirements,
   listSources,
   type AssessmentsResult,
   type EstimateResult,
   type GapsResult,
+  type OutdatedAssessmentsResult,
   type RedTeamResult,
   type RequirementsResult,
   type SourcesResult,
@@ -1078,6 +1080,75 @@ export async function confirmAllRequirements(opportunityId: unknown): Promise<Co
     );
     return { kind: "error" };
   }
+}
+
+// --- pending Requirement changes (Story 2.7) --------------------------------------------------
+
+export type RequirementRejectInput = RequirementConfirmInput & {
+  /** Why: 1 to 500 code points once trimmed (the API checks again). */
+  reason: string;
+};
+
+/** A write on a pending change: as a Requirement write, plus 409 when it has none (any
+ * more), e.g. someone else decided it first. */
+export type RequirementChangeResult = RequirementWriteResult | { kind: "no-change" };
+
+function isRejectInput(input: unknown): input is RequirementRejectInput {
+  return isRowTarget(input) && typeof (input as Record<string, unknown>).reason === "string";
+}
+
+/** `POST /api/v1/opportunities/{id}/requirements/{rid}/change/accept` (or `/reject` with a
+ * reason) with `If-Match`. Never retries or overwrites on 412. Logs ids and statuses only. */
+async function decideRequirementChange(
+  input: RequirementConfirmInput,
+  decision: { reason: string } | null,
+): Promise<RequirementChangeResult> {
+  const { opportunityId, requirementId, rowVersion } = input;
+  const action = decision ? "reject requirement change" : "accept requirement change";
+  try {
+    const api = await createServerApiClient();
+    const params = {
+      path: { opportunity_id: opportunityId, requirement_id: requirementId },
+      header: { "If-Match": `"${rowVersion}"` },
+    };
+    const { data, error, response } = decision
+      ? await api.POST(
+          "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/change/reject",
+          { params, body: { reason: decision.reason } },
+        )
+      : await api.POST(
+          "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/change/accept",
+          { params },
+        );
+    if (data) return { kind: "ok", requirement: data };
+    if (response.status === 409) return { kind: "no-change" };
+    return await requirementWriteFailure(action, input, response.status, error);
+  } catch (thrown) {
+    console.error(`${action} failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** Accept a Requirement's pending change: its text and classification become the next
+ * version. */
+export async function acceptRequirementChange(input: unknown): Promise<RequirementChangeResult> {
+  if (!isRowTarget(input)) return { kind: "error" };
+  return decideRequirementChange(input, null);
+}
+
+/** Reject a Requirement's pending change with a reason; the Requirement stays as it is. */
+export async function rejectRequirementChange(input: unknown): Promise<RequirementChangeResult> {
+  if (!isRejectInput(input)) return { kind: "error" };
+  return decideRequirementChange(input, { reason: input.reason });
+}
+
+/** The current Assessments that used Requirement versions that have changed since (the
+ * Requirements tab's notice). */
+export async function loadOutdatedAssessments(
+  opportunityId: unknown,
+): Promise<OutdatedAssessmentsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return listOutdatedAssessments(opportunityId);
 }
 
 // --- editing and approving Clarification Questions (Story 4.5) -------------------------------

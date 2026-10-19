@@ -48,6 +48,9 @@ describe("labels", () => {
     expect(eventLabel("knowledge.catalogue_entry.reactivated")).toBe("Catalogue entry reactivated");
     expect(subjectLabel("knowledge.catalogue_entry")).toBe("Catalogue entry");
     expect(eventLabel("conflicts.conflict.escalated")).toBe("Conflict escalated");
+    expect(eventLabel("intake.requirement_change.proposed")).toBe("Requirement change proposed");
+    expect(eventLabel("intake.requirement_change.accepted")).toBe("Requirement change accepted");
+    expect(eventLabel("intake.requirement_change.rejected")).toBe("Requirement change rejected");
     expect(eventLabel("brand.new.happened")).toBe("brand.new.happened");
     for (const [type, label] of Object.entries(EVENT_LABELS)) {
       expect(type).toMatch(/^[a-z_]+\.[a-z_]+\.[a-z_]+$/);

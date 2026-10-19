@@ -131,6 +131,14 @@ class ParseNotFailedError(ConflictError):
     title = "Parse not failed"
 
 
+class NoPendingChangeError(ConflictError):
+    """A pending Requirement change was accepted or rejected, but the Requirement has no
+    open one (Story 2.7)."""
+
+    code = "no_pending_change"
+    title = "No pending change"
+
+
 class ExtractionInProgressError(ConflictError):
     """A Requirement extraction was asked for while one is queued or running."""
 
