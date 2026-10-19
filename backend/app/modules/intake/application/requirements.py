@@ -27,6 +27,7 @@ from app.modules.intake.application.extraction import (
 )
 from app.modules.intake.application.models import (
     Extraction,
+    PendingChange,
     Requirement,
     RequirementEvidence,
     RequirementList,
@@ -104,17 +105,45 @@ async def requirement_views(
             )
         )
     authors = await repo.current_version_authors(uow, records)
+    changes = await repo.open_changes(uow, [r.id for r in records])
+    proposed = await repo.passages_by_id(
+        uow, sorted({pid for c in changes.values() for pid in c.passage_ids})
+    )
+
+    def pending(requirement_id: UUID) -> PendingChange | None:
+        change = changes.get(requirement_id)
+        if change is None:
+            return None
+        cited = [proposed[pid] for pid in change.passage_ids if pid in proposed]
+        cited.sort(key=lambda p: (numbers.get(p.source_id, 0), p.start, p.end))
+        return PendingChange(
+            id=str(change.id),
+            text=change.text,
+            classification=Classification(change.classification),
+            evidence=[
+                RequirementEvidence(
+                    passage_id=str(p.id),
+                    source_id=str(p.source_id),
+                    source_version=p.source_version,
+                    filename=p.filename,
+                    label=f"S{numbers.get(p.source_id, 0)}{LABEL_SEPARATOR}{p.filename}",
+                )
+                for p in cited
+            ],
+            proposed_at=change.created_at,
+        )
+
     changers: dict[UUID, UUID | None] = {}
     for r in records:
         author = authors.get(r.id)
-        changes: list[tuple[datetime, UUID | None]] = []
+        moments: list[tuple[datetime, UUID | None]] = []
         if author is not None:
-            changes.append((author.created_at, _user_id(author.created_by)))
+            moments.append((author.created_at, _user_id(author.created_by)))
         if r.confirmed_at is not None:
-            changes.append((r.confirmed_at, r.confirmed_by))
+            moments.append((r.confirmed_at, r.confirmed_by))
         # The latest change; on a tie (one transaction), the confirmation, listed last.
         changers[r.id] = (
-            max(reversed(changes), key=lambda change: change[0])[1] if changes else None
+            max(reversed(moments), key=lambda moment: moment[0])[1] if moments else None
         )
     wanted = {u for u in changers.values() if u is not None} | {
         r.confirmed_by for r in records if r.confirmed_by is not None
@@ -141,6 +170,7 @@ async def requirement_views(
             last_changed_by=ref(changers[r.id]),
             # Stable sort: Source order, then the span order the query returned.
             evidence=[e for _, e in sorted(evidence[r.id], key=lambda pair: pair[0])],
+            pending_change=pending(r.id),
         )
         for r in records
     ]

@@ -1,5 +1,6 @@
 """Requirement rules (Story 2.5 Part A): classifications, statuses, extraction states and
-error codes, the input budget, and quote resolution. Pure.
+error codes, the input budget, and quote resolution; and the reconciliation of a new
+extraction with the active Requirements (Story 2.7). Pure.
 
 `resolve_quote` turns a verbatim quote from the model into Unicode code-point offsets
 `[start, end)` into the Source version's extracted text (Python `str` indices are code
@@ -10,6 +11,7 @@ case, mapped back to the original offsets.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+from uuid import UUID
 
 SUBJECT_TYPE = "intake.extraction"
 """The trace subject of an extraction run."""
@@ -210,3 +212,168 @@ def requirement_text(raw: str) -> str:
             f"The Requirement text can be at most {REQUIREMENT_TEXT_MAX:,} characters."
         )
     return trimmed
+
+
+# --- incremental intake (Story 2.7) ---------------------------------------------------------
+
+REJECT_REASON_MAX = 500
+"""The most characters (Unicode code points) a pending change's rejection reason may have."""
+
+
+class ChangeStatus(StrEnum):
+    """A pending Requirement change's state."""
+
+    OPEN = "open"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    SUPERSEDED = "superseded"
+
+
+def reject_reason(raw: str) -> str:
+    """A rejection reason as a person entered it: trimmed, 1 to `REJECT_REASON_MAX` code
+    points. Raises `ValueError` (with the sentence to show) otherwise."""
+    trimmed = raw.strip()
+    if not trimmed:
+        raise ValueError("Give a reason for rejecting the change.")
+    if len(trimmed) > REJECT_REASON_MAX:
+        raise ValueError(f"The reason can be at most {REJECT_REASON_MAX} characters.")
+    return trimmed
+
+
+def normalised_text(text: str) -> str:
+    """`text` case-folded, with every run of whitespace collapsed to one space and trimmed:
+    what the fallback match compares."""
+    return " ".join(text.casefold().split())
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class PassageKey:
+    """A passage: a code-point span `[start, end)` in one Source version's text. `text`: the
+    quoted text, normalised (`normalised_text`), when known; not part of its identity."""
+
+    source_id: UUID
+    version: int
+    start: int
+    end: int
+    text: str | None = field(default=None, compare=False, repr=False)
+
+    def overlaps(self, other: "PassageKey") -> bool:
+        """Shared: overlapping spans in the same Source version, or (Story 2.7 review
+        decision) equal normalised text in different versions of the same Source."""
+        if self.source_id != other.source_id:
+            return False
+        if self.version == other.version:
+            return self.start < other.end and other.start < self.end
+        return self.text is not None and self.text == other.text
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileProposal:
+    """A resolved proposal of the current extraction, its spans as passages."""
+
+    text: str = field(repr=False)
+    classification: Classification
+    passages: tuple[PassageKey, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingRequirement:
+    """An active Requirement with the passages it already cites."""
+
+    id: UUID
+    text: str = field(repr=False)
+    classification: str
+    locked: bool
+    passages: tuple[PassageKey, ...]
+
+
+class ReconcileOutcome(StrEnum):
+    ADD = "add"
+    """Unmatched: a new Requirement."""
+    VERSION = "version"
+    """Changed and unlocked: the same Requirement at its next version."""
+    PROPOSE = "propose"
+    """Changed and locked by a human: a pending change."""
+    UNCHANGED = "unchanged"
+    """Matched, nothing new: nothing is written."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileStep:
+    outcome: ReconcileOutcome
+    proposal: ReconcileProposal
+    requirement_id: UUID | None
+    """The matched Requirement; None for `add`."""
+    new_passages: tuple[PassageKey, ...]
+    """The proposal's passages the Requirement doesn't cite yet (overlapping none of its
+    passages), in proposal order; every passage for `add`."""
+
+
+def _shared(proposal: ReconcileProposal, existing: ExistingRequirement) -> int:
+    return sum(1 for p in proposal.passages if any(p.overlaps(e) for e in existing.passages))
+
+
+def reconcile(
+    proposals: Sequence[ReconcileProposal], existing: Sequence[ExistingRequirement]
+) -> tuple[ReconcileStep, ...]:
+    """What to do with each proposal (one step per proposal, in proposal order), given the
+    active Requirements, oldest first.
+
+    Matching is one-to-one. A proposal matches the Requirement it shares the most cited
+    passages with (overlapping spans in the same Source version, or equal normalised text
+    in different versions of the same Source: `PassageKey.overlaps`); the pairs sharing most are
+    matched first, ties going to the oldest Requirement (then the earliest proposal).
+    Failing that, it matches the oldest unmatched Requirement with equal normalised text.
+
+    A match is changed when the proposal cites a passage the Requirement doesn't (one
+    sharing none of its passages) and its normalised text or its classification
+    differs; anything else is unchanged. Active Requirements no proposal matches are kept:
+    nothing is ever removed."""
+    pairs = sorted(
+        (
+            (-shared, r_index, p_index)
+            for p_index, proposal in enumerate(proposals)
+            for r_index, requirement in enumerate(existing)
+            if (shared := _shared(proposal, requirement)) > 0
+        )
+    )
+    matched: dict[int, int] = {}
+    taken: set[int] = set()
+    for _, r_index, p_index in pairs:
+        if p_index in matched or r_index in taken:
+            continue
+        matched[p_index] = r_index
+        taken.add(r_index)
+    for p_index, proposal in enumerate(proposals):
+        if p_index in matched:
+            continue
+        wanted = normalised_text(proposal.text)
+        for r_index, requirement in enumerate(existing):
+            if r_index not in taken and normalised_text(requirement.text) == wanted:
+                matched[p_index] = r_index
+                taken.add(r_index)
+                break
+
+    steps: list[ReconcileStep] = []
+    for p_index, proposal in enumerate(proposals):
+        found = matched.get(p_index)
+        if found is None:
+            steps.append(ReconcileStep(ReconcileOutcome.ADD, proposal, None, proposal.passages))
+            continue
+        requirement = existing[found]
+        new: list[PassageKey] = []
+        for p in proposal.passages:
+            if p not in new and not any(p.overlaps(e) for e in requirement.passages):
+                new.append(p)
+        differs = (
+            normalised_text(proposal.text) != normalised_text(requirement.text)
+            or proposal.classification.value != requirement.classification
+        )
+        if not (new and differs):
+            outcome = ReconcileOutcome.UNCHANGED
+        elif requirement.locked:
+            outcome = ReconcileOutcome.PROPOSE
+        else:
+            outcome = ReconcileOutcome.VERSION
+        steps.append(ReconcileStep(outcome, proposal, requirement.id, tuple(new)))
+    return tuple(steps)

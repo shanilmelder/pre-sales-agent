@@ -47,6 +47,7 @@ function requirement(n: number, classification: Classification, ...files: string
     confirmed_at: null,
     confirmed_by: null,
     last_changed_by: null,
+    pending_change: null,
     evidence: files.map((file, i) => ({
       passage_id: passageId(n, i),
       source_id: `00000000-0000-7000-8000-0000000000b${i}`,

@@ -1,10 +1,15 @@
-import { getOpportunity, listRequirements } from "@/app/opportunities/data";
+import {
+  getOpportunity,
+  listOutdatedAssessments,
+  listRequirements,
+} from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { RequirementsSection } from "@/components/opportunities/requirements-list";
 import { getMe } from "@/lib/api/server";
 
 /** Tab 3: the Opportunity's Requirements, grouped by classification, with the state of its
- * latest extraction. Renders nothing when the user may not read the Opportunity; the
+ * latest extraction, and a notice of the Assessments that used Requirement versions that
+ * have changed since (Story 2.7). Renders nothing when the user may not read the Opportunity; the
  * workspace layout shows why. */
 export async function RequirementsTab({ id }: { id: string }) {
   const result = await getMe();
@@ -12,7 +17,10 @@ export async function RequirementsTab({ id }: { id: string }) {
   const loaded = await getOpportunity(id);
   if (loaded.kind !== "ok") return null;
   const { opportunity } = loaded;
-  const listed = await listRequirements(opportunity.id);
+  const [listed, outdated] = await Promise.all([
+    listRequirements(opportunity.id),
+    listOutdatedAssessments(opportunity.id),
+  ]);
 
   return (
     <div className="flex flex-col gap-4 p-gutter">
@@ -22,6 +30,7 @@ export async function RequirementsTab({ id }: { id: string }) {
           key={opportunity.id}
           opportunityId={opportunity.id}
           initial={listed.list}
+          initialOutdated={outdated.kind === "ok" ? outdated.items : []}
         />
       ) : (
         <p>The Requirements could not be loaded. Try again in a moment.</p>

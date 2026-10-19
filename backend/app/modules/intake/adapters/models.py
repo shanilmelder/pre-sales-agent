@@ -1,4 +1,4 @@
-"""The intake module's tables (Stories 2.1, 2.2, 2.5, 2.6). `opportunity_id`, `created_by` and
+"""The intake module's tables (Stories 2.1, 2.2, 2.5, 2.6, 2.7). `opportunity_id`, `created_by` and
 `uploaded_by` hold ids owned by other modules without foreign keys (AD-2); `file_sha256` and
 `text_sha256` name blobs in `platform.storage` (metadata rows in `platform_files`)."""
 
@@ -19,6 +19,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.concurrency import RowVersioned
@@ -158,8 +159,9 @@ class SourcePassageRow(Base):
 
 class RequirementRow(RowVersioned, Base):
     """A Requirement of an Opportunity. Extraction inserts `active`, `extracted`, unlocked
-    rows at version 1, and a later extraction marks them `superseded`; a human-locked one
-    (Story 2.6) is never touched by extraction."""
+    rows at version 1; a later extraction that refines one moves it to its next version in
+    place (Story 2.7). A human-locked one (Story 2.6) is never changed by extraction: it
+    gets a pending change instead."""
 
     __tablename__ = "intake_requirements"
     __table_args__ = (
@@ -240,3 +242,57 @@ class RequirementEvidenceRow(Base):
         ),
         primary_key=True,
     )
+
+
+class RequirementChangeRow(RowVersioned, Base):
+    """A pending change to a human-locked Requirement (Story 2.7): what extraction (or, later,
+    a Gap answer) proposes, against the Requirement's `base_version`. At most one `open` per
+    Requirement; a newer proposal marks it `superseded`. A person accepts it (the next
+    version) or rejects it with a `reason`. `passage_ids`: the passages it would add, sorted.
+    `extraction_id`: the extraction that proposed it (null for other proposers)."""
+
+    __tablename__ = "intake_requirement_changes"
+    __table_args__ = (
+        Index(
+            "uq_intake_requirement_changes_one_open",
+            "requirement_id",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+        CheckConstraint("status IN ('open', 'accepted', 'rejected', 'superseded')", name="status"),
+        CheckConstraint(
+            "classification IN ('functional', 'integration', 'data', 'security', "
+            "'non_functional', 'commercial')",
+            name="classification",
+        ),
+        CheckConstraint("base_version >= 1", name="base_version"),
+        CheckConstraint("(status = 'rejected') = (reason IS NOT NULL)", name="rejected_has_reason"),
+        CheckConstraint(
+            "(status IN ('accepted', 'rejected')) = (decided_by IS NOT NULL) "
+            "AND (decided_by IS NULL) = (decided_at IS NULL)",
+            name="decided_fields",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    requirement_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "intake_requirements.id",
+            ondelete="CASCADE",
+            name="fk_intake_requirement_changes_requirement_id",
+        ),
+    )
+    base_version: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    classification: Mapped[str] = mapped_column(Text)
+    passage_ids: Mapped[list[UUID]] = mapped_column(ARRAY(Uuid))
+    status: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    extraction_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("intake_extractions.id", name="fk_intake_requirement_changes_extraction_id"),
+    )
+    decided_by: Mapped[UUID | None] = mapped_column(Uuid)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

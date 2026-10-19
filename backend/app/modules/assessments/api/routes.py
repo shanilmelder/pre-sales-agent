@@ -2,6 +2,7 @@
 
 - Red Team (Story 6.5): `GET /api/v1/opportunities/{opportunity_id}/red-team` and
   `POST /api/v1/opportunities/{opportunity_id}/red-team-reviews`.
+- Outdated Assessments (Story 2.7): `GET …/{opportunity_id}/assessments/outdated`.
 
 The specialist Assessments' routes (`GET …/assessments` and the assessment run commands)
 are served by `workflows` since Story 5.2, composed with this module's public API.
@@ -14,7 +15,11 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from app.modules.assessments.application import public as assessments
-from app.modules.assessments.application.public import RedTeamRun, RedTeamView
+from app.modules.assessments.application.public import (
+    OutdatedAssessments,
+    RedTeamRun,
+    RedTeamView,
+)
 from app.modules.identity.application.public import CurrentPrincipal
 from app.platform.errors import PROBLEM_JSON, Problem
 from app.platform.uow import UoW
@@ -71,3 +76,18 @@ async def start_red_team_review(
     draft Estimate, e.g. to retry a failed one. The owner and collaborators, except sales
     representatives."""
     return await assessments.start_review(uow, actor, opportunity_id)
+
+
+@router.get(
+    "/assessments/outdated",
+    operation_id="list_outdated_assessments",
+    responses=_responses(404, 422),
+)
+async def list_outdated_assessments(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> OutdatedAssessments:
+    """The Opportunity's current Assessments that used a Requirement version that has changed
+    since (a newer version, or the Requirement is no longer active), each with those
+    Requirements' labels. Empty when none did; nothing is rerun. Anyone who can read the
+    Opportunity."""
+    return await assessments.outdated_assessments(uow, actor, opportunity_id)

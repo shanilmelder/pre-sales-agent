@@ -10,6 +10,8 @@ export type ExtractionStatus = components["schemas"]["ExtractionStatus"];
 export type ExtractionErrorCode = components["schemas"]["ExtractionErrorCode"];
 export type Passage = components["schemas"]["Passage"];
 export type RequirementOrigin = components["schemas"]["RequirementOrigin"];
+export type PendingChange = components["schemas"]["PendingChange"];
+export type OutdatedAssessment = components["schemas"]["OutdatedAssessment"];
 
 /** The classifications in the order the Requirements tab groups them, with their labels. */
 export const CLASSIFICATIONS: readonly { value: Classification; label: string }[] = [
@@ -58,6 +60,38 @@ export function requirementTextProblem(raw: string): string | null {
     return "The Requirement text can be at most 2,000 characters.";
   }
   return null;
+}
+
+// --- pending changes (Story 2.7) ----------------------------------------------------------------
+
+/** The amber marker on a Requirement with a pending change, and its inspector section. */
+export const PENDING_CHANGE = "Pending change";
+export const ACCEPT_CHANGE = "Accept";
+export const REJECT_CHANGE = "Reject";
+export const REJECT_REASON_LABEL = "Why reject this change?";
+export const CHANGE_DECIDED =
+  "This change was already accepted or rejected. The Requirements were reloaded.";
+
+/** "Classification: Functional → Integration", or null when the change keeps it. */
+export function classificationChange(
+  current: Classification,
+  proposed: Classification,
+): string | null {
+  if (current === proposed) return null;
+  return `Classification: ${classificationLabel(current)} → ${classificationLabel(proposed)}`;
+}
+
+/** "Engineering Agent (R1, R3)". */
+export function outdatedLabel(item: OutdatedAssessment): string {
+  return `${item.label} (${item.requirement_labels.join(", ")})`;
+}
+
+/** The Requirements tab's notice: "These Assessments used Requirements that have changed
+ * since: Engineering Agent (R1), PM Agent (R2)." */
+export function outdatedNotice(items: readonly OutdatedAssessment[]): string {
+  return `These Assessments used Requirements that have changed since: ${items
+    .map(outdatedLabel)
+    .join(", ")}.`;
 }
 
 /** The Evidence inspector's passage states (Story 2.5 Part B). */

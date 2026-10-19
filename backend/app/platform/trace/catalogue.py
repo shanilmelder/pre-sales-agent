@@ -184,7 +184,8 @@ class IntakeExtractionCompleted(TracePayload):
 @register
 class IntakeRequirementEdited(TracePayload):
     """A person changed a Requirement's text and/or classification (Story 2.6), making a new
-    version and locking it against re-extraction. Subject: the Requirement
+    version and locking it against re-extraction; or an extraction refined an unlocked one
+    to its next version (Story 2.7, actor `intake_agent@<semver>`). Subject: the Requirement
     (`intake.requirement`), at its new version. Field names only, never the text."""
 
     event_type: ClassVar[str] = "intake.requirement.edited"
@@ -200,6 +201,43 @@ class IntakeRequirementConfirmed(TracePayload):
 
     event_type: ClassVar[str] = "intake.requirement.confirmed"
 
+    version: int
+
+
+@register
+class IntakeRequirementChangeProposed(TracePayload):
+    """A change to a human-locked Requirement was proposed (Story 2.7), e.g. by an extraction
+    that read a new Source. Subject: the Requirement (`intake.requirement`), at the
+    `base_version` the change was made against. `superseded_change_id`: the open change it
+    replaces, if any. Ids and versions only, never the text."""
+
+    event_type: ClassVar[str] = "intake.requirement_change.proposed"
+
+    change_id: str
+    base_version: int
+    superseded_change_id: str | None = None
+
+
+@register
+class IntakeRequirementChangeAccepted(TracePayload):
+    """A person accepted a pending Requirement change (Story 2.7): the Requirement's new
+    `version`. Subject: the Requirement (`intake.requirement`)."""
+
+    event_type: ClassVar[str] = "intake.requirement_change.accepted"
+
+    change_id: str
+    version: int
+
+
+@register
+class IntakeRequirementChangeRejected(TracePayload):
+    """A person rejected a pending Requirement change with a reason (Story 2.7); the
+    Requirement stays at `version`. Subject: the Requirement (`intake.requirement`). The
+    reason is never in the trace."""
+
+    event_type: ClassVar[str] = "intake.requirement_change.rejected"
+
+    change_id: str
     version: int
 
 

@@ -15,6 +15,7 @@ vi.mock("server-only", () => ({}));
 import {
   acceptAllAssumptions,
   acceptAssumption,
+  acceptRequirementChange,
   addSource,
   addTextSource,
   approveAllClarificationQuestions,
@@ -38,11 +39,13 @@ import {
   loadEstimate,
   loadGaps,
   loadImport,
+  loadOutdatedAssessments,
   loadRedTeam,
   loadRequirements,
   loadSources,
   markClarificationQuestionsSent,
   markClarificationQuestionUnanswered,
+  rejectRequirementChange,
   reopenGap,
   resolveConflict,
   retryAssessmentTask,
@@ -1095,6 +1098,79 @@ describe("editRequirement / confirmRequirement / confirmAllRequirements", () => 
         { params: { path: { opportunity_id: OPP_ID } } },
       ],
     ]);
+  });
+});
+
+describe("acceptRequirementChange / rejectRequirementChange / loadOutdatedAssessments", () => {
+  const REQ_ID = "00000000-0000-7000-8000-0000000000c1";
+  const REQ = { id: REQ_ID, text: "[TEXT]", row_version: 4, last_changed_by: null };
+  const TARGET = { opportunityId: OPP_ID, requirementId: REQ_ID, rowVersion: 3 };
+  const PARAMS = {
+    path: { opportunity_id: OPP_ID, requirement_id: REQ_ID },
+    header: { "If-Match": '"3"' },
+  };
+  const ok = (data: unknown) => ({ data, response: new Response(null, { status: 200 }) });
+
+  it("POSTs accept with If-Match", async () => {
+    api.POST.mockResolvedValue(ok(REQ));
+    expect(await acceptRequirementChange(TARGET)).toEqual({ kind: "ok", requirement: REQ });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/change/accept",
+      { params: PARAMS },
+    );
+  });
+
+  it("POSTs reject with If-Match and the reason", async () => {
+    api.POST.mockResolvedValue(ok(REQ));
+    expect(await rejectRequirementChange({ ...TARGET, reason: "[REASON]" })).toEqual({
+      kind: "ok",
+      requirement: REQ,
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/change/reject",
+      { params: PARAMS, body: { reason: "[REASON]" } },
+    );
+  });
+
+  it.each([
+    [409, { kind: "no-change" }],
+    [412, { kind: "stale", changedBy: null }],
+    [422, { kind: "invalid", detail: "The reason can be at most 500 characters." }],
+    [403, { kind: "forbidden" }],
+  ])("maps %i on accept and on reject", async (code, expected) => {
+    api.POST.mockResolvedValue({
+      error: { code: "x", detail: "The reason can be at most 500 characters." },
+      response: status(code),
+    });
+    api.GET.mockResolvedValue(ok({ items: [] })); // the 412 changer lookup
+    expect(await acceptRequirementChange(TARGET)).toEqual(expected);
+    expect(await rejectRequirementChange({ ...TARGET, reason: "x" })).toEqual(expected);
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await acceptRequirementChange({ ...TARGET, requirementId: "x" })).toEqual({
+      kind: "error",
+    });
+    expect(await acceptRequirementChange({ ...TARGET, rowVersion: -1 })).toEqual({
+      kind: "error",
+    });
+    expect(await rejectRequirementChange(TARGET)).toEqual({ kind: "error" }); // no reason
+    expect(await rejectRequirementChange({ ...TARGET, reason: 5 })).toEqual({ kind: "error" });
+    expect(await loadOutdatedAssessments("nope")).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+    expect(api.GET).not.toHaveBeenCalled();
+  });
+
+  it("GETs the outdated Assessments and returns their items", async () => {
+    const items = [
+      { id: "a1", agent: "engineering_agent", label: "Engineering Agent", requirement_labels: ["R1"] },
+    ];
+    api.GET.mockResolvedValue(ok({ items }));
+    expect(await loadOutdatedAssessments(OPP_ID)).toEqual({ kind: "ok", items });
+    expect(api.GET).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assessments/outdated",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
   });
 });
 

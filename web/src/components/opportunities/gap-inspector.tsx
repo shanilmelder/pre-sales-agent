@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { InlineField } from "@/components/opportunities/inline-field";
+import { ReasonInput, reasonFieldClass } from "@/components/opportunities/reason-input";
 import {
   approvedLabel,
   categoryLabel,
@@ -17,7 +18,6 @@ import {
   localToday,
   noteProblem,
   questionStatus,
-  REASON_MAX,
   reasonProblem,
   sentLabel,
   sentOnProblem,
@@ -30,7 +30,6 @@ import {
   type Impact,
   type QuestionStatus,
 } from "@/lib/gaps";
-import { codePointLength } from "@/lib/opportunities";
 import { cn } from "@/lib/utils";
 
 const actionClass =
@@ -433,59 +432,7 @@ export type GapEditing = {
   onReopen: (reason: string) => Promise<GapFormOutcome>;
 };
 
-const fieldClass =
-  "w-full rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive";
-
-/** A labelled textarea with a code-point counter and its error. */
-function ReasonInput({
-  label,
-  value,
-  onChange,
-  error,
-  disabled,
-  inputRef,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  error: string | null;
-  disabled: boolean;
-  inputRef?: Ref<HTMLTextAreaElement>;
-}) {
-  const id = useId();
-  const countId = useId();
-  const errorId = useId();
-  const length = codePointLength(value.trim());
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-meta text-muted-foreground">
-        {label}
-      </label>
-      <textarea
-        id={id}
-        ref={inputRef}
-        rows={2}
-        value={value}
-        disabled={disabled}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${countId} ${errorId}` : countId}
-        onChange={(event) => onChange(event.target.value)}
-        className={`${fieldClass} py-1`}
-      />
-      <span
-        id={countId}
-        className={`text-meta [font-variant-numeric:tabular-nums] ${length > REASON_MAX ? "text-destructive" : "text-muted-foreground"}`}
-      >
-        {`${length}/${REASON_MAX}`}
-      </span>
-      {error ? (
-        <p id={errorId} className="text-meta text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
+const fieldClass = reasonFieldClass;
 
 /** Run a form's write; clear it on success, show a 422 under it. */
 async function submitForm(

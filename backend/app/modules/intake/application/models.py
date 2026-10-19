@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.intake.domain.parsing import ParseErrorCode, ParseStatus
 from app.modules.intake.domain.requirements import (
+    REJECT_REASON_MAX,
     REQUIREMENT_TEXT_MAX,
     Classification,
     ExtractionErrorCode,
@@ -75,11 +76,24 @@ class RequirementEvidence(BaseModel):
     label: str
 
 
+class PendingChange(BaseModel):
+    """A change extraction proposes to a human-locked Requirement (Story 2.7): the proposed
+    text and classification, and the new passages it would cite (`evidence`). A person
+    accepts it or rejects it with a reason."""
+
+    id: str
+    text: str
+    classification: Classification
+    evidence: list[RequirementEvidence]
+    proposed_at: datetime
+
+
 class Requirement(BaseModel):
     """An active Requirement of the Opportunity with the passages it cites. `origin` is
     `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
     once confirmed. `last_changed_by`: the person behind the latest edit or confirmation
-    (null when the latest change was extraction's). `row_version` goes back in `If-Match`."""
+    (null when the latest change was extraction's). `pending_change`: the open change
+    proposed to it, if any (Story 2.7). `row_version` goes back in `If-Match`."""
 
     id: str
     text: str
@@ -93,6 +107,7 @@ class Requirement(BaseModel):
     confirmed_by: UserRef | None
     last_changed_by: UserRef | None
     evidence: list[RequirementEvidence]
+    pending_change: PendingChange | None
 
 
 class Extraction(BaseModel):
@@ -126,6 +141,16 @@ class RequirementChanges(BaseModel):
         description=f"The new text. Trimmed, it must be 1 to {REQUIREMENT_TEXT_MAX:,} characters.",
     )
     classification: Classification | None = None
+
+
+class RequirementChangeRejection(BaseModel):
+    """Why a person rejects a pending Requirement change (Story 2.7)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: StrictStr = Field(
+        description=f"Trimmed, it must be 1 to {REJECT_REASON_MAX} characters."
+    )
 
 
 class ConfirmAllResult(BaseModel):

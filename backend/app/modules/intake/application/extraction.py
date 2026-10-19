@@ -17,9 +17,12 @@ one is `queued` or `running`. Both hold the Opportunity's extraction lock until 
 3. No Unit of Work open: `intake_agent` proposes Requirements through the ModelGateway. Their
    quotes are resolved; if any citation or Requirement was dropped, one retry call names the
    failing items by index. Then what resolves is accepted.
-4. `accept_extraction`, one Unit of Work: passages, the superseding of earlier extracted
-   Requirements, the new Requirements and their evidence, the extraction `succeeded` with
-   its counts, an `intake.extraction.completed` trace event, and the Opportunity's Gap
+4. `accept_extraction`, one Unit of Work: passages; the proposals reconciled with the
+   active Requirements (Story 2.7, `domain.requirements.reconcile`): unmatched ones become
+   new Requirements, changed matches of unlocked ones their next version (citing the new
+   passages too), and changed matches of human-locked ones pending changes
+   (`propose_requirement_change`); nothing is superseded. Then the extraction `succeeded`
+   with its counts, an `intake.extraction.completed` trace event, and the Opportunity's Gap
    detection queued (`gaps.enqueue_detection`, Story 4.3).
 
 A gateway error (or any other) is retried by the queue (`max_attempts` 2); on the final
@@ -32,9 +35,11 @@ text.
 """
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
+from typing import Literal
 from uuid import UUID
 
 from app.agents.contract import AgentResult
@@ -49,13 +54,20 @@ from app.modules.intake.adapters import requirements_repository as repo
 from app.modules.intake.application.texts import extracted_text
 from app.modules.intake.domain.requirements import (
     IN_PROGRESS,
+    REQUIREMENT_SUBJECT_TYPE,
     SUBJECT_TYPE,
+    ExistingRequirement,
     ExtractionErrorCode,
     ExtractionStatus,
+    PassageKey,
     ProposedCitation,
     ProposedRequirement,
+    ReconcileOutcome,
+    ReconcileProposal,
     Resolution,
     input_budget_chars,
+    normalised_text,
+    reconcile,
     resolve_requirements,
 )
 from app.modules.registry.application import public as registry
@@ -73,7 +85,7 @@ from app.platform.model_gateway.port import (
 )
 from app.platform.model_gateway.profiles import get_profile
 from app.platform.storage import BlobStore
-from app.platform.trace.catalogue import IntakeExtractionCompleted
+from app.platform.trace.catalogue import IntakeExtractionCompleted, IntakeRequirementEdited
 from app.platform.uow import UnitOfWork, unit_of_work
 
 EXTRACT_REQUIREMENTS = "intake.extract_requirements"
@@ -199,14 +211,15 @@ async def accept_extraction(
     result: AgentResult,
     sources: Sequence[ExtractionSource],
     actor: Actor,
+    store: BlobStore | None = None,
 ) -> Resolution | None:
     """`intake.accept_extraction`: validate the agent's result, resolve every quote to a
-    passage, supersede the Opportunity's earlier extracted, unlocked Requirements and store
-    the new ones with their evidence; mark the extraction `succeeded` and trace it. With no
-    Sources nothing is superseded. Returns None (and writes nothing) unless the extraction is
-    still `running`.
+    passage, and reconcile the proposals with the Opportunity's active Requirements (add new
+    ones, version changed unlocked ones, propose changes to locked ones, keep the rest);
+    mark the extraction `succeeded` and trace it. Returns None (and writes nothing) unless
+    the extraction is still `running`.
 
-    Nothing is superseded or stored, either, when a newer extraction of the Opportunity has
+    No Requirement is written, either, when a newer extraction of the Opportunity has
     already succeeded (this one is `succeeded` with 0 Requirements: its results are out of
     date), or when the model proposed Requirements but none could be cited (`failed` /
     `output_invalid`)."""
@@ -247,32 +260,7 @@ async def accept_extraction(
             },
         )
         return resolution
-    by_label = {s.label: s for s in sources}
-    # With no Source read (none parsed, or their text missing) nothing is replaced.
-    superseded = await repo.supersede_extracted(uow, record.opportunity_id) if sources else 0
-    for requirement in resolution.requirements:
-        passage_ids: list[UUID] = []
-        for span in requirement.spans:
-            source = by_label[span.source]
-            passage_id = await repo.passage(
-                uow,
-                source_id=source.source_id,
-                version=source.version,
-                start=span.start,
-                end=span.end,
-            )
-            if passage_id not in passage_ids:
-                passage_ids.append(passage_id)
-        await repo.insert_requirement(
-            uow,
-            requirement_id=new_id(),
-            opportunity_id=record.opportunity_id,
-            text_=requirement.text,
-            classification=requirement.classification.value,
-            extraction_id=extraction_id,
-            passage_ids=passage_ids,
-            created_by=actor.id,
-        )
+    counts = await _reconcile(uow, record, resolution, sources, actor, store)
     completed = IntakeExtractionCompleted(
         requirement_count=len(resolution.requirements),
         dropped_count=resolution.dropped,
@@ -288,9 +276,175 @@ async def accept_extraction(
     await gaps.enqueue_detection(uow, record.opportunity_id)
     _log.info(
         "intake.extraction_accepted",
-        extra={**ids, "superseded_count": superseded, **completed.model_dump()},
+        extra={**ids, **counts, **completed.model_dump()},
     )
     return resolution
+
+
+async def _passage_ids(
+    uow: UnitOfWork, keys: Sequence[PassageKey], known: dict[PassageKey, UUID]
+) -> list[UUID]:
+    """The passage ids of these spans (inserted if new), without duplicates, in order."""
+    ids: list[UUID] = []
+    for key in keys:
+        passage_id = known.get(key)
+        if passage_id is None:
+            passage_id = await repo.passage(
+                uow, source_id=key.source_id, version=key.version, start=key.start, end=key.end
+            )
+            known[key] = passage_id
+        if passage_id not in ids:
+            ids.append(passage_id)
+    return ids
+
+
+async def _reconcile(
+    uow: UnitOfWork,
+    record: repo.ExtractionRecord,
+    resolution: Resolution,
+    sources: Sequence[ExtractionSource],
+    actor: Actor,
+    store: BlobStore | None,
+) -> dict[str, int]:
+    """Write the reconciliation of the resolved proposals with the active Requirements.
+    Returns the count of each outcome, for the log."""
+    # Imported here: requirement_edits imports requirements, which imports this module.
+    from app.modules.intake.application.requirement_edits import propose_requirement_change
+
+    by_label = {s.label: s for s in sources}
+    proposals = [
+        ReconcileProposal(
+            text=r.text,
+            classification=r.classification,
+            passages=tuple(
+                PassageKey(
+                    by_label[span.source].source_id,
+                    by_label[span.source].version,
+                    span.start,
+                    span.end,
+                    normalised_text(by_label[span.source].text[span.start : span.end]),
+                )
+                for span in r.spans
+            ),
+        )
+        for r in resolution.requirements
+    ]
+    active = await repo.active_requirements(uow, record.opportunity_id)
+    cited: dict[UUID, list[PassageKey]] = defaultdict(list)
+    known: dict[PassageKey, UUID] = {}
+    # The texts of the cited Source versions, so passages in different versions of a Source
+    # can match by their quoted text (Story 2.7 review decision). A file read, no model call.
+    texts: dict[tuple[UUID, int], str | None] = {(s.source_id, s.version): s.text for s in sources}
+    for c in await repo.active_cited_passages(uow, record.opportunity_id):
+        version = (c.source_id, c.source_version)
+        if version not in texts:
+            texts[version] = await extracted_text(uow, *version, store=store)
+        text = texts[version]
+        key = PassageKey(
+            c.source_id,
+            c.source_version,
+            c.start,
+            c.end,
+            None if text is None else normalised_text(text[c.start : c.end]),
+        )
+        cited[c.requirement_id].append(key)
+        known[key] = c.passage_id
+    by_id = {r.id: r for r in active}
+    existing = [
+        ExistingRequirement(
+            id=r.id,
+            text=r.text,
+            classification=r.classification,
+            locked=r.locked_by_human,
+            passages=tuple(cited[r.id]),
+        )
+        for r in active
+    ]
+    counts = {outcome.value: 0 for outcome in ReconcileOutcome}
+    for step in reconcile(proposals, existing):
+        outcome = step.outcome
+        if outcome is ReconcileOutcome.UNCHANGED:
+            counts[outcome.value] += 1
+            continue
+        passage_ids = await _passage_ids(uow, step.new_passages, known)
+        text, classification = step.proposal.text, step.proposal.classification.value
+        if outcome is ReconcileOutcome.ADD:
+            await repo.insert_requirement(
+                uow,
+                requirement_id=new_id(),
+                opportunity_id=record.opportunity_id,
+                text_=text,
+                classification=classification,
+                extraction_id=record.id,
+                passage_ids=passage_ids,
+                created_by=actor.id,
+            )
+            counts[outcome.value] += 1
+            continue
+        if step.requirement_id is None:  # pragma: no cover - only `add` has no match
+            raise AssertionError("A matched step names its Requirement.")
+        current = by_id[step.requirement_id]
+        if outcome is ReconcileOutcome.VERSION:
+            updated = await repo.version_extracted(
+                uow,
+                current.id,
+                expected_row_version=current.row_version,
+                text_=text,
+                classification=classification,
+            )
+            if updated is not None:
+                await _record_version(uow, record, current, updated, actor, passage_ids)
+                counts[outcome.value] += 1
+                continue
+            # Locked by a person since it was read: the change becomes a proposal.
+        proposed = await propose_requirement_change(
+            uow,
+            opportunity_id=record.opportunity_id,
+            requirement_id=current.id,
+            text=text,
+            classification=classification,
+            passage_ids=passage_ids,
+            actor=actor,
+            extraction_id=record.id,
+        )
+        done = ReconcileOutcome.PROPOSE if proposed else ReconcileOutcome.UNCHANGED
+        counts[done.value] += 1
+    return {f"{name}_count": count for name, count in counts.items()}
+
+
+async def _record_version(
+    uow: UnitOfWork,
+    record: repo.ExtractionRecord,
+    before: repo.RequirementRecord,
+    updated: repo.RequirementRecord,
+    actor: Actor,
+    passage_ids: list[UUID],
+) -> None:
+    """The history row, the new evidence and the `intake.requirement.edited` event of an
+    unlocked Requirement that extraction moved to its next version."""
+    await repo.insert_version(
+        uow,
+        requirement_id=updated.id,
+        version=updated.version,
+        text_=updated.text,
+        classification=updated.classification,
+        created_by=actor.id,
+    )
+    await repo.link_evidence(uow, updated.id, passage_ids)
+    fields: list[Literal["text", "classification"]] = []
+    if updated.text != before.text:
+        fields.append("text")
+    if updated.classification != before.classification:
+        fields.append("classification")
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=IntakeRequirementEdited(fields=fields, version=updated.version),
+        subject_type=REQUIREMENT_SUBJECT_TYPE,
+        subject_id=updated.id,
+        opportunity_id=record.opportunity_id,
+        subject_version=updated.version,
+    )
 
 
 async def _succeed(
@@ -523,7 +677,12 @@ async def _extract(ctx: JobContext, payload: ExtractRequirements) -> None:
     actor = Actor(type="agent", id=config.actor_id)
     async with unit_of_work(ctx.engine) as uow:
         accepted = await accept_extraction(
-            uow, extraction_id=extraction_id, result=result, sources=sources, actor=actor
+            uow,
+            extraction_id=extraction_id,
+            result=result,
+            sources=sources,
+            actor=actor,
+            store=BlobStore(settings.storage_dir),
         )
     if accepted is None:
         _log.info("intake.extraction_skipped", extra=ids)
