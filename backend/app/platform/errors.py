@@ -213,6 +213,35 @@ class GapNotDismissedError(ConflictError):
     title = "Gap not dismissed"
 
 
+class QuestionNotApprovedError(ConflictError):
+    """A question was marked sent that is not `approved` (Story 4.6)."""
+
+    code = "question_not_approved"
+    title = "Clarification Question not approved"
+
+
+class QuestionNotSentError(ConflictError):
+    """A question was marked "No answer" that is not `sent` (Story 4.6)."""
+
+    code = "question_not_sent"
+    title = "Clarification Question not sent"
+
+
+class QuestionNotEditableError(ConflictError):
+    """A `sent` or `unanswered` question was edited or approved (Story 4.6)."""
+
+    code = "question_not_editable"
+    title = "Clarification Question not editable"
+
+
+class NoApprovedQuestionsError(ConflictError):
+    """An export of Clarification Questions found no approved question of an open Gap
+    (Story 4.6)."""
+
+    code = "no_approved_questions"
+    title = "No approved Clarification Questions"
+
+
 class CatalogueDuplicateError(ConflictError):
     """A catalogue entry's code or name equals that of an active entry of the same kind
     (Story 3.1)."""

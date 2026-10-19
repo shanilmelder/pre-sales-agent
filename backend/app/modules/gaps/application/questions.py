@@ -21,12 +21,23 @@ of `open` Gaps change (409 `gap_not_open` otherwise).
   questions of open Gaps (one changed, approved meanwhile, or not listed).
 - `approve_selected` (Story 4.4): approves exactly the listed questions (1 to 200), one event
   each, all or nothing; 412 when one is stale, not drafted, or not on an open Gap.
+- `mark_sent` (Story 4.6, `gaps.clarification_question.send`: the owner and every
+  collaborator, sales representatives included): marks exactly the listed approved questions
+  (1 to 200) sent on a date that is not in the future (422), one
+  `gaps.clarification_question.sent` event each, all or nothing; 412 when one is stale, not
+  approved, or not on an open Gap.
+- `mark_unanswered` (Story 4.6, same action): "No answer" on a sent question with
+  `If-Match`; 409 `question_not_sent` when it isn't sent. Appends
+  `gaps.clarification_question.marked_unanswered`. The Gap stays open.
+
+A sent or unanswered question can't be edited or approved (409 `question_not_editable`).
 
 Trace and logs carry ids, versions and field names only, never the text.
 """
 
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from functools import partial
 from uuid import UUID
 
 from app.modules.gaps.adapters import repository as repo
@@ -36,17 +47,21 @@ from app.modules.gaps.application.models import (
     ApproveAllResult,
     ApproveSelectedResult,
     ClarificationQuestion,
+    MarkSentRequest,
+    MarkSentResult,
     QuestionChanges,
     QuestionVersion,
 )
 from app.modules.gaps.domain import gaps as rules
 from app.modules.gaps.domain.gaps import (
     QUESTION_SUBJECT_TYPE,
+    SENT_STATUSES,
     GapStatus,
     QuestionState,
     QuestionStatus,
     question_text,
     question_topic,
+    sent_date,
 )
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
@@ -57,6 +72,9 @@ from app.platform.errors import (
     ForbiddenError,
     GapNotOpenError,
     NotFoundError,
+    QuestionNotApprovedError,
+    QuestionNotEditableError,
+    QuestionNotSentError,
     RowVersionMismatchError,
     UnprocessableError,
 )
@@ -64,6 +82,8 @@ from app.platform.logging import get_logger
 from app.platform.trace.catalogue import (
     GapsClarificationQuestionApproved,
     GapsClarificationQuestionEdited,
+    GapsClarificationQuestionMarkedUnanswered,
+    GapsClarificationQuestionSent,
 )
 from app.platform.uow import UnitOfWork
 
@@ -73,6 +93,9 @@ NOT_OPEN_DETAIL = (
     "The Gap of this Clarification Question is no longer open: it was dismissed, converted "
     "or replaced by a newer Gap detection."
 )
+SENT_DETAIL = "This Clarification Question was sent: it can no longer be edited or approved."
+NOT_APPROVED_DETAIL = "Only an approved Clarification Question can be marked sent."
+NOT_SENT_DETAIL = 'Only a sent Clarification Question can be marked "No answer".'
 _log = get_logger(__name__)
 
 
@@ -83,14 +106,19 @@ def _stale() -> RowVersionMismatchError:
     )
 
 
-async def _authorized(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> UUID:
-    """Authorize `gaps.clarification_question.edit` on the Opportunity, then take its
-    detection lock; the acting user's id."""
+async def _authorized(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    action: Action = Action.GAP_QUESTION_EDIT,
+) -> UUID:
+    """Authorize `action` (by default `gaps.clarification_question.edit`) on the Opportunity,
+    then take its detection lock; the acting user's id."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    identity.authorize(actor, Action.GAP_QUESTION_EDIT, resource)
+    identity.authorize(actor, action, resource)
     user_id = actor.user_id
-    if user_id is None:  # pragma: no cover - the policy grants this action to users only
-        raise ForbiddenError("Only people can edit Clarification Questions.")
+    if user_id is None:  # pragma: no cover - the policy grants these actions to users only
+        raise ForbiddenError("Only people can change Clarification Questions.")
     await repo.lock_opportunity(uow, opportunity_id)
     return user_id
 
@@ -125,6 +153,8 @@ def _state(record: QuestionRecord) -> QuestionState:
         approved_by=record.approved_by,
         approved_at=record.approved_at,
         edited_by_human=record.edited_by_human,
+        sent_on=record.sent_on,
+        sent_by=record.sent_by,
     )
 
 
@@ -149,6 +179,8 @@ async def _write(
         edited_by_human=state.edited_by_human,
         changed_by=user_id,
         status_changed_at=at if state.status != record.status else None,
+        sent_on=state.sent_on,
+        sent_by=state.sent_by,
     )
     if updated is None:
         gap = await repo.get_gap(uow, record.gap_id)
@@ -160,11 +192,19 @@ async def _write(
 
 def _transition[T](change: Callable[[], T]) -> T:
     """Run a domain transition; a superseded question (inconsistent with an open Gap) is 409
-    `gap_not_open`, never a 500."""
+    `gap_not_open`, never a 500. A sent or unanswered one is 409 `question_not_editable`, one
+    not approved (to mark sent) `question_not_approved`, and one not sent (to mark "No
+    answer") `question_not_sent`."""
     try:
         return change()
     except rules.QuestionNotEditableError:
         raise GapNotOpenError(NOT_OPEN_DETAIL) from None
+    except rules.QuestionSentError:
+        raise QuestionNotEditableError(SENT_DETAIL) from None
+    except rules.QuestionNotApprovedTransitionError:
+        raise QuestionNotApprovedError(NOT_APPROVED_DETAIL) from None
+    except rules.QuestionNotSentTransitionError:
+        raise QuestionNotSentError(NOT_SENT_DETAIL) from None
 
 
 async def _view(uow: UnitOfWork, record: QuestionRecord) -> ClarificationQuestion:
@@ -265,6 +305,8 @@ async def approve_question(
     record, gap = await _load(uow, opportunity_id, question_id)
     expected = _expected(if_match)
     _open(gap)
+    if record.status in SENT_STATUSES:
+        raise QuestionNotEditableError(SENT_DETAIL)
     if record.status == QuestionStatus.APPROVED:
         return await _view(uow, record)
     if record.row_version != expected:
@@ -373,3 +415,112 @@ async def approve_all(
         },
     )
     return ApproveAllResult(count=len(drafted))
+
+
+# --- sending (Story 4.6) --------------------------------------------------------------------
+
+
+def _today() -> date:
+    """The latest date that is "today" somewhere: the API's UTC date plus one day, so a user
+    ahead of UTC can always mark questions sent on their own today."""
+    return datetime.now(UTC).date() + timedelta(days=1)
+
+
+async def mark_sent(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    request: MarkSentRequest,
+    *,
+    today: date | None = None,
+) -> MarkSentResult:
+    """Record that exactly the listed approved questions (`id` and row version, 1 to 200)
+    were sent on `request.sent_on`, as the caller; how many. All or nothing: a date in the
+    future is 422; if one changed, is not approved, is not on an open Gap of this
+    Opportunity, or is listed twice with different versions, 412 and nothing is marked."""
+    user_id = await _authorized(uow, actor, opportunity_id, Action.GAP_QUESTION_SEND)
+    try:
+        sent_on = sent_date(request.sent_on, today=today or _today())
+    except ValueError as exc:
+        raise UnprocessableError(str(exc)) from None
+    approved = {
+        q.id: (q, gap)
+        for q, gap in await repo.questions_of_open_gaps(
+            uow, opportunity_id, QuestionStatus.APPROVED.value
+        )
+    }
+    listed: dict[UUID, int] = {}
+    for q in request.questions:
+        if listed.setdefault(q.id, q.row_version) != q.row_version:
+            raise _selection_changed()
+    chosen = [approved.get(qid) for qid in listed]
+    pairs = [pair for pair in chosen if pair is not None]
+    if len(pairs) != len(listed) or any(q.row_version != listed[q.id] for q, _ in pairs):
+        raise _selection_changed()
+    at = datetime.now(UTC)
+    for record, gap in pairs:
+        state = _transition(partial(rules.mark_sent, _state(record), user_id=user_id, on=sent_on))
+        updated = await _write(
+            uow, record, state, expected=record.row_version, user_id=user_id, at=at
+        )
+        await trace.append(
+            uow,
+            actor=actor.actor,
+            payload=GapsClarificationQuestionSent(
+                gap_id=str(gap.id), sent_on=sent_on.isoformat(), row_version=updated.row_version
+            ),
+            subject_type=QUESTION_SUBJECT_TYPE,
+            subject_id=record.id,
+            opportunity_id=opportunity_id,
+        )
+    _log.info(
+        "gaps.clarification_questions_sent",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "actor_id": str(user_id),
+            "count": len(pairs),
+            "sent_on": sent_on.isoformat(),
+        },
+    )
+    return MarkSentResult(count=len(pairs))
+
+
+async def mark_unanswered(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    question_id: UUID,
+    if_match: str | None,
+) -> ClarificationQuestion:
+    """Record that the customer won't answer the sent question ("No answer"). `if_match` is
+    the raw `If-Match` header (428/412). The Gap stays open."""
+    user_id = await _authorized(uow, actor, opportunity_id, Action.GAP_QUESTION_SEND)
+    record, gap = await _load(uow, opportunity_id, question_id)
+    expected = _expected(if_match)
+    _open(gap)
+    state = _transition(lambda: rules.mark_unanswered(_state(record)))
+    if record.row_version != expected:
+        raise _stale()
+    updated = await _write(
+        uow, record, state, expected=expected, user_id=user_id, at=datetime.now(UTC)
+    )
+    await trace.append(
+        uow,
+        actor=actor.actor,
+        payload=GapsClarificationQuestionMarkedUnanswered(
+            gap_id=str(gap.id), row_version=updated.row_version
+        ),
+        subject_type=QUESTION_SUBJECT_TYPE,
+        subject_id=question_id,
+        opportunity_id=opportunity_id,
+    )
+    _log.info(
+        "gaps.clarification_question_marked_unanswered",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "question_id": str(question_id),
+            "actor_id": str(user_id),
+            "row_version": updated.row_version,
+        },
+    )
+    return await _view(uow, updated)

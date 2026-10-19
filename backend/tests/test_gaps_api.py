@@ -52,6 +52,7 @@ def test_before_any_detection_the_list_is_empty(client: TestClient, sync_engine:
         "can_start_detection": True,
         "can_edit_questions": True,
         "can_edit_gaps": True,
+        "can_send_questions": True,
     }
     assert theirs.json() == {
         "items": [],
@@ -59,6 +60,7 @@ def test_before_any_detection_the_list_is_empty(client: TestClient, sync_engine:
         "can_start_detection": False,
         "can_edit_questions": False,
         "can_edit_gaps": False,
+        "can_send_questions": False,
     }
 
 

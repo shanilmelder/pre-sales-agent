@@ -1,12 +1,13 @@
 """Gap routes (Story 4.3): `GET /api/v1/opportunities/{opportunity_id}/gaps` and
 `POST /api/v1/opportunities/{opportunity_id}/gap-detections`; Story 4.5: editing and approving
 Clarification Questions under `…/clarification-questions`; Story 4.4: changing a Gap's impact,
-dismissing and reopening it under `…/gaps/{gap_id}`, and approving selected questions."""
+dismissing and reopening it under `…/gaps/{gap_id}`, and approving selected questions; Story
+4.6: exporting the approved questions, marking them sent and "No answer"."""
 
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Header, Response
+from fastapi import APIRouter, Body, Header, Request, Response
 
 from app.modules.gaps.application import public as gaps
 from app.modules.gaps.application.public import (
@@ -19,12 +20,18 @@ from app.modules.gaps.application.public import (
     GapList,
     GapReopening,
     ImpactChange,
+    MarkSentRequest,
+    MarkSentResult,
     QuestionChanges,
+    QuestionExport,
+    QuestionExportRequest,
     QuestionVersion,
 )
 from app.modules.identity.application.public import CurrentPrincipal
 from app.platform.concurrency import etag
+from app.platform.config import Settings
 from app.platform.errors import PROBLEM_JSON, Problem
+from app.platform.storage import BlobStore
 from app.platform.uow import UoW
 
 PROBLEM_CONTENT = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
@@ -83,7 +90,9 @@ _QUESTION_DESCRIBED: dict[int, str] = {
     "or a collaborator, or is a sales representative",
     404: "No Opportunity with this id, or the caller may not see it, or no Clarification "
     "Question with this id in it (`not_found`)",
-    409: "The question's Gap is not open: it was converted or superseded (`gap_not_open`)",
+    409: "The question's Gap is not open: it was dismissed, converted or superseded "
+    "(`gap_not_open`), or the question was sent and can't be edited or approved "
+    "(`question_not_editable`)",
     412: "The question changed since the caller read it (`row_version_mismatch`)",
     428: "The write has no `If-Match` header (`if_match_required`)",
 }
@@ -370,3 +379,123 @@ async def reopen_gap(
     representatives."""
     reopened = await gaps.reopen_gap(uow, actor, opportunity_id, gap_id, body, if_match)
     return _gap_with_etag(response, reopened)
+
+
+# --- exporting and sending Clarification Questions (Story 4.6) ------------------------------
+
+_SEND_403 = {
+    "description": "Not allowed (`forbidden`): the caller can read the Opportunity but is not "
+    "its owner or a collaborator",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@router.post(
+    "/clarification-questions/export",
+    operation_id="export_clarification_questions",
+    responses={
+        **_responses(),
+        403: _SEND_403,
+        404: _APPROVE_ALL_RESPONSES[404],
+        409: {
+            "description": "No approved question of an open Gap to export "
+            "(`no_approved_questions`); nothing is stored or traced",
+            "content": PROBLEM_CONTENT,
+        },
+        422: {
+            "description": "An unknown format or field, or an id that is not a UUID "
+            "(`validation_error`)",
+            "content": PROBLEM_CONTENT,
+        },
+        200: {"description": "The text (`copy`), or a short-lived signed link to the file"},
+    },
+)
+async def export_clarification_questions(
+    opportunity_id: UUID,
+    body: QuestionExportRequest,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    request: Request,
+) -> QuestionExport:
+    """Export every approved Clarification Question of the open Gaps, grouped by topic and
+    numbered, in customer wording only (the customer's name, a date, topics and questions):
+    `copy` returns the text, `docx` a Word file and `eml` an unsent email draft with no
+    recipient, both as a short-lived signed link. Nothing is sent. The owner and every
+    collaborator, sales representatives included."""
+    settings: Settings = request.app.state.settings
+    storage = gaps.ExportStorage(
+        store=BlobStore(settings.storage_dir),
+        signing_key=settings.download_signing_key,
+        ttl_s=settings.download_link_ttl_s,
+    )
+    return await gaps.export_questions(uow, actor, opportunity_id, body.format, storage)
+
+
+_MARK_SENT_RESPONSES = _question_responses()
+_MARK_SENT_RESPONSES[403] = _SEND_403
+_MARK_SENT_RESPONSES[404] = _APPROVE_ALL_RESPONSES[404]
+_MARK_SENT_RESPONSES[412] = {
+    "description": "A listed question changed (row version), is not approved, or is not on an "
+    "open Gap of this Opportunity (`row_version_mismatch`); nothing is marked",
+    "content": PROBLEM_CONTENT,
+}
+_MARK_SENT_RESPONSES[422] = {
+    "description": "`sent_on` is in the future, the list does not hold 1 to 200 "
+    "`{id, row_version}`, or an id is not a UUID (`validation_error`)",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@router.post(
+    "/clarification-questions/mark-sent",
+    operation_id="mark_clarification_questions_sent",
+    responses={
+        **_MARK_SENT_RESPONSES,
+        200: {"description": "How many questions were marked sent"},
+    },
+)
+async def mark_clarification_questions_sent(
+    opportunity_id: UUID,
+    body: MarkSentRequest,
+    actor: CurrentPrincipal,
+    uow: UoW,
+) -> MarkSentResult:
+    """Record that exactly the listed approved Clarification Questions (`id` and
+    `row_version` each, 1 to 200) were sent to the customer on `sent_on` (not in the
+    future), all or nothing. If one changed, is not approved, or is not on an open Gap, 412
+    and nothing is marked. The owner and every collaborator, sales representatives
+    included."""
+    return await gaps.mark_sent(uow, actor, opportunity_id, body)
+
+
+_NO_ANSWER_RESPONSES = _question_responses(404, 412, 428)
+_NO_ANSWER_RESPONSES[403] = _SEND_403
+_NO_ANSWER_RESPONSES[409] = {
+    "description": "The question's Gap is not open (`gap_not_open`), or the question is not "
+    "sent (`question_not_sent`); nothing changed",
+    "content": PROBLEM_CONTENT,
+}
+_NO_ANSWER_RESPONSES[422] = _ID_422
+
+
+@router.post(
+    "/clarification-questions/{question_id}/no-answer",
+    operation_id="mark_clarification_question_unanswered",
+    responses={
+        **_NO_ANSWER_RESPONSES,
+        200: {"description": "The question", "headers": _ETAG_HEADER},
+    },
+)
+async def mark_clarification_question_unanswered(
+    opportunity_id: UUID,
+    question_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> ClarificationQuestion:
+    """Record that the customer won't answer a sent Clarification Question ("No answer").
+    The Gap stays open. The owner and every collaborator, sales representatives
+    included."""
+    marked = await gaps.mark_unanswered(uow, actor, opportunity_id, question_id, if_match)
+    return _with_etag(response, marked)

@@ -723,7 +723,9 @@ describe("/opportunities/[id] workspace", () => {
       expect(
         within(pipeline).getByRole("link", { name: /Requirements\s*3\s*2 Functional · 1 Security/ }),
       ).toBeTruthy();
-      const gapsLink = within(pipeline).getByRole("link", { name: /Open Gaps\s*3\s*2 high impact/ });
+      const gapsLink = within(pipeline).getByRole("link", {
+        name: /Open Gaps\s*3\s*2 high impact\s*0 questions sent · 0 awaiting an answer/,
+      });
       expect(gapsLink.getAttribute("href")).toBe(href("gaps"));
 
       const estimate = card("Estimate v2");

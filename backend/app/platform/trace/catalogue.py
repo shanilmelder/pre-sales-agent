@@ -320,6 +320,42 @@ class GapsGapReopened(TracePayload):
     row_version: int
 
 
+@register
+class GapsClarificationQuestionExported(TracePayload):
+    """A person exported the approved Clarification Questions of open Gaps (Story 4.6), to copy,
+    `.docx` or an unsent `.eml` draft. Subject: the Opportunity
+    (`opportunities.opportunity`). Ids only, never the text."""
+
+    event_type: ClassVar[str] = "gaps.clarification_question.exported"
+
+    format: Literal["copy", "docx", "eml"]
+    question_ids: list[str]
+
+
+@register
+class GapsClarificationQuestionSent(TracePayload):
+    """A person recorded that an approved Clarification Question was sent to the customer
+    (Story 4.6). Subject: the question (`gaps.clarification_question`). `sent_on`: the date
+    it was sent (ISO)."""
+
+    event_type: ClassVar[str] = "gaps.clarification_question.sent"
+
+    gap_id: str
+    sent_on: str
+    row_version: int
+
+
+@register
+class GapsClarificationQuestionMarkedUnanswered(TracePayload):
+    """A person recorded that the customer won't answer a sent Clarification Question ("No
+    answer", Story 4.6). Subject: the question (`gaps.clarification_question`)."""
+
+    event_type: ClassVar[str] = "gaps.clarification_question.marked_unanswered"
+
+    gap_id: str
+    row_version: int
+
+
 # --- estimates ----------------------------------------------------------------------------
 # Story 8.1. Payloads hold the version number and counts only, never line or Requirement
 # text.

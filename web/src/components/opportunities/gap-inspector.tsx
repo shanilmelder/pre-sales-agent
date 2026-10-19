@@ -13,10 +13,14 @@ import {
   historyAction,
   historyByline,
   IMPACTS,
+  isSent,
+  localToday,
   noteProblem,
   questionStatus,
   REASON_MAX,
   reasonProblem,
+  sentLabel,
+  sentOnProblem,
   statusSince,
   triggerLabel,
   type DismissReasonKind,
@@ -72,12 +76,16 @@ export type QuestionEditing = {
  * **Approve**; an approved one says who approved it and when. With `gapEdit`, an open Gap has
  * an impact select with a required reason and a **Dismiss** form ("Not relevant" / "Other"
  * with a note); a dismissed one says why, by whom and when, and has **Reopen** with a reason.
- * Convert is not offered here (Epic 8 does it from the Estimate). Without them, read-only. */
+ * Convert is not offered here (Epic 8 does it from the Estimate). With `send` (Story 4.6), an
+ * approved question of an open Gap has **Mark sent** (a date, today by default) and a sent one
+ * **No answer**; a sent question says "Sent {date} by {name}" and can't be edited or approved.
+ * Without them, read-only. */
 export function GapInspector({
   gap,
   focusRequest = 0,
   edit,
   gapEdit,
+  send,
 }: {
   gap: Gap;
   focusRequest?: number;
@@ -85,11 +93,16 @@ export function GapInspector({
   edit?: QuestionEditing;
   /** Left out for those who may not change Gaps. */
   gapEdit?: GapEditing;
+  /** Left out for those who may not send questions (Story 4.6). */
+  send?: QuestionSending;
 }) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const question = gap.question;
-  const editable = edit !== undefined && gap.status === "open" && question !== null;
+  const editable =
+    edit !== undefined && gap.status === "open" && question !== null && !isSent(question.status);
+  const sendable = send !== undefined && gap.status === "open" && question !== null;
+  const [markingSent, setMarkingSent] = useState(false);
 
   useEffect(() => {
     if (focusRequest > 0) headingRef.current?.focus();
@@ -208,7 +221,7 @@ export function GapInspector({
               <p className="whitespace-pre-wrap break-words text-body">{question.text}</p>
             </div>
           )}
-          {question.status === "approved" ? (
+          {question.status === "approved" || isSent(question.status) ? (
             <p className="text-meta text-muted-foreground">{approvedLabel(question)}</p>
           ) : editable ? (
             <div>
@@ -219,6 +232,47 @@ export function GapInspector({
                 className={actionClass}
               >
                 Approve
+              </button>
+            </div>
+          ) : null}
+          {isSent(question.status) ? (
+            <p className="text-meta text-muted-foreground">{sentLabel(question)}</p>
+          ) : null}
+          {sendable && question.status === "approved" ? (
+            markingSent ? (
+              <MarkSentForm
+                label="Mark this question sent"
+                confirm="Mark sent"
+                disabled={send.busy || send.locked}
+                onSubmit={async (sentOn) => {
+                  const outcome = await send.onMarkSent(sentOn);
+                  if (outcome === "ok" || outcome === "failed") setMarkingSent(false);
+                  return outcome;
+                }}
+                onCancel={() => setMarkingSent(false)}
+              />
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  disabled={send.busy || send.locked}
+                  onClick={() => setMarkingSent(true)}
+                  className={actionClass}
+                >
+                  Mark sent
+                </button>
+              </div>
+            )
+          ) : null}
+          {sendable && question.status === "sent" ? (
+            <div>
+              <button
+                type="button"
+                disabled={send.busy || send.locked}
+                onClick={send.onNoAnswer}
+                className={actionClass}
+              >
+                No answer
               </button>
             </div>
           ) : null}
@@ -257,6 +311,110 @@ export function GapStatusPill({ status }: { status: GapStatus }) {
       <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
       {known.label}
     </span>
+  );
+}
+
+// --- sending questions (Story 4.6) -------------------------------------------------------------
+
+/** What the inspector needs to mark the Gap's question sent or "No answer" (Story 4.6). */
+export type QuestionSending = {
+  /** A write of this question is in flight. */
+  busy: boolean;
+  /** Nothing may be changed (a stale view, or a reload or bulk write in flight). */
+  locked: boolean;
+  onMarkSent: (sentOn: string) => Promise<GapFormOutcome>;
+  onNoAnswer: () => void;
+};
+
+/** The small "date sent" form: a date (today by default, never later) and a confirm button,
+ * with Cancel when `onCancel` is given. A refused date shows under the field. */
+export function MarkSentForm({
+  label,
+  confirm,
+  disabled,
+  onSubmit,
+  onCancel,
+}: {
+  /** The form's accessible name. */
+  label: string;
+  /** The confirm button, e.g. "Mark 3 sent". */
+  confirm: string;
+  disabled: boolean;
+  onSubmit: (sentOn: string) => Promise<GapFormOutcome>;
+  onCancel?: () => void;
+}) {
+  const today = localToday();
+  const [sentOn, setSentOn] = useState(today);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+  const errorId = useId();
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  function onSubmitForm(event: FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    const problem = sentOnProblem(sentOn, today);
+    setError(problem);
+    if (problem) {
+      inputRef.current?.focus();
+      return;
+    }
+    void (async () => {
+      const outcome = await onSubmit(sentOn);
+      if (outcome !== "ok" && outcome !== "failed") setError(outcome.invalid);
+    })();
+  }
+
+  return (
+    <form
+      aria-label={label}
+      noValidate
+      onSubmit={onSubmitForm}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && onCancel) {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+      className="flex flex-col gap-1.5"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor={inputId} className="shrink-0 text-meta text-muted-foreground">
+          Date sent
+        </label>
+        <input
+          id={inputId}
+          ref={inputRef}
+          type="date"
+          value={sentOn}
+          max={today}
+          required
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(event) => setSentOn(event.target.value)}
+          className={`${fieldClass} h-6 w-auto`}
+        />
+        <button type="submit" disabled={disabled} className={actionClass}>
+          {confirm}
+        </button>
+        {onCancel ? (
+          <button type="button" onClick={onCancel} className={actionClass}>
+            Cancel
+          </button>
+        ) : null}
+      </div>
+      {error ? (
+        <p id={errorId} className="text-meta text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </form>
   );
 }
 

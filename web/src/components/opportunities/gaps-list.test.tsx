@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ApproveAllQuestionsResult,
+  CopyQuestionsResult,
   GapWriteResult,
+  MarkSentResult,
   QuestionWriteResult,
   StartGapDetectionResult,
 } from "@/app/opportunities/actions";
@@ -39,7 +41,21 @@ const approveSelectedClarificationQuestions = vi.hoisted(() =>
 const changeGapImpact = vi.hoisted(() => vi.fn<(input: unknown) => Promise<GapWriteResult>>());
 const dismissGap = vi.hoisted(() => vi.fn<(input: unknown) => Promise<GapWriteResult>>());
 const reopenGap = vi.hoisted(() => vi.fn<(input: unknown) => Promise<GapWriteResult>>());
+const markClarificationQuestionsSent = vi.hoisted(() =>
+  vi.fn<
+    (opportunityId: string, sentOn: string, questions: unknown) => Promise<MarkSentResult>
+  >(),
+);
+const markClarificationQuestionUnanswered = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<QuestionWriteResult>>(),
+);
+const copyClarificationQuestions = vi.hoisted(() =>
+  vi.fn<(opportunityId: string) => Promise<CopyQuestionsResult>>(),
+);
 vi.mock("@/app/opportunities/actions", () => ({
+  markClarificationQuestionsSent,
+  markClarificationQuestionUnanswered,
+  copyClarificationQuestions,
   startGapDetection,
   loadGaps,
   editClarificationQuestion,
@@ -95,6 +111,8 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
       approved_at: null,
       edited_by_human: false,
       last_changed_by: null,
+      sent_on: null,
+      sent_by: null,
     },
     dismissal: null,
     history: [
@@ -123,6 +141,7 @@ function list(
   canStart = true,
   canEdit = false,
   canEditGaps = canEdit,
+  canSend = false,
 ): GapList {
   return {
     items,
@@ -130,6 +149,7 @@ function list(
     can_start_detection: canStart,
     can_edit_questions: canEdit,
     can_edit_gaps: canEditGaps,
+    can_send_questions: canSend,
   };
 }
 
@@ -155,6 +175,9 @@ beforeEach(() => {
   changeGapImpact.mockReset();
   dismissGap.mockReset();
   reopenGap.mockReset();
+  markClarificationQuestionsSent.mockReset();
+  markClarificationQuestionUnanswered.mockReset();
+  copyClarificationQuestions.mockReset();
 });
 
 afterEach(() => {
@@ -691,6 +714,27 @@ describe("editing questions", () => {
     expect(loadGaps).toHaveBeenCalled();
   });
 
+  it("a 409 question_not_editable says the question was sent and re-reads the Gaps", async () => {
+    const user = userEvent.setup();
+    editClarificationQuestion.mockResolvedValue({ kind: "question-not-editable" });
+    loadGaps.mockResolvedValue({ kind: "ok", list: list([sentGap(1, "high")], succeeded, true, true) });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Edit question" }));
+    const input = within(inspector).getByRole("textbox", { name: "Question" });
+    await user.clear(input);
+    await user.type(input, "Other wording{Enter}");
+
+    expect(
+      await screen.findByText(
+        "This Clarification Question was sent: it can no longer be edited or approved.",
+        { selector: "p" },
+      ),
+    ).toBeTruthy();
+    expect(loadGaps).toHaveBeenCalled();
+  });
+
   it("e on a row opens the inspector with the question text being edited", async () => {
     const user = userEvent.setup();
     renderSection(list([gap(1, "high"), gap(2, "low")], succeeded, true, true));
@@ -788,7 +832,7 @@ describe("approving questions", () => {
     await user.click(screen.getByRole("button", { name: "Approve all (1)" }));
 
     const reload = await screen.findByRole("button", { name: "Reload" });
-    expect(screen.getByText("Changed by Colleague since you opened it.")).toBeTruthy();
+    expect(screen.getByText("Changed by Colleague since you opened it.", { selector: "p" })).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(reload));
     expect(screen.getAllByRole("row")[0].textContent).toBe("Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsDraft");
   });
@@ -999,7 +1043,7 @@ describe("multi-select (Story 4.4)", () => {
     await user.click(screen.getByRole("button", { name: "Approve 1 selected" }));
 
     expect(await screen.findByRole("button", { name: "Reload" })).toBeTruthy();
-    expect(screen.getByText("Changed by Colleague since you opened it.")).toBeTruthy();
+    expect(screen.getByText("Changed by Colleague since you opened it.", { selector: "p" })).toBeTruthy();
   });
 
   it("no selection for those who may not approve questions", async () => {
@@ -1172,7 +1216,7 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
     await user.click(within(inspector).getByRole("button", { name: "Dismiss" }));
 
     const reload = await screen.findByRole("button", { name: "Reload" });
-    expect(screen.getByText("Changed by Colleague since you opened it.")).toBeTruthy();
+    expect(screen.getByText("Changed by Colleague since you opened it.", { selector: "p" })).toBeTruthy();
     expect(screen.getAllByRole("row")[0].hasAttribute("data-dismissed")).toBe(false);
     expect(await axeViolations(container)).toEqual([]);
     await user.click(reload);
@@ -1205,5 +1249,270 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
     expect(within(inspector).queryByRole("form", { name: "Change impact" })).toBeNull();
     expect(within(inspector).queryByRole("form", { name: "Dismiss the Gap" })).toBeNull();
     expect(within(inspector).getByRole("list", { name: "Gap history" })).toBeTruthy();
+  });
+});
+
+// --- exporting and sending questions (Story 4.6) ---------------------------------------------
+
+const REP = { id: "00000000-0000-7000-8000-0000000000e2", name: "Rep Person" };
+
+function sentQuestion(q: ClarificationQuestion, status: "sent" | "unanswered" = "sent") {
+  return {
+    ...approvedQuestion(q),
+    status,
+    row_version: q.row_version + 2,
+    sent_on: "2026-10-14",
+    sent_by: REP,
+    status_changed_at: "2026-10-14T09:00:00Z",
+    last_changed_by: REP,
+  };
+}
+
+function sentGap(n: number, impact: Impact, status: "sent" | "unanswered" = "sent"): Gap {
+  const base = gap(n, impact);
+  return { ...base, question: sentQuestion(base.question!, status) };
+}
+
+/** A sales representative's list: may send, may not edit. */
+function repList(items: Gap[]): GapList {
+  return list(items, succeeded, false, false, false, true);
+}
+
+describe("exporting and sending questions (Story 4.6)", () => {
+  it("pills show Sent and No answer with icons; the inspector says when and by whom", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSection(
+      repList([sentGap(1, "high"), sentGap(2, "medium", "unanswered")]),
+    );
+    const rows = screen.getAllByRole("row");
+    expect(rows[0].textContent).toContain("Sent");
+    expect(rows[1].textContent).toContain("No answer");
+    expect(rows[0].querySelector('[data-question-status="sent"] svg')).toBeTruthy();
+    expect(rows[1].querySelector('[data-question-status="unanswered"] svg')).toBeTruthy();
+
+    const inspector = await openRow(user, 1);
+
+    expect(within(inspector).getByText("Sent 14 Oct 2026 by Rep Person")).toBeTruthy();
+    expect(within(inspector).getByText("Approved by Owner Person, 5 Oct 2026")).toBeTruthy();
+    expect(within(inspector).getByRole("button", { name: "No answer" })).toBeTruthy();
+    expect(within(inspector).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a sent question is read-only even for editors, and e does not edit it", async () => {
+    const user = userEvent.setup();
+    renderSection(list([sentGap(1, "high")], succeeded, true, true, true, true));
+
+    row(1).focus();
+    await user.keyboard("e");
+    const inspector = await openRow(user, 1);
+
+    expect(within(inspector).getByRole("group", { name: "Clarification Question (read-only)" }))
+      .toBeTruthy();
+    expect(within(inspector).queryByRole("button", { name: "Edit question" })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
+  it("Mark all sent (N) opens a date form (today by default) and marks the shown questions", async () => {
+    const user = userEvent.setup();
+    markClarificationQuestionsSent.mockResolvedValue({ kind: "ok", count: 2 });
+    loadGaps.mockResolvedValue({
+      kind: "ok",
+      list: repList([sentGap(1, "high"), sentGap(2, "medium"), gap(3, "low")]),
+    });
+    const { container } = renderSection(
+      repList([approvedGap(1, "high"), approvedGap(2, "medium"), gap(3, "low")]),
+    );
+    expect(screen.queryByRole("button", { name: /^Approve (all|[0-9])/ })).toBeNull(); // a rep
+
+    await user.click(screen.getByRole("button", { name: "Mark all sent (2)" }));
+    const form = screen.getByRole("form", { name: "Mark questions sent" });
+    const date = within(form).getByLabelText("Date sent") as HTMLInputElement;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    expect(date.value).toBe(today);
+    expect(date.max).toBe(today);
+    expect(await axeViolations(container)).toEqual([]);
+    await user.click(within(form).getByRole("button", { name: "Mark 2 sent" }));
+
+    expect(markClarificationQuestionsSent).toHaveBeenCalledWith(OPP_ID, today, [
+      { id: gap(1, "high").question!.id, row_version: 2 },
+      { id: gap(2, "medium").question!.id, row_version: 2 },
+    ]);
+    await waitFor(() => expect(screen.getAllByRole("row")[0].textContent).toContain("Sent"));
+    expect(screen.queryByRole("form", { name: "Mark questions sent" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark all sent/ })).toBeNull();
+  });
+
+  it("x selects approved questions and Mark N selected sent marks exactly those", async () => {
+    const user = userEvent.setup();
+    markClarificationQuestionsSent.mockResolvedValue({ kind: "ok", count: 1 });
+    loadGaps.mockResolvedValue({ kind: "ok", list: repList([approvedGap(1, "high")]) });
+    renderSection(repList([approvedGap(1, "high"), approvedGap(2, "low")]));
+
+    row(2).focus();
+    await user.keyboard("x");
+    await user.click(screen.getByRole("button", { name: "Mark 1 selected sent" }));
+    const form = screen.getByRole("form", { name: "Mark questions sent" });
+    await user.click(within(form).getByRole("button", { name: "Mark 1 sent" }));
+
+    expect(markClarificationQuestionsSent).toHaveBeenCalledWith(OPP_ID, expect.any(String), [
+      { id: gap(2, "low").question!.id, row_version: 2 },
+    ]);
+  });
+
+  it("refuses a future date before sending, and shows a 422 under the date", async () => {
+    const user = userEvent.setup();
+    markClarificationQuestionsSent.mockResolvedValue({
+      kind: "invalid",
+      detail: "The date sent can't be in the future.",
+    });
+    renderSection(repList([approvedGap(1, "high")]));
+    await user.click(screen.getByRole("button", { name: "Mark all sent (1)" }));
+    const form = screen.getByRole("form", { name: "Mark questions sent" });
+    const date = within(form).getByLabelText("Date sent");
+
+    await user.clear(date);
+    await user.type(date, "2999-01-01");
+    await user.click(within(form).getByRole("button", { name: "Mark 1 sent" }));
+    expect(within(form).getByText("The date sent can't be in the future.")).toBeTruthy();
+    expect(markClarificationQuestionsSent).not.toHaveBeenCalled();
+
+    await user.clear(date);
+    await user.type(date, "2026-10-01");
+    await user.click(within(form).getByRole("button", { name: "Mark 1 sent" }));
+    expect(markClarificationQuestionsSent).toHaveBeenCalledTimes(1);
+    expect(await within(form).findByText("The date sent can't be in the future.")).toBeTruthy();
+  });
+
+  it("a 412 on Mark sent marks nothing and offers Reload", async () => {
+    const user = userEvent.setup();
+    markClarificationQuestionsSent.mockResolvedValue({ kind: "stale", changedBy: "Colleague" });
+    const { container } = renderSection(repList([approvedGap(1, "high")]));
+
+    await user.click(screen.getByRole("button", { name: "Mark all sent (1)" }));
+    await user.click(screen.getByRole("button", { name: "Mark 1 sent" }));
+
+    expect(await screen.findByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(screen.getByText("Changed by Colleague since you opened it.", { selector: "p" })).toBeTruthy();
+    expect(screen.queryByRole("form", { name: "Mark questions sent" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the inspector marks one approved question sent", async () => {
+    const user = userEvent.setup();
+    markClarificationQuestionsSent.mockResolvedValue({ kind: "ok", count: 1 });
+    loadGaps.mockResolvedValue({ kind: "ok", list: repList([sentGap(1, "high")]) });
+    renderSection(repList([approvedGap(1, "high"), approvedGap(2, "low")]));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Mark sent" }));
+    const form = within(inspector).getByRole("form", { name: "Mark this question sent" });
+    await user.click(within(form).getByRole("button", { name: "Mark sent" }));
+
+    expect(markClarificationQuestionsSent).toHaveBeenCalledWith(OPP_ID, expect.any(String), [
+      { id: gap(1, "high").question!.id, row_version: 2 },
+    ]);
+    expect(await within(pane()).findByText("Sent 14 Oct 2026 by Rep Person")).toBeTruthy();
+  });
+
+  it("No answer marks a sent question and keeps the Gap open", async () => {
+    const user = userEvent.setup();
+    const sent = sentGap(1, "high");
+    markClarificationQuestionUnanswered.mockResolvedValue({
+      kind: "ok",
+      question: { ...sent.question!, status: "unanswered", row_version: 4 },
+    });
+    renderSection(repList([sent]));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "No answer" }));
+
+    expect(markClarificationQuestionUnanswered).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      questionId: sent.question!.id,
+      rowVersion: 3,
+    });
+    await waitFor(() => expect(screen.getAllByRole("row")[0].textContent).toContain("No answer"));
+    expect(screen.getAllByRole("row")[0].textContent).toContain("Open");
+    expect(within(pane()).queryByRole("button", { name: "No answer" })).toBeNull();
+  });
+
+  it("a 409 on No answer says the question is no longer sent and re-reads", async () => {
+    const user = userEvent.setup();
+    markClarificationQuestionUnanswered.mockResolvedValue({ kind: "question-not-sent" });
+    loadGaps.mockResolvedValue({ kind: "ok", list: repList([sentGap(1, "high", "unanswered")]) });
+    renderSection(repList([sentGap(1, "high")]));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "No answer" }));
+
+    expect(
+      await screen.findByText("This Clarification Question is no longer sent."),
+    ).toBeTruthy();
+    expect(loadGaps).toHaveBeenCalled();
+  });
+
+  it("Export copies the approved questions and announces how many", async () => {
+    const user = userEvent.setup();
+    copyClarificationQuestions.mockResolvedValue({ kind: "ok", text: "[EXPORT TEXT]", count: 2 });
+    const { container } = renderSection(repList([approvedGap(1, "high"), approvedGap(2, "low")]));
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    const menu = screen.getByRole("group", { name: "Export questions as" });
+    expect(within(menu).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Copy",
+      "Word (.docx)",
+      "Email draft (.eml)",
+    ]);
+    expect(await axeViolations(container)).toEqual([]);
+    await user.click(within(menu).getByRole("button", { name: "Copy" }));
+
+    expect(copyClarificationQuestions).toHaveBeenCalledWith(OPP_ID);
+    await waitFor(async () => expect(await navigator.clipboard.readText()).toBe("[EXPORT TEXT]"));
+    await waitFor(() => expect(screen.getByText("2 questions copied")).toBeTruthy());
+  });
+
+  it("Export downloads the email draft through the web route", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async () =>
+      new Response("draft", {
+        status: 200,
+        headers: {
+          "Content-Type": "message/rfc822",
+          "Content-Disposition": 'attachment; filename="clarification-questions-x.eml"',
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const createObjectURL = vi.fn(() => "blob:x");
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = vi.fn();
+    try {
+      renderSection(repList([approvedGap(1, "high")]));
+      await user.click(screen.getByRole("button", { name: "Export" }));
+      await user.click(screen.getByRole("button", { name: "Email draft (.eml)" }));
+
+      await waitFor(() =>
+        expect(screen.getByText("Exported clarification-questions-x.eml")).toBeTruthy(),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/opportunities/${OPP_ID}/questions-export?format=eml`,
+        { method: "POST", credentials: "same-origin" },
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("no Export or Mark sent without approved questions, or for those who may not send", () => {
+    const { unmount } = renderSection(repList([gap(1, "high")]));
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark all sent/ })).toBeNull();
+    unmount();
+    renderSection(list([approvedGap(1, "high")], succeeded, false, false, false, false));
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark all sent/ })).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
   });
 });

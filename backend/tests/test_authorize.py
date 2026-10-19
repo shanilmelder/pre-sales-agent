@@ -160,6 +160,7 @@ def test_resource_scoped_grants() -> None:
         Action.GAP_DETECTION_START,
         Action.GAP_QUESTION_EDIT,
         Action.GAP_EDIT,
+        Action.GAP_QUESTION_SEND,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
@@ -177,6 +178,7 @@ def test_resource_scoped_grants() -> None:
         Action.GAP_DETECTION_START,
         Action.GAP_QUESTION_EDIT,
         Action.GAP_EDIT,
+        Action.GAP_QUESTION_SEND,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
@@ -220,6 +222,9 @@ def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) ->
     assert can(member, Action.GAP_QUESTION_EDIT, opportunity) is allowed
     assert can(owner, Action.GAP_EDIT, opportunity) is allowed
     assert can(member, Action.GAP_EDIT, opportunity) is allowed
+    # Story 4.6: sales representatives send questions too.
+    assert can(owner, Action.GAP_QUESTION_SEND, opportunity) is True
+    assert can(member, Action.GAP_QUESTION_SEND, opportunity) is True
     assert can(owner, Action.ESTIMATE_DRAFT_START, opportunity) is allowed
     assert can(member, Action.ESTIMATE_DRAFT_START, opportunity) is allowed
     assert can(owner, Action.ASSUMPTION_ACCEPT, opportunity) is allowed

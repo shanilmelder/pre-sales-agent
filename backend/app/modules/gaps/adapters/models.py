@@ -1,13 +1,14 @@
 """The gaps module's tables (Story 4.3). `opportunity_id` and `requirement_id` hold ids owned
 by other modules without foreign keys (AD-2)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -36,6 +37,17 @@ DISMISSED_FIELDS = (
 )
 """The dismissal fields are set only while a Gap is `dismissed`, and then all of them (the
 note only for `other`, where it is required)."""
+
+QUESTION_APPROVED_IFF_STATUS = (
+    "(status IN ('approved', 'sent', 'unanswered')) = (approved_by IS NOT NULL)"
+)
+"""A question's approval is recorded while it is approved, and kept once it is sent."""
+QUESTION_SENT_FIELDS = (
+    "(status IN ('sent', 'unanswered')) = (sent_on IS NOT NULL) "
+    "AND (sent_on IS NULL) = (sent_by IS NULL)"
+)
+"""When and by whom a question was sent is set only while `sent | unanswered`, both or
+neither."""
 
 
 class DetectionRow(Base):
@@ -162,16 +174,20 @@ class GapRequirementRow(Base):
 class QuestionRow(RowVersioned, Base):
     """The Clarification Question drafted for a Gap (one per Gap in the demo). Story 4.5: a
     person may edit its text and topic (`edited_by_human`) and approve it (`approved_by` /
-    `approved_at`, set only while `approved`); editing an approved question returns it to
-    `drafted`. `changed_by`: the person behind its latest edit or approval."""
+    `approved_at`); editing an approved question returns it to `drafted`. Story 4.6: an
+    approved question may be marked `sent` (`sent_on` / `sent_by`), then `unanswered`; the
+    approval fields are set while `approved | sent | unanswered`, the sent fields while
+    `sent | unanswered`. `changed_by`: the person behind its latest change."""
 
     __tablename__ = "gaps_clarification_questions"
     __table_args__ = (
-        CheckConstraint("status IN ('drafted', 'approved', 'superseded')", name="status"),
-        CheckConstraint("(approved_at IS NULL) = (approved_by IS NULL)", name="approved_has_by"),
         CheckConstraint(
-            "(status = 'approved') = (approved_by IS NOT NULL)", name="approved_iff_status"
+            "status IN ('drafted', 'approved', 'sent', 'unanswered', 'superseded')",
+            name="status",
         ),
+        CheckConstraint("(approved_at IS NULL) = (approved_by IS NULL)", name="approved_has_by"),
+        CheckConstraint(QUESTION_APPROVED_IFF_STATUS, name="approved_iff_status"),
+        CheckConstraint(QUESTION_SENT_FIELDS, name="sent_fields"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -188,3 +204,5 @@ class QuestionRow(RowVersioned, Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     edited_by_human: Mapped[bool] = mapped_column(Boolean, server_default=_FALSE)
     changed_by: Mapped[UUID | None] = mapped_column(Uuid)
+    sent_on: Mapped[date | None] = mapped_column(Date)
+    sent_by: Mapped[UUID | None] = mapped_column(Uuid)

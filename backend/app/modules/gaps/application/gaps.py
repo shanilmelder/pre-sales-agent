@@ -4,7 +4,8 @@
   8.4), then its dismissed Gaps (Story 4.4), each group in the same order, each with the
   Requirements it relates to, its Clarification Question, its dismissal and its history, and
   its latest detection (anyone who can read the Opportunity; a sales representative sees
-  only approved questions, Story 4.5, and no reason or note text, Story 4.4).
+  only approved, sent and unanswered questions, Stories 4.5 and 4.6, and no reason or note
+  text, Story 4.4).
 - `irrelevance_share`: the FR-11 live irrelevance measure (Story 4.4).
 - `start_detection`: queue a new detection, e.g. to retry a failed one
   (`gaps.detection.start`: the owner and collaborators except sales representatives; other
@@ -45,6 +46,7 @@ from app.modules.gaps.application.models import (
     IrrelevanceShare,
 )
 from app.modules.gaps.domain.gaps import (
+    APPROVED_STATUSES,
     IN_PROGRESS,
     ConvertedTo,
     DetectionErrorCode,
@@ -127,17 +129,20 @@ def question_view(question: QuestionRecord, names: Mapping[UUID, str]) -> Clarif
         approved_at=question.approved_at,
         edited_by_human=question.edited_by_human,
         last_changed_by=ref(question.changed_by),
+        sent_on=question.sent_on,
+        sent_by=ref(question.sent_by),
     )
 
 
 async def question_names(
     uow: UnitOfWork, questions: Iterable[QuestionRecord], *, also: Iterable[UUID] = ()
 ) -> dict[UUID, str]:
-    """The names of the people who approved or last changed these questions, and of `also`."""
+    """The names of the people who approved, sent or last changed these questions, and of
+    `also`."""
     wanted = {
         user_id
         for q in questions
-        for user_id in (q.approved_by, q.changed_by)
+        for user_id in (q.approved_by, q.changed_by, q.sent_by)
         if user_id is not None
     } | set(also)
     return await identity.user_names(uow, wanted) if wanted else {}
@@ -207,16 +212,15 @@ async def gap_views(
     approved_only: bool = False,
 ) -> list[Gap]:
     """The read models of these Gaps, in the given order. With `approved_only` (a sales
-    representative's view, Stories 4.5 and 4.4), a question that isn't `approved` is left
-    out, and the history and dismissal come without their reason and note text."""
+    representative's view, Stories 4.5, 4.4 and 4.6), a question that isn't `approved`,
+    `sent` or `unanswered` is left out, and the history and dismissal come without their
+    reason and note text."""
     gap_ids = [g.id for g in records]
     links = await repo.links_for(uow, gap_ids)
     questions = await repo.questions_for(uow, gap_ids)
     history = await repo.history_for(uow, gap_ids)
     if approved_only:
-        questions = {
-            gap_id: q for gap_id, q in questions.items() if q.status == QuestionStatus.APPROVED
-        }
+        questions = {gap_id: q for gap_id, q in questions.items() if q.status in APPROVED_STATUSES}
     people = {
         user_id
         for g in records
@@ -278,7 +282,7 @@ async def gap_views(
 
 def sees_only_approved_questions(actor: Principal) -> bool:
     """A sales representative (every role they hold is sales representative) sees only
-    approved Clarification Questions (Story 4.5)."""
+    approved, sent and unanswered Clarification Questions (Stories 4.5, 4.6)."""
     return bool(actor.roles) and actor.roles <= {Role.SALES_REPRESENTATIVE}
 
 
@@ -297,6 +301,7 @@ async def list_gaps(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> 
         can_start_detection=identity.can(actor, Action.GAP_DETECTION_START, resource),
         can_edit_questions=identity.can(actor, Action.GAP_QUESTION_EDIT, resource),
         can_edit_gaps=identity.can(actor, Action.GAP_EDIT, resource),
+        can_send_questions=identity.can(actor, Action.GAP_QUESTION_SEND, resource),
     )
 
 

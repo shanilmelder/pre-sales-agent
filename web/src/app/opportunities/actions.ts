@@ -1106,6 +1106,10 @@ export type QuestionWriteResult =
   | { kind: "invalid"; detail: string }
   /** 409 `gap_not_open`: the Gap was dismissed, converted or replaced; nothing changed. */
   | { kind: "gap-not-open" }
+  /** 409 `question_not_editable`: the question was sent (Story 4.6); nothing changed. */
+  | { kind: "question-not-editable" }
+  /** 409 `question_not_sent`: "No answer" on a question that isn't sent; nothing changed. */
+  | { kind: "question-not-sent" }
   | { kind: "forbidden" }
   /** 404: the Opportunity can't be read, or the question is gone. */
   | { kind: "not-found" }
@@ -1173,8 +1177,12 @@ async function questionWriteFailure(
           detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
       };
     }
-    case 409:
+    case 409: {
+      const { code } = problem(error);
+      if (code === "question_not_editable") return { kind: "question-not-editable" };
+      if (code === "question_not_sent") return { kind: "question-not-sent" };
       return { kind: "gap-not-open" };
+    }
     case 403:
       return { kind: "forbidden" };
     case 404:
@@ -1355,6 +1363,167 @@ export async function approveSelectedClarificationQuestions(
   } catch (thrown) {
     console.error(
       `approve selected questions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- exporting and sending Clarification Questions (Story 4.6) --------------------------------
+
+export type CopyQuestionsResult =
+  | { kind: "ok"; text: string; count: number }
+  /** 409 `no_approved_questions`: nothing to export. */
+  | { kind: "nothing-approved" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+/** `POST /api/v1/opportunities/{id}/clarification-questions/export` as `copy`: the approved
+ * questions as plain text, grouped by topic, in customer wording only. Logs statuses only,
+ * never the text. */
+export async function copyClarificationQuestions(
+  opportunityId: unknown,
+): Promise<CopyQuestionsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/export",
+      { params: { path: { opportunity_id: opportunityId } }, body: { format: "copy" } },
+    );
+    if (data && typeof data.text === "string") {
+      return { kind: "ok", text: data.text, count: data.question_count };
+    }
+    switch (response.status) {
+      case 409:
+        return { kind: "nothing-approved" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `copy questions failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`copy questions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type MarkSentResult =
+  | { kind: "ok"; count: number }
+  /** 412: a listed question changed, isn't approved or isn't on an open Gap; nothing marked. */
+  | { kind: "stale"; changedBy: string | null }
+  /** 422: e.g. a date in the future. */
+  | { kind: "invalid"; detail: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+/** Who changed one of the listed approved questions, read again after a 412 (null when
+ * unknown). */
+async function sentChanger(opportunityId: string, listed: ShownQuestion[]): Promise<string | null> {
+  const current = await listGaps(opportunityId);
+  if (current.kind !== "ok") return null;
+  const versions = new Map(listed.map((q) => [q.id, q.row_version]));
+  for (const gap of current.list.items) {
+    const question = gap.question;
+    if (!question || !versions.has(question.id)) continue;
+    if (versions.get(question.id) !== question.row_version && question.last_changed_by) {
+      return question.last_changed_by.name;
+    }
+  }
+  return null;
+}
+
+/** `POST /api/v1/opportunities/{id}/clarification-questions/mark-sent` with the date sent and
+ * the approved questions the tab shows (`[{id, row_version}]`, 1 to 200): marks exactly those,
+ * all or nothing. A 412 marks nothing. */
+export async function markClarificationQuestionsSent(
+  opportunityId: unknown,
+  sentOn: unknown,
+  questions: unknown,
+): Promise<MarkSentResult> {
+  if (
+    typeof opportunityId !== "string" ||
+    !UUID_RE.test(opportunityId) ||
+    typeof sentOn !== "string" ||
+    !DATE_RE.test(sentOn) ||
+    !isShownList(questions) ||
+    questions.length < 1 ||
+    questions.length > 200
+  )
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/mark-sent",
+      {
+        params: { path: { opportunity_id: opportunityId } },
+        body: {
+          sent_on: sentOn,
+          questions: questions.map(({ id, row_version }) => ({ id, row_version })),
+        },
+      },
+    );
+    if (data) return { kind: "ok", count: data.count };
+    switch (response.status) {
+      case 412:
+        return { kind: "stale", changedBy: await sentChanger(opportunityId, questions) };
+      case 422: {
+        const { detail } = problem(error);
+        return {
+          kind: "invalid",
+          detail:
+            detail && !detail.startsWith("Invalid fields:")
+              ? detail
+              : "The date or the questions were not accepted.",
+        };
+      }
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `mark questions sent failed: status=${response.status} code=${String(problem(error).code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `mark questions sent failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/clarification-questions/{qid}/no-answer` with `If-Match`:
+ * the customer won't answer the sent question. Never retries or overwrites on 412. */
+export async function markClarificationQuestionUnanswered(
+  input: unknown,
+): Promise<QuestionWriteResult> {
+  if (!isQuestionTarget(input)) return { kind: "error" };
+  const { opportunityId, questionId, rowVersion } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/no-answer",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, question_id: questionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+      },
+    );
+    if (data) return { kind: "ok", question: data };
+    return await questionWriteFailure("mark question unanswered", input, response.status, error);
+  } catch (thrown) {
+    console.error(
+      `mark question unanswered failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

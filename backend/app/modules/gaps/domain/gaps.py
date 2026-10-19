@@ -9,7 +9,7 @@ added later without a schema change.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
 from uuid import UUID
@@ -91,6 +91,11 @@ class QuestionStatus(StrEnum):
     DRAFTED = "drafted"
     APPROVED = "approved"
     """Story 4.5: a person approved it. Editing its text or topic returns it to `drafted`."""
+    SENT = "sent"
+    """Story 4.6: a person recorded that it was sent to the customer. It can't be edited or
+    approved any more; its approval is kept."""
+    UNANSWERED = "unanswered"
+    """Story 4.6: sent, and a person recorded that the customer won't answer it ("No answer")."""
     SUPERSEDED = "superseded"
     """Set together with its Gap's `superseded` by a newer detection."""
 
@@ -244,6 +249,25 @@ class QuestionNotEditableError(ValueError):
     """The question is `superseded`: it can't be edited or approved."""
 
 
+class QuestionSentError(ValueError):
+    """The question is `sent` or `unanswered` (Story 4.6): it can't be edited or approved."""
+
+
+class QuestionNotApprovedTransitionError(ValueError):
+    """The question is not `approved`: it can't be marked sent (Story 4.6)."""
+
+
+class QuestionNotSentTransitionError(ValueError):
+    """The question is not `sent`: it can't be marked "No answer" (Story 4.6)."""
+
+
+SENT_STATUSES = frozenset({QuestionStatus.SENT, QuestionStatus.UNANSWERED})
+"""Statuses of a question that left the platform: it can't be edited or approved, and its
+approval and sending are kept."""
+APPROVED_STATUSES = frozenset({QuestionStatus.APPROVED, *SENT_STATUSES})
+"""Statuses of a question whose approval is recorded (and that a sales representative sees)."""
+
+
 @dataclass(frozen=True, slots=True)
 class QuestionState:
     """What editing and approving change on a Clarification Question."""
@@ -254,6 +278,8 @@ class QuestionState:
     approved_by: UUID | None = None
     approved_at: datetime | None = None
     edited_by_human: bool = False
+    sent_on: date | None = None
+    sent_by: UUID | None = None
 
 
 def question_text(raw: str) -> str:
@@ -284,6 +310,8 @@ def edit_question(
     an approved question to `drafted`, clearing its approval."""
     if state.status == QuestionStatus.SUPERSEDED:
         raise QuestionNotEditableError("A superseded question can't be edited.")
+    if state.status in SENT_STATUSES:
+        raise QuestionSentError("A question that was sent can't be edited.")
     changed: list[QuestionField] = []
     if text is not None and text != state.text:
         changed.append("text")
@@ -307,15 +335,42 @@ def approve_question(state: QuestionState, *, user_id: UUID, at: datetime) -> Qu
     """The question approved by `user_id` at `at`; an approved question stays as it is."""
     if state.status == QuestionStatus.SUPERSEDED:
         raise QuestionNotEditableError("A superseded question can't be approved.")
+    if state.status in SENT_STATUSES:
+        raise QuestionSentError("A question that was sent can't be approved.")
     if state.status == QuestionStatus.APPROVED:
         return state
     return replace(state, status=QuestionStatus.APPROVED, approved_by=user_id, approved_at=at)
 
 
 def touched(*, status: str, edited_by_human: bool) -> bool:
-    """Whether a person has touched the question (edited or approved it): a later detection
-    keeps its Gap instead of superseding it."""
-    return edited_by_human or status == QuestionStatus.APPROVED
+    """Whether a person has touched the question (edited, approved, sent or marked it "No
+    answer"): a later detection keeps its Gap instead of superseding it."""
+    return edited_by_human or status in APPROVED_STATUSES
+
+
+# --- sending Clarification Questions (Story 4.6) --------------------------------------------
+
+
+def sent_date(on: date, *, today: date) -> date:
+    """The date a question was sent; ValueError (with the sentence to show) if it is after
+    `today`."""
+    if on > today:
+        raise ValueError("The date sent can't be in the future.")
+    return on
+
+
+def mark_sent(state: QuestionState, *, user_id: UUID, on: date) -> QuestionState:
+    """The `approved` question marked sent on `on` by `user_id`; its approval is kept."""
+    if state.status != QuestionStatus.APPROVED:
+        raise QuestionNotApprovedTransitionError("Only an approved question can be marked sent.")
+    return replace(state, status=QuestionStatus.SENT, sent_on=on, sent_by=user_id)
+
+
+def mark_unanswered(state: QuestionState) -> QuestionState:
+    """The `sent` question marked "No answer"; when and by whom it was sent is kept."""
+    if state.status != QuestionStatus.SENT:
+        raise QuestionNotSentTransitionError('Only a sent question can be marked "No answer".')
+    return replace(state, status=QuestionStatus.UNANSWERED)
 
 
 # --- changing impact, dismissing and reopening Gaps (Story 4.4) -----------------------------
