@@ -1,0 +1,139 @@
+# Runs the stack from images pushed to Nexus (no local build).
+#   docker login nexus.shanilmelder.com
+#   cp .env.example .env
+#   docker compose -f compose.nexus.yaml pull
+#   docker compose -f compose.nexus.yaml up --wait -d
+# Pick another tag with PSA_IMAGE_TAG (default: latest).
+name: pre-sales-agent
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-backend-env: &backend-env
+  PSA_ENV: local
+  PSA_DATABASE_URL: postgresql+psycopg://psa_app:${PSA_APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  PSA_LOG_LEVEL: ${PSA_LOG_LEVEL:-INFO}
+  PSA_STORAGE_DIR: /var/lib/psa/files
+  PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
+
+services:
+  postgres:
+    <<: *restart
+    image: pgvector/pgvector:0.8.6-pg18-trixie
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      PSA_APP_DB_PASSWORD: ${PSA_APP_DB_PASSWORD:?set PSA_APP_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./ops/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${PSA_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    <<: *restart
+    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-api:${PSA_IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PSA_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env}
+      PSA_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:?set AUTH0_AUDIENCE in .env}
+      PSA_UPLOAD_MAX_BYTES: ${PSA_UPLOAD_MAX_BYTES:-52428800}
+      PSA_KNOWLEDGE_STALE_MONTHS: ${PSA_KNOWLEDGE_STALE_MONTHS:-12}
+      PSA_DOWNLOAD_SIGNING_KEY: ${PSA_DOWNLOAD_SIGNING_KEY:-local-dev-download-signing-key-change-me}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - files:/var/lib/psa/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PSA_API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    <<: *restart
+    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-worker:${PSA_IMAGE_TAG:-latest}
+    command: ["python", "-m", "app.main_worker"]
+    environment:
+      <<: *backend-env
+      PSA_WORKER_POLL_S: ${PSA_WORKER_POLL_S:-1}
+      PSA_WORKER_CONCURRENCY: ${PSA_WORKER_CONCURRENCY:-1}
+      PSA_WORKER_ALIVE_FILE: /tmp/worker-alive
+      PSA_JOB_LEASE_S: ${PSA_JOB_LEASE_S:-30}
+      PSA_JOB_HEARTBEAT_S: ${PSA_JOB_HEARTBEAT_S:-10}
+      LANGGRAPH_STRICT_MSGPACK: "true"
+      PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
+      PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
+      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
+      PSA_OPENAI_BASE_URL: ${PSA_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
+      PSA_OPENAI_API_KEY: ${PSA_OPENAI_API_KEY:-}
+      PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
+      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
+      PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
+      PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
+      PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - files:/var/lib/psa/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,sys,time; p='/tmp/worker-alive'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 60 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    <<: *restart
+    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-web:${PSA_IMAGE_TAG:-latest}
+    environment:
+      PSA_API_URL: http://api:8000
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:?set AUTH0_CLIENT_ID in .env}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:?set AUTH0_CLIENT_SECRET in .env}
+      AUTH0_SECRET: ${AUTH0_SECRET:?set AUTH0_SECRET in .env}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:?set AUTH0_AUDIENCE in .env}
+      APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL in .env}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PSA_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pgdata:
+  files:
