@@ -1,0 +1,24 @@
+# Decoy: every specialist assumes the same cloud-hosted design; nothing contradicts.
+findings:
+  engineering_agent:
+    - key: eng-cloud
+      kind: constraint
+      severity: medium
+      title: WMS hosted in the customer's Azure tenant
+      detail: The WMS runs in the customer's Azure tenant with a site edge gateway for the PLCs.
+      requirements: [1]
+  pm_agent:
+    - key: pm-cloud-team
+      kind: dependency
+      severity: medium
+      title: Azure landing zone must be ready by month three
+      detail: The customer's cloud team has to provide the Azure landing zone by month three.
+      requirements: [1]
+  security_agent:
+    - key: sec-cloud
+      kind: constraint
+      severity: high
+      title: Azure deployment must follow the customer's landing-zone policies
+      detail: The Azure deployment must use the customer's landing-zone policies and private endpoints.
+      requirements: [1]
+expected: []

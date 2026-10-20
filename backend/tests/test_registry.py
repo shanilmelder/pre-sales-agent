@@ -77,7 +77,8 @@ _no_auto_run = specialist_tests._no_auto_run
 URL = "/api/v1/registry/agents"
 BACKEND = Path(__file__).resolve().parents[1]
 MIGRATION = BACKEND / "migrations" / "versions" / "20261013_0026_registry.py"
-SEEDED = (
+MIGRATION_0033 = BACKEND / "migrations" / "versions" / "20261020_0033_conflict_agent.py"
+SEEDED_0026 = (
     ("clarification_agent", "Clarification Agent"),
     ("engineering_agent", "Engineering Agent"),
     ("estimating_agent", "Estimating Agent"),
@@ -87,6 +88,9 @@ SEEDED = (
     ("red_team_agent", "Red Team Agent"),
     ("security_agent", "Security Agent"),
 )
+SEEDED_0033 = (("conflict_agent", "Conflict Agent"),)
+"""Story 6.2 seeds the Conflict Agent the same way."""
+SEEDED = SEEDED_0026 + SEEDED_0033
 CODES = {
     403: "forbidden",
     404: "not_found",
@@ -230,16 +234,22 @@ def test_prompt_hashes_ignore_line_endings(tmp_path: Path) -> None:
     assert deployed.prompt_hash(lf) == deployed.prompt_hash(crlf)
 
 
-def test_the_migration_seed_matches_the_domain_and_never_imports_the_app() -> None:
-    spec = importlib.util.spec_from_file_location("migration_0026", MIGRATION)
+@pytest.mark.parametrize(
+    ("path", "seeded", "agent_id"),
+    [(MIGRATION, SEEDED_0026, "pm_agent"), (MIGRATION_0033, SEEDED_0033, "conflict_agent")],
+)
+def test_the_migration_seed_matches_the_domain_and_never_imports_the_app(
+    path: Path, seeded: tuple[tuple[str, str], ...], agent_id: str
+) -> None:
+    spec = importlib.util.spec_from_file_location(f"migration_{path.stem}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert module.SEED_NAMESPACE == rules.SEED_NAMESPACE
-    assert module.SEED_AGENTS == SEEDED
-    assert module._agent_row_id("pm_agent") == rules.agent_row_id("pm_agent")
-    assert module._seed_version_id("pm_agent") == rules.seed_config_version_id("pm_agent")
-    tree = ast.parse(MIGRATION.read_text(encoding="utf-8"))
+    assert module.SEED_AGENTS == seeded
+    assert module._agent_row_id(agent_id) == rules.agent_row_id(agent_id)
+    assert module._seed_version_id(agent_id) == rules.seed_config_version_id(agent_id)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     imported = {
         alias.name
         for node in ast.walk(tree)
@@ -316,7 +326,7 @@ def test_the_profile_override_applies_only_when_set_explicitly(
 # --- the seed and its backfill --------------------------------------------------------------
 
 
-def test_the_seed_is_eight_active_agents_at_version_one(sync_engine: Engine) -> None:
+def test_the_seeded_agents_are_active_at_version_one(sync_engine: Engine) -> None:
     for agent_id, name in SEEDED:
         agent = _agent_rows(sync_engine, agent_id)
         assert (agent["id"], agent["name"]) == (rules.agent_row_id(agent_id), name)

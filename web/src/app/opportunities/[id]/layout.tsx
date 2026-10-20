@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { countOpenGaps } from "@/app/opportunities/actions";
+import { countOpenConflicts, countOpenGaps } from "@/app/opportunities/actions";
 import { getConflicts, getOpportunity, listGaps } from "@/app/opportunities/data";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { WorkspaceHeader } from "@/components/opportunities/workspace-header";
@@ -15,8 +15,8 @@ import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 export const metadata: Metadata = { title: "Opportunity · Pre-Sales Agent" };
 
 /** The Opportunity workspace: header and tab strip around every tab. Fetched here once per
- * navigation into the workspace (with the Conflicts tab's open count, refreshed by a
- * navigation or `router.refresh()`); switching tabs re-renders only the tab page. Each tab
+ * navigation into the workspace (with the Conflicts and Gaps tabs' counts, which then follow
+ * the event stream); switching tabs re-renders only the tab page. Each tab
  * page gates itself too, since a layout can't keep a page out of the payload. */
 export default async function OpportunityLayout({
   children,
@@ -30,7 +30,7 @@ export default async function OpportunityLayout({
 
   const { id } = await params;
   const loaded = await getOpportunity(id);
-  // The Conflicts tab's badge: open plus escalated, read with the layout (no live updates).
+  // The Conflicts tab's badge: open plus escalated, kept live over the event stream (6.2).
   const conflicts = loaded.kind === "ok" ? await getConflicts(loaded.opportunity.id) : null;
   // The Gaps tab's badge: open Gaps, kept live over the event stream (Story 4.7).
   const gaps = loaded.kind === "ok" ? await listGaps(loaded.opportunity.id) : null;
@@ -57,6 +57,7 @@ export default async function OpportunityLayout({
             id={loaded.opportunity.id}
             counts={counts}
             loadGapCount={countOpenGaps}
+            loadConflictCount={countOpenConflicts}
           >
             {children}
           </WorkspaceTabs>

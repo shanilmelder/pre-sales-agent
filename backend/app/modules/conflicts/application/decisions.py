@@ -249,6 +249,7 @@ async def resolve_conflict(
     )
     if new_version is None:  # pragma: no cover - the Conflicts lock serialises decisions
         raise await _stale(uow, conflict)
+    await repo.notify_conflicts_changed(uow, opportunity_id)  # Story 6.2: live tab
     await trace.append(
         uow,
         actor=actor.actor,
@@ -325,6 +326,7 @@ async def escalate_conflict(
     )
     if new_version is None:  # pragma: no cover - the Conflicts lock serialises decisions
         raise await _stale(uow, conflict)
+    await repo.notify_conflicts_changed(uow, opportunity_id)  # Story 6.2: live tab
     await trace.append(
         uow,
         actor=actor.actor,

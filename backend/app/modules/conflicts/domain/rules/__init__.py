@@ -40,6 +40,8 @@ def detect(inputs: RuleInputs) -> list[ConflictCandidate]:
 
 
 def rule_of(fingerprint: str) -> str:
+    """The rule id a rule Conflict's fingerprint starts with; `semantic` for a semantic
+    Conflict (Story 6.2), which no rule owns."""
     return fingerprint.split(":", 1)[0]
 
 
@@ -49,7 +51,7 @@ def current_summary(
     """What a position (an agent's, or the Estimate's when `agent` is None) of the Conflict
     with this fingerprint would read now; None when it has no current source or the rule is
     unknown."""
-    rule = RULES.get(rule_of(fingerprint))
+    rule = RULES.get(rule_of(fingerprint))  # never a `semantic:` fingerprint (not in RULES)
     if rule is None:
         return None
     return rule[1](inputs, agent=agent, requirement_id=requirement_id)

@@ -22,6 +22,14 @@ Clarification Questions or answer suggestions) is forwarded as an id-less frame
     data: {"source": "gaps"}
 
 so the Gaps tab, its badge and the Overview re-read; nothing is replayed for it.
+
+Story 6.2: likewise a NOTIFY `{opportunity_id, source: "conflicts"}` (any write that changes
+what the Conflicts tab shows) is forwarded as
+
+    event: conflicts.changed
+    data: {"source": "conflicts"}
+
+so the Conflicts tab and its badge re-read.
 """
 
 import json
@@ -49,6 +57,10 @@ KEEPALIVE_S = 15.0
 GAPS_SOURCE = "gaps"
 GAPS_CHANGED_FRAME = 'event: gaps.changed\ndata: {"source": "gaps"}\n\n'
 """The frame for a change to the Opportunity's Gaps (Story 4.7): no id, no content."""
+CONFLICTS_SOURCE = "conflicts"
+CONFLICTS_CHANGED_FRAME = 'event: conflicts.changed\ndata: {"source": "conflicts"}\n\n'
+"""The frame for a change to the Opportunity's Conflicts (Story 6.2): no id, no content."""
+_CHANGED_FRAMES = {GAPS_SOURCE: GAPS_CHANGED_FRAME, CONFLICTS_SOURCE: CONFLICTS_CHANGED_FRAME}
 _SEEN_MAX = 2000
 _log = get_logger(__name__)
 
@@ -99,14 +111,14 @@ async def _read(engine: AsyncEngine, event_id: UUID) -> ProgressRecord | None:
 
 
 def _notified(payload: str, opportunity_id: UUID) -> UUID | str | None:
-    """For a NOTIFY about this Opportunity: the event id of a progress row, or
-    `GAPS_SOURCE` for a change to its Gaps; else None."""
+    """For a NOTIFY about this Opportunity: the event id of a progress row, or the source
+    (`GAPS_SOURCE`, `CONFLICTS_SOURCE`) of a change to its Gaps or Conflicts; else None."""
     try:
         data = json.loads(payload)
         if UUID(data["opportunity_id"]) != opportunity_id:
             return None
-        if data.get("source") == GAPS_SOURCE:
-            return GAPS_SOURCE
+        if data.get("source") in _CHANGED_FRAMES:
+            return str(data["source"])
         if data.get("source") != PROGRESS_SOURCE:
             return None
         return UUID(data["event_id"])
@@ -141,8 +153,8 @@ async def event_stream(
         while True:
             async for notify in listener.notifies(timeout=keepalive_s):
                 event_id = _notified(notify.payload, opportunity_id)
-                if event_id == GAPS_SOURCE:
-                    yield GAPS_CHANGED_FRAME
+                if isinstance(event_id, str):
+                    yield _CHANGED_FRAMES[event_id]
                     continue
                 if not isinstance(event_id, UUID) or event_id in seen:
                     continue

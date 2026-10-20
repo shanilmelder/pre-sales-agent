@@ -1,0 +1,30 @@
+# PM puts label printing out of scope; Engineering designs and prices it.
+findings:
+  engineering_agent:
+    - key: eng-printing
+      kind: constraint
+      severity: medium
+      title: Print-and-apply label stations at both outbound lines
+      detail: >-
+        Shipping labels are printed and applied by our print-and-apply units at the end of
+        both outbound conveyor lines; they are part of the design and the controls scope.
+      requirements: [3]
+  pm_agent:
+    - key: pm-printing
+      kind: risk
+      severity: medium
+      title: Label printing stays with the customer's carrier system
+      detail: >-
+        The customer confirmed shipping labels remain with their existing carrier system and
+        printers; label printing is out of our scope.
+      requirements: [3]
+  security_agent:
+    - key: sec-patching
+      kind: risk
+      severity: low
+      title: Workstation patching follows the customer's monthly cycle
+      detail: Operator workstations must be patched within the customer's monthly cycle.
+      requirements: [5]
+expected:
+  - type: scope
+    findings: [eng-printing, pm-printing]

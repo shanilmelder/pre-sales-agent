@@ -24,6 +24,7 @@ function position(overrides: Partial<ConflictPosition>): ConflictPosition {
     summary: "24 h",
     value: 24,
     requirement: null,
+    finding: null,
     ...overrides,
   };
 }

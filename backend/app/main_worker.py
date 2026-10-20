@@ -53,6 +53,7 @@ _JOB_MODULES: tuple[str, ...] = (
     "app.modules.estimates.application.draft",
     "app.modules.estimates.application.assumptions",
     "app.modules.assessments.application.review",
+    "app.modules.conflicts.application.semantic",
     "app.modules.workflows.application.runs",
     "app.modules.workflows.application.progress",
     "app.modules.opportunities.application.imports",

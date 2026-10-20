@@ -66,6 +66,7 @@ function agent(n: number, name: string, hours: number): ConflictPosition {
     summary: `${hours} h`,
     value: hours,
     requirement: R2,
+    finding: null,
   };
 }
 
@@ -80,6 +81,7 @@ const ESTIMATE: ConflictPosition = {
   summary: "131 h",
   value: 131,
   requirement: R2,
+  finding: null,
 };
 
 function effortConflict(overrides: Partial<Conflict> = {}): Conflict {
@@ -441,6 +443,95 @@ describe("the Conflicts list", () => {
       name: /Escalated to Sam Reviewer/,
     });
     expect(row).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+// --- Story 6.2: Conflicts detected from the Findings' text ----------------------------------
+
+function findingPosition(
+  n: number,
+  name: string,
+  stance: string,
+  finding: { title: string; kind: string },
+): ConflictPosition {
+  return {
+    ...agent(n, name, 0),
+    summary: stance,
+    value: null,
+    finding: { id: `00000000-0000-7000-8000-00000000f00${n}`, ...finding },
+  };
+}
+
+function textConflict(overrides: Partial<Conflict> = {}): Conflict {
+  return effortConflict({
+    id: "00000000-0000-7000-8000-000000000062",
+    type: "architecture",
+    severity: "high",
+    detected_by: "semantic",
+    summary: "[SEMANTIC SUMMARY]",
+    positions: [
+      findingPosition(1, "engineering_agent", "[ENGINEERING STANCE]", {
+        title: "[SSO FINDING]",
+        kind: "risk",
+      }),
+      findingPosition(2, "security_agent", "[SECURITY STANCE]", {
+        title: "[IDP FINDING]",
+        kind: "constraint",
+      }),
+    ],
+    ...overrides,
+  });
+}
+
+describe("a Conflict detected from text", () => {
+  it("is tagged in the header and shows each cited Finding's kind and title above its stance", async () => {
+    const { container } = renderInspector(textConflict());
+    expect(screen.getByTestId("detected-from-text").textContent).toBe("Detected from text");
+    expect(screen.getByRole("heading", { name: "Architecture Conflict" })).toBeTruthy();
+    const findings = screen.getAllByTestId("position-finding");
+    expect(findings.map((f) => f.textContent)).toEqual([
+      "Risk[SSO FINDING]",
+      "Constraint[IDP FINDING]",
+    ]);
+    // The Finding comes before the stance on its card.
+    const card = findings[0]!.parentElement!;
+    expect(card.textContent).toMatch(/\[SSO FINDING\].*\[ENGINEERING STANCE\]/);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("is resolved as in 6.3, by choosing a position", async () => {
+    const user = userEvent.setup();
+    resolveConflict.mockResolvedValue({
+      kind: "ok",
+      conflict: textConflict({ status: "resolved", row_version: 2 }),
+    });
+    renderInspector(textConflict());
+    const radios = within(resolveForm()).getAllByRole("radio");
+    await user.click(radios[1]!);
+    await user.type(screen.getByLabelText("Reason"), "Security policy wins.");
+    await user.click(within(resolveForm()).getByRole("button", { name: "Resolve" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(resolveConflict).toHaveBeenCalledWith(
+      expect.objectContaining({ choice: { position: 2 }, reason: "Security policy wins." }),
+    );
+  });
+
+  it("is tagged on its row; a rule Conflict is not", async () => {
+    const view: ConflictsView = {
+      conflicts: [textConflict(), effortConflict()],
+      open_count: 2,
+      reviewers: [],
+    };
+    const { container } = render(
+      <ShellProviders singleKeyShortcuts>
+        <ConflictsSection initial={view} opportunityId={OPP_ID} />
+        <RightPane />
+      </ShellProviders>,
+    );
+    const rows = within(screen.getByRole("grid", { name: "Open Conflicts" })).getAllByRole("row");
+    expect(within(rows[0]!).getByTestId("detected-from-text")).toBeTruthy();
+    expect(within(rows[1]!).queryByTestId("detected-from-text")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 });

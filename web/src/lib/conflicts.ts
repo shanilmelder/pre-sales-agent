@@ -107,6 +107,14 @@ function lowerFirst(text: string): string {
   return /^[A-Z][a-z]/.test(text) ? text[0]!.toLowerCase() + text.slice(1) : text;
 }
 
+/** Story 6.2: the tag on a Conflict the Conflict Agent found in the Findings' text. */
+export const DETECTED_FROM_TEXT = "Detected from text";
+
+/** Whether the Conflict was found by the Conflict Agent (semantic detection, Story 6.2). */
+export function isFromText(conflict: Pick<Conflict, "detected_by">): boolean {
+  return conflict.detected_by === "semantic";
+}
+
 /** The row's positions summary: "Engineering: 24 h · PM: not sized". */
 export function positionsSummary(positions: readonly ConflictPosition[]): string {
   return positions.map((p) => `${positionRole(p)}: ${lowerFirst(p.summary)}`).join(" · ");

@@ -1,5 +1,8 @@
 """`python -m app.evals run [--config <agent_id>=<version> ...] [--only <slug> ...]
-[--timeout <s>]` (`make eval ARGS="..."`).
+[--timeout <s>]` (`make eval ARGS="..."`), and `python -m app.evals conflicts [--only <case>
+...] [--profile <name>]` (`make eval-conflicts ARGS="..."`, Story 6.2: precision and recall of
+semantic Conflict detection per type; exit 0 once the report is written, 2 for an invalid or
+unknown case).
 
 Exit codes: 0 passed; 1 failed (a bar missed or regressed, or a stage failed; the result
 is still stored); 2 refused or could not run (an unknown `--only` slug, invalid
@@ -12,6 +15,7 @@ import asyncio
 import sys
 from collections.abc import Sequence
 
+from app.evals import conflicts as conflicts_eval
 from app.evals.annotations import ReferenceSetError
 from app.evals.harness import (
     DEFAULT_TIMEOUT_S,
@@ -52,7 +56,38 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_TIMEOUT_S,
         help=f"Seconds before the eval gives up (default {DEFAULT_TIMEOUT_S:g}).",
     )
+    semantic = commands.add_parser(
+        "conflicts", help="Run the semantic Conflict detection cases (evals/conflicts/)."
+    )
+    semantic.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="CASE",
+        help="Run only this case (repeatable).",
+    )
+    semantic.add_argument(
+        "--profile", default=None, help="The model profile (default: PSA_MODEL_PROFILE_CHAT)."
+    )
     return parser
+
+
+def _conflicts(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    try:
+        outcome = asyncio.run(
+            conflicts_eval.run_conflicts_eval(
+                settings, only=tuple(args.only), profile=args.profile
+            ),
+            loop_factory=loop_factory,
+        )
+    except conflicts_eval.CaseError as exc:
+        print(f"Eval refused: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    print(conflicts_eval.render(outcome.report))
+    print(f"\nReport: {outcome.out_dir / 'report.json'}")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -61,8 +96,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    settings = get_settings()
     configure_logging("WARNING")
+    if args.command == "conflicts":
+        return _conflicts(args)
+    settings = get_settings()
     try:
         options = EvalOptions(
             configs=parse_configs(args.config), only=tuple(args.only), timeout_s=args.timeout

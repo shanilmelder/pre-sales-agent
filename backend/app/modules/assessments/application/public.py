@@ -10,7 +10,9 @@ from app.modules.assessments.application.assessment import (
     AssessmentInputs,
     accept_assessment,
     current_assessment_snapshots,
+    current_finding_snapshots,
     current_sizings,
+    finding_titles,
     load_inputs,
 )
 from app.modules.assessments.application.assessments import (
@@ -68,8 +70,10 @@ __all__ = [
     "accept_assessment",
     "agent_assessments",
     "current_assessment_snapshots",
+    "current_finding_snapshots",
     "current_sizings",
     "enqueue_review",
+    "finding_titles",
     "get_red_team",
     "load_inputs",
     "outdated_assessments",

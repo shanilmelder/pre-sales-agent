@@ -52,6 +52,7 @@ function agentPosition(
     summary,
     value,
     requirement,
+    finding: null,
   };
 }
 

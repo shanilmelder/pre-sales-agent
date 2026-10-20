@@ -31,6 +31,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   startExtraction: vi.fn(),
   loadGaps: vi.fn(),
   countOpenGaps: vi.fn(async () => null),
+  countOpenConflicts: vi.fn(async () => null),
   startGapDetection: vi.fn(),
   loadEstimate: vi.fn(),
   startEstimateDraft: vi.fn(),

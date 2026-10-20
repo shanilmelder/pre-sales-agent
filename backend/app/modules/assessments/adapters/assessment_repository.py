@@ -250,6 +250,27 @@ async def findings_of(uow: UnitOfWork, assessment_ids: Sequence[UUID]) -> list[F
     ]
 
 
+async def findings_by_id(uow: UnitOfWork, finding_ids: Sequence[UUID]) -> list[FindingRecord]:
+    """These Findings (of any Assessment), in no particular order."""
+    if not finding_ids:
+        return []
+    rows = await uow.session.execute(
+        select(AssessmentFindingRow).where(AssessmentFindingRow.id.in_(list(finding_ids)))
+    )
+    return [
+        FindingRecord(
+            id=row.id,
+            assessment_id=row.assessment_id,
+            position=row.position,
+            kind=row.kind,
+            severity=row.severity,
+            title=row.title,
+            detail=row.detail,
+        )
+        for row in rows.scalars()
+    ]
+
+
 async def requirement_links_for(
     uow: UnitOfWork, finding_ids: Sequence[UUID]
 ) -> list[FindingRequirementRecord]:
