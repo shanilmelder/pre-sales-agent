@@ -7,7 +7,7 @@ import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "rea
 import { useShell, useWorkspaceTabKeys } from "@/components/shell/shell-context";
 import { cn } from "@/lib/utils";
 import { openCountLabel } from "@/lib/conflicts";
-import { useGapsEvents } from "@/lib/opportunity-events";
+import { useConflictsEvents, useGapsEvents } from "@/lib/opportunity-events";
 import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
 
 /** The workspace tab strip and the selected tab's panel. A `tablist` of links (each tab has
@@ -15,11 +15,13 @@ import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib
  * shell's key handler, and Left/Right/Home/End move focus along the strip. A tab with a
  * count above 0 shows it after its label ("Conflicts 3", read as "Conflicts, 3 open").
  * Story 4.7: with `loadGapCount`, the Gaps tab's open count follows the Opportunity's event
- * stream (`gaps.changed`) without a reload. */
+ * stream (`gaps.changed`) without a reload; Story 6.2: with `loadConflictCount`, so does the
+ * Conflicts tab's open count (`conflicts.changed`). */
 export function WorkspaceTabs({
   id,
   counts: initialCounts = {},
   loadGapCount,
+  loadConflictCount,
   children,
 }: {
   id: string;
@@ -28,11 +30,18 @@ export function WorkspaceTabs({
   counts?: Partial<Record<WorkspaceTabSlug, number>>;
   /** Reads the open Gap count again (a server action); left out, the count stays as given. */
   loadGapCount?: (opportunityId: string) => Promise<number | null>;
+  /** Reads the open-plus-escalated Conflict count again (a server action); left out, the
+   * count stays as given. */
+  loadConflictCount?: (opportunityId: string) => Promise<number | null>;
   children: ReactNode;
 }) {
   const [liveGaps, setLiveGaps] = useState<{ from: number | undefined; count: number } | null>(
     null,
   );
+  const [liveConflicts, setLiveConflicts] = useState<{
+    from: number | undefined;
+    count: number;
+  } | null>(null);
   useGapsEvents(
     id,
     () => {
@@ -46,11 +55,27 @@ export function WorkspaceTabs({
     },
     loadGapCount !== undefined,
   );
+  useConflictsEvents(
+    id,
+    () => {
+      const from = initialCounts.conflicts;
+      void loadConflictCount?.(id).then(
+        (count) => {
+          if (count !== null) setLiveConflicts({ from, count });
+        },
+        () => undefined,
+      );
+    },
+    loadConflictCount !== undefined,
+  );
   // A newer count from the server (a navigation) wins over the live one read before it.
-  const counts =
-    liveGaps && liveGaps.from === initialCounts.gaps
-      ? { ...initialCounts, gaps: liveGaps.count }
-      : initialCounts;
+  const counts = {
+    ...initialCounts,
+    ...(liveGaps && liveGaps.from === initialCounts.gaps ? { gaps: liveGaps.count } : {}),
+    ...(liveConflicts && liveConflicts.from === initialCounts.conflicts
+      ? { conflicts: liveConflicts.count }
+      : {}),
+  };
   const segment = useSelectedLayoutSegment();
   const { singleKeyShortcuts } = useShell();
   const selected = activeTab(segment);

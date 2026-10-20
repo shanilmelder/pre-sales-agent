@@ -1,0 +1,24 @@
+# Decoy: the specialists raise unrelated points; nothing contradicts.
+findings:
+  engineering_agent:
+    - key: eng-floor
+      kind: risk
+      severity: high
+      title: Floor flatness unknown for the shuttle racking
+      detail: No floor survey exists; shuttle racking needs flatness to DIN 15185.
+      requirements: [2]
+  pm_agent:
+    - key: pm-permits
+      kind: dependency
+      severity: medium
+      title: Building permit for the mezzanine takes twelve weeks
+      detail: The local authority needs about twelve weeks to approve the mezzanine.
+      requirements: [3]
+  security_agent:
+    - key: sec-logging
+      kind: constraint
+      severity: medium
+      title: Audit logs must be kept for one year
+      detail: The customer's policy keeps application audit logs for twelve months.
+      requirements: [4]
+expected: []

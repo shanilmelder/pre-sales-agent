@@ -55,6 +55,7 @@ from app.modules.registry.domain.registry import (
     ConfigVersion,
     RegisteredAgent,
     runs_tasks,
+    seed_config_version_id,
 )
 
 __all__ = [
@@ -104,5 +105,6 @@ __all__ = [
     "register_agent",
     "require_enabled",
     "runs_tasks",
+    "seed_config_version_id",
     "set_status",
 ]

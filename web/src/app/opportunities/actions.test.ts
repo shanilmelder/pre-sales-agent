@@ -31,6 +31,7 @@ import {
   confirmAllRequirements,
   confirmRequirement,
   copyClarificationQuestions,
+  countOpenConflicts,
   countOpenGaps,
   createOpportunity,
   editClarificationQuestion,
@@ -2088,5 +2089,28 @@ describe("countOpenGaps (Story 4.7)", () => {
     api.GET.mockResolvedValueOnce({ response: new Response(null, { status: 500 }) });
     expect(await countOpenGaps(OPP_ID)).toBeNull();
     expect(await countOpenGaps("nope")).toBeNull();
+  });
+});
+
+describe("countOpenConflicts (Story 6.2)", () => {
+  it("is the open-plus-escalated count, null on a failed read or a bad id", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockResolvedValueOnce({
+      data: {
+        conflicts: [{ status: "open" }, { status: "resolved" }, { status: "escalated" }],
+        open_count: 2,
+        reviewers: [],
+      },
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await countOpenConflicts(OPP_ID)).toBe(2);
+    expect(api.GET).toHaveBeenLastCalledWith("/api/v1/opportunities/{opportunity_id}/conflicts", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    api.GET.mockResolvedValueOnce({ response: new Response(null, { status: 500 }) });
+    expect(await countOpenConflicts(OPP_ID)).toBeNull();
+    api.GET.mockClear();
+    expect(await countOpenConflicts("nope")).toBeNull();
+    expect(api.GET).not.toHaveBeenCalled();
   });
 });

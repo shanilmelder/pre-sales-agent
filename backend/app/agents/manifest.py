@@ -34,6 +34,8 @@ from pydantic import TypeAdapter
 
 from app.agents.clarification_agent.agent import AnswersTask, ClarificationTask
 from app.agents.clarification_agent.schema import AnswerMatchOutput, ClarificationOutput
+from app.agents.conflict_agent.agent import ConflictTask
+from app.agents.conflict_agent.schema import ConflictOutput
 from app.agents.contract import CONTRACT_VERSION
 from app.agents.engineering_agent.schema import EngineeringOutput
 from app.agents.estimating_agent.agent import AssumptionsTask, EstimatingTask
@@ -80,6 +82,8 @@ class SchemaVersion:
 SCHEMA_VERSIONS: tuple[SchemaVersion, ...] = (
     SchemaVersion("clarification_agent", "input", 1, ClarificationTask | AnswersTask, "1"),
     SchemaVersion("clarification_agent", "output", 1, ClarificationOutput | AnswerMatchOutput, "1"),
+    SchemaVersion("conflict_agent", "input", 1, ConflictTask, "1"),
+    SchemaVersion("conflict_agent", "output", 1, ConflictOutput, "1"),
     SchemaVersion("engineering_agent", "input", 1, SpecialistTask, "1"),
     SchemaVersion("engineering_agent", "output", 1, EngineeringOutput, "1"),
     SchemaVersion("estimating_agent", "input", 1, EstimatingTask | AssumptionsTask, "1"),

@@ -1,6 +1,7 @@
 """Persistence for Conflicts and their positions (Stories 6.1 and 6.3). Runs inside the
 caller's Unit of Work."""
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -10,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.modules.conflicts.adapters.models import ConflictRow, PositionRow
+from app.modules.conflicts.adapters.models import ConflictRow, DetectionRow, PositionRow
 from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork
 
@@ -61,6 +62,7 @@ class PositionRecord:
     requirement_id: UUID | None
     requirement_version: int | None
     summary: str = field(repr=False)
+    finding_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +77,23 @@ class NewPosition:
     requirement_id: UUID | None
     requirement_version: int | None
     summary: str = field(repr=False)
+    finding_id: UUID | None = None
+
+
+EVENTS_CHANNEL = "psa_events"
+"""The NOTIFY channel of the per-Opportunity event stream (AD-30), shared with workflows."""
+CONFLICTS_SOURCE = "conflicts"
+
+
+async def notify_conflicts_changed(uow: UnitOfWork, opportunity_id: UUID) -> None:
+    """Tell the Opportunity's event stream that its Conflicts changed (Story 6.2). Delivered
+    when the Unit of Work commits, and only then; Postgres folds identical notifications of
+    one transaction into one. Ids only."""
+    payload = json.dumps({"opportunity_id": str(opportunity_id), "source": CONFLICTS_SOURCE})
+    await uow.session.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {"channel": EVENTS_CHANNEL, "payload": payload},
+    )
 
 
 async def lock_opportunity(uow: UnitOfWork, opportunity_id: UUID) -> None:
@@ -176,6 +195,7 @@ async def insert_conflict(
                     "value": p.value,
                     "requirement_id": p.requirement_id,
                     "requirement_version": p.requirement_version,
+                    "finding_id": p.finding_id,
                 }
                 for n, p in enumerate(positions, start=1)
             ],
@@ -184,13 +204,58 @@ async def insert_conflict(
 
 
 async def latest_pass(uow: UnitOfWork, run_id: UUID) -> int:
-    """The run's highest stored detection pass (0 before any Conflict of it)."""
-    found = (
+    """The run's highest detection pass (0 before the first): recorded passes, and the
+    Conflicts stored before passes were recorded."""
+    recorded = (
+        await uow.session.execute(
+            select(func.max(DetectionRow.detection_pass)).where(DetectionRow.run_id == run_id)
+        )
+    ).scalar_one_or_none()
+    stored = (
         await uow.session.execute(
             select(func.max(ConflictRow.detection_pass)).where(ConflictRow.run_id == run_id)
         )
     ).scalar_one_or_none()
-    return found or 0
+    return max(recorded or 0, stored or 0)
+
+
+async def record_detection(
+    uow: UnitOfWork, *, opportunity_id: UUID, run_id: UUID, detection_pass: int
+) -> None:
+    """Record a detection pass of the run (Story 6.2); a second record of it changes
+    nothing."""
+    await uow.session.execute(
+        pg_insert(DetectionRow)
+        .values(run_id=run_id, detection_pass=detection_pass, opportunity_id=opportunity_id)
+        .on_conflict_do_nothing(index_elements=["run_id", "detection_pass"])
+    )
+
+
+async def latest_detection(uow: UnitOfWork, opportunity_id: UUID) -> tuple[UUID, int] | None:
+    """The Opportunity's newest detection pass as (run id, pass); None before the first."""
+    row = (
+        await uow.session.execute(
+            select(DetectionRow.run_id, DetectionRow.detection_pass)
+            .where(DetectionRow.opportunity_id == opportunity_id)
+            .order_by(DetectionRow.created_at.desc(), DetectionRow.detection_pass.desc())
+            .limit(1)
+        )
+    ).one_or_none()
+    return None if row is None else (row[0], row[1])
+
+
+async def fingerprints_of_pass(
+    uow: UnitOfWork, run_id: UUID, detection_pass: int, *, detected_by: str
+) -> list[str]:
+    """The fingerprints of the Conflicts a detector stored in the run's detection pass."""
+    rows = await uow.session.execute(
+        select(ConflictRow.fingerprint).where(
+            ConflictRow.run_id == run_id,
+            ConflictRow.detection_pass == detection_pass,
+            ConflictRow.detected_by == detected_by,
+        )
+    )
+    return list(rows.scalars())
 
 
 async def get_by_fingerprint(
@@ -409,6 +474,7 @@ async def positions_of(uow: UnitOfWork, conflict_ids: Sequence[UUID]) -> list[Po
             requirement_id=row.requirement_id,
             requirement_version=row.requirement_version,
             summary=row.summary,
+            finding_id=row.finding_id,
         )
         for row in rows.scalars()
     ]

@@ -19,7 +19,10 @@ import {
   type ConflictChoice,
   type ConflictDecisionResult,
 } from "@/app/opportunities/actions";
-import { ConflictStatusPill } from "@/components/opportunities/conflict-status-pill";
+import {
+  ConflictStatusPill,
+  DetectedFromTextTag,
+} from "@/components/opportunities/conflict-status-pill";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -34,6 +37,7 @@ import {
   estimateEffect,
   HOURS_REQUIRED,
   isEnteredHours,
+  isFromText,
   positionName,
   positionRole,
   positionSource,
@@ -45,6 +49,7 @@ import {
   type ConflictPosition,
   type Person,
 } from "@/lib/conflicts";
+import { kindLabel, type FindingKind } from "@/lib/assessments";
 import { codePointLength } from "@/lib/opportunities";
 
 type ConflictRequirement = NonNullable<ConflictPosition["requirement"]>;
@@ -90,8 +95,10 @@ const sameRequirement = (
   b: ConflictRequirement | null,
 ) => a !== null && b !== null && a.id === b.id && a.version === b.version;
 
-/** One position's content: the agent by role (or the Estimate), the value in tabular figures,
- * its Requirement chip when it differs from the Conflict's, and the source version. */
+/** One position's content: the agent by role (or the Estimate), the cited Finding's title and
+ * kind for a Conflict found in the text (Story 6.2), the value (or the Finding's stance) in
+ * tabular figures, its Requirement chip when it differs from the Conflict's, and the source
+ * version. */
 function PositionBody({
   position,
   shown,
@@ -112,7 +119,21 @@ function PositionBody({
           </span>
         ) : null}
       </span>
-      <span className="text-body-strong [font-variant-numeric:tabular-nums]">
+      {position.finding ? (
+        <span className="flex min-w-0 flex-col gap-0.5" data-testid="position-finding">
+          <span className="text-meta text-muted-foreground">
+            {kindLabel(position.finding.kind as FindingKind)}
+          </span>
+          <span className="min-w-0 break-words text-label">{position.finding.title}</span>
+        </span>
+      ) : null}
+      <span
+        className={
+          position.finding
+            ? "min-w-0 break-words text-body"
+            : "text-body-strong [font-variant-numeric:tabular-nums]"
+        }
+      >
         {position.summary}
       </span>
       {requirement && !sameRequirement(requirement, shown) ? (
@@ -558,6 +579,7 @@ export function ConflictInspector({
         <div className="flex flex-wrap items-center gap-2">
           <SeverityPill severity={conflict.severity} />
           <ConflictStatusPill status={conflict.status} />
+          {isFromText(conflict) ? <DetectedFromTextTag /> : null}
         </div>
         <h3
           id={headingId}

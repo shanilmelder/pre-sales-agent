@@ -25,6 +25,11 @@
         "v1.md": "49c51ac4b2b721f923f87229db88723d5a5b49ce6552d6b8bf7db69c01b72a8c"
       }
     },
+    "conflict_agent": {
+      "1": {
+        "v1.md": "c05a8e73046ad5ea9c9c36ce0f68ae8a03179bbcf8c8d16a7a52f11baf8ac82c"
+      }
+    },
     "engineering_agent": {
       "1": {
         "v1.md": "9ca6fbf7f03046ecf5d0a391671736989328ae1d9ddbb7d6cbffd09e448c5b9f"
@@ -74,6 +79,20 @@
         "1": {
           "contract_version": "1",
           "sha256": "6c53d80dae24c1a20febf308f16da03eb8ab08ee37c5b2c03b139c02066e2374"
+        }
+      }
+    },
+    "conflict_agent": {
+      "input": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "8eb46d613f91397252c47ac9989320530aaa32514e083426ea64cd0ed7ccbf50"
+        }
+      },
+      "output": {
+        "1": {
+          "contract_version": "1",
+          "sha256": "6bf0316543cecedc21b871687c1be1293e1d72105f8c54ed31fd4e76e18d7d54"
         }
       }
     },

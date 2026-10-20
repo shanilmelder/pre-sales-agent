@@ -1,0 +1,37 @@
+# Engineering designs SSO against the on-prem directory; Security requires a cloud IdP.
+findings:
+  engineering_agent:
+    - key: eng-sso
+      kind: constraint
+      severity: high
+      title: Single sign-on against the on-premises Active Directory
+      detail: >-
+        The WMS client and the operator terminals authenticate directly against the site's
+        on-premises Active Directory over LDAPS; no internet dependency for logins.
+      requirements: [4]
+    - key: eng-throughput
+      kind: risk
+      severity: medium
+      title: Peak of 3,000 order lines per hour needs two pick stations
+      detail: The throughput Requirement implies a second pick station at seasonal peak.
+      requirements: [1]
+  pm_agent:
+    - key: pm-golive
+      kind: dependency
+      severity: medium
+      title: Go-live depends on the Q3 IT change freeze
+      detail: The customer's IT freezes changes from July to September; cut-over must avoid it.
+      requirements: [2]
+  security_agent:
+    - key: sec-idp
+      kind: constraint
+      severity: critical
+      title: Cloud identity provider with MFA is mandatory for all logins
+      detail: >-
+        The customer's security policy requires every application login to go through their
+        cloud identity provider (OIDC) with MFA; direct LDAP binds to on-prem AD are not
+        allowed for new systems.
+      requirements: [4]
+expected:
+  - type: architecture
+    findings: [eng-sso, sec-idp]

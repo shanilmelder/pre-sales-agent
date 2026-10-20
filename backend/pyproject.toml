@@ -248,7 +248,11 @@ forbidden_modules = [
     "app.modules.workflows",
 ]
 # Story 6.3: only the routes hand estimates' public decision functions to the commands.
-ignore_imports = ["app.modules.conflicts.api.routes -> app.modules.estimates.application.public"]
+# Story 6.2: `application/findings.py` reads assessments' Findings at call time.
+ignore_imports = [
+    "app.modules.conflicts.api.routes -> app.modules.estimates.application.public",
+    "app.modules.conflicts.application.findings -> app.modules.assessments.application.public",
+]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]

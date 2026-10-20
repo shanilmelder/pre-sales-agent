@@ -144,3 +144,46 @@ Every annotation is still `annotator: draft`; the report says how many are draft
 
 To grow the judged Evidence, copy pairs from `review-pending.yaml` into the Opportunity's
 `evidence:` with the expert's `supported` verdict.
+
+## Semantic Conflict detection (`make eval-conflicts`)
+
+Story 6.2 records a precision/recall baseline for `conflict_agent`, which compares the
+specialists' free-text Findings and proposes Conflicts (`architecture`, `assumption`,
+`evidence`, `scope`). It is separate from `make eval`: no eval database, nothing stored in the
+Agent Registry, no gate.
+
+```sh
+make eval-conflicts                                    # every case, PSA_MODEL_PROFILE_CHAT
+make eval-conflicts ARGS="--only scope-label-printing" # one case (repeatable)
+make eval-conflicts ARGS="--profile demo-chat"         # another model profile
+```
+
+Each case in `conflicts/<name>.yaml` holds synthetic Findings per specialist and the Conflicts
+a reviewer expects:
+
+```yaml
+findings:
+  engineering_agent:            # engineering_agent, pm_agent, security_agent
+    - key: eng-sso              # unique in the case; `expected` cites it
+      kind: constraint          # risk | constraint | dependency | opportunity (default risk)
+      severity: high            # low | medium | high | critical (default medium)
+      title: Single sign-on against the on-premises Active Directory
+      detail: The terminals authenticate directly against the on-prem AD.
+      requirements: [4]         # cited Requirement numbers (R4), optional
+  security_agent:
+    - key: sec-idp
+      ...
+expected:                       # [] for a decoy with no Conflict
+  - type: architecture
+    findings: [eng-sso, sec-idp]
+```
+
+The runner sends each case's Findings to the agent (prompt 1) on the live ModelGateway (no
+call rows are written), validates the reply with the same pure validation the job uses, and
+matches a predicted Conflict to an unmatched expected one when the type is equal and they
+share at least two Findings. It prints precision and recall per type and overall, and writes
+`out/conflicts-<timestamp>/report.json` (per-type and overall counts, each case's expected and
+predicted Conflicts by Finding key, and any case whose model call failed, counted as predicting
+nothing). Exit `0` once the report is written, `2` for an invalid or unknown case.
+
+There are six cases: one per type and two decoys (an aligned design, unrelated topics).

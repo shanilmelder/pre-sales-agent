@@ -74,7 +74,8 @@ class RuleInputs:
 @dataclass(frozen=True, slots=True)
 class PositionCandidate:
     """One side of a Conflict. An Assessment position names its agent and Assessment
-    version; the Estimate position its Estimate Version. `value`: hours, or None."""
+    version; the Estimate position its Estimate Version. `value`: hours, or None.
+    `finding_id`: the Finding a semantic Conflict's position cites (Story 6.2)."""
 
     source: PositionSource
     summary: str = field(repr=False)
@@ -86,6 +87,7 @@ class PositionCandidate:
     estimate_version: int | None = None
     requirement_id: UUID | None = None
     requirement_version: int | None = None
+    finding_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

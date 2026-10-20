@@ -86,15 +86,27 @@ export function useOpportunityEvents(
  * Questions or answer suggestions change (no content: readers re-read). */
 export const GAPS_CHANGED = "gaps.changed";
 
-type GapsSubscriber = { changed: () => void; connected: (on: boolean) => void };
-type SharedSource = { source: EventSource; open: boolean; subscribers: Set<GapsSubscriber> };
+/** Story 6.2: the id-less frame the stream sends when the Opportunity's Conflicts change (a
+ * Conflict raised or resolved by detection, or resolved or escalated by a person). */
+export const CONFLICTS_CHANGED = "conflicts.changed";
 
-/** One EventSource per Opportunity, shared by every `useGapsEvents` subscriber (the tab
- * badge, the Gaps tab, the Overview) and closed when the last one leaves, so the page doesn't
- * use up the browser's connections to the origin. */
+/** The id-less "re-read" frames a subscriber can follow. */
+export type ChangeFrame = typeof GAPS_CHANGED | typeof CONFLICTS_CHANGED;
+const CHANGE_FRAMES: readonly ChangeFrame[] = [GAPS_CHANGED, CONFLICTS_CHANGED];
+
+type ChangeSubscriber = {
+  frame: ChangeFrame;
+  changed: () => void;
+  connected: (on: boolean) => void;
+};
+type SharedSource = { source: EventSource; open: boolean; subscribers: Set<ChangeSubscriber> };
+
+/** One EventSource per Opportunity, shared by every `useGapsEvents` and `useConflictsEvents`
+ * subscriber (the tab badges, the Gaps and Conflicts tabs, the Overview) and closed when the
+ * last one leaves, so the page doesn't use up the browser's connections to the origin. */
 const sharedSources = new Map<string, SharedSource>();
 
-function subscribeGaps(opportunityId: string, subscriber: GapsSubscriber): () => void {
+function subscribeChanges(opportunityId: string, subscriber: ChangeSubscriber): () => void {
   let shared = sharedSources.get(opportunityId);
   if (!shared) {
     const source = new EventSource(eventsUrl(opportunityId));
@@ -111,9 +123,11 @@ function subscribeGaps(opportunityId: string, subscriber: GapsSubscriber): () =>
       created.open = false;
       for (const s of [...created.subscribers]) s.connected(false);
     });
-    source.addEventListener(GAPS_CHANGED, () => {
-      for (const s of [...created.subscribers]) s.changed();
-    });
+    for (const frame of CHANGE_FRAMES) {
+      source.addEventListener(frame, () => {
+        for (const s of [...created.subscribers]) if (s.frame === frame) s.changed();
+      });
+    }
     sharedSources.set(opportunityId, created);
     shared = created;
   }
@@ -133,14 +147,11 @@ function subscribeGaps(opportunityId: string, subscriber: GapsSubscriber): () =>
   };
 }
 
-/** Subscribe to the Opportunity's `gaps.changed` frames while `enabled`. `onChange` runs for
- * each and whenever the stream (re)connects. Returns whether the stream is connected; while it
- * isn't, callers keep their own polling. Every subscriber of one Opportunity shares a single
- * EventSource. */
-export function useGapsEvents(
+function useChangeEvents(
+  frame: ChangeFrame,
   opportunityId: string,
   onChange: () => void,
-  enabled = true,
+  enabled: boolean,
 ): boolean {
   const [connected, setConnected] = useState(false);
   const handler = useRef(onChange);
@@ -150,7 +161,8 @@ export function useGapsEvents(
 
   useEffect(() => {
     if (!enabled || typeof EventSource === "undefined") return;
-    const unsubscribe = subscribeGaps(opportunityId, {
+    const unsubscribe = subscribeChanges(opportunityId, {
+      frame,
       changed: () => handler.current(),
       connected: setConnected,
     });
@@ -158,7 +170,30 @@ export function useGapsEvents(
       unsubscribe();
       setConnected(false);
     };
-  }, [opportunityId, enabled]);
+  }, [frame, opportunityId, enabled]);
 
   return connected;
+}
+
+/** Subscribe to the Opportunity's `gaps.changed` frames while `enabled`. `onChange` runs for
+ * each and whenever the stream (re)connects. Returns whether the stream is connected; while it
+ * isn't, callers keep their own polling. Every subscriber of one Opportunity shares a single
+ * EventSource. */
+export function useGapsEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  return useChangeEvents(GAPS_CHANGED, opportunityId, onChange, enabled);
+}
+
+/** Subscribe to the Opportunity's `conflicts.changed` frames while `enabled` (Story 6.2: the
+ * Conflicts tab and its badge). `onChange` runs for each and whenever the stream (re)connects.
+ * Returns whether the stream is connected. Shares the EventSource with `useGapsEvents`. */
+export function useConflictsEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  return useChangeEvents(CONFLICTS_CHANGED, opportunityId, onChange, enabled);
 }

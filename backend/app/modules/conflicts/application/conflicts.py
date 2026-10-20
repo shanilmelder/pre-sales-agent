@@ -16,10 +16,13 @@
   - resolved by the system, or none: a new, unlinked `open` Conflict.
 - `detect_for_run`: at the end of an assessment run (in its Unit of Work), run the rules over
   each agent's current Assessment and the current Estimate draft as a new detection pass of
-  the run (1 + the highest pass stored for it: a task retry finishes the run again), raise
-  what they find, and resolve every `open` or `escalated` rule Conflict they no longer
-  raise, with a reason naming the source that changed ("No longer present in PM Assessment
-  v2").
+  the run (1 + the highest pass recorded for it: a task retry finishes the run again; the
+  pass is recorded even when it raises nothing, Story 6.2), raise what they find, and
+  resolve every `open` or `escalated` rule Conflict they no longer raise, with a reason
+  naming the source that changed ("No longer present in PM Assessment v2"). Semantic
+  Conflicts (Story 6.2, `semantic.py`) are left alone.
+- Every write that changes what the Conflicts tab shows also sends `conflicts.changed` on
+  the Opportunity's event stream (Story 6.2; delivered on commit, ids only).
 - `list_open`: the Opportunity's open and escalated Conflicts (no authorization; for other
   modules).
 - `open_by_requirement`: its open and escalated `effort` and `scope` Conflicts by Requirement
@@ -38,7 +41,9 @@ from uuid import UUID
 
 from app.modules.conflicts.adapters import repository as repo
 from app.modules.conflicts.adapters.repository import ConflictRecord, NewPosition, PositionRecord
+from app.modules.conflicts.application import findings as assessment_findings
 from app.modules.conflicts.application.models import (
+    ConflictFinding,
     ConflictPosition,
     ConflictRequirement,
     ConflictsView,
@@ -103,6 +108,15 @@ class RaisedConflict:
     created: bool
 
 
+@dataclass(frozen=True, slots=True)
+class Detection:
+    """What a rule detection did: its detection pass of the run and the Conflicts it
+    raised."""
+
+    detection_pass: int
+    raised: list[UUID]
+
+
 async def raise_conflict(
     uow: UnitOfWork,
     *,
@@ -162,6 +176,7 @@ async def raise_conflict(
                 requirement_id=p.requirement_id,
                 requirement_version=p.requirement_version,
                 summary=p.summary,
+                finding_id=p.finding_id,
             )
             for p in candidate.positions
         ],
@@ -250,11 +265,15 @@ async def detect_for_run(
     run_id: UUID,
     snapshots: Sequence[AssessmentSnapshot],
     estimate: EstimateSnapshot | None,
-) -> list[UUID]:
+) -> Detection:
     """Run the rules for the finished run and record the outcome (see the module docstring).
-    Returns the ids of the Conflicts the rules raised in this pass."""
+    Returns the detection pass (recorded, Story 6.2) and the ids of the Conflicts the rules
+    raised in it."""
     await repo.lock_opportunity(uow, opportunity_id)
     detection_pass = await repo.latest_pass(uow, run_id) + 1
+    await repo.record_detection(
+        uow, opportunity_id=opportunity_id, run_id=run_id, detection_pass=detection_pass
+    )
     active = await intake.active_requirement_snapshots(uow, opportunity_id)
     inputs = RuleInputs(
         assessments=list(snapshots),
@@ -295,6 +314,8 @@ async def detect_for_run(
         if await repo.resolve(uow, conflict.id, reason=reason):
             await _trace_resolved(uow, conflict, run_id, "no_longer_present", _SYSTEM)
             resolved += 1
+    if created or resolved:
+        await repo.notify_conflicts_changed(uow, opportunity_id)  # Story 6.2: live tab
     _log.info(
         "conflicts.detected",
         extra={
@@ -306,7 +327,7 @@ async def detect_for_run(
             "resolved_count": resolved,
         },
     )
-    return raised
+    return Detection(detection_pass=detection_pass, raised=raised)
 
 
 async def list_open(uow: UnitOfWork, opportunity_id: UUID) -> list[OpenConflict]:
@@ -451,6 +472,9 @@ async def conflicts_view(
         s.id: s.number for s in await intake.active_requirement_snapshots(uow, opportunity_id)
     }
     texts = await intake.requirement_version_texts(uow, opportunity_id, list(refs))
+    titles = await assessment_findings.finding_titles(
+        uow, sorted({p.finding_id for p in positions if p.finding_id is not None}, key=str)
+    )
     reviewers = reviewer_ids(resource, actor.user_id)
     people: set[UUID] = set(reviewers)
     for c in records:
@@ -492,6 +516,12 @@ async def conflicts_view(
             return None
         return names.get(user_id, UNKNOWN_PERSON)
 
+    def finding(finding_id: UUID | None) -> ConflictFinding | None:
+        found = None if finding_id is None else titles.get(finding_id)
+        if found is None:
+            return None
+        return ConflictFinding(id=str(found.id), title=found.title, kind=found.kind)
+
     def person(user_id: UUID | None) -> Person | None:
         if user_id is None:
             return None
@@ -513,6 +543,7 @@ async def conflicts_view(
                 summary=p.summary,
                 value=None if p.value is None else float(p.value),
                 requirement=chip(p.requirement_id, p.requirement_version),
+                finding=finding(p.finding_id),
             )
         )
     views: list[ConflictView] = []

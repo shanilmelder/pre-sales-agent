@@ -1,4 +1,6 @@
-import { statusInfo, type ConflictStatus } from "@/lib/conflicts";
+import { TextSearchIcon } from "lucide-react";
+
+import { DETECTED_FROM_TEXT, statusInfo, type ConflictStatus } from "@/lib/conflicts";
 import { cn } from "@/lib/utils";
 
 /** A Conflict's status: always an icon and a label, never colour alone. 20px, fully
@@ -14,6 +16,20 @@ export function ConflictStatusPill({ status }: { status: ConflictStatus }) {
     >
       <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
       {known.label}
+    </span>
+  );
+}
+
+/** Story 6.2: "Detected from text" on a Conflict the Conflict Agent found in the Findings'
+ * text. An icon and a label, in the agent tone, never colour alone. */
+export function DetectedFromTextTag() {
+  return (
+    <span
+      data-testid="detected-from-text"
+      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-border bg-background pr-1.5 pl-1 text-meta text-muted-foreground"
+    >
+      <TextSearchIcon className="size-3 shrink-0 text-agent" aria-hidden="true" />
+      {DETECTED_FROM_TEXT}
     </span>
   );
 }
