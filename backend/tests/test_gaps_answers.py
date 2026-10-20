@@ -48,6 +48,7 @@ from tests.test_intake_extraction import (
 from tests.test_intake_parse_job import _alembic
 from tests.test_intake_requirement_edits import _list, _patch
 from tests.test_opportunities import _add, _user
+from tests.test_workflows_events import reader
 
 storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
@@ -723,15 +724,14 @@ def test_an_answer_sends_a_gaps_changed_frame_on_the_event_stream(
 
     async def scenario() -> str:
         engine = create_engine(Settings(database_url=db_url))
-        stream = stream_events.event_stream(engine, db_url, UUID(opp["id"]), None, keepalive_s=0.2)
+        stream = stream_events.event_stream(
+            engine, db_url, UUID(opp["id"]), None, actor=reader(opp), keepalive_s=0.2
+        )
         try:
             assert await anext(stream) == ": connected\n\n"
             resp = _answer(client, headers, opp["id"], questions[SAP])
             assert resp.status_code == 200, resp.text
-            while True:
-                chunk = await anext(stream)
-                if not chunk.startswith(":"):
-                    return chunk
+            return await _id_less_frame(stream)
         finally:
             await stream.aclose()
             await engine.dispose()
@@ -741,19 +741,27 @@ def test_an_answer_sends_a_gaps_changed_frame_on_the_event_stream(
     assert frame == 'event: gaps.changed\ndata: {"source": "gaps"}\n\n'
 
 
-def _frame_after(db_url: str, opp_id: str, action: Callable[[Any], Awaitable[None]]) -> str:
-    """The first frame the Opportunity's stream sends after `action(engine)`."""
+async def _id_less_frame(stream: Any) -> str:
+    """The next frame without an id: not a comment, nor a trace or progress frame (Story
+    2.3 streams the trace events the same change appends)."""
+    while True:
+        chunk: str = await anext(stream)
+        if not chunk.startswith(":") and not chunk.startswith("id: "):
+            return chunk
+
+
+def _frame_after(db_url: str, opp: dict[str, Any], action: Callable[[Any], Awaitable[None]]) -> str:
+    """The first id-less frame the Opportunity's stream sends after `action(engine)`."""
 
     async def scenario() -> str:
         engine = create_engine(Settings(database_url=db_url))
-        stream = stream_events.event_stream(engine, db_url, UUID(opp_id), None, keepalive_s=0.2)
+        stream = stream_events.event_stream(
+            engine, db_url, UUID(opp["id"]), None, actor=reader(opp), keepalive_s=0.2
+        )
         try:
             assert await anext(stream) == ": connected\n\n"
             await action(engine)
-            while True:
-                chunk = await anext(stream)
-                if not chunk.startswith(":"):
-                    return chunk
+            return await _id_less_frame(stream)
         finally:
             await stream.aclose()
             await engine.dispose()
@@ -778,7 +786,7 @@ def test_a_stored_suggestion_sends_a_gaps_changed_frame(
         assert job is not None
         assert await run_job(engine, job, extraction_tests.LEASE) == "succeeded"
 
-    assert _frame_after(db_url, opp["id"], run_match) == GAPS_CHANGED_FRAME
+    assert _frame_after(db_url, opp, run_match) == GAPS_CHANGED_FRAME
     assert len(events(sync_engine, opp["id"], SUGGESTED)) == 1
 
 
@@ -792,7 +800,7 @@ def test_a_dismissal_sends_a_gaps_changed_frame(
         resp = _dismiss(client, headers, opp["id"], sap, {"reason_kind": "not_relevant"})
         assert resp.status_code == 200, resp.text
 
-    assert _frame_after(db_url, opp["id"], dismiss) == GAPS_CHANGED_FRAME
+    assert _frame_after(db_url, opp, dismiss) == GAPS_CHANGED_FRAME
 
 
 # --- review fixes ---------------------------------------------------------------------------

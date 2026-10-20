@@ -5,6 +5,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, func, insert, select, text, tuple_, update
@@ -14,12 +15,12 @@ from app.modules.workflows.adapters.models import (
     WorkflowRunRow,
     WorkflowTaskRow,
 )
+from app.platform.events import EVENTS_CHANNEL
 from app.platform.ids import new_id
+from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork
 
 _IN_PROGRESS = ("queued", "running")
-EVENTS_CHANNEL = "psa_events"
-"""The NOTIFY channel of the per-Opportunity event stream (AD-30)."""
 PROGRESS_SOURCE = "workflows_progress"
 
 
@@ -71,6 +72,19 @@ class ProgressRecord:
     subject_id: UUID
     subject_version: int | None
     summary: str = field(repr=False)
+    occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TraceRecord:
+    """What the event stream reads of a trace row (Story 2.3): never its payload."""
+
+    id: UUID
+    opportunity_id: UUID | None
+    event_type: str
+    subject_type: str
+    subject_id: UUID
+    subject_version: int | None
     occurred_at: datetime
 
 
@@ -437,3 +451,50 @@ async def delete_progress_before(uow: UnitOfWork, older_than: timedelta) -> int:
         .execution_options(synchronize_session=False)
     )
     return len(result.all())
+
+
+# --- trace rows for the event stream (Story 2.3) ----------------------------------------------
+
+_TRACE_COLUMNS = (
+    TraceEvent.id,
+    TraceEvent.opportunity_id,
+    TraceEvent.event_type,
+    TraceEvent.subject_type,
+    TraceEvent.subject_id,
+    TraceEvent.subject_version,
+    TraceEvent.occurred_at,
+)
+
+
+def _trace(row: Any) -> TraceRecord:
+    return TraceRecord(
+        id=row.id,
+        opportunity_id=row.opportunity_id,
+        event_type=row.event_type,
+        subject_type=row.subject_type,
+        subject_id=row.subject_id,
+        subject_version=row.subject_version,
+        occurred_at=row.occurred_at,
+    )
+
+
+async def get_trace(uow: UnitOfWork, event_id: UUID) -> TraceRecord | None:
+    """One trace row's stream fields (the payload is never read)."""
+    row = (
+        await uow.session.execute(select(*_TRACE_COLUMNS).where(TraceEvent.id == event_id))
+    ).one_or_none()
+    return None if row is None else _trace(row)
+
+
+async def trace_after(
+    uow: UnitOfWork, opportunity_id: UUID, after: UUID, *, limit: int = 500
+) -> list[TraceRecord]:
+    """The Opportunity's trace rows after `after` (UUIDv7 ids sort by creation), oldest
+    first."""
+    rows = await uow.session.execute(
+        select(*_TRACE_COLUMNS)
+        .where(TraceEvent.opportunity_id == opportunity_id, TraceEvent.id > after)
+        .order_by(TraceEvent.id)
+        .limit(limit)
+    )
+    return [_trace(row) for row in rows.all()]

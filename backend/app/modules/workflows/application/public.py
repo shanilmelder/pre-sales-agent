@@ -25,6 +25,7 @@ from app.modules.workflows.application.models import (
     AssessmentsView,
     AssessmentTask,
     ProgressEventData,
+    TraceEventData,
 )
 from app.modules.workflows.application.runs import (
     EXECUTE,
@@ -88,6 +89,7 @@ __all__ = [
     "NoGraphRunnerError",
     "NodeTask",
     "ProgressEventData",
+    "TraceEventData",
     "begin_task",
     "cancel_run",
     "complete_task",

@@ -48,6 +48,7 @@ from tests.test_conflicts_resolution import escalate, resolve
 from tests.test_gaps_detection import requirement_rows, rows
 from tests.test_intake_extraction import ASSESS, FakeGateway, drain
 from tests.test_opportunities import BASE, PSE, _add, _user
+from tests.test_workflows_events import reader
 
 storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
@@ -564,7 +565,7 @@ def test_without_a_job_open_semantic_conflicts_citing_superseded_assessments_are
         async def rerun(_: Any) -> None:
             await asyncio.to_thread(assess, client, headers, opp["id"], db_url)
 
-        assert _frame_after(db_url, opp["id"], rerun, CONFLICTS_CHANGED_FRAME) == (
+        assert _frame_after(db_url, opp, rerun, CONFLICTS_CHANGED_FRAME) == (
             CONFLICTS_CHANGED_FRAME
         )
     finally:
@@ -728,16 +729,18 @@ CONFLICTS_CHANGED_FRAME = 'event: conflicts.changed\ndata: {"source": "conflicts
 
 def _frame_after(
     db_url: str,
-    opp_id: str,
+    opp: dict[str, Any],
     action: Callable[[Any], Awaitable[None]],
     wanted: str | None = None,
 ) -> str:
-    """The first frame the Opportunity's stream sends after `action(engine)` (with `wanted`,
-    the first such frame, skipping progress frames)."""
+    """The first id-less frame the Opportunity's stream sends after `action(engine)` (with
+    `wanted`, the first such frame), skipping trace and progress frames (Story 2.3)."""
 
     async def scenario() -> str:
         engine = create_engine(Settings(database_url=db_url))
-        stream = stream_events.event_stream(engine, db_url, UUID(opp_id), None, keepalive_s=0.2)
+        stream = stream_events.event_stream(
+            engine, db_url, UUID(opp["id"]), None, actor=reader(opp), keepalive_s=0.2
+        )
         try:
             assert await anext(stream) == ": connected\n\n"
             await action(engine)
@@ -747,7 +750,9 @@ def _frame_after(
                 if remaining <= 0:
                     raise AssertionError("no matching frame within 10 s")
                 chunk = await asyncio.wait_for(anext(stream), remaining)
-                if not chunk.startswith(":") and (wanted is None or chunk == wanted):
+                if chunk.startswith((":", "id: ")):
+                    continue
+                if wanted is None or chunk == wanted:
                     return chunk
         finally:
             await stream.aclose()
@@ -766,7 +771,7 @@ def test_storing_a_semantic_conflict_sends_a_conflicts_changed_frame(
         assert job is not None
         assert await run_job(engine, job, extraction_tests.LEASE) == "succeeded"
 
-    assert _frame_after(db_url, opp["id"], run_semantic) == CONFLICTS_CHANGED_FRAME
+    assert _frame_after(db_url, opp, run_semantic) == CONFLICTS_CHANGED_FRAME
 
 
 def test_resolving_a_conflict_sends_a_conflicts_changed_frame(
@@ -779,7 +784,7 @@ def test_resolving_a_conflict_sends_a_conflicts_changed_frame(
     async def decide(_: Any) -> None:
         assert resolve(client, headers, opp["id"], view, 1).status_code == 200
 
-    assert _frame_after(db_url, opp["id"], decide) == CONFLICTS_CHANGED_FRAME
+    assert _frame_after(db_url, opp, decide) == CONFLICTS_CHANGED_FRAME
 
 
 def test_escalating_a_conflict_sends_a_conflicts_changed_frame(
@@ -795,7 +800,7 @@ def test_escalating_a_conflict_sends_a_conflicts_changed_frame(
     async def escalated(_: Any) -> None:
         assert escalate(client, headers, opp["id"], view, reviewer_id).status_code == 200
 
-    assert _frame_after(db_url, opp["id"], escalated) == CONFLICTS_CHANGED_FRAME
+    assert _frame_after(db_url, opp, escalated) == CONFLICTS_CHANGED_FRAME
 
 
 def test_a_firing_rule_sends_a_conflicts_changed_frame(
@@ -827,7 +832,7 @@ def test_a_firing_rule_sends_a_conflicts_changed_frame(
         async with unit_of_work(engine) as uow:
             await workflows_runs.detect_conflicts(uow, UUID(opp["id"]), run_row["id"])
 
-    assert _frame_after(db_url, opp["id"], detect) == CONFLICTS_CHANGED_FRAME
+    assert _frame_after(db_url, opp, detect) == CONFLICTS_CHANGED_FRAME
 
 
 def test_a_pass_that_stores_nothing_is_recorded_so_the_next_pass_is_two(
@@ -860,6 +865,6 @@ def test_a_pass_that_stores_nothing_is_recorded_so_the_next_pass_is_two(
 def test_the_stream_maps_conflicts_notifications_to_their_frame() -> None:
     opp = uuid4()
     payload = f'{{"opportunity_id": "{opp}", "source": "conflicts"}}'
-    assert stream_events._notified(payload, opp) == "conflicts"
+    assert stream_events._notified(payload, opp) == ("conflicts", None)
     assert stream_events._notified(payload, uuid4()) is None
     assert stream_events.CONFLICTS_CHANGED_FRAME == CONFLICTS_CHANGED_FRAME

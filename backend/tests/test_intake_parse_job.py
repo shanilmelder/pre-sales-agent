@@ -316,6 +316,13 @@ def test_each_kind_is_parsed_and_its_text_stored(
     assert event["payload"] == {"version": 1, "char_count": len(want)}
     assert (event["actor_type"], event["actor_id"]) == ("system", JOB_TYPE)
     assert event["subject_version"] == 1 and str(event["opportunity_id"]) == opp["id"]
+    # Story 2.3: the Queued -> Parsing move is traced too, before the parse.
+    (started,) = _events(sync_engine, source["id"], "intake.source.parse_started")
+    assert started["payload"] == {"version": 1}
+    assert (started["actor_type"], started["actor_id"]) == ("system", JOB_TYPE)
+    assert started["subject_version"] == 1 and str(started["opportunity_id"]) == opp["id"]
+    assert started["id"] < event["id"]
+    assert _events(sync_engine, source["id"], "intake.source.parse_failed") == []
 
     listed = _list(client, headers, opp["id"])[source["id"]]
     assert listed["parse"] == {"status": "parsed", "error_code": None}
@@ -373,6 +380,11 @@ def test_permanent_failures_finish_the_job_without_retry(
     (job,) = _jobs(sync_engine, source["id"])
     assert (job["status"], job["attempts"], job["last_error"]) == ("succeeded", 1, None)
     assert _events(sync_engine, source["id"], "intake.source.parsed") == []
+    (failed,) = _events(sync_engine, source["id"], "intake.source.parse_failed")
+    assert failed["payload"] == {"version": 1, "error_code": code}
+    assert (failed["actor_type"], failed["actor_id"]) == ("system", JOB_TYPE)
+    assert failed["subject_version"] == 1 and str(failed["opportunity_id"]) == opp["id"]
+    assert len(_events(sync_engine, source["id"], "intake.source.parse_started")) == 1
     assert _list(client, headers, opp["id"])[source["id"]]["parse"] == {
         "status": "failed",
         "error_code": code,
@@ -406,6 +418,10 @@ def test_hang_is_killed_retried_then_failed_with_timeout(
     (job,) = _jobs(sync_engine, source["id"])
     assert (job["status"], job["attempts"]) == ("dead", 2)
     assert job["last_error"] == "ParseTimeoutError: parse exceeded 0.5s"
+    # One start (the retry of a row already `parsing` adds none) and one failure.
+    assert len(_events(sync_engine, source["id"], "intake.source.parse_started")) == 1
+    (failed,) = _events(sync_engine, source["id"], "intake.source.parse_failed")
+    assert failed["payload"] == {"version": 1, "error_code": "timeout"}
     # Privacy: no text or file name in logs, trace or last_error.
     logged = caplog.text + str([r.__dict__ for r in caplog.records])
     for leak in ("secret customer", "secret-name"):
@@ -516,9 +532,11 @@ def test_retry_requeues_a_failed_version(
     assert event["payload"] == {"version": 1, "error_code": "unreadable"}
     assert (event["actor_type"], event["actor_id"]) == ("user", str(member_id))
 
-    # Still corrupt: it fails again, and can be retried again.
+    # Still corrupt: it fails again (traced again), and can be retried again.
     _drain(db_url)
     assert _parse_row(sync_engine, source["id"])["status"] == "failed"
+    assert len(_events(sync_engine, source["id"], "intake.source.parse_started")) == 2
+    assert len(_events(sync_engine, source["id"], "intake.source.parse_failed")) == 2
     assert _retry(client, headers, opp["id"], source["id"]).status_code == 202
 
 

@@ -1,10 +1,10 @@
 // The Opportunity's live event stream (Story 5.2): `GET /api/opportunities/{id}/events`.
 // Same-origin for the browser's EventSource: adds the signed-in user's access token, calls
 // the backend's `GET /api/v1/opportunities/{id}/events` (Server-Sent Events, AD-30) and
-// passes the stream through unbuffered, forwarding `Last-Event-ID` so a reconnect replays
-// what it missed. Closing the browser's connection aborts the backend request. Failures come
-// back as the backend's problem+json (or a local one); the client then falls back to
-// polling. The session itself is guarded by `proxy.ts` (as for `estimate-export`).
+// passes the stream through unbuffered, forwarding `Last-Event-ID` (or, when that header is
+// absent, the `?last_event_id=` query) so a reconnect replays what it missed. Closing the
+// browser's connection aborts the backend request. Failures come back as the backend's
+// problem+json (or a local one); the client then falls back to polling. The session itself is guarded by `proxy.ts` (as for `estimate-export`).
 import { AccessTokenError } from "@auth0/nextjs-auth0/errors";
 
 import { createServerApiClient } from "@/lib/api/server";
@@ -51,7 +51,11 @@ export async function GET(
     }
     throw error;
   }
-  const lastEventId = request.headers.get("Last-Event-ID");
+  // The browser's own reconnects send the header; the client's reopen after the browser
+  // gave up (Story 2.3) can't set headers on an EventSource, so it passes the query instead.
+  const lastEventId =
+    request.headers.get("Last-Event-ID") ||
+    new URL(request.url).searchParams.get("last_event_id");
   try {
     const { data, error, response } = await api.GET(
       "/api/v1/opportunities/{opportunity_id}/events",

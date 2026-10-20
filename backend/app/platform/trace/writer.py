@@ -1,11 +1,13 @@
 """`append`: the only code that writes trace rows (AD-12)."""
 
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import insert
+from sqlalchemy import insert, text
 
 from app.platform.actor import Actor
+from app.platform.events import EVENTS_CHANNEL, TRACE_SOURCE
 from app.platform.ids import new_id
 from app.platform.trace.catalogue import CATALOGUE, TracePayload
 from app.platform.trace.models import TraceEvent
@@ -30,7 +32,9 @@ async def append(
 ) -> UUID:
     """Insert one trace row inside the caller's transaction and return its UUIDv7 id.
 
-    The row commits or rolls back with everything else in the Unit of Work."""
+    The row commits or rolls back with everything else in the Unit of Work. When the row
+    belongs to an Opportunity it also NOTIFYs the event stream (Story 2.3), delivered on
+    commit and carrying ids only: `{event_id, opportunity_id, source: "trace"}`."""
     event_type = getattr(type(payload), "event_type", None)
     if event_type is None or CATALOGUE.get(event_type) is not type(payload):
         raise UnknownTraceEventError(f"{type(payload).__name__} is not in the trace catalogue")
@@ -51,4 +55,16 @@ async def append(
             occurred_at=datetime.now(UTC),
         )
     )
+    if opportunity_id is not None:
+        notification = json.dumps(
+            {
+                "event_id": str(event_id),
+                "opportunity_id": str(opportunity_id),
+                "source": TRACE_SOURCE,
+            }
+        )
+        await uow.session.execute(
+            text("SELECT pg_notify(:channel, :payload)"),
+            {"channel": EVENTS_CHANNEL, "payload": notification},
+        )
     return event_id

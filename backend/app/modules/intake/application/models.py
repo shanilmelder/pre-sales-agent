@@ -49,6 +49,23 @@ class SourceList(BaseModel):
     items: list[Source]
 
 
+class OpportunitySourceText(BaseModel):
+    """The extracted text of a parsed Source version, exactly as stored (Story 2.3).
+    `char_count` is in Unicode code points."""
+
+    version: int = Field(ge=1)
+    char_count: int
+    text: str
+
+
+class OpportunitySourceDownloadLink(BaseModel):
+    """A short-lived signed link to a Source version's original file (Story 2.3). `url` is
+    relative to the API origin."""
+
+    url: str
+    expires_at: datetime
+
+
 class AddTextSource(BaseModel):
     """Pasted text to add as a Source (Story 2.1 Part B). Only its shape is checked here;
     the trimming, length and character rules are the command's, so their rejections carry

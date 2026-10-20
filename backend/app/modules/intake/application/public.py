@@ -14,6 +14,8 @@ from app.modules.intake.application.models import (
     AddTextSource,
     ConfirmAllResult,
     Extraction,
+    OpportunitySourceDownloadLink,
+    OpportunitySourceText,
     Passage,
     PendingChange,
     Requirement,
@@ -42,6 +44,7 @@ from app.modules.intake.application.requirement_refs import (
     requirement_version_texts,
 )
 from app.modules.intake.application.requirements import list_requirements, start_extraction
+from app.modules.intake.application.source_viewer import source_download_link, source_text
 from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
     TEXT_BODY_MAX_BYTES,
@@ -74,6 +77,8 @@ __all__ = [
     "Extraction",
     "FileTextUnreadableError",
     "IncomingFile",
+    "OpportunitySourceDownloadLink",
+    "OpportunitySourceText",
     "Passage",
     "PassageRef",
     "PendingChange",
@@ -115,6 +120,8 @@ __all__ = [
     "requirement_version_texts",
     "resolve_passage",
     "retry_parse",
+    "source_download_link",
+    "source_text",
     "start_extraction",
     "store_upload",
 ]

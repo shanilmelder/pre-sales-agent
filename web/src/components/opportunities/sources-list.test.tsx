@@ -18,7 +18,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadSources,
 }));
 
-import { LiveRegionProvider } from "../shell/live-region";
+import { ShellProviders } from "../shell/shell-context";
 import { SourcesList, SourcesSection } from "./sources-list";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
@@ -50,9 +50,9 @@ function rowFor(name: string) {
 
 function renderSection(initial: Source[], canAdd = true) {
   return render(
-    <LiveRegionProvider>
+    <ShellProviders singleKeyShortcuts>
       <SourcesSection opportunityId={OPP_ID} canAdd={canAdd} initial={initial} />
-    </LiveRegionProvider>,
+    </ShellProviders>,
   );
 }
 

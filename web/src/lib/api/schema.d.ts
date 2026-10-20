@@ -337,6 +337,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/sources/{source_id}/versions/{version}/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Source Text
+         * @description The extracted text of a parsed Source version, exactly as stored. 404 until it is
+         *     parsed. Anyone who can read the Opportunity.
+         */
+        get: operations["get_source_text"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/sources/{source_id}/versions/{version}/download-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Source Download Link
+         * @description A short-lived signed link to a Source version's original file, served unchanged as
+         *     an attachment under its stored file name. Anyone who can read the Opportunity.
+         */
+        post: operations["create_source_download_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/requirements": {
         parameters: {
             query?: never;
@@ -1160,9 +1202,10 @@ export interface paths {
         };
         /**
          * Stream Opportunity Events
-         * @description The Opportunity's live progress: a run queued, each task started and ended, a run
-         *     ended. Reconnect with `Last-Event-ID` to replay what was missed. Anyone who can read the
-         *     Opportunity.
+         * @description The Opportunity's live progress (a run queued, each task started and ended, a run
+         *     ended) and its trace events (e.g. a Source added, parsing started, parsed or failed).
+         *     Reconnect with `Last-Event-ID` to replay what was missed. Anyone who can read the
+         *     Opportunity; the stream ends once they no longer can.
          */
         get: operations["stream_opportunity_events"];
         put?: never;
@@ -3530,6 +3573,33 @@ export interface components {
             page_size: number;
             /** Total */
             total: number;
+        };
+        /**
+         * OpportunitySourceDownloadLink
+         * @description A short-lived signed link to a Source version's original file (Story 2.3). `url` is
+         *     relative to the API origin.
+         */
+        OpportunitySourceDownloadLink: {
+            /** Url */
+            url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
+         * OpportunitySourceText
+         * @description The extracted text of a parsed Source version, exactly as stored (Story 2.3).
+         *     `char_count` is in Unicode code points.
+         */
+        OpportunitySourceText: {
+            /** Version */
+            version: number;
+            /** Char Count */
+            char_count: number;
+            /** Text */
+            text: string;
         };
         /**
          * OpportunityStatus
@@ -6747,6 +6817,230 @@ export interface operations {
                 };
             };
             /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_source_text: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                source_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunitySourceText"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no such Source version in it, or the version is not parsed (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID, or the version is not a positive integer (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_source_download_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                source_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunitySourceDownloadLink"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no such Source version in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID, or the version is not a positive integer (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12759,7 +13053,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Server-Sent Events: `id: <event_id>`, `event: <event_type>`, `data:` the JSON below; a comment line every 15 s keeps the connection open */
+            /** @description Server-Sent Events: `id: <event_id>`, `event: <event_type>`, `data:` the JSON below (a progress frame or a trace frame); a comment line every 15 s keeps the connection open */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -12771,6 +13065,22 @@ export interface operations {
                          * @enum {string}
                          */
                         event_type: "workflows.run.queued" | "workflows.task.started" | "workflows.task.ended" | "workflows.run.ended";
+                        /** Subject Type */
+                        subject_type: string;
+                        /** Subject Id */
+                        subject_id: string;
+                        /** Subject Version */
+                        subject_version: number | null;
+                        /**
+                         * Occurred At
+                         * Format: date-time
+                         */
+                        occurred_at: string;
+                        /** Summary */
+                        summary: string;
+                    } | {
+                        /** Event Type */
+                        event_type: string;
                         /** Subject Type */
                         subject_type: string;
                         /** Subject Id */

@@ -147,6 +147,27 @@ class IntakeSourceAdded(TracePayload):
 
 
 @register
+class IntakeSourceParseStarted(TracePayload):
+    """The worker began parsing a Source version (Story 2.3): its status is now `parsing`.
+    Actor: the worker (`system`)."""
+
+    event_type: ClassVar[str] = "intake.source.parse_started"
+
+    version: int
+
+
+@register
+class IntakeSourceParseFailed(TracePayload):
+    """A Source version's parse failed (Story 2.3): its status is now `failed`. Actor: the
+    worker (`system`). `error_code`: the stable failure code, never the parser's message."""
+
+    event_type: ClassVar[str] = "intake.source.parse_failed"
+
+    version: int
+    error_code: str
+
+
+@register
 class IntakeSourceParsed(TracePayload):
     """A Source version's text was extracted and stored (Story 2.2 Part B). Actor: the
     worker (`system`). `char_count` is in Unicode code points."""

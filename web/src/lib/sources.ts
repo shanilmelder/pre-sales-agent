@@ -103,3 +103,15 @@ export function mergeSources(server: readonly Source[], local: readonly Source[]
 
 /** Polling stops after this long with a parse continuously pending (a reload resumes it). */
 export const PARSE_POLL_LIMIT_MS = 15 * 60 * 1000;
+
+/** The inspector's sentence before a version's text exists (Story 2.3). */
+export const TEXT_PENDING = "Available once parsing finishes";
+/** The inspector's sentence for a version whose parse failed. */
+export const NO_TEXT_EXTRACTED = "No text was extracted from this version.";
+/** The inspector's sentence when the text couldn't be loaded. */
+export const TEXT_LOAD_FAILED = "The text could not be loaded.";
+
+/** The same-origin route that streams a Source version's original file (Story 2.3). */
+export function sourceDownloadHref(opportunityId: string, sourceId: string, version: number): string {
+  return `/api/opportunities/${encodeURIComponent(opportunityId)}/sources/${encodeURIComponent(sourceId)}/versions/${version}/download`;
+}

@@ -73,3 +73,15 @@ class ProgressEventData(BaseModel):
     subject_version: int | None
     occurred_at: datetime
     summary: str
+
+
+class TraceEventData(BaseModel):
+    """The `data` of a trace frame on the event stream (Story 2.3): the trace row's event
+    type, subject and time. `summary` is the event type; the trace payload is never sent."""
+
+    event_type: str
+    subject_type: str
+    subject_id: str
+    subject_version: int | None
+    occurred_at: datetime
+    summary: str
