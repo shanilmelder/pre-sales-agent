@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   OFFLINE_AFTER_MS,
+  useConflictsEvents,
   useEventStreamStatus,
   useGapsEvents,
   useOpportunityEvents,
@@ -101,6 +102,45 @@ describe("useGapsEvents (Story 4.7)", () => {
     expect(FakeSource.instances).toHaveLength(1);
     expect(late).toHaveBeenCalledTimes(1);
     expect(view.getByTestId("b").textContent).toBe("connected");
+  });
+});
+
+function ConflictsProbe({ onChange }: { onChange: () => void }) {
+  useConflictsEvents(ID, onChange);
+  return null;
+}
+
+describe("useConflictsEvents (Story 6.2)", () => {
+  beforeEach(() => {
+    FakeSource.instances = [];
+    vi.stubGlobal("EventSource", FakeSource);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shares the EventSource with useGapsEvents and follows only its own frame", async () => {
+    const gaps = vi.fn();
+    const conflicts = vi.fn();
+    const view = render(
+      <>
+        <Probe name="a" onChange={gaps} />
+        <ConflictsProbe onChange={conflicts} />
+      </>,
+    );
+    expect(FakeSource.instances).toHaveLength(1);
+    const source = FakeSource.instances[0]!;
+    await act(async () => source.emit("open"));
+    expect([gaps.mock.calls.length, conflicts.mock.calls.length]).toEqual([1, 1]);
+
+    await act(async () => source.emit("conflicts.changed"));
+    expect([gaps.mock.calls.length, conflicts.mock.calls.length]).toEqual([1, 2]);
+    await act(async () => source.emit("gaps.changed"));
+    expect([gaps.mock.calls.length, conflicts.mock.calls.length]).toEqual([2, 2]);
+
+    view.unmount();
+    expect(source.closed).toBe(true);
   });
 });
 

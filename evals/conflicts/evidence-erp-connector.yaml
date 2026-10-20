@@ -1,0 +1,31 @@
+# Engineering says the ERP connector is proven; Security says nothing has been verified.
+findings:
+  engineering_agent:
+    - key: eng-connector
+      kind: opportunity
+      severity: low
+      title: Standard SAP S/4HANA connector already proven at this customer
+      detail: >-
+        The customer's existing warehouse already runs our standard S/4HANA IDoc connector, so
+        the interface is proven and needs only configuration.
+      requirements: [1]
+  pm_agent:
+    - key: pm-sap-team
+      kind: dependency
+      severity: medium
+      title: The customer's SAP team is available from March
+      detail: The SAP team has confirmed availability for integration testing from March.
+      requirements: [1]
+  security_agent:
+    - key: sec-unverified
+      kind: risk
+      severity: high
+      title: No evidence of the connector running in the customer's landscape
+      detail: >-
+        Nothing in the documents shows our connector has ever been deployed in the customer's
+        SAP landscape; their integration inventory lists no such interface and the claim is
+        unverified.
+      requirements: [1]
+expected:
+  - type: evidence
+    findings: [eng-connector, sec-unverified]

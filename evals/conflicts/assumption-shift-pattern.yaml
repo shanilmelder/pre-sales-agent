@@ -1,0 +1,36 @@
+# Engineering assumes 24/7 operation; PM plans around a single day shift.
+findings:
+  engineering_agent:
+    - key: eng-247
+      kind: constraint
+      severity: high
+      title: Redundant controls sized for 24/7 operation
+      detail: >-
+        The uptime target assumes the site runs around the clock, seven days a week, so
+        maintenance windows do not exist and the PLCs need hot standby.
+      requirements: [2]
+  pm_agent:
+    - key: pm-dayshift
+      kind: risk
+      severity: medium
+      title: Commissioning planned in the evenings after the single day shift
+      detail: >-
+        The site works one day shift, 06:00 to 14:00, Monday to Friday, so commissioning and
+        testing are planned for the idle evenings and weekends.
+      requirements: [2]
+    - key: pm-training
+      kind: dependency
+      severity: low
+      title: Operator training needs the customer's shift supervisors
+      detail: Training sessions need the shift supervisors released for two days each.
+      requirements: [5]
+  security_agent:
+    - key: sec-remote
+      kind: risk
+      severity: medium
+      title: Vendor remote access needs a jump host
+      detail: Remote support must go through the customer's jump host with session recording.
+      requirements: [3]
+expected:
+  - type: assumption
+    findings: [eng-247, pm-dayshift]

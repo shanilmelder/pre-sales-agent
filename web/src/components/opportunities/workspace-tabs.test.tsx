@@ -226,6 +226,34 @@ describe("the live Gaps badge (Story 4.7)", () => {
     expect(screen.getByTestId("tab-count-gaps").textContent).toBe("2, 2 open");
     expect(FakeSource.last!.url).toBe(`/api/opportunities/${ID}/events`);
   });
+
+  it("follows conflicts.changed frames with the open Conflict count (Story 6.2)", async () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const loadGapCount = vi.fn(async () => 3);
+    const loadConflictCount = vi.fn(async () => 1);
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <AppShell me={ME}>
+          <WorkspaceTabs
+            id={ID}
+            counts={{ gaps: 3 }}
+            loadGapCount={loadGapCount}
+            loadConflictCount={loadConflictCount}
+          >
+            <p>Tab body</p>
+          </WorkspaceTabs>
+        </AppShell>
+      </ShellProviders>,
+    );
+    expect(screen.queryByTestId("tab-count-conflicts")).toBeNull();
+
+    await act(async () => FakeSource.last!.emit("conflicts.changed"));
+
+    expect(loadConflictCount).toHaveBeenCalledWith(ID);
+    expect(loadGapCount).not.toHaveBeenCalled();
+    expect(screen.getByTestId("tab-count-conflicts").textContent).toBe("1, 1 open");
+    expect(screen.getByTestId("tab-count-gaps").textContent).toBe("3, 3 open");
+  });
 });
 
 describe("the connection status bar (Story 2.3)", () => {

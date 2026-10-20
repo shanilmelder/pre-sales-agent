@@ -10,7 +10,9 @@ run or task status.
 
 `current_sizings` and `current_assessment_snapshots` give `workflows` each agent's current
 Assessment when a run finishes (the Estimate is built from them, Story 8.3, and the Conflict
-rules run over them, Story 6.1).
+rules run over them, Story 6.1). `current_finding_snapshots` and `finding_titles` give
+`conflicts` the current Findings for the Conflict Agent and a cited Finding's title and kind
+(Story 6.2).
 
 Logs and trace carry ids, codes and counts only, never Requirement, Gap or Finding text.
 """
@@ -294,6 +296,54 @@ async def current_assessment_snapshots(
         )
         for r in records
     ]
+
+
+async def current_finding_snapshots(
+    uow: UnitOfWork, opportunity_id: UUID
+) -> list[conflicts.FindingSnapshot]:
+    """Every Finding of each agent's current Assessment of the Opportunity (Story 6.2: what
+    the Conflict Agent compares): ids, the agent and Assessment version, kind, severity,
+    title, detail and the cited Requirements (id and version), in agent and Finding order.
+    No authorization."""
+    records = sorted(
+        await repo.current_assessments(uow, opportunity_id),
+        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
+    )
+    by_id = {r.id: r for r in records}
+    found = await repo.findings_of(uow, list(by_id))
+    cited: dict[UUID, list[tuple[UUID, int]]] = {}
+    for link in await repo.requirement_links_for(uow, [f.id for f in found]):
+        cited.setdefault(link.finding_id, []).append(
+            (link.requirement_id, link.requirement_version)
+        )
+    order = {r.id: n for n, r in enumerate(records)}
+    return [
+        conflicts.FindingSnapshot(
+            finding_id=f.id,
+            assessment_id=f.assessment_id,
+            assessment_version=by_id[f.assessment_id].version,
+            agent=by_id[f.assessment_id].agent,
+            position=f.position,
+            kind=f.kind,
+            severity=f.severity,
+            title=f.title,
+            detail=f.detail,
+            requirements=tuple(sorted(cited.get(f.id, []), key=lambda r: str(r[0]))),
+        )
+        for f in sorted(found, key=lambda f: (order[f.assessment_id], f.position))
+    ]
+
+
+async def finding_titles(
+    uow: UnitOfWork, finding_ids: Sequence[UUID]
+) -> dict[UUID, conflicts.FindingTitle]:
+    """The title and kind of each of these Assessment Findings (any Assessment, current or
+    superseded), by id (Story 6.2: a semantic Conflict's position cards). No authorization:
+    the caller has authorized the reader."""
+    return {
+        f.id: conflicts.FindingTitle(id=f.id, kind=f.kind, title=f.title)
+        for f in await repo.findings_by_id(uow, finding_ids)
+    }
 
 
 async def current_sizings(uow: UnitOfWork, opportunity_id: UUID) -> list[estimates.AgentSizing]:

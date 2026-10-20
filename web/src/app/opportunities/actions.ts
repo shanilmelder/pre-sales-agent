@@ -2,6 +2,7 @@
 
 import {
   getAssessments,
+  getConflicts,
   getEstimate,
   getOpportunity,
   getRedTeam,
@@ -697,6 +698,14 @@ export async function loadGaps(opportunityId: unknown): Promise<GapsResult> {
 export async function countOpenGaps(opportunityId: unknown): Promise<number | null> {
   const loaded = await loadGaps(opportunityId);
   return loaded.kind === "ok" ? openGapCount(loaded.list.items) : null;
+}
+
+/** How many of the Opportunity's Conflicts are open or escalated (the Conflicts tab badge,
+ * Story 6.2); null when they can't be read. */
+export async function countOpenConflicts(opportunityId: unknown): Promise<number | null> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return null;
+  const loaded = await getConflicts(opportunityId);
+  return loaded.kind === "ok" ? loaded.conflicts.open_count : null;
 }
 
 /** `POST /api/v1/opportunities/{id}/gap-detections`: detect the Gaps again (the Retry of a

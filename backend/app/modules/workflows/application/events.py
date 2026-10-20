@@ -24,6 +24,14 @@ Clarification Questions or answer suggestions) is forwarded as an id-less frame
     data: {"source": "gaps"}
 
 so the Gaps tab, its badge and the Overview re-read; nothing is replayed for it.
+
+Story 6.2: likewise a NOTIFY `{opportunity_id, source: "conflicts"}` (any write that changes
+what the Conflicts tab shows) is forwarded as
+
+    event: conflicts.changed
+    data: {"source": "conflicts"}
+
+so the Conflicts tab and its badge re-read.
 """
 
 import json
@@ -54,6 +62,10 @@ GAPS_SOURCE = "gaps"
 GAPS_CHANGED_FRAME = 'event: gaps.changed\ndata: {"source": "gaps"}\n\n'
 """The frame for a change to the Opportunity's Gaps (Story 4.7): no id, no content."""
 REPLAY_LIMIT = 500
+CONFLICTS_SOURCE = "conflicts"
+CONFLICTS_CHANGED_FRAME = 'event: conflicts.changed\ndata: {"source": "conflicts"}\n\n'
+"""The frame for a change to the Opportunity's Conflicts (Story 6.2): no id, no content."""
+_CHANGED_FRAMES = {GAPS_SOURCE: GAPS_CHANGED_FRAME, CONFLICTS_SOURCE: CONFLICTS_CHANGED_FRAME}
 _SEEN_MAX = 2000
 _log = get_logger(__name__)
 
@@ -152,14 +164,15 @@ async def _still_readable(engine: AsyncEngine, actor: Principal, opportunity_id:
 
 def _notified(payload: str, opportunity_id: UUID) -> tuple[str, UUID | None] | None:
     """For a NOTIFY about this Opportunity: `(source, event_id)` for a progress or trace
-    row, or `(GAPS_SOURCE, None)` for a change to its Gaps; else None."""
+    row, or `(source, None)` for a change to its Gaps or Conflicts (`GAPS_SOURCE`,
+    `CONFLICTS_SOURCE`); else None."""
     try:
         data = json.loads(payload)
         if UUID(data["opportunity_id"]) != opportunity_id:
             return None
         source = data.get("source")
-        if source == GAPS_SOURCE:
-            return GAPS_SOURCE, None
+        if source in _CHANGED_FRAMES:
+            return str(source), None
         if source not in (PROGRESS_SOURCE, TRACE_SOURCE):
             return None
         return source, UUID(data["event_id"])
@@ -210,7 +223,7 @@ async def event_stream(
                     _log.info("workflows.stream_revoked", extra=ids)
                     return
                 if live is None:
-                    yield GAPS_CHANGED_FRAME
+                    yield _CHANGED_FRAMES[source]
                     continue
                 seen.append(live.id)
                 yield frame(live)

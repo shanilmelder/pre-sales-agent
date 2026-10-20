@@ -3,7 +3,10 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { ConflictInspector } from "@/components/opportunities/conflict-inspector";
-import { ConflictStatusPill } from "@/components/opportunities/conflict-status-pill";
+import {
+  ConflictStatusPill,
+  DetectedFromTextTag,
+} from "@/components/opportunities/conflict-status-pill";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import {
   RIGHT_PANE_TOGGLE_ID,
@@ -12,6 +15,7 @@ import {
 } from "@/components/shell/shell-context";
 import {
   escalatedLabel,
+  isFromText,
   NO_CONFLICTS,
   OPEN_SECTION,
   positionsSummary,
@@ -25,7 +29,7 @@ import {
 /** Conflicts as dense 32px rows, in the order given (the API ranks them critical to low,
  * then newest first). Each row shows the type, the severity pill, the status pill and the
  * positions summary ("Engineering: 24 h · PM: not sized"); an escalated one names its reviewer
- * ("Escalated to Sam").
+ * ("Escalated to Sam"); one the Conflict Agent found is tagged "Detected from text" (6.2).
  *
  * The list is one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows, and
@@ -95,6 +99,7 @@ export function ConflictsList({
                 <span className="w-24 shrink-0 truncate text-label">{typeLabel(item.type)}</span>
                 <SeverityPill severity={item.severity} />
                 <ConflictStatusPill status={item.status} />
+                {isFromText(item) ? <DetectedFromTextTag /> : null}
                 {item.status === "escalated" && item.escalated_to ? (
                   <span className="shrink-0 text-label text-gap">{escalatedLabel(item)}</span>
                 ) : null}

@@ -21,7 +21,8 @@ whose Agent call fails reports the error and, on the job's final attempt, marks 
 `failed`; before that the task stays `running` for the next attempt, which re-runs only
 unfinished tasks. When no task is left in progress the run is finished: `succeeded`,
 `partially_failed` or `failed`, traced, and (when a task succeeded) the Estimate is built
-from the Assessments and the Conflict rules run (Stories 8.3, 6.1).
+from the Assessments and the Conflict rules run (Stories 8.3, 6.1), then the semantic
+Conflict detection is queued (Story 6.2).
 
 A run stuck past `stale_after()` (its job died without recording it) is failed on the next
 start, retry or cancel: its unfinished tasks `failed` / `model_timeout`.
@@ -417,7 +418,9 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
 
 async def detect_conflicts(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> None:
     """Run the Conflict rules for the finished run (Story 6.1) over each agent's current
-    Assessment and the current Estimate draft, read now."""
+    Assessment and the current Estimate draft, read now; then queue the semantic detection
+    of that pass (Story 6.2: when two agents have Findings and the Conflict Agent is
+    active)."""
     snapshots = await assessments.current_assessment_snapshots(uow, opportunity_id)
     lines = await estimates.current_version_lines(uow, opportunity_id)
     estimate = (
@@ -434,7 +437,14 @@ async def detect_conflicts(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) 
             ),
         )
     )
-    await conflicts.detect_for_run(uow, opportunity_id, run_id, snapshots, estimate)
+    detection = await conflicts.detect_for_run(uow, opportunity_id, run_id, snapshots, estimate)
+    # Story 6.2: the Conflict Agent compares the Findings' free text afterwards, in a job.
+    await conflicts.queue_semantic_detection(
+        uow,
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        detection_pass=detection.detection_pass,
+    )
 
 
 # --- the handler ----------------------------------------------------------------------------

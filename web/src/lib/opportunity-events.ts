@@ -1,7 +1,7 @@
 // The Opportunity's live event stream (Stories 5.2, 4.7 and 2.3, AD-30): one EventSource per
 // Opportunity on the same-origin route `/api/opportunities/{id}/events`, which adds the access
-// token server-side. Every subscriber on the page (progress, `gaps.changed`, Source frames
-// and the workspace status bar) shares it, so the page doesn't use up the browser's
+// token server-side. Every subscriber on the page (progress, `gaps.changed`,
+// `conflicts.changed`, Source frames and the workspace status bar) shares it, so the page doesn't use up the browser's
 // connections to the origin; it closes with the last subscriber.
 //
 // The browser reconnects by itself with `Last-Event-ID` after a dropped stream, and the
@@ -37,6 +37,10 @@ export const PROGRESS_EVENTS: readonly ProgressEventType[] = [
 /** Story 4.7: the id-less frame the stream sends when the Opportunity's Gaps, Clarification
  * Questions or answer suggestions change (no content: readers re-read). */
 export const GAPS_CHANGED = "gaps.changed";
+
+/** Story 6.2: the id-less frame the stream sends when the Opportunity's Conflicts change (a
+ * Conflict raised or resolved by detection, or resolved or escalated by a person). */
+export const CONFLICTS_CHANGED = "conflicts.changed";
 
 /** Story 2.3: the trace frames that change a Source's row (`intake.source.*`). */
 export const SOURCE_EVENTS: readonly string[] = [
@@ -267,6 +271,18 @@ export function useGapsEvents(
   enabled = true,
 ): boolean {
   const status = useStream(opportunityId, [GAPS_CHANGED], () => onChange(), onChange, enabled);
+  return status === "open";
+}
+
+/** Subscribe to the Opportunity's `conflicts.changed` frames while `enabled` (Story 6.2: the
+ * Conflicts tab and its badge). `onChange` runs for each and whenever the stream (re)connects.
+ * Returns whether the stream is connected. */
+export function useConflictsEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  const status = useStream(opportunityId, [CONFLICTS_CHANGED], () => onChange(), onChange, enabled);
   return status === "open";
 }
 

@@ -1,6 +1,6 @@
 """The conflicts module's tables (Story 6.1). `opportunity_id`, `run_id`, `assessment_id`,
-`estimate_version_id` and `requirement_id` hold ids owned by other modules without foreign
-keys (AD-2)."""
+`finding_id`, `estimate_version_id` and `requirement_id` hold ids owned by other modules
+without foreign keys (AD-2)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -98,8 +98,8 @@ class ConflictRow(Base):
 
 class PositionRow(Base):
     """One side of a Conflict: an agent's Assessment (with its version) or the Estimate
-    Version, a short summary, an hours value (or none) and the Requirement it is about.
-    Insert-only."""
+    Version, a short summary, an hours value (or none), the Requirement it is about and, for
+    a semantic Conflict (Story 6.2), the Finding it cites. Insert-only."""
 
     __tablename__ = "conflicts_positions"
     __table_args__ = (
@@ -141,3 +141,22 @@ class PositionRow(Base):
     value: Mapped[Decimal | None] = mapped_column(Numeric(10, 1))
     requirement_id: Mapped[UUID | None] = mapped_column(Uuid)
     requirement_version: Mapped[int | None] = mapped_column(Integer)
+    # Story 6.2: the Finding a semantic Conflict's position cites.
+    finding_id: Mapped[UUID | None] = mapped_column(Uuid)
+
+
+class DetectionRow(Base):
+    """A detection pass of a run (Story 6.2): recorded every time the rules run, whether or
+    not they raise anything, so passes are numbered one past the run's latest and the
+    semantic job can tell a newer pass or run has happened. Insert-only."""
+
+    __tablename__ = "conflicts_detections"
+    __table_args__ = (
+        Index(None, "opportunity_id", "created_at"),
+        CheckConstraint("detection_pass >= 1", name="detection_pass"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    detection_pass: Mapped[int] = mapped_column(Integer, primary_key=True)
+    opportunity_id: Mapped[UUID] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

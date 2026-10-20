@@ -27,10 +27,21 @@ class ConflictRequirement(BaseModel):
     excerpt: str
 
 
+class ConflictFinding(BaseModel):
+    """The Assessment Finding a semantic Conflict's position cites (Story 6.2): its id,
+    title and kind (`risk`, `constraint`, `dependency`, `opportunity`)."""
+
+    id: str
+    title: str
+    kind: str
+
+
 class ConflictPosition(BaseModel):
     """One side of a Conflict. From an agent's Assessment (`agent`, `assessment_id`,
     `assessment_version`) or the Estimate (`estimate_version_id`, `estimate_version`).
-    `summary`: e.g. "24 h", "Not sized", "Do not proceed". `value`: hours to 0.1, or null."""
+    `summary`: e.g. "24 h", "Not sized", "Do not proceed", or for a semantic Conflict the
+    cited Finding's stance. `value`: hours to 0.1, or null. `finding`: the cited Finding
+    (semantic Conflicts only, Story 6.2), else null."""
 
     position: int = Field(ge=1)
     source: PositionSource
@@ -42,6 +53,7 @@ class ConflictPosition(BaseModel):
     summary: str
     value: float | None
     requirement: ConflictRequirement | None
+    finding: ConflictFinding | None
 
 
 class Person(BaseModel):
