@@ -8,7 +8,7 @@ event, in the caller's Unit of Work. Each takes the Opportunity's detection lock
 change must not race a detection, which keeps Gaps a person touched.
 
 Order of checks: authorize (403/404) → Gap in this Opportunity (404) → body (422) →
-`If-Match` (428) → status (409 `gap_not_open` / `gap_not_dismissed`) → stale (412) → no-op
+`If-Match` (428) → status (409 `gap_not_open` / `gap_not_reopenable`) → stale (412) → no-op
 or write.
 
 - `change_impact`: an `open` Gap's impact, with a reason; sets `touched_by_human`. The same
@@ -16,8 +16,11 @@ or write.
   `gaps.gap.impact_changed`.
 - `dismiss_gap`: an `open` Gap `dismissed` with `not_relevant` (note optional) or `other`
   (note required). Trace `gaps.gap.dismissed`.
-- `reopen_gap`: a `dismissed` Gap `open` again, its dismissal cleared, with a reason; sets
-  `touched_by_human`. Trace `gaps.gap.reopened`.
+- `reopen_gap`: a `dismissed` or `answered` (Story 4.7) Gap `open` again, its dismissal or
+  answer cleared, with a reason; sets `touched_by_human`. The question of an answered Gap is
+  `sent` again, its answer cleared. Trace `gaps.gap.reopened`.
+
+Every write notifies the Opportunity's event stream (`gaps.changed`, Story 4.7).
 
 Reasons and notes are kept in the Gap's history only; trace and logs carry ids, impacts,
 the reason kind and versions, never their text.
@@ -43,6 +46,8 @@ from app.modules.gaps.domain.gaps import (
     GapState,
     GapStatus,
     Impact,
+    QuestionState,
+    QuestionStatus,
 )
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
@@ -51,8 +56,8 @@ from app.platform import trace
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
     ForbiddenError,
-    GapNotDismissedError,
     GapNotOpenError,
+    GapNotReopenableError,
     NotFoundError,
     RowVersionMismatchError,
     UnprocessableError,
@@ -67,7 +72,7 @@ NOT_FOUND_DETAIL = "No Gap with this id."
 NOT_OPEN_DETAIL = (
     "The Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection."
 )
-NOT_DISMISSED_DETAIL = "The Gap is not dismissed, so it can't be reopened."
+NOT_REOPENABLE_DETAIL = "The Gap is neither dismissed nor answered, so it can't be reopened."
 _log = get_logger(__name__)
 
 
@@ -122,6 +127,9 @@ def _state(record: GapRecord) -> GapState:
         dismissed_by=record.dismissed_by,
         dismissed_at=record.dismissed_at,
         touched_by_human=record.touched_by_human,
+        answered_on=record.answered_on,
+        answered_by=record.answered_by,
+        answer_passage_id=record.answer_passage_id,
     )
 
 
@@ -149,12 +157,16 @@ async def _write(
         dismissed_at=state.dismissed_at,
         touched_by_human=state.touched_by_human,
         changed_by=user_id,
+        answered_on=state.answered_on,
+        answered_by=state.answered_by,
+        answer_passage_id=state.answer_passage_id,
     )
     if updated is None:
         current = await repo.get_gap(uow, record.id)
         if current is None or current.status != record.status:
             raise not_in_state
         raise _stale()
+    await repo.notify_gaps_changed(uow, record.opportunity_id)
     return updated
 
 
@@ -323,16 +335,16 @@ async def reopen_gap(
     body: GapReopening,
     if_match: str | None,
 ) -> Gap:
-    """Reopen a dismissed Gap, with a reason. `if_match` is the raw `If-Match` header
-    (428/412)."""
+    """Reopen a dismissed or answered Gap, with a reason. `if_match` is the raw `If-Match`
+    header (428/412). An answered Gap's question is `sent` again."""
     user_id = await _authorized(uow, actor, opportunity_id)
     record = await _load(uow, opportunity_id, gap_id)
     reason = _reason(body.reason)
     expected = _expected(if_match)
     try:
         state = rules.reopen_gap(_state(record))
-    except rules.GapNotDismissedTransitionError:
-        raise GapNotDismissedError(NOT_DISMISSED_DETAIL) from None
+    except rules.GapNotReopenableTransitionError:
+        raise GapNotReopenableError(NOT_REOPENABLE_DETAIL) from None
     if record.row_version != expected:
         raise _stale()
     updated = await _write(
@@ -341,8 +353,10 @@ async def reopen_gap(
         state,
         expected=expected,
         user_id=user_id,
-        not_in_state=GapNotDismissedError(NOT_DISMISSED_DETAIL),
+        not_in_state=GapNotReopenableError(NOT_REOPENABLE_DETAIL),
     )
+    if record.status == GapStatus.ANSWERED:
+        await _reopen_question(uow, record, user_id=user_id)
     await _history(
         uow, gap_id, GapHistoryKind.REOPENED, user_id=user_id, at=datetime.now(UTC), reason=reason
     )
@@ -356,3 +370,42 @@ async def reopen_gap(
     )
     _log_change("gaps.gap_reopened", record, user_id, updated.row_version)
     return await _view(uow, updated)
+
+
+async def _reopen_question(uow: UnitOfWork, gap: GapRecord, *, user_id: UUID) -> None:
+    """The answered question of a reopened Gap is `sent` again, its answer cleared."""
+    question = (await repo.questions_for(uow, [gap.id])).get(gap.id)
+    if question is None or question.status != QuestionStatus.ANSWERED:
+        return
+    state = rules.reopen_question(
+        QuestionState(
+            text=question.text,
+            topic=question.topic,
+            status=QuestionStatus(question.status),
+            approved_by=question.approved_by,
+            approved_at=question.approved_at,
+            edited_by_human=question.edited_by_human,
+            sent_on=question.sent_on,
+            sent_by=question.sent_by,
+            answered_on=question.answered_on,
+            answered_by=question.answered_by,
+            answer_passage_id=question.answer_passage_id,
+        )
+    )
+    updated = await repo.update_question(
+        uow,
+        question.id,
+        expected_row_version=question.row_version,
+        text_=state.text,
+        topic=state.topic,
+        status=state.status.value,
+        approved_by=state.approved_by,
+        approved_at=state.approved_at,
+        edited_by_human=state.edited_by_human,
+        changed_by=user_id,
+        status_changed_at=datetime.now(UTC),
+        sent_on=state.sent_on,
+        sent_by=state.sent_by,
+    )
+    if updated is None:  # pragma: no cover - the Opportunity's lock is held
+        raise _stale()

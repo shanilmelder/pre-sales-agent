@@ -24,10 +24,14 @@ import {
   approveSelectedClarificationQuestions,
   changeCollaborator,
   changeGapImpact,
+  confirmAnswerMatch,
+  recordAnswer,
+  rejectAnswerMatch,
   dismissGap,
   confirmAllRequirements,
   confirmRequirement,
   copyClarificationQuestions,
+  countOpenGaps,
   createOpportunity,
   editClarificationQuestion,
   editEstimateLine,
@@ -1492,7 +1496,7 @@ describe("changeGapImpact / dismissGap / reopenGap / approveSelected (Story 4.4)
   });
 
   it.each([
-    [409, "gap_not_dismissed", { kind: "gap-not-dismissed" }],
+    [409, "gap_not_reopenable", { kind: "gap-not-reopenable" }],
     [409, "gap_not_open", { kind: "gap-not-open" }],
     [422, "validation_error", { kind: "invalid", detail: "The reason must be 1 to 500." }],
     [403, "forbidden", { kind: "forbidden" }],
@@ -2000,5 +2004,89 @@ describe("resolveConflict and escalateConflict", () => {
       },
     );
     expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("recordAnswer / confirmAnswerMatch / rejectAnswerMatch (Story 4.7)", () => {
+  const Q_ID = "00000000-0000-7000-8000-0000000000f1";
+  const M_ID = "00000000-0000-7000-8000-0000000000f2";
+  const GAP = { id: "00000000-0000-7000-8000-0000000000f3", title: "[GAP]", row_version: 4 };
+  const ok = (data: unknown) => ({ data, response: new Response(null, { status: 200 }) });
+  const answer = {
+    opportunityId: OPP_ID,
+    questionId: Q_ID,
+    rowVersion: 3,
+    text: "[ANSWER]",
+    answeredOn: "2026-10-12",
+    settlesGap: true,
+  };
+
+  it("POSTs the answer with If-Match", async () => {
+    api.POST.mockResolvedValue(ok(GAP));
+    expect(await recordAnswer(answer)).toEqual({ kind: "ok", gap: GAP });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/answer",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, question_id: Q_ID },
+          header: { "If-Match": '"3"' },
+        },
+        body: { text: "[ANSWER]", answered_on: "2026-10-12", settles_gap: true },
+      },
+    );
+  });
+
+  it("POSTs confirm and reject with the suggestion's If-Match", async () => {
+    api.POST.mockResolvedValue(ok(GAP));
+    const target = { opportunityId: OPP_ID, matchId: M_ID, rowVersion: 1 };
+    expect(await confirmAnswerMatch(target)).toEqual({ kind: "ok", gap: GAP });
+    expect(await rejectAnswerMatch(target)).toEqual({ kind: "ok", gap: GAP });
+    const params = {
+      params: { path: { opportunity_id: OPP_ID, match_id: M_ID }, header: { "If-Match": '"1"' } },
+    };
+    expect(api.POST.mock.calls).toEqual([
+      ["/api/v1/opportunities/{opportunity_id}/answer-matches/{match_id}/confirm", params],
+      ["/api/v1/opportunities/{opportunity_id}/answer-matches/{match_id}/reject", params],
+    ]);
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await recordAnswer({ ...answer, answeredOn: "12 Oct" })).toEqual({ kind: "error" });
+    expect(await recordAnswer({ ...answer, settlesGap: "yes" })).toEqual({ kind: "error" });
+    expect(await confirmAnswerMatch({ opportunityId: OPP_ID, matchId: "x", rowVersion: 1 })).toEqual(
+      { kind: "error" },
+    );
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [409, "question_not_sent", { kind: "question-not-sent" }],
+    [409, "gap_not_open", { kind: "gap-not-open" }],
+    [412, "row_version_mismatch", { kind: "stale" }],
+    [422, "validation_error", { kind: "invalid", detail: "The date answered can't be in the future." }],
+    [403, "forbidden", { kind: "forbidden" }],
+    [404, "not_found", { kind: "not-found" }],
+    [500, "x", { kind: "error" }],
+  ])("maps %i %s", async (code, problemCode, expected) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({
+      error: { code: problemCode, detail: "The date answered can't be in the future." },
+      response: status(code),
+    });
+    expect(await recordAnswer(answer)).toEqual(expected);
+  });
+});
+
+describe("countOpenGaps (Story 4.7)", () => {
+  it("counts only the open Gaps, and is null on a failed read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockResolvedValueOnce({
+      data: { items: [{ status: "open" }, { status: "answered" }, { status: "open" }] },
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await countOpenGaps(OPP_ID)).toBe(2);
+    api.GET.mockResolvedValueOnce({ response: new Response(null, { status: 500 }) });
+    expect(await countOpenGaps(OPP_ID)).toBeNull();
+    expect(await countOpenGaps("nope")).toBeNull();
   });
 });

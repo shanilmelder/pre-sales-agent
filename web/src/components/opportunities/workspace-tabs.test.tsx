@@ -1,7 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Me } from "@/lib/api/server";
 import { axeViolations } from "@/test/axe";
@@ -183,5 +183,47 @@ describe("WorkspaceTabs", () => {
     segment.current = "estimate";
     const { container } = render(tree());
     expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("the live Gaps badge (Story 4.7)", () => {
+  class FakeSource {
+    static last: FakeSource | null = null;
+    readonly listeners = new Map<string, (() => void)[]>();
+    constructor(readonly url: string) {
+      FakeSource.last = this;
+    }
+    addEventListener(type: string, listener: () => void) {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+    }
+    close() {}
+    emit(type: string) {
+      for (const listener of this.listeners.get(type) ?? []) listener();
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("follows gaps.changed frames with the open Gap count", async () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const loadGapCount = vi.fn(async () => 2);
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <AppShell me={ME}>
+          <WorkspaceTabs id={ID} counts={{ gaps: 3 }} loadGapCount={loadGapCount}>
+            <p>Tab body</p>
+          </WorkspaceTabs>
+        </AppShell>
+      </ShellProviders>,
+    );
+    expect(screen.getByTestId("tab-count-gaps").textContent).toBe("3, 3 open");
+
+    await act(async () => FakeSource.last!.emit("gaps.changed"));
+
+    expect(loadGapCount).toHaveBeenCalledWith(ID);
+    expect(screen.getByTestId("tab-count-gaps").textContent).toBe("2, 2 open");
+    expect(FakeSource.last!.url).toBe(`/api/opportunities/${ID}/events`);
   });
 });

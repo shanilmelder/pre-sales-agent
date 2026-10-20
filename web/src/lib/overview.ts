@@ -4,7 +4,7 @@
 import { agentLabel, type AssessmentsView } from "@/lib/assessments";
 import { typeLabel, type ConflictsView } from "@/lib/conflicts";
 import { hours, type Assumption, type EstimateView } from "@/lib/estimates";
-import type { Gap, GapList } from "@/lib/gaps";
+import { isSent, type Gap, type GapList } from "@/lib/gaps";
 import type { RedTeamView, Severity } from "@/lib/red-team";
 import { groupRequirements, type RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
@@ -190,8 +190,8 @@ export function requirementCounts(list: RequirementList): RequirementCounts | St
   };
 }
 
-/** `sent`: questions sent (sent or "No answer"); `awaiting`: sent and not yet answered (Story
- * 4.6). */
+/** `sent`: questions sent (sent, "No answer" or answered, Story 4.7); `awaiting`: sent and
+ * not yet answered (Story 4.6). */
 export type GapCounts = { open: number; high: number; sent: number; awaiting: number };
 
 /** The open Gaps and how many are high impact, and how many questions were sent and still
@@ -206,7 +206,7 @@ export function gapCounts(list: GapList): GapCounts | StepStatus | null {
   return {
     open: open.length,
     high: open.filter((g) => g.impact === "high").length,
-    sent: statuses.filter((s) => s === "sent" || s === "unanswered").length,
+    sent: statuses.filter((s) => s !== undefined && isSent(s)).length,
     awaiting: statuses.filter((s) => s === "sent").length,
   };
 }

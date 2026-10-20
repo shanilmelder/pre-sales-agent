@@ -1,11 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { InlineField } from "@/components/opportunities/inline-field";
 import { ReasonInput, reasonFieldClass } from "@/components/opportunities/reason-input";
 import {
+  answeredLabel,
+  answeredOnProblem,
+  answerRecordedBy,
+  answerTextProblem,
   approvedLabel,
   categoryLabel,
   DISMISS_REASONS,
@@ -14,17 +19,25 @@ import {
   historyAction,
   historyByline,
   IMPACTS,
+  INJECTION_SUSPECTED,
+  isAnswerable,
   isSent,
   localToday,
   noteProblem,
+  possibleAnswerLabel,
   questionStatus,
   reasonProblem,
+  requirementChangeLabel,
+  requirementHref,
   sentLabel,
   sentOnProblem,
   statusSince,
   triggerLabel,
+  type AnswerPassage,
+  type AnswerSuggestion,
   type DismissReasonKind,
   type Gap,
+  type GapAnswer,
   type GapHistoryEntry,
   type GapStatus,
   type Impact,
@@ -78,15 +91,22 @@ export type QuestionEditing = {
  * Convert is not offered here (Epic 8 does it from the Estimate). With `send` (Story 4.6), an
  * approved question of an open Gap has **Mark sent** (a date, today by default) and a sent one
  * **No answer**; a sent question says "Sent {date} by {name}" and can't be edited or approved.
- * Without them, read-only. */
+ * Story 4.7: with `send`, a sent or "No answer" question of an open Gap has **Record answer**
+ * (the answer, a date, and whether it settles the Gap), and each suggested answer has **Confirm**
+ * and **Not an answer**; an answered Gap shows "Answered by customer, {date}" with the answer
+ * passage as Evidence and links to the Requirements the answer changed, and (with `gapEdit`)
+ * **Reopen**. Without them, read-only. */
 export function GapInspector({
   gap,
+  opportunityId,
   focusRequest = 0,
   edit,
   gapEdit,
   send,
 }: {
   gap: Gap;
+  /** For the links to the Requirements an answer changed. */
+  opportunityId: string;
   focusRequest?: number;
   /** Left out for those who may not edit questions. */
   edit?: QuestionEditing;
@@ -102,6 +122,7 @@ export function GapInspector({
     edit !== undefined && gap.status === "open" && question !== null && !isSent(question.status);
   const sendable = send !== undefined && gap.status === "open" && question !== null;
   const [markingSent, setMarkingSent] = useState(false);
+  const [answering, setAnswering] = useState(false);
 
   useEffect(() => {
     if (focusRequest > 0) headingRef.current?.focus();
@@ -263,20 +284,61 @@ export function GapInspector({
               </div>
             )
           ) : null}
-          {sendable && question.status === "sent" ? (
-            <div>
+          {sendable && isAnswerable(question.status) && !answering ? (
+            <div className="flex gap-2">
               <button
                 type="button"
                 disabled={send.busy || send.locked}
-                onClick={send.onNoAnswer}
+                onClick={() => setAnswering(true)}
                 className={actionClass}
               >
-                No answer
+                Record answer
               </button>
+              {question.status === "sent" ? (
+                <button
+                  type="button"
+                  disabled={send.busy || send.locked}
+                  onClick={send.onNoAnswer}
+                  className={actionClass}
+                >
+                  No answer
+                </button>
+              ) : null}
             </div>
+          ) : null}
+          {sendable && isAnswerable(question.status) && answering ? (
+            <RecordAnswerForm
+              gapTitle={gap.title}
+              disabled={send.busy || send.locked}
+              onSubmit={async (text, answeredOn, settlesGap) => {
+                const outcome = await send.onRecordAnswer(text, answeredOn, settlesGap);
+                // Only a recorded answer closes the form: a failure keeps the typed text.
+                if (outcome === "ok") setAnswering(false);
+                return outcome;
+              }}
+              onCancel={() => setAnswering(false)}
+            />
           ) : null}
         </div>
       ) : null}
+
+      {gap.answer_suggestions.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-label text-muted-foreground">Suggested answers</h4>
+          <ul className="flex flex-col gap-2">
+            {gap.answer_suggestions.map((suggestion) => (
+              <li key={suggestion.id}>
+                <SuggestionCard
+                  suggestion={suggestion}
+                  decide={sendable && question && isAnswerable(question.status) ? send : undefined}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {gap.answer ? <AnswerSection answer={gap.answer} opportunityId={opportunityId} /> : null}
 
       {gapEdit && gap.status === "open" ? (
         <div className="flex flex-col gap-1.5">
@@ -284,7 +346,7 @@ export function GapInspector({
           <DismissForm edit={gapEdit} />
         </div>
       ) : null}
-      {gapEdit && gap.status === "dismissed" ? (
+      {gapEdit && (gap.status === "dismissed" || gap.status === "answered") ? (
         <div className="flex flex-col gap-1.5">
           <h4 className="text-label text-muted-foreground">Reopen</h4>
           <ReopenForm edit={gapEdit} />
@@ -323,7 +385,241 @@ export type QuestionSending = {
   locked: boolean;
   onMarkSent: (sentOn: string) => Promise<GapFormOutcome>;
   onNoAnswer: () => void;
+  /** **Record answer** (Story 4.7). */
+  onRecordAnswer: (
+    text: string,
+    answeredOn: string,
+    settlesGap: boolean,
+  ) => Promise<GapFormOutcome>;
+  /** **Confirm** a suggested answer (Story 4.7). */
+  onConfirmSuggestion: (suggestion: AnswerSuggestion) => void;
+  /** **Not an answer** (Story 4.7). */
+  onRejectSuggestion: (suggestion: AnswerSuggestion) => void;
 };
+
+// --- answers (Story 4.7) ---------------------------------------------------------------------
+
+/** A cited passage as an Evidence chip: its `S<n> · <file name>` label and its excerpt. */
+function PassageChip({ passage }: { passage: AnswerPassage }) {
+  return (
+    <figure className="flex flex-col gap-1 rounded-md border border-border p-2">
+      <figcaption>
+        <span className="inline-flex h-5 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
+          {passage.label}
+        </span>
+      </figcaption>
+      {passage.excerpt ? (
+        <blockquote className="whitespace-pre-wrap break-words text-body">{passage.excerpt}</blockquote>
+      ) : null}
+    </figure>
+  );
+}
+
+/** The Answer section: who answered when, the answer passage as Evidence, and the Requirements
+ * the answer added, updated or proposed changes to, each a link that opens it (with its diff)
+ * on the Requirements tab. */
+function AnswerSection({ answer, opportunityId }: { answer: GapAnswer; opportunityId: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h4 className="text-label text-muted-foreground">Answer</h4>
+      <p className="text-body">{answeredLabel(answer.answered_on)}</p>
+      <p className="text-meta text-muted-foreground">{answerRecordedBy(answer)}</p>
+      {answer.passage ? <PassageChip passage={answer.passage} /> : null}
+      {answer.requirement_changes.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-meta text-muted-foreground">Requirement changes</p>
+          <ul aria-label="Requirement changes" className="flex flex-wrap gap-1.5">
+            {answer.requirement_changes.map((change) => (
+              <li key={change.requirement_id}>
+                <Link
+                  href={requirementHref(opportunityId, change.requirement_id)}
+                  className="inline-flex h-6 items-center rounded-md border border-border px-2 text-label underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {requirementChangeLabel(change)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A suggested answer: the Source it is in, the passage, an "Injection suspected" warning when
+ * the passage reads like an instruction, and (with `decide`) **Confirm** and **Not an
+ * answer**. Only a person's Confirm answers the question. */
+function SuggestionCard({
+  suggestion,
+  decide,
+}: {
+  suggestion: AnswerSuggestion;
+  decide?: QuestionSending;
+}) {
+  return (
+    <article
+      aria-label={possibleAnswerLabel(suggestion)}
+      className="flex flex-col gap-1.5 rounded-md border border-border p-2"
+    >
+      <p className="text-meta text-muted-foreground">{possibleAnswerLabel(suggestion)}</p>
+      {suggestion.injection_suspected ? (
+        <p className="inline-flex w-fit items-center rounded-sm border border-gap px-1.5 text-label text-gap">
+          {INJECTION_SUSPECTED}
+        </p>
+      ) : null}
+      <PassageChip passage={suggestion.passage} />
+      {decide ? (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={decide.busy || decide.locked}
+            onClick={() => decide.onConfirmSuggestion(suggestion)}
+            className={actionClass}
+          >
+            Confirm
+          </button>
+          <button
+            type="button"
+            disabled={decide.busy || decide.locked}
+            onClick={() => decide.onRejectSuggestion(suggestion)}
+            className={actionClass}
+          >
+            Not an answer
+          </button>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+/** **Record answer**: the customer's answer, the date they gave it (today by default, never
+ * later), whether it settles the Gap (ticked by default), then Record answer. */
+export function RecordAnswerForm({
+  gapTitle,
+  disabled,
+  onSubmit,
+  onCancel,
+}: {
+  gapTitle: string;
+  disabled: boolean;
+  onSubmit: (text: string, answeredOn: string, settlesGap: boolean) => Promise<GapFormOutcome>;
+  onCancel: () => void;
+}) {
+  const today = localToday();
+  const [text, setText] = useState("");
+  const [answeredOn, setAnsweredOn] = useState(today);
+  const [settles, setSettles] = useState(true);
+  const [textError, setTextError] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
+  const textId = useId();
+  const textErrorId = useId();
+  const dateId = useId();
+  const dateErrorId = useId();
+
+  useEffect(() => {
+    textRef.current?.focus();
+  }, []);
+
+  function onSubmitForm(event: FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    const textProblem = answerTextProblem(text);
+    const dateProblem = answeredOnProblem(answeredOn, today);
+    setTextError(textProblem);
+    setDateError(dateProblem);
+    if (textProblem) {
+      textRef.current?.focus();
+      return;
+    }
+    if (dateProblem) {
+      dateRef.current?.focus();
+      return;
+    }
+    void (async () => {
+      const outcome = await onSubmit(text.trim(), answeredOn, settles);
+      if (outcome !== "ok" && outcome !== "failed") setTextError(outcome.invalid);
+    })();
+  }
+
+  return (
+    <form
+      aria-label="Record the customer’s answer"
+      noValidate
+      onSubmit={onSubmitForm}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+      className="flex flex-col gap-1.5"
+    >
+      <label htmlFor={textId} className="text-meta text-muted-foreground">
+        Customer’s answer
+      </label>
+      <textarea
+        id={textId}
+        ref={textRef}
+        value={text}
+        disabled={disabled}
+        aria-invalid={textError ? true : undefined}
+        aria-describedby={textError ? textErrorId : undefined}
+        onChange={(event) => setText(event.target.value)}
+        className={`${fieldClass} min-h-20 resize-y py-1`}
+      />
+      {textError ? (
+        <p id={textErrorId} className="text-meta text-destructive">
+          {textError}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor={dateId} className="shrink-0 text-meta text-muted-foreground">
+          Date answered
+        </label>
+        <input
+          id={dateId}
+          ref={dateRef}
+          type="date"
+          value={answeredOn}
+          max={today}
+          disabled={disabled}
+          aria-invalid={dateError ? true : undefined}
+          aria-describedby={dateError ? dateErrorId : undefined}
+          onChange={(event) => setAnsweredOn(event.target.value)}
+          className={`${fieldClass} h-6 w-auto`}
+        />
+      </div>
+      {dateError ? (
+        <p id={dateErrorId} className="text-meta text-destructive">
+          {dateError}
+        </p>
+      ) : null}
+      <label className="flex items-start gap-1.5 text-label">
+        <input
+          type="checkbox"
+          checked={settles}
+          disabled={disabled}
+          onChange={(event) => setSettles(event.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          This answer settles the Gap <span className="text-muted-foreground">“{gapTitle}”</span>
+        </span>
+      </label>
+      <div className="flex gap-2">
+        <button type="submit" disabled={disabled} className={actionClass}>
+          Record answer
+        </button>
+        <button type="button" onClick={onCancel} className={actionClass}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
 
 /** The small "date sent" form: a date (today by default, never later) and a confirm button,
  * with Cancel when `onCancel` is given. A refused date shows under the field. */

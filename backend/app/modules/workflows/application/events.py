@@ -14,6 +14,14 @@ that id, in order (an unknown id streams from now). Frames are
 
 and a comment line is sent every `keepalive_s` seconds so proxies keep the connection open.
 Trace events are not streamed (Story 5.7).
+
+Story 4.7: a NOTIFY `{opportunity_id, source: "gaps"}` (any change to the Opportunity's Gaps,
+Clarification Questions or answer suggestions) is forwarded as an id-less frame
+
+    event: gaps.changed
+    data: {"source": "gaps"}
+
+so the Gaps tab, its badge and the Overview re-read; nothing is replayed for it.
 """
 
 import json
@@ -38,6 +46,9 @@ from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork, unit_of_work
 
 KEEPALIVE_S = 15.0
+GAPS_SOURCE = "gaps"
+GAPS_CHANGED_FRAME = 'event: gaps.changed\ndata: {"source": "gaps"}\n\n'
+"""The frame for a change to the Opportunity's Gaps (Story 4.7): no id, no content."""
 _SEEN_MAX = 2000
 _log = get_logger(__name__)
 
@@ -87,16 +98,19 @@ async def _read(engine: AsyncEngine, event_id: UUID) -> ProgressRecord | None:
         return await repo.get_progress(uow, event_id)
 
 
-def _notified(payload: str, opportunity_id: UUID) -> UUID | None:
-    """The event id of a NOTIFY for this Opportunity's progress, else None."""
+def _notified(payload: str, opportunity_id: UUID) -> UUID | str | None:
+    """For a NOTIFY about this Opportunity: the event id of a progress row, or
+    `GAPS_SOURCE` for a change to its Gaps; else None."""
     try:
         data = json.loads(payload)
-        if data.get("source") != PROGRESS_SOURCE:
-            return None
         if UUID(data["opportunity_id"]) != opportunity_id:
             return None
+        if data.get("source") == GAPS_SOURCE:
+            return GAPS_SOURCE
+        if data.get("source") != PROGRESS_SOURCE:
+            return None
         return UUID(data["event_id"])
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, AttributeError):
         return None
 
 
@@ -127,7 +141,10 @@ async def event_stream(
         while True:
             async for notify in listener.notifies(timeout=keepalive_s):
                 event_id = _notified(notify.payload, opportunity_id)
-                if event_id is None or event_id in seen:
+                if event_id == GAPS_SOURCE:
+                    yield GAPS_CHANGED_FRAME
+                    continue
+                if not isinstance(event_id, UUID) or event_id in seen:
                     continue
                 live = await _read(engine, event_id)
                 if live is None:

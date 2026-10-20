@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  AnswerWriteResult,
   ApproveAllQuestionsResult,
   CopyQuestionsResult,
   GapWriteResult,
@@ -20,6 +21,7 @@ import type {
   GapList,
   Impact,
 } from "@/lib/gaps";
+import { GAPS_FALLBACK_POLL_MS } from "@/lib/gaps";
 import { axeViolations } from "@/test/axe";
 
 const startGapDetection = vi.hoisted(() =>
@@ -49,10 +51,20 @@ const markClarificationQuestionsSent = vi.hoisted(() =>
 const markClarificationQuestionUnanswered = vi.hoisted(() =>
   vi.fn<(input: unknown) => Promise<QuestionWriteResult>>(),
 );
+const recordAnswer = vi.hoisted(() => vi.fn<(input: unknown) => Promise<AnswerWriteResult>>());
+const confirmAnswerMatch = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<AnswerWriteResult>>(),
+);
+const rejectAnswerMatch = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<AnswerWriteResult>>(),
+);
 const copyClarificationQuestions = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<CopyQuestionsResult>>(),
 );
 vi.mock("@/app/opportunities/actions", () => ({
+  recordAnswer,
+  confirmAnswerMatch,
+  rejectAnswerMatch,
   markClarificationQuestionsSent,
   markClarificationQuestionUnanswered,
   copyClarificationQuestions,
@@ -113,6 +125,8 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
       last_changed_by: null,
       sent_on: null,
       sent_by: null,
+      answered_on: null,
+      answered_by: null,
     },
     dismissal: null,
     history: [
@@ -127,6 +141,8 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
       },
     ],
     last_changed_by: null,
+    answer: null,
+    answer_suggestions: [],
   };
 }
 
@@ -178,6 +194,9 @@ beforeEach(() => {
   markClarificationQuestionsSent.mockReset();
   markClarificationQuestionUnanswered.mockReset();
   copyClarificationQuestions.mockReset();
+  recordAnswer.mockReset();
+  confirmAnswerMatch.mockReset();
+  rejectAnswerMatch.mockReset();
 });
 
 afterEach(() => {
@@ -398,18 +417,24 @@ describe("GapsSection", () => {
     expect(screen.getByText("[GAP 1]")).toBeTruthy();
     expect(screen.queryByText("Detecting Gaps")).toBeNull();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(GAPS_FALLBACK_POLL_MS - 1);
     });
+    // Detection polling stopped; only the slower fallback for the event stream remains.
     expect(loadGaps).toHaveBeenCalledTimes(2);
   });
 
-  it("does not poll when no detection is running", async () => {
+  it("without a detection running, only the event stream fallback polls (Story 4.7)", async () => {
     vi.useFakeTimers();
+    loadGaps.mockResolvedValue({ kind: "ok", list: list([gap(1, "high")], succeeded) });
     renderSection(list([gap(1, "high")], succeeded));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(GAPS_FALLBACK_POLL_MS - 1);
     });
     expect(loadGaps).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(loadGaps).toHaveBeenCalledTimes(1);
   });
 
   it("pauses polling while the tab is hidden", async () => {
@@ -1227,7 +1252,7 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
 
   it("a 409 on reopen says the Gap is no longer dismissed and re-reads", async () => {
     const user = userEvent.setup();
-    reopenGap.mockResolvedValue({ kind: "gap-not-dismissed" });
+    reopenGap.mockResolvedValue({ kind: "gap-not-reopenable" });
     loadGaps.mockResolvedValue({ kind: "ok", list: list([gap(1, "high")], succeeded, true, true) });
     renderSection(list([dismissedGap(1, "high")], succeeded, true, true));
     const inspector = await openRow(user, 1);
@@ -1237,7 +1262,7 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
     await user.click(within(form).getByRole("button", { name: "Reopen" }));
 
     expect(
-      await screen.findByText("This Gap is no longer dismissed: someone reopened it."),
+      await screen.findByText("This Gap is no longer dismissed or answered: someone reopened it."),
     ).toBeTruthy();
     expect(loadGaps).toHaveBeenCalled();
   });
@@ -1514,5 +1539,311 @@ describe("exporting and sending questions (Story 4.6)", () => {
     expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Mark all sent/ })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+});
+
+// --- answering questions (Story 4.7) ----------------------------------------------------------
+
+const PASSAGE = {
+  passage_id: "00000000-0000-7000-8000-0000000000c1",
+  source_id: "00000000-0000-7000-8000-0000000000c2",
+  source_version: 1,
+  filename: "reply.txt",
+  label: "S2 · reply.txt",
+  excerpt: "Our uptime window is 06:00 to 22:00.",
+};
+const R1_ID = "00000000-0000-7000-8000-0000000000d1";
+
+function answeredGap(n: number, settles = true): Gap {
+  const base = sentGap(n, "high");
+  return {
+    ...base,
+    status: settles ? "answered" : "open",
+    row_version: base.row_version + 1,
+    question: {
+      ...base.question!,
+      status: "answered",
+      row_version: base.question!.row_version + 1,
+      answered_on: "2026-10-12",
+      answered_by: REP,
+    },
+    answer: {
+      answered_on: "2026-10-12",
+      answered_by: REP,
+      passage: PASSAGE,
+      requirement_changes: [{ requirement_id: R1_ID, label: "R1", kind: "pending" }],
+    },
+  };
+}
+
+function suggestedGap(n: number, injection = false): Gap {
+  const base = sentGap(n, "high");
+  return {
+    ...base,
+    answer_suggestions: [
+      {
+        id: `00000000-0000-7000-8000-00000000${String(n).padStart(4, "0")}`,
+        question_id: base.question!.id,
+        passage: PASSAGE,
+        injection_suspected: injection,
+        row_version: 1,
+        created_at: "2026-10-14T09:00:00Z",
+      },
+    ],
+  };
+}
+
+const ANSWER_FORM = "Record the customer’s answer";
+const ANSWER_FIELD = "Customer’s answer";
+
+describe("answering questions (Story 4.7)", () => {
+  it("Record answer sends the text, date and settles flag, and shows the Answered Gap", async () => {
+    const user = userEvent.setup();
+    recordAnswer.mockResolvedValue({ kind: "ok", gap: answeredGap(1) });
+    const { container } = renderSection(repList([sentGap(1, "high")]));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Record answer" }));
+    const form = within(inspector).getByRole("form", { name: ANSWER_FORM });
+    expect(within(form).getByRole("checkbox")).toHaveProperty("checked", true);
+    expect(await axeViolations(container)).toEqual([]);
+    await user.type(within(form).getByLabelText(ANSWER_FIELD), "  Weekdays 06:00-22:00 ");
+    await user.click(within(form).getByRole("button", { name: "Record answer" }));
+
+    expect(recordAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        opportunityId: OPP_ID,
+        questionId: sentGap(1, "high").question!.id,
+        rowVersion: 3,
+        text: "Weekdays 06:00-22:00",
+        settlesGap: true,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[0].textContent).toContain("Answered by customer, 12 Oct"),
+    );
+    expect(
+      screen.getAllByRole("row")[0].querySelector('[data-question-status="answered"]'),
+    ).toBeTruthy();
+    expect(within(pane()).getAllByText("Answered by customer, 12 Oct").length).toBeGreaterThan(0);
+  });
+
+  it("unticking the checkbox sends settlesGap false; an empty or future answer is refused", async () => {
+    const user = userEvent.setup();
+    recordAnswer.mockResolvedValue({ kind: "ok", gap: answeredGap(1, false) });
+    renderSection(repList([sentGap(1, "high")]));
+    const inspector = await openRow(user, 1);
+    await user.click(within(inspector).getByRole("button", { name: "Record answer" }));
+    const form = within(inspector).getByRole("form", { name: ANSWER_FORM });
+
+    await user.click(within(form).getByRole("button", { name: "Record answer" }));
+    expect(within(form).getByText("Give the customer’s answer.")).toBeTruthy();
+    await user.type(within(form).getByLabelText(ANSWER_FIELD), "Yes");
+    const date = within(form).getByLabelText("Date answered");
+    await user.clear(date);
+    await user.type(date, "2999-01-01");
+    await user.click(within(form).getByRole("button", { name: "Record answer" }));
+    expect(within(form).getByText("The date answered can’t be in the future.")).toBeTruthy();
+    expect(recordAnswer).not.toHaveBeenCalled();
+
+    await user.clear(date);
+    await user.type(date, "2026-10-12");
+    await user.click(within(form).getByRole("checkbox"));
+    await user.click(within(form).getByRole("button", { name: "Record answer" }));
+    expect(recordAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ answeredOn: "2026-10-12", settlesGap: false }),
+    );
+  });
+
+  it("a failed Record answer keeps the form open with the typed text", async () => {
+    const user = userEvent.setup();
+    recordAnswer.mockResolvedValue({ kind: "error" });
+    renderSection(repList([sentGap(1, "high")]));
+    const inspector = await openRow(user, 1);
+    await user.click(within(inspector).getByRole("button", { name: "Record answer" }));
+    const form = within(inspector).getByRole("form", { name: ANSWER_FORM });
+    await user.type(within(form).getByLabelText(ANSWER_FIELD), "A long answer");
+    await user.click(within(form).getByRole("button", { name: "Record answer" }));
+
+    expect(await screen.findByText("The answer could not be recorded. Try again.")).toBeTruthy();
+    const kept = within(inspector).getByRole("form", { name: ANSWER_FORM });
+    expect((within(kept).getByLabelText(ANSWER_FIELD) as HTMLTextAreaElement).value).toBe(
+      "A long answer",
+    );
+  });
+
+  it("a 409 says the question is no longer sent and re-reads", async () => {
+    const user = userEvent.setup();
+    recordAnswer.mockResolvedValue({ kind: "question-not-sent" });
+    loadGaps.mockResolvedValue({ kind: "ok", list: repList([answeredGap(1)]) });
+    renderSection(repList([sentGap(1, "high")]));
+    const inspector = await openRow(user, 1);
+    await user.click(within(inspector).getByRole("button", { name: "Record answer" }));
+    const form = within(inspector).getByRole("form", { name: ANSWER_FORM });
+    await user.type(within(form).getByLabelText(ANSWER_FIELD), "Yes");
+    await user.click(within(form).getByRole("button", { name: "Record answer" }));
+
+    expect(await screen.findByText("This Clarification Question is no longer sent.")).toBeTruthy();
+    expect(loadGaps).toHaveBeenCalled();
+  });
+
+  it("the Answer section shows the passage as Evidence and links the Requirement changes", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSection(repList([answeredGap(1)]));
+    const inspector = await openRow(user, 1);
+
+    expect(within(inspector).getByText("S2 · reply.txt")).toBeTruthy();
+    expect(within(inspector).getByText(PASSAGE.excerpt)).toBeTruthy();
+    expect(within(inspector).getByText("Recorded by Rep Person")).toBeTruthy();
+    const link = within(inspector).getByRole("link", { name: "R1 · pending change" });
+    expect(link.getAttribute("href")).toBe(
+      `/opportunities/${OPP_ID}/requirements?requirement=${R1_ID}`,
+    );
+    expect(within(inspector).queryByRole("button", { name: "Record answer" })).toBeNull();
+    // Reopen is for editors only.
+    expect(within(inspector).queryByRole("form", { name: "Reopen the Gap" })).toBeNull();
+    expect(screen.getAllByRole("row")[0].textContent).toContain("Answered");
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("editors reopen an answered Gap", async () => {
+    const user = userEvent.setup();
+    reopenGap.mockResolvedValue({ kind: "ok", gap: { ...sentGap(1, "high"), row_version: 9 } });
+    renderSection(list([answeredGap(1)], succeeded, true, true, true, true));
+    const inspector = await openRow(user, 1);
+    const form = within(inspector).getByRole("form", { name: "Reopen the Gap" });
+
+    await user.type(within(form).getByRole("textbox"), "Incomplete");
+    await user.click(within(form).getByRole("button", { name: "Reopen" }));
+
+    expect(reopenGap).toHaveBeenCalledWith(
+      expect.objectContaining({ gapId: answeredGap(1).id, reason: "Incomplete" }),
+    );
+    await waitFor(() => expect(screen.getAllByRole("row")[0].textContent).toContain("Sent"));
+  });
+
+  it("a suggestion shows its Source in the row and Confirm or Not an answer in the card", async () => {
+    const user = userEvent.setup();
+    confirmAnswerMatch.mockResolvedValue({ kind: "ok", gap: answeredGap(1) });
+    const suggested = suggestedGap(1, true);
+    const { container } = renderSection(repList([suggested]));
+    expect(screen.getAllByRole("row")[0].textContent).toContain(
+      "Possible answer in Source 'reply.txt'",
+    );
+    const inspector = await openRow(user, 1);
+    const card = within(inspector).getByRole("article", {
+      name: "Possible answer in Source 'reply.txt'",
+    });
+    expect(within(card).getByText("Injection suspected")).toBeTruthy();
+    expect(within(card).getByText(PASSAGE.excerpt)).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(within(card).getByRole("button", { name: "Confirm" }));
+
+    expect(confirmAnswerMatch).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      matchId: suggested.answer_suggestions[0]!.id,
+      rowVersion: 1,
+    });
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[0].textContent).toContain("Answered by customer, 12 Oct"),
+    );
+  });
+
+  it("Not an answer rejects the suggestion; a stale one shows Reload", async () => {
+    const user = userEvent.setup();
+    rejectAnswerMatch.mockResolvedValueOnce({ kind: "stale" });
+    renderSection(repList([suggestedGap(1)]));
+    const inspector = await openRow(user, 1);
+
+    await user.click(within(inspector).getByRole("button", { name: "Not an answer" }));
+
+    expect(rejectAnswerMatch).toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "Reload" })).toBeTruthy();
+  });
+
+  it("readers without send rights see suggestions without the buttons", async () => {
+    const user = userEvent.setup();
+    renderSection(list([suggestedGap(1)], succeeded, false, false, false, false));
+    const inspector = await openRow(user, 1);
+    expect(within(inspector).queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: "Record answer" })).toBeNull();
+  });
+});
+
+/** A stand-in for the browser's EventSource (jsdom has none). */
+class FakeGapsEventSource {
+  static instances: FakeGapsEventSource[] = [];
+  readonly listeners = new Map<string, ((event: Event) => void)[]>();
+
+  constructor(readonly url: string) {
+    FakeGapsEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  close() {}
+
+  emit(type: string) {
+    for (const listener of this.listeners.get(type) ?? []) listener(new Event(type));
+  }
+}
+
+describe("live Gaps over the event stream (Story 4.7)", () => {
+  beforeEach(() => {
+    FakeGapsEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeGapsEventSource);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a gaps.changed frame re-reads the list, updating pills and the open count", async () => {
+    loadGaps.mockResolvedValue({ kind: "ok", list: repList([answeredGap(1), sentGap(2, "low")]) });
+    renderSection(repList([sentGap(1, "high"), sentGap(2, "low")]));
+    const source = FakeGapsEventSource.instances[0]!;
+    expect(source.url).toBe(`/api/opportunities/${OPP_ID}/events`);
+
+    await act(async () => source.emit("gaps.changed"));
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[0].textContent).toContain("Answered by customer, 12 Oct"),
+    );
+    expect(screen.getByText("2 Gaps · 1 open · ranked by impact")).toBeTruthy();
+    expect(loadGaps).toHaveBeenCalledWith(OPP_ID);
+  });
+
+  it("while connected nothing polls", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    loadGaps.mockResolvedValue({ kind: "ok", list: repList([sentGap(1, "high")]) });
+    renderSection(repList([sentGap(1, "high")]));
+    await act(async () => FakeGapsEventSource.instances[0]!.emit("open"));
+    expect(loadGaps).toHaveBeenCalledTimes(1); // the catch-up read on connecting
+
+    await act(async () => vi.advanceTimersByTime(3 * GAPS_FALLBACK_POLL_MS));
+
+    expect(loadGaps).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the polling fallback while the stream is not connected (Story 4.7)", () => {
+  it("re-reads the list on a timer, and stops once unmounted", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    loadGaps.mockResolvedValue({ kind: "ok", list: repList([answeredGap(1)]) });
+    const view = renderSection(repList([sentGap(1, "high")]));
+    expect(loadGaps).not.toHaveBeenCalled();
+
+    await act(async () => vi.advanceTimersByTime(GAPS_FALLBACK_POLL_MS));
+
+    expect(loadGaps).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[0].textContent).toContain("Answered by customer, 12 Oct"),
+    );
+    view.unmount();
+    await act(async () => vi.advanceTimersByTime(3 * GAPS_FALLBACK_POLL_MS));
+    expect(loadGaps).toHaveBeenCalledTimes(1);
   });
 });

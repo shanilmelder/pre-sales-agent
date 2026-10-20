@@ -29,6 +29,10 @@ export type GapDismissal = components["schemas"]["GapDismissal"];
 export type GapHistoryEntry = components["schemas"]["GapHistoryEntry"];
 export type DismissReasonKind = components["schemas"]["DismissReasonKind"];
 export type QuestionExportFormat = components["schemas"]["QuestionExportRequest"]["format"];
+export type GapAnswer = components["schemas"]["GapAnswer"];
+export type AnswerSuggestion = components["schemas"]["AnswerSuggestion"];
+export type AnswerPassage = components["schemas"]["AnswerPassage"];
+export type RequirementChangeRef = components["schemas"]["RequirementChangeRef"];
 
 /** The categories with their labels. */
 export const GAP_CATEGORIES: readonly { value: GapCategory; label: string }[] = [
@@ -70,8 +74,9 @@ export const DRAFT = "Draft";
 export const APPROVED = "Approved";
 export const SENT = "Sent";
 export const NO_ANSWER = "No answer";
+export const ANSWERED = "Answered";
 
-type PillStatus = "drafted" | "approved" | "sent" | "unanswered";
+type PillStatus = "drafted" | "approved" | "sent" | "unanswered" | "answered";
 
 /** The question statuses the pill shows, with their label, icon and icon tone (the pill always
  * shows icon and label): Sent is a neutral send icon, No answer is gap amber. */
@@ -83,6 +88,7 @@ export const QUESTION_STATUSES: Record<
   approved: { label: APPROVED, icon: CheckIcon, tone: "text-resolved" },
   sent: { label: SENT, icon: SendIcon, tone: "text-muted-foreground" },
   unanswered: { label: NO_ANSWER, icon: CircleSlashIcon, tone: "text-gap" },
+  answered: { label: ANSWERED, icon: CheckIcon, tone: "text-resolved" },
 };
 
 /** A question status's pill (Draft for one this build doesn't know). */
@@ -96,8 +102,14 @@ export function questionStatus(status: QuestionStatus): {
     : QUESTION_STATUSES.drafted;
 }
 
-/** Whether a question was sent (sent or "No answer"): it can no longer be edited or approved. */
+/** Whether a question was sent (sent, "No answer" or answered): it can no longer be edited or
+ * approved. */
 export function isSent(status: QuestionStatus): boolean {
+  return status === "sent" || status === "unanswered" || status === "answered";
+}
+
+/** Whether a question can be answered (Story 4.7): sent or "No answer". */
+export function isAnswerable(status: QuestionStatus | undefined): boolean {
   return status === "sent" || status === "unanswered";
 }
 
@@ -266,15 +278,20 @@ export const DETECTION_POLL_MS = 2000;
 /** Polling stops after this long of continuous detecting (a reload resumes it). */
 export const DETECTION_POLL_LIMIT_MS = 15 * 60 * 1000;
 
+/** How often the Gaps tab re-reads the list while the event stream is not connected (Story
+ * 4.7: polling is the fallback for live updates). */
+export const GAPS_FALLBACK_POLL_MS = 10_000;
+
 // --- Gap status, impact change, dismiss and reopen (Story 4.4) -------------------------------
 
 /** The Gap statuses the list shows, with label, icon and icon tone (UX status pills: Open is
  * circle-help in gap amber; Converted arrow-right and Dismissed minus, both neutral). */
 export const GAP_STATUSES: Record<
-  "open" | "converted" | "dismissed",
+  "open" | "answered" | "converted" | "dismissed",
   { label: string; icon: LucideIcon; tone: StatusTone }
 > = {
   open: { label: "Open", icon: CircleHelpIcon, tone: "text-gap" },
+  answered: { label: ANSWERED, icon: CheckIcon, tone: "text-resolved" },
   converted: { label: "Converted", icon: ArrowRightIcon, tone: "text-muted-foreground" },
   dismissed: { label: "Dismissed", icon: MinusIcon, tone: "text-muted-foreground" },
 };
@@ -285,7 +302,7 @@ export function gapStatus(status: GapStatus): {
   icon: LucideIcon;
   tone: StatusTone;
 } {
-  return status === "converted" || status === "dismissed"
+  return status === "converted" || status === "dismissed" || status === "answered"
     ? GAP_STATUSES[status]
     : GAP_STATUSES.open;
 }
@@ -361,6 +378,8 @@ export function historyAction(entry: GapHistoryEntry): string {
       return "Reopened";
     case "converted":
       return "Converted to Assumption";
+    case "answered":
+      return "Answered";
     default:
       return "Changed";
   }
@@ -372,17 +391,105 @@ export function historyByline(entry: GapHistoryEntry): string {
   return entry.actor === "agent" ? date : `${entry.actor.name}, ${date}`;
 }
 
-const STATUS_ORDER: Record<string, number> = { open: 0, converted: 1, dismissed: 2 };
+const STATUS_ORDER: Record<string, number> = { open: 0, answered: 1, converted: 2, dismissed: 3 };
 
-/** Open Gaps, then converted, then dismissed; each ranked by impact, then oldest first (the
- * API's order, kept after a local change). */
+/** Open Gaps, then answered, then converted, then dismissed; each ranked by impact, then oldest
+ * first (the API's order, kept after a local change). */
 export function rankGaps(items: readonly Gap[]): Gap[] {
   const rank = (impact: Impact) => IMPACTS.findIndex((i) => i.value === impact);
   return [...items].sort(
     (a, b) =>
-      (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3) ||
+      (STATUS_ORDER[a.status] ?? 4) - (STATUS_ORDER[b.status] ?? 4) ||
       rank(a.impact) - rank(b.impact) ||
       a.created_at.localeCompare(b.created_at) ||
       a.id.localeCompare(b.id),
   );
+}
+
+// --- answers (Story 4.7) --------------------------------------------------------------------
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "12 Oct" from a `YYYY-MM-DD` date (or an ISO timestamp's date part); the input itself when it
+ * isn't one. */
+export function dayMonth(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  const month = MONTHS[Number(match[2]) - 1];
+  return month ? `${Number(match[3])} ${month}` : value;
+}
+
+/** "Answered by customer, 12 Oct". */
+export function answeredLabel(answeredOn: string): string {
+  return `Answered by customer, ${dayMonth(answeredOn)}`;
+}
+
+/** "Recorded by Jane Doe": who recorded or confirmed the answer. */
+export function answerRecordedBy(answer: Pick<GapAnswer, "answered_by">): string {
+  return `Recorded by ${answer.answered_by.name}`;
+}
+
+/** "Possible answer in Source 'reply.txt'": the row hint for a suggestion. */
+export function possibleAnswerLabel(suggestion: Pick<AnswerSuggestion, "passage">): string {
+  return `Possible answer in Source '${suggestion.passage.filename}'`;
+}
+
+/** The warning label on a suggestion whose passage reads like an instruction to the platform. */
+export const INJECTION_SUSPECTED = "Injection suspected";
+
+/** The API's longest answer, in code points (trimmed). */
+export const ANSWER_MAX = 20000;
+
+/** Why an answer text can't be recorded, or null. */
+export function answerTextProblem(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return "Give the customer’s answer.";
+  if (codePointLength(trimmed) > ANSWER_MAX) return "The answer can be at most 20,000 characters.";
+  return null;
+}
+
+/** Why a "date answered" can't be sent, or null: required, and not after `today`. */
+export function answeredOnProblem(value: string, today: string = localToday()): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "Give the date the customer answered.";
+  if (value > today) return "The date answered can’t be in the future.";
+  return null;
+}
+
+/** What a Requirement change caused by an answer is called. */
+export const REQUIREMENT_CHANGE_KINDS: Record<RequirementChangeRef["kind"], string> = {
+  added: "added",
+  versioned: "updated",
+  pending: "pending change",
+  accepted: "change accepted",
+  rejected: "change rejected",
+  superseded: "change superseded",
+};
+
+/** "R1 · pending change". */
+export function requirementChangeLabel(change: RequirementChangeRef): string {
+  return `${change.label} · ${REQUIREMENT_CHANGE_KINDS[change.kind] ?? change.kind}`;
+}
+
+/** The Requirements tab link that opens this Requirement's inspector. */
+export function requirementHref(opportunityId: string, requirementId: string): string {
+  return `/opportunities/${encodeURIComponent(opportunityId)}/requirements?requirement=${encodeURIComponent(requirementId)}`;
+}
+
+/** How many Gaps are open: the Gaps tab badge (Story 4.7). */
+export function openGapCount(items: readonly Pick<Gap, "status">[]): number {
+  return items.filter((g) => g.status === "open").length;
+}
+
+/** "2 Gaps answered, 5 open": the polite announcement after a live change (null when the
+ * answered and open counts didn't change). */
+export function gapsChangedAnnouncement(
+  before: readonly Pick<Gap, "status">[],
+  after: readonly Pick<Gap, "status">[],
+): string | null {
+  const answered = (items: readonly Pick<Gap, "status">[]) =>
+    items.filter((g) => g.status === "answered").length;
+  const open = openGapCount(after);
+  if (answered(before) === answered(after) && openGapCount(before) === open) return null;
+  const n = answered(after);
+  return `${n} ${n === 1 ? "Gap" : "Gaps"} answered, ${open} open`;
 }

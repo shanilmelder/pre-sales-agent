@@ -7,6 +7,7 @@ import {
   ClockIcon,
   FileTextIcon,
   MailIcon,
+  MessageSquareReplyIcon,
   StickyNoteIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -37,6 +38,7 @@ const KIND_ICONS: Record<SourceKind, LucideIcon> = {
   note: StickyNoteIcon,
   transcript: CaptionsIcon,
   document: FileTextIcon,
+  clarification_answer: MessageSquareReplyIcon,
 };
 
 export const RETRY = "Retry";

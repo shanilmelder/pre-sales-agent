@@ -36,7 +36,12 @@ from app.modules.intake.domain.parsing import (
     ParseErrorCode,
     ParseStatus,
 )
-from app.modules.intake.domain.sources import PASTED_TEXT_FILENAME, SUBJECT_TYPE, extension
+from app.modules.intake.domain.sources import (
+    PASTED_TEXT_FILENAME,
+    SUBJECT_TYPE,
+    extension,
+    is_answer_filename,
+)
 from app.platform import files, trace
 from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
@@ -64,8 +69,9 @@ def parse_settings() -> Settings:
 
 
 def file_extension(filename: str) -> str:
-    """The extension a version's file is parsed as: its own, or `.txt` for pasted text."""
-    if filename == PASTED_TEXT_FILENAME:
+    """The extension a version's file is parsed as: its own, or `.txt` for pasted text and
+    for a recorded answer (Story 4.7)."""
+    if filename == PASTED_TEXT_FILENAME or is_answer_filename(filename):
         return PASTED_TEXT_EXTENSION
     return extension(filename)
 
@@ -201,6 +207,18 @@ async def _parse(ctx: JobContext, payload: ParseSource) -> None:
             )
             # Story 2.5: every successful parse (re)queues the Opportunity's extraction.
             await enqueue_extraction(uow, opportunity_id=target.opportunity_id)
+            # Story 4.7: and asks `clarification_agent` whether this Source version answers a
+            # sent question (skipped when none is waiting for an answer). Imported here, not
+            # at the top: gaps reads intake through `intake.application.public`, which
+            # imports this module, so a top-level import would be circular.
+            from app.modules.gaps.application import public as gaps
+
+            await gaps.enqueue_answer_matching(
+                uow,
+                opportunity_id=target.opportunity_id,
+                source_id=payload.source_id,
+                version=payload.version,
+            )
     _log.info(
         "intake.source_parsed",
         extra={

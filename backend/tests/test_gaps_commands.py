@@ -339,7 +339,7 @@ def test_the_wrong_state_is_409_and_changes_nothing(
     for resp in (converted_dismiss, converted_impact):
         assert resp.status_code == 409, resp.text
         assert_problem(resp.json(), 409, "gap_not_open")
-    assert_problem(open_reopen.json(), 409, "gap_not_dismissed")
+    assert_problem(open_reopen.json(), 409, "gap_not_reopenable")
     assert (_gap_row(sync_engine, sap["id"]), _gap_row(sync_engine, uptime["id"])) == before
     assert events(sync_engine, opp["id"], "gaps.gap.d") == []
     assert events(sync_engine, opp["id"], "gaps.gap.re") == []

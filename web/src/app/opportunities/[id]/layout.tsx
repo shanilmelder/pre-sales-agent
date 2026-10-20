@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { getConflicts, getOpportunity } from "@/app/opportunities/data";
+import { countOpenGaps } from "@/app/opportunities/actions";
+import { getConflicts, getOpportunity, listGaps } from "@/app/opportunities/data";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { WorkspaceHeader } from "@/components/opportunities/workspace-header";
 import { WorkspaceTabs } from "@/components/opportunities/workspace-tabs";
 import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
+import { openGapCount } from "@/lib/gaps";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 
 // The title stays generic: customer names are not put in the tab title or history.
@@ -30,7 +32,15 @@ export default async function OpportunityLayout({
   const loaded = await getOpportunity(id);
   // The Conflicts tab's badge: open plus escalated, read with the layout (no live updates).
   const conflicts = loaded.kind === "ok" ? await getConflicts(loaded.opportunity.id) : null;
-  const counts = conflicts?.kind === "ok" ? { conflicts: conflicts.conflicts.open_count } : {};
+  // The Gaps tab's badge: open Gaps, kept live over the event stream (Story 4.7).
+  const gaps = loaded.kind === "ok" ? await listGaps(loaded.opportunity.id) : null;
+  const counts = {
+    ...(conflicts?.kind === "ok" ? { conflicts: conflicts.conflicts.open_count } : {}),
+    // (`items` is checked: a partial read must not break the whole workspace.)
+    ...(gaps?.kind === "ok" && Array.isArray(gaps.list.items)
+      ? { gaps: openGapCount(gaps.list.items) }
+      : {}),
+  };
 
   return (
     <AppShell me={result.me}>
@@ -43,7 +53,11 @@ export default async function OpportunityLayout({
       ) : (
         <>
           <WorkspaceHeader opportunity={loaded.opportunity} />
-          <WorkspaceTabs id={loaded.opportunity.id} counts={counts}>
+          <WorkspaceTabs
+            id={loaded.opportunity.id}
+            counts={counts}
+            loadGapCount={countOpenGaps}
+          >
             {children}
           </WorkspaceTabs>
         </>

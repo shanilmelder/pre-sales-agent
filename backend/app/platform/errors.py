@@ -214,11 +214,12 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
-class GapNotDismissedError(ConflictError):
-    """A Gap reopen was asked for on a Gap that is not `dismissed` (Story 4.4)."""
+class GapNotReopenableError(ConflictError):
+    """A Gap reopen was asked for on a Gap that is neither `dismissed` (Story 4.4) nor
+    `answered` (Story 4.7)."""
 
-    code = "gap_not_dismissed"
-    title = "Gap not dismissed"
+    code = "gap_not_reopenable"
+    title = "Gap not reopenable"
 
 
 class QuestionNotApprovedError(ConflictError):
@@ -229,7 +230,8 @@ class QuestionNotApprovedError(ConflictError):
 
 
 class QuestionNotSentError(ConflictError):
-    """A question was marked "No answer" that is not `sent` (Story 4.6)."""
+    """A question was marked "No answer" that is not `sent` (Story 4.6), or answered that is
+    not `sent` or `unanswered` (Story 4.7)."""
 
     code = "question_not_sent"
     title = "Clarification Question not sent"

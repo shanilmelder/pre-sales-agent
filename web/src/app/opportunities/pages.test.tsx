@@ -30,6 +30,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadRequirements: vi.fn(),
   startExtraction: vi.fn(),
   loadGaps: vi.fn(),
+  countOpenGaps: vi.fn(async () => null),
   startGapDetection: vi.fn(),
   loadEstimate: vi.fn(),
   startEstimateDraft: vi.fn(),
@@ -1284,6 +1285,8 @@ describe("/opportunities/[id] workspace", () => {
             edited_by_human: false,
             last_changed_by: { id: "00000000-0000-7000-8000-0000000000f3", name: "[OWNER]" },
           },
+          answer: null,
+          answer_suggestions: [],
         },
       ],
       detection: { status: "succeeded", error_code: null },
@@ -1291,7 +1294,9 @@ describe("/opportunities/[id] workspace", () => {
       can_edit_questions: false,
     });
     const { container } = await renderWorkspace("gaps");
-    expect(selectedTabs()).toEqual(["4Gaps"]);
+    // Story 4.7: the Gaps tab badge counts the open Gaps.
+    expect(selectedTabs()).toEqual(["4Gaps1, 1 open"]);
+    expect(screen.getByTestId("tab-count-gaps").textContent).toBe("1, 1 open");
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
     expect(within(panel).getByRole("row").textContent).toBe(

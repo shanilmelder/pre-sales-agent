@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, insert, select, text, tuple_, update
+from sqlalchemy import any_, func, insert, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.modules.intake.adapters.models import (
@@ -863,3 +863,67 @@ async def passages_by_id(uow: UnitOfWork, passage_ids: list[UUID]) -> dict[UUID,
         )
         for row in rows
     }
+
+
+# --- answers (Story 4.7) --------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SourceCitation:
+    """A Requirement whose Evidence cites a passage of a Source, and whether the
+    Requirement was created after that passage's Source version was added."""
+
+    requirement_id: UUID
+    created_after_source: bool
+
+
+async def requirements_citing_source(uow: UnitOfWork, source_id: UUID) -> list[SourceCitation]:
+    """The Requirements whose Evidence cites a passage of any version of the Source."""
+    rows = await uow.session.execute(
+        select(
+            RequirementEvidenceRow.requirement_id,
+            func.bool_or(RequirementRow.created_at >= SourceVersionRow.uploaded_at).label(
+                "created_after"
+            ),
+        )
+        .join(SourcePassageRow, SourcePassageRow.id == RequirementEvidenceRow.passage_id)
+        .join(RequirementRow, RequirementRow.id == RequirementEvidenceRow.requirement_id)
+        .join(
+            SourceVersionRow,
+            (SourceVersionRow.source_id == SourcePassageRow.source_id)
+            & (SourceVersionRow.version == SourcePassageRow.source_version),
+        )
+        .where(SourcePassageRow.source_id == source_id)
+        .group_by(RequirementEvidenceRow.requirement_id)
+    )
+    return [
+        SourceCitation(
+            requirement_id=row.requirement_id, created_after_source=bool(row.created_after)
+        )
+        for row in rows
+    ]
+
+
+async def changes_citing_source(uow: UnitOfWork, source_id: UUID) -> list[tuple[UUID, str]]:
+    """`(requirement_id, status)` of every change whose proposed passages include a passage
+    of any version of the Source, newest first."""
+    cites = (
+        select(SourcePassageRow.id)
+        .where(
+            SourcePassageRow.source_id == source_id,
+            SourcePassageRow.id == any_(RequirementChangeRow.passage_ids),
+        )
+        .exists()
+    )
+    rows = await uow.session.execute(
+        select(RequirementChangeRow.requirement_id, RequirementChangeRow.status)
+        .where(cites)
+        .order_by(RequirementChangeRow.created_at.desc(), RequirementChangeRow.id)
+    )
+    return [(row.requirement_id, row.status) for row in rows]
+
+
+async def source_opportunity(uow: UnitOfWork, source_id: UUID) -> UUID | None:
+    return (
+        await uow.session.execute(select(SourceRow.opportunity_id).where(SourceRow.id == source_id))
+    ).scalar_one_or_none()

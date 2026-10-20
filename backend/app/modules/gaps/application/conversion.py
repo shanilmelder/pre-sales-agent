@@ -64,6 +64,7 @@ async def mark_converted(
         subject_id=gap_id,
         opportunity_id=converted.opportunity_id,
     )
+    await repo.notify_gaps_changed(uow, converted.opportunity_id)
     _log.info(
         "gaps.gap_converted",
         extra={

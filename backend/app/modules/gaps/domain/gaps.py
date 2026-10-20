@@ -7,6 +7,7 @@ current version) and carries a category. Its trigger is stored as
 added later without a schema change.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
@@ -18,6 +19,19 @@ DETECTION_SUBJECT_TYPE = "gaps.detection"
 """The trace subject of a detection run."""
 GAP_SUBJECT_TYPE = "gaps.gap"
 QUESTION_SUBJECT_TYPE = "gaps.clarification_question"
+ANSWER_MATCH_SUBJECT_TYPE = "gaps.answer_match"
+
+
+class AnswerMatchStatus(StrEnum):
+    """A suggestion by `clarification_agent` that a Source passage answers a question (Story
+    4.7). Only a person's Confirm or Not an answer decides it; `superseded` once the question
+    is answered another way."""
+
+    SUGGESTED = "suggested"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    SUPERSEDED = "superseded"
+
 
 TITLE_MAX = 200
 WHY_MAX = 1_000
@@ -78,6 +92,9 @@ class GapStatus(StrEnum):
     DISMISSED = "dismissed"
     """Story 4.4: a person set it aside with a reason (the domain's `dismissed_with_reason`).
     It can be reopened; a later detection never supersedes or reopens it."""
+    ANSWERED = "answered"
+    """Story 4.7: a person recorded (or confirmed) the customer's answer to its question,
+    which settles it. It can be reopened; a later detection never supersedes or reopens it."""
 
 
 class ConvertedTo(StrEnum):
@@ -96,6 +113,9 @@ class QuestionStatus(StrEnum):
     approved any more; its approval is kept."""
     UNANSWERED = "unanswered"
     """Story 4.6: sent, and a person recorded that the customer won't answer it ("No answer")."""
+    ANSWERED = "answered"
+    """Story 4.7: sent (or "No answer"), and a person recorded or confirmed the customer's
+    answer. Its approval and sending are kept."""
     SUPERSEDED = "superseded"
     """Set together with its Gap's `superseded` by a newer detection."""
 
@@ -258,10 +278,13 @@ class QuestionNotApprovedTransitionError(ValueError):
 
 
 class QuestionNotSentTransitionError(ValueError):
-    """The question is not `sent`: it can't be marked "No answer" (Story 4.6)."""
+    """The question is not `sent` (to mark it "No answer", Story 4.6), or not `sent` or
+    `unanswered` (to answer it, Story 4.7)."""
 
 
-SENT_STATUSES = frozenset({QuestionStatus.SENT, QuestionStatus.UNANSWERED})
+OPEN_TO_ANSWER = frozenset({QuestionStatus.SENT, QuestionStatus.UNANSWERED})
+"""Statuses of a question that can be answered (Story 4.7)."""
+SENT_STATUSES = frozenset({*OPEN_TO_ANSWER, QuestionStatus.ANSWERED})
 """Statuses of a question that left the platform: it can't be edited or approved, and its
 approval and sending are kept."""
 APPROVED_STATUSES = frozenset({QuestionStatus.APPROVED, *SENT_STATUSES})
@@ -280,6 +303,9 @@ class QuestionState:
     edited_by_human: bool = False
     sent_on: date | None = None
     sent_by: UUID | None = None
+    answered_on: date | None = None
+    answered_by: UUID | None = None
+    answer_passage_id: UUID | None = None
 
 
 def question_text(raw: str) -> str:
@@ -343,8 +369,8 @@ def approve_question(state: QuestionState, *, user_id: UUID, at: datetime) -> Qu
 
 
 def touched(*, status: str, edited_by_human: bool) -> bool:
-    """Whether a person has touched the question (edited, approved, sent or marked it "No
-    answer"): a later detection keeps its Gap instead of superseding it."""
+    """Whether a person has touched the question (edited, approved, sent, marked it "No
+    answer" or answered it): a later detection keeps its Gap instead of superseding it."""
     return edited_by_human or status in APPROVED_STATUSES
 
 
@@ -373,6 +399,100 @@ def mark_unanswered(state: QuestionState) -> QuestionState:
     return replace(state, status=QuestionStatus.UNANSWERED)
 
 
+# --- answering Clarification Questions (Story 4.7) ------------------------------------------
+
+ANSWER_MAX = 20_000
+"""A recorded answer's text, in Unicode code points, on the trimmed text."""
+
+
+def answer_text(raw: str) -> str:
+    """The answer text trimmed; ValueError (with the sentence to show) unless 1 to
+    `ANSWER_MAX` characters."""
+    trimmed = _bounded(raw, ANSWER_MAX)
+    if trimmed is None:
+        raise ValueError(f"The answer must be 1 to {ANSWER_MAX:,} characters long once trimmed.")
+    return trimmed
+
+
+def answered_date(on: date, *, today: date) -> date:
+    """The date the customer answered; ValueError (with the sentence to show) if it is after
+    `today`."""
+    if on > today:
+        raise ValueError("The date answered can't be in the future.")
+    return on
+
+
+def answer_question(
+    state: QuestionState, *, user_id: UUID, on: date, passage_id: UUID
+) -> QuestionState:
+    """The `sent` or `unanswered` question answered on `on`, recorded by `user_id`, with the
+    answer passage as its Evidence; its approval and sending are kept."""
+    if state.status not in OPEN_TO_ANSWER:
+        raise QuestionNotSentTransitionError(
+            'Only a sent Clarification Question, or one marked "No answer", can be answered.'
+        )
+    return replace(
+        state,
+        status=QuestionStatus.ANSWERED,
+        answered_on=on,
+        answered_by=user_id,
+        answer_passage_id=passage_id,
+    )
+
+
+def reopen_question(state: QuestionState) -> QuestionState:
+    """The question of a reopened Gap (Story 4.7): an `answered` one is `sent` again with its
+    answer cleared; any other stays as it is."""
+    if state.status != QuestionStatus.ANSWERED:
+        return state
+    return replace(
+        state,
+        status=QuestionStatus.SENT,
+        answered_on=None,
+        answered_by=None,
+        answer_passage_id=None,
+    )
+
+
+_STATE_WORDS = (
+    r"(?:answered|resolved|closed|open|dismissed|done|complete|completed|approved|sent|"
+    r"irrelevant|not relevant)"
+)
+_INJECTION_PATTERNS = (
+    # "Ignore previous instructions", "disregard the rules above".
+    re.compile(
+        r"\b(?:ignore|disregard|forget|override|bypass)\b[^.!?\n]{0,40}?"
+        r"\b(?:instructions?|prompts?|rules?|directions?|guidelines?|context)\b"
+    ),
+    # "Mark all Gaps as answered", "set every question to resolved".
+    re.compile(
+        r"\b(?:mark|set|flag|change|update|move|treat|consider|record|close|resolve|dismiss|"
+        r"reopen|approve)\b[^.!?\n]{0,60}?"
+        r"\b(?:gaps?|questions?|clarifications?|status(?:es)?|requirements?|unknowns?)\b"
+        rf"[^.!?\n]{{0,40}}?\b(?:as|to|is|are)\b[^.!?\n]{{0,20}}?\b{_STATE_WORDS}\b"
+    ),
+    # "All Gaps are answered", "every question has been resolved".
+    re.compile(
+        r"\b(?:all|every|each|any)\b[^.!?\n]{0,20}?\b(?:gaps?|questions?)\b[^.!?\n]{0,20}?"
+        rf"\b(?:is|are|has been|have been|should be|must be)\b\s+{_STATE_WORDS}\b"
+    ),
+    # Talking to the model rather than to the vendor.
+    re.compile(
+        r"\b(?:you are now|from now on you|act as|pretend to be|system prompt|"
+        r"new instructions?|developer message|as an ai)\b"
+    ),
+)
+
+
+def injection_suspected(text: str) -> bool:
+    """Whether `text` reads like an instruction to the platform rather than a customer's
+    answer: an imperative about statuses, Gaps, questions or instructions (e.g. "Mark all
+    Gaps as answered", "Ignore previous instructions"). A heuristic that only flags: it never
+    changes what is stored or any status."""
+    folded = " ".join(text.casefold().split())
+    return any(pattern.search(folded) for pattern in _INJECTION_PATTERNS)
+
+
 # --- changing impact, dismissing and reopening Gaps (Story 4.4) -----------------------------
 
 REASON_MAX = 500
@@ -391,14 +511,20 @@ class GapHistoryKind(StrEnum):
     DISMISSED = "dismissed"
     REOPENED = "reopened"
     CONVERTED = "converted"
+    ANSWERED = "answered"
 
 
 class GapNotOpenTransitionError(ValueError):
-    """The Gap is not `open`: its impact can't change and it can't be dismissed."""
+    """The Gap is not `open`: its impact can't change and it can't be dismissed or
+    answered."""
 
 
-class GapNotDismissedTransitionError(ValueError):
-    """The Gap is not `dismissed`: it can't be reopened."""
+class GapNotReopenableTransitionError(ValueError):
+    """The Gap is neither `dismissed` nor `answered`: it can't be reopened."""
+
+
+REOPENABLE = frozenset({GapStatus.DISMISSED, GapStatus.ANSWERED})
+"""Statuses of a Gap a person may reopen (Stories 4.4 and 4.7)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -412,6 +538,9 @@ class GapState:
     dismissed_by: UUID | None = None
     dismissed_at: datetime | None = None
     touched_by_human: bool = False
+    answered_on: date | None = None
+    answered_by: UUID | None = None
+    answer_passage_id: UUID | None = None
 
 
 def reason_text(raw: str) -> str:
@@ -468,11 +597,25 @@ def dismiss_gap(
     )
 
 
+def answer_gap(state: GapState, *, user_id: UUID, on: date, passage_id: UUID) -> GapState:
+    """The `open` Gap answered (Story 4.7) on `on`, recorded by `user_id`, with the answer
+    passage as its Evidence."""
+    if state.status != GapStatus.OPEN:
+        raise GapNotOpenTransitionError("Only an open Gap can be answered.")
+    return replace(
+        state,
+        status=GapStatus.ANSWERED,
+        answered_on=on,
+        answered_by=user_id,
+        answer_passage_id=passage_id,
+    )
+
+
 def reopen_gap(state: GapState) -> GapState:
-    """The `dismissed` Gap open again, its dismissal cleared and marked `touched_by_human`
-    (a later detection keeps it)."""
-    if state.status != GapStatus.DISMISSED:
-        raise GapNotDismissedTransitionError("Only a dismissed Gap can be reopened.")
+    """The `dismissed` or `answered` Gap open again, its dismissal or answer cleared, and
+    marked `touched_by_human` (a later detection keeps it)."""
+    if state.status not in REOPENABLE:
+        raise GapNotReopenableTransitionError("Only a dismissed or answered Gap can be reopened.")
     return replace(
         state,
         status=GapStatus.OPEN,
@@ -480,5 +623,8 @@ def reopen_gap(state: GapState) -> GapState:
         dismiss_note=None,
         dismissed_by=None,
         dismissed_at=None,
+        answered_on=None,
+        answered_by=None,
+        answer_passage_id=None,
         touched_by_human=True,
     )

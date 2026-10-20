@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.gaps.domain.gaps import (
+    ANSWER_MAX,
     QUESTION_MAX,
     REASON_MAX,
     TOPIC_MAX,
@@ -20,6 +21,7 @@ from app.modules.gaps.domain.gaps import (
     Impact,
     QuestionStatus,
 )
+from app.modules.intake.application.public import RequirementChangeRef
 from app.modules.opportunities.application.public import UserRef
 
 
@@ -44,11 +46,13 @@ class GapRequirement(BaseModel):
 
 class ClarificationQuestion(BaseModel):
     """A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5), then
-    `sent` and `unanswered` ("No answer", Story 4.6); `status_changed_at` moves on every
-    status change. `approved_by` / `approved_at` are set while `approved`, `sent` or
-    `unanswered`; `sent_on` / `sent_by` while `sent` or `unanswered`. `edited_by_human`: a
-    person changed its text or topic. `last_changed_by`: the person behind its latest change
-    (null for the agent's draft)."""
+    `sent` and `unanswered` ("No answer", Story 4.6), then `answered` (Story 4.7);
+    `status_changed_at` moves on every status change. `approved_by` / `approved_at` are set
+    while `approved`, `sent`, `unanswered` or `answered`; `sent_on` / `sent_by` while `sent`,
+    `unanswered` or `answered`; `answered_on` / `answered_by` (the person who recorded or
+    confirmed the answer) while `answered`. `edited_by_human`: a person changed its text or
+    topic. `last_changed_by`: the person behind its latest change (null for the agent's
+    draft)."""
 
     id: str
     text: str
@@ -62,6 +66,8 @@ class ClarificationQuestion(BaseModel):
     last_changed_by: UserRef | None
     sent_on: date | None
     sent_by: UserRef | None
+    answered_on: date | None
+    answered_by: UserRef | None
 
 
 class QuestionChanges(BaseModel):
@@ -187,7 +193,9 @@ class GapDismissal(BaseModel):
     at: datetime
 
 
-GapHistoryEntryKind = Literal["raised", "impact_changed", "dismissed", "reopened", "converted"]
+GapHistoryEntryKind = Literal[
+    "raised", "impact_changed", "dismissed", "reopened", "converted", "answered"
+]
 
 
 class GapHistoryEntry(BaseModel):
@@ -214,13 +222,68 @@ class IrrelevanceShare(BaseModel):
     dismissed_not_relevant: int = Field(ge=0)
 
 
+class AnswerPassage(BaseModel):
+    """A Source passage holding a customer's answer (Story 4.7), as Evidence: `label` is
+    `S<n> · <file name>`; `excerpt` up to 280 characters of the passage, with `…` when cut
+    (empty when its text can't be read)."""
+
+    passage_id: str
+    source_id: str
+    source_version: int = Field(ge=1)
+    filename: str
+    label: str
+    excerpt: str
+
+
+class GapAnswer(BaseModel):
+    """The customer's answer to the Gap's question (Story 4.7): the date they answered, the
+    person who recorded or confirmed it, the answer passage (null if it can't be found) and
+    the Requirements that answer's Source added, versioned or proposed changes to."""
+
+    answered_on: date
+    answered_by: UserRef
+    passage: AnswerPassage | None
+    requirement_changes: list[RequirementChangeRef]
+
+
+class AnswerSuggestion(BaseModel):
+    """`clarification_agent`'s suggestion that a passage of a new Source answers the Gap's
+    question (Story 4.7): only a person's **Confirm** answers it; **Not an answer** rejects
+    it for good. `injection_suspected`: the passage reads like an instruction to the
+    platform. `row_version` for `If-Match`."""
+
+    id: str
+    question_id: str
+    passage: AnswerPassage
+    injection_suspected: bool
+    row_version: int = Field(ge=1)
+    created_at: datetime
+
+
+class AnswerRequest(BaseModel):
+    """**Record answer** (Story 4.7): the customer's answer to a sent question, the date they
+    gave it, and whether it settles the Gap (it then becomes `answered` too)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: StrictStr = Field(
+        description=f"The customer's answer. Trimmed, it must be 1 to {ANSWER_MAX:,} characters."
+    )
+    answered_on: date = Field(description="The date the customer answered; not in the future.")
+    settles_gap: bool = Field(
+        default=True, description="Whether the answer settles the Gap (it becomes `answered`)."
+    )
+
+
 class Gap(BaseModel):
     """A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
     `converted` once an Assumption made from it was accepted (Story 8.4; `converted_to` then
-    names the Assumption's kind, `condition` or `contingency`, and is null otherwise), or
-    `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise).
-    `history`: its changes, oldest first. `last_changed_by`: the person behind its latest
-    change (null until a person changes it)."""
+    names the Assumption's kind, `condition` or `contingency`, and is null otherwise),
+    `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise), or
+    `answered` (Story 4.7). `answer`: the customer's answer once its question is answered
+    (whether or not it settled the Gap), else null; `answer_suggestions`: the open
+    suggestions for its question. `history`: its changes, oldest first. `last_changed_by`:
+    the person behind its latest change (null until a person changes it)."""
 
     id: str
     title: str
@@ -239,6 +302,8 @@ class Gap(BaseModel):
     dismissal: GapDismissal | None
     history: list[GapHistoryEntry]
     last_changed_by: UserRef | None
+    answer: GapAnswer | None
+    answer_suggestions: list[AnswerSuggestion]
 
 
 class Detection(BaseModel):
@@ -257,7 +322,8 @@ class GapList(BaseModel):
     `can_start_detection`: whether the caller may start (retry) a detection;
     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
     (Story 4.5); `can_send_questions`: whether the caller may export questions, mark them
-    sent and "No answer" (Story 4.6, sales representatives included). The UI only uses them
+    sent and "No answer" (Story 4.6), record answers and confirm or reject suggested ones
+    (Story 4.7), sales representatives included. The UI only uses them
     to hide controls; the API decides. A sales representative sees only approved, sent and
     unanswered questions: other Gaps come with `question` null."""
 

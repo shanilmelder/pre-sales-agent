@@ -1,14 +1,17 @@
 """Persistence for detections, Gaps, their Requirement links and their Clarification
 Questions (Story 4.3). Runs inside the caller's Unit of Work."""
 
+import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, insert, or_, select, text, tuple_, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.modules.gaps.adapters.models import (
+    AnswerMatchRow,
     DetectionRow,
     GapHistoryRow,
     GapRequirementRow,
@@ -51,6 +54,9 @@ class GapRecord:
     dismissed_at: datetime | None = None
     changed_by: UUID | None = None
     touched_by_human: bool = False
+    answered_on: date | None = None
+    answered_by: UUID | None = None
+    answer_passage_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,10 +94,43 @@ class QuestionRecord:
     changed_by: UUID | None = None
     sent_on: date | None = None
     sent_by: UUID | None = None
+    answered_on: date | None = None
+    answered_by: UUID | None = None
+    answer_passage_id: UUID | None = None
 
 
-TOUCHED_QUESTION_STATUSES = ("approved", "sent", "unanswered")
-"""A question in one of these statuses was touched by a person (Stories 4.5, 4.6)."""
+@dataclass(frozen=True, slots=True)
+class AnswerMatchRecord:
+    id: UUID
+    opportunity_id: UUID
+    question_id: UUID
+    passage_id: UUID
+    injection_suspected: bool
+    status: str
+    row_version: int
+    created_at: datetime
+    decided_by: UUID | None = None
+    decided_at: datetime | None = None
+
+
+TOUCHED_QUESTION_STATUSES = ("approved", "sent", "unanswered", "answered")
+"""A question in one of these statuses was touched by a person (Stories 4.5, 4.6, 4.7)."""
+OPEN_TO_ANSWER_STATUSES = ("sent", "unanswered")
+"""A question in one of these statuses can be answered (Story 4.7)."""
+EVENTS_CHANNEL = "psa_events"
+"""The NOTIFY channel of the per-Opportunity event stream (AD-30), shared with workflows."""
+GAPS_SOURCE = "gaps"
+
+
+async def notify_gaps_changed(uow: UnitOfWork, opportunity_id: UUID) -> None:
+    """Tell the Opportunity's event stream that its Gaps, questions or answer suggestions
+    changed (Story 4.7). Delivered when the Unit of Work commits, and only then; Postgres
+    folds identical notifications of one transaction into one. Ids only."""
+    payload = json.dumps({"opportunity_id": str(opportunity_id), "source": GAPS_SOURCE})
+    await uow.session.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {"channel": EVENTS_CHANNEL, "payload": payload},
+    )
 
 
 # --- detections -----------------------------------------------------------------------------
@@ -372,6 +411,9 @@ def _gap(row: GapRow) -> GapRecord:
         dismissed_at=row.dismissed_at,
         changed_by=row.changed_by,
         touched_by_human=row.touched_by_human,
+        answered_on=row.answered_on,
+        answered_by=row.answered_by,
+        answer_passage_id=row.answer_passage_id,
     )
 
 
@@ -402,11 +444,13 @@ async def gaps_by_id(
     return {row.id: _gap(row) for row in rows.scalars()}
 
 
-async def dismissed_keys(uow: UnitOfWork, opportunity_id: UUID) -> list[tuple[str, str]]:
-    """The category and title of each of the Opportunity's `dismissed` Gaps."""
+async def settled_keys(uow: UnitOfWork, opportunity_id: UUID) -> list[tuple[str, str]]:
+    """The category and title of each of the Opportunity's `dismissed` (Story 4.4) and
+    `answered` (Story 4.7) Gaps."""
     rows = await uow.session.execute(
         select(GapRow.category, GapRow.title).where(
-            GapRow.opportunity_id == opportunity_id, GapRow.status == "dismissed"
+            GapRow.opportunity_id == opportunity_id,
+            GapRow.status.in_(("dismissed", "answered")),
         )
     )
     return [(category, title) for category, title in rows.all()]
@@ -426,6 +470,9 @@ async def update_gap(
     dismissed_at: datetime | None,
     touched_by_human: bool,
     changed_by: UUID,
+    answered_on: date | None = None,
+    answered_by: UUID | None = None,
+    answer_passage_id: UUID | None = None,
 ) -> GapRecord | None:
     """Write the Gap's new state if it is still at `expected_row_version` and in
     `from_status` (a Gap converted by `estimates` meanwhile doesn't take the gaps lock),
@@ -447,6 +494,9 @@ async def update_gap(
                 dismissed_at=dismissed_at,
                 touched_by_human=touched_by_human,
                 changed_by=changed_by,
+                answered_on=answered_on,
+                answered_by=answered_by,
+                answer_passage_id=answer_passage_id,
                 row_version=GapRow.row_version + 1,
             )
             .returning(GapRow.id)
@@ -586,6 +636,9 @@ def _question(row: QuestionRow) -> QuestionRecord:
         changed_by=row.changed_by,
         sent_on=row.sent_on,
         sent_by=row.sent_by,
+        answered_on=row.answered_on,
+        answered_by=row.answered_by,
+        answer_passage_id=row.answer_passage_id,
     )
 
 
@@ -670,6 +723,9 @@ async def update_question(
     status_changed_at: datetime | None,
     sent_on: date | None = None,
     sent_by: UUID | None = None,
+    answered_on: date | None = None,
+    answered_by: UUID | None = None,
+    answer_passage_id: UUID | None = None,
 ) -> QuestionRecord | None:
     """Write the question's new state if it is still at `expected_row_version` and its Gap
     is still `open` (a Gap converted by `estimates` meanwhile doesn't take the gaps lock),
@@ -685,6 +741,9 @@ async def update_question(
         "changed_by": changed_by,
         "sent_on": sent_on,
         "sent_by": sent_by,
+        "answered_on": answered_on,
+        "answered_by": answered_by,
+        "answer_passage_id": answer_passage_id,
         "row_version": QuestionRow.row_version + 1,
     }
     if status_changed_at is not None:
@@ -714,3 +773,150 @@ async def update_question(
         )
     ).scalar_one()
     return _question(row)
+
+
+async def questions_open_to_answer(
+    uow: UnitOfWork, opportunity_id: UUID
+) -> list[tuple[QuestionRecord, GapRecord]]:
+    """The `sent` and `unanswered` questions of the Opportunity's `open` Gaps, with their
+    Gaps, oldest Gap first (Story 4.7)."""
+    found = await uow.session.execute(
+        select(QuestionRow, GapRow)
+        .join(GapRow, GapRow.id == QuestionRow.gap_id)
+        .where(
+            GapRow.opportunity_id == opportunity_id,
+            GapRow.status == "open",
+            QuestionRow.status.in_(OPEN_TO_ANSWER_STATUSES),
+        )
+        .order_by(GapRow.created_at, GapRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return [(_question(question), _gap(gap)) for question, gap in found.all()]
+
+
+# --- answer suggestions (Story 4.7) ---------------------------------------------------------
+
+
+def _match(row: AnswerMatchRow) -> AnswerMatchRecord:
+    return AnswerMatchRecord(
+        id=row.id,
+        opportunity_id=row.opportunity_id,
+        question_id=row.question_id,
+        passage_id=row.passage_id,
+        injection_suspected=row.injection_suspected,
+        status=row.status,
+        row_version=row.row_version,
+        created_at=row.created_at,
+        decided_by=row.decided_by,
+        decided_at=row.decided_at,
+    )
+
+
+async def insert_match(
+    uow: UnitOfWork,
+    *,
+    match_id: UUID,
+    opportunity_id: UUID,
+    question_id: UUID,
+    passage_id: UUID,
+    injection_suspected: bool,
+) -> bool:
+    """A `suggested` match, unless the (question, passage) pair is already known in any
+    status (a rejected pair never returns). Whether it was inserted."""
+    inserted = (
+        await uow.session.execute(
+            pg_insert(AnswerMatchRow)
+            .values(
+                id=match_id,
+                opportunity_id=opportunity_id,
+                question_id=question_id,
+                passage_id=passage_id,
+                injection_suspected=injection_suspected,
+                status="suggested",
+                row_version=1,
+            )
+            .on_conflict_do_nothing(index_elements=["question_id", "passage_id"])
+            .returning(AnswerMatchRow.id)
+        )
+    ).scalar_one_or_none()
+    return inserted is not None
+
+
+async def known_match_pairs(uow: UnitOfWork, question_ids: list[UUID]) -> set[tuple[UUID, UUID]]:
+    """The (question, passage) pairs already matched for these questions, in any status."""
+    if not question_ids:
+        return set()
+    rows = await uow.session.execute(
+        select(AnswerMatchRow.question_id, AnswerMatchRow.passage_id).where(
+            AnswerMatchRow.question_id.in_(question_ids)
+        )
+    )
+    return {(question_id, passage_id) for question_id, passage_id in rows.all()}
+
+
+async def suggested_matches(uow: UnitOfWork, question_ids: list[UUID]) -> list[AnswerMatchRecord]:
+    """The `suggested` matches of these questions, oldest first."""
+    if not question_ids:
+        return []
+    rows = await uow.session.execute(
+        select(AnswerMatchRow)
+        .where(AnswerMatchRow.question_id.in_(question_ids), AnswerMatchRow.status == "suggested")
+        .order_by(AnswerMatchRow.created_at, AnswerMatchRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return [_match(row) for row in rows.scalars()]
+
+
+async def get_match(
+    uow: UnitOfWork, opportunity_id: UUID, match_id: UUID
+) -> AnswerMatchRecord | None:
+    """The match with this id, if it belongs to the Opportunity."""
+    row = (
+        await uow.session.execute(
+            select(AnswerMatchRow)
+            .where(AnswerMatchRow.id == match_id, AnswerMatchRow.opportunity_id == opportunity_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _match(row)
+
+
+async def decide_match(
+    uow: UnitOfWork,
+    match_id: UUID,
+    *,
+    expected_row_version: int,
+    status: str,
+    decided_by: UUID,
+) -> bool:
+    """Move a `suggested` match still at `expected_row_version` to `status` (`confirmed` or
+    `rejected`) with who decided, and now. False (and no change) otherwise."""
+    result = await uow.session.execute(
+        update(AnswerMatchRow)
+        .where(
+            AnswerMatchRow.id == match_id,
+            AnswerMatchRow.status == "suggested",
+            AnswerMatchRow.row_version == expected_row_version,
+        )
+        .values(
+            status=status,
+            decided_by=decided_by,
+            decided_at=func.now(),
+            row_version=AnswerMatchRow.row_version + 1,
+        )
+        .returning(AnswerMatchRow.id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.one_or_none() is not None
+
+
+async def supersede_matches(uow: UnitOfWork, question_id: UUID) -> int:
+    """Mark the question's `suggested` matches `superseded` (it was answered); how many."""
+    result = await uow.session.execute(
+        update(AnswerMatchRow)
+        .where(AnswerMatchRow.question_id == question_id, AnswerMatchRow.status == "suggested")
+        .values(status="superseded", row_version=AnswerMatchRow.row_version + 1)
+        .returning(AnswerMatchRow.id)
+        .execution_options(synchronize_session=False)
+    )
+    return len(result.all())

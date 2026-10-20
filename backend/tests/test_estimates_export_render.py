@@ -151,6 +151,8 @@ def _gap(title: str, status: str, question: str | None, q_status: str = "drafted
             "dismissal": None,
             "history": [],
             "last_changed_by": None,
+            "answer": None,
+            "answer_suggestions": [],
             "question": None
             if question is None
             else {
@@ -161,16 +163,20 @@ def _gap(title: str, status: str, question: str | None, q_status: str = "drafted
                 "status_changed_at": "2026-10-05T10:00:00Z",
                 "row_version": 1,
                 "approved_by": {"id": "0199b1a0-0000-7000-8000-000000000600", "name": "Owner"}
-                if q_status in ("approved", "sent", "unanswered")
+                if q_status in ("approved", "sent", "unanswered", "answered")
                 else None,
                 "approved_at": "2026-10-05T11:00:00Z"
-                if q_status in ("approved", "sent", "unanswered")
+                if q_status in ("approved", "sent", "unanswered", "answered")
                 else None,
                 "edited_by_human": False,
                 "last_changed_by": None,
-                "sent_on": "2026-10-06" if q_status in ("sent", "unanswered") else None,
+                "sent_on": "2026-10-06" if q_status in ("sent", "unanswered", "answered") else None,
                 "sent_by": {"id": "0199b1a0-0000-7000-8000-000000000600", "name": "Owner"}
-                if q_status in ("sent", "unanswered")
+                if q_status in ("sent", "unanswered", "answered")
+                else None,
+                "answered_on": "2026-10-07" if q_status == "answered" else None,
+                "answered_by": {"id": "0199b1a0-0000-7000-8000-000000000600", "name": "Owner"}
+                if q_status == "answered"
                 else None,
             },
         }
@@ -407,6 +413,17 @@ def test_sent_and_unanswered_questions_stay_in_the_export_with_their_status() ->
     by_title = {row[0]: row for row in rows}
     assert by_title["Interface owner"][4] == "Sent"
     assert by_title["Peak growth"][4] == "No answer"
+
+
+def test_answered_questions_stay_in_the_export_labelled_answered() -> None:
+    answered = _gap("SAP release", "answered", "Which SAP release?", q_status="answered")
+    document = build_export(
+        opportunity_title="Acme", version=version(), gaps=[answered], exported_at=AT
+    )
+    workbook = load_workbook(BytesIO(render_xlsx(document)))
+    row = {r[0]: r for r in _sheet_rows(workbook["Clarification Questions"])}["SAP release"]
+
+    assert (row[4], row[5]) == ("Answered", "Answered")
 
 
 def _with_title(title: str) -> Any:

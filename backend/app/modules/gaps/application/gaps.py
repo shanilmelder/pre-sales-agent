@@ -1,7 +1,9 @@
 """Gap queries and the detection start command (Story 4.3).
 
-- `list_gaps`: the Opportunity's open Gaps, ranked by impact, then its converted Gaps (Story
-  8.4), then its dismissed Gaps (Story 4.4), each group in the same order, each with the
+- `list_gaps`: the Opportunity's open Gaps, ranked by impact, then its answered Gaps (Story
+  4.7), then its converted Gaps (Story 8.4), then its dismissed Gaps (Story 4.4), each group
+  in the same order, each with the answer to its question and the open answer suggestions
+  (Story 4.7), the
   Requirements it relates to, its Clarification Question, its dismissal and its history, and
   its latest detection (anyone who can read the Opportunity; a sales representative sees
   only approved, sent and unanswered questions, Stories 4.5 and 4.6, and no reason or note
@@ -16,7 +18,7 @@
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import cast
 from uuid import UUID
 
@@ -34,9 +36,12 @@ from app.modules.gaps.application.detection import (
     stale_after,
 )
 from app.modules.gaps.application.models import (
+    AnswerPassage,
+    AnswerSuggestion,
     ClarificationQuestion,
     Detection,
     Gap,
+    GapAnswer,
     GapDismissal,
     GapHistoryEntry,
     GapHistoryEntryKind,
@@ -48,6 +53,7 @@ from app.modules.gaps.application.models import (
 from app.modules.gaps.domain.gaps import (
     APPROVED_STATUSES,
     IN_PROGRESS,
+    OPEN_TO_ANSWER,
     ConvertedTo,
     DetectionErrorCode,
     DetectionStatus,
@@ -67,10 +73,12 @@ from app.modules.opportunities.application.public import UserRef
 from app.modules.registry.application import public as registry
 from app.platform.errors import GapDetectionInProgressError
 from app.platform.logging import get_logger
+from app.platform.storage import BlobStore
 from app.platform.uow import UnitOfWork
 
 IN_PROGRESS_DETAIL = "Gaps are already being detected for this Opportunity."
 EXCERPT_MAX = 140
+PASSAGE_EXCERPT_MAX = 280
 INACTIVE_LABEL = "Superseded"
 UNKNOWN_USER = "Unknown user"
 _log = get_logger(__name__)
@@ -131,6 +139,8 @@ def question_view(question: QuestionRecord, names: Mapping[UUID, str]) -> Clarif
         last_changed_by=ref(question.changed_by),
         sent_on=question.sent_on,
         sent_by=ref(question.sent_by),
+        answered_on=question.answered_on,
+        answered_by=ref(question.answered_by),
     )
 
 
@@ -142,7 +152,7 @@ async def question_names(
     wanted = {
         user_id
         for q in questions
-        for user_id in (q.approved_by, q.changed_by, q.sent_by)
+        for user_id in (q.approved_by, q.changed_by, q.sent_by, q.answered_by)
         if user_id is not None
     } | set(also)
     return await identity.user_names(uow, wanted) if wanted else {}
@@ -204,12 +214,40 @@ def _dismissal(gap: GapRecord, names: Mapping[UUID, str], *, redacted: bool) -> 
     )
 
 
+def _answer_passage(ref: intake.PassageRef) -> AnswerPassage:
+    return AnswerPassage(
+        passage_id=str(ref.passage_id),
+        source_id=str(ref.source_id),
+        source_version=ref.source_version,
+        filename=ref.filename,
+        label=ref.label,
+        excerpt=excerpt(ref.text, PASSAGE_EXCERPT_MAX),
+    )
+
+
+def _answer_of(gap: GapRecord, question: QuestionRecord | None) -> tuple[date, UUID, UUID] | None:
+    """When, by whom and with which passage the Gap (or, when the answer did not settle it,
+    its question) was answered."""
+    if gap.answered_on is not None and gap.answered_by and gap.answer_passage_id:
+        return gap.answered_on, gap.answered_by, gap.answer_passage_id
+    if (
+        question is not None
+        and question.status == QuestionStatus.ANSWERED
+        and question.answered_on is not None
+        and question.answered_by is not None
+        and question.answer_passage_id is not None
+    ):
+        return question.answered_on, question.answered_by, question.answer_passage_id
+    return None
+
+
 async def gap_views(
     uow: UnitOfWork,
     opportunity_id: UUID,
     records: list[GapRecord],
     *,
     approved_only: bool = False,
+    store: BlobStore | None = None,
 ) -> list[Gap]:
     """The read models of these Gaps, in the given order. With `approved_only` (a sales
     representative's view, Stories 4.5, 4.4 and 4.6), a question that isn't `approved`,
@@ -224,9 +262,41 @@ async def gap_views(
     people = {
         user_id
         for g in records
-        for user_id in (g.dismissed_by, g.changed_by)
+        for user_id in (g.dismissed_by, g.changed_by, g.answered_by)
         if user_id is not None
     } | {e.actor_id for entries in history.values() for e in entries if e.actor_id is not None}
+    answers = {g.id: _answer_of(g, questions.get(g.id)) for g in records}
+    open_questions = {
+        q.id: gap_id
+        for gap_id, q in questions.items()
+        if q.status in OPEN_TO_ANSWER and gap_id in {g.id for g in records if g.status == "open"}
+    }
+    suggestions = await repo.suggested_matches(uow, list(open_questions))
+    passage_ids = [a[2] for a in answers.values() if a is not None] + [
+        s.passage_id for s in suggestions
+    ]
+    passages = await intake.passage_refs(uow, opportunity_id, passage_ids, store=store)
+    changes: dict[UUID, list[intake.RequirementChangeRef]] = {}
+    for answer in answers.values():
+        ref = None if answer is None else passages.get(answer[2])
+        if ref is not None and ref.source_id not in changes:
+            changes[ref.source_id] = await intake.requirement_changes_for_source(uow, ref.source_id)
+    suggested: dict[UUID, list[AnswerSuggestion]] = defaultdict(list)
+    for match in suggestions:
+        ref = passages.get(match.passage_id)
+        if ref is None:
+            continue
+        suggested[open_questions[match.question_id]].append(
+            AnswerSuggestion(
+                id=str(match.id),
+                question_id=str(match.question_id),
+                passage=_answer_passage(ref),
+                injection_suspected=match.injection_suspected,
+                row_version=match.row_version,
+                created_at=match.created_at,
+            )
+        )
+    people |= {a[1] for a in answers.values() if a is not None}
     names = await question_names(uow, questions.values(), also=people)
     active = {
         s.id: s.number for s in await intake.active_requirement_snapshots(uow, opportunity_id)
@@ -275,9 +345,29 @@ async def gap_views(
                 dismissal=_dismissal(g, names, redacted=approved_only),
                 history=_history(g, history.get(g.id, []), names, redacted=approved_only),
                 last_changed_by=None if g.changed_by is None else _user_ref(g.changed_by, names),
+                answer=_gap_answer(answers[g.id], passages, changes, names),
+                answer_suggestions=suggested.get(g.id, []),
             )
         )
     return views
+
+
+def _gap_answer(
+    answer: tuple[date, UUID, UUID] | None,
+    passages: Mapping[UUID, intake.PassageRef],
+    changes: Mapping[UUID, list[intake.RequirementChangeRef]],
+    names: Mapping[UUID, str],
+) -> GapAnswer | None:
+    if answer is None:
+        return None
+    answered_on, answered_by, passage_id = answer
+    ref = passages.get(passage_id)
+    return GapAnswer(
+        answered_on=answered_on,
+        answered_by=_user_ref(answered_by, names),
+        passage=None if ref is None else _answer_passage(ref),
+        requirement_changes=[] if ref is None else changes.get(ref.source_id, []),
+    )
 
 
 def sees_only_approved_questions(actor: Principal) -> bool:
@@ -286,16 +376,31 @@ def sees_only_approved_questions(actor: Principal) -> bool:
     return bool(actor.roles) and actor.roles <= {Role.SALES_REPRESENTATIVE}
 
 
-async def list_gaps(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> GapList:
+async def list_gaps(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    *,
+    store: BlobStore | None = None,
+) -> GapList:
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     records = [
         gap
-        for status in (GapStatus.OPEN, GapStatus.CONVERTED, GapStatus.DISMISSED)
+        for status in (
+            GapStatus.OPEN,
+            GapStatus.ANSWERED,
+            GapStatus.CONVERTED,
+            GapStatus.DISMISSED,
+        )
         for gap in _ranked(await repo.gaps_in(uow, opportunity_id, status.value))
     ]
     return GapList(
         items=await gap_views(
-            uow, opportunity_id, records, approved_only=sees_only_approved_questions(actor)
+            uow,
+            opportunity_id,
+            records,
+            approved_only=sees_only_approved_questions(actor),
+            store=store,
         ),
         detection=_detection(await repo.latest_detection(uow, opportunity_id)),
         can_start_detection=identity.can(actor, Action.GAP_DETECTION_START, resource),

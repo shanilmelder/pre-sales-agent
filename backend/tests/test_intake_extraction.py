@@ -30,6 +30,7 @@ from app.agents.intake_agent.schema import IntakeOutput
 from app.modules.assessments.application import review as assessments_review
 from app.modules.estimates.application import assumptions as estimates_assumptions
 from app.modules.estimates.application import draft as estimates_draft
+from app.modules.gaps.application import answer_matching as gaps_answer_matching
 from app.modules.gaps.application import detection as gaps_detection
 from app.modules.intake.application import extraction as intake_extraction
 from app.modules.intake.application import jobs as intake_jobs
@@ -65,6 +66,7 @@ DRAFT = "estimates.draft_estimate"
 PROPOSE = "estimates.propose_assumptions"
 RED_TEAM = "assessments.red_team_review"
 ASSESS = "workflows.execute"
+MATCH = "gaps.match_answers"
 LEASE = LeaseSettings(lease_s=30, heartbeat_s=5)
 HIDDEN = timedelta(days=1)
 MINE: list[UUID] = []
@@ -147,6 +149,7 @@ def _hidden_jobs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(intake_jobs, "enqueue", hidden_enqueue)
     monkeypatch.setattr(intake_extraction, "enqueue", hidden_enqueue)
     monkeypatch.setattr(gaps_detection, "enqueue", hidden_enqueue)  # Story 4.3
+    monkeypatch.setattr(gaps_answer_matching, "enqueue", hidden_enqueue)  # Story 4.7
     monkeypatch.setattr(estimates_draft, "enqueue", hidden_enqueue)  # Story 8.1
     monkeypatch.setattr(estimates_assumptions, "enqueue", hidden_enqueue)  # Story 8.4
     monkeypatch.setattr(assessments_review, "enqueue", hidden_enqueue)  # Story 6.5
@@ -174,7 +177,7 @@ def retire_extraction_jobs(opportunity_ids: list[UUID]) -> None:
                     "AND opportunity_id = ANY(:o)"
                 ),
                 {
-                    "t": [EXTRACT, DETECT, DRAFT, PROPOSE, RED_TEAM, ASSESS],
+                    "t": [EXTRACT, DETECT, DRAFT, PROPOSE, RED_TEAM, ASSESS, MATCH],
                     "o": list(opportunity_ids),
                 },
             )

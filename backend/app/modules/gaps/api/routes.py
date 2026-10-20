@@ -2,7 +2,8 @@
 `POST /api/v1/opportunities/{opportunity_id}/gap-detections`; Story 4.5: editing and approving
 Clarification Questions under `…/clarification-questions`; Story 4.4: changing a Gap's impact,
 dismissing and reopening it under `…/gaps/{gap_id}`, and approving selected questions; Story
-4.6: exporting the approved questions, marking them sent and "No answer"."""
+4.6: exporting the approved questions, marking them sent and "No answer"; Story 4.7:
+recording answers, and confirming or rejecting suggested ones under `…/answer-matches`."""
 
 from typing import Annotated, Any
 from uuid import UUID
@@ -11,6 +12,7 @@ from fastapi import APIRouter, Body, Header, Request, Response
 
 from app.modules.gaps.application import public as gaps
 from app.modules.gaps.application.public import (
+    AnswerRequest,
     ApproveAllResult,
     ApproveSelectedResult,
     ClarificationQuestion,
@@ -58,14 +60,17 @@ router = APIRouter(prefix="/opportunities/{opportunity_id}", tags=["gaps"])
 
 
 @router.get("/gaps", operation_id="list_gaps", responses=_responses(404, 422))
-async def list_gaps(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) -> GapList:
+async def list_gaps(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW, request: Request
+) -> GapList:
     """The Opportunity's open Gaps, high impact first, then medium, then low (oldest first
     within an impact), then its converted Gaps, then its dismissed Gaps, each group in the
     same order, each with the Requirements it relates to, its Clarification Question, its
     dismissal and its history; and its latest Gap detection (null before the first). Anyone
     who can read the Opportunity; a sales representative sees only approved questions, and
-    no reason or note text."""
-    return await gaps.list_gaps(uow, actor, opportunity_id)
+    no reason or note text. Answered Gaps (Story 4.7) follow the open ones."""
+    settings: Settings = request.app.state.settings
+    return await gaps.list_gaps(uow, actor, opportunity_id, store=BlobStore(settings.storage_dir))
 
 
 @router.post(
@@ -359,7 +364,8 @@ async def dismiss_gap(
     operation_id="reopen_gap",
     responses=_gap_responses(
         {
-            "description": "The Gap is not dismissed (`gap_not_dismissed`); nothing changed",
+            "description": "The Gap is neither dismissed nor answered "
+            "(`gap_not_reopenable`); nothing changed",
             "content": PROBLEM_CONTENT,
         },
         "a reason blank or longer than 500 characters once trimmed",
@@ -374,9 +380,9 @@ async def reopen_gap(
     response: Response,
     if_match: _GAP_IF_MATCH = None,
 ) -> Gap:
-    """Reopen a dismissed Gap, with a reason (kept in its history, never in the trace). A
-    later Gap detection keeps it. The owner and collaborators, except sales
-    representatives."""
+    """Reopen a dismissed or answered Gap, with a reason (kept in its history, never in the
+    trace). An answered Gap's question is sent again, its answer cleared. A later Gap
+    detection keeps it. The owner and collaborators, except sales representatives."""
     reopened = await gaps.reopen_gap(uow, actor, opportunity_id, gap_id, body, if_match)
     return _gap_with_etag(response, reopened)
 
@@ -499,3 +505,130 @@ async def mark_clarification_question_unanswered(
     included."""
     marked = await gaps.mark_unanswered(uow, actor, opportunity_id, question_id, if_match)
     return _with_etag(response, marked)
+
+
+# --- answering Clarification Questions (Story 4.7) ------------------------------------------
+
+_ANSWER_RESPONSES = _question_responses(404, 412, 428)
+_ANSWER_RESPONSES[403] = _SEND_403
+_ANSWER_RESPONSES[409] = {
+    "description": "The question's Gap is not open (`gap_not_open`), or the question is not "
+    'sent or marked "No answer" (`question_not_sent`); nothing changed',
+    "content": PROBLEM_CONTENT,
+}
+_ANSWER_RESPONSES[422] = {
+    "description": "`validation_error`: the text is blank or longer than 20,000 characters "
+    "once trimmed, `answered_on` is in the future, an unknown field, or an id that is not a "
+    "UUID",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@router.post(
+    "/clarification-questions/{question_id}/answer",
+    operation_id="answer_clarification_question",
+    responses={
+        **_ANSWER_RESPONSES,
+        200: {"description": "The Gap, with the answer", "headers": _GAP_ETAG_HEADER},
+    },
+)
+async def answer_clarification_question(
+    opportunity_id: UUID,
+    question_id: UUID,
+    body: AnswerRequest,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    request: Request,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> Gap:
+    """**Record answer**: store the customer's answer to a sent (or "No answer") Clarification
+    Question as a Source of kind `clarification_answer` (parsed as usual, so its extraction
+    may update the Requirements or propose changes), and mark the question answered with
+    that text as its Evidence; with `settles_gap` its Gap is answered too. `If-Match` is the
+    question's row version. The owner and every collaborator, sales representatives
+    included."""
+    settings: Settings = request.app.state.settings
+    answered = await gaps.answer_question(
+        uow,
+        actor,
+        opportunity_id,
+        question_id,
+        body,
+        if_match,
+        store=BlobStore(settings.storage_dir),
+    )
+    return _gap_with_etag(response, answered)
+
+
+_MATCH_IF_MATCH = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description="The ETag of the answer suggestion as last read (its `row_version`), "
+        'e.g. `"1"`.',
+    ),
+]
+_MATCH_RESPONSES = _question_responses(428)
+_MATCH_RESPONSES[403] = _SEND_403
+_MATCH_RESPONSES[404] = {
+    "description": "No Opportunity with this id, or the caller may not see it, or no answer "
+    "suggestion with this id in it (`not_found`)",
+    "content": PROBLEM_CONTENT,
+}
+_MATCH_RESPONSES[412] = {
+    "description": "The suggestion changed or was decided since the caller read it "
+    "(`row_version_mismatch`)",
+    "content": PROBLEM_CONTENT,
+}
+_MATCH_RESPONSES[422] = _ID_422
+_MATCH_RESPONSES[200] = {
+    "description": "The Gap of the suggestion's question",
+    "headers": _GAP_ETAG_HEADER,
+}
+_CONFIRM_RESPONSES = dict(_MATCH_RESPONSES)
+_CONFIRM_RESPONSES[409] = {
+    "description": "The question's Gap is not open (`gap_not_open`), or the question is no "
+    'longer sent or marked "No answer" (`question_not_sent`); nothing changed',
+    "content": PROBLEM_CONTENT,
+}
+
+
+@router.post(
+    "/answer-matches/{match_id}/confirm",
+    operation_id="confirm_answer_match",
+    responses=_CONFIRM_RESPONSES,
+)
+async def confirm_answer_match(
+    opportunity_id: UUID,
+    match_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _MATCH_IF_MATCH = None,
+) -> Gap:
+    """**Confirm** a suggested answer: the question is answered today with the suggested
+    passage as its Evidence, and its Gap is answered. The owner and every collaborator,
+    sales representatives included."""
+    gap = await gaps.confirm_match(uow, actor, opportunity_id, match_id, if_match)
+    return _gap_with_etag(response, gap)
+
+
+@router.post(
+    "/answer-matches/{match_id}/reject",
+    operation_id="reject_answer_match",
+    responses=_MATCH_RESPONSES,
+)
+async def reject_answer_match(
+    opportunity_id: UUID,
+    match_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _MATCH_IF_MATCH = None,
+) -> Gap:
+    """**Not an answer**: reject a suggested answer; the same passage is never suggested for
+    that question again. Nothing else changes. The owner and every collaborator, sales
+    representatives included."""
+    gap = await gaps.reject_match(uow, actor, opportunity_id, match_id, if_match)
+    return _gap_with_etag(response, gap)

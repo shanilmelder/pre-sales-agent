@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -39,15 +40,23 @@ DISMISSED_FIELDS = (
 note only for `other`, where it is required)."""
 
 QUESTION_APPROVED_IFF_STATUS = (
-    "(status IN ('approved', 'sent', 'unanswered')) = (approved_by IS NOT NULL)"
+    "(status IN ('approved', 'sent', 'unanswered', 'answered')) = (approved_by IS NOT NULL)"
 )
-"""A question's approval is recorded while it is approved, and kept once it is sent."""
+"""A question's approval is recorded while it is approved, and kept once it is sent or
+answered."""
 QUESTION_SENT_FIELDS = (
-    "(status IN ('sent', 'unanswered')) = (sent_on IS NOT NULL) "
+    "(status IN ('sent', 'unanswered', 'answered')) = (sent_on IS NOT NULL) "
     "AND (sent_on IS NULL) = (sent_by IS NULL)"
 )
-"""When and by whom a question was sent is set only while `sent | unanswered`, both or
-neither."""
+"""When and by whom a question was sent is set only while `sent | unanswered | answered`, both
+or neither."""
+ANSWERED_FIELDS = (
+    "(status = 'answered') = (answered_on IS NOT NULL) "
+    "AND (answered_on IS NULL) = (answered_by IS NULL) "
+    "AND (answered_on IS NULL) = (answer_passage_id IS NULL)"
+)
+"""When, by whom and with which passage a question or Gap was answered (Story 4.7) is set
+only while `answered`, all or none."""
 
 
 class DetectionRow(Base):
@@ -97,7 +106,8 @@ class GapRow(RowVersioned, Base):
         CheckConstraint("impact IN ('high', 'medium', 'low')", name="impact"),
         CheckConstraint("origin IN ('detected')", name="origin"),
         CheckConstraint(
-            "status IN ('open', 'superseded', 'converted', 'dismissed')", name="status"
+            "status IN ('open', 'superseded', 'converted', 'dismissed', 'answered')",
+            name="status",
         ),
         CheckConstraint(
             "converted_to IS NULL OR converted_to IN ('condition', 'contingency')",
@@ -111,6 +121,7 @@ class GapRow(RowVersioned, Base):
             name="dismiss_reason_kind",
         ),
         CheckConstraint(DISMISSED_FIELDS, name="dismissed_fields"),
+        CheckConstraint(ANSWERED_FIELDS, name="answered_fields"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -132,6 +143,9 @@ class GapRow(RowVersioned, Base):
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     changed_by: Mapped[UUID | None] = mapped_column(Uuid)
     touched_by_human: Mapped[bool] = mapped_column(Boolean, server_default=_FALSE)
+    answered_on: Mapped[date | None] = mapped_column(Date)
+    answered_by: Mapped[UUID | None] = mapped_column(Uuid)
+    answer_passage_id: Mapped[UUID | None] = mapped_column(Uuid)
 
 
 class GapHistoryRow(Base):
@@ -144,7 +158,8 @@ class GapHistoryRow(Base):
     __table_args__ = (
         Index(None, "gap_id", "at"),
         CheckConstraint(
-            "kind IN ('impact_changed', 'dismissed', 'reopened', 'converted')", name="kind"
+            "kind IN ('impact_changed', 'dismissed', 'reopened', 'converted', 'answered')",
+            name="kind",
         ),
     )
 
@@ -182,12 +197,13 @@ class QuestionRow(RowVersioned, Base):
     __tablename__ = "gaps_clarification_questions"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('drafted', 'approved', 'sent', 'unanswered', 'superseded')",
+            "status IN ('drafted', 'approved', 'sent', 'unanswered', 'answered', 'superseded')",
             name="status",
         ),
         CheckConstraint("(approved_at IS NULL) = (approved_by IS NULL)", name="approved_has_by"),
         CheckConstraint(QUESTION_APPROVED_IFF_STATUS, name="approved_iff_status"),
         CheckConstraint(QUESTION_SENT_FIELDS, name="sent_fields"),
+        CheckConstraint(ANSWERED_FIELDS, name="answered_fields"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -206,3 +222,41 @@ class QuestionRow(RowVersioned, Base):
     changed_by: Mapped[UUID | None] = mapped_column(Uuid)
     sent_on: Mapped[date | None] = mapped_column(Date)
     sent_by: Mapped[UUID | None] = mapped_column(Uuid)
+    answered_on: Mapped[date | None] = mapped_column(Date)
+    answered_by: Mapped[UUID | None] = mapped_column(Uuid)
+    answer_passage_id: Mapped[UUID | None] = mapped_column(Uuid)
+
+
+class AnswerMatchRow(RowVersioned, Base):
+    """`clarification_agent`'s suggestion that a passage of a Source answers a question
+    (Story 4.7): `suggested` until a person confirms it (`confirmed`, which answers the
+    question) or says it is not an answer (`rejected`); `superseded` once the question is
+    answered another way. One row per (question, passage), so a rejected pair is never
+    suggested again. `injection_suspected`: the passage reads like an instruction to the
+    platform. `passage_id` is an `intake_source_passages` id (no foreign key: AD-2)."""
+
+    __tablename__ = "gaps_answer_matches"
+    __table_args__ = (
+        Index(None, "opportunity_id", "status"),
+        UniqueConstraint("question_id", "passage_id"),
+        CheckConstraint(
+            "status IN ('suggested', 'confirmed', 'rejected', 'superseded')", name="status"
+        ),
+        CheckConstraint(
+            "(status IN ('confirmed', 'rejected')) = (decided_by IS NOT NULL) "
+            "AND (decided_by IS NULL) = (decided_at IS NULL)",
+            name="decided_fields",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    opportunity_id: Mapped[UUID] = mapped_column(Uuid)
+    question_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("gaps_clarification_questions.id", ondelete="CASCADE")
+    )
+    passage_id: Mapped[UUID] = mapped_column(Uuid)
+    injection_suspected: Mapped[bool] = mapped_column(Boolean, server_default=_FALSE)
+    status: Mapped[str] = mapped_column(Text)
+    decided_by: Mapped[UUID | None] = mapped_column(Uuid)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
