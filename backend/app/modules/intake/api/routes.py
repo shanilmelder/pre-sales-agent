@@ -5,7 +5,8 @@ route (Story 2.5 Part B): `…/{opportunity_id}/passages/{passage_id}`, and the 
 edit routes (Story 2.6): `PATCH …/requirements/{requirement_id}`,
 `POST …/requirements/{requirement_id}/confirm` and `POST …/requirements/confirm-all`, and
 the pending-change routes (Story 2.7): `POST …/requirements/{requirement_id}/change/accept`
-and `…/change/reject`.
+and `…/change/reject`, and the Source viewer routes (Story 2.3):
+`GET …/sources/{source_id}/versions/{version}/text` and `POST …/download-link`.
 
 Uploads are `multipart/form-data` with the file in the `file` field. The body is read as a
 stream (`app.platform.multipart`), never parsed up front, so a rejected type is answered
@@ -17,7 +18,7 @@ import json
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Request, Response
+from fastapi import APIRouter, Header, Path, Request, Response
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from starlette.requests import ClientDisconnect
@@ -28,6 +29,8 @@ from app.modules.intake.application.public import (
     AddTextSource,
     ConfirmAllResult,
     Extraction,
+    OpportunitySourceDownloadLink,
+    OpportunitySourceText,
     Passage,
     Requirement,
     RequirementChangeRejection,
@@ -238,6 +241,78 @@ async def retry_source_parse(
     """Parse the Source's latest version again after it failed: sets it back to `queued` and
     enqueues a new parse job. The Opportunity's owner and collaborators only."""
     return await intake.retry_parse(uow, actor, opportunity_id, source_id)
+
+
+# --- the Source viewer (Story 2.3) ----------------------------------------------------------
+
+_VIEWER_RESPONSES = _responses(404)
+_VIEWER_RESPONSES[404] = {
+    "description": "No Opportunity with this id, or the caller may not see it, or no such "
+    "Source version in it (`not_found`)",
+    "content": PROBLEM_CONTENT,
+}
+_VIEWER_RESPONSES[422] = {
+    "description": "An id is not a UUID, or the version is not a positive integer "
+    "(`validation_error`)",
+    "content": PROBLEM_CONTENT,
+}
+_TEXT_RESPONSES = {
+    **_VIEWER_RESPONSES,
+    404: {
+        "description": "No Opportunity with this id, or the caller may not see it, or no such "
+        "Source version in it, or the version is not parsed (`not_found`)",
+        "content": PROBLEM_CONTENT,
+    },
+}
+SourceVersion = Annotated[int, Path(ge=1, le=2_147_483_647)]
+
+
+@router.get(
+    "/{source_id}/versions/{version}/text",
+    operation_id="get_source_text",
+    responses=_TEXT_RESPONSES,
+)
+async def get_source_text(
+    opportunity_id: UUID,
+    source_id: UUID,
+    version: SourceVersion,
+    request: Request,
+    actor: CurrentPrincipal,
+    uow: UoW,
+) -> OpportunitySourceText:
+    """The extracted text of a parsed Source version, exactly as stored. 404 until it is
+    parsed. Anyone who can read the Opportunity."""
+    settings: Settings = request.app.state.settings
+    return await intake.source_text(
+        uow, actor, opportunity_id, source_id, version, store=BlobStore(settings.storage_dir)
+    )
+
+
+@router.post(
+    "/{source_id}/versions/{version}/download-link",
+    operation_id="create_source_download_link",
+    responses=_VIEWER_RESPONSES,
+)
+async def create_source_download_link(
+    opportunity_id: UUID,
+    source_id: UUID,
+    version: SourceVersion,
+    request: Request,
+    actor: CurrentPrincipal,
+    uow: UoW,
+) -> OpportunitySourceDownloadLink:
+    """A short-lived signed link to a Source version's original file, served unchanged as
+    an attachment under its stored file name. Anyone who can read the Opportunity."""
+    settings: Settings = request.app.state.settings
+    return await intake.source_download_link(
+        uow,
+        actor,
+        opportunity_id,
+        source_id,
+        version,
+        signing_key=settings.download_signing_key,
+        ttl_s=settings.download_link_ttl_s,
+    )
 
 
 # --- Requirements (Story 2.5 Part A) --------------------------------------------------------

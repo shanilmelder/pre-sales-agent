@@ -19,6 +19,7 @@ from app.modules.workflows.application.public import (
     AssessmentRun,
     AssessmentsView,
     ProgressEventData,
+    TraceEventData,
 )
 from app.platform.config import Settings
 from app.platform.errors import PROBLEM_JSON, Problem
@@ -137,8 +138,18 @@ async def cancel_assessment_run(
         **_responses(404, 422),
         200: {
             "description": "Server-Sent Events: `id: <event_id>`, `event: <event_type>`, "
-            "`data:` the JSON below; a comment line every 15 s keeps the connection open",
-            "content": {"text/event-stream": {"schema": ProgressEventData.model_json_schema()}},
+            "`data:` the JSON below (a progress frame or a trace frame); a comment line every "
+            "15 s keeps the connection open",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "anyOf": [
+                            ProgressEventData.model_json_schema(),
+                            TraceEventData.model_json_schema(),
+                        ]
+                    }
+                }
+            },
         },
     },
 )
@@ -149,9 +160,10 @@ async def stream_opportunity_events(
     uow: UoW,
     last_event_id: Annotated[str | None, Header()] = None,
 ) -> StreamingResponse:
-    """The Opportunity's live progress: a run queued, each task started and ended, a run
-    ended. Reconnect with `Last-Event-ID` to replay what was missed. Anyone who can read the
-    Opportunity."""
+    """The Opportunity's live progress (a run queued, each task started and ended, a run
+    ended) and its trace events (e.g. a Source added, parsing started, parsed or failed).
+    Reconnect with `Last-Event-ID` to replay what was missed. Anyone who can read the
+    Opportunity; the stream ends once they no longer can."""
     await events.authorize_stream(uow, actor, opportunity_id)
     settings: Settings = request.app.state.settings
     stream = events.event_stream(
@@ -159,6 +171,7 @@ async def stream_opportunity_events(
         settings.database_url,
         opportunity_id,
         events.parse_event_id(last_event_id),
+        actor=actor,
     )
     return StreamingResponse(
         stream,

@@ -604,6 +604,48 @@ export async function loadSources(opportunityId: unknown): Promise<SourcesResult
   return listSources(opportunityId);
 }
 
+export type SourceTextResult =
+  | { kind: "ok"; version: number; text: string; charCount: number }
+  /** 404: not parsed (yet), or not readable by the caller. */
+  | { kind: "unavailable" }
+  | { kind: "error" };
+
+/** `GET /api/v1/opportunities/{id}/sources/{source_id}/versions/{version}/text`: the
+ * extracted text of a parsed Source version, for the Sources tab's inspector (Story 2.3). */
+export async function loadSourceText(
+  opportunityId: unknown,
+  sourceId: unknown,
+  version: unknown,
+): Promise<SourceTextResult> {
+  if (
+    typeof opportunityId !== "string" ||
+    !UUID_RE.test(opportunityId) ||
+    typeof sourceId !== "string" ||
+    !UUID_RE.test(sourceId) ||
+    typeof version !== "number" ||
+    !Number.isSafeInteger(version) ||
+    version < 1
+  ) {
+    return { kind: "error" };
+  }
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/sources/{source_id}/versions/{version}/text",
+      { params: { path: { opportunity_id: opportunityId, source_id: sourceId, version } } },
+    );
+    if (data) {
+      return { kind: "ok", version: data.version, text: data.text, charCount: data.char_count };
+    }
+    if (response.status === 404) return { kind: "unavailable" };
+    console.error(`GET source text failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET source text failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
 /** The Opportunity's Requirements and latest extraction as stored now (the Requirements tab
  * polls this while an extraction runs). */
 export async function loadRequirements(opportunityId: unknown): Promise<RequirementsResult> {

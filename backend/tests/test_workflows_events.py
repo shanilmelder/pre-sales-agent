@@ -1,34 +1,44 @@
-"""Workflow progress and the per-Opportunity event stream (Story 5.2) against a real,
-migrated Postgres as psa_app: progress rows and their grants, the SSE frames, replay from
-`Last-Event-ID`, the route's authorization, the daily prune from `platform_schedules`, and the
-0028 migration's round trip with existing runs.
+"""Workflow progress and the per-Opportunity event stream (Stories 5.2 and 2.3) against a
+real, migrated Postgres as psa_app: progress rows and their grants, the SSE frames (progress
+and trace), merged replay from `Last-Event-ID`, the per-event re-authorization, the route's
+authorization, the daily prune from `platform_schedules`, and the 0028 migration's round trip
+with existing runs.
 """
 
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+import psycopg
 import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
+from app.modules.identity.application.public import Action, Principal, Role
+from app.modules.workflows.adapters.repository import ProgressRecord, TraceRecord
 from app.modules.workflows.application import events
 from app.modules.workflows.application import progress as workflows_progress
 from app.modules.workflows.domain.runs import AssessmentRunStatus, AssessmentTaskStatus
+from app.platform import trace
+from app.platform.actor import Actor
 from app.platform.config import Settings
-from app.platform.db import create_engine
+from app.platform.db import create_engine, libpq_url
+from app.platform.events import EVENTS_CHANNEL
 from app.platform.jobs import JobContext
 from app.platform.schedules import enqueue_due
+from app.platform.trace.catalogue import IdentityUserProvisioned
 from app.platform.uow import unit_of_work
 from tests import test_intake_extraction as extraction_tests
+from tests.auth_tokens import permissions_for
 from tests.conftest import run_async
 from tests.test_gaps_detection import rows
-from tests.test_intake_extraction import BASE, FakeGateway, owner
+from tests.test_intake_extraction import BASE, FakeGateway, owner, upload
 from tests.test_intake_parse_job import _alembic
-from tests.test_opportunities import PSE, _user
+from tests.test_opportunities import PSE, _add, _if_match, _user
 from tests.test_orchestration import planned
 
 storage_dir = extraction_tests.storage_dir
@@ -37,6 +47,20 @@ gateway = extraction_tests.gateway
 client = extraction_tests.client
 
 PRUNE = "workflows.prune_progress"
+
+
+def principal(user_id: str | UUID, *roles: str) -> Principal:
+    """The Principal a token for `user_id` with `roles` gives (README permission seed)."""
+    return Principal(
+        Actor("user", str(user_id)),
+        frozenset(Role(r) for r in roles),
+        frozenset(Action(p) for p in permissions_for(roles)),
+    )
+
+
+def reader(opp: dict[str, Any]) -> Principal:
+    """The Opportunity's owner (a presales engineer), who can read it."""
+    return principal(opp["owner"]["id"], PSE)
 
 
 async def _record(db_url: str, opp_id: str, run_id: UUID, status: AssessmentRunStatus) -> UUID:
@@ -90,7 +114,9 @@ def test_the_stream_replays_after_the_last_event_id_then_sends_live_frames(
         first = await _record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED)
         second = await _record(db_url, opp["id"], run_id, AssessmentRunStatus.FAILED)
         engine = create_engine(Settings(database_url=db_url))
-        stream = events.event_stream(engine, db_url, UUID(opp["id"]), first, keepalive_s=0.2)
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), first, actor=reader(opp), keepalive_s=0.2
+        )
         try:
             assert await anext(stream) == ": connected\n\n"
             replayed = await _next_frame(stream)
@@ -132,7 +158,9 @@ def test_an_unknown_last_event_id_streams_from_now(
     async def scenario() -> list[str]:
         await _record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED)
         engine = create_engine(Settings(database_url=db_url))
-        stream = events.event_stream(engine, db_url, UUID(opp["id"]), uuid4(), keepalive_s=0.2)
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), uuid4(), actor=reader(opp), keepalive_s=0.2
+        )
         try:
             return [await anext(stream), await anext(stream)]
         finally:
@@ -188,6 +216,336 @@ def test_progress_rows_are_not_updatable_by_psa_app(
             conn.execute(sa.text(sql), {"r": run_id})
 
 
+# --- trace frames (Story 2.3) ---------------------------------------------------------------
+
+
+DATA_KEYS = {
+    "event_type",
+    "subject_type",
+    "subject_id",
+    "subject_version",
+    "occurred_at",
+    "summary",
+}
+
+
+async def _trace_id(db_url: str, source_id: str) -> UUID:
+    """The id of the Source's latest `intake.source.added` trace row."""
+    engine = create_engine(Settings(database_url=db_url))
+    try:
+        async with unit_of_work(engine) as uow:
+            found: UUID = (
+                await uow.session.execute(
+                    sa.text(
+                        "SELECT id FROM platform_trace_events WHERE subject_id = :s "
+                        "AND event_type = 'intake.source.added' ORDER BY id DESC LIMIT 1"
+                    ),
+                    {"s": source_id},
+                )
+            ).scalar_one()
+        return found
+    finally:
+        await engine.dispose()
+
+
+def test_a_source_added_while_subscribed_is_a_trace_frame_and_others_are_not_sent(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = owner(client, sync_engine)
+    other_headers, other = owner(client, sync_engine)
+    secret = f"secret customer words {opp['id']}"
+
+    async def scenario() -> tuple[str, str, str]:
+        engine = create_engine(Settings(database_url=db_url))
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), None, actor=reader(opp), keepalive_s=0.2
+        )
+        try:
+            assert await anext(stream) == ": connected\n\n"
+            upload(client, other_headers, other["id"], "other.txt", f"other {other['id']}")
+            mine = upload(client, headers, opp["id"], "secret-name.txt", secret)
+            got = await _next_frame(stream)
+            return mine["id"], str(await _trace_id(db_url, mine["id"])), got
+        finally:
+            await stream.aclose()
+            await engine.dispose()
+
+    source_id, trace_id, got = run_async(scenario())
+
+    event_id, event, data = _parse(got)  # the other Opportunity's Source was not sent
+    assert (event_id, event) == (trace_id, "intake.source.added")
+    assert set(data) == DATA_KEYS
+    assert data == {
+        "event_type": "intake.source.added",
+        "subject_type": "intake.source",
+        "subject_id": source_id,
+        "subject_version": 1,
+        "occurred_at": data["occurred_at"],
+        "summary": "intake.source.added",  # the payload (kind, size) is never sent
+    }
+    for leak in ("secret", "size_bytes", "kind"):
+        assert leak not in got
+
+
+def test_a_trace_row_without_an_opportunity_sends_no_notify(db_url: str) -> None:
+    async def scenario() -> list[str]:
+        listener = await psycopg.AsyncConnection.connect(libpq_url(db_url), autocommit=True)
+        engine = create_engine(Settings(database_url=db_url))
+        try:
+            await listener.execute(f"LISTEN {EVENTS_CHANNEL}")
+            subject, opportunity = uuid4(), uuid4()
+            async with unit_of_work(engine) as uow:
+                without = await trace.append(
+                    uow,
+                    actor=Actor("system", "test"),
+                    payload=IdentityUserProvisioned(),
+                    subject_type="identity.user",
+                    subject_id=subject,
+                )
+                # A control row with an Opportunity: it does NOTIFY, with ids only.
+                with_opp = await trace.append(
+                    uow,
+                    actor=Actor("system", "test"),
+                    payload=IdentityUserProvisioned(),
+                    subject_type="identity.user",
+                    subject_id=subject,
+                    opportunity_id=opportunity,
+                )
+            got: list[dict[str, str]] = []
+            async for notify in listener.notifies(timeout=0.5):
+                got.append(json.loads(notify.payload))
+            assert {
+                "event_id": str(with_opp),
+                "opportunity_id": str(opportunity),
+                "source": "trace",
+            } in got
+            return [p for p in got if p.get("event_id") == str(without)]
+        finally:
+            await listener.close()
+            await engine.dispose()
+
+    assert run_async(scenario()) == []
+
+
+def test_replay_merges_progress_and_trace_rows_in_id_order(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = owner(client, sync_engine)
+    run_id, _ = planned(db_url, opp["id"])
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        first = await _record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED)
+        source = upload(client, headers, opp["id"], "a.txt", f"note {opp['id']}")
+        added = await _trace_id(db_url, source["id"])
+        last = await _record(db_url, opp["id"], run_id, AssessmentRunStatus.FAILED)
+        engine = create_engine(Settings(database_url=db_url))
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), first, actor=reader(opp), keepalive_s=0.2
+        )
+        try:
+            assert await anext(stream) == ": connected\n\n"
+            frames = [await _next_frame(stream), await _next_frame(stream)]
+            assert await anext(stream) == ": keep-alive\n\n"  # nothing more, no duplicate
+            return [str(added), str(last)], frames
+        finally:
+            await stream.aclose()
+            await engine.dispose()
+
+    expected, frames = run_async(scenario())
+
+    parsed = [_parse(f) for f in frames]
+    assert [p[0] for p in parsed] == expected
+    assert [p[1] for p in parsed] == ["intake.source.added", "workflows.run.ended"]
+
+
+def test_replay_after_a_trace_id_resumes_from_it(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = owner(client, sync_engine)
+    run_id, _ = planned(db_url, opp["id"])
+
+    async def scenario() -> tuple[str, str]:
+        source = upload(client, headers, opp["id"], "a.txt", f"note {opp['id']}")
+        added = await _trace_id(db_url, source["id"])
+        later = await _record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED)
+        engine = create_engine(Settings(database_url=db_url))
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), added, actor=reader(opp), keepalive_s=0.2
+        )
+        try:
+            assert await anext(stream) == ": connected\n\n"
+            return str(later), await _next_frame(stream)
+        finally:
+            await stream.aclose()
+            await engine.dispose()
+
+    later, got = run_async(scenario())
+
+    assert _parse(got)[:2] == (later, "workflows.run.queued")
+
+
+def _progress(i: int) -> ProgressRecord:
+    return ProgressRecord(
+        id=UUID(int=i),
+        opportunity_id=UUID(int=0),
+        run_id=UUID(int=0),
+        task_id=None,
+        event_type="workflows.run.queued",
+        subject_type="workflows.run",
+        subject_id=UUID(int=0),
+        subject_version=None,
+        summary="run queued",
+        occurred_at=datetime.now(UTC),
+    )
+
+
+def _traced(i: int) -> TraceRecord:
+    return TraceRecord(
+        id=UUID(int=i),
+        opportunity_id=UUID(int=0),
+        event_type="intake.source.added",
+        subject_type="intake.source",
+        subject_id=UUID(int=0),
+        subject_version=1,
+        occurred_at=datetime.now(UTC),
+    )
+
+
+def test_merge_replay_orders_by_id_and_stops_where_a_full_kind_stops() -> None:
+    merged = events.merge_replay([_progress(1), _progress(4)], [_traced(2), _traced(3)])
+    assert [r.id.int for r in merged] == [1, 2, 3, 4]
+
+    # The traces filled their limit at id 3: progress row 4 waits for the next reconnect.
+    capped = events.merge_replay([_progress(1), _progress(4)], [_traced(2), _traced(3)], limit=2)
+    assert [r.id.int for r in capped] == [1, 2, 3]
+    assert events.merge_replay([], [], limit=2) == []
+
+
+def test_the_stream_ends_once_the_subscriber_loses_access(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = owner(client, sync_engine)
+    _, member_id = _user(client, sync_engine, "Member Person", "pm_reviewer")
+    added = _add(client, headers, opp, member_id)
+    assert added.status_code == 200, added.text
+    member = principal(member_id, "pm_reviewer")
+
+    async def scenario() -> list[str]:
+        engine = create_engine(Settings(database_url=db_url))
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), None, actor=member, keepalive_s=0.2
+        )
+        sent: list[str] = []
+        try:
+            assert await anext(stream) == ": connected\n\n"
+            resp = client.delete(
+                f"{BASE}/{opp['id']}/collaborators/{member_id}",
+                headers={**headers, **_if_match(added.json()["row_version"])},
+            )
+            assert resp.status_code == 200, resp.text
+            upload(client, headers, opp["id"], "after.txt", f"after {opp['id']}")
+            async with asyncio.timeout(10):
+                async for chunk in stream:
+                    sent.append(chunk)
+            return sent
+        finally:
+            await stream.aclose()
+            await engine.dispose()
+
+    sent = run_async(scenario())
+
+    # The removal's own trace event re-checked access: the stream ended, sending nothing.
+    assert all(chunk.startswith(":") for chunk in sent)
+
+
+def test_a_replay_longer_than_the_limit_is_paged_to_the_end(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers, opp = owner(client, sync_engine)
+    run_id, _ = planned(db_url, opp["id"])
+    monkeypatch.setattr(events, "REPLAY_LIMIT", 2)
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        first = await _record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED)
+        expected: list[str] = []
+        for n in range(3):
+            expected.append(
+                str(await _record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED))
+            )
+            if n < 2:
+                source = upload(client, headers, opp["id"], f"{n}.txt", f"n{n} {opp['id']}")
+                expected.append(str(await _trace_id(db_url, source["id"])))
+        engine = create_engine(Settings(database_url=db_url))
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), first, actor=reader(opp), keepalive_s=0.2
+        )
+        got: list[str] = []
+        try:
+            assert await anext(stream) == ": connected\n\n"
+            async with asyncio.timeout(10):
+                while (chunk := await anext(stream)) != ": keep-alive\n\n":
+                    got.append(chunk)
+            return expected, got
+        finally:
+            await stream.aclose()
+            await engine.dispose()
+
+    expected, got = run_async(scenario())
+
+    # 5 rows past the id, pages of 2: every one, in id order, none twice.
+    assert [_parse(f)[0] for f in got] == expected
+
+
+def test_a_gaps_change_is_withheld_once_the_subscriber_loses_access(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = owner(client, sync_engine)
+    _, member_id = _user(client, sync_engine, "Member Person", "pm_reviewer")
+    assert _add(client, headers, opp, member_id).status_code == 200
+    member = principal(member_id, "pm_reviewer")
+
+    async def scenario() -> list[str]:
+        engine = create_engine(Settings(database_url=db_url))
+        stream = events.event_stream(
+            engine, db_url, UUID(opp["id"]), None, actor=member, keepalive_s=0.2
+        )
+        sent: list[str] = []
+        try:
+            assert await anext(stream) == ": connected\n\n"
+            # Written directly, so no trace event (and its frame) ends the stream first.
+            with sync_engine.begin() as conn:
+                conn.execute(
+                    sa.text(
+                        "DELETE FROM opportunities_collaborators "
+                        "WHERE opportunity_id = :o AND user_id = :u"
+                    ),
+                    {"o": opp["id"], "u": member_id},
+                )
+                conn.execute(
+                    sa.text("SELECT pg_notify(:c, :p)"),
+                    {
+                        "c": EVENTS_CHANNEL,
+                        "p": json.dumps({"opportunity_id": opp["id"], "source": "gaps"}),
+                    },
+                )
+            async with asyncio.timeout(10):
+                async for chunk in stream:
+                    sent.append(chunk)
+            return sent
+        finally:
+            await stream.aclose()
+            await engine.dispose()
+
+    sent = run_async(scenario())
+
+    # The stream ended on the gaps notification, having sent no `gaps.changed` frame.
+    assert all(chunk.startswith(":") for chunk in sent)
+
+
 # --- the route ------------------------------------------------------------------------------
 
 
@@ -200,12 +558,19 @@ def test_the_route_streams_to_a_reader_and_passes_the_last_event_id(
 ) -> None:
     headers, opp = owner(client, sync_engine)
     seen: list[UUID | None] = []
+    actors: list[str] = []
     resume = uuid4()
 
     async def finite(
-        engine: Any, database_url: str, opportunity_id: UUID, last_event_id: UUID | None
+        engine: Any,
+        database_url: str,
+        opportunity_id: UUID,
+        last_event_id: UUID | None,
+        *,
+        actor: Principal,
     ) -> AsyncIterator[str]:
         seen.append(last_event_id)
+        actors.append(actor.actor.id)
         yield ": connected\n\n"
         yield 'id: 1\nevent: workflows.run.queued\ndata: {"summary": "run queued"}\n\n'
 
@@ -220,6 +585,7 @@ def test_the_route_streams_to_a_reader_and_passes_the_last_event_id(
     assert response.headers["cache-control"] == "no-cache, no-transform"
     assert "event: workflows.run.queued" in response.text
     assert seen == [resume]
+    assert actors == [opp["owner"]["id"]]  # the stream re-authorizes as the caller
 
 
 def test_the_route_is_404_for_someone_who_cannot_read_the_opportunity(

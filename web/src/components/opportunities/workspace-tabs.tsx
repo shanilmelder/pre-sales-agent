@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 
+import { ConnectionStatus } from "@/components/opportunities/connection-status";
 import { useShell, useWorkspaceTabKeys } from "@/components/shell/shell-context";
 import { cn } from "@/lib/utils";
 import { openCountLabel } from "@/lib/conflicts";
-import { useGapsEvents } from "@/lib/opportunity-events";
+import { useEventStreamStatus, useGapsEvents } from "@/lib/opportunity-events";
 import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
 
 /** The workspace tab strip and the selected tab's panel. A `tablist` of links (each tab has
@@ -15,7 +16,9 @@ import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib
  * shell's key handler, and Left/Right/Home/End move focus along the strip. A tab with a
  * count above 0 shows it after its label ("Conflicts 3", read as "Conflicts, 3 open").
  * Story 4.7: with `loadGapCount`, the Gaps tab's open count follows the Opportunity's event
- * stream (`gaps.changed`) without a reload. */
+ * stream (`gaps.changed`) without a reload. Story 2.3: a slim status bar at the bottom shows
+ * while that stream is down; once it reads "Offline — edits disabled" the tab panel sits in a
+ * disabled `fieldset`, so its buttons and inputs go inert (links and the tabs still work). */
 export function WorkspaceTabs({
   id,
   counts: initialCounts = {},
@@ -51,6 +54,8 @@ export function WorkspaceTabs({
     liveGaps && liveGaps.from === initialCounts.gaps
       ? { ...initialCounts, gaps: liveGaps.count }
       : initialCounts;
+  const stream = useEventStreamStatus(id);
+  const offline = stream === "offline";
   const segment = useSelectedLayoutSegment();
   const { singleKeyShortcuts } = useShell();
   const selected = activeTab(segment);
@@ -142,8 +147,15 @@ export function WorkspaceTabs({
         aria-labelledby={selected ? tabId(selected) : undefined}
         className="flex flex-1 flex-col"
       >
-        {children}
+        <fieldset
+          disabled={offline}
+          aria-label={offline ? "Edits disabled while offline" : undefined}
+          className="m-0 flex min-w-0 flex-1 flex-col border-0 p-0"
+        >
+          {children}
+        </fieldset>
       </div>
+      <ConnectionStatus status={stream} />
     </>
   );
 }

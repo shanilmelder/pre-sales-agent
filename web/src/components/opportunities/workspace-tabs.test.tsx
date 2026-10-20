@@ -227,3 +227,77 @@ describe("the live Gaps badge (Story 4.7)", () => {
     expect(FakeSource.last!.url).toBe(`/api/opportunities/${ID}/events`);
   });
 });
+
+describe("the connection status bar (Story 2.3)", () => {
+  class FakeSource {
+    static last: FakeSource | null = null;
+    readonly listeners = new Map<string, ((event?: unknown) => void)[]>();
+    readyState = 0;
+    constructor(readonly url: string) {
+      FakeSource.last = this;
+    }
+    addEventListener(type: string, listener: (event?: unknown) => void) {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+    }
+    close() {
+      this.readyState = 2;
+    }
+    emit(type: string) {
+      if (type === "open") this.readyState = 1;
+      for (const listener of this.listeners.get(type) ?? []) listener({ type });
+    }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("EventSource", FakeSource);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function body() {
+    return (
+      <>
+        <button type="button">Retry</button>
+        <input aria-label="Filter" />
+        <a href="https://example.invalid/elsewhere">Elsewhere</a>
+      </>
+    );
+  }
+
+  it("reads Reconnecting… from the first drop, then Offline — edits disabled at 60 s, and clears on reconnect", async () => {
+    const { container } = render(tree(body()));
+    const bar = screen.getByTestId("connection-status");
+    expect(bar.getAttribute("role")).toBe("status");
+    expect(bar.getAttribute("aria-live")).toBe("polite");
+    expect(bar.textContent).toBe(""); // connecting: no bar
+
+    await act(async () => FakeSource.last!.emit("open"));
+    expect(bar.textContent).toBe("");
+
+    FakeSource.last!.readyState = 0; // the browser retries by itself
+    await act(async () => FakeSource.last!.emit("error"));
+    expect(bar.textContent).toBe("Reconnecting…");
+    expect(screen.getByRole("button", { name: "Retry" }).matches(":disabled")).toBe(false);
+
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(bar.textContent).toBe("Offline — edits disabled");
+    // The tab panel's controls go inert; links and the tabs still work.
+    expect(screen.getByRole("button", { name: "Retry" }).matches(":disabled")).toBe(true);
+    expect(screen.getByRole("textbox", { name: "Filter" }).matches(":disabled")).toBe(true);
+    expect(screen.getByRole("link", { name: "Elsewhere" }).getAttribute("href")).toBe(
+      "https://example.invalid/elsewhere",
+    );
+    for (const tab of tabs()) expect(tab.getAttribute("aria-disabled")).toBeNull();
+    vi.useRealTimers();
+    expect(await axeViolations(container)).toEqual([]);
+    vi.useFakeTimers();
+
+    await act(async () => FakeSource.last!.emit("open"));
+    expect(bar.textContent).toBe("");
+    expect(screen.getByRole("button", { name: "Retry" }).matches(":disabled")).toBe(false);
+  });
+});

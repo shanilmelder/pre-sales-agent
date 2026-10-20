@@ -11,12 +11,19 @@ import {
   StickyNoteIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadSources, retryParse, type RetryParseResult } from "@/app/opportunities/actions";
+import { SourceInspector } from "@/components/opportunities/source-inspector";
 import { SourceUpload, type SourceUploadHandle } from "@/components/opportunities/source-upload";
 import { useAnnounce } from "@/components/shell/live-region";
+import {
+  RIGHT_PANE_TOGGLE_ID,
+  RightPaneContent,
+  useShell,
+} from "@/components/shell/shell-context";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
+import { useSourceEvents } from "@/lib/opportunity-events";
 import {
   formatDateTime,
   isParsePending,
@@ -85,7 +92,8 @@ export function ParseStatusPill({ parse }: { parse: SourceParse }) {
 
 /** The Opportunity's Sources, newest first: kind, file name, version, parse status, uploader
  * and time (of the latest version). A failed parse shows its reason and, for those who may
- * add Sources, **Retry** and **Paste text instead**. */
+ * add Sources, **Retry** and **Paste text instead**. With `onOpen`, each file name is a
+ * button (one Tab stop per row) that opens the Source in the inspector, by click or Enter. */
 export function SourcesList({
   sources,
   canAdd = false,
@@ -93,9 +101,15 @@ export function SourcesList({
   retryMessages = {},
   onRetry,
   onPasteInstead,
+  selectedId = null,
+  onOpen,
 }: {
   sources: readonly Source[];
   canAdd?: boolean;
+  /** The Source shown in the inspector. */
+  selectedId?: string | null;
+  /** `viaKeyboard` is true when the row was opened with Enter or Space, not a pointer. */
+  onOpen?: (source: Source, viaKeyboard: boolean) => void;
   /** Sources whose Retry is in flight. */
   retrying?: ReadonlySet<string>;
   /** A Retry's failure sentence, by Source id. */
@@ -137,8 +151,12 @@ export function SourcesList({
           const failed = source.parse?.status === "failed";
           const busy = retrying.has(source.id);
           const retryMessage = retryMessages[source.id];
+          const selected = source.id === selectedId;
           return (
-            <tr key={source.id} className="h-row border-b border-border align-top">
+            <tr
+              key={source.id}
+              className={`h-row border-b border-border align-top ${selected ? "bg-muted" : onOpen ? "hover:bg-muted/60" : ""}`}
+            >
               <td className="py-1.5 pr-2">
                 <span className="inline-flex items-center gap-1.5">
                   <Icon aria-hidden className="size-3.5 text-muted-foreground" />
@@ -146,7 +164,21 @@ export function SourcesList({
                 </span>
               </td>
               <td className="truncate px-2 py-1.5" title={source.filename}>
-                {source.filename}
+                {onOpen ? (
+                  <button
+                    type="button"
+                    data-source-row=""
+                    data-source-id={source.id}
+                    aria-current={selected ? "true" : undefined}
+                    // A keyboard-activated click has no pointer clicks (detail 0).
+                    onClick={(event) => onOpen(source, event.detail === 0)}
+                    className="w-full truncate rounded-sm text-left text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >
+                    {source.filename}
+                  </button>
+                ) : (
+                  source.filename
+                )}
               </td>
               <td className="px-2 py-1.5 text-numeric">v{source.version}</td>
               <td className="px-2 py-1.5">
@@ -216,8 +248,11 @@ function retryMessage(result: RetryParseResult): string | null {
 
 /** The Sources tab's content: the upload area (only when the caller may add Sources; the
  * API decides on every upload) and the list, which takes each added Source as it lands.
- * While any Source is Queued or Parsing, the list is re-read every 2 s: paused while the
- * tab is hidden, and stopped after 15 minutes of continuous pending. */
+ * Story 2.3: the list follows the Opportunity's event stream: any `intake.source.*` frame,
+ * or a (re)connect, re-reads it. Only while the stream isn't connected and a Source is Queued
+ * or Parsing is the list re-read every 2 s instead: paused while the tab is hidden, and
+ * stopped after 15 minutes of continuous pending. A selected row opens in the right pane's
+ * inspector. */
 export function SourcesSection({
   opportunityId,
   canAdd,
@@ -242,6 +277,56 @@ export function SourcesSection({
   const pendingSince = useRef<number | null>(null);
   const [visible, setVisible] = useState(true);
   const pending = sources.some(isParsePending);
+  const { rightPaneOpen, setRightPaneOpen } = useShell();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const returnFocusTo = useRef<string | null>(null);
+  const selected = sources.find((s) => s.id === selectedId) ?? null;
+
+  /** Bumped as each re-read starts: only the latest-started one is applied, so a slower,
+   * older response can't put back what a newer one showed. */
+  const readSeq = useRef(0);
+
+  /** Re-reads the list. One that a local change overtook (see `mutation`) is dropped and
+   * run once more, so the stream's change still lands. */
+  const reread = useCallback(() => {
+    const run = async (again: boolean): Promise<void> => {
+      const seq = ++readSeq.current;
+      const startedAt = mutation.current;
+      try {
+        const result = await loadSources(opportunityId);
+        if (seq !== readSeq.current || result.kind !== "ok") return;
+        if (mutation.current !== startedAt) {
+          if (again) await run(false);
+          return;
+        }
+        setSources((current) => mergeSources(result.sources, current));
+      } catch {
+        // A failed re-read is retried on the next frame (or poll).
+      }
+    };
+    return run(true);
+  }, [opportunityId]);
+
+  const live = useSourceEvents(opportunityId, () => void reread());
+
+  // When the pane closes after a keyboard open, focus goes back to the row, not the toggle.
+  useEffect(() => {
+    if (rightPaneOpen) return;
+    const id = returnFocusTo.current;
+    returnFocusTo.current = null;
+    const active = document.activeElement;
+    if (id && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
+      document.querySelector<HTMLElement>(`[data-source-id="${id}"]`)?.focus();
+    }
+  }, [rightPaneOpen]);
+
+  function open(source: Source, viaKeyboard: boolean) {
+    setSelectedId(source.id);
+    returnFocusTo.current = viaKeyboard ? source.id : null;
+    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
 
   useEffect(() => {
     const onVisibility = () => setVisible(!document.hidden);
@@ -256,8 +341,9 @@ export function SourcesSection({
       return;
     }
     pendingSince.current ??= Date.now();
-    // Paused while the tab is hidden; stopped once pending for too long.
-    if (!visible || Date.now() - pendingSince.current >= PARSE_POLL_LIMIT_MS) return;
+    // The stream drives the pills while connected. Without it: paused while the tab is
+    // hidden, and stopped once pending for too long.
+    if (live || !visible || Date.now() - pendingSince.current >= PARSE_POLL_LIMIT_MS) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       const startedAt = mutation.current;
@@ -275,7 +361,7 @@ export function SourcesSection({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [pending, visible, opportunityId, pollTick]);
+  }, [pending, visible, live, opportunityId, pollTick]);
 
   /** Applies a local change to the list (see `mutation`). */
   function change(update: (current: Source[]) => Source[]) {
@@ -342,7 +428,19 @@ export function SourcesSection({
         retryMessages={retryMessages}
         onRetry={(source) => void retry(source)}
         onPasteInstead={() => uploadRef.current?.openPaste()}
+        selectedId={selectedId}
+        onOpen={open}
       />
+      {selected ? (
+        <RightPaneContent>
+          <SourceInspector
+            key={selected.id}
+            opportunityId={opportunityId}
+            source={selected}
+            focusRequest={focusRequest}
+          />
+        </RightPaneContent>
+      ) : null}
     </div>
   );
 }

@@ -3,7 +3,8 @@
 Every added Source version enqueues one `ParseSource` job (`enqueue_parse`, in the adding
 command's Unit of Work, next to the version's `queued` parse row). The worker's handler:
 
-1. marks the parse row `parsing` (short Unit of Work);
+1. marks the parse row `parsing` and, when it was `queued`, appends
+   `intake.source.parse_started` (short Unit of Work; Story 2.3);
 2. parses the stored file in a child process with time and memory limits (`parse_runner`),
    with no Unit of Work open;
 3. stores the text UTF-8 encoded in `platform.storage`, then marks the row `parsed` with
@@ -12,7 +13,8 @@ command's Unit of Work, next to the version's `queued` parse row). The worker's 
    (`intake.extract_requirements`, Story 2.5), in one Unit of Work.
 
 A permanent failure (`PERMANENT_CODES`: `unreadable`, `not_supported`, `no_text`,
-`too_large_output`) marks the row `failed` and finishes the job: retrying the same bytes
+`too_large_output`) marks the row `failed` (appending `intake.source.parse_failed` when the
+row changed, Story 2.3) and finishes the job: retrying the same bytes
 can't help. Anything else raises so the queue retries it: a timed-out or signal-killed
 child, a stored file not found, the database. On the final attempt the handler first marks
 the row `failed` (`timeout` for the child, `unreadable` otherwise), best effort, then
@@ -48,7 +50,11 @@ from app.platform.config import Settings, get_settings
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
 from app.platform.logging import get_logger
 from app.platform.storage import BlobStore
-from app.platform.trace.catalogue import IntakeSourceParsed
+from app.platform.trace.catalogue import (
+    IntakeSourceParsed,
+    IntakeSourceParseFailed,
+    IntakeSourceParseStarted,
+)
 from app.platform.uow import UnitOfWork, unit_of_work
 
 PARSE_SOURCE = "intake.parse_source"
@@ -99,6 +105,18 @@ async def _mark_failed(ctx: JobContext, payload: ParseSource, code: ParseErrorCo
             status=ParseStatus.FAILED.value,
             error_code=code.value,
         )
+        if changed:
+            target = await repository.parse_target(uow, payload.source_id, payload.version)
+            if target is not None:
+                await trace.append(
+                    uow,
+                    actor=_ACTOR,
+                    payload=IntakeSourceParseFailed(version=payload.version, error_code=code.value),
+                    subject_type=SUBJECT_TYPE,
+                    subject_id=payload.source_id,
+                    opportunity_id=target.opportunity_id,
+                    subject_version=payload.version,
+                )
     _log.info(
         "intake.source_parse_failed",
         extra={**_ids(payload), "error_code": code.value, "recorded": changed},
@@ -156,13 +174,34 @@ async def _parse(ctx: JobContext, payload: ParseSource) -> None:
                 extra={**_ids(payload), "status": None if target is None else target.status},
             )
             return
-        await repository.update_parse(
+        started = await repository.update_parse(
             uow,
             payload.source_id,
             payload.version,
-            from_statuses=_IN_PROGRESS,
+            from_statuses=(ParseStatus.QUEUED.value,),
             status=ParseStatus.PARSING.value,
         )
+        if not started:
+            # A reclaimed or retried run of a row already `parsing`: no new start.
+            await repository.update_parse(
+                uow,
+                payload.source_id,
+                payload.version,
+                from_statuses=(ParseStatus.PARSING.value,),
+                status=ParseStatus.PARSING.value,
+            )
+        else:
+            # Story 2.3: the pill's Queued -> Parsing move reaches the event stream, once:
+            # only the run whose update moved the row from `queued` appends it.
+            await trace.append(
+                uow,
+                actor=_ACTOR,
+                payload=IntakeSourceParseStarted(version=payload.version),
+                subject_type=SUBJECT_TYPE,
+                subject_id=payload.source_id,
+                opportunity_id=target.opportunity_id,
+                subject_version=payload.version,
+            )
 
     path = store.path_for(target.file_sha256)
     if not await asyncio.to_thread(path.is_file):

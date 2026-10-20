@@ -70,6 +70,26 @@ describe("GET /api/opportunities/{id}/events", () => {
     });
   });
 
+  it("forwards ?last_event_id= as Last-Event-ID when the header is absent (Story 2.3)", async () => {
+    const backend = new Response(FRAME);
+    apiGet.mockResolvedValue({ data: backend.body, error: undefined, response: backend });
+    const at = (headers: Record<string, string>) =>
+      GET(
+        new Request(
+          `http://web/api/opportunities/${OPP_ID}/events?last_event_id=01a1-query`,
+          { headers },
+        ),
+        { params: Promise.resolve({ id: OPP_ID }) },
+      );
+
+    await at({});
+    await at({ "Last-Event-ID": "01a1-header" });
+
+    expect(apiGet.mock.calls[0][1].params.header).toEqual({ "last-event-id": "01a1-query" });
+    // The browser's own reconnect header wins over the query.
+    expect(apiGet.mock.calls[1][1].params.header).toEqual({ "last-event-id": "01a1-header" });
+  });
+
   it("passes a backend 404 on as problem+json", async () => {
     apiGet.mockResolvedValue({
       data: undefined,

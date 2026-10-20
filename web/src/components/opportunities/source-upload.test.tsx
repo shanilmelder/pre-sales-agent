@@ -19,7 +19,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadSources,
 }));
 
-import { LiveRegionProvider } from "../shell/live-region";
+import { ShellProviders } from "../shell/shell-context";
 import { SourceUpload } from "./source-upload";
 import { SourcesSection } from "./sources-list";
 
@@ -78,9 +78,9 @@ describe("SourcesSection with uploads", () => {
   it("dropping three files incl. an .exe: two Sources appear, the .exe row says why", async () => {
     apiAnswers();
     const { container } = render(
-      <LiveRegionProvider>
+      <ShellProviders singleKeyShortcuts>
         <SourcesSection opportunityId={OPP_ID} canAdd initial={[]} />
-      </LiveRegionProvider>,
+      </ShellProviders>,
     );
     expect(screen.getByText("No Sources yet.")).toBeTruthy();
 
@@ -110,9 +110,9 @@ describe("SourcesSection with uploads", () => {
       source: { ...first, filename: "call-again.vtt", version: 2, version_count: 2 },
     });
     render(
-      <LiveRegionProvider>
+      <ShellProviders singleKeyShortcuts>
         <SourcesSection opportunityId={OPP_ID} canAdd initial={[first]} />
-      </LiveRegionProvider>,
+      </ShellProviders>,
     );
 
     drop([file("call-again.vtt")]);
@@ -126,7 +126,9 @@ describe("SourcesSection with uploads", () => {
 
   it("without can_add_sources there is no upload area, and the list still shows", async () => {
     const { container } = render(
-      <SourcesSection opportunityId={OPP_ID} canAdd={false} initial={[source("rfp.pdf")]} />,
+      <ShellProviders singleKeyShortcuts>
+        <SourcesSection opportunityId={OPP_ID} canAdd={false} initial={[source("rfp.pdf")]} />
+      </ShellProviders>,
     );
     expect(screen.queryByRole("button", { name: "Choose files" })).toBeNull();
     expect(screen.queryByText("Drop emails, notes, transcripts or documents here")).toBeNull();
@@ -143,9 +145,9 @@ describe("SourcesSection with uploads", () => {
 describe("SourceUpload", () => {
   function renderUpload(onAdded = vi.fn()) {
     render(
-      <LiveRegionProvider>
+      <ShellProviders singleKeyShortcuts>
         <SourceUpload opportunityId={OPP_ID} onAdded={onAdded} />
-      </LiveRegionProvider>,
+      </ShellProviders>,
     );
     return { user: userEvent.setup(), onAdded };
   }
@@ -248,9 +250,9 @@ describe("Paste text", () => {
 
   function renderSection(initial: Source[] = []) {
     const view = render(
-      <LiveRegionProvider>
+      <ShellProviders singleKeyShortcuts>
         <SourcesSection opportunityId={OPP_ID} canAdd initial={initial} />
-      </LiveRegionProvider>,
+      </ShellProviders>,
     );
     return { ...view, user: userEvent.setup() };
   }
@@ -466,7 +468,11 @@ describe("Paste text", () => {
   });
 
   it("without can_add_sources there is no Paste text", () => {
-    render(<SourcesSection opportunityId={OPP_ID} canAdd={false} initial={[]} />);
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <SourcesSection opportunityId={OPP_ID} canAdd={false} initial={[]} />
+      </ShellProviders>,
+    );
     expect(screen.queryByRole("button", { name: "Paste text" })).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
   });

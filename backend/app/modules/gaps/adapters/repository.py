@@ -18,6 +18,7 @@ from app.modules.gaps.adapters.models import (
     GapRow,
     QuestionRow,
 )
+from app.platform.events import EVENTS_CHANNEL
 from app.platform.uow import UnitOfWork
 
 
@@ -117,8 +118,6 @@ TOUCHED_QUESTION_STATUSES = ("approved", "sent", "unanswered", "answered")
 """A question in one of these statuses was touched by a person (Stories 4.5, 4.6, 4.7)."""
 OPEN_TO_ANSWER_STATUSES = ("sent", "unanswered")
 """A question in one of these statuses can be answered (Story 4.7)."""
-EVENTS_CHANNEL = "psa_events"
-"""The NOTIFY channel of the per-Opportunity event stream (AD-30), shared with workflows."""
 GAPS_SOURCE = "gaps"
 
 
