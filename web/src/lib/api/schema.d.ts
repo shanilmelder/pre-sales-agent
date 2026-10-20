@@ -527,7 +527,7 @@ export interface paths {
          *     same order, each with the Requirements it relates to, its Clarification Question, its
          *     dismissal and its history; and its latest Gap detection (null before the first). Anyone
          *     who can read the Opportunity; a sales representative sees only approved questions, and
-         *     no reason or note text.
+         *     no reason or note text. Answered Gaps (Story 4.7) follow the open ones.
          */
         get: operations["list_gaps"];
         put?: never;
@@ -705,9 +705,9 @@ export interface paths {
         put?: never;
         /**
          * Reopen Gap
-         * @description Reopen a dismissed Gap, with a reason (kept in its history, never in the trace). A
-         *     later Gap detection keeps it. The owner and collaborators, except sales
-         *     representatives.
+         * @description Reopen a dismissed or answered Gap, with a reason (kept in its history, never in the
+         *     trace). An answered Gap's question is sent again, its answer cleared. A later Gap
+         *     detection keeps it. The owner and collaborators, except sales representatives.
          */
         post: operations["reopen_gap"];
         delete?: never;
@@ -780,6 +780,75 @@ export interface paths {
          *     included.
          */
         post: operations["mark_clarification_question_unanswered"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Clarification Question
+         * @description **Record answer**: store the customer's answer to a sent (or "No answer") Clarification
+         *     Question as a Source of kind `clarification_answer` (parsed as usual, so its extraction
+         *     may update the Requirements or propose changes), and mark the question answered with
+         *     that text as its Evidence; with `settles_gap` its Gap is answered too. `If-Match` is the
+         *     question's row version. The owner and every collaborator, sales representatives
+         *     included.
+         */
+        post: operations["answer_clarification_question"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/answer-matches/{match_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Answer Match
+         * @description **Confirm** a suggested answer: the question is answered today with the suggested
+         *     passage as its Evidence, and its Gap is answered. The owner and every collaborator,
+         *     sales representatives included.
+         */
+        post: operations["confirm_answer_match"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/answer-matches/{match_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Answer Match
+         * @description **Not an answer**: reject a suggested answer; the same passage is never suggested for
+         *     that question again. Nothing else changes. The owner and every collaborator, sales
+         *     representatives included.
+         */
+        post: operations["reject_answer_match"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1743,6 +1812,73 @@ export interface components {
             status: components["schemas"]["AgentStatus"];
         };
         /**
+         * AnswerPassage
+         * @description A Source passage holding a customer's answer (Story 4.7), as Evidence: `label` is
+         *     `S<n> · <file name>`; `excerpt` up to 280 characters of the passage, with `…` when cut
+         *     (empty when its text can't be read).
+         */
+        AnswerPassage: {
+            /** Passage Id */
+            passage_id: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Version */
+            source_version: number;
+            /** Filename */
+            filename: string;
+            /** Label */
+            label: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /**
+         * AnswerRequest
+         * @description **Record answer** (Story 4.7): the customer's answer to a sent question, the date they
+         *     gave it, and whether it settles the Gap (it then becomes `answered` too).
+         */
+        AnswerRequest: {
+            /**
+             * Text
+             * @description The customer's answer. Trimmed, it must be 1 to 20,000 characters.
+             */
+            text: string;
+            /**
+             * Answered On
+             * Format: date
+             * @description The date the customer answered; not in the future.
+             */
+            answered_on: string;
+            /**
+             * Settles Gap
+             * @description Whether the answer settles the Gap (it becomes `answered`).
+             * @default true
+             */
+            settles_gap: boolean;
+        };
+        /**
+         * AnswerSuggestion
+         * @description `clarification_agent`'s suggestion that a passage of a new Source answers the Gap's
+         *     question (Story 4.7): only a person's **Confirm** answers it; **Not an answer** rejects
+         *     it for good. `injection_suspected`: the passage reads like an instruction to the
+         *     platform. `row_version` for `If-Match`.
+         */
+        AnswerSuggestion: {
+            /** Id */
+            id: string;
+            /** Question Id */
+            question_id: string;
+            passage: components["schemas"]["AnswerPassage"];
+            /** Injection Suspected */
+            injection_suspected: boolean;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
          * ApproveAllResult
          * @description How many questions **Approve all** approved (the drafted questions of open Gaps).
          */
@@ -2042,11 +2178,13 @@ export interface components {
         /**
          * ClarificationQuestion
          * @description A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5), then
-         *     `sent` and `unanswered` ("No answer", Story 4.6); `status_changed_at` moves on every
-         *     status change. `approved_by` / `approved_at` are set while `approved`, `sent` or
-         *     `unanswered`; `sent_on` / `sent_by` while `sent` or `unanswered`. `edited_by_human`: a
-         *     person changed its text or topic. `last_changed_by`: the person behind its latest change
-         *     (null for the agent's draft).
+         *     `sent` and `unanswered` ("No answer", Story 4.6), then `answered` (Story 4.7);
+         *     `status_changed_at` moves on every status change. `approved_by` / `approved_at` are set
+         *     while `approved`, `sent`, `unanswered` or `answered`; `sent_on` / `sent_by` while `sent`,
+         *     `unanswered` or `answered`; `answered_on` / `answered_by` (the person who recorded or
+         *     confirmed the answer) while `answered`. `edited_by_human`: a person changed its text or
+         *     topic. `last_changed_by`: the person behind its latest change (null for the agent's
+         *     draft).
          */
         ClarificationQuestion: {
             /** Id */
@@ -2072,6 +2210,9 @@ export interface components {
             /** Sent On */
             sent_on: string | null;
             sent_by: components["schemas"]["UserRef"] | null;
+            /** Answered On */
+            answered_on: string | null;
+            answered_by: components["schemas"]["UserRef"] | null;
         };
         /**
          * Classification
@@ -2727,10 +2868,12 @@ export interface components {
          * Gap
          * @description A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
          *     `converted` once an Assumption made from it was accepted (Story 8.4; `converted_to` then
-         *     names the Assumption's kind, `condition` or `contingency`, and is null otherwise), or
-         *     `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise).
-         *     `history`: its changes, oldest first. `last_changed_by`: the person behind its latest
-         *     change (null until a person changes it).
+         *     names the Assumption's kind, `condition` or `contingency`, and is null otherwise),
+         *     `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise), or
+         *     `answered` (Story 4.7). `answer`: the customer's answer once its question is answered
+         *     (whether or not it settled the Gap), else null; `answer_suggestions`: the open
+         *     suggestions for its question. `history`: its changes, oldest first. `last_changed_by`:
+         *     the person behind its latest change (null until a person changes it).
          */
         Gap: {
             /** Id */
@@ -2761,6 +2904,26 @@ export interface components {
             /** History */
             history: components["schemas"]["GapHistoryEntry"][];
             last_changed_by: components["schemas"]["UserRef"] | null;
+            answer: components["schemas"]["GapAnswer"] | null;
+            /** Answer Suggestions */
+            answer_suggestions: components["schemas"]["AnswerSuggestion"][];
+        };
+        /**
+         * GapAnswer
+         * @description The customer's answer to the Gap's question (Story 4.7): the date they answered, the
+         *     person who recorded or confirmed it, the answer passage (null if it can't be found) and
+         *     the Requirements that answer's Source added, versioned or proposed changes to.
+         */
+        GapAnswer: {
+            /**
+             * Answered On
+             * Format: date
+             */
+            answered_on: string;
+            answered_by: components["schemas"]["UserRef"];
+            passage: components["schemas"]["AnswerPassage"] | null;
+            /** Requirement Changes */
+            requirement_changes: components["schemas"]["RequirementChangeRef"][];
         };
         /**
          * GapCategory
@@ -2809,7 +2972,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "raised" | "impact_changed" | "dismissed" | "reopened" | "converted";
+            kind: "raised" | "impact_changed" | "dismissed" | "reopened" | "converted" | "answered";
             /**
              * At
              * Format: date-time
@@ -2833,7 +2996,8 @@ export interface components {
          *     `can_start_detection`: whether the caller may start (retry) a detection;
          *     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
          *     (Story 4.5); `can_send_questions`: whether the caller may export questions, mark them
-         *     sent and "No answer" (Story 4.6, sales representatives included). The UI only uses them
+         *     sent and "No answer" (Story 4.6), record answers and confirm or reject suggested ones
+         *     (Story 4.7), sales representatives included. The UI only uses them
          *     to hide controls; the API decides. A sales representative sees only approved, sent and
          *     unanswered questions: other Gaps come with `question` null.
          */
@@ -2887,7 +3051,7 @@ export interface components {
          * GapStatus
          * @enum {string}
          */
-        GapStatus: "open" | "superseded" | "converted" | "dismissed";
+        GapStatus: "open" | "superseded" | "converted" | "dismissed" | "answered";
         /**
          * GapTrigger
          * @description What raised the Gap. In the demo, always the agent, by category.
@@ -3573,7 +3737,7 @@ export interface components {
          * QuestionStatus
          * @enum {string}
          */
-        QuestionStatus: "drafted" | "approved" | "sent" | "unanswered" | "superseded";
+        QuestionStatus: "drafted" | "approved" | "sent" | "unanswered" | "answered" | "superseded";
         /**
          * QuestionVersion
          * @description A drafted question as the client shows it, for **Approve all** (Story 4.5).
@@ -3721,6 +3885,24 @@ export interface components {
             /** Evidence */
             evidence: components["schemas"]["RequirementEvidence"][];
             pending_change: components["schemas"]["PendingChange"] | null;
+        };
+        /**
+         * RequirementChangeRef
+         * @description A Requirement a Source changed (Story 4.7). `label` is `R<n>` among the active
+         *     Requirements, or `Superseded` once it is no longer active. `kind`: `added` (created
+         *     from the Source), `versioned` (a new version cites it), or the status of a pending
+         *     change proposing one of its passages (`pending`, `accepted`, `rejected`, `superseded`).
+         */
+        RequirementChangeRef: {
+            /** Requirement Id */
+            requirement_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "added" | "versioned" | "pending" | "accepted" | "rejected" | "superseded";
         };
         /**
          * RequirementChangeRejection
@@ -3916,7 +4098,7 @@ export interface components {
          * SourceKind
          * @enum {string}
          */
-        SourceKind: "email" | "note" | "transcript" | "document";
+        SourceKind: "email" | "note" | "transcript" | "document" | "clarification_answer";
         /**
          * SourceList
          * @description An Opportunity's Sources, newest first.
@@ -9385,7 +9567,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Gap is not dismissed (`gap_not_dismissed`); nothing changed */
+            /** @description The Gap is neither dismissed nor answered (`gap_not_reopenable`); nothing changed */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9928,6 +10110,600 @@ export interface operations {
                 };
             };
             /** @description The question changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    answer_clarification_question: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the question as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description The Gap, with the answer */
+            200: {
+                headers: {
+                    /** @description The Gap's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gap"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Clarification Question with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The question's Gap is not open (`gap_not_open`), or the question is not sent or marked "No answer" (`question_not_sent`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The question changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: the text is blank or longer than 20,000 characters once trimmed, `answered_on` is in the future, an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    confirm_answer_match: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the answer suggestion as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Gap of the suggestion's question */
+            200: {
+                headers: {
+                    /** @description The Gap's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gap"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no answer suggestion with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The question's Gap is not open (`gap_not_open`), or the question is no longer sent or marked "No answer" (`question_not_sent`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The suggestion changed or was decided since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    reject_answer_match: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the answer suggestion as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Gap of the suggestion's question */
+            200: {
+                headers: {
+                    /** @description The Gap's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gap"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no answer suggestion with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The suggestion changed or was decided since the caller read it (`row_version_mismatch`) */
             412: {
                 headers: {
                     [name: string]: unknown;

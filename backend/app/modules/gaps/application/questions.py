@@ -30,7 +30,17 @@ of `open` Gaps change (409 `gap_not_open` otherwise).
   `If-Match`; 409 `question_not_sent` when it isn't sent. Appends
   `gaps.clarification_question.marked_unanswered`. The Gap stays open.
 
-A sent or unanswered question can't be edited or approved (409 `question_not_editable`).
+- `answer_question` (Story 4.7, same action): **Record answer** on a sent or unanswered
+  question with `If-Match`: the text becomes a `clarification_answer` Source
+  (`intake.add_answer_source`, parsed as usual, which then queues the extraction and the
+  answer matching), the question becomes `answered` with the passage spanning the text as
+  its Evidence and, when the answer settles the Gap, the Gap `answered` too; the question's
+  open suggestions are `superseded`. 409 `question_not_sent` for any other status. Traces
+  `gaps.clarification_question.answered` (and `gaps.gap.answered`).
+
+A sent, unanswered or answered question can't be edited or approved (409
+`question_not_editable`). Every write notifies the Opportunity's event stream
+(`gaps.changed`).
 
 Trace and logs carry ids, versions and field names only, never the text.
 """
@@ -42,11 +52,18 @@ from uuid import UUID
 
 from app.modules.gaps.adapters import repository as repo
 from app.modules.gaps.adapters.repository import GapRecord, QuestionRecord
-from app.modules.gaps.application.gaps import question_names, question_view
+from app.modules.gaps.application.gaps import (
+    gap_views,
+    question_names,
+    question_view,
+    sees_only_approved_questions,
+)
 from app.modules.gaps.application.models import (
+    AnswerRequest,
     ApproveAllResult,
     ApproveSelectedResult,
     ClarificationQuestion,
+    Gap,
     MarkSentRequest,
     MarkSentResult,
     QuestionChanges,
@@ -54,9 +71,14 @@ from app.modules.gaps.application.models import (
 )
 from app.modules.gaps.domain import gaps as rules
 from app.modules.gaps.domain.gaps import (
+    GAP_SUBJECT_TYPE,
     QUESTION_SUBJECT_TYPE,
     SENT_STATUSES,
+    DismissReasonKind,
+    GapHistoryKind,
+    GapState,
     GapStatus,
+    Impact,
     QuestionState,
     QuestionStatus,
     question_text,
@@ -65,6 +87,7 @@ from app.modules.gaps.domain.gaps import (
 )
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
+from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
 from app.platform import trace
 from app.platform.concurrency import parse_if_match
@@ -78,12 +101,16 @@ from app.platform.errors import (
     RowVersionMismatchError,
     UnprocessableError,
 )
+from app.platform.ids import new_id
 from app.platform.logging import get_logger
+from app.platform.storage import BlobStore
 from app.platform.trace.catalogue import (
+    GapsClarificationQuestionAnswered,
     GapsClarificationQuestionApproved,
     GapsClarificationQuestionEdited,
     GapsClarificationQuestionMarkedUnanswered,
     GapsClarificationQuestionSent,
+    GapsGapAnswered,
 )
 from app.platform.uow import UnitOfWork
 
@@ -96,6 +123,9 @@ NOT_OPEN_DETAIL = (
 SENT_DETAIL = "This Clarification Question was sent: it can no longer be edited or approved."
 NOT_APPROVED_DETAIL = "Only an approved Clarification Question can be marked sent."
 NOT_SENT_DETAIL = 'Only a sent Clarification Question can be marked "No answer".'
+NOT_OPEN_TO_ANSWER_DETAIL = (
+    'Only a sent Clarification Question, or one marked "No answer", can be answered.'
+)
 _log = get_logger(__name__)
 
 
@@ -155,6 +185,9 @@ def _state(record: QuestionRecord) -> QuestionState:
         edited_by_human=record.edited_by_human,
         sent_on=record.sent_on,
         sent_by=record.sent_by,
+        answered_on=record.answered_on,
+        answered_by=record.answered_by,
+        answer_passage_id=record.answer_passage_id,
     )
 
 
@@ -166,7 +199,10 @@ async def _write(
     expected: int,
     user_id: UUID,
     at: datetime,
+    opportunity_id: UUID,
 ) -> QuestionRecord:
+    """Write the question's new state (412 when stale, 409 when its Gap is no longer open)
+    and notify the Opportunity's event stream."""
     updated = await repo.update_question(
         uow,
         record.id,
@@ -181,12 +217,16 @@ async def _write(
         status_changed_at=at if state.status != record.status else None,
         sent_on=state.sent_on,
         sent_by=state.sent_by,
+        answered_on=state.answered_on,
+        answered_by=state.answered_by,
+        answer_passage_id=state.answer_passage_id,
     )
     if updated is None:
         gap = await repo.get_gap(uow, record.gap_id)
         if gap is None or gap.status != GapStatus.OPEN:
             raise GapNotOpenError(NOT_OPEN_DETAIL)
         raise _stale()
+    await repo.notify_gaps_changed(uow, opportunity_id)
     return updated
 
 
@@ -238,7 +278,13 @@ async def edit_question(
     if not changed:
         return await _view(uow, record)
     updated = await _write(
-        uow, record, state, expected=expected, user_id=user_id, at=datetime.now(UTC)
+        uow,
+        record,
+        state,
+        expected=expected,
+        user_id=user_id,
+        at=datetime.now(UTC),
+        opportunity_id=opportunity_id,
     )
     await trace.append(
         uow,
@@ -278,7 +324,15 @@ async def _approve(
 ) -> QuestionRecord:
     at = datetime.now(UTC)
     state = _transition(lambda: rules.approve_question(_state(record), user_id=user_id, at=at))
-    updated = await _write(uow, record, state, expected=expected, user_id=user_id, at=at)
+    updated = await _write(
+        uow,
+        record,
+        state,
+        expected=expected,
+        user_id=user_id,
+        at=at,
+        opportunity_id=opportunity_id,
+    )
     await trace.append(
         uow,
         actor=actor.actor,
@@ -461,7 +515,13 @@ async def mark_sent(
     for record, gap in pairs:
         state = _transition(partial(rules.mark_sent, _state(record), user_id=user_id, on=sent_on))
         updated = await _write(
-            uow, record, state, expected=record.row_version, user_id=user_id, at=at
+            uow,
+            record,
+            state,
+            expected=record.row_version,
+            user_id=user_id,
+            at=at,
+            opportunity_id=opportunity_id,
         )
         await trace.append(
             uow,
@@ -502,7 +562,13 @@ async def mark_unanswered(
     if record.row_version != expected:
         raise _stale()
     updated = await _write(
-        uow, record, state, expected=expected, user_id=user_id, at=datetime.now(UTC)
+        uow,
+        record,
+        state,
+        expected=expected,
+        user_id=user_id,
+        at=datetime.now(UTC),
+        opportunity_id=opportunity_id,
     )
     await trace.append(
         uow,
@@ -524,3 +590,186 @@ async def mark_unanswered(
         },
     )
     return await _view(uow, updated)
+
+
+# --- answering (Story 4.7) ------------------------------------------------------------------
+
+
+def _gap_state(record: GapRecord) -> GapState:
+    return GapState(
+        status=GapStatus(record.status),
+        impact=Impact(record.impact),
+        dismiss_reason_kind=None
+        if record.dismiss_reason_kind is None
+        else DismissReasonKind(record.dismiss_reason_kind),
+        dismiss_note=record.dismiss_note,
+        dismissed_by=record.dismissed_by,
+        dismissed_at=record.dismissed_at,
+        touched_by_human=record.touched_by_human,
+        answered_on=record.answered_on,
+        answered_by=record.answered_by,
+        answer_passage_id=record.answer_passage_id,
+    )
+
+
+def check_answerable(record: QuestionRecord, gap: GapRecord) -> None:
+    """409 `gap_not_open` unless the Gap is open, then 409 `question_not_sent` unless the
+    question is `sent` or `unanswered`."""
+    _open(gap)
+    if record.status not in rules.OPEN_TO_ANSWER:
+        raise QuestionNotSentError(NOT_OPEN_TO_ANSWER_DETAIL)
+
+
+async def settle_answer(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    record: QuestionRecord,
+    gap: GapRecord,
+    *,
+    expected: int,
+    user_id: UUID,
+    on: date,
+    passage_id: UUID,
+    source_id: UUID,
+    settles_gap: bool,
+) -> GapRecord:
+    """Answer the question (and, when `settles_gap`, its open Gap) with the passage as
+    Evidence, supersede the question's open suggestions, trace and notify; the Gap as it is
+    now. The caller holds the Opportunity's lock and checked the transition."""
+    at = datetime.now(UTC)
+    state = _transition(
+        lambda: rules.answer_question(_state(record), user_id=user_id, on=on, passage_id=passage_id)
+    )
+    updated = await _write(
+        uow,
+        record,
+        state,
+        expected=expected,
+        user_id=user_id,
+        at=at,
+        opportunity_id=opportunity_id,
+    )
+    await repo.supersede_matches(uow, record.id)
+    await trace.append(
+        uow,
+        actor=actor.actor,
+        payload=GapsClarificationQuestionAnswered(
+            gap_id=str(gap.id),
+            source_id=str(source_id),
+            passage_id=str(passage_id),
+            row_version=updated.row_version,
+        ),
+        subject_type=QUESTION_SUBJECT_TYPE,
+        subject_id=record.id,
+        opportunity_id=opportunity_id,
+    )
+    if not settles_gap:
+        return gap
+    try:
+        gap_state = rules.answer_gap(_gap_state(gap), user_id=user_id, on=on, passage_id=passage_id)
+    except rules.GapNotOpenTransitionError:
+        raise GapNotOpenError(NOT_OPEN_DETAIL) from None
+    answered = await repo.update_gap(
+        uow,
+        gap.id,
+        expected_row_version=gap.row_version,
+        from_status=gap.status,
+        status=gap_state.status.value,
+        impact=gap_state.impact.value,
+        dismiss_reason_kind=None,
+        dismiss_note=None,
+        dismissed_by=None,
+        dismissed_at=None,
+        touched_by_human=gap_state.touched_by_human,
+        changed_by=user_id,
+        answered_on=gap_state.answered_on,
+        answered_by=gap_state.answered_by,
+        answer_passage_id=gap_state.answer_passage_id,
+    )
+    if answered is None:  # changed since it was read, though the lock is held: conflict
+        raise GapNotOpenError(NOT_OPEN_DETAIL)
+    await repo.insert_history(
+        uow,
+        history_id=new_id(),
+        gap_id=gap.id,
+        kind=GapHistoryKind.ANSWERED.value,
+        actor_id=user_id,
+        at=at,
+    )
+    await trace.append(
+        uow,
+        actor=actor.actor,
+        payload=GapsGapAnswered(
+            question_id=str(record.id),
+            passage_id=str(passage_id),
+            row_version=answered.row_version,
+        ),
+        subject_type=GAP_SUBJECT_TYPE,
+        subject_id=gap.id,
+        opportunity_id=opportunity_id,
+    )
+    return answered
+
+
+async def answer_question(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    question_id: UUID,
+    body: AnswerRequest,
+    if_match: str | None,
+    *,
+    store: BlobStore,
+    today: date | None = None,
+) -> Gap:
+    """**Record answer**: store the customer's answer as a Source and answer the sent (or
+    "No answer") question with it, settling its Gap when `body.settles_gap`. `if_match` is
+    the question's raw `If-Match` header (428/412). Order of checks: authorize → 404 → 422
+    → 428 → 409 → 412."""
+    user_id = await _authorized(uow, actor, opportunity_id, Action.GAP_QUESTION_SEND)
+    record, gap = await _load(uow, opportunity_id, question_id)
+    try:
+        text = rules.answer_text(body.text)
+        on = rules.answered_date(body.answered_on, today=today or _today())
+    except ValueError as exc:
+        raise UnprocessableError(str(exc)) from None
+    expected = _expected(if_match)
+    check_answerable(record, gap)
+    if record.row_version != expected:
+        raise _stale()
+    source = await intake.add_answer_source(
+        uow, actor, opportunity_id, text, answered_on=on, store=store
+    )
+    answered = await settle_answer(
+        uow,
+        actor,
+        opportunity_id,
+        record,
+        gap,
+        expected=expected,
+        user_id=user_id,
+        on=on,
+        passage_id=source.passage_id,
+        source_id=source.source_id,
+        settles_gap=body.settles_gap,
+    )
+    _log.info(
+        "gaps.clarification_question_answered",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "question_id": str(question_id),
+            "gap_id": str(gap.id),
+            "source_id": str(source.source_id),
+            "actor_id": str(user_id),
+            "settles_gap": body.settles_gap,
+        },
+    )
+    (view,) = await gap_views(
+        uow,
+        opportunity_id,
+        [answered],
+        approved_only=sees_only_approved_questions(actor),
+        store=store,
+    )
+    return view

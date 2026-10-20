@@ -2,27 +2,55 @@
 
 import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
-import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
+import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 
 import { useShell, useWorkspaceTabKeys } from "@/components/shell/shell-context";
 import { cn } from "@/lib/utils";
 import { openCountLabel } from "@/lib/conflicts";
+import { useGapsEvents } from "@/lib/opportunity-events";
 import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
 
 /** The workspace tab strip and the selected tab's panel. A `tablist` of links (each tab has
  * its own URL), the selected one marked by the route; `1`–`9` reach the tabs through the
  * shell's key handler, and Left/Right/Home/End move focus along the strip. A tab with a
- * count above 0 shows it after its label ("Conflicts 3", read as "Conflicts, 3 open"). */
+ * count above 0 shows it after its label ("Conflicts 3", read as "Conflicts, 3 open").
+ * Story 4.7: with `loadGapCount`, the Gaps tab's open count follows the Opportunity's event
+ * stream (`gaps.changed`) without a reload. */
 export function WorkspaceTabs({
   id,
-  counts = {},
+  counts: initialCounts = {},
+  loadGapCount,
   children,
 }: {
   id: string;
-  /** A count shown after a tab's label when above 0 (the Conflicts tab's open count). */
+  /** A count shown after a tab's label when above 0 (the Conflicts tab's open count, the Gaps
+   * tab's open Gaps). */
   counts?: Partial<Record<WorkspaceTabSlug, number>>;
+  /** Reads the open Gap count again (a server action); left out, the count stays as given. */
+  loadGapCount?: (opportunityId: string) => Promise<number | null>;
   children: ReactNode;
 }) {
+  const [liveGaps, setLiveGaps] = useState<{ from: number | undefined; count: number } | null>(
+    null,
+  );
+  useGapsEvents(
+    id,
+    () => {
+      const from = initialCounts.gaps;
+      void loadGapCount?.(id).then(
+        (count) => {
+          if (count !== null) setLiveGaps({ from, count });
+        },
+        () => undefined,
+      );
+    },
+    loadGapCount !== undefined,
+  );
+  // A newer count from the server (a navigation) wins over the live one read before it.
+  const counts =
+    liveGaps && liveGaps.from === initialCounts.gaps
+      ? { ...initialCounts, gaps: liveGaps.count }
+      : initialCounts;
   const segment = useSelectedLayoutSegment();
   const { singleKeyShortcuts } = useShell();
   const selected = activeTab(segment);

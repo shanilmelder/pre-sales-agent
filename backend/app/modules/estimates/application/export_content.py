@@ -100,8 +100,10 @@ QUESTION_STATUS_LABELS = {
     "approved": "Approved",
     "sent": "Sent",
     "unanswered": "No answer",
+    "answered": "Answered",
 }
-"""The exported questions' statuses (Stories 4.5, 4.6); superseded questions are left out."""
+"""The exported questions' statuses (Stories 4.5, 4.6, 4.7); superseded questions are left
+out."""
 
 
 _XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -245,7 +247,7 @@ def _questions_table(gaps: Sequence[Gap]) -> Table:
         for gap in gaps
         if gap.question is not None
         and gap.question.status.value in QUESTION_STATUS_LABELS
-        and gap.status.value in ("open", "converted")
+        and gap.status.value in ("open", "answered", "converted")
     ]
     if not rows:
         rows = [Row("item", (NONE_ROW, None, None, None, None, None))]

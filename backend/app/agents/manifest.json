@@ -21,6 +21,7 @@
   "prompts": {
     "clarification_agent": {
       "1": {
+        "v1-answers.md": "191cffa7a0d65d3d149d747e9d7ca1b183bac37cd88cf14441c4a34fab4554a0",
         "v1.md": "49c51ac4b2b721f923f87229db88723d5a5b49ce6552d6b8bf7db69c01b72a8c"
       }
     },
@@ -66,13 +67,13 @@
       "input": {
         "1": {
           "contract_version": "1",
-          "sha256": "8b91f29cab0af9be20e0c80a436d3220c90ef4c36ba647762879e120588ab37a"
+          "sha256": "e7329a6890ed702a6506c588de4c581697e8793e525fc5687a855c3b28f3306a"
         }
       },
       "output": {
         "1": {
           "contract_version": "1",
-          "sha256": "7e635527addfbaa68a4769955c9040fb99566d8682f4762fcd40648a0afd538f"
+          "sha256": "6c53d80dae24c1a20febf308f16da03eb8ab08ee37c5b2c03b139c02066e2374"
         }
       }
     },

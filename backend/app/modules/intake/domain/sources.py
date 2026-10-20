@@ -7,8 +7,11 @@ that extension (magic bytes for binary formats, valid UTF-8 without NUL bytes fo
 Customer content is untrusted, so nothing here parses more than these checks need.
 """
 
+import re
+from datetime import date
 from enum import StrEnum
 
+from app.platform.parsing.rules import normalise
 from app.platform.upload_validation import (
     EMPTY_MESSAGE,
     FILENAME_INVALID_MESSAGE,
@@ -32,6 +35,7 @@ from app.platform.upload_validation import (
 SUBJECT_TYPE = "intake.source"
 
 __all__ = [
+    "ANSWER_FILENAME_PREFIX",
     "EMPTY_MESSAGE",
     "EXTENSION_KINDS",
     "FILENAME_INVALID_MESSAGE",
@@ -56,10 +60,13 @@ __all__ = [
     "PastedTextTooLongError",
     "PastedTextUnsupportedError",
     "SourceKind",
+    "answer_filename",
+    "answer_text",
     "clean_filename",
     "clean_pasted_text",
     "content_matches",
     "extension",
+    "is_answer_filename",
     "kind_for",
     "mismatch_message",
     "too_large_message",
@@ -72,6 +79,30 @@ class SourceKind(StrEnum):
     NOTE = "note"
     TRANSCRIPT = "transcript"
     DOCUMENT = "document"
+    CLARIFICATION_ANSWER = "clarification_answer"
+    """Story 4.7: a customer's answer to a Clarification Question, recorded as text."""
+
+
+ANSWER_FILENAME_PREFIX = "Customer answer, "
+"""The version filename of a recorded answer is `Customer answer, <yyyy-mm-dd>` (Story 4.7):
+no extension, so no upload can carry it; it is parsed as text."""
+_ANSWER_FILENAME = re.compile(r"Customer answer, \d{4}-\d{2}-\d{2}")
+
+
+def answer_filename(answered_on: date) -> str:
+    """The version filename of an answer the customer gave on `answered_on`."""
+    return f"{ANSWER_FILENAME_PREFIX}{answered_on.isoformat()}"
+
+
+def is_answer_filename(filename: str) -> bool:
+    return _ANSWER_FILENAME.fullmatch(filename) is not None
+
+
+def answer_text(cleaned: str) -> str:
+    """Pasted answer text (already `clean_pasted_text`) as its parse will store it: line ends
+    and Unicode normalised and no leading byte order mark, so a passage over the whole text
+    is exact before the parse runs."""
+    return normalise(cleaned).lstrip("﻿").strip()
 
 
 EXTENSION_KINDS: dict[str, SourceKind] = {

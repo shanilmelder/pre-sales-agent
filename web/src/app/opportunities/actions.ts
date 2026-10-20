@@ -21,7 +21,7 @@ import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
 import type { Conflict } from "@/lib/conflicts";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
-import type { ClarificationQuestion, Detection, Gap } from "@/lib/gaps";
+import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
 import {
@@ -648,6 +648,13 @@ export async function startExtraction(opportunityId: unknown): Promise<StartExtr
 export async function loadGaps(opportunityId: unknown): Promise<GapsResult> {
   if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
   return listGaps(opportunityId);
+}
+
+/** How many of the Opportunity's Gaps are open (the Gaps tab badge, Story 4.7); null when it
+ * can't be read. */
+export async function countOpenGaps(opportunityId: unknown): Promise<number | null> {
+  const loaded = await loadGaps(opportunityId);
+  return loaded.kind === "ok" ? openGapCount(loaded.list.items) : null;
 }
 
 /** `POST /api/v1/opportunities/{id}/gap-detections`: detect the Gaps again (the Retry of a
@@ -1617,8 +1624,8 @@ export type GapWriteResult =
   | { kind: "invalid"; detail: string }
   /** 409 `gap_not_open`: the Gap was dismissed, converted or replaced; nothing changed. */
   | { kind: "gap-not-open" }
-  /** 409 `gap_not_dismissed`: the Gap was reopened meanwhile; nothing changed. */
-  | { kind: "gap-not-dismissed" }
+  /** 409 `gap_not_reopenable`: the Gap is neither dismissed nor answered (reopened meanwhile). */
+  | { kind: "gap-not-reopenable" }
   | { kind: "forbidden" }
   /** 404: the Opportunity can't be read, or the Gap is gone. */
   | { kind: "not-found" }
@@ -1663,8 +1670,8 @@ async function gapWriteFailure(
       };
     }
     case 409:
-      return problem(error).code === "gap_not_dismissed"
-        ? { kind: "gap-not-dismissed" }
+      return problem(error).code === "gap_not_reopenable"
+        ? { kind: "gap-not-reopenable" }
         : { kind: "gap-not-open" };
     case 403:
       return { kind: "forbidden" };
@@ -1736,7 +1743,7 @@ export async function dismissGap(input: unknown): Promise<GapWriteResult> {
   }
 }
 
-/** `POST /api/v1/opportunities/{id}/gaps/{gid}/reopen` with `If-Match`: reopen a dismissed
+/** `POST /api/v1/opportunities/{id}/gaps/{gid}/reopen` with `If-Match`: reopen a dismissed or answered
  * Gap, with a reason. */
 export async function reopenGap(input: unknown): Promise<GapWriteResult> {
   if (!isGapTarget(input)) return { kind: "error" };
@@ -1760,6 +1767,146 @@ export async function reopenGap(input: unknown): Promise<GapWriteResult> {
     console.error(`reopen gap failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
+}
+
+// --- answering Clarification Questions (Story 4.7) -------------------------------------------
+
+export type AnswerWriteResult =
+  | { kind: "ok"; gap: Gap }
+  /** 412: the question or suggestion changed first. */
+  | { kind: "stale" }
+  /** 422: a readable reason. */
+  | { kind: "invalid"; detail: string }
+  /** 409 `gap_not_open`: the Gap was dismissed, converted or replaced; nothing changed. */
+  | { kind: "gap-not-open" }
+  /** 409 `question_not_sent`: the question is no longer sent or "No answer"; nothing changed. */
+  | { kind: "question-not-sent" }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the question or suggestion is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function answerWriteFailure(action: string, status: number, error: unknown): AnswerWriteResult {
+  switch (status) {
+    case 412:
+      return { kind: "stale" };
+    case 422: {
+      const { detail } = problem(error);
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The answer was not accepted.",
+      };
+    }
+    case 409:
+      return problem(error).code === "question_not_sent"
+        ? { kind: "question-not-sent" }
+        : { kind: "gap-not-open" };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${action} failed: status=${status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/clarification-questions/{qid}/answer` with `If-Match`:
+ * **Record answer**. The text becomes a Source; the question is answered, and the Gap too when
+ * `settlesGap`. Logs ids and statuses only, never the answer. */
+export async function recordAnswer(input: unknown): Promise<AnswerWriteResult> {
+  if (!isQuestionTarget(input)) return { kind: "error" };
+  const { text, answeredOn, settlesGap } = input as Record<string, unknown>;
+  if (
+    typeof text !== "string" ||
+    typeof answeredOn !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(answeredOn) ||
+    typeof settlesGap !== "boolean"
+  )
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/clarification-questions/{question_id}/answer",
+      {
+        params: {
+          path: { opportunity_id: input.opportunityId, question_id: input.questionId },
+          header: { "If-Match": `"${input.rowVersion}"` },
+        },
+        body: { text, answered_on: answeredOn, settles_gap: settlesGap },
+      },
+    );
+    if (data) return { kind: "ok", gap: data };
+    return answerWriteFailure("record answer", response.status, error);
+  } catch (thrown) {
+    console.error(`record answer failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type AnswerMatchInput = {
+  opportunityId: string;
+  matchId: string;
+  /** The suggestion's `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+};
+
+function isMatchTarget(input: unknown): input is AnswerMatchInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, matchId, rowVersion } = input as Record<string, unknown>;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof matchId === "string" &&
+    UUID_RE.test(matchId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0
+  );
+}
+
+async function decideMatch(
+  input: unknown,
+  decision: "confirm" | "reject",
+): Promise<AnswerWriteResult> {
+  if (!isMatchTarget(input)) return { kind: "error" };
+  const action = decision === "confirm" ? "confirm answer" : "reject answer";
+  try {
+    const api = await createServerApiClient();
+    const options = {
+      params: {
+        path: { opportunity_id: input.opportunityId, match_id: input.matchId },
+        header: { "If-Match": `"${input.rowVersion}"` },
+      },
+    };
+    const { data, error, response } =
+      decision === "confirm"
+        ? await api.POST(
+            "/api/v1/opportunities/{opportunity_id}/answer-matches/{match_id}/confirm",
+            options,
+          )
+        : await api.POST(
+            "/api/v1/opportunities/{opportunity_id}/answer-matches/{match_id}/reject",
+            options,
+          );
+    if (data) return { kind: "ok", gap: data };
+    return answerWriteFailure(action, response.status, error);
+  } catch (thrown) {
+    console.error(`${action} failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST …/answer-matches/{mid}/confirm` with `If-Match`: the suggested passage answers the
+ * question, which settles its Gap. */
+export async function confirmAnswerMatch(input: unknown): Promise<AnswerWriteResult> {
+  return decideMatch(input, "confirm");
+}
+
+/** `POST …/answer-matches/{mid}/reject` with `If-Match`: **Not an answer**. */
+export async function rejectAnswerMatch(input: unknown): Promise<AnswerWriteResult> {
+  return decideMatch(input, "reject");
 }
 
 // --- accepting Assumptions (Story 8.4 + 8.5) -------------------------------------------------

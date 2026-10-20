@@ -60,3 +60,20 @@ class GapCandidate(_Output):
 
 class ClarificationOutput(_Output):
     gaps: list[GapCandidate]
+
+
+class AnswerMatch(_Output):
+    """One passage of the Source that answers one question (Story 4.7)."""
+
+    question: str = Field(description="The label of the question it answers, e.g. 'Q2'.")
+    quote: str = Field(
+        description="The exact words of the Source that answer it, copied verbatim from the "
+        "Source block."
+    )
+
+
+class AnswerMatchOutput(_Output):
+    """The Source passages that answer the questions; empty when none does. The gaps module
+    checks every label and quote; only a person's confirmation marks a question answered."""
+
+    matches: list[AnswerMatch]

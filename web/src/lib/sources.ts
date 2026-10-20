@@ -10,6 +10,7 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   note: "Note",
   transcript: "Transcript",
   document: "Document",
+  clarification_answer: "Customer answer",
 };
 
 /** What the file picker offers. The API decides what is allowed. */

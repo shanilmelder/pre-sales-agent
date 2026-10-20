@@ -20,7 +20,8 @@ Opportunity's detection lock until commit.
    approved, Story 4.5, or whose impact a person changed or that a person reopened, Story
    4.4: they are kept as they are; dismissed Gaps are never touched), drops candidates that
    repeat a dismissed Gap (same category and title, ignoring case and spacing; counted as
-   dropped), stores the new Gaps, their Requirement links and their drafted questions,
+   dropped; answered ones too, Story 4.7), stores the new Gaps, their Requirement links and
+   their drafted questions,
    marks the detection `succeeded` with its counts, and traces
    `gaps.gap.raised` and `gaps.clarification_question.drafted` per Gap and
    `gaps.detection.completed`; and queues the Opportunity's specialist assessment run
@@ -211,17 +212,18 @@ async def _resolvable(
     }
 
 
-async def _without_dismissed(
+async def _without_settled(
     uow: UnitOfWork, opportunity_id: UUID, validation: Validation[tuple[UUID, int]]
 ) -> Validation[tuple[UUID, int]]:
-    """The validation without candidates that repeat one of the Opportunity's dismissed Gaps
-    (same category and title, ignoring case and spacing), which count as dropped (Story 4.4:
-    a person's dismissal stands)."""
-    dismissed = {gap_key(c, t) for c, t in await repo.dismissed_keys(uow, opportunity_id)}
-    if not dismissed:
+    """The validation without candidates that repeat one of the Opportunity's dismissed or
+    answered Gaps (same category and title, ignoring case and spacing), which count as
+    dropped (Story 4.4: a person's dismissal stands; Story 4.7: an answered Gap is not raised
+    again)."""
+    settled = {gap_key(c, t) for c, t in await repo.settled_keys(uow, opportunity_id)}
+    if not settled:
         return validation
     kept: list[ValidGap[tuple[UUID, int]]] = [
-        g for g in validation.gaps if gap_key(g.category.value, g.title) not in dismissed
+        g for g in validation.gaps if gap_key(g.category.value, g.title) not in settled
     ]
     return Validation(tuple(kept), validation.dropped + len(validation.gaps) - len(kept))
 
@@ -271,7 +273,7 @@ async def accept_gap_detection(
             extra={**ids, "dropped_count": validation.dropped},
         )
         raise ModelOutputInvalidError("Every proposed Gap was invalid.")
-    validation = await _without_dismissed(uow, record.opportunity_id, validation)
+    validation = await _without_settled(uow, record.opportunity_id, validation)
     superseded, kept = await repo.supersede_detected(uow, record.opportunity_id)
     for gap in validation.gaps:
         gap_id = new_id()
@@ -321,6 +323,7 @@ async def accept_gap_detection(
         kept_count=kept,
     )
     await _succeed(uow, record, completed, actor)
+    await repo.notify_gaps_changed(uow, record.opportunity_id)  # Story 4.7: live Gaps tab
     # Story 5.1: every successful Gap detection queues the specialist assessment run
     # (coalesced with one already queued or running), in this Unit of Work; the Estimate is
     # built from its Assessments when it finishes (Story 8.3: no model Estimate draft is

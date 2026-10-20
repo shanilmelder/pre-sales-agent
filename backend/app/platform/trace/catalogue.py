@@ -350,8 +350,8 @@ class GapsGapDismissed(TracePayload):
 
 @register
 class GapsGapReopened(TracePayload):
-    """A person reopened a dismissed Gap (Story 4.4). Subject: the Gap (`gaps.gap`). The
-    reason is never in the trace."""
+    """A person reopened a dismissed (Story 4.4) or answered (Story 4.7) Gap. Subject: the Gap
+    (`gaps.gap`). The reason is never in the trace."""
 
     event_type: ClassVar[str] = "gaps.gap.reopened"
 
@@ -392,6 +392,69 @@ class GapsClarificationQuestionMarkedUnanswered(TracePayload):
 
     gap_id: str
     row_version: int
+
+
+@register
+class GapsClarificationQuestionAnswered(TracePayload):
+    """A person recorded the customer's answer to a sent (or "No answer") Clarification
+    Question, or confirmed a suggested one (Story 4.7). Subject: the question
+    (`gaps.clarification_question`). `source_id` / `passage_id`: the Source and passage
+    holding the answer, its Evidence. Ids only, never the answer text."""
+
+    event_type: ClassVar[str] = "gaps.clarification_question.answered"
+
+    gap_id: str
+    source_id: str
+    passage_id: str
+    row_version: int
+
+
+@register
+class GapsGapAnswered(TracePayload):
+    """The answer to its Clarification Question settled an open Gap (Story 4.7). Subject: the
+    Gap (`gaps.gap`)."""
+
+    event_type: ClassVar[str] = "gaps.gap.answered"
+
+    question_id: str
+    passage_id: str
+    row_version: int
+
+
+@register
+class GapsAnswerMatchSuggested(TracePayload):
+    """`clarification_agent` suggested that a passage of a new Source answers a sent question
+    (Story 4.7); a person decides. Subject: the suggestion (`gaps.answer_match`). Actor:
+    `clarification_agent@<semver>`. `injection_suspected`: the passage reads like an
+    instruction to the platform."""
+
+    event_type: ClassVar[str] = "gaps.answer_match.suggested"
+
+    question_id: str
+    passage_id: str
+    injection_suspected: bool
+
+
+@register
+class GapsAnswerMatchConfirmed(TracePayload):
+    """A person confirmed a suggested answer, which answered the question (Story 4.7).
+    Subject: the suggestion (`gaps.answer_match`)."""
+
+    event_type: ClassVar[str] = "gaps.answer_match.confirmed"
+
+    question_id: str
+    passage_id: str
+
+
+@register
+class GapsAnswerMatchRejected(TracePayload):
+    """A person said a suggested passage is not an answer ("Not an answer", Story 4.7); the
+    pair is never suggested again. Subject: the suggestion (`gaps.answer_match`)."""
+
+    event_type: ClassVar[str] = "gaps.answer_match.rejected"
+
+    question_id: str
+    passage_id: str
 
 
 # --- estimates ----------------------------------------------------------------------------

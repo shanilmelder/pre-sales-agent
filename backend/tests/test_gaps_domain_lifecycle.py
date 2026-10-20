@@ -8,8 +8,8 @@ import pytest
 from app.modules.gaps.domain.gaps import (
     REASON_MAX,
     DismissReasonKind,
-    GapNotDismissedTransitionError,
     GapNotOpenTransitionError,
+    GapNotReopenableTransitionError,
     GapState,
     GapStatus,
     Impact,
@@ -83,7 +83,7 @@ def test_dismiss_then_reopen_clears_the_dismissal() -> None:
 
 @pytest.mark.parametrize("status", [GapStatus.OPEN, GapStatus.CONVERTED, GapStatus.SUPERSEDED])
 def test_only_a_dismissed_gap_reopens(status: GapStatus) -> None:
-    with pytest.raises(GapNotDismissedTransitionError):
+    with pytest.raises(GapNotReopenableTransitionError):
         reopen_gap(GapState(status=status, impact=Impact.LOW))
 
 

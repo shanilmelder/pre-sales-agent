@@ -413,6 +413,15 @@ describe("pipeline counts", () => {
       "1 question sent · 0 awaiting an answer",
     );
   });
+
+  it("an answered question of an open Gap still counts as sent, not awaiting (Story 4.7)", () => {
+    const withQuestion = (g: Gap, status: string) =>
+      ({ ...g, question: { status } }) as unknown as Gap;
+    const counts = gapCounts(
+      gaps([withQuestion(gap("a", "high"), "answered"), withQuestion(gap("b", "low"), "sent")]),
+    );
+    expect(counts).toMatchObject({ open: 2, sent: 2, awaiting: 1 });
+  });
 });
 
 describe("assessments card helpers", () => {

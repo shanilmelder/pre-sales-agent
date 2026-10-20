@@ -32,8 +32,8 @@ from typing import Any, Literal
 
 from pydantic import TypeAdapter
 
-from app.agents.clarification_agent.agent import ClarificationTask
-from app.agents.clarification_agent.schema import ClarificationOutput
+from app.agents.clarification_agent.agent import AnswersTask, ClarificationTask
+from app.agents.clarification_agent.schema import AnswerMatchOutput, ClarificationOutput
 from app.agents.contract import CONTRACT_VERSION
 from app.agents.engineering_agent.schema import EngineeringOutput
 from app.agents.estimating_agent.agent import AssumptionsTask, EstimatingTask
@@ -55,9 +55,13 @@ PROMPT_FILE_RE = re.compile(r"^v([1-9]\d*)(?:-[a-z0-9][a-z0-9_-]*)?\.md$")
 
 SchemaKind = Literal["input", "output"]
 
-REQUIRED_PROMPTS: dict[str, tuple[str, ...]] = {"estimating_agent": ("assumptions",)}
+REQUIRED_PROMPTS: dict[str, tuple[str, ...]] = {
+    "clarification_agent": ("answers",),
+    "estimating_agent": ("assumptions",),
+}
 """Named prompt files an agent reads besides `v<N>.md`: prompt version N is deployed only
-when `v<N>-<name>.md` is too (`estimating_agent` reads `v<N>-assumptions.md`)."""
+when `v<N>-<name>.md` is too (`clarification_agent` reads `v<N>-answers.md`,
+`estimating_agent` reads `v<N>-assumptions.md`)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +78,8 @@ class SchemaVersion:
 
 
 SCHEMA_VERSIONS: tuple[SchemaVersion, ...] = (
-    SchemaVersion("clarification_agent", "input", 1, ClarificationTask, "1"),
-    SchemaVersion("clarification_agent", "output", 1, ClarificationOutput, "1"),
+    SchemaVersion("clarification_agent", "input", 1, ClarificationTask | AnswersTask, "1"),
+    SchemaVersion("clarification_agent", "output", 1, ClarificationOutput | AnswerMatchOutput, "1"),
     SchemaVersion("engineering_agent", "input", 1, SpecialistTask, "1"),
     SchemaVersion("engineering_agent", "output", 1, EngineeringOutput, "1"),
     SchemaVersion("estimating_agent", "input", 1, EstimatingTask | AssumptionsTask, "1"),

@@ -359,18 +359,32 @@ export function RequirementsSection({
   opportunityId,
   initial,
   initialOutdated = NO_OUTDATED,
+  initialSelectedId = null,
 }: {
   opportunityId: string;
   initial: RequirementList;
   /** The Assessments that used outdated Requirement versions, as the page loaded. */
   initialOutdated?: readonly OutdatedAssessment[];
+  /** A Requirement to open in the inspector as the page loads (`?requirement=<id>`, Story
+   * 4.7); ignored when it isn't listed. */
+  initialSelectedId?: string | null;
 }) {
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [list, setList] = useState<RequirementList>(initial);
   const [selection, setSelection] = useState<{ id: string; passageId: string | null } | null>(
-    null,
+    () =>
+      initialSelectedId && initial.items.some((item) => item.id === initialSelectedId)
+        ? { id: initialSelectedId, passageId: null }
+        : null,
   );
+  // A deep link opens the inspector once, as the page loads.
+  const deepLinked = useRef(selection !== null);
+  useEffect(() => {
+    if (!deepLinked.current) return;
+    deepLinked.current = false;
+    setRightPaneOpen(true);
+  }, [setRightPaneOpen]);
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);

@@ -24,7 +24,8 @@ export default async function WorkspaceTabPage({
   if (!isWorkspaceTab(tab)) notFound();
   if (tab === "overview") return await OverviewTab({ id });
   if (tab === "sources") return await SourcesTab({ id });
-  if (tab === "requirements") return await RequirementsTab({ id });
+  if (tab === "requirements")
+    return await RequirementsTab({ id, searchParams: (await searchParams) ?? {} });
   if (tab === "gaps") return await GapsTab({ id });
   if (tab === "assessments") return await AssessmentsTab({ id });
   if (tab === "conflicts") return await ConflictsTab({ id });

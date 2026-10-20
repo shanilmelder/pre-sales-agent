@@ -49,6 +49,7 @@ _JOB_MODULES: tuple[str, ...] = (
     "app.modules.knowledge.application.jobs",
     "app.modules.intake.application.extraction",
     "app.modules.gaps.application.detection",
+    "app.modules.gaps.application.answer_matching",
     "app.modules.estimates.application.draft",
     "app.modules.estimates.application.assumptions",
     "app.modules.assessments.application.review",

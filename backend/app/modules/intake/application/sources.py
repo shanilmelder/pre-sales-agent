@@ -25,12 +25,13 @@ kinds and sizes only.
 
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
+from datetime import date
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
-from app.modules.intake.adapters import repository
+from app.modules.intake.adapters import repository, requirements_repository
 from app.modules.intake.adapters.repository import SourceRecord
 from app.modules.intake.application.jobs import enqueue_parse
 from app.modules.intake.application.models import Source, SourceList, SourceParse
@@ -40,12 +41,15 @@ from app.modules.intake.domain.sources import (
     PASTED_TEXT_FILENAME,
     PASTED_TEXT_KIND,
     SUBJECT_TYPE,
+    TEXT_EMPTY_MESSAGE,
     TEXT_MAX_CHARS,
     InvalidFilenameError,
     PastedTextEmptyError,
     PastedTextTooLongError,
     PastedTextUnsupportedError,
     SourceKind,
+    answer_filename,
+    answer_text,
     clean_filename,
     clean_pasted_text,
     content_matches,
@@ -288,6 +292,63 @@ async def add_text(
         kind=PASTED_TEXT_KIND,
         filename=PASTED_TEXT_FILENAME,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerSource:
+    """A recorded answer stored as a Source version, and the passage spanning its text."""
+
+    source_id: UUID
+    version: int
+    passage_id: UUID
+
+
+async def add_answer_source(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    text: str,
+    *,
+    answered_on: date,
+    store: BlobStore,
+) -> AnswerSource:
+    """Store a customer's answer (Story 4.7) as a `clarification_answer` Source named
+    `Customer answer, <yyyy-mm-dd>`, through the same write path as pasted text (versioned,
+    referenced, traced and queued for parsing; its parse then queues the extraction and the
+    answer matching), and record one passage spanning the whole cleaned text. Identical
+    bytes become the next version of the Source already holding them, which keeps its kind.
+    The caller has authorized the answer; adding still needs `intake.source.add`."""
+    uploader = await _authorized_uploader(uow, actor, opportunity_id)
+    try:
+        cleaned = answer_text(clean_pasted_text(text))
+    except PastedTextEmptyError as exc:
+        raise FileEmptyError(exc.message) from None
+    except PastedTextTooLongError as exc:
+        raise FileTooLargeError(exc.message) from None
+    except PastedTextUnsupportedError as exc:
+        raise FileContentMismatchError(exc.message) from None
+    if not cleaned:
+        raise FileEmptyError(TEXT_EMPTY_MESSAGE)
+    data = cleaned.encode("utf-8")
+
+    async def single_chunk() -> AsyncIterator[bytes]:
+        yield data
+
+    blob = await store.put_stream(single_chunk(), len(data))
+    source = await _record(
+        uow,
+        actor,
+        opportunity_id,
+        uploader,
+        blob=blob,
+        kind=SourceKind.CLARIFICATION_ANSWER,
+        filename=answer_filename(answered_on),
+    )
+    source_id = UUID(source.id)
+    passage_id = await requirements_repository.passage(
+        uow, source_id=source_id, version=source.version, start=0, end=len(cleaned)
+    )
+    return AnswerSource(source_id=source_id, version=source.version, passage_id=passage_id)
 
 
 async def _record(

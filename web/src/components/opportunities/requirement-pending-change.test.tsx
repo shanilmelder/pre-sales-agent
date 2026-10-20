@@ -362,3 +362,38 @@ describe("the outdated Assessments notice", () => {
     expect(screen.queryByTestId("outdated-assessments")).toBeNull();
   });
 });
+
+describe("the ?requirement= deep link (Story 4.7)", () => {
+  it("opens that Requirement's inspector with its diff as the page loads", async () => {
+    const r2 = requirement(2, { pending_change: PENDING });
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <RequirementsSection
+          opportunityId={OPP_ID}
+          initial={list([requirement(1), r2])}
+          initialSelectedId={r2.id}
+        />
+        <RightPane />
+      </ShellProviders>,
+    );
+
+    expect(await within(pane()).findByTestId("pending-change")).toBeTruthy();
+    expect(within(section()).getByText("+").closest("p")?.textContent).toBe(
+      "+Proposed: [PROPOSED TEXT]",
+    );
+  });
+
+  it("an id that is not listed opens nothing", () => {
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <RequirementsSection
+          opportunityId={OPP_ID}
+          initial={list([requirement(1)])}
+          initialSelectedId="00000000-0000-7000-8000-00000000ffff"
+        />
+        <RightPane />
+      </ShellProviders>,
+    );
+    expect(screen.queryByTestId("pending-change")).toBeNull();
+  });
+});

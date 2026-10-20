@@ -8,13 +8,17 @@ import {
   approveClarificationQuestion,
   approveSelectedClarificationQuestions,
   changeGapImpact,
+  confirmAnswerMatch,
   dismissGap,
   editClarificationQuestion,
   loadGaps,
   markClarificationQuestionsSent,
   markClarificationQuestionUnanswered,
+  recordAnswer,
+  rejectAnswerMatch,
   reopenGap,
   startGapDetection,
+  type AnswerWriteResult,
   type ApproveAllQuestionsResult,
   type GapWriteResult,
   type MarkSentResult,
@@ -38,6 +42,7 @@ import {
   useShell,
 } from "@/components/shell/shell-context";
 import {
+  answeredLabel,
   approveAllLabel,
   approvedCount,
   approveSelectedLabel,
@@ -49,6 +54,8 @@ import {
   DETECTION_POLL_MS,
   detectionFailure,
   gapCount,
+  gapsChangedAnnouncement,
+  GAPS_FALLBACK_POLL_MS,
   gapsSummary,
   gapStatus,
   impactLabel,
@@ -59,6 +66,7 @@ import {
   NO_ANSWER,
   NO_GAPS,
   NONE_FOUND,
+  possibleAnswerLabel,
   questionTextProblem,
   questionTopicProblem,
   rankGaps,
@@ -67,6 +75,7 @@ import {
   toApprove,
   toSend,
   triggerLabel,
+  type AnswerSuggestion,
   type ClarificationQuestion,
   type Detection,
   type DismissReasonKind,
@@ -76,6 +85,7 @@ import {
 } from "@/lib/gaps";
 import { convertedLabel } from "@/lib/estimates";
 import { NO_ACCESS_TO_OPPORTUNITY, staleMessage } from "@/lib/opportunities";
+import { useGapsEvents } from "@/lib/opportunity-events";
 
 export const RETRY = "Retry";
 const RETRY_FAILED = "The retry failed. Try again.";
@@ -89,7 +99,8 @@ export const EDIT_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can edit and approve questions.";
 export const GAP_NOT_OPEN =
   "This Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection.";
-export const GAP_NOT_DISMISSED = "This Gap is no longer dismissed: someone reopened it.";
+export const GAP_NOT_DISMISSED =
+  "This Gap is no longer dismissed or answered: someone reopened it.";
 export const GAP_EDIT_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can change, dismiss and reopen Gaps.";
 const GAP_GONE = "This Gap is no longer available.";
@@ -104,6 +115,10 @@ export const SEND_NOT_ALLOWED =
   "Only the owner and collaborators can mark questions sent or “No answer”.";
 const MARK_SENT_FAILED = "The questions could not be marked sent. Try again.";
 const NO_ANSWER_FAILED = "The question could not be marked “No answer”. Try again.";
+const ANSWER_FAILED = "The answer could not be recorded. Try again.";
+const DECIDE_FAILED = "The suggested answer could not be decided. Try again.";
+export const ANSWER_NOT_ALLOWED = "Only the owner and collaborators can record answers.";
+export const SUGGESTION_GONE = "This suggested answer is no longer available.";
 const FIELD_NAMES: Record<QuestionField, string> = { text: "Question", topic: "Topic" };
 
 const actionClass =
@@ -281,6 +296,15 @@ export function GapsList({
                     className={`min-w-0 flex-1 truncate text-body ${greyed ? "text-muted-foreground" : ""}`}
                   >
                     {item.title}
+                    {item.answer ? (
+                      <span className="ml-2 text-meta text-muted-foreground">
+                        {answeredLabel(item.answer.answered_on)}
+                      </span>
+                    ) : item.answer_suggestions[0] ? (
+                      <span className="ml-2 text-meta text-muted-foreground">
+                        {possibleAnswerLabel(item.answer_suggestions[0])}
+                      </span>
+                    ) : null}
                   </span>
                   <span className={greyed ? "opacity-60" : undefined}>
                     <ImpactBar impact={item.impact} />
@@ -437,7 +461,12 @@ function retryMessage(result: StartGapDetectionResult): string {
  * questions of open Gaps exist, and **Mark N selected sent** while the selection holds approved
  * questions (else **Mark all sent (N)**); either opens a small form with the date sent (today by
  * default) and a confirm button. The inspector marks one approved question sent and a sent one
- * "No answer". A 412 shows the stale notice with Reload. */
+ * "No answer". A 412 shows the stale notice with Reload.
+ *
+ * Story 4.7: the inspector records a customer's answer to a sent question and confirms or
+ * rejects suggested answers (same people as sending). The list re-reads on the event stream's
+ * `gaps.changed` frames (detection polling stays while it runs) and announces "N Gaps answered,
+ * M open" through the throttled live region when those counts change. */
 export function GapsSection({
   opportunityId,
   initial,
@@ -489,6 +518,37 @@ export function GapsSection({
   // Multi-select (Story 4.4): Gap ids; ids no longer listed drop out.
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const checkedIds = new Set(list.items.filter((g) => checked.has(g.id)).map((g) => g.id));
+
+  // Story 4.7: another person's change arrives over the event stream; the list is read again
+  // (unless a local change happened meanwhile) and a count change is announced.
+  const listRef = useRef(list);
+  useEffect(() => {
+    listRef.current = list;
+  });
+  const reread = useRef(() => {});
+  useEffect(() => {
+    reread.current = () => {
+    const startedAt = mutation.current;
+    void loadGaps(opportunityId).then(
+      (result) => {
+        if (result.kind !== "ok" || mutation.current !== startedAt) return;
+        const before = listRef.current.items;
+        setList(result.list);
+        const sentence = gapsChangedAnnouncement(before, result.list.items);
+        if (sentence) announce(sentence);
+      },
+      () => undefined,
+    );
+    };
+  });
+  const live = useGapsEvents(opportunityId, () => reread.current());
+  // While the stream is not connected, polling is the fallback (the detection's own polling
+  // covers a running detection); it stops once the stream connects or the tab unmounts.
+  useEffect(() => {
+    if (live || detecting || !visible) return;
+    const timer = setInterval(() => reread.current(), GAPS_FALLBACK_POLL_MS);
+    return () => clearInterval(timer);
+  }, [live, detecting, visible]);
 
   // New data from the server (e.g. a navigation refresh) replaces the local copy.
   if (initial !== syncedFrom) {
@@ -992,7 +1052,7 @@ export function GapsSection({
         say(GAP_NOT_OPEN);
         void refresh();
         return "failed";
-      case "gap-not-dismissed":
+      case "gap-not-reopenable":
         say(GAP_NOT_DISMISSED);
         void refresh();
         return "failed";
@@ -1047,6 +1107,103 @@ export function GapsSection({
       item,
       () => reopenGap({ opportunityId, gapId: item.id, rowVersion: item.row_version, reason }),
       (gap) => `Reopened: ${gap.title}`,
+    );
+  }
+
+  /** Run an answer write (Story 4.7) and act on its result; what the form does next. */
+  async function writeAnswer(
+    item: Gap,
+    busyId: string,
+    call: () => Promise<AnswerWriteResult>,
+    done: (gap: Gap) => string,
+    fallback: string,
+  ): Promise<GapFormOutcome> {
+    if (locked || busyIds.has(busyId)) return "failed";
+    setNotice(null);
+    markBusy(busyId, true);
+    let result: AnswerWriteResult;
+    try {
+      result = await call();
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(busyId, false);
+    switch (result.kind) {
+      case "ok": {
+        const updated = result.gap;
+        mutation.current += 1;
+        setList((current) => ({
+          ...current,
+          items: rankGaps(current.items.map((g) => (g.id === updated.id ? updated : g))),
+        }));
+        announce(done(updated));
+        return "ok";
+      }
+      case "stale":
+        setStale({ changedBy: null });
+        announce(staleMessage(null));
+        return "failed";
+      case "invalid":
+        announce(result.detail);
+        return { invalid: result.detail };
+      case "gap-not-open":
+        say(GAP_NOT_OPEN);
+        void refresh();
+        return "failed";
+      case "question-not-sent":
+        say(QUESTION_NOT_SENT);
+        void refresh();
+        return "failed";
+      case "forbidden":
+        say(ANSWER_NOT_ALLOWED);
+        void refresh();
+        return "failed";
+      case "not-found":
+        say(item.answer_suggestions.length > 0 ? SUGGESTION_GONE : QUESTION_GONE);
+        void refresh();
+        return "failed";
+      default:
+        say(fallback);
+        return "failed";
+    }
+  }
+
+  function answer(
+    item: Gap,
+    text: string,
+    answeredOn: string,
+    settlesGap: boolean,
+  ): Promise<GapFormOutcome> {
+    const question = item.question;
+    if (!question) return Promise.resolve("failed");
+    return writeAnswer(
+      item,
+      question.id,
+      () =>
+        recordAnswer({
+          opportunityId,
+          questionId: question.id,
+          rowVersion: question.row_version,
+          text,
+          answeredOn,
+          settlesGap,
+        }),
+      (gap) => `${answeredLabel(gap.answer?.answered_on ?? answeredOn)}: ${gap.title}`,
+      ANSWER_FAILED,
+    );
+  }
+
+  function decide(item: Gap, suggestion: AnswerSuggestion, confirm: boolean) {
+    const target = { opportunityId, matchId: suggestion.id, rowVersion: suggestion.row_version };
+    void writeAnswer(
+      item,
+      item.question?.id ?? item.id,
+      () => (confirm ? confirmAnswerMatch(target) : rejectAnswerMatch(target)),
+      (gap) =>
+        confirm
+          ? `${answeredLabel(gap.answer?.answered_on ?? "")}: ${gap.title}`
+          : `Not an answer: ${gap.title}`,
+      DECIDE_FAILED,
     );
   }
 
@@ -1192,6 +1349,7 @@ export function GapsSection({
           <GapInspector
             key={selected.id}
             gap={selected}
+            opportunityId={opportunityId}
             focusRequest={focusRequest}
             edit={
               canEdit && selected.question
@@ -1223,6 +1381,10 @@ export function GapsSection({
                     locked,
                     onMarkSent: (sentOn) => markSent([selected], sentOn),
                     onNoAnswer: () => void noAnswer(selected),
+                    onRecordAnswer: (text, answeredOn, settlesGap) =>
+                      answer(selected, text, answeredOn, settlesGap),
+                    onConfirmSuggestion: (suggestion) => decide(selected, suggestion, true),
+                    onRejectSuggestion: (suggestion) => decide(selected, suggestion, false),
                   }
                 : undefined
             }
