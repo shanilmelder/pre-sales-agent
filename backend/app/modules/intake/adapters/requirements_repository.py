@@ -1,6 +1,7 @@
 """Persistence for extractions, Source passages and Requirements (Story 2.5 Part A),
-Requirement versions and confirmation (Story 2.6), and pending Requirement changes (Story
-2.7). Runs inside the caller's Unit of Work."""
+Requirement versions and confirmation (Story 2.6), pending Requirement changes (Story
+2.7), and creating, deleting, splitting and merging Requirements with their stable numbers
+(Story 2.6 remainder). Runs inside the caller's Unit of Work."""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -69,6 +70,9 @@ class RequirementRecord:
     created_at: datetime
     confirmed_at: datetime | None = None
     confirmed_by: UUID | None = None
+    number: int = 0
+    """Its stable `R<n>` within the Opportunity (Story 2.6)."""
+    status: str = "active"
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +296,29 @@ async def passage(uow: UnitOfWork, *, source_id: UUID, version: int, start: int,
     ).scalar_one()
 
 
+async def lock_numbers(uow: UnitOfWork, opportunity_id: UUID) -> None:
+    """Serialise allocating Requirement numbers for one Opportunity until commit, so two
+    concurrent inserts never take the same `R<n>`."""
+    await uow.session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"intake.requirement_number:{opportunity_id}"},
+    )
+
+
+async def next_number(uow: UnitOfWork, opportunity_id: UUID) -> int:
+    """The Opportunity's next Requirement number: one past the highest ever given (removed
+    Requirements keep theirs, so a number is never reused). Takes `lock_numbers` first."""
+    await lock_numbers(uow, opportunity_id)
+    highest = (
+        await uow.session.execute(
+            select(func.max(RequirementRow.number)).where(
+                RequirementRow.opportunity_id == opportunity_id
+            )
+        )
+    ).scalar_one_or_none()
+    return (highest or 0) + 1
+
+
 async def insert_requirement(
     uow: UnitOfWork,
     *,
@@ -299,30 +326,41 @@ async def insert_requirement(
     opportunity_id: UUID,
     text_: str,
     classification: str,
-    extraction_id: UUID,
+    extraction_id: UUID | None,
     passage_ids: list[UUID],
     created_by: str,
-) -> None:
-    """An `active`, `extracted`, unlocked Requirement at version 1, citing the passages, and
-    its version-1 history row (`created_by`: the agent's actor id)."""
-    await uow.session.execute(
-        insert(RequirementRow).values(
-            id=requirement_id,
-            opportunity_id=opportunity_id,
-            text=text_,
-            classification=classification,
-            origin="extracted",
-            locked_by_human=False,
-            status="active",
-            version=1,
-            extraction_id=extraction_id,
-            row_version=1,
+    origin: str = "extracted",
+    locked_by_human: bool = False,
+) -> RequirementRecord:
+    """An `active` Requirement at version 1 with the Opportunity's next number, citing the
+    passages, and its version-1 history row (`created_by`: the actor id). Extraction inserts
+    `extracted`, unlocked ones; a person's create, split and merge `human`, locked ones."""
+    number = await next_number(uow, opportunity_id)
+    row = (
+        await uow.session.execute(
+            insert(RequirementRow)
+            .values(
+                id=requirement_id,
+                opportunity_id=opportunity_id,
+                text=text_,
+                classification=classification,
+                origin=origin,
+                locked_by_human=locked_by_human,
+                status="active",
+                version=1,
+                extraction_id=extraction_id,
+                row_version=1,
+                number=number,
+            )
+            .returning(RequirementRow)
         )
-    )
-    await uow.session.execute(
-        insert(RequirementEvidenceRow),
-        [{"requirement_id": requirement_id, "passage_id": pid} for pid in passage_ids],
-    )
+    ).scalar_one()
+    record = _requirement(row)
+    if passage_ids:
+        await uow.session.execute(
+            insert(RequirementEvidenceRow),
+            [{"requirement_id": requirement_id, "passage_id": pid} for pid in passage_ids],
+        )
     await insert_version(
         uow,
         requirement_id=requirement_id,
@@ -331,6 +369,7 @@ async def insert_requirement(
         classification=classification,
         created_by=created_by,
     )
+    return record
 
 
 async def insert_version(
@@ -366,17 +405,42 @@ def _requirement(row: RequirementRow) -> RequirementRecord:
         created_at=row.created_at,
         confirmed_at=row.confirmed_at,
         confirmed_by=row.confirmed_by,
+        number=row.number,
+        status=row.status,
     )
+
+
+async def requirements_in(
+    uow: UnitOfWork, opportunity_id: UUID, status: str = "active"
+) -> list[RequirementRecord]:
+    """The Opportunity's Requirements in `status`, by number (oldest first)."""
+    rows = await uow.session.execute(
+        select(RequirementRow)
+        .where(RequirementRow.opportunity_id == opportunity_id, RequirementRow.status == status)
+        .order_by(RequirementRow.number)
+    )
+    return [_requirement(row) for row in rows.scalars()]
+
+
+async def removed_requirements(uow: UnitOfWork, opportunity_id: UUID) -> list[RequirementRecord]:
+    """The Requirements a person removed (Story 2.6): `deleted` ones, and `superseded` ones
+    that are locked (split or merged away; extraction before Story 2.7 only superseded
+    unlocked rows), by number."""
+    rows = await uow.session.execute(
+        select(RequirementRow)
+        .where(
+            RequirementRow.opportunity_id == opportunity_id,
+            (RequirementRow.status == "deleted")
+            | ((RequirementRow.status == "superseded") & RequirementRow.locked_by_human.is_(True)),
+        )
+        .order_by(RequirementRow.number)
+    )
+    return [_requirement(row) for row in rows.scalars()]
 
 
 async def active_requirements(uow: UnitOfWork, opportunity_id: UUID) -> list[RequirementRecord]:
-    """The Opportunity's `active` Requirements, oldest first."""
-    rows = await uow.session.execute(
-        select(RequirementRow)
-        .where(RequirementRow.opportunity_id == opportunity_id, RequirementRow.status == "active")
-        .order_by(RequirementRow.created_at, RequirementRow.id)
-    )
-    return [_requirement(row) for row in rows.scalars()]
+    """The Opportunity's `active` Requirements, by number (oldest first)."""
+    return await requirements_in(uow, opportunity_id)
 
 
 # --- human edits (Story 2.6) ----------------------------------------------------------------
@@ -405,9 +469,23 @@ async def edit_requirement(
     expected_row_version: int,
     text_: str,
     classification: str,
+    clear_confirmation: bool = False,
 ) -> RequirementRecord | None:
-    """Store a human edit: the next version, `origin` `human`, locked. Only while the
-    Requirement is `active` at `expected_row_version`; None (and no change) otherwise."""
+    """Store a human edit: the next version, `origin` `human`, locked; unconfirmed when
+    `clear_confirmation`. Only while the Requirement is `active` at `expected_row_version`;
+    None (and no change) otherwise."""
+    values: dict[str, object] = {
+        "text": text_,
+        "classification": classification,
+        "origin": "human",
+        "locked_by_human": True,
+        "version": RequirementRow.version + 1,
+        "row_version": RequirementRow.row_version + 1,
+        "updated_at": func.now(),
+    }
+    if clear_confirmation:
+        values["confirmed_at"] = None
+        values["confirmed_by"] = None
     row = (
         await uow.session.execute(
             update(RequirementRow)
@@ -416,15 +494,7 @@ async def edit_requirement(
                 RequirementRow.status == "active",
                 RequirementRow.row_version == expected_row_version,
             )
-            .values(
-                text=text_,
-                classification=classification,
-                origin="human",
-                locked_by_human=True,
-                version=RequirementRow.version + 1,
-                row_version=RequirementRow.row_version + 1,
-                updated_at=func.now(),
-            )
+            .values(**values)
             .returning(RequirementRow)
             # Rows read earlier in the session are refreshed, not served stale.
             .execution_options(synchronize_session=False, populate_existing=True)
@@ -480,7 +550,7 @@ async def confirm_all(
         .returning(RequirementRow)
         .execution_options(synchronize_session=False)
     )
-    return sorted((_requirement(row) for row in rows.scalars()), key=lambda r: (r.created_at, r.id))
+    return sorted((_requirement(row) for row in rows.scalars()), key=lambda r: r.number)
 
 
 async def current_version_authors(
@@ -627,8 +697,11 @@ class CitedPassage:
     end: int
 
 
-async def active_cited_passages(uow: UnitOfWork, opportunity_id: UUID) -> list[CitedPassage]:
-    """The passages every active Requirement of the Opportunity cites, with their spans."""
+async def active_cited_passages(
+    uow: UnitOfWork, opportunity_id: UUID, status: str = "active"
+) -> list[CitedPassage]:
+    """The passages every Requirement of the Opportunity in `status` (by default the active
+    ones) cites, with their spans."""
     rows = await uow.session.execute(
         select(
             RequirementEvidenceRow.requirement_id,
@@ -640,7 +713,7 @@ async def active_cited_passages(uow: UnitOfWork, opportunity_id: UUID) -> list[C
         )
         .join(SourcePassageRow, SourcePassageRow.id == RequirementEvidenceRow.passage_id)
         .join(RequirementRow, RequirementRow.id == RequirementEvidenceRow.requirement_id)
-        .where(RequirementRow.opportunity_id == opportunity_id, RequirementRow.status == "active")
+        .where(RequirementRow.opportunity_id == opportunity_id, RequirementRow.status == status)
         .order_by(SourcePassageRow.source_id, SourcePassageRow.start, SourcePassageRow.end)
     )
     return [
@@ -863,6 +936,62 @@ async def passages_by_id(uow: UnitOfWork, passage_ids: list[UUID]) -> dict[UUID,
         )
         for row in rows
     }
+
+
+# --- shaping the list (Story 2.6 remainder) -------------------------------------------------
+
+
+async def remove_requirement(
+    uow: UnitOfWork,
+    requirement_id: UUID,
+    *,
+    expected_row_version: int,
+    status: str,
+    removal_reason: str | None = None,
+) -> RequirementRecord | None:
+    """Take the Requirement out of the active list: `deleted` (with its reason) or
+    `superseded` (split or merged away), locked either way, so reconciliation knows a person
+    removed it (Story 2.6 review decision). Only while it is `active` at
+    `expected_row_version`; None (and no change) otherwise."""
+    row = (
+        await uow.session.execute(
+            update(RequirementRow)
+            .where(
+                RequirementRow.id == requirement_id,
+                RequirementRow.status == "active",
+                RequirementRow.row_version == expected_row_version,
+            )
+            .values(
+                status=status,
+                removal_reason=removal_reason,
+                locked_by_human=True,
+                row_version=RequirementRow.row_version + 1,
+                updated_at=func.now(),
+            )
+            .returning(RequirementRow)
+            # Rows read earlier in the session are refreshed, not served stale.
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _requirement(row)
+
+
+async def evidence_passage_ids(uow: UnitOfWork, requirement_ids: list[UUID]) -> list[UUID]:
+    """The passages these Requirements cite, without duplicates, in Source and span order."""
+    if not requirement_ids:
+        return []
+    rows = await uow.session.execute(
+        select(SourcePassageRow.id)
+        .where(
+            SourcePassageRow.id.in_(
+                select(RequirementEvidenceRow.passage_id).where(
+                    RequirementEvidenceRow.requirement_id.in_(requirement_ids)
+                )
+            )
+        )
+        .order_by(SourcePassageRow.source_id, SourcePassageRow.start, SourcePassageRow.end)
+    )
+    return list(rows.scalars())
 
 
 # --- answers (Story 4.7) --------------------------------------------------------------------

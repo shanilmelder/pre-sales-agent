@@ -37,6 +37,7 @@ const OPP_ID = "00000000-0000-7000-8000-000000000001";
 function requirement(n: number, classification: Classification, ...labels: string[]): Requirement {
   return {
     id: `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`,
+    number: n,
     text: `[REQUIREMENT ${n}]`,
     classification,
     origin: "extracted",

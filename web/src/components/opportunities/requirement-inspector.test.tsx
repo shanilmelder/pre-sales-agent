@@ -37,6 +37,7 @@ function passageId(n: number, i: number): string {
 function requirement(n: number, classification: Classification, ...files: string[]): Requirement {
   return {
     id: `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`,
+    number: n,
     text: `[REQUIREMENT ${n}]`,
     classification,
     origin: "extracted",

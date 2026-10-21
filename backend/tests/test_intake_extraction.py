@@ -650,8 +650,8 @@ def test_a_rerun_keeps_unproduced_requirements(
         conn.execute(
             sa.text(
                 "INSERT INTO intake_requirements (id, opportunity_id, text, classification, "
-                "origin, locked_by_human, status, version, row_version) VALUES "
-                "(:i, :o, 'Locked one.', 'functional', 'extracted', true, 'active', 2, 3)"
+                "origin, locked_by_human, status, version, row_version, number) VALUES "
+                "(:i, :o, 'Locked one.', 'functional', 'extracted', true, 'active', 2, 3, 3)"
             ),
             {"i": locked_id, "o": opp["id"]},
         )

@@ -149,3 +149,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-7-incremental-intake.md`
   summary: Test the "locked since it was read" fallback in `_reconcile` (extraction.py), where `version_extracted` misses and the refinement becomes a pending change.
   evidence: Story 2.7 review, verification-gap layer. No test reaches the branch, because every incremental test locks the Requirement before extraction runs. Hitting it needs a lock injected between `active_requirements` and the UPDATE.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-6-split-merge-delete-create-requirements.md`
+  summary: With single-key shortcuts turned off, keyboard-only users cannot multi-select rows in the Requirements list or the Gaps list (row checkboxes are `tabIndex -1` and `x` is a single-key shortcut), so Merge and approve-selected are mouse-only; add Space on the focused row (or a focusable checkbox) to toggle selection.
+  evidence: Story 2.6 review 2 (triage row 28): `requirements-list.tsx` follows `gaps-list.tsx:194,269`, which predates this story.

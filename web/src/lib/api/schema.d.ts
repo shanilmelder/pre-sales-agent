@@ -394,7 +394,13 @@ export interface paths {
          */
         get: operations["list_requirements"];
         put?: never;
-        post?: never;
+        /**
+         * Create Requirement
+         * @description Add a Requirement the extraction missed: origin `human`, locked, no Evidence,
+         *     unconfirmed, with the Opportunity's next number. The owner and collaborators, except
+         *     sales representatives.
+         */
+        post: operations["create_requirement"];
         delete?: never;
         options?: never;
         head?: never;
@@ -549,6 +555,72 @@ export interface paths {
          *     representatives.
          */
         post: operations["reject_requirement_change"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/requirements/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Requirements
+         * @description Merge 2 to 20 active Requirements into one new Requirement citing all their Evidence;
+         *     the originals are superseded. No `If-Match` header: each Requirement names the
+         *     `row_version` the caller read, and any stale one fails the whole merge. The owner and
+         *     collaborators, except sales representatives.
+         */
+        post: operations["merge_requirements"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Requirement
+         * @description Delete a Requirement with a reason: it leaves the active list but stays in history,
+         *     and re-extraction never brings it back. The owner and collaborators, except sales
+         *     representatives.
+         */
+        post: operations["delete_requirement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Split Requirement
+         * @description Split a Requirement into two new Requirements, each citing all its Evidence; the
+         *     original is superseded. The owner and collaborators, except sales representatives.
+         */
+        post: operations["split_requirement"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2335,9 +2407,8 @@ export interface components {
         /**
          * ConflictRequirement
          * @description The Requirement a position is about, at the version it names. `label` is `R<n>`, its
-         *     position among the Opportunity's active Requirements (oldest first), or `Superseded` once
-         *     it is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
-         *     when cut.
+         *     stable number within the Opportunity, or `Superseded` once it is no longer active.
+         *     `excerpt`: up to 140 characters of that version's text, with `…` when cut.
          */
         ConflictRequirement: {
             /** Id */
@@ -2909,9 +2980,9 @@ export interface components {
         /**
          * FindingRequirement
          * @description A Requirement a Finding (or an effort row) cites, at the version the agent read. `label` is
-         *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
-         *     first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
-         *     that version's text, with `…` when cut.
+         *     `R<n>`, the Requirement's stable number within the Opportunity, or `Superseded` once it
+         *     is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
+         *     when cut.
          */
         FindingRequirement: {
             /** Id */
@@ -3092,9 +3163,9 @@ export interface components {
         /**
          * GapRequirement
          * @description A Requirement the Gap relates to, at the version it was raised against. `label` is
-         *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
-         *     first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
-         *     that version's text, with `…` when cut.
+         *     `R<n>`, the Requirement's stable number within the Opportunity, or `Superseded` once it
+         *     is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
+         *     when cut.
          */
         GapRequirement: {
             /** Id */
@@ -3331,9 +3402,9 @@ export interface components {
         /**
          * LineRequirement
          * @description A Requirement the line covers, at the version it was drafted against. `label` is
-         *     `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
-         *     first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
-         *     that version's text, with `…` when cut.
+         *     `R<n>`, the Requirement's stable number within the Opportunity, or `Superseded` once it
+         *     is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
+         *     when cut.
          */
         LineRequirement: {
             /** Id */
@@ -3367,6 +3438,19 @@ export interface components {
         MarkSentResult: {
             /** Count */
             count: number;
+        };
+        /**
+         * MergedRequirementRef
+         * @description A Requirement to merge, at the row version the caller read (its `If-Match`).
+         */
+        MergedRequirementRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Row Version */
+            row_version: number;
         };
         /**
          * NewAgent
@@ -3939,16 +4023,31 @@ export interface components {
             items: components["schemas"]["RegistryAgent"][];
         };
         /**
+         * RemovedRequirement
+         * @description A Requirement that left the active list: `deleted` by a person (Story 2.6).
+         */
+        RemovedRequirement: {
+            /** Id */
+            id: string;
+            status: components["schemas"]["RequirementStatus"];
+            /** Version */
+            version: number;
+        };
+        /**
          * Requirement
          * @description An active Requirement of the Opportunity with the passages it cites. `origin` is
          *     `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
          *     once confirmed. `last_changed_by`: the person behind the latest edit or confirmation
          *     (null when the latest change was extraction's). `pending_change`: the open change
-         *     proposed to it, if any (Story 2.7). `row_version` goes back in `If-Match`.
+         *     proposed to it, if any (Story 2.7). `number`: its stable `R<n>` within the Opportunity,
+         *     never reused (Story 2.6). A Requirement a person created has origin `human` and no
+         *     Evidence. `row_version` goes back in `If-Match`.
          */
         Requirement: {
             /** Id */
             id: string;
+            /** Number */
+            number: number;
             /** Text */
             text: string;
             classification: components["schemas"]["Classification"];
@@ -3974,10 +4073,11 @@ export interface components {
         };
         /**
          * RequirementChangeRef
-         * @description A Requirement a Source changed (Story 4.7). `label` is `R<n>` among the active
-         *     Requirements, or `Superseded` once it is no longer active. `kind`: `added` (created
-         *     from the Source), `versioned` (a new version cites it), or the status of a pending
-         *     change proposing one of its passages (`pending`, `accepted`, `rejected`, `superseded`).
+         * @description A Requirement a Source changed (Story 4.7). `label` is `R<n>`, the Requirement's
+         *     stable number within the Opportunity, or `Superseded` once it is no longer active.
+         *     `kind`: `added` (created from the Source), `versioned` (a new version cites it), or the
+         *     status of a pending change proposing one of its passages (`pending`, `accepted`,
+         *     `rejected`, `superseded`).
          */
         RequirementChangeRef: {
             /** Requirement Id */
@@ -4014,6 +4114,29 @@ export interface components {
             classification?: components["schemas"]["Classification"] | null;
         };
         /**
+         * RequirementDeletion
+         * @description Why a person deletes a Requirement (Story 2.6).
+         */
+        RequirementDeletion: {
+            /**
+             * Reason
+             * @description Trimmed, it must be 1 to 500 characters.
+             */
+            reason: string;
+        };
+        /**
+         * RequirementDraft
+         * @description A new Requirement's text and classification, as a person wrote it (Story 2.6).
+         */
+        RequirementDraft: {
+            /**
+             * Text
+             * @description Trimmed, it must be 1 to 2,000 characters.
+             */
+            text: string;
+            classification: components["schemas"]["Classification"];
+        };
+        /**
          * RequirementEvidence
          * @description A Source passage a Requirement cites. `label` is `S<n> · <file name>`, where `n` is
          *     the Source's position among the Opportunity's Sources, oldest first.
@@ -4032,10 +4155,11 @@ export interface components {
         };
         /**
          * RequirementList
-         * @description The Opportunity's active Requirements, oldest first, and its latest extraction (null
-         *     when none has been queued yet). `can_start_extraction`: whether the caller may start
-         *     (retry) an extraction; `can_edit_requirements`: whether they may edit and confirm the
-         *     Requirements (Story 2.6). The UI only uses them to hide controls; the API decides.
+         * @description The Opportunity's active Requirements by number (oldest first), and its latest
+         *     extraction (null when none has been queued yet). `can_start_extraction`: whether the
+         *     caller may start (retry) an extraction; `can_edit_requirements`: whether they may edit,
+         *     confirm, create, delete, split and merge the Requirements (Story 2.6). The UI only uses
+         *     them to hide controls; the API decides.
          */
         RequirementList: {
             /** Items */
@@ -4047,10 +4171,38 @@ export interface components {
             can_edit_requirements: boolean;
         };
         /**
+         * RequirementMerge
+         * @description The Requirements to merge (distinct, each at the row version the caller read) and the
+         *     merged Requirement's text and classification (Story 2.6).
+         */
+        RequirementMerge: {
+            /** Requirements */
+            requirements: components["schemas"]["MergedRequirementRef"][];
+            /**
+             * Text
+             * @description Trimmed, it must be 1 to 2,000 characters.
+             */
+            text: string;
+            classification: components["schemas"]["Classification"];
+        };
+        /**
          * RequirementOrigin
          * @enum {string}
          */
         RequirementOrigin: "extracted" | "human";
+        /**
+         * RequirementSplit
+         * @description The two Requirements one Requirement is split into (Story 2.6).
+         */
+        RequirementSplit: {
+            /** Parts */
+            parts: components["schemas"]["RequirementDraft"][];
+        };
+        /**
+         * RequirementStatus
+         * @enum {string}
+         */
+        RequirementStatus: "active" | "superseded" | "deleted";
         /**
          * RetireRequest
          * @description Why the entry is retired (1-500 characters, trimmed).
@@ -4213,6 +4365,14 @@ export interface components {
             char_count: number;
             /** Text */
             text: string;
+        };
+        /**
+         * SplitResult
+         * @description The two Requirements a split made, in the order of the parts.
+         */
+        SplitResult: {
+            /** Items */
+            items: components["schemas"]["Requirement"][];
         };
         /**
          * Status
@@ -7196,6 +7356,144 @@ export interface operations {
             };
         };
     };
+    create_requirement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementDraft"];
+            };
+        };
+        responses: {
+            /** @description The new Requirement */
+            201: {
+                headers: {
+                    /** @description The Requirement's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a text is blank or longer than 2,000 characters once trimmed (the `detail` is the sentence to show), an unknown classification or field. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
     start_extraction: {
         parameters: {
             query?: never;
@@ -8306,6 +8604,534 @@ export interface operations {
                 };
             };
             /** @description `validation_error`: the reason is blank or longer than 500 characters once trimmed (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    merge_requirements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementMerge"];
+            };
+        };
+        responses: {
+            /** @description The merged Requirement */
+            201: {
+                headers: {
+                    /** @description The Requirement's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A Requirement changed since the caller read it (`row_version_mismatch`): nothing is merged */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a text is blank or longer than 2,000 characters once trimmed (the `detail` is the sentence to show), an unknown classification or field, fewer than 2 or more than 20 Requirements, the same Requirement twice, or an id that is not a UUID. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    delete_requirement: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Requirement as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementDeletion"];
+            };
+        };
+        responses: {
+            /** @description The deleted Requirement */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemovedRequirement"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Requirement changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: the reason is blank or longer than 500 characters once trimmed (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    split_requirement: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Requirement as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementSplit"];
+            };
+        };
+        responses: {
+            /** @description The two new Requirements */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Requirement changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a text is blank or longer than 2,000 characters once trimmed (the `detail` is the sentence to show), an unknown classification or field, not exactly two parts, or an id that is not a UUID. */
             422: {
                 headers: {
                     [name: string]: unknown;

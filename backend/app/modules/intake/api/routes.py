@@ -5,7 +5,9 @@ route (Story 2.5 Part B): `…/{opportunity_id}/passages/{passage_id}`, and the 
 edit routes (Story 2.6): `PATCH …/requirements/{requirement_id}`,
 `POST …/requirements/{requirement_id}/confirm` and `POST …/requirements/confirm-all`, and
 the pending-change routes (Story 2.7): `POST …/requirements/{requirement_id}/change/accept`
-and `…/change/reject`, and the Source viewer routes (Story 2.3):
+and `…/change/reject`, the list-shaping routes (Story 2.6 remainder): `POST …/requirements`,
+`POST …/requirements/merge`, `POST …/requirements/{requirement_id}/delete` and `…/split`,
+and the Source viewer routes (Story 2.3):
 `GET …/sources/{source_id}/versions/{version}/text` and `POST …/download-link`.
 
 Uploads are `multipart/form-data` with the file in the `file` field. The body is read as a
@@ -32,12 +34,18 @@ from app.modules.intake.application.public import (
     OpportunitySourceDownloadLink,
     OpportunitySourceText,
     Passage,
+    RemovedRequirement,
     Requirement,
     RequirementChangeRejection,
     RequirementChanges,
+    RequirementDeletion,
+    RequirementDraft,
     RequirementList,
+    RequirementMerge,
+    RequirementSplit,
     Source,
     SourceList,
+    SplitResult,
 )
 from app.platform.concurrency import etag
 from app.platform.config import Settings
@@ -566,3 +574,126 @@ async def reject_requirement_change(
         uow, actor, opportunity_id, requirement_id, body, if_match
     )
     return _with_etag(response, rejected)
+
+
+# --- shaping the list (Story 2.6 remainder) -------------------------------------------------
+
+_TEXT_422 = (
+    "`validation_error`: a text is blank or longer than 2,000 characters once trimmed (the "
+    "`detail` is the sentence to show), an unknown classification or field"
+)
+_CREATE_RESPONSES = _edit_responses(403, 404)
+_CREATE_RESPONSES[422] = {"description": f"{_TEXT_422}.", "content": PROBLEM_CONTENT}
+
+
+@requirements_router.post(
+    "/requirements",
+    operation_id="create_requirement",
+    status_code=201,
+    responses={
+        **_CREATE_RESPONSES,
+        201: {"description": "The new Requirement", "headers": _ETAG_HEADER},
+    },
+)
+async def create_requirement(
+    opportunity_id: UUID,
+    body: RequirementDraft,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+) -> Requirement:
+    """Add a Requirement the extraction missed: origin `human`, locked, no Evidence,
+    unconfirmed, with the Opportunity's next number. The owner and collaborators, except
+    sales representatives."""
+    created = await intake.create_requirement(uow, actor, opportunity_id, body)
+    return _with_etag(response, created)
+
+
+_MERGE_RESPONSES = _edit_responses(403, 404, 412)
+_MERGE_RESPONSES[422] = {
+    "description": f"{_TEXT_422}, fewer than 2 or more than 20 Requirements, the same "
+    "Requirement twice, or an id that is not a UUID.",
+    "content": PROBLEM_CONTENT,
+}
+_MERGE_RESPONSES[412] = {
+    "description": "A Requirement changed since the caller read it (`row_version_mismatch`): "
+    "nothing is merged",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@requirements_router.post(
+    "/requirements/merge",
+    operation_id="merge_requirements",
+    status_code=201,
+    responses={
+        **_MERGE_RESPONSES,
+        201: {"description": "The merged Requirement", "headers": _ETAG_HEADER},
+    },
+)
+async def merge_requirements(
+    opportunity_id: UUID,
+    body: RequirementMerge,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+) -> Requirement:
+    """Merge 2 to 20 active Requirements into one new Requirement citing all their Evidence;
+    the originals are superseded. No `If-Match` header: each Requirement names the
+    `row_version` the caller read, and any stale one fails the whole merge. The owner and
+    collaborators, except sales representatives."""
+    merged = await intake.merge_requirements(uow, actor, opportunity_id, body)
+    return _with_etag(response, merged)
+
+
+_DELETE_RESPONSES = _edit_responses(403, 404, 412, 428)
+_DELETE_RESPONSES[422] = _REJECT_RESPONSES[422]
+
+
+@requirements_router.post(
+    "/requirements/{requirement_id}/delete",
+    operation_id="delete_requirement",
+    responses={**_DELETE_RESPONSES, 200: {"description": "The deleted Requirement"}},
+)
+async def delete_requirement(
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    body: RequirementDeletion,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    if_match: _IF_MATCH = None,
+) -> RemovedRequirement:
+    """Delete a Requirement with a reason: it leaves the active list but stays in history,
+    and re-extraction never brings it back. The owner and collaborators, except sales
+    representatives."""
+    return await intake.delete_requirement(
+        uow, actor, opportunity_id, requirement_id, body, if_match
+    )
+
+
+_SPLIT_RESPONSES = _edit_responses(403, 404, 412, 428)
+_SPLIT_RESPONSES[422] = {
+    "description": f"{_TEXT_422}, not exactly two parts, or an id that is not a UUID.",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@requirements_router.post(
+    "/requirements/{requirement_id}/split",
+    operation_id="split_requirement",
+    status_code=201,
+    responses={**_SPLIT_RESPONSES, 201: {"description": "The two new Requirements"}},
+)
+async def split_requirement(
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    body: RequirementSplit,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    if_match: _IF_MATCH = None,
+) -> SplitResult:
+    """Split a Requirement into two new Requirements, each citing all its Evidence; the
+    original is superseded. The owner and collaborators, except sales representatives."""
+    return await intake.split_requirement(
+        uow, actor, opportunity_id, requirement_id, body, if_match
+    )

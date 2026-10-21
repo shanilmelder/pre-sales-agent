@@ -1,7 +1,7 @@
 """Requirement queries and the extraction start command (Story 2.5 Part A).
 
-- `list_requirements`: the Opportunity's active Requirements with their evidence, and its
-  latest extraction (anyone who can read the Opportunity).
+- `list_requirements`: the Opportunity's active Requirements by number, with their
+  evidence, and its latest extraction (anyone who can read the Opportunity).
 - `start_extraction`: queue a new extraction, e.g. to retry a failed one
   (`intake.extraction.start`: the owner and collaborators; other readers 403, everyone else
   the Opportunity's 404). 409 `extraction_in_progress` while one is queued or running; one
@@ -158,6 +158,7 @@ async def requirement_views(
     return [
         Requirement(
             id=str(r.id),
+            number=r.number,
             text=r.text,
             classification=Classification(r.classification),
             origin=RequirementOrigin(r.origin),

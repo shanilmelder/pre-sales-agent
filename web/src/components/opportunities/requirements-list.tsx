@@ -2,28 +2,38 @@
 
 import { CheckIcon, CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import {
   acceptRequirementChange,
   confirmAllRequirements,
   confirmRequirement,
+  createRequirement,
+  deleteRequirement,
   editRequirement,
   loadOutdatedAssessments,
   loadRequirements,
+  mergeRequirements,
   rejectRequirementChange,
+  splitRequirement,
   startExtraction,
   type ConfirmAllResult,
   type RequirementChangeResult,
+  type RequirementCreateResult,
+  type RequirementDeleteResult,
+  type RequirementFailure,
+  type RequirementSplitResult,
   type RequirementWriteResult,
   type StartExtractionResult,
 } from "@/app/opportunities/actions";
 import { InlineInput } from "@/components/opportunities/inline-field";
+import { RequirementDiff, type DiffSide } from "@/components/opportunities/requirement-diff";
 import {
   EvidenceChip,
   PendingChangeMarker,
   RequirementInspector,
   type ChangeFormOutcome,
+  type SplitPart,
 } from "@/components/opportunities/requirement-inspector";
 import { isEditableTarget } from "@/components/shell/keyboard-shortcuts";
 import { useAnnounce } from "@/components/shell/live-region";
@@ -34,7 +44,9 @@ import {
 } from "@/components/shell/shell-context";
 import { NO_ACCESS_TO_OPPORTUNITY, staleMessage } from "@/lib/opportunities";
 import {
+  ADD_REQUIREMENT,
   CHANGE_DECIDED,
+  CLASSIFICATIONS,
   CONFIRMED,
   confirmAllLabel,
   EXTRACTING,
@@ -42,16 +54,21 @@ import {
   EXTRACTION_POLL_MS,
   extractionFailure,
   groupRequirements,
+  HIDE_DIFF,
   isExtracting,
+  mergeDraft,
+  mergeLabel,
   NO_REQUIREMENTS,
   noneFound,
-  originLabel,
   outdatedNotice,
   requirementCount,
+  requirementLabel,
+  requirementOrigin,
   requirementTextProblem,
   STILL_EXTRACTING,
   TOO_MUCH_TEXT,
   unconfirmed,
+  VIEW_DIFF,
   type Classification,
   type Extraction,
   type OutdatedAssessment,
@@ -73,6 +90,11 @@ const REQUIREMENT_GONE = "This Requirement is no longer available.";
 const RELOAD_FAILED = "The Requirements could not be reloaded. Try again.";
 export const OPEN_ASSESSMENTS = "Open the Assessments tab";
 const NO_OUTDATED: readonly OutdatedAssessment[] = [];
+const NONE_CHECKED: ReadonlySet<string> = new Set();
+const fieldClass =
+  "w-full rounded-md border border-input bg-transparent px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive";
+const selectClass =
+  "h-7 w-fit rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60";
 
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
@@ -119,12 +141,19 @@ export function ConfirmedLabel() {
  * chip's passage shown. The selected row is `aria-selected`.
  *
  * With `edit`, `e` (with single-key shortcuts on) or a double-click on the text edits the
- * row inline (blur or Enter saves, Esc reverts), and each unconfirmed row has **Confirm**. */
+ * row inline (blur or Enter saves, Esc reverts), and each unconfirmed row has **Confirm**.
+ * With `onToggle` (Story 2.6), each row has a checkbox and `x` toggles the focused row's
+ * selection; Esc clears it (unless the inspector is open, which Esc closes first). Each row
+ * shows its stable `R<n>`. */
 export function RequirementsList({
   items,
   selectedId = null,
   onOpen,
   edit,
+  checkedIds = NONE_CHECKED,
+  inspectorOpen = false,
+  onToggle,
+  onClearSelection,
 }: {
   items: readonly Requirement[];
   selectedId?: string | null;
@@ -133,6 +162,13 @@ export function RequirementsList({
   onOpen?: (item: Requirement, passageId: string | null, viaKeyboard: boolean) => void;
   /** Left out for those who may not edit: no inline edit and no Confirm. */
   edit?: RequirementEditing;
+  /** The multi-selected Requirements (with `onToggle`). */
+  checkedIds?: ReadonlySet<string>;
+  /** Whether the inspector is open: Esc then closes it instead of clearing the selection. */
+  inspectorOpen?: boolean;
+  /** `x` on a row or its checkbox; left out for those who may not edit. */
+  onToggle?: (item: Requirement) => void;
+  onClearSelection?: () => void;
 }) {
   const { singleKeyShortcuts } = useShell();
   const container = useRef<HTMLDivElement>(null);
@@ -141,17 +177,37 @@ export function RequirementsList({
   const tabStopId =
     [focusedId, selectedId].find((id) => id !== null && items.some((i) => i.id === id)) ??
     groups[0]?.items[0]?.id;
+  const selectable = onToggle !== undefined;
+
+  function rowItem(target: EventTarget): Requirement | undefined {
+    const rowId =
+      target instanceof Element
+        ? target.closest('[role="row"]')?.getAttribute("data-row-id")
+        : null;
+    return items.find((i) => i.id === rowId);
+  }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     // Keys typed into the inline editor are text, not list navigation.
     if (isEditableTarget(event.target)) return;
+    if (event.key === "Escape") {
+      if (onClearSelection && !inspectorOpen && checkedIds.size > 0) {
+        event.preventDefault();
+        onClearSelection();
+      }
+      return;
+    }
+    if (onToggle && singleKeyShortcuts && event.key === "x") {
+      const item = rowItem(event.target);
+      if (item) {
+        event.preventDefault();
+        onToggle(item);
+      }
+      return;
+    }
     if (edit && singleKeyShortcuts && event.key === "e") {
-      const rowId =
-        event.target instanceof Element
-          ? event.target.closest('[role="row"]')?.getAttribute("data-row-id")
-          : null;
-      const item = items.find((i) => i.id === rowId);
+      const item = rowItem(event.target);
       if (item && !edit.locked && !edit.busyIds.has(item.id)) {
         event.preventDefault();
         edit.onStartEdit(item);
@@ -194,16 +250,35 @@ export function RequirementsList({
                 const selected = item.id === selectedId;
                 const editing = edit?.editing?.id === item.id ? edit.editing : null;
                 const busy = edit?.busyIds.has(item.id) ?? false;
+                const checked = checkedIds.has(item.id);
                 return (
                   <div
                     key={item.id}
                     role="row"
                     data-row-id={item.id}
+                    data-checked={checked ? "" : undefined}
                     aria-selected={selected}
                     aria-busy={busy || undefined}
-                    className={`border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
+                    className={`flex border-b border-border ${
+                      selected ? "bg-muted" : checked ? "bg-muted/40" : "hover:bg-muted/60"
+                    }`}
                   >
-                    <div role="gridcell" className="flex min-h-row flex-col gap-1 px-1 py-1.5">
+                    {selectable ? (
+                      <div role="gridcell" className="flex w-6 shrink-0 justify-center pt-2">
+                        <input
+                          type="checkbox"
+                          tabIndex={-1}
+                          checked={checked}
+                          onChange={() => onToggle?.(item)}
+                          aria-label={`Select ${requirementLabel(item)}: ${item.text}`}
+                          className="size-3.5 accent-primary"
+                        />
+                      </div>
+                    ) : null}
+                    <div
+                      role="gridcell"
+                      className="flex min-h-row min-w-0 flex-1 flex-col gap-1 px-1 py-1.5"
+                    >
                       {editing && edit ? (
                         <InlineInput
                           // A fresh input (and draft) each time editing reopens.
@@ -234,6 +309,9 @@ export function RequirementsList({
                         </button>
                       )}
                       <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-meta text-muted-foreground">
+                          {requirementLabel(item)}
+                        </span>
                         {item.evidence.length > 0 ? (
                           <>
                             <span className="sr-only">Evidence:</span>
@@ -251,7 +329,7 @@ export function RequirementsList({
                         ) : null}
                         {item.origin === "human" ? (
                           <span className="text-meta text-muted-foreground">
-                            {originLabel(item.origin)}
+                            {requirementOrigin(item)}
                           </span>
                         ) : null}
                         {item.pending_change ? <PendingChangeMarker /> : null}
@@ -338,6 +416,133 @@ export function ExtractionStatus({
   );
 }
 
+/** The inline form that adds or merges Requirements (Story 2.6): a text field and a
+ * classification select, saved with Enter or the submit button; Esc or **Cancel** closes
+ * it. `onSubmit` gets the trimmed text and resolves to an error sentence, or null when
+ * saved. */
+function RequirementDraftForm({
+  label,
+  submitLabel,
+  initial,
+  multiline = false,
+  busy,
+  error,
+  onSubmit,
+  onCancel,
+}: {
+  /** The form's accessible name; the fields are named after it. */
+  label: string;
+  submitLabel: string;
+  initial: DiffSide;
+  multiline?: boolean;
+  busy: boolean;
+  error: string | null;
+  onSubmit: (draft: DiffSide) => void;
+  onCancel: () => void;
+}) {
+  const textId = useId();
+  const classId = useId();
+  const errorId = useId();
+  const [text, setText] = useState(initial.text);
+  const [classification, setClassification] = useState<Classification>(initial.classification);
+  const [problem, setProblem] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  const shown = problem ?? error;
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  function submit(event: Pick<FormEvent, "preventDefault">) {
+    event.preventDefault();
+    if (busy) return;
+    const found = requirementTextProblem(text);
+    setProblem(found);
+    if (found) {
+      inputRef.current?.focus();
+      return;
+    }
+    onSubmit({ text: text.trim(), classification });
+  }
+
+  const fieldProps = {
+    id: textId,
+    ref: inputRef,
+    value: text,
+    disabled: busy,
+    "aria-invalid": shown ? true : undefined,
+    "aria-describedby": shown ? errorId : undefined,
+  };
+  return (
+    <form
+      aria-label={label}
+      noValidate
+      onSubmit={submit}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+      className="flex max-w-2xl flex-col gap-2 rounded-md border border-border p-2"
+    >
+      <label htmlFor={textId} className="text-meta text-muted-foreground">
+        {`${label} text`}
+      </label>
+      {multiline ? (
+        <textarea
+          {...fieldProps}
+          rows={3}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter saves; Shift+Enter is a new line.
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              submit(event);
+            }
+          }}
+          className={`${fieldClass} py-1`}
+        />
+      ) : (
+        <input
+          {...fieldProps}
+          type="text"
+          onChange={(event) => setText(event.target.value)}
+          className={`${fieldClass} h-7`}
+        />
+      )}
+      {shown ? (
+        <p id={errorId} className="text-meta text-destructive">
+          {shown}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor={classId} className="sr-only">
+          {`${label} classification`}
+        </label>
+        <select
+          id={classId}
+          value={classification}
+          disabled={busy}
+          onChange={(event) => setClassification(event.target.value as Classification)}
+          className={selectClass}
+        >
+          {CLASSIFICATIONS.map(({ value, label: name }) => (
+            <option key={value} value={value}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={busy} className={actionClass}>
+          {submitLabel}
+        </button>
+        <button type="button" onClick={onCancel} className={actionClass}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function retryMessage(result: StartExtractionResult): string {
   switch (result.kind) {
     case "forbidden":
@@ -354,7 +559,13 @@ function retryMessage(result: StartExtractionResult): string {
  * running the list is re-read every 2 s: paused while the tab is hidden, and stopped after
  * 15 minutes. A selected Requirement no longer active leaves the pane showing "Nothing
  * selected." Above the list, a notice names the Assessments that used Requirement versions
- * that have changed since (Story 2.7), with a link to the Assessments tab; nothing is rerun. */
+ * that have changed since (Story 2.7), with a link to the Assessments tab; nothing is rerun.
+ *
+ * Those who may edit (Story 2.6) also get **Add Requirement** (or `c`) for an inline form at
+ * the top of the list, a checkbox per row (`x` toggles the focused row, Esc clears) with a
+ * **Merge (N)** bar once two or more are selected, and **Split** and **Delete** in the
+ * inspector. After a 412 on an edit, **View diff** shows the saved text as a `−` line and
+ * the user's draft as a `+` line. */
 export function RequirementsSection({
   opportunityId,
   initial,
@@ -370,7 +581,7 @@ export function RequirementsSection({
   initialSelectedId?: string | null;
 }) {
   const announce = useAnnounce();
-  const { rightPaneOpen, setRightPaneOpen } = useShell();
+  const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();
   const [list, setList] = useState<RequirementList>(initial);
   const [selection, setSelection] = useState<{ id: string; passageId: string | null } | null>(
     () =>
@@ -413,7 +624,25 @@ export function RequirementsSection({
     error: string;
   } | null>(null);
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
-  const [stale, setStale] = useState<{ changedBy: string | null } | null>(null);
+  /** After a 412: who changed it and, for an edit, the saved version and the user's draft
+   * (**View diff**). */
+  const [stale, setStale] = useState<{
+    changedBy: string | null;
+    diff?: { saved: DiffSide; draft: DiffSide } | null;
+  } | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
+  // Shaping the list (Story 2.6): the multi-selection, and the Add and Merge forms.
+  const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(NONE_CHECKED);
+  const [creating, setCreating] = useState<{ seq: number } | null>(null);
+  /** The open Merge form, and the selection it was drafted for (the ids, in list order). */
+  const [merging, setMerging] = useState<{
+    seq: number;
+    initial: DiffSide;
+    ids: string;
+  } | null>(null);
+  const [formBusy, setFormBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const formSeq = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -448,6 +677,33 @@ export function RequirementsSection({
   useEffect(() => {
     if (stale) reloadRef.current?.focus();
   }, [stale]);
+
+  function startCreate() {
+    if (!canEdit) return;
+    setMerging(null);
+    setFormError(null);
+    formSeq.current += 1;
+    setCreating({ seq: formSeq.current });
+  }
+
+  // `c` opens the Add form (Story 2.6). The shell leaves `c` to this tab (it would
+  // otherwise start an Opportunity), so only keys the shell ignores reach here.
+  useEffect(() => {
+    if (!canEdit) return;
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== "c" || event.isComposing || event.repeat) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!singleKeyShortcuts || dialog || isEditableTarget(event.target)) return;
+      if (event.target instanceof Element && event.target.closest('[role="menu"]')) return;
+      event.preventDefault();
+      setMerging(null);
+      setFormError(null);
+      formSeq.current += 1;
+      setCreating({ seq: formSeq.current });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canEdit, singleKeyShortcuts, dialog]);
 
   // After Enter or Esc in the inline editor, focus goes back to the row (shown again in the
   // same render that closed the editor).
@@ -728,6 +984,21 @@ export function RequirementsSection({
       ),
     }));
     writeFailed(item, result, "text" in changes ? changes.text : null, from);
+    if (result.kind === "stale" && result.current) {
+      // **View diff**: what is saved now against what the user tried to save.
+      const saved = result.current;
+      setShowDiff(false);
+      setStale({
+        changedBy: result.changedBy,
+        diff: {
+          saved: { text: saved.text, classification: saved.classification },
+          draft: {
+            text: body.text ?? item.text,
+            classification: body.classification ?? item.classification,
+          },
+        },
+      });
+    }
   }
 
   async function confirm(item: Requirement) {
@@ -823,6 +1094,7 @@ export function RequirementsSection({
     setReloading(false);
     if (reloaded) {
       setStale(null);
+      setShowDiff(false);
       // The inspector keeps the user's text to save again; the 412 sentence goes.
       setInspectorFailure((failure) => failure && { ...failure, error: "" });
       setNotice(null);
@@ -831,6 +1103,159 @@ export function RequirementsSection({
       // Keep the stale notice (and its Reload button); nothing was overwritten.
       announce(RELOAD_FAILED);
     }
+  }
+
+  // --- shaping the list (Story 2.6) ------------------------------------------------------
+
+  function toggle(item: Requirement) {
+    const next = new Set(checkedIds);
+    if (next.has(item.id)) next.delete(item.id);
+    else next.add(item.id);
+    setCheckedIds(next);
+    announce(`${next.size} selected`);
+  }
+
+  function clearSelection() {
+    setCheckedIds(NONE_CHECKED);
+    announce("Selection cleared");
+  }
+
+  /** A failed create or merge: the sentence goes under the form, or a notice. */
+  function shapeFailed(result: RequirementFailure) {
+    switch (result.kind) {
+      case "stale":
+        setStale({ changedBy: result.changedBy });
+        announce(staleMessage(result.changedBy));
+        return;
+      case "invalid":
+        setFormError(result.detail);
+        announce(result.detail);
+        return;
+      case "forbidden":
+        say(EDIT_NOT_ALLOWED);
+        void refresh();
+        return;
+      case "not-found":
+        say(REQUIREMENT_GONE);
+        void refresh();
+        return;
+      default:
+        setFormError(SAVE_FAILED);
+        announce(SAVE_FAILED);
+    }
+  }
+
+  async function create(draft: DiffSide) {
+    if (locked || formBusy) return;
+    setNotice(null);
+    setFormError(null);
+    setFormBusy(true);
+    let result: RequirementCreateResult;
+    try {
+      result = await createRequirement({ opportunityId, ...draft });
+    } catch {
+      result = { kind: "error" };
+    }
+    setFormBusy(false);
+    if (result.kind === "ok") {
+      const { requirement } = result;
+      mutation.current += 1;
+      setList((current) => ({ ...current, items: [...current.items, requirement] }));
+      setCreating(null);
+      announce(`Requirement added: ${requirementLabel(requirement)}`);
+      return;
+    }
+    shapeFailed(result);
+  }
+
+  async function merge(draft: DiffSide, selection: readonly Requirement[]) {
+    if (locked || formBusy || selection.length < 2) return;
+    setNotice(null);
+    setFormError(null);
+    setFormBusy(true);
+    let result: RequirementCreateResult;
+    try {
+      result = await mergeRequirements({
+        opportunityId,
+        requirements: selection.map((item) => ({ id: item.id, rowVersion: item.row_version })),
+        ...draft,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    setFormBusy(false);
+    if (result.kind === "ok") {
+      const { requirement } = result;
+      setMerging(null);
+      setCheckedIds(NONE_CHECKED);
+      if (!(await refresh())) say(RELOAD_FAILED);
+      announce(`Requirements merged into ${requirementLabel(requirement)}`);
+      return;
+    }
+    shapeFailed(result);
+  }
+
+  /** Split or delete the Requirement from the inspector. A 412 shows the stale notice. */
+  async function remove(
+    item: Requirement,
+    write: () => Promise<RequirementSplitResult | RequirementDeleteResult>,
+    done: string,
+  ): Promise<ChangeFormOutcome> {
+    if (locked || busyIds.has(item.id)) return "failed";
+    setNotice(null);
+    markBusy(item.id, true);
+    let result: RequirementSplitResult | RequirementDeleteResult;
+    try {
+      result = await write();
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(item.id, false);
+    if (result.kind === "ok") {
+      setCheckedIds((current) => {
+        if (!current.has(item.id)) return current;
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+      if ("requirements" in result && result.requirements[0]) {
+        setSelection({ id: result.requirements[0].id, passageId: null });
+      }
+      if (!(await refresh())) say(RELOAD_FAILED);
+      announce(done);
+      return "ok";
+    }
+    if (result.kind === "invalid") return { invalid: result.detail };
+    writeFailed(item, result, null, "inspector");
+    return "failed";
+  }
+
+  function split(item: Requirement, parts: [SplitPart, SplitPart]) {
+    return remove(
+      item,
+      () =>
+        splitRequirement({
+          opportunityId,
+          requirementId: item.id,
+          rowVersion: item.row_version,
+          parts,
+        }),
+      "Requirement split",
+    );
+  }
+
+  function deleteOne(item: Requirement, reason: string) {
+    return remove(
+      item,
+      () =>
+        deleteRequirement({
+          opportunityId,
+          requirementId: item.id,
+          rowVersion: item.row_version,
+          reason,
+        }),
+      "Requirement deleted",
+    );
   }
 
   const edit: RequirementEditing | undefined = canEdit
@@ -858,6 +1283,15 @@ export function RequirementsSection({
       }
     : undefined;
   const toConfirm = unconfirmed(list.items).length;
+  // The selection, in list order (by number); Requirements no longer listed drop out.
+  const checked = canEdit ? list.items.filter((item) => checkedIds.has(item.id)) : [];
+  const checkedKey = checked.map((item) => item.id).join(" ");
+  // The Merge form's text was drafted for one selection: any change to it (a toggle, or a
+  // refresh dropping a row) closes the form.
+  if (merging && merging.ids !== checkedKey) {
+    setMerging(null);
+    setFormError(null);
+  }
 
   const failed = list.extraction?.status === "failed";
   const succeeded = list.extraction?.status === "succeeded";
@@ -872,33 +1306,68 @@ export function RequirementsSection({
           stalled={stalled}
           onRetry={() => void retry()}
         />
-        {canEdit && toConfirm > 0 ? (
-          <button
-            type="button"
-            disabled={locked || busyIds.size > 0}
-            onClick={() => void confirmAll()}
-            className={`${actionClass} ml-auto`}
-          >
-            {confirmAllLabel(toConfirm)}
-          </button>
+        {canEdit ? (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={startCreate}
+              disabled={locked}
+              aria-keyshortcuts="c"
+              aria-expanded={creating !== null}
+              className={actionClass}
+            >
+              {ADD_REQUIREMENT}
+            </button>
+            {toConfirm > 0 ? (
+              <button
+                type="button"
+                disabled={locked || busyIds.size > 0}
+                onClick={() => void confirmAll()}
+                className={actionClass}
+              >
+                {confirmAllLabel(toConfirm)}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {/* Screen readers hear these through the shell's single live region. */}
       {stale ? (
-        <div
-          id={noticeId}
-          className="flex max-w-md items-center justify-between gap-2 rounded-md border border-border p-2"
-        >
-          <p className="text-meta">{staleMessage(stale.changedBy)}</p>
-          <button
-            type="button"
-            ref={reloadRef}
-            onClick={() => void reload()}
-            aria-disabled={reloading || undefined}
-            className={actionClass}
-          >
-            {RELOAD}
-          </button>
+        <div id={noticeId} className="flex max-w-md flex-col gap-2 rounded-md border border-border p-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-meta">{staleMessage(stale.changedBy)}</p>
+            <span className="flex shrink-0 gap-2">
+              {stale.diff ? (
+                <button
+                  type="button"
+                  aria-expanded={showDiff}
+                  onClick={() => setShowDiff((shown) => !shown)}
+                  className={actionClass}
+                >
+                  {showDiff ? HIDE_DIFF : VIEW_DIFF}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                ref={reloadRef}
+                onClick={() => void reload()}
+                aria-disabled={reloading || undefined}
+                className={actionClass}
+              >
+                {RELOAD}
+              </button>
+            </span>
+          </div>
+          {stale.diff && showDiff ? (
+            <div data-testid="stale-diff" className="flex flex-col gap-1">
+              <RequirementDiff
+                before={stale.diff.saved}
+                after={stale.diff.draft}
+                beforeLabel="Saved"
+                afterLabel="Yours"
+              />
+            </div>
+          ) : null}
         </div>
       ) : notice ? (
         <p id={noticeId} className="text-meta text-destructive">
@@ -922,12 +1391,73 @@ export function RequirementsSection({
           </div>
         ) : null}
       </div>
+      {canEdit && creating ? (
+        <RequirementDraftForm
+          key={creating.seq}
+          label="New Requirement"
+          submitLabel="Add"
+          initial={{ text: "", classification: "functional" }}
+          busy={formBusy || locked}
+          error={formError}
+          onSubmit={(draft) => void create(draft)}
+          onCancel={() => {
+            setCreating(null);
+            setFormError(null);
+          }}
+        />
+      ) : null}
+      {checked.length >= 2 ? (
+        <div
+          role="toolbar"
+          aria-label="Selected Requirements"
+          className="flex max-w-2xl flex-wrap items-center gap-2 rounded-md border border-border p-2"
+        >
+          <span className="text-meta">{`${checked.length} selected`}</span>
+          <button
+            type="button"
+            disabled={locked || formBusy}
+            aria-expanded={merging !== null}
+            onClick={() => {
+              setCreating(null);
+              setFormError(null);
+              formSeq.current += 1;
+              setMerging({ seq: formSeq.current, initial: mergeDraft(checked), ids: checkedKey });
+            }}
+            className={actionClass}
+          >
+            {mergeLabel(checked.length)}
+          </button>
+          <button type="button" onClick={clearSelection} className={actionClass}>
+            Clear selection
+          </button>
+        </div>
+      ) : null}
+      {merging && checked.length >= 2 ? (
+        <RequirementDraftForm
+          key={merging.seq}
+          label="Merged Requirement"
+          submitLabel="Merge"
+          multiline
+          initial={merging.initial}
+          busy={formBusy || locked}
+          error={formError}
+          onSubmit={(draft) => void merge(draft, checked)}
+          onCancel={() => {
+            setMerging(null);
+            setFormError(null);
+          }}
+        />
+      ) : null}
       {list.items.length > 0 ? (
         <RequirementsList
           items={list.items}
           selectedId={selected?.id ?? null}
           onOpen={open}
           edit={edit}
+          checkedIds={checkedIds}
+          inspectorOpen={rightPaneOpen && selected !== null}
+          onToggle={canEdit ? toggle : undefined}
+          onClearSelection={clearSelection}
         />
       ) : succeeded ? (
         <p className="text-muted-foreground">{noneFound(list.extraction?.source_count)}</p>
@@ -957,6 +1487,8 @@ export function RequirementsSection({
                     onConfirm: () => void confirm(selected),
                     onAccept: () => void decide(selected, null),
                     onReject: (reason) => decide(selected, reason),
+                    onSplit: (parts) => split(selected, parts),
+                    onDelete: (reason) => deleteOne(selected, reason),
                   }
                 : undefined
             }

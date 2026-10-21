@@ -30,6 +30,8 @@ import {
   dismissGap,
   confirmAllRequirements,
   confirmRequirement,
+  createRequirement,
+  deleteRequirement,
   copyClarificationQuestions,
   countOpenConflicts,
   countOpenGaps,
@@ -37,6 +39,8 @@ import {
   editClarificationQuestion,
   editEstimateLine,
   editRequirement,
+  mergeRequirements,
+  splitRequirement,
   escalateConflict,
   getPassage,
   importFile,
@@ -1044,7 +1048,7 @@ describe("editRequirement / confirmRequirement / confirmAllRequirements", () => 
         rowVersion: 1,
         text: "a",
       }),
-    ).toEqual({ kind: "stale", changedBy: "[OTHER]" });
+    ).toMatchObject({ kind: "stale", changedBy: "[OTHER]", current: { id: REQ_ID, row_version: 3 } });
   });
 
   it.each([
@@ -1139,7 +1143,7 @@ describe("acceptRequirementChange / rejectRequirementChange / loadOutdatedAssess
 
   it.each([
     [409, { kind: "no-change" }],
-    [412, { kind: "stale", changedBy: null }],
+    [412, { kind: "stale", changedBy: null, current: null }],
     [422, { kind: "invalid", detail: "The reason can be at most 500 characters." }],
     [403, { kind: "forbidden" }],
   ])("maps %i on accept and on reject", async (code, expected) => {
@@ -2112,5 +2116,146 @@ describe("countOpenConflicts (Story 6.2)", () => {
     api.GET.mockClear();
     expect(await countOpenConflicts("nope")).toBeNull();
     expect(api.GET).not.toHaveBeenCalled();
+  });
+});
+
+describe("createRequirement / deleteRequirement / splitRequirement / mergeRequirements", () => {
+  const REQ_ID = "00000000-0000-7000-8000-0000000000c1";
+  const OTHER_ID = "00000000-0000-7000-8000-0000000000c2";
+  const REQ = { id: REQ_ID, number: 6, text: "[TEXT]", row_version: 1, last_changed_by: null };
+  const ok = (data: unknown) => ({ data, response: new Response(null, { status: 200 }) });
+  const failing = (code: number) => ({
+    error: { code: "x", detail: "[SENTENCE]" },
+    response: status(code),
+  });
+  const TARGET = { opportunityId: OPP_ID, requirementId: REQ_ID, rowVersion: 4 };
+  const PARTS = [
+    { text: "[A]", classification: "functional" },
+    { text: "[B]", classification: "security" },
+  ];
+  const MERGE = {
+    opportunityId: OPP_ID,
+    requirements: [
+      { id: REQ_ID, rowVersion: 2 },
+      { id: OTHER_ID, rowVersion: 5 },
+    ],
+    text: "[MERGED]",
+    classification: "data",
+  };
+
+  it("createRequirement POSTs the text and classification", async () => {
+    api.POST.mockResolvedValue(ok(REQ));
+    expect(
+      await createRequirement({ opportunityId: OPP_ID, text: "[TEXT]", classification: "data" }),
+    ).toEqual({ kind: "ok", requirement: REQ });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/requirements", {
+      params: { path: { opportunity_id: OPP_ID } },
+      body: { text: "[TEXT]", classification: "data" },
+    });
+  });
+
+  it("deleteRequirement POSTs the reason with If-Match", async () => {
+    api.POST.mockResolvedValue(ok({ id: REQ_ID, status: "deleted", version: 1 }));
+    expect(await deleteRequirement({ ...TARGET, reason: "[WHY]" })).toEqual({ kind: "ok" });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/delete",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, requirement_id: REQ_ID },
+          header: { "If-Match": '"4"' },
+        },
+        body: { reason: "[WHY]" },
+      },
+    );
+  });
+
+  it("splitRequirement POSTs the two parts with If-Match", async () => {
+    api.POST.mockResolvedValue(ok({ items: [REQ, { ...REQ, id: OTHER_ID }] }));
+    expect(await splitRequirement({ ...TARGET, parts: PARTS })).toEqual({
+      kind: "ok",
+      requirements: [REQ, { ...REQ, id: OTHER_ID }],
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/split",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, requirement_id: REQ_ID },
+          header: { "If-Match": '"4"' },
+        },
+        body: { parts: PARTS },
+      },
+    );
+  });
+
+  it("mergeRequirements POSTs each row_version in the body, with no If-Match", async () => {
+    api.POST.mockResolvedValue(ok(REQ));
+    expect(await mergeRequirements(MERGE)).toEqual({ kind: "ok", requirement: REQ });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/requirements/merge",
+      {
+        params: { path: { opportunity_id: OPP_ID } },
+        body: {
+          requirements: [
+            { id: REQ_ID, row_version: 2 },
+            { id: OTHER_ID, row_version: 5 },
+          ],
+          text: "[MERGED]",
+          classification: "data",
+        },
+      },
+    );
+  });
+
+  it.each([
+    [422, { kind: "invalid", detail: "[SENTENCE]" }],
+    [403, { kind: "forbidden" }],
+    [404, { kind: "not-found" }],
+    [500, { kind: "error" }],
+  ])("maps %i on every shaping write", async (code, expected) => {
+    api.POST.mockResolvedValue(failing(code));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(
+      await createRequirement({ opportunityId: OPP_ID, text: "x", classification: "data" }),
+    ).toEqual(expected);
+    expect(await deleteRequirement({ ...TARGET, reason: "x" })).toEqual(expected);
+    expect(await splitRequirement({ ...TARGET, parts: PARTS })).toEqual(expected);
+    expect(await mergeRequirements(MERGE)).toEqual(expected);
+  });
+
+  it("maps 412: delete and split read the saved Requirement; create and merge name no one", async () => {
+    api.POST.mockResolvedValue(failing(412));
+    const saved = { ...REQ, last_changed_by: { id: USER_ID, name: "[OTHER]" } };
+    api.GET.mockResolvedValue(ok({ items: [saved] }));
+    const named = { kind: "stale", changedBy: "[OTHER]", current: saved };
+    expect(await deleteRequirement({ ...TARGET, reason: "x" })).toEqual(named);
+    expect(await splitRequirement({ ...TARGET, parts: PARTS })).toEqual(named);
+    const unnamed = { kind: "stale", changedBy: null, current: null };
+    expect(await mergeRequirements(MERGE)).toEqual(unnamed);
+    expect(
+      await createRequirement({ opportunityId: OPP_ID, text: "x", classification: "data" }),
+    ).toEqual(unnamed);
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(
+      await createRequirement({ opportunityId: "x", text: "a", classification: "data" }),
+    ).toEqual({ kind: "error" });
+    expect(
+      await createRequirement({ opportunityId: OPP_ID, text: "a", classification: "nice" }),
+    ).toEqual({ kind: "error" });
+    expect(await deleteRequirement(TARGET)).toEqual({ kind: "error" }); // no reason
+    expect(await splitRequirement({ ...TARGET, parts: PARTS.slice(0, 1) })).toEqual({
+      kind: "error",
+    });
+    expect(
+      await mergeRequirements({
+        ...MERGE,
+        requirements: [
+          { id: REQ_ID, rowVersion: 0 },
+          { id: OTHER_ID, rowVersion: 1 },
+        ],
+      }),
+    ).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
   });
 });

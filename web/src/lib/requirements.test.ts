@@ -18,6 +18,7 @@ import {
 function requirement(n: number, classification: Classification): Requirement {
   return {
     id: `r${n}`,
+    number: n,
     text: `Requirement ${n}`,
     classification,
     origin: "extracted",

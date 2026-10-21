@@ -23,9 +23,9 @@ from app.modules.assessments.domain.reviews import (
 
 class FindingRequirement(BaseModel):
     """A Requirement a Finding (or an effort row) cites, at the version the agent read. `label` is
-    `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
-    first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
-    that version's text, with `…` when cut."""
+    `R<n>`, the Requirement's stable number within the Opportunity, or `Superseded` once it
+    is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
+    when cut."""
 
     id: str
     version: int = Field(ge=1)
