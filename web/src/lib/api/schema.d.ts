@@ -4073,10 +4073,11 @@ export interface components {
         };
         /**
          * RequirementChangeRef
-         * @description A Requirement a Source changed (Story 4.7). `label` is `R<n>` among the active
-         *     Requirements, or `Superseded` once it is no longer active. `kind`: `added` (created
-         *     from the Source), `versioned` (a new version cites it), or the status of a pending
-         *     change proposing one of its passages (`pending`, `accepted`, `rejected`, `superseded`).
+         * @description A Requirement a Source changed (Story 4.7). `label` is `R<n>`, the Requirement's
+         *     stable number within the Opportunity, or `Superseded` once it is no longer active.
+         *     `kind`: `added` (created from the Source), `versioned` (a new version cites it), or the
+         *     status of a pending change proposing one of its passages (`pending`, `accepted`,
+         *     `rejected`, `superseded`).
          */
         RequirementChangeRef: {
             /** Requirement Id */
