@@ -23,6 +23,7 @@ export function source(n: number, over: Partial<KnowledgeSource> = {}): Knowledg
     uploaded_by: { id: `00000000-0000-7000-8000-00000000020${n}`, name: `[OWNER ${n}]` },
     uploaded_at: "2026-09-01T10:00:00Z",
     parse: { status: "parsed", error_code: null },
+    embed: { status: "ready", error_code: null },
     row_version: 1,
     created_at: "2026-09-01T10:00:00Z",
     ...over,

@@ -1,6 +1,11 @@
 """Knowledge Source routes (Story 3.2) under `/api/v1/knowledge/sources`. Reads: any user
 with a role. Writes: platform administrators or the Source's owner; each takes the Source's
-`ETag` back in `If-Match` (except registering and retrying a parse).
+`ETag` back in `If-Match` (except registering and retrying a parse or an embedding).
+
+Story 3.3: `POST /{source_id}/embed` (retry a failed embedding, or embed a version parsed
+before embedding existed) and `GET /api/v1/knowledge/search` (`search_router`, any user with
+a role), which embeds the query through the api process's ModelGateway
+(`app.state.model_gateway`).
 
 Uploads are `multipart/form-data` with the file in the `file` field, read as a stream
 (`app.platform.multipart`) so a rejected type is answered before its bytes are read and an
@@ -15,7 +20,10 @@ from fastapi import APIRouter, Header, Path, Query, Request, Response
 from app.modules.identity.application.public import CurrentPrincipal, UserSearchResult
 from app.modules.knowledge.application import public as knowledge
 from app.modules.knowledge.application.public import (
+    SEARCH_K_DEFAULT,
+    SEARCH_K_MAX,
     DownloadLink,
+    KnowledgeSearchResult,
     KnowledgeSource,
     KnowledgeSourceList,
     KnowledgeSourceVersionList,
@@ -26,6 +34,7 @@ from app.modules.knowledge.application.public import (
 from app.platform.concurrency import etag
 from app.platform.config import Settings
 from app.platform.errors import PROBLEM_JSON, Problem
+from app.platform.model_gateway.port import ModelGatewayPort
 from app.platform.multipart import MultipartFile
 from app.platform.storage import BlobStore
 from app.platform.uow import UoW
@@ -36,15 +45,17 @@ _DESCRIBED: dict[int, str] = {
     403: "The caller has no role, or (for writes) is neither a platform administrator nor "
     "the Source's owner (`forbidden`)",
     404: "No Knowledge Source with this id, or no such version (`not_found`)",
-    409: "The Source is retired (`knowledge_source_retired`), or its latest version has not "
-    "failed to parse (`parse_not_failed`)",
+    409: "The Source is retired (`knowledge_source_retired`), its latest version has not "
+    "failed to parse (`parse_not_failed`), or is not parsed or its embedding is queued, "
+    "running or done (`embed_not_failed`)",
     412: "The Source changed since the caller read it (`row_version_mismatch`)",
     422: "Rejected file (`file_too_large`, `file_type_not_allowed`, `file_content_mismatch`, "
     "`file_empty`; the `detail` is the sentence to show), a field that is blank or too long, "
     "no active Integration Type tag, a retired tag or an owner with no role, or an id that is "
     "not a UUID (`validation_error`)",
     428: "The write has no `If-Match` header (`if_match_required`)",
-    503: "Sign-in service unavailable (`auth_unavailable`)",
+    503: "Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model "
+    "failed (`model_unavailable`)",
 }
 _ETAG_HEADER = {
     "ETag": {
@@ -410,3 +421,74 @@ async def retry_knowledge_source_parse(
         uow, actor, source_id, stale_months=settings.knowledge_stale_months
     )
     return _with_etag(response, source)
+
+
+@router.post(
+    "/{source_id}/embed",
+    operation_id="retry_knowledge_source_embed",
+    status_code=202,
+    responses={
+        **_responses(403, 404, 409, 422),
+        202: {"description": "The Source, its embedding `queued`", "headers": _ETAG_HEADER},
+    },
+)
+async def retry_knowledge_source_embed(
+    source_id: UUID, request: Request, response: Response, actor: CurrentPrincipal, uow: UoW
+) -> KnowledgeSource:
+    """Chunk and embed the Source's parsed latest version: again after its embedding failed,
+    or for the first time when it has none (a version parsed before embedding existed).
+    Platform administrators or the Source's owner."""
+    settings: Settings = request.app.state.settings
+    source = await knowledge.retry_embed(
+        uow, actor, source_id, stale_months=settings.knowledge_stale_months
+    )
+    return _with_etag(response, source)
+
+
+search_router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+
+
+@search_router.get(
+    "/search",
+    operation_id="search_knowledge",
+    responses=_responses(403, 422, 503),
+)
+async def search_knowledge(
+    request: Request,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    q: Annotated[
+        str, Query(max_length=4000, description="What to search for (1-2,000 characters).")
+    ],
+    k: Annotated[
+        int,
+        Query(ge=1, le=SEARCH_K_MAX, description=f"How many passages to return, 1-{SEARCH_K_MAX}."),
+    ] = SEARCH_K_DEFAULT,
+    product: Annotated[
+        str | None, Query(max_length=200, description="Only this product (ignoring case).")
+    ] = None,
+    integration_type_id: Annotated[
+        UUID | None, Query(description="Only Sources tagged with this Integration Type.")
+    ] = None,
+    product_version: Annotated[
+        str | None,
+        Query(max_length=200, description="Only Sources whose latest version documents this."),
+    ] = None,
+) -> KnowledgeSearchResult:
+    """The passages nearest to `q` from Ready, active, latest Source versions, nearest
+    first, each with a citable Evidence reference. Any user with a role. The query is never
+    logged."""
+    settings: Settings = request.app.state.settings
+    gateway: ModelGatewayPort = request.app.state.model_gateway
+    return await knowledge.search(
+        uow,
+        actor,
+        q,
+        gateway=gateway,
+        embed_profile=settings.model_profile_embed,
+        stale_months=settings.knowledge_stale_months,
+        k=k,
+        product=product,
+        integration_type_id=integration_type_id,
+        product_version=product_version,
+    )

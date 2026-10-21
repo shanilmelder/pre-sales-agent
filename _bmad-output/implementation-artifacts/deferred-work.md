@@ -152,3 +152,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-6-split-merge-delete-create-requirements.md`
   summary: With single-key shortcuts turned off, keyboard-only users cannot multi-select rows in the Requirements list or the Gaps list (row checkboxes are `tabIndex -1` and `x` is a single-key shortcut), so Merge and approve-selected are mouse-only; add Space on the focused row (or a focusable checkbox) to toggle selection.
   evidence: Story 2.6 review 2 (triage row 28): `requirements-list.tsx` follows `gaps-list.tsx:194,269`, which predates this story.
+- source_spec: none
+  summary: Story 3.3 part B: `knowledge_chunk` Evidence chips open the inspector at the highlighted span with the Source version, and superseded or retired chips are struck through with a "superseded" label (UX-DR11).
+  evidence: Split from Story 3.3 on 2026-10-21. Nothing cites `knowledge_chunk` until Epic 4/5, so the chip UI has no real consumer yet.
+- source_spec: none
+  summary: Story 3.3 part C: `knowledge.reembed` job, Admin trigger and `make reembed`, the "Re-embedding Knowledge: N of M passages done" banner, and the `knowledge.reembed.started`/`.completed` trace events (AD-14).
+  evidence: Split from Story 3.3 on 2026-10-21. Only `bge-m3` exists, so there is no second model to re-embed into yet.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-chunk-embed-search-knowledge.md`
+  summary: Add a SourcesTab component test (fake timers) proving the Knowledge list keeps polling while a Source is embedding and flips to Ready.
+  evidence: Story 3.3 verification-gap review. `sources-tab.tsx` switched to `isProcessing`; reverting to `isParsePending` fails no test, and SourcesTab had no component test before.

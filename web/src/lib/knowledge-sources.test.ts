@@ -6,6 +6,8 @@ import {
   applyFilters,
   canRegister,
   canWrite,
+  embedAction,
+  embedFailureReason,
   EMPTY_STATE,
   exceedsTransportLimit,
   fieldError,
@@ -13,10 +15,12 @@ import {
   formatSize,
   hasFilters,
   isParsePending,
+  isProcessing,
   mergeSources,
   NO_FILTERS,
   ownersOf,
   parseFailureReason,
+  processingStatus,
   productsOf,
   upsert,
 } from "./knowledge-sources";
@@ -72,6 +76,30 @@ describe("knowledge source helpers", () => {
     expect(isParsePending(source(1))).toBe(false);
     expect(parseFailureReason("no_text")).toBe("No text found — scanned PDF?");
     expect(parseFailureReason(null)).toBe("The file couldn't be read");
+  });
+
+  it("shows the parse state until parsed, then the embedding state (Story 3.3)", () => {
+    const queued = source(1, { parse: { status: "queued", error_code: null }, embed: null });
+    expect(processingStatus(queued)).toEqual({ kind: "parse", parse: queued.parse });
+    const legacy = source(1, { embed: null });
+    expect(processingStatus(legacy).kind).toBe("parse");
+    const embedding = source(1, { embed: { status: "embedding", error_code: null } });
+    expect(processingStatus(embedding)).toEqual({ kind: "embed", embed: embedding.embed });
+
+    expect(isProcessing(queued)).toBe(true);
+    expect(isProcessing(embedding)).toBe(true);
+    expect(isProcessing(source(1, { embed: { status: "queued", error_code: null } }))).toBe(true);
+    expect(isProcessing(source(1))).toBe(false);
+    expect(isProcessing(legacy)).toBe(false);
+
+    const failed = source(1, { embed: { status: "failed", error_code: "model_timeout" } });
+    expect(embedAction(failed)).toBe("retry");
+    expect(embedAction(legacy)).toBe("embed");
+    expect(embedAction(source(1))).toBeNull();
+    expect(embedAction(embedding)).toBeNull();
+    expect(embedAction(queued)).toBeNull();
+    expect(embedFailureReason("model_unavailable")).toBe("The embedding model couldn't be reached");
+    expect(embedFailureReason(null)).toBe("Something went wrong while embedding");
   });
 
   it("upserts keeping the longest-unreviewed first", () => {

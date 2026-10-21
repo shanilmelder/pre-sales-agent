@@ -51,6 +51,7 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.KNOWLEDGE_SOURCE_REVIEW,
             Action.KNOWLEDGE_SOURCE_RETIRE,
             Action.KNOWLEDGE_SOURCE_RETRY_PARSE,
+            Action.KNOWLEDGE_SOURCE_RETRY_EMBED,
             # The Agent Registry (Story 7.1): platform administrators only.
             Action.REGISTRY_AGENT_REGISTER,
             Action.REGISTRY_AGENT_CONFIG_CREATE,
@@ -79,6 +80,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.KNOWLEDGE_SOURCE_REVIEW: "Mark any Knowledge Source reviewed",
     Action.KNOWLEDGE_SOURCE_RETIRE: "Retire any Knowledge Source",
     Action.KNOWLEDGE_SOURCE_RETRY_PARSE: "Retry a failed Knowledge Source parse",
+    Action.KNOWLEDGE_SOURCE_RETRY_EMBED: "Retry or start embedding any Knowledge Source",
     Action.OPPORTUNITY_READ: "Read every Opportunity",
     Action.REGISTRY_AGENT_REGISTER: "Register Agents in the Agent Registry",
     Action.REGISTRY_AGENT_CONFIG_CREATE: "Create a new config version of an Agent",

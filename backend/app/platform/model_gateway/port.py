@@ -1,4 +1,5 @@
-"""The ModelGateway port: `complete_structured(request) -> StructuredResult[T]` (AD-8).
+"""The ModelGateway port: `complete_structured(request) -> StructuredResult[T]` and
+`embed(request) -> list[list[float]]` (AD-8, Story 3.3).
 
 Provider-neutral. A request carries the messages, the Pydantic output model `T`, the profile
 name, the priority, a timeout and the caller's metadata; the result carries the validated
@@ -86,6 +87,31 @@ class StructuredResult[T: BaseModel]:
     attempts: int
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class EmbedRequest:
+    """Texts to embed with one embedding profile; one vector per text, in order. The texts
+    are never logged, stored or echoed in errors."""
+
+    texts: Sequence[str] = field(repr=False)
+    caller: CallerMetadata
+    profile: str | None = None
+    """An embedding profile name (`profiles.EMBED_PROFILES`); None means the configured one."""
+    priority: Priority = "background"
+    timeout_s: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.texts:
+            raise ValueError("an embedding request needs at least one text")
+        if self.timeout_s is not None and self.timeout_s <= 0:
+            raise ValueError("timeout_s must be > 0")
+
+    def __repr__(self) -> str:
+        return (
+            f"EmbedRequest(texts={len(self.texts)}, profile={self.profile!r}, "
+            f"priority={self.priority!r}, caller={self.caller!r})"
+        )
+
+
 class ModelGatewayError(Exception):
     """Base of the gateway's typed errors. Raised after the call row is written."""
 
@@ -142,3 +168,7 @@ class ModelGatewayPort(Protocol):
     async def complete_structured[T: BaseModel](
         self, request: StructuredRequest[T]
     ) -> StructuredResult[T]: ...
+
+    async def embed(self, request: EmbedRequest) -> list[list[float]]:
+        """One vector per text, each of the profile's `dims`. Raises the typed errors."""
+        ...

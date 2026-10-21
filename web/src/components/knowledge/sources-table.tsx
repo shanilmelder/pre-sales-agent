@@ -1,15 +1,23 @@
 "use client";
 
-import { ArchiveIcon, HourglassIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  CircleAlertIcon,
+  CircleCheckIcon,
+  HourglassIcon,
+} from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import { ParseStatusPill } from "@/components/opportunities/sources-list";
 import { useShell } from "@/components/shell/shell-context";
 import {
+  EMBED_STATUS_LABELS,
+  embedFailureReason,
   EMPTY_STATE,
   formatDate,
   NO_MATCHES,
   parseFailureReason,
+  processingStatus,
   type KnowledgeSource,
 } from "@/lib/knowledge-sources";
 
@@ -26,6 +34,47 @@ export function StaleLabel() {
   );
 }
 
+/** A version's processing status (Story 3.3): its parse pill until it is parsed, then its
+ * embedding state (Embedding with the running dot, Ready, or Embedding failed with a red
+ * icon). An icon and a label, never colour alone. */
+export function SourceStatusPill({ source }: { source: Pick<KnowledgeSource, "parse" | "embed"> }) {
+  const status = processingStatus(source);
+  if (status.kind === "parse") return <ParseStatusPill parse={status.parse} />;
+  const { embed } = status;
+  let mark;
+  switch (embed.status) {
+    case "ready":
+      mark = <CircleCheckIcon aria-hidden="true" className="size-3 shrink-0 text-resolved" />;
+      break;
+    case "failed":
+      mark = <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-blocker" />;
+      break;
+    default:
+      mark = (
+        <span
+          aria-hidden="true"
+          data-testid="running-dot"
+          className="mx-0.5 size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
+        />
+      );
+  }
+  return (
+    <span className={labelClass} data-status={`embed-${embed.status}`}>
+      {mark}
+      {EMBED_STATUS_LABELS[embed.status]}
+    </span>
+  );
+}
+
+/** Why the version failed to process (parse or embedding), or null. */
+export function processingFailure(source: Pick<KnowledgeSource, "parse" | "embed">): string | null {
+  if (source.parse.status === "failed") return parseFailureReason(source.parse.error_code);
+  if (source.parse.status === "parsed" && source.embed?.status === "failed") {
+    return embedFailureReason(source.embed.error_code);
+  }
+  return null;
+}
+
 /** "Retired": an icon and a label, never colour alone. */
 export function RetiredLabel() {
   return (
@@ -37,8 +86,8 @@ export function RetiredLabel() {
 }
 
 /** The Knowledge Sources as 32px rows: title, product, Integration Types, owner, last
- * reviewed (with the Stale label), version and parse status (a failed parse shows its
- * reason). The title buttons are one Tab stop (roving tabindex); j/k (or the arrow keys)
+ * reviewed (with the Stale label), version and processing status (parse, then embedding; a
+ * failure shows its reason). The title buttons are one Tab stop (roving tabindex); j/k (or the arrow keys)
  * move between rows and Enter opens the inspector. */
 export function SourcesTable({
   sources,
@@ -113,6 +162,7 @@ export function SourcesTable({
         <tbody>
           {sources.map((source) => {
             const selected = source.id === selectedId;
+            const failure = processingFailure(source);
             const types = source.integration_types.map((t) => t.name).join(", ");
             return (
               <tr
@@ -152,13 +202,9 @@ export function SourcesTable({
                 <td className="px-2 text-numeric">v{source.version}</td>
                 <td className="px-2">
                   <span className="flex flex-wrap items-center gap-1">
-                    <ParseStatusPill parse={source.parse} />
+                    <SourceStatusPill source={source} />
                     {source.retired ? <RetiredLabel /> : null}
-                    {source.parse.status === "failed" ? (
-                      <span className="text-meta text-blocker">
-                        {parseFailureReason(source.parse.error_code)}
-                      </span>
-                    ) : null}
+                    {failure ? <span className="text-meta text-blocker">{failure}</span> : null}
                   </span>
                 </td>
               </tr>

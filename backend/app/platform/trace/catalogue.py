@@ -883,6 +883,34 @@ class KnowledgeSourceParseRetried(TracePayload):
     error_code: str
 
 
+# Story 3.3. Ids, counts and the embedding profile only, never chunk or query text.
+
+
+@register
+class KnowledgeSourceEmbedded(TracePayload):
+    """The worker chunked and embedded a Knowledge Source version; it is Ready for search.
+    Subject: the Source. Actor: the system (`knowledge.embed_source`). `model`: the
+    embedding profile."""
+
+    event_type: ClassVar[str] = "knowledge.source.embedded"
+
+    version: int
+    chunk_count: int
+    model: str
+
+
+@register
+class KnowledgeSourceEmbedRetried(TracePayload):
+    """Someone queued a Knowledge Source version's embedding again: after it failed
+    (`error_code`), or for the first time for a version parsed before embedding existed
+    (`error_code` None). Subject: the Source."""
+
+    event_type: ClassVar[str] = "knowledge.source.embed_retried"
+
+    version: int
+    error_code: str | None
+
+
 # --- conflicts ------------------------------------------------------------------------------
 
 

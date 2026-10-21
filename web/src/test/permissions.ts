@@ -13,6 +13,7 @@ const SEED: Partial<Record<Role, readonly Permission[]>> = {
     "knowledge.source.register",
     "knowledge.source.retag",
     "knowledge.source.retire",
+    "knowledge.source.retry_embed",
     "knowledge.source.retry_parse",
     "knowledge.source.review",
     "opportunities.opportunity.read",

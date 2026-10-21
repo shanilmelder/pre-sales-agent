@@ -2,7 +2,9 @@
 [--timeout <s>]` (`make eval ARGS="..."`), and `python -m app.evals conflicts [--only <case>
 ...] [--profile <name>]` (`make eval-conflicts ARGS="..."`, Story 6.2: precision and recall of
 semantic Conflict detection per type; exit 0 once the report is written, 2 for an invalid or
-unknown case).
+unknown case), and `python -m app.evals retrieval [--timeout <s>]` (`make eval-retrieval`,
+Story 3.3: hit rate at k and citation validity of Knowledge search in the eval database;
+exit 0 once the report is written, 2 refused, 3 timed out).
 
 Exit codes: 0 passed; 1 failed (a bar missed or regressed, or a stage failed; the result
 is still stored); 2 refused or could not run (an unknown `--only` slug, invalid
@@ -16,6 +18,7 @@ import sys
 from collections.abc import Sequence
 
 from app.evals import conflicts as conflicts_eval
+from app.evals import retrieval as retrieval_eval
 from app.evals.annotations import ReferenceSetError
 from app.evals.harness import (
     DEFAULT_TIMEOUT_S,
@@ -69,7 +72,38 @@ def _parser() -> argparse.ArgumentParser:
     semantic.add_argument(
         "--profile", default=None, help="The model profile (default: PSA_MODEL_PROFILE_CHAT)."
     )
+    retrieval = commands.add_parser(
+        "retrieval", help="Score Knowledge search on evals/knowledge/ (hit rate, citations)."
+    )
+    retrieval.add_argument(
+        "--timeout",
+        type=float,
+        default=retrieval_eval.DEFAULT_TIMEOUT_S,
+        help=f"Seconds before the eval gives up (default {retrieval_eval.DEFAULT_TIMEOUT_S:g}).",
+    )
     return parser
+
+
+def _retrieval(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    try:
+        outcome = asyncio.run(
+            retrieval_eval.run_retrieval_eval(settings, timeout_s=args.timeout),
+            loop_factory=loop_factory,
+        )
+    except (EvalRefusedError, retrieval_eval.CaseError) as exc:
+        print(f"Eval refused: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    except RuntimeError as exc:  # e.g. the eval database reset failed
+        print(f"Eval could not run: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    except EvalTimedOutError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_TIMED_OUT
+    print(retrieval_eval.render(outcome.report))
+    print(f"\nReport: {outcome.out_dir / 'report.json'}")
+    return 0
 
 
 def _conflicts(args: argparse.Namespace) -> int:
@@ -99,6 +133,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging("WARNING")
     if args.command == "conflicts":
         return _conflicts(args)
+    if args.command == "retrieval":
+        return _retrieval(args)
     settings = get_settings()
     try:
         options = EvalOptions(

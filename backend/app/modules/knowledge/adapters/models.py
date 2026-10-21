@@ -1,8 +1,11 @@
-"""The knowledge module's tables: the catalogue (Story 3.1) and Knowledge Sources (3.2), AD-2."""
+"""The knowledge module's tables: the catalogue (Story 3.1), Knowledge Sources (3.2) and
+their chunks and embedding state (3.3), AD-2."""
 
 from datetime import date, datetime
+from typing import Any
 from uuid import UUID
 
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -13,9 +16,11 @@ from sqlalchemy import (
     Index,
     Integer,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.concurrency import RowVersioned
@@ -153,3 +158,83 @@ class SourceParseRow(Base):
     char_count: Mapped[int | None] = mapped_column(Integer)
     parser: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+# --- chunks and embeddings (Story 3.3) -------------------------------------------------------
+
+
+class SourceEmbedRow(Base):
+    """The embedding state of one Source version: `queued`, `embedding`, `ready` (with
+    `chunk_count` and the embedding profile `model`) or `failed` (with an `error_code`).
+    Inserted `queued` when the version's parse succeeds; absent for versions parsed before
+    Story 3.3 (they show an Embed action)."""
+
+    __tablename__ = "knowledge_source_embeds"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_id", "version"],
+            ["knowledge_source_versions.source_id", "knowledge_source_versions.version"],
+        ),
+        CheckConstraint("status IN ('queued', 'embedding', 'ready', 'failed')", name="status"),
+        CheckConstraint(
+            "error_code IS NULL OR error_code IN ('model_unavailable', 'model_timeout', "
+            "'model_bad_output', 'text_missing', 'internal_error')",
+            name="error_code",
+        ),
+        CheckConstraint(
+            "(status = 'ready') = (chunk_count IS NOT NULL AND model IS NOT NULL)",
+            name="ready_has_chunks",
+        ),
+        CheckConstraint("(status = 'failed') = (error_code IS NOT NULL)", name="failed_has_code"),
+    )
+
+    source_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(Text)
+    chunk_count: Mapped[int | None] = mapped_column(Integer)
+    model: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ChunkRow(Base):
+    """One chunk of a Source version's extracted text, with its embedding (AD-14). `text` is
+    exactly `extracted_text[start_offset:end_offset]` (Unicode code points). The product,
+    product version and Integration Type ids are copied at embedding time. `embedding` is an
+    untyped `vector`; each embedding model has its own partial HNSW expression index (see
+    migration 0035). Insert-only: a later version's chunks never replace an earlier one's."""
+
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_id", "version"],
+            ["knowledge_source_versions.source_id", "knowledge_source_versions.version"],
+        ),
+        UniqueConstraint("source_id", "version", "embedding_model", "ordinal"),
+        CheckConstraint("start_offset >= 0 AND end_offset > start_offset", name="offsets"),
+        CheckConstraint("ordinal >= 0", name="ordinal"),
+        CheckConstraint(
+            "embedding_dims >= 1 AND vector_dims(embedding) = embedding_dims", name="dims"
+        ),
+        Index(
+            "ix_knowledge_chunks_embedding_bge_m3",
+            text("(embedding::vector(1024)) vector_cosine_ops"),
+            postgresql_using="hnsw",
+            postgresql_where=text("embedding_model = 'bge-m3'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    source_id: Mapped[UUID] = mapped_column(Uuid)
+    version: Mapped[int] = mapped_column(Integer)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    start_offset: Mapped[int] = mapped_column(Integer)
+    end_offset: Mapped[int] = mapped_column(Integer)
+    product: Mapped[str] = mapped_column(Text)
+    product_version: Mapped[str] = mapped_column(Text)
+    integration_type_ids: Mapped[list[UUID]] = mapped_column(ARRAY(Uuid))
+    embedding_model: Mapped[str] = mapped_column(Text)
+    embedding_dims: Mapped[int] = mapped_column(Integer)
+    embedding: Mapped[Any] = mapped_column(VECTOR())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

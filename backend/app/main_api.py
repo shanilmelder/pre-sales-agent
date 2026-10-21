@@ -1,4 +1,7 @@
-"""`api` process entry point: HTTP only, never runs agents, graphs or parsing (AD-1)."""
+"""`api` process entry point: HTTP only, never runs agents, graphs or parsing (AD-1).
+
+Story 3.3: the process holds one ModelGateway (`app.state.model_gateway`), used only to embed
+Knowledge search queries; it never makes a chat call."""
 
 import asyncio
 import sys
@@ -23,6 +26,7 @@ from app.modules.intake.api.routes import requirements_router as intake_requirem
 from app.modules.intake.api.routes import router as intake_router
 from app.modules.knowledge.api.routes import router as knowledge_router
 from app.modules.knowledge.api.source_routes import router as knowledge_sources_router
+from app.modules.knowledge.api.source_routes import search_router as knowledge_search_router
 from app.modules.opportunities.api.imports_routes import router as opportunity_imports_router
 from app.modules.opportunities.api.routes import router as opportunities_router
 from app.modules.registry.api.routes import evals_router as registry_evals_router
@@ -38,6 +42,7 @@ from app.platform.errors import (
     unhandled_error_response,
 )
 from app.platform.logging import configure_logging, get_logger
+from app.platform.model_gateway.gateway import ModelGateway
 
 API_PREFIX = "/api/v1"
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -75,11 +80,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
     engine = create_engine(settings)
+    model_gateway = ModelGateway(settings, engine)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         _log.info("api.started", extra={"version": settings.version, "env": settings.env})
         yield
+        await model_gateway.aclose()
         await engine.dispose()
 
     app = FastAPI(
@@ -92,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.model_gateway = model_gateway
     app.state.token_validator = TokenValidator.from_settings(settings)
     install_error_handlers(app)
 
@@ -132,6 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(workflows_router, prefix=API_PREFIX)
     app.include_router(knowledge_router, prefix=API_PREFIX)
     app.include_router(knowledge_sources_router, prefix=API_PREFIX)
+    app.include_router(knowledge_search_router, prefix=API_PREFIX)
     app.include_router(downloads_router, prefix=API_PREFIX)
     app.include_router(conflicts_router, prefix=API_PREFIX)
     app.include_router(registry_router, prefix=API_PREFIX)

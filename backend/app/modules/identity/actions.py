@@ -42,6 +42,8 @@ class Action(StrEnum):
     KNOWLEDGE_SOURCE_REVIEW = "knowledge.source.review"
     KNOWLEDGE_SOURCE_RETIRE = "knowledge.source.retire"
     KNOWLEDGE_SOURCE_RETRY_PARSE = "knowledge.source.retry_parse"
+    KNOWLEDGE_SOURCE_RETRY_EMBED = "knowledge.source.retry_embed"
+    KNOWLEDGE_CHUNK_SEARCH = "knowledge.chunk.search"
     ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"
     CONFLICT_RESOLVE = "conflicts.conflict.resolve"
     CONFLICT_ESCALATE = "conflicts.conflict.escalate"

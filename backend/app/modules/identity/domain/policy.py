@@ -1,7 +1,7 @@
 """Authorization policy (AD-15): which permissions, and which relations to a resource, grant
 which actions. Pure, no I/O.
 
-Two kinds of grant, either of which allows an action:
+Three kinds of grant, any of which allows an action:
 
 - **Permission grants**: Auth0 RBAC assigns permissions to roles, and the access token's
   `permissions` claim carries them. Each permission name equals an `Action` value; holding
@@ -15,6 +15,9 @@ Two kinds of grant, either of which allows an action:
   Requirements, start Gap detection, draft an Estimate, accept an Assumption, start a Red
   Team Review, export the Estimate, edit its lines, or resolve or escalate a Conflict).
   Roles add up, so someone who also holds a role that isn't excluded keeps the grant.
+- **Any-role grants**: `ANY_ROLE_GRANTS` are allowed to every user holding at least one
+  role (e.g. searching the Knowledge Base, Story 3.3), with no permission or relation.
+  A principal with no role holds none of them.
 """
 
 from collections.abc import Mapping
@@ -135,10 +138,15 @@ KNOWLEDGE_SOURCE_OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.KNOWLEDGE_SOURCE_REVIEW,
         Action.KNOWLEDGE_SOURCE_RETIRE,
         Action.KNOWLEDGE_SOURCE_RETRY_PARSE,
+        Action.KNOWLEDGE_SOURCE_RETRY_EMBED,
     }
 )
 """What the owner of a Knowledge Source may do to it, whatever their role, as long as they
 hold one. Registering has no Source yet, so it is granted by role only."""
+
+
+ANY_ROLE_GRANTS: frozenset[Action] = frozenset({Action.KNOWLEDGE_CHUNK_SEARCH})
+"""What every principal holding at least one role may do (reads open to all roles)."""
 
 
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:
@@ -150,6 +158,8 @@ def is_allowed(principal: Principal, action: Action, resource: Resource | None =
     and system actors follow the same rules: with no granting permission or relation they
     are denied."""
     if action in principal.permissions:
+        return True
+    if action in ANY_ROLE_GRANTS and principal.roles:
         return True
     if resource is None or not principal.roles:
         return False

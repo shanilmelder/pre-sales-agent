@@ -16,6 +16,7 @@ const actions = vi.hoisted(() => ({
   loadText: vi.fn(),
   markReviewed: vi.fn(),
   retireSource: vi.fn(),
+  retryEmbed: vi.fn(),
   retryParse: vi.fn(),
 }));
 vi.mock("@/app/knowledge/actions", () => actions);
@@ -30,6 +31,7 @@ const VERSION = {
   uploaded_by: STALE.uploaded_by,
   uploaded_at: "2026-09-01T10:00:00Z",
   parse: { status: "parsed", error_code: null },
+  embed: { status: "ready", error_code: null },
   char_count: 10,
 };
 const OWNER = { id: STALE.owner.id, roles: ["engineering_reviewer"] as const };
@@ -114,6 +116,43 @@ describe("SourceInspector", () => {
     expect(screen.getByText("The file couldn't be read")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(actions.retryParse).toHaveBeenCalledWith(STALE.id);
+  });
+
+  it("shows a failed embedding with its reason and Retry (Story 3.3)", async () => {
+    const failed: KnowledgeSource = {
+      ...STALE,
+      embed: { status: "failed", error_code: "model_timeout" },
+    };
+    const queued = { ...STALE, embed: { status: "queued", error_code: null } } as const;
+    actions.retryEmbed.mockResolvedValue({ kind: "ok", source: queued });
+    const { user, onChange } = renderInspector(OWNER, failed);
+    expect(screen.getByText("Embedding failed")).toBeTruthy();
+    expect(screen.getByText("The embedding model took too long")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(actions.retryEmbed).toHaveBeenCalledWith(STALE.id);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(queued));
+  });
+
+  it("offers Embed for a version parsed before embedding existed, to writers only", async () => {
+    const legacy: KnowledgeSource = { ...STALE, embed: null };
+    actions.retryEmbed.mockResolvedValue({ kind: "conflict", code: "embed_not_failed" });
+    const { user, unmount } = renderInspector(ADMIN, legacy);
+    expect(screen.getByText("Parsed")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Embed" }));
+    expect(actions.retryEmbed).toHaveBeenCalledWith(STALE.id);
+    expect(await screen.findByText(/can.t be embedded now: it isn.t parsed yet, or its embedding is already queued/)).toBeTruthy();
+    unmount();
+    renderInspector(STRANGER, legacy);
+    await screen.findByText("v1", { exact: false });
+    expect(screen.queryByRole("button", { name: "Embed" })).toBeNull();
+  });
+
+  it("shows no embed action once Ready or while embedding", async () => {
+    renderInspector(OWNER, { ...STALE, embed: { status: "embedding", error_code: null } });
+    await screen.findByText("v1", { exact: false });
+    expect(screen.queryByRole("button", { name: "Embed" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getAllByText("Embedding").length).toBeGreaterThanOrEqual(1);
   });
 
   it("labels a retired Integration Type tag and a retired Source", async () => {

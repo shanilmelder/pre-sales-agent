@@ -30,6 +30,7 @@ from app.modules.identity.application.user_search import (
     user_names,
 )
 from app.modules.identity.domain.policy import (
+    ANY_ROLE_GRANTS,
     KNOWLEDGE_SOURCE_RESOURCE,
     MEMBER_GRANTS,
     OPPORTUNITY_RESOURCE,
@@ -42,6 +43,7 @@ from app.modules.identity.domain.roles import Role
 
 __all__ = [
     "ACTION_NAME_RE",
+    "ANY_ROLE_GRANTS",
     "DEFAULT_PAGE_SIZE",
     "KNOWLEDGE_SOURCE_RESOURCE",
     "MAX_PAGE",

@@ -240,8 +240,8 @@ def reset_eval_database(url: str, owner_url: str) -> None:
 # --- 5. run -----------------------------------------------------------------------------------
 
 
-class _Upload:
-    """An `intake.IncomingFile` over bytes in memory."""
+class Upload:
+    """An uploaded file (`intake` or `knowledge` `IncomingFile`) over bytes in memory."""
 
     def __init__(self, name: str, data: bytes) -> None:
         self._name, self._data = name, data
@@ -290,7 +290,7 @@ async def create_opportunities(
                     uow,
                     owner,
                     opportunity_id,
-                    _Upload(source.name, source.data),
+                    Upload(source.name, source.data),
                     store=store,
                     max_bytes=settings.upload_max_bytes,
                 )
@@ -298,21 +298,26 @@ async def create_opportunities(
     return created
 
 
-async def open_job_count(db: AsyncEngine) -> int:
+async def open_job_count(db: AsyncEngine, job_types: frozenset[str] = EVAL_JOB_TYPES) -> int:
     async with db.connect() as conn:
         found = await conn.execute(
             sa.text(
                 "SELECT count(*) FROM platform_jobs WHERE job_type = ANY(:t) AND status = ANY(:s)"
             ),
-            {"t": sorted(EVAL_JOB_TYPES), "s": list(_OPEN_JOB_STATUSES)},
+            {"t": sorted(job_types), "s": list(_OPEN_JOB_STATUSES)},
         )
         return int(found.scalar_one())
 
 
 async def drain(
-    db: AsyncEngine, settings: Settings, gateway: ModelGatewayPort | None, poll_s: float
+    db: AsyncEngine,
+    settings: Settings,
+    gateway: ModelGatewayPort | None,
+    poll_s: float,
+    job_types: frozenset[str] = EVAL_JOB_TYPES,
 ) -> None:
-    """Run the worker loop on the eval database until no job of the chain is left."""
+    """Run the worker loop on the eval database until no job of `job_types` (default: the
+    chain) is left."""
     main_worker.load_job_types()
     stop = asyncio.Event()
     worker = asyncio.create_task(
@@ -321,7 +326,7 @@ async def drain(
             settings=settings,
             engine=db,
             poll_s=poll_s,
-            job_types=EVAL_JOB_TYPES,
+            job_types=job_types,
             gateway=gateway,
         )
     )
@@ -332,7 +337,7 @@ async def drain(
             if worker.done():
                 worker.result()
                 raise RuntimeError("the worker loop stopped early")
-            idle = idle + 1 if await open_job_count(db) == 0 else 0
+            idle = idle + 1 if await open_job_count(db, job_types) == 0 else 0
     finally:
         stop.set()
         with contextlib.suppress(asyncio.CancelledError):
@@ -577,13 +582,13 @@ async def run_eval(
         raise EvalRefusedError(f"No reference Opportunities under {options.reference_dir}.")
     digest = reference_set_digest(options.reference_dir, [r.slug for r in reference])
     version = registry.reference_set_version(digest)
-    with _temporary_storage() as storage:
+    with temporary_storage() as storage:
         settings = settings.model_copy(update={"storage_dir": storage})
         return await _run(options, settings, url, owner_url, reference, version, gateway)
 
 
 @contextlib.contextmanager
-def _temporary_storage() -> Iterator[Path]:
+def temporary_storage() -> Iterator[Path]:
     """A file store for the eval's Sources, removed afterwards: never the main one. Job
     handlers read `get_settings().storage_dir`, so `PSA_STORAGE_DIR` points there meanwhile."""
     previous = os.environ.get("PSA_STORAGE_DIR")

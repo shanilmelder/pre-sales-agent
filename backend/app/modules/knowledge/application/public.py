@@ -1,4 +1,7 @@
-"""knowledge's public API. Other modules import knowledge only from here."""
+"""knowledge's public API. Other modules import knowledge only from here.
+
+Story 3.3: `search` (citable top-k chunks) and `resolve_evidence` (the `knowledge_chunk`
+Evidence resolver, also registered with `app.platform.evidence` on import)."""
 
 from app.modules.knowledge.application.catalogue import (
     create_entry,
@@ -12,6 +15,7 @@ from app.modules.knowledge.application.catalogue import (
     retire_entry,
     validate_catalogue_ref,
 )
+from app.modules.knowledge.application.evidence import check_chunk_refs, resolve_evidence
 from app.modules.knowledge.application.models import (
     CatalogueEntry,
     CatalogueList,
@@ -21,14 +25,20 @@ from app.modules.knowledge.application.models import (
     NewEntry,
     RetireRequest,
 )
+from app.modules.knowledge.application.search import search
 from app.modules.knowledge.application.source_models import (
     DownloadLink,
     IntegrationTypeTag,
+    KnowledgeEvidence,
+    KnowledgeSearchHit,
+    KnowledgeSearchResult,
     KnowledgeSource,
+    KnowledgeSourceEmbed,
     KnowledgeSourceList,
     KnowledgeSourceParse,
     KnowledgeSourceVersion,
     KnowledgeSourceVersionList,
+    KnowledgeSpan,
     KnowledgeUserRef,
     RetireSource,
     SourceChanges,
@@ -45,6 +55,7 @@ from app.modules.knowledge.application.sources import (
     read_text,
     register_source,
     retire_source,
+    retry_embed,
     retry_parse,
     search_owners,
 )
@@ -52,21 +63,38 @@ from app.modules.knowledge.application.sources import (
     read_versions as read_source_versions,
 )
 from app.modules.knowledge.domain.catalogue import Kind, Status
+from app.modules.knowledge.domain.embedding import (
+    EVIDENCE_KIND,
+    SEARCH_K_DEFAULT,
+    SEARCH_K_MAX,
+    EmbedErrorCode,
+    EmbedStatus,
+)
 
 __all__ = [
+    "EVIDENCE_KIND",
+    "SEARCH_K_DEFAULT",
+    "SEARCH_K_MAX",
     "CatalogueEntry",
     "CatalogueList",
     "CatalogueVersion",
     "CatalogueVersionList",
     "DownloadLink",
+    "EmbedErrorCode",
+    "EmbedStatus",
     "EntryChanges",
     "IntegrationTypeTag",
     "Kind",
+    "KnowledgeEvidence",
+    "KnowledgeSearchHit",
+    "KnowledgeSearchResult",
     "KnowledgeSource",
+    "KnowledgeSourceEmbed",
     "KnowledgeSourceList",
     "KnowledgeSourceParse",
     "KnowledgeSourceVersion",
     "KnowledgeSourceVersionList",
+    "KnowledgeSpan",
     "KnowledgeUserRef",
     "NewEntry",
     "RetireRequest",
@@ -75,6 +103,7 @@ __all__ = [
     "SourceText",
     "Status",
     "add_version",
+    "check_chunk_refs",
     "create_entry",
     "download_link",
     "edit_entry",
@@ -92,9 +121,12 @@ __all__ = [
     "read_text",
     "read_versions",
     "register_source",
+    "resolve_evidence",
     "retire_entry",
     "retire_source",
+    "retry_embed",
     "retry_parse",
+    "search",
     "search_owners",
     "validate_catalogue_ref",
 ]

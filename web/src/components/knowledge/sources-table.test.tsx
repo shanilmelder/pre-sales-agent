@@ -15,6 +15,12 @@ const SOURCES: KnowledgeSource[] = [
   source(1, { title: "Old guide", stale: true, last_reviewed_on: "2025-01-01" }),
   source(2, { title: "Retired guide", retired: true, status: "retired", retired_reason: "Old" }),
   source(3, { title: "Broken guide", parse: { status: "failed", error_code: "no_text" } }),
+  source(4, { title: "Embedding guide", embed: { status: "embedding", error_code: null } }),
+  source(5, {
+    title: "Unembedded guide",
+    embed: { status: "failed", error_code: "model_unavailable" },
+  }),
+  source(6, { title: "Legacy guide", embed: null }),
 ];
 
 function renderTable(sources: KnowledgeSource[] = SOURCES, total = sources.length) {
@@ -55,6 +61,19 @@ describe("SourcesTable", () => {
     const row = rowOf("Broken guide");
     expect(within(row).getByText("Parse failed")).toBeTruthy();
     expect(within(row).getByText("No text found — scanned PDF?")).toBeTruthy();
+  });
+
+  it("shows the embedding state once parsed: Embedding, Ready, Embedding failed (Story 3.3)", () => {
+    renderTable();
+    expect(within(rowOf("Old guide")).getByText("Ready")).toBeTruthy();
+    const embedding = within(rowOf("Embedding guide"));
+    expect(embedding.getByText("Embedding")).toBeTruthy();
+    expect(embedding.getByTestId("running-dot")).toBeTruthy();
+    const failed = within(rowOf("Unembedded guide"));
+    expect(failed.getByText("Embedding failed").closest("span")?.querySelector("svg")).toBeTruthy();
+    expect(failed.getByText("The embedding model couldn't be reached")).toBeTruthy();
+    // Parsed before embedding existed: still "Parsed".
+    expect(within(rowOf("Legacy guide")).getByText("Parsed")).toBeTruthy();
   });
 
   it("j/k move between rows and Enter opens via the keyboard", async () => {
