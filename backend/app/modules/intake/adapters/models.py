@@ -161,20 +161,28 @@ class RequirementRow(RowVersioned, Base):
     """A Requirement of an Opportunity. Extraction inserts `active`, `extracted`, unlocked
     rows at version 1; a later extraction that refines one moves it to its next version in
     place (Story 2.7). A human-locked one (Story 2.6) is never changed by extraction: it
-    gets a pending change instead."""
+    gets a pending change instead. A person may also create one, delete one (`deleted`, with
+    a `removal_reason`), or split or merge them (the originals `superseded`).
+
+    `number`: its stable `R<n>` within the Opportunity, never reused (Story 2.6)."""
 
     __tablename__ = "intake_requirements"
     __table_args__ = (
         Index(None, "opportunity_id", "status"),
+        UniqueConstraint("opportunity_id", "number"),
         CheckConstraint(
             "classification IN ('functional', 'integration', 'data', 'security', "
             "'non_functional', 'commercial')",
             name="classification",
         ),
         CheckConstraint("origin IN ('extracted', 'human')", name="origin"),
-        CheckConstraint("status IN ('active', 'superseded')", name="status"),
+        CheckConstraint("status IN ('active', 'superseded', 'deleted')", name="status"),
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint("(confirmed_at IS NULL) = (confirmed_by IS NULL)", name="confirmed_has_by"),
+        CheckConstraint("number >= 1", name="number"),
+        CheckConstraint(
+            "(status = 'deleted') = (removal_reason IS NOT NULL)", name="deleted_has_reason"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -191,6 +199,8 @@ class RequirementRow(RowVersioned, Base):
     # Story 2.6: who confirmed the Requirement, and when (both or neither).
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     confirmed_by: Mapped[UUID | None] = mapped_column(Uuid)
+    number: Mapped[int] = mapped_column(Integer)
+    removal_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class RequirementVersionRow(Base):

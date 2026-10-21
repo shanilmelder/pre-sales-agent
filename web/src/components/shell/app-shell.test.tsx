@@ -501,6 +501,13 @@ describe("c creates an Opportunity (presales engineers only)", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("c is left to an Opportunity's Requirements tab, which adds a Requirement", async () => {
+    pathname.current = "/opportunities/00000000-0000-7000-8000-000000000001/requirements";
+    const { user } = renderShell({ roles: ["presales_engineer"] });
+    await user.keyboard("c");
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("c does nothing for other roles, and the cheat sheet leaves it out", async () => {
     const { user } = renderShell({ roles: ["head_of_delivery", "platform_administrator"] });
     await user.keyboard("c");

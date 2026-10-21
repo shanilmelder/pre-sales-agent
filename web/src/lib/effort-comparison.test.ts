@@ -13,9 +13,9 @@ import {
 } from "./effort-comparison";
 import type { EstimateVersion } from "./estimates";
 
-const R1 = { id: "r1", text: "First requirement" };
-const R2 = { id: "r2", text: "Second requirement" };
-const R3 = { id: "r3", text: "Third requirement" };
+const R1 = { id: "r1", number: 1, text: "First requirement" };
+const R2 = { id: "r2", number: 2, text: "Second requirement" };
+const R3 = { id: "r3", number: 3, text: "Third requirement" };
 const OLD = "r-old";
 
 function chip(id: string) {
@@ -233,16 +233,20 @@ describe("compareEffort", () => {
     expect(c.leftOut).toBe(1);
   });
 
-  it("rows follow Requirement order, labelled R1…Rn", () => {
+  it("rows follow Requirement order, labelled with their stored numbers", () => {
+    // R2 deleted, R4 and R5 split from another: the numbers have gaps and never shift.
+    const R4 = { id: "r4", number: 4, text: "Fourth requirement" };
+    const R5 = { id: "r5", number: 5, text: "Fifth requirement" };
     const c = compareEffort({
-      requirements: [R3, R1, R2],
-      assessments: agents([["r2", 1]], null, null),
+      requirements: [R1, R3, R4, R5],
+      assessments: agents([["r4", 1]], null, null),
       estimate: null,
     });
     expect(c.rows.map((r) => [r.id, r.label])).toEqual([
-      ["r3", "R1"],
-      ["r1", "R2"],
-      ["r2", "R3"],
+      ["r1", "R1"],
+      ["r3", "R3"],
+      ["r4", "R4"],
+      ["r5", "R5"],
     ]);
   });
 

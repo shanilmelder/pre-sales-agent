@@ -10,8 +10,8 @@ import { axeViolations } from "@/test/axe";
 import { EffortComparisonSection } from "./effort-comparison";
 
 const REQUIREMENTS = [
-  { id: "r1", text: "[REQ ONE]" },
-  { id: "r2", text: "[REQ TWO]" },
+  { id: "r1", number: 1, text: "[REQ ONE]" },
+  { id: "r2", number: 2, text: "[REQ TWO]" },
 ] as Requirement[];
 
 function slot(agent: AssessmentAgent, effort: [string, number][] | null): AgentAssessment {

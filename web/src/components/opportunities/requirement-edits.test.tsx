@@ -63,6 +63,7 @@ function requirement(
 ): Requirement {
   return {
     id: `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`,
+    number: n,
     text: `[REQUIREMENT ${n}]`,
     classification,
     origin: "extracted",
@@ -78,6 +79,16 @@ function requirement(
     ...extra,
   };
 }
+
+/** One cited passage: a Requirement with it reads "Edited" once a person changes it (one
+ * without Evidence that a person changed is "Manual"). */
+const EVIDENCE = {
+  passage_id: "00000000-0000-7000-8000-0000000000a9",
+  source_id: "00000000-0000-7000-8000-0000000000b1",
+  source_version: 1,
+  filename: "call.vtt",
+  label: "S1 · call.vtt",
+};
 
 const ME = { id: "00000000-0000-7000-8000-0000000000e1", name: "[OWNER]" };
 
@@ -126,7 +137,7 @@ beforeEach(() => {
 describe("editing Requirements inline", () => {
   it("e edits the focused row; Enter saves with If-Match and focus returns to the row", async () => {
     const user = userEvent.setup();
-    const r1 = requirement(1);
+    const r1 = requirement(1, "functional", { evidence: [EVIDENCE] });
     renderSection(list([r1, requirement(2)]));
     editRequirement.mockResolvedValue({
       kind: "ok",
@@ -138,6 +149,7 @@ describe("editing Requirements inline", () => {
         row_version: 2,
       },
     });
+    await user.tab(); // Add Requirement
     await user.tab(); // Confirm all (2)
     await user.tab(); // the list's one tab stop: the first row
     expect(document.activeElement).toBe(row(1));
@@ -463,7 +475,8 @@ describe("the inspector", () => {
 
   it("has a classification select, an editable text and Confirm", async () => {
     const user = userEvent.setup();
-    const r1 = requirement(1, "functional");
+    const r1 = requirement(1, "functional", { evidence: [EVIDENCE] });
+    getPassage.mockResolvedValue({ kind: "not-found" });
     renderSection(list([r1]));
     editRequirement.mockResolvedValue({
       kind: "ok",

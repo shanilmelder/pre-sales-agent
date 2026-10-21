@@ -41,10 +41,11 @@ _CHANGE_ORDER = ("pending", "accepted", "rejected", "superseded")
 
 
 class RequirementChangeRef(BaseModel):
-    """A Requirement a Source changed (Story 4.7). `label` is `R<n>` among the active
-    Requirements, or `Superseded` once it is no longer active. `kind`: `added` (created
-    from the Source), `versioned` (a new version cites it), or the status of a pending
-    change proposing one of its passages (`pending`, `accepted`, `rejected`, `superseded`)."""
+    """A Requirement a Source changed (Story 4.7). `label` is `R<n>`, the Requirement's
+    stable number within the Opportunity, or `Superseded` once it is no longer active.
+    `kind`: `added` (created from the Source), `versioned` (a new version cites it), or the
+    status of a pending change proposing one of its passages (`pending`, `accepted`,
+    `rejected`, `superseded`)."""
 
     requirement_id: str
     label: str
@@ -148,13 +149,10 @@ async def requirement_changes_for_source(
         )
     if not kinds:
         return []
-    numbers = {
-        r.id: number
-        for number, r in enumerate(await repo.active_requirements(uow, opportunity_id), start=1)
-    }
-    ordered = sorted(
-        kinds.items(), key=lambda item: (numbers.get(item[0], len(numbers) + 1), str(item[0]))
-    )
+    # The stable `R<n>` (Story 2.6), so a label never moves after a delete, split or merge.
+    numbers = {r.id: r.number for r in await repo.active_requirements(uow, opportunity_id)}
+    last = max(numbers.values(), default=0) + 1
+    ordered = sorted(kinds.items(), key=lambda item: (numbers.get(item[0], last), str(item[0])))
     return [
         RequirementChangeRef(
             requirement_id=str(requirement_id),
