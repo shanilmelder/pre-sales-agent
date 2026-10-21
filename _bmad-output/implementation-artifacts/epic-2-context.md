@@ -16,6 +16,7 @@ A presales engineer or sales representative adds customer emails, notes and tran
 - Story 2.6: Edit, split, merge and confirm Requirements
 - Story 2.7: Incremental intake with pending changes
 - Story 2.8: Treat customer content as untrusted
+- Story 2.9: Requirement confirmation state (Unconfirmed, Confirmed, Needs review)
 
 ## Requirements & Constraints
 
@@ -25,6 +26,7 @@ A presales engineer or sales representative adds customer emails, notes and tran
 - **Extraction:** each Requirement is classified as functional, integration, data, security, non-functional or commercial and cites at least one source passage. Duplicates across Sources merge into one Requirement that cites all their passages, with the lineage traced.
 - **Quality bar:** at least 90% recall and 100% valid citations on the annotated intake fixtures. The story-level gate is `make eval-intake`. The shared `make eval` harness (reference set in `evals/`, results stored insert-only in `registry_eval_results`) also scores this bar, and CI blocks prompt, agent, model-profile or digest changes that fail it.
 - **Human edits always win:** edits, splits, merges, deletes and confirms are traced. Extraction never overwrites a human-touched Requirement. It proposes a pending change, which a human accepts, or rejects with a reason. Deleted Requirements stay in history.
+- **Confirmation state:** every Requirement is Unconfirmed (initial for an extracted one), Confirmed (a person confirmed it, or created it) or Needs review (a Confirmed Requirement changed by an accepted pending change, an edit by someone other than the confirmer, or an agent flag). A confirmer's own edit keeps it Confirmed. State changes are traced and never block submission.
 - **Incremental intake:** a new Source yields only new or changed Requirements. Affected Assessments are flagged once Epic 5 exists; in R1 the engineer chooses what to rerun.
 - **Untrusted content:** it never grants extra actions. Injection attempts are detected heuristically and flagged, and prompt-injection tests run in CI.
 - **Performance:** up to 50 pages extracted in under 5 minutes; status reads under 500 ms P95.
@@ -59,7 +61,7 @@ A presales engineer or sales representative adds customer emails, notes and tran
   - Agents are plain classes implementing `Agent.run(task) -> AgentResult` and only propose. `intake.accept_extraction` validates the result and writes it.
   - `actor_id` is `<agent_id>@<semver>`. Prompts live at `agents/<agent_id>/prompts/v<N>.md`. A config may reference only prompt and schema versions present in the image. Only `orchestration/` imports LangGraph.
 - **Evidence:** `{kind, id, version?, span?}`; `version` is required when the target is versioned. `source_passage` rows are immutable, tied to a source version, and use Unicode code-point offsets into the extracted-text artifact. References that don't resolve are rejected on acceptance.
-- **Requirement provenance:** `origin: extracted | human` plus `locked_by_human`. Changes to a locked Requirement go through `intake.propose_requirement_change`. Merges and splits are lineage trace events.
+- **Requirement provenance:** `origin: extracted | human`, `locked_by_human` and `confirmation_status: unconfirmed | confirmed | needs_review` with `confirmed_by` and `confirmed_at` while confirmed. Transitions live in `intake/domain` and each appends an `intake.requirement.*` trace event. A migration backfills `confirmed` where `confirmed_at` was set. Changes to a locked Requirement go through `intake.propose_requirement_change`. Merges and splits are lineage trace events.
 - **Untrusted text** enters prompts only inside delimited data blocks, never in system instructions or tool descriptions. A suspected injection sets `injection_suspected` and appends `intake.source.injection_flagged`.
 - **Conventions:** trace events are `intake.<entity>.<past_tense_verb>`, each with one payload model in `platform/trace/catalogue.py`. The trace is append-only. Errors are problem+json with a stable `code`. IDs are UUIDv7. Config comes from `pydantic-settings` with the `PSA_` prefix. The web app uses only the generated API client.
 - **Testing:** domain code is tested without DB or LLM; agents use a fake ModelGateway; jobs and commands get Postgres integration tests, including lease reclaim.
@@ -68,18 +70,18 @@ A presales engineer or sales representative adds customer emails, notes and tran
 
 - **Sources tab:** drag-and-drop, file picker or paste. A rejected upload shows a specific inline reason on its row. Live status pills: Queued, Parsing, Parsed, Parse failed. **Parse failed** is red and shows the reason, with **Retry** and **Paste text instead**. The inspector shows the extracted text, metadata, version and **Download original**.
 - **Empty state:** a new Opportunity with no Sources shows one sentence plus the inline upload/paste area.
-- **Requirements tab:** grouped by classification, showing origin and lock state. During extraction it streams in, with "Extracting — 2 of 3 sources", a running dot and a tab badge that counts up.
-- **Keyboard:** `e` inline edit (saves on blur with `If-Match`), `x` multi-select, `c` create, Enter opens the inspector.
+- **Requirements tab:** grouped by classification, showing origin, lock state and a confirmation pill (Unconfirmed, Confirmed, Needs review with a triangle) and a **Confirm** button. Group headers read "n · m confirmed" and Low-confidence unconfirmed rows get an amber edge. During extraction it streams in, with "Extracting — 2 of 3 sources", the static loader icon (no pulse) and a tab badge that counts up.
+- **Keyboard:** `e` inline edit (saves on blur with `If-Match`), `x` multi-select, `c` create, Enter opens the inspector. These are single-key shortcuts, controlled by the Settings switch (default Off), so each action also has a visible control.
 - **Evidence chip:** a kind icon plus a label. Clicking it opens the passage in the inspector with the span highlighted. Superseded references are struck through.
 - **Pending change:** an amber marker. The diff view uses the diff-tint token with `+`/`−` markers (not semantic green/red) and shows the new Evidence. **Accept** applies it; **Reject** requires a reason.
 - **412:** "Changed by [user] since you opened it", with Reload or View diff.
-- **Connection:** "Reconnecting…" while disconnected; "Offline — edits disabled" after 60 s.
+- **Connection:** "Reconnecting…" while disconnected; after 60 s the Offline strip shows with Retry and edits are disabled.
 - **Copy:** glossary terms exactly, specific failure reasons, no emoji.
 
 ## Cross-Story Dependencies
 
 - **From Epic 1:** scaffold, Auth0 token validation and `identity.authorize`, Unit of Work, trace writer, Opportunity membership, workspace tabs, inspector and status pill.
-- **Within the epic:** 2.1 → 2.2 → 2.3. 2.4 (gateway, agent contract, registry seed) comes before 2.5. Then 2.5 → 2.6 → 2.7. 2.8 hardens the intake agent from 2.5.
+- **Within the epic:** 2.1 → 2.2 → 2.3. 2.4 (gateway, agent contract, registry seed) comes before 2.5. Then 2.5 → 2.6 → 2.7. 2.8 hardens the intake agent from 2.5. 2.9 extends 2.6's confirm with the three-state vocabulary and reacts to 2.7's accepted pending changes.
 - **Later epics:**
   - Epics 3–9 reuse the job queue, ModelGateway and SSE stream.
   - Epic 4 Gap answers go through `intake.propose_requirement_change`.

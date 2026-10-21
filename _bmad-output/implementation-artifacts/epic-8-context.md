@@ -9,20 +9,21 @@ Give the presales engineer one standard, structured Estimate whose numbers are a
 ## Stories
 
 - Story 8.1: Estimate Versions, lines and deterministic arithmetic
-- Story 8.2: Estimate grid with inline editing
+- Story 8.2: Estimate grid with in-place draft edits
 - Story 8.3: Draft an Estimate from Assessments
 - Story 8.4: Convert Gaps and Unknowns into Assumptions or Risks
 - Story 8.5: Assumptions Register and Risks
 - Story 8.6: Submission blockers gate and Estimate submission
 - Story 8.7: New Estimate Versions and version comparison
 - Story 8.8: Export the Estimate, Assumptions Register and Clarification Questions
+- Story 8.9: Overview recomposition
 
 ## Requirements & Constraints
 
 - **Standard structure:** lines grouped by Integration Type and Work Package. Each line shows effort, role mix, duration, Contingency and its source Assessments. Every line must reference an active catalogue entry. Retired entries stay valid on existing lines but can't be picked for new ones. All Estimates use one versioned, configurable template (sections, columns, roles), agreed with the Head of Delivery. The template version is recorded on each Estimate Version.
 - **Assumptions Register:** each Assumption is a Condition (with proposal-ready wording) or a Contingency (with an effort or money amount). Each has exactly one origin (Gap, Unknown, or Finding plus its Assessment version) and records who accepted it and when. A version can't be submitted while any Assumption has no accepting person. The accepting person must be an Opportunity member with the presales engineer or commercial role.
 - **Unknowns cannot vanish:** submission is blocked while any Gap or Unknown is open. It must be answered, or converted to an Assumption or Risk. Converting a Finding leaves the Finding's own status unchanged, so a critical Finding still needs to be resolved or overridden.
-- **Edits need a reason** and are traced. Submitted versions are immutable, so any change means a new version, and earlier versions stay viewable and comparable.
+- **Draft edits** are made in place with a required reason, saved with `row_version`, and recorded in the Decision Trace; they do not create a version. Version labels are whole numbers (v1, v2, v3). Submitted versions are immutable, so changing one means a new version from an assessment rerun, a Challenge or an explicit new draft, and earlier versions stay viewable and comparable.
 - **Concurrent edits** are detected. A stale save gets a 412 and is never applied silently.
 - **Access:** sales representatives can't write Estimates, Assumptions or exports (403). Users without access get the 404-equivalent. A missing permission is always 403, never 401.
 - **Exports** carry no customer content in logs and are audited. Downloads use short-lived signed URLs issued only after authorization.
@@ -44,16 +45,17 @@ Give the presales engineer one standard, structured Estimate whose numbers are a
 
 ## UX & Interaction Patterns
 
-- **Estimate tab:** a dense grid built on shadcn Table. It has tabular figures, right-aligned numbers, a sticky header and sticky totals, and a left rule before the Contingency column. Inline editing is allowed only on drafts (`e`, `c` to add a line). A compact reason prompt appears on save. The version switcher is a segmented control for the two latest versions, plus a list under `v`, with a reserved Baseline marker slot. `d` toggles a diff that uses the diff-tint and `+`/`−` text markers (never semantic red or green) and shows a server-calculated summary line.
+- **Estimate tab:** a grid built on shadcn Table. It has tabular figures, right-aligned numbers, a sticky header and sticky totals, and a left rule before the Contingency column. Grid cells are read-only. A draft line is edited from the Inspector's **Edit line** section (Engineer effort plus a required reason, saved in place); there is no "Save as new version", and Edit line is hidden on read-only versions (submitted, Baseline, superseded). `c` adds a line. The version switcher is a segmented control with a state pill per segment (Superseded, Baseline, Draft), plus a list under `v`. A Version lifecycle card shows Draft, In review, Approved, Baseline as a read-only stepper. `d` toggles a diff that uses the diff-tint and `+`/`−` text markers (never semantic red or green) and shows a server-calculated summary line.
 - **Assumptions Register** sits below the grid. It is grouped into Conditions (clipboard-check icon) and Contingencies (shield-plus icon), with origin chips and accepted-by. Unaccepted rows are blocker rows: blocker tint, a 2px blocker bar and a "not accepted" label, with an **Accept** action. Risks have their own section.
 - **Submission Blockers card** on Overview: "N blockers before you can submit". Rows disappear live as blockers are resolved, and a polite aria-live region announces the new count. At zero it reads "0 blockers — ready to submit" and **Submit** becomes the primary action. A second "Blockers to Baseline" gate is laid out but stays empty until reviews exist.
 - **Convert form** on the Gap card or in the inspector: a segmented Condition/Contingency control, with wording or amount and an "Accepted by" field that defaults to the current user.
-- **States:** "No Estimate Version yet…" (Run assessment / Start blank), a submitted read-only banner with **New version**, a 412 message "Changed by [user] since you opened it" (Reload / View diff), and "Export failed: <reason>" with Retry. Copy uses glossary terms and specific reasons, with no emoji.
-- The visual reference is `mockups/estimate.html`. Where the mockup and the spines differ, the spines win.
+- **States:** the empty-tab card "No Estimate yet" with one primary action, Run assessment (no Start blank), a submitted read-only banner with **New version**, a 412 message "Changed by [user] since you opened it" (Reload / View diff), and "Export failed: <reason>" with Retry. Copy uses glossary terms and specific reasons, with no emoji.
+- **Overview (Story 8.9):** four KPI tiles and an 8-step read-only Submission pipeline (status tracker, never a forced order) that links to tabs and uses the same data as the blockers check, plus Needs you, Submission Blockers, Recent activity, Latest agent decision and Agent run.
+- The visual reference is the redesign v2 prototype (`imports/presales-agent-design-spec-standalone-v2.html`). Where it and the spines differ, the spines win. The older `mockups/` are superseded.
 
 ## Cross-Story Dependencies
 
 - 8.1 (schema, template, arithmetic) underpins every other story. 8.3 adds the Assumption and Risk tables that 8.4, 8.5, 8.6 and 8.8 rely on.
-- 8.6's blocker query reads Gaps and Unknowns (Epic 4), Conflicts and critical Findings or overrides (Epics 5–6), and later Review Requests (Epic 9). 8.7's supersede logic extends to Review Requests in Epic 9 (Story 9.4).
+- 8.6's blocker query reads Gaps and Unknowns (Epic 4), Conflicts and critical Findings or overrides (Epics 5–6), and later Review Requests (Epic 9). 8.9 depends on 8.6 and reads the same blockers query. 8.7's supersede logic extends to Review Requests in Epic 9 (Story 9.4).
 - 8.3 depends on accepted Assessments with per-integration and per-Work-Package effort (Epic 5), `workflows.start_run`, and resolved Conflicts (Epic 6). The catalogue comes from Epic 3. The Gap card Convert form builds on Epic 4.
 - Baseline (`estimates_baselines`, `set_baseline`) and the in_review, approved and rejected transitions belong to Epic 9. Actuals per line belong to Epic 10.

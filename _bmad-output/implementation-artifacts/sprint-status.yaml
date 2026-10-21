@@ -1,0 +1,206 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 10-21-2026 19:00
+last_updated: 10-21-2026 19:00
+project: pre-sales-agent
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: in-progress
+  1-1-project-scaffold-and-local-stack: done
+  1-2-production-deployment-to-the-vps: backlog
+  1-3-backups-monitoring-and-alerts: backlog
+  1-4-sign-in-with-auth0: done
+  1-5-linear-style-app-shell-and-design-tokens: done
+  1-6-administrator-assigns-roles: done
+  1-7-create-and-share-opportunities: done
+  1-8-opportunity-workspace-with-tabs-and-status: done
+  1-9-auth0-roles-and-permissions: done
+  epic-1-retrospective: optional
+
+  epic-2: in-progress
+  2-1-add-opportunity-sources: done
+  2-2-background-parsing-with-the-worker-and-job-queue: done
+  2-3-live-updates-and-the-source-viewer: done
+  2-4-governed-model-access-through-the-modelgateway: done
+  2-5-extract-classified-cited-requirements: done
+  2-6-edit-split-merge-and-confirm-requirements: done
+  2-7-incremental-intake-with-pending-changes: done
+  2-8-treat-customer-content-as-untrusted: backlog
+  2-9-requirement-confirmation-state-unconfirmed-confirmed-needs-r: backlog
+  epic-2-retrospective: optional
+
+  epic-3: in-progress
+  3-1-integration-type-and-work-package-catalogue: done
+  3-2-register-knowledge-sources-by-upload: done
+  3-3-chunk-embed-and-search-knowledge-with-citable-passages: done
+  3-4-author-and-version-checklists: backlog
+  3-5-knowledge-coverage-view: backlog
+  3-6-knowledge-graph: backlog
+  epic-3-retrospective: optional
+
+  epic-4: in-progress
+  4-1-integration-types-in-scope-and-applicable-checklists: backlog
+  4-2-deterministic-gaps-from-mandatory-checklist-items: backlog
+  4-3-detect-gaps-and-draft-clarification-questions-with-the-clari: done
+  4-4-gaps-tab-with-ranked-gap-cards: done
+  4-5-edit-merge-drop-and-approve-clarification-questions: done
+  4-6-export-clarification-questions-and-mark-them-sent: done
+  4-7-record-answers-and-propose-requirement-updates: done
+  epic-4-retrospective: optional
+
+  epic-5: in-progress
+  5-1-start-a-workflow-run-with-pinned-inputs-and-a-versioned-plan: done
+  5-2-durable-langgraph-execution-in-the-worker: done
+  5-3-assessments-and-the-standard-assessment-contract: done
+  5-4-toolgateway-with-task-scoped-read-only-tools-and-research-sn: backlog
+  5-5-pause-for-human-input-resume-and-cancel: done
+  5-6-budgets-timeouts-and-failure-handling: backlog
+  5-7-agent-run-panel-and-activity-tab: done
+  5-8-engineering-and-pm-agents: done
+  5-9-security-and-research-agents-and-a-full-assessment-run: done
+  5-10-single-gpu-load-test-and-nfr-baseline: backlog
+  epic-5-retrospective: optional
+
+  epic-6: in-progress
+  6-1-detect-conflicts-with-deterministic-rules: done
+  6-2-llm-assisted-conflict-detection-for-free-text: done
+  6-3-resolve-conflicts-with-a-reason: done
+  6-4-critic-review: backlog
+  6-5-red-team-review: done
+  6-6-blocking-findings-and-overrides: backlog
+  epic-6-retrospective: optional
+
+  epic-7: in-progress
+  7-1-db-owned-agent-registry-with-immutable-config-versions: done
+  7-2-model-profiles-pinned-by-digest-and-sized-to-the-gpu: backlog
+  7-3-admin-agents-view-with-config-history: backlog
+  7-4-tool-permissions-administration-and-denial-audit: backlog
+  7-5-cost-and-observability-per-run-agent-and-opportunity: backlog
+  7-6-evaluation-harness-and-reference-set: done
+  7-7-single-agent-baseline-comparison-and-decision-rule: backlog
+  7-8-ci-eval-gate-on-the-self-hosted-gpu-runner: backlog
+  epic-7-retrospective: optional
+
+  epic-8: in-progress
+  8-1-estimate-versions-lines-and-deterministic-arithmetic: done
+  8-2-estimate-grid-with-in-place-draft-edits: done
+  8-3-draft-an-estimate-from-assessments: done
+  8-4-convert-gaps-and-unknowns-into-assumptions-or-risks: done
+  8-5-assumptions-register-and-risks: done
+  8-6-submission-blockers-gate-and-estimate-submission: backlog
+  8-7-new-estimate-versions-and-version-comparison: done
+  8-8-export-the-estimate-assumptions-register-and-clarification-q: done
+  8-9-overview-recomposition: backlog
+  epic-8-retrospective: optional
+
+  epic-9: in-progress
+  9-1-send-review-requests-to-named-reviewers: backlog
+  9-2-inbox-with-in-app-notifications-and-review-reminders: backlog
+  9-3-reviewers-record-decisions-in-the-review-panel: backlog
+  9-4-author-side-review-outcomes-and-superseded-requests: backlog
+  9-5-raise-a-challenge-and-confirm-reassessment: backlog
+  9-6-challenge-reassessment-run-creates-a-new-estimate-version: backlog
+  9-7-set-the-baseline: backlog
+  9-8-decision-trace-tab: done
+  9-9-trace-any-number-to-its-evidence-and-compare-versions: backlog
+  9-10-decision-trace-completeness-test: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-record-actuals-per-estimate-line: backlog
+  10-2-import-actuals-from-a-file: backlog
+  10-3-variance-reporting-views-and-the-reports-table: backlog
+  10-4-drill-down-from-variance-to-the-failed-assumption: backlog
+  10-5-record-the-opportunity-outcome-and-retention-dates: backlog
+  10-6-controlled-retention-purge: backlog
+  10-7-pipeline-report: backlog
+  epic-10-retrospective: optional
+
+  epic-11: backlog
+  11-1-notifications-module-and-in-platform-notifications: backlog
+  11-2-email-and-teams-delivery: backlog
+  11-3-configure-approval-policies: backlog
+  11-4-enforce-approval-policies-before-the-baseline: backlog
+  11-5-reminders-and-escalation-of-overdue-review-requests: backlog
+  epic-11-retrospective: optional
+
+  epic-12: backlog
+  12-1-pricing-port-and-versioned-pricing-rules: backlog
+  12-2-price-an-estimate-version: backlog
+  12-3-commercial-agent-assessment: backlog
+  12-4-proposal-template-administration: backlog
+  12-5-generate-a-proposal-draft: backlog
+  12-6-review-and-edit-a-proposal-draft: backlog
+  12-7-proposal-approval-and-release: backlog
+  epic-12-retrospective: optional
+
+  epic-13: backlog
+  13-1-integration-connections-and-the-admin-integrations-view: backlog
+  13-2-create-or-link-an-opportunity-from-a-hubspot-deal: backlog
+  13-3-write-back-status-and-baseline-summary-to-hubspot: backlog
+  13-4-attach-outlook-emails-through-microsoft-365: backlog
+  13-5-attach-teams-meeting-transcripts: backlog
+  13-6-sharepoint-knowledge-connector-with-scheduled-re-sync: backlog
+  13-7-confluence-knowledge-connector: backlog
+  epic-13-retrospective: optional
+
+  epic-14: backlog
+  14-1-negotiation-settings-and-eligibility: backlog
+  14-2-bounded-negotiation-subgraph-rounds-and-limits: backlog
+  14-3-trade-off-analysis-and-critic-review-of-the-negotiation: backlog
+  14-4-consensus-proposal-with-conditions-and-dissent: backlog
+  14-5-accept-modify-or-reject-a-negotiation-proposal: backlog
+  epic-14-retrospective: optional
+
+  epic-15: backlog
+  15-1-detect-material-changes-and-their-impact: backlog
+  15-2-automatic-targeted-reassessment: backlog
+  15-3-automatic-reassessment-on-challenge: backlog
+  15-4-create-a-scenario-from-the-baseline: backlog
+  15-5-compare-scenarios-side-by-side: backlog
+  15-6-promote-a-scenario-to-baseline: backlog
+  epic-15-retrospective: optional
+
+  epic-16: backlog
+  16-1-calibration-from-estimate-vs-actual-history: backlog
+  16-2-calibration-suggestions-on-estimate-lines: backlog
+  16-3-calibration-impact-reporting: backlog
+  16-4-agents-cite-past-projects-as-evidence: backlog
+  epic-16-retrospective: optional
+
+  epic-17: backlog
+  17-1-token-layer-and-primitives: backlog
+  17-2-app-shell-settings-and-accessibility-behaviours: backlog
+  17-3-refit-built-tabs-to-the-redesign: backlog
+  17-4-opportunity-list-and-overview-chrome: backlog
+  epic-17-retrospective: optional

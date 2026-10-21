@@ -1,17 +1,17 @@
 ---
-title: "PRD: Agentic AI Presales Platform (pre-sales-agent)"
+title: "PRD: Pre Sales Agent Framework (pre-sales-agent)"
 status: draft
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-21
 ---
 
-# PRD: Agentic AI Presales Platform
+# PRD: Pre Sales Agent Framework
 
-*Working title. Confirm.*
+*Product name confirmed as "Pre Sales Agent Framework" (decided 2026-10-21).*
 
 ## 0. Document Purpose
 
-This PRD defines the full Agentic AI Presales Platform for the product, architecture and delivery teams, and for the sponsor (Head of Delivery). It builds on two inputs and does not repeat them:
+This PRD defines the full Pre Sales Agent Framework for the product, architecture and delivery teams, and for the sponsor (Head of Delivery). It builds on two inputs and does not repeat them:
 
 - **Product brief:** `../../briefs/brief-pre-sales-agent-2026-10-01/brief.md`. Covers the problem, the evidence and the case for building rather than buying.
 - **Orchestration engine specification:** `docs/BMAD Implementation Specification — LangGraph Agent Orchestration Engine.md`. Covers technical direction, agent contracts, the API and the data model.
@@ -65,7 +65,7 @@ Personas are fictional.
 
 - **Opportunity:** a potential deal being assessed. It has one or more Opportunity Sources and zero or more Estimates. It is the root object of the platform.
 - **Opportunity Source:** raw customer input attached to an Opportunity: an email, call notes, a Teams transcript, an RFP document or a CRM record.
-- **Requirement:** a single structured customer need extracted from Opportunity Sources. It is classified (functional, integration, data, security, non-functional, commercial) and linked to the source text it came from.
+- **Requirement:** a single structured customer need extracted from Opportunity Sources. It is classified (functional, integration, data, security, non-functional, commercial) and linked to the source text it came from. It has a confirmation state (Unconfirmed, Confirmed, Needs review).
 - **Knowledge Source:** an internal reference the agents may cite: product documentation, an integration specification, a Checklist or a past delivery record.
 - **Checklist:** an expert-written list of questions or risks for a product, integration type or industry. Used in Gap detection.
 - **Integration Type / Work Package:** catalogue entries (FR-65) used to classify Assessment lines, Estimate lines, Actuals and Checklists consistently.
@@ -83,7 +83,7 @@ Personas are fictional.
 - **Conflict:** incompatible positions between two or more Assessments, for example on timeline, effort, architecture or scope.
 - **Negotiation:** a bounded, structured process in which Agents try to resolve a Conflict. *(Release 3)*
 - **Critic Review / Red Team Review:** independent checks of the combined Assessments. The Critic checks coverage and consistency. The Red Team argues the solution is harder or riskier than stated.
-- **Estimate:** the structured effort, timeline and cost forecast for delivering an Opportunity, broken into line items. Every change creates a new **Estimate Version**.
+- **Estimate:** the structured effort, timeline and cost forecast for delivering an Opportunity, broken into line items. It is kept as numbered **Estimate Versions**. A new version comes from an assessment rerun or an explicit new draft, and edits to a draft are traced in place (FR-35).
 - **Baseline:** the approved Estimate Version for an Opportunity.
 - **Scenario:** an alternative Estimate built from the Baseline with changed constraints. It never modifies the Baseline. *(Release 3)*
 - **Review Request:** a request for a named human to review, approve or reject an Estimate Version or Assessment.
@@ -138,6 +138,9 @@ The platform extracts Requirements from all Opportunity Sources, classifies each
 #### FR-6: Edit and confirm Requirements
 A presales engineer can add, edit, split, merge, delete and confirm Requirements.
 - Human edits are recorded in the Decision Trace and are never overwritten by later extraction runs.
+- Every Requirement has a confirmation state: **Unconfirmed** (the initial state of an extracted Requirement), **Confirmed** (a person confirmed it; set automatically for a Requirement the person created) or **Needs review** (a Confirmed Requirement whose text changed through an accepted pending change, an edit by someone other than the confirmer, or an agent flag). An edit by the confirmer themselves keeps the Requirement Confirmed. (decided 2026-10-21)
+- Confirmation state never blocks submission.
+- Changes of state are recorded in the Decision Trace.
 
 #### FR-7: Incremental intake
 When a new Opportunity Source is added, the platform extracts only the new or changed Requirements and flags which existing Assessments those changes affect (feeds FR-44 in R3; in R1 the engineer chooses what to rerun).
@@ -157,6 +160,13 @@ Designated experts can create and version Checklists of questions and known risk
 
 #### FR-10: Knowledge coverage visibility
 A platform administrator can see which products and integration types lack documentation or Checklists. This shows where risk detection is weak.
+
+#### FR-66: Knowledge graph [R1]
+A platform administrator, and the roles that can edit Checklists (FR-9), can explore a graph of Products, Integration Types, Knowledge Sources and Checklists, with their links, search and type filters.
+- Each node shows its Coverage score (0 to 100, calculated deterministically from FR-8 and FR-9 data: Ready non-stale Knowledge Sources and active published Checklists for the product and Integration Type pair) `[ASSUMPTION]`, its owner and last-reviewed date, and its status (Ready, Partial or Stale, Missing or Failed, Embedding).
+- Missing coverage is shown as a distinct link.
+- The same facts are available as tables (FR-10) so the graph is never the only route.
+- Retrieval statistics ('used by agents', 'last retrieved') are not part of the first slice and are shown only once agent retrieval is logged.
 
 #### FR-65: Integration Type and Work Package catalogue
 A platform administrator can maintain a catalogue of Integration Types (e.g. ERP connector, SSO, data migration) and Work Packages (e.g. configuration, testing, training), with definitions.
@@ -298,7 +308,10 @@ Each Estimate Version has an Assumptions Register. Every Assumption is classifie
 - Every Assumption records who accepted it and when. An Estimate Version cannot be submitted while any Assumption lacks an accepting person.
 
 #### FR-35: Edit and version Estimates
-A presales engineer can adjust line items and Assumptions with a reason. Every change creates a new Estimate Version. Earlier versions remain viewable and comparable.
+A presales engineer can adjust line items and Assumptions with a reason.
+- A change to a draft Estimate Version is made in place. It requires a reason and is traced with the before and after values and the person who made it (decided 2026-10-21).
+- A new Estimate Version is created by an assessment rerun (including a Challenge, FR-38) or when a presales engineer explicitly starts a new draft from an earlier version. Version labels are whole numbers.
+- Submitted, Baseline and superseded versions are read-only. Earlier versions remain viewable and comparable.
 
 #### FR-36: Export Estimate [R1]
 A presales engineer can export the Estimate, Assumptions Register and Clarification Questions as `.xlsx` and `.docx` for use in today's proposal process.
@@ -388,6 +401,10 @@ When a project closes (and optionally at milestones), a delivery manager can rec
 #### FR-50: Estimate-vs-actual reporting [R1]
 The Head of Delivery can view variance by Opportunity, product, integration type, work package and variance cause, and can drill down to the failed Assumptions in the Decision Trace.
 
+#### FR-67: Pipeline report [R1]
+The Head of Delivery and platform administrator can see Opportunities grouped by derived status and the Opportunities whose target proposal date is due soon.
+- Derived only from platform data (FR-2 status, target proposal date). It does not read or write CRM pipeline stages (§5).
+
 #### FR-51: Calibration [R4]
 Once enough closed projects exist for an integration type or work package `[ASSUMPTION: at least 5]`, the platform suggests adjustments to future Estimates based on historical variance and shows the reasoning and data behind each suggestion.
 - Calibration suggestions are visible and can be overridden. They never apply silently.
@@ -429,8 +446,9 @@ Users sign in with company SSO `[ASSUMPTION: Microsoft Entra ID]`. Roles: presal
 - Opportunity access is limited to owner, collaborators and roles granted by policy.
 
 #### FR-59: Observability and cost
-A platform administrator can see per-Workflow-Run and per-Agent traces, latency, failures, retries, token use and model cost, linked by correlation ID.
+A platform administrator can see per-Workflow-Run and per-Agent traces, latency, failures, retries, token use and model cost, linked by correlation ID. The Head of Delivery can view the cost and usage summary read-only.
 - Cost per Opportunity is reported (input to SM-C2).
+- Usage is summarised per Agent as runs, tokens, compute time and failures.
 
 #### FR-60: Evaluation harness
 A platform administrator can run Agents against a set of reference Opportunities with known good answers to detect quality regressions before changing a model, prompt or Agent version.
@@ -446,7 +464,7 @@ Content from Opportunity Sources, Research results and Knowledge Sources is trea
 
 ## 5. Non-Goals
 
-- **Not a CRM, PSA or project-management tool.** The platform links to these and does not replace them.
+- **Not a CRM, PSA or project-management tool.** The platform links to these and does not replace them. The Pipeline report (FR-67) shows only platform-derived status and dates.
 - **No autonomous customer communication.** The platform never sends emails, questions or Proposals to customers. People do.
 - **No autonomous commitments.** Agents never approve Estimates, Proposals, prices or contractual terms.
 - **Not an RFP questionnaire-answering tool.** Security questionnaires and RFP Q&A libraries are well served by commercial tools and can be integrated later if needed.
@@ -460,7 +478,7 @@ The full product is specified above. It is built and released in four Releases s
 
 | Release | Goal | Features |
 |---|---|---|
-| **R1: Estimation core** | A presales engineer takes a real Opportunity from raw input to a reviewed, assumption-backed Estimate, and delivery records Actuals. | 4.1, 4.2, 4.3 (upload), 4.4, 4.5, 4.6 (engineering, PM, security, research), 4.7, 4.8 (detection and human resolution), 4.9, 4.10 (Review Requests, Challenge), 4.11, 4.14 (capture and reporting), 4.16, 4.17 |
+| **R1: Estimation core** | A presales engineer takes a real Opportunity from raw input to a reviewed, assumption-backed Estimate, and delivery records Actuals. | 4.1, 4.2, 4.3 (upload, graph), 4.4, 4.5, 4.6 (engineering, PM, security, research), 4.7, 4.8 (detection and human resolution), 4.9, 4.10 (Review Requests, Challenge), 4.11, 4.14 (capture and reporting), 4.16, 4.17 |
 | **R2: Governance and integration** | Approvals by policy, Proposals generated from Baselines, and the platform connected to CRM, Microsoft 365 and knowledge spaces. | 4.6 (commercial), 4.10 (approval policies, notifications), 4.13, 4.15 |
 | **R3: Advanced orchestration** | Estimates stay current as things change; alternatives can be tested; Agents negotiate Conflicts before humans step in. | 4.8 (Negotiation), 4.12 |
 | **R4: Learning** | Estimates improve from history. | 4.14 (Calibration, past-project evidence) |
@@ -494,7 +512,7 @@ R4 depends on data, not just code: it starts when enough closed projects with Ac
 - **NFR-4: Security.** SSO authentication is mandatory, and authorization is checked on every sensitive operation. Data is encrypted in transit and at rest. Secrets are held in a managed vault. Sensitive operations are audited.
 - **NFR-5: Observability.** Every Workflow Run has a correlation ID. Every Agent execution, tool call, retry and failure is traceable (FR-59).
 - **NFR-6: Auditability.** Decision Trace and audit records are append-only and retained for at least the contract lifetime plus 7 years `[ASSUMPTION]`.
-- **NFR-7: Accessibility.** The web UI meets WCAG 2.1 AA.
+- **NFR-7: Accessibility.** The web UI meets WCAG 2.1 AA. Single-key keyboard shortcuts can be turned off (WCAG 2.1.4), every screen has a skip link, and live changes are announced politely.
 - **NFR-8: Platform.** Desktop web application on current Chrome and Edge. Mobile is not a target.
 
 ## 9. Constraints and Guardrails
@@ -576,6 +594,7 @@ R4 depends on data, not just code: it starts when enough closed projects with Ac
 - FR-54: Microsoft 365 integration for email and Teams intake.
 - FR-58: SSO is Microsoft Entra ID.
 - FR-60: 5-point single-agent decision rule. Reference set of at least 10 expert-annotated Opportunities.
+- FR-66: The Coverage score definition (0 to 100, from Ready non-stale Knowledge Sources and active published Checklists per product and Integration Type pair).
 - SM-1: Target ±15% estimate accuracy.
 - SM-2: Target ≥80% adoption within 3 months of R1.
 - SM-3: Target ≥70% of Opportunities with questions sent before Estimate.

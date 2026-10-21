@@ -26,7 +26,7 @@ Give platform administrators control over and visibility into the Agents. The Ag
 - **Privacy:** views, logs and denial lists hold only IDs, counts and timings, never prompt text, Source text or customer content. Reference-set data is anonymised (for example `[CUSTOMER]`), and originals never enter the repository.
 - **Eval bars (release gate):** extraction recall ≥90% and citation validity 100%; Gap recall ≥80%, irrelevant Gaps ≤20% and mandatory-item Gaps 100%; Evidence support ≥95% plus the schema-valid rate. A candidate fails if it misses any bar or regresses any bar by more than 5 points against the last accepted result. Evidence pairs with no annotation are reported as pending, never counted as passes. The reference set holds at least 10 annotated Opportunities.
 - **Single-agent decision rule:** "met" when the baseline is within 5 points on Gap detection and on integration-risk Findings, at a cost at least the configured margin lower (default 30%, an assumption). The platform never changes the design automatically, and the admin records the decision with a reason.
-- **Access:** registry, admin and eval endpoints are restricted to platform administrators, and other users get 403. The Head of Delivery has read-only access to the Cost view.
+- **Access:** registry, admin and eval endpoints are restricted to platform administrators, and other users get 403. The Head of Delivery has read-only access to Cost and usage, which lives under Reports (not Admin).
 
 ## Technical Decisions
 
@@ -43,10 +43,11 @@ Give platform administrators control over and visibility into the Agents. The Ag
 
 ## UX & Interaction Patterns
 
-- **Admin layout:** the Admin sidebar entry is visible only to the admin role, with sub-tabs for Agents, Cost and Evals.
-- **Agents list:** 32px rows with `j`/`k` selection and Enter to open the inspector. Config history is shown newest first, with author, date and changed fields, and any two versions can be compared in the diff view (diff-tint with `+`/`−` markers).
+- **Admin layout:** the Admin sidebar entry is visible only to the admin role, with sub-tabs Users and roles, Agents, Catalogue and Evals. Cost is not in Admin.
+- **Cost and usage:** a Reports sub-tab, visible to the Head of Delivery (read-only) and platform administrators only. It shows KPIs (runs, tokens, GPU seconds, cost) and a per-Agent table (runs, tokens, GPU seconds, failures), with per-run drill-down. GPU seconds are derived from configured rates.
+- **Agents list:** padded list rows (density token) with `j`/`k` selection and Enter to open the right pane's Inspector (one 420px pane with Inspector and Activity tabs). Config history is shown newest first, with author, date and changed fields, and any two versions can be compared in the diff view (diff-tint with `+`/`−` markers).
 - **Editing:** edits require a reason. A 412 shows the concurrent-edit message with reload or diff. Disable and enable use a confirm dialog that states the effect. Saving a config with no passing eval shows "Not evaluated" with the missing bars and requires explicit confirmation.
-- **Data display:** Cost uses tabular figures and sortable columns. Eval pass and fail pills use an icon plus a label, never colour alone.
+- **Data display:** Cost and usage uses tabular figures and sortable columns. Eval pass and fail pills use an icon plus a label, never colour alone.
 - **Accessibility:** WCAG 2.1 AA, with axe in CI.
 
 ## Cross-Story Dependencies

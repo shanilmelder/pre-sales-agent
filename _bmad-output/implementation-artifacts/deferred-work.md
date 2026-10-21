@@ -161,3 +161,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-3-chunk-embed-search-knowledge.md`
   summary: Add a SourcesTab component test (fake timers) proving the Knowledge list keeps polling while a Source is embedding and flips to Ready.
   evidence: Story 3.3 verification-gap review. `sources-tab.tsx` switched to `isProcessing`; reverting to `isParsePending` fails no test, and SourcesTab had no component test before.
+- source_spec: none
+  summary: [post-demo] Refit built screens to the 2026-10-21 redesign (Epic 17): token layer and primitives, app shell and Settings, built tabs, Opportunity list and Overview chrome (Stories 17.1-17.4).
+  evidence: Approved Sprint Change Proposal P9 in `_bmad-output/planning-artifacts/sprint-change-proposal-2026-10-21.md`. About 67 built `.tsx` files still use the old tokens (`h-row`, type-role classes, `rounded-*`); done specs stay as history.
+- source_spec: none
+  summary: [post-demo] Remove the six `animate-pulse` running dots and show Running as a static loader icon, updating their tests.
+  evidence: Approved Sprint Change Proposal P8 and P9 (Story 17.1) in `_bmad-output/planning-artifacts/sprint-change-proposal-2026-10-21.md`. Built `status-pill.tsx` and five other components still pulse, which the redesign (UX-DR10) no longer allows.
