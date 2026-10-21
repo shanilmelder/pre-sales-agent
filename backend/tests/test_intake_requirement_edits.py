@@ -476,18 +476,32 @@ def test_confirming_again_is_200_with_no_new_event(
     assert len(_events(sync_engine, sap["id"])) == 1
 
 
-def test_an_edit_after_confirming_keeps_it_confirmed(
+@pytest.mark.parametrize("field", ["text", "classification"])
+def test_a_content_edit_after_confirming_clears_the_confirmation(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway, field: str
+) -> None:
+    headers, opp, (sap, _) = _extracted(client, sync_engine, db_url, gateway)
+    confirmed = _confirm(client, headers, opp["id"], sap, sap["row_version"]).json()
+    assert confirmed["confirmed_at"] is not None
+    change = {"text": "Edited."} if field == "text" else {"classification": "data"}
+
+    edited = _patch(client, headers, opp["id"], sap, change, confirmed["row_version"]).json()
+
+    assert (edited["confirmed_at"], edited["confirmed_by"]) == (None, None)
+    assert (edited["version"], edited["origin"], edited["locked_by_human"]) == (2, "human", True)
+    row = _row(sync_engine, sap["id"])
+    assert (row["confirmed_at"], row["confirmed_by"]) == (None, None)
+
+
+def test_a_no_op_edit_after_confirming_keeps_the_confirmation(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
     headers, opp, (sap, _) = _extracted(client, sync_engine, db_url, gateway)
     confirmed = _confirm(client, headers, opp["id"], sap, sap["row_version"]).json()
 
-    edited = _patch(
-        client, headers, opp["id"], sap, {"text": "Edited."}, confirmed["row_version"]
-    ).json()
+    same = _patch(client, headers, opp["id"], sap, {"text": sap["text"]}, confirmed["row_version"])
 
-    assert edited["confirmed_at"] == confirmed["confirmed_at"]
-    assert (edited["version"], edited["origin"]) == (2, "human")
+    assert same.json()["confirmed_at"] == confirmed["confirmed_at"]
 
 
 def test_confirm_all_confirms_only_the_unconfirmed(
@@ -602,7 +616,11 @@ def test_last_changed_by_names_whoever_changed_it_last(
     assert last.json()["last_changed_by"] == expected
     (listed,) = [i for i in _list(client, owner, opp["id"]) if i["id"] == sap["id"]]
     assert listed["last_changed_by"] == expected
-    assert listed["confirmed_by"]["name"] == "Owner Person"
+    # An edit clears the confirmation (Story 2.6 remainder).
+    if editor_last:
+        assert listed["confirmed_by"] is None
+    else:
+        assert listed["confirmed_by"]["name"] == "Owner Person"
 
 
 # --- migration 0010 backfill ----------------------------------------------------------------

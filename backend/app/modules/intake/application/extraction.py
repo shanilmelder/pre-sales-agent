@@ -64,6 +64,7 @@ from app.modules.intake.domain.requirements import (
     ProposedRequirement,
     ReconcileOutcome,
     ReconcileProposal,
+    RequirementStatus,
     Resolution,
     input_budget_chars,
     normalised_text,
@@ -330,40 +331,54 @@ async def _reconcile(
         for r in resolution.requirements
     ]
     active = await repo.active_requirements(uow, record.opportunity_id)
+    # Story 2.6: a proposal whose best match is a Requirement a person deleted, split or
+    # merged away is dropped, so re-extraction never revives what a person removed.
+    removed = await repo.removed_requirements(uow, record.opportunity_id)
+    removed_ids = {r.id for r in removed}
     cited: dict[UUID, list[PassageKey]] = defaultdict(list)
     known: dict[PassageKey, UUID] = {}
     # The texts of the cited Source versions, so passages in different versions of a Source
     # can match by their quoted text (Story 2.7 review decision). A file read, no model call.
     texts: dict[tuple[UUID, int], str | None] = {(s.source_id, s.version): s.text for s in sources}
-    for c in await repo.active_cited_passages(uow, record.opportunity_id):
-        version = (c.source_id, c.source_version)
-        if version not in texts:
-            texts[version] = await extracted_text(uow, *version, store=store)
-        text = texts[version]
-        key = PassageKey(
-            c.source_id,
-            c.source_version,
-            c.start,
-            c.end,
-            None if text is None else normalised_text(text[c.start : c.end]),
-        )
-        cited[c.requirement_id].append(key)
-        known[key] = c.passage_id
+    for status in (
+        RequirementStatus.ACTIVE,
+        RequirementStatus.DELETED,
+        RequirementStatus.SUPERSEDED,
+    ):
+        for c in await repo.active_cited_passages(uow, record.opportunity_id, status.value):
+            if status is not RequirementStatus.ACTIVE and c.requirement_id not in removed_ids:
+                continue
+            version = (c.source_id, c.source_version)
+            if version not in texts:
+                texts[version] = await extracted_text(uow, *version, store=store)
+            text = texts[version]
+            key = PassageKey(
+                c.source_id,
+                c.source_version,
+                c.start,
+                c.end,
+                None if text is None else normalised_text(text[c.start : c.end]),
+            )
+            cited[c.requirement_id].append(key)
+            known[key] = c.passage_id
     by_id = {r.id: r for r in active}
-    existing = [
-        ExistingRequirement(
-            id=r.id,
-            text=r.text,
-            classification=r.classification,
-            locked=r.locked_by_human,
-            passages=tuple(cited[r.id]),
-        )
-        for r in active
-    ]
+
+    def existing(records: list[repo.RequirementRecord]) -> list[ExistingRequirement]:
+        return [
+            ExistingRequirement(
+                id=r.id,
+                text=r.text,
+                classification=r.classification,
+                locked=r.locked_by_human,
+                passages=tuple(cited[r.id]),
+            )
+            for r in records
+        ]
+
     counts = {outcome.value: 0 for outcome in ReconcileOutcome}
-    for step in reconcile(proposals, existing):
+    for step in reconcile(proposals, existing(active), existing(removed)):
         outcome = step.outcome
-        if outcome is ReconcileOutcome.UNCHANGED:
+        if outcome in (ReconcileOutcome.UNCHANGED, ReconcileOutcome.REMOVED):
             counts[outcome.value] += 1
             continue
         passage_ids = await _passage_ids(uow, step.new_passages, known)
@@ -397,6 +412,11 @@ async def _reconcile(
                 counts[outcome.value] += 1
                 continue
             # Locked by a person since it was read: the change becomes a proposal.
+        if await repo.active_requirement(uow, record.opportunity_id, current.id) is None:
+            # Deleted, split or merged away by a person since it was read (Story 2.6): like a
+            # match with a removed Requirement, nothing is written.
+            counts[ReconcileOutcome.REMOVED.value] += 1
+            continue
         proposed = await propose_requirement_change(
             uow,
             opportunity_id=record.opportunity_id,

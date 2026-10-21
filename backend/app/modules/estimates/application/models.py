@@ -47,9 +47,9 @@ class Totals(BaseModel):
 
 class LineRequirement(BaseModel):
     """A Requirement the line covers, at the version it was drafted against. `label` is
-    `R<n>`, the Requirement's position among the Opportunity's active Requirements (oldest
-    first), or `Superseded` once it is no longer active. `excerpt`: up to 140 characters of
-    that version's text, with `…` when cut."""
+    `R<n>`, the Requirement's stable number within the Opportunity, or `Superseded` once it
+    is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
+    when cut."""
 
     id: str
     version: int = Field(ge=1)

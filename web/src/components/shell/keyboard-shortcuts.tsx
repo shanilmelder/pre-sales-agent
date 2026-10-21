@@ -80,6 +80,8 @@ function sequenceKey(key: string): string {
 /** The pages that handle `c` themselves (a new catalogue entry or Knowledge Source, not an
  * Opportunity). */
 const OWN_CREATE_PATHS = ["/admin/catalogue", "/knowledge"];
+/** An Opportunity's Requirements tab, whose `c` adds a Requirement (Story 2.6). */
+const REQUIREMENTS_TAB = /^\/opportunities\/[^/]+\/requirements(\/|$)/;
 
 const SEQUENCES = SHORTCUTS.filter(
   (s): s is Shortcut & { match: { kind: "sequence" } } => s.match.kind === "sequence",
@@ -213,10 +215,12 @@ export function KeyboardShortcuts({ permissions }: { permissions: readonly Permi
         return;
       }
 
-      // Admin → Catalogue and Knowledge use `c` for their own create forms.
+      // Admin → Catalogue, Knowledge and the Requirements tab use `c` for their own create
+      // forms.
       if (
         shortcut?.id === "create-opportunity" &&
-        OWN_CREATE_PATHS.some((path) => pathname.startsWith(path))
+        (OWN_CREATE_PATHS.some((path) => pathname.startsWith(path)) ||
+          REQUIREMENTS_TAB.test(pathname))
       ) {
         return;
       }

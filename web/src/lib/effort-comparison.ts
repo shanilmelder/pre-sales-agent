@@ -8,7 +8,7 @@ import {
   type AssessmentAgent,
 } from "@/lib/assessments";
 import type { EstimateVersion } from "@/lib/estimates";
-import type { Requirement } from "@/lib/requirements";
+import { requirementLabel, type Requirement } from "@/lib/requirements";
 
 /** The section heading. */
 export const EFFORT_COMPARISON = "Effort comparison";
@@ -163,7 +163,7 @@ export function compareEffort({
   assessments,
   estimate,
 }: {
-  requirements: readonly Pick<Requirement, "id" | "text">[];
+  requirements: readonly Pick<Requirement, "id" | "number" | "text">[];
   assessments: readonly AgentAssessment[];
   estimate: EstimateVersion | null;
 }): EffortComparison {
@@ -204,9 +204,10 @@ export function compareEffort({
     }
   }
 
-  const rows: ComparisonRow[] = requirements.map((r, index) => ({
+  const rows: ComparisonRow[] = requirements.map((r) => ({
     id: r.id,
-    label: `R${index + 1}`,
+    // The stable number (Story 2.6), so labels stay after a delete, split or merge.
+    label: requirementLabel(r),
     excerpt: excerpt(r.text),
     ...values(
       agentHours.get(r.id) ?? noHours(),

@@ -51,6 +51,11 @@ describe("labels", () => {
     expect(eventLabel("intake.requirement_change.proposed")).toBe("Requirement change proposed");
     expect(eventLabel("intake.requirement_change.accepted")).toBe("Requirement change accepted");
     expect(eventLabel("intake.requirement_change.rejected")).toBe("Requirement change rejected");
+    expect(eventLabel("intake.requirement.created")).toBe("Requirement added");
+    expect(eventLabel("intake.requirement.deleted")).toBe("Requirement deleted");
+    expect(eventLabel("intake.requirement.split")).toBe("Requirement split");
+    expect(eventLabel("intake.requirement.merged")).toBe("Requirements merged");
+    expect(fieldLabel("into")).toBe("Split into (Requirement ids)");
     expect(eventLabel("brand.new.happened")).toBe("brand.new.happened");
     for (const [type, label] of Object.entries(EVENT_LABELS)) {
       expect(type).toMatch(/^[a-z_]+\.[a-z_]+\.[a-z_]+$/);

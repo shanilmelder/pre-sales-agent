@@ -17,9 +17,8 @@ from app.modules.conflicts.domain.conflicts import (
 
 class ConflictRequirement(BaseModel):
     """The Requirement a position is about, at the version it names. `label` is `R<n>`, its
-    position among the Opportunity's active Requirements (oldest first), or `Superseded` once
-    it is no longer active. `excerpt`: up to 140 characters of that version's text, with `…`
-    when cut."""
+    stable number within the Opportunity, or `Superseded` once it is no longer active.
+    `excerpt`: up to 140 characters of that version's text, with `…` when cut."""
 
     id: str
     version: int = Field(ge=1)

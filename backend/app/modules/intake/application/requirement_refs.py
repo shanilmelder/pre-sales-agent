@@ -2,8 +2,10 @@
 versions, and the texts of given Requirement versions. No authorization here: callers have
 already checked that the actor may read the Opportunity, or run as the worker.
 
-Each Requirement is numbered by its position among the Opportunity's active Requirements,
-oldest first (1-based), the order the Requirements tab lists them in: `R<n>`.
+Each Requirement carries its stored number (Story 2.6): given when it was created (extracted,
+created, split or merged) as one past the Opportunity's highest, and never reused, so a
+Requirement keeps its `R<n>` label after others are deleted, split or merged. The active
+Requirements come by number, the order the Requirements tab lists them in.
 """
 
 from dataclasses import dataclass, field
@@ -20,7 +22,7 @@ class RequirementSnapshot:
     id: UUID
     version: int
     number: int
-    """Its position among the active Requirements, oldest first (1-based)."""
+    """Its stable number within the Opportunity: `R<n>`."""
     classification: str
     text: str = field(repr=False)
 
@@ -34,17 +36,17 @@ class RequirementVersionText:
 async def active_requirement_snapshots(
     uow: UnitOfWork, opportunity_id: UUID
 ) -> list[RequirementSnapshot]:
-    """The Opportunity's active Requirements at their current versions, oldest first."""
+    """The Opportunity's active Requirements at their current versions, by number."""
     records = await repo.active_requirements(uow, opportunity_id)
     return [
         RequirementSnapshot(
             id=r.id,
             version=r.version,
-            number=number,
+            number=r.number,
             classification=r.classification,
             text=r.text,
         )
-        for number, r in enumerate(records, start=1)
+        for r in records
     ]
 
 

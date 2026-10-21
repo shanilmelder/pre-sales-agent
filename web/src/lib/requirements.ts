@@ -12,6 +12,7 @@ export type Passage = components["schemas"]["Passage"];
 export type RequirementOrigin = components["schemas"]["RequirementOrigin"];
 export type PendingChange = components["schemas"]["PendingChange"];
 export type OutdatedAssessment = components["schemas"]["OutdatedAssessment"];
+export type SplitResult = components["schemas"]["SplitResult"];
 
 /** The classifications in the order the Requirements tab groups them, with their labels. */
 export const CLASSIFICATIONS: readonly { value: Classification; label: string }[] = [
@@ -28,9 +29,21 @@ export function classificationLabel(value: Classification): string {
   return CLASSIFICATIONS.find((c) => c.value === value)?.label ?? value;
 }
 
-/** A Requirement's origin as the list and inspector show it: a person's edit is "Edited". */
-export function originLabel(origin: RequirementOrigin): string {
-  return origin === "extracted" ? "Extracted" : "Edited";
+/** A Requirement's origin as the list and inspector show it: a person's edit is "Edited",
+ * and one a person added (`human` with no Evidence, Story 2.6) is "Manual". */
+export function originLabel(origin: RequirementOrigin, evidenceCount?: number): string {
+  if (origin === "extracted") return "Extracted";
+  return evidenceCount === 0 ? MANUAL : "Edited";
+}
+
+/** The origin label of a Requirement as it stands. */
+export function requirementOrigin(item: Pick<Requirement, "origin" | "evidence">): string {
+  return originLabel(item.origin, item.evidence.length);
+}
+
+/** A Requirement's stable label: "R4". */
+export function requirementLabel(item: Pick<Requirement, "number">): string {
+  return `R${item.number}`;
 }
 
 // --- editing and confirming (Story 2.6) -------------------------------------------------------
@@ -60,6 +73,34 @@ export function requirementTextProblem(raw: string): string | null {
     return "The Requirement text can be at most 2,000 characters.";
   }
   return null;
+}
+
+// --- shaping the list (Story 2.6) ------------------------------------------------------------
+
+export const MANUAL = "Manual";
+export const NO_EVIDENCE = "No Evidence.";
+export const ADD_REQUIREMENT = "Add Requirement";
+export const SPLIT_REQUIREMENT = "Split";
+export const DELETE_REQUIREMENT = "Delete";
+export const DELETE_REASON_LABEL = "Why delete this Requirement?";
+export const VIEW_DIFF = "View diff";
+export const HIDE_DIFF = "Hide diff";
+
+/** The selection bar's button: "Merge (2)". */
+export function mergeLabel(n: number): string {
+  return `Merge (${n})`;
+}
+
+/** What the Merge form starts with: the selected texts joined by a space, and the first
+ * one's classification. */
+export function mergeDraft(selected: readonly Requirement[]): {
+  text: string;
+  classification: Classification;
+} {
+  return {
+    text: selected.map((item) => item.text).join(" "),
+    classification: selected[0]?.classification ?? "functional",
+  };
 }
 
 // --- pending changes (Story 2.7) ----------------------------------------------------------------
