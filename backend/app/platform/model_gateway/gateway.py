@@ -11,8 +11,14 @@ call, AD-25), then the result is returned or the typed error raised. If the row 
 it is logged (`model_call.record_failed`) and the call's own result or error still wins.
 A caller cancelled mid-call gets no row.
 
+`embed(request)` (Story 3.3) takes a slot the same way, sends the texts in batches of the
+embedding profile's `batch_size` (one adapter request each, not retried: the caller's job
+retries), checks that every vector has the profile's `dims`, and writes one
+`platform_model_calls` row for the whole call (`output_tokens` 0). The texts are never logged.
+
 Create one gateway per process (the semaphore is per gateway) and close it with `aclose()`
-or `async with`. Only the worker makes model calls; the `api` process never does.
+or `async with`. The worker makes every chat and Source-embedding call; the `api` process
+makes embedding calls only (Knowledge search queries, Story 3.3) and never a chat call.
 """
 
 import re
@@ -28,12 +34,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.platform.config import Settings
 from app.platform.ids import new_id
+from app.platform.jobs.registry import Priority
 from app.platform.logging import get_logger
 from app.platform.model_gateway.adapter import ChatAdapter
 from app.platform.model_gateway.models import PlatformModelCall
 from app.platform.model_gateway.ollama import OllamaAdapter
 from app.platform.model_gateway.openai_compat import OpenAICompatAdapter
 from app.platform.model_gateway.port import (
+    CallerMetadata,
+    EmbedRequest,
     Message,
     ModelGatewayError,
     ModelOutputInvalidError,
@@ -41,7 +50,12 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
     StructuredResult,
 )
-from app.platform.model_gateway.profiles import ModelProfile, Provider, get_profile
+from app.platform.model_gateway.profiles import (
+    ModelProfile,
+    Provider,
+    get_embed_profile,
+    get_profile,
+)
 from app.platform.model_gateway.semaphore import PrioritySemaphore
 from app.platform.uow import unit_of_work
 
@@ -105,6 +119,7 @@ class ModelGateway:
         self._settings = settings
         self._engine = engine
         get_profile(settings.model_profile_chat)  # fail fast on an unknown profile
+        get_embed_profile(settings.model_profile_embed)
         ollama_client = httpx.AsyncClient(base_url=settings.ollama_url, transport=transport)
         key = settings.openai_api_key
         api_key = key.get_secret_value().strip() if key else ""  # whitespace-only = unset
@@ -180,14 +195,17 @@ class ModelGateway:
             "outcome": outcome,
             "error_code": error_code,
         }
-        try:
-            await self._record(request, profile, call_id, digest, run, outcome, error_code)
-        except Exception as exc:
-            # Losing the record must not replace the model's result or typed error.
-            _log.error(
-                "model_call.record_failed",
-                extra={"call_id": str(call_id), "exc_type": type(exc).__name__},
-            )
+        await self._record(
+            caller=request.caller,
+            priority=request.priority,
+            profile=profile.name,
+            model=profile.model,
+            call_id=call_id,
+            digest=digest,
+            run=run,
+            outcome=outcome,
+            error_code=error_code,
+        )
         if run.error is not None:
             _log.warning("model_call.failed", extra=log_fields)
             run.error.call_id = call_id
@@ -250,35 +268,102 @@ class ModelGateway:
         finally:
             run.latency_ms = round((time.perf_counter() - started) * 1000)
 
+    async def embed(self, request: EmbedRequest) -> list[list[float]]:
+        profile = get_embed_profile(request.profile or self._settings.model_profile_embed)
+        timeout_s = request.timeout_s or self._settings.model_timeout_s
+        call_id = new_id()
+        vectors: list[list[float]] = []
+        run: _Run[BaseModel] = _Run()
+        adapter = self._adapters[profile.provider]
+        texts = list(request.texts)
+        async with self._semaphore.slot(request.priority):
+            started = time.perf_counter()
+            try:
+                for offset in range(0, len(texts), profile.batch_size):
+                    run.attempts += 1
+                    batch = texts[offset : offset + profile.batch_size]
+                    try:
+                        reply = await adapter.embed(profile, batch, timeout_s)
+                    except ModelGatewayError as exc:
+                        run.error = exc
+                        break
+                    run.input_tokens += reply.input_tokens
+                    vectors.extend(reply.vectors)
+            finally:
+                run.latency_ms = round((time.perf_counter() - started) * 1000)
+        digest = await adapter.digest(profile.model)
+        outcome: Outcome = run.error.outcome if run.error else "ok"
+        error_code = run.error.error_code if run.error else None
+        await self._record(
+            caller=request.caller,
+            priority=request.priority,
+            profile=profile.name,
+            model=profile.model,
+            call_id=call_id,
+            digest=digest,
+            run=run,
+            outcome=outcome,
+            error_code=error_code,
+        )
+        log_fields = {
+            "call_id": str(call_id),
+            "agent_id": request.caller.agent_id,
+            "profile": profile.name,
+            "model": profile.model,
+            "priority": request.priority,
+            "texts": len(texts),
+            "input_tokens": run.input_tokens,
+            "latency_ms": run.latency_ms,
+            "requests": run.attempts,
+            "outcome": outcome,
+            "error_code": error_code,
+        }
+        if run.error is not None:
+            _log.warning("model_call.embed_failed", extra=log_fields)
+            run.error.call_id = call_id
+            raise run.error
+        _log.info("model_call.embedded", extra=log_fields)
+        return vectors
+
     async def _record[T: BaseModel](
         self,
-        request: StructuredRequest[T],
-        profile: ModelProfile,
+        *,
+        caller: CallerMetadata,
+        priority: Priority,
+        profile: str,
+        model: str,
         call_id: UUID,
         digest: str,
         run: _Run[T],
         outcome: Outcome,
         error_code: str | None,
     ) -> None:
-        caller = request.caller
-        async with unit_of_work(self._engine) as uow:
-            uow.session.add(
-                PlatformModelCall(
-                    id=call_id,
-                    agent_id=caller.agent_id,
-                    config_version=caller.config_version,
-                    run_id=caller.run_id,
-                    task_id=caller.task_id,
-                    opportunity_id=caller.opportunity_id,
-                    profile=profile.name,
-                    model=profile.model,
-                    model_digest=digest,
-                    priority=request.priority,
-                    input_tokens=run.input_tokens,
-                    output_tokens=run.output_tokens,
-                    latency_ms=run.latency_ms,
-                    attempts=run.attempts,
-                    outcome=outcome,
-                    error_code=error_code,
+        """Write the call's `platform_model_calls` row in its own Unit of Work. A failed
+        write is logged and swallowed: it must not replace the call's result or error."""
+        try:
+            async with unit_of_work(self._engine) as uow:
+                uow.session.add(
+                    PlatformModelCall(
+                        id=call_id,
+                        agent_id=caller.agent_id,
+                        config_version=caller.config_version,
+                        run_id=caller.run_id,
+                        task_id=caller.task_id,
+                        opportunity_id=caller.opportunity_id,
+                        profile=profile,
+                        model=model,
+                        model_digest=digest,
+                        priority=priority,
+                        input_tokens=run.input_tokens,
+                        output_tokens=run.output_tokens,
+                        latency_ms=run.latency_ms,
+                        attempts=run.attempts,
+                        outcome=outcome,
+                        error_code=error_code,
+                    )
                 )
+        except Exception as exc:
+            _log.error(
+                "model_call.record_failed",
+                extra={"call_id": str(call_id), "exc_type": type(exc).__name__},
             )

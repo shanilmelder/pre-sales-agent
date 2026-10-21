@@ -10,6 +10,7 @@ import pytest
 
 from app.modules.identity.application.public import (
     ACTION_NAME_RE,
+    ANY_ROLE_GRANTS,
     MEMBER_GRANTS,
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
@@ -120,9 +121,18 @@ def test_a_permission_grants_its_action_without_any_role(action: Action) -> None
 
 @pytest.mark.parametrize("role", list(Role))
 def test_a_role_without_permissions_grants_nothing_on_its_own(role: Role) -> None:
+    """Beyond the reads every role holds (`ANY_ROLE_GRANTS`)."""
     principal, _ = _user({role}, permissions=set())
     for action in Action:
-        assert not can(principal, action)
+        assert can(principal, action) == (action in ANY_ROLE_GRANTS)
+
+
+def test_any_role_grants_need_a_role() -> None:
+    assert ANY_ROLE_GRANTS == {Action.KNOWLEDGE_CHUNK_SEARCH}
+    nobody, _ = _user(set(), permissions=set())
+    assert not can(nobody, Action.KNOWLEDGE_CHUNK_SEARCH)
+    commercial, _ = _user({Role.COMMERCIAL}, permissions=set())
+    assert can(commercial, Action.KNOWLEDGE_CHUNK_SEARCH)
 
 
 def test_role_without_create_permission_keeps_owner_and_member_access() -> None:

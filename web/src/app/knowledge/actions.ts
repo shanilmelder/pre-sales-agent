@@ -16,8 +16,8 @@ export type SourceResult =
   | { kind: "rejected"; reason: string }
   /** 422 for a field or tag, with the API's sentence. */
   | { kind: "invalid"; detail: string }
-  /** 409 `knowledge_source_retired` or `parse_not_failed`. */
-  | { kind: "conflict" }
+  /** 409 `knowledge_source_retired`, `parse_not_failed` or `embed_not_failed`. */
+  | { kind: "conflict"; code?: string }
   | { kind: "forbidden" }
   | { kind: "not-found" }
   | { kind: "error" };
@@ -80,7 +80,7 @@ function outcome(result: Outcome, what: string): SourceResult {
         ? { kind: "rejected", reason: detail }
         : { kind: "invalid", detail: detail ?? "This value is not valid." };
     case 409:
-      return { kind: "conflict" };
+      return code ? { kind: "conflict", code } : { kind: "conflict" };
     case 403:
       return { kind: "forbidden" };
     case 404:
@@ -296,6 +296,21 @@ export async function retryParse(sourceId: unknown): Promise<SourceResult> {
     return outcome(result, "retry knowledge source parse");
   } catch (thrown) {
     return failed("retry knowledge source parse", thrown);
+  }
+}
+
+/** Chunk and embed the Source's parsed latest version: again after its embedding failed, or
+ * for the first time (a version parsed before embedding existed). */
+export async function retryEmbed(sourceId: unknown): Promise<SourceResult> {
+  if (!isId(sourceId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const result = await api.POST("/api/v1/knowledge/sources/{source_id}/embed", {
+      params: { path: { source_id: sourceId } },
+    });
+    return outcome(result, "retry knowledge source embed");
+  } catch (thrown) {
+    return failed("retry knowledge source embed", thrown);
   }
 }
 

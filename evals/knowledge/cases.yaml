@@ -1,0 +1,64 @@
+# Retrieval eval cases (Story 3.3, `make eval-retrieval`). Synthetic documentation only.
+# `sources`: the Knowledge Sources registered in the eval database (files under sources/).
+# `queries`: a question, the Source that answers it and a phrase the answering passage must
+# contain (ignoring case and line breaks). A query is a hit when a passage of that Source
+# containing the phrase is among the top k results.
+k: 5
+sources:
+  - file: autostore-install-guide.md
+    title: AutoStore installation guide
+    product: AutoStore
+    product_version: "2.1"
+  - file: wms-interface-spec.md
+    title: WMS interface specification
+    product: AutoStore
+    product_version: "2.1"
+  - file: safety-and-maintenance.md
+    title: Safety and maintenance
+    product: AutoStore
+    product_version: "2.1"
+  - file: sso-and-identity.md
+    title: Single sign-on and identity
+    product: Operator Portal
+    product_version: "1.4"
+queries:
+  - id: firewall-port
+    query: Which firewall port must be opened for the controller?
+    source: autostore-install-guide.md
+    contains: "4711"
+  - id: power-supply
+    query: What electrical supply does a grid segment need?
+    source: autostore-install-guide.md
+    contains: three-phase
+  - id: licence-transfer
+    query: What happens to licences when the controller hardware is replaced?
+    source: autostore-install-guide.md
+    contains: licence transfer
+  - id: pick-confirmation
+    query: How quickly is a pick confirmed back to the WMS?
+    source: wms-interface-spec.md
+    contains: two seconds
+  - id: retry-policy
+    query: How should the WMS retry failed messages?
+    source: wms-interface-spec.md
+    contains: exponential backoff
+  - id: stock-differences
+    query: What happens when stock levels differ between systems?
+    source: wms-interface-spec.md
+    contains: reconciliation
+  - id: estop-testing
+    query: How often are emergency stops tested?
+    source: safety-and-maintenance.md
+    contains: every quarter
+  - id: service-interval
+    query: How often are robots serviced?
+    source: safety-and-maintenance.md
+    contains: 2,000 operating hours
+  - id: sso-protocols
+    query: Which single sign-on protocols are supported?
+    source: sso-and-identity.md
+    contains: OpenID Connect
+  - id: session-timeout
+    query: When do operator sessions expire?
+    source: sso-and-identity.md
+    contains: twelve hours

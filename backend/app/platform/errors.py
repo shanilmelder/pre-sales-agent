@@ -267,6 +267,14 @@ class SourceRetiredError(ConflictError):
     title = "Knowledge Source retired"
 
 
+class EmbedNotRetryableError(ConflictError):
+    """An embedding retry asked for a Knowledge Source version whose embedding hasn't failed
+    and isn't missing, or that isn't parsed (Story 3.3)."""
+
+    code = "embed_not_failed"
+    title = "Embedding not failed"
+
+
 class ConflictAlreadyResolvedError(ConflictError):
     """A Conflict was resolved or escalated after it was already resolved (Story 6.3)."""
 
@@ -379,6 +387,23 @@ class FileEmptyError(UnprocessableError):
 
     code = "file_empty"
     title = "File empty"
+
+
+class EvidenceUnresolvableError(UnprocessableError):
+    """An Evidence reference doesn't resolve: unknown kind or id, wrong version, or a span
+    outside the cited text (AD-13, Story 3.3). The detail names the reference."""
+
+    code = "evidence_unresolvable"
+    title = "Evidence does not resolve"
+
+
+class ModelUnavailableProblem(ProblemError):
+    """A request needed a model call (e.g. embedding a search query) and the model server
+    failed or timed out."""
+
+    status = 503
+    code = "model_unavailable"
+    title = "Model unavailable"
 
 
 class RegistryConfigNotDeployedError(UnprocessableError):

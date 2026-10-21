@@ -28,6 +28,7 @@ from app.platform.model_gateway.gateway import ModelGateway, field_paths
 from app.platform.model_gateway.openai_compat import schema_name
 from app.platform.model_gateway.port import (
     CallerMetadata,
+    EmbedRequest,
     Message,
     ModelGatewayError,
     ModelOutputInvalidError,
@@ -1109,3 +1110,97 @@ def test_app_role_can_only_select_and_insert_call_rows(sync_engine: Engine) -> N
             ).scalar_one()
         }
     assert privileges == {"SELECT", "INSERT"}
+
+
+# --- embeddings (Story 3.3) -------------------------------------------------------------------
+
+
+def _embed_run(
+    db_url: str, stub: Callable[[httpx.Request], httpx.Response], texts: list[str]
+) -> list[list[float]] | ModelGatewayError:
+    async def scenario() -> list[list[float]] | ModelGatewayError:
+        config = _settings(db_url)
+        engine = create_engine(config)
+        try:
+            async with ModelGateway(config, engine, transport=httpx.MockTransport(stub)) as gw:
+                try:
+                    return await gw.embed(
+                        EmbedRequest(
+                            texts=texts,
+                            caller=CallerMetadata(agent_id=EMBED_AGENT, config_version="bge-m3"),
+                        )
+                    )
+                except ModelGatewayError as exc:
+                    return exc
+        finally:
+            await engine.dispose()
+
+    return run_async(scenario())
+
+
+EMBED_AGENT = "test.embed_batches"
+
+
+def _embed_rows(engine: Engine, since: Any) -> list[dict[str, Any]]:
+    with engine.connect() as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                sa.text(
+                    "SELECT * FROM platform_model_calls WHERE agent_id = :a AND created_at >= :t"
+                ),
+                {"a": EMBED_AGENT, "t": since},
+            ).mappings()
+        ]
+
+
+def _now(engine: Engine) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(sa.text("SELECT now()")).scalar_one()
+
+
+def test_embed_sends_batches_in_order_and_records_one_row(db_url: str, sync_engine: Engine) -> None:
+    batches: list[list[str]] = []
+
+    def stub(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": []})
+        texts = json.loads(request.content)["input"]
+        batches.append(texts)
+        vectors = [[float(int(t.split("-")[1]))] + [0.0] * 1023 for t in texts]
+        return httpx.Response(200, json={"embeddings": vectors, "prompt_eval_count": len(texts)})
+
+    since = _now(sync_engine)
+    texts = [f"t-{i}" for i in range(40)]
+    result = _embed_run(db_url, stub, texts)
+    assert isinstance(result, list)
+    assert [len(b) for b in batches] == [16, 16, 8]  # ceil(40 / 16) requests
+    assert [t for b in batches for t in b] == texts  # in order
+    assert len(result) == 40 and [v[0] for v in result] == [float(i) for i in range(40)]
+    (row,) = _embed_rows(sync_engine, since)
+    assert (row["profile"], row["priority"], row["outcome"]) == ("bge-m3", "background", "ok")
+    assert row["attempts"] == 3 and row["input_tokens"] == 40 and row["output_tokens"] == 0
+
+
+def test_embed_failing_in_the_second_batch_raises_after_one_error_row(
+    db_url: str, sync_engine: Engine
+) -> None:
+    calls = 0
+
+    def stub(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": []})
+        calls += 1
+        if calls == 2:
+            return httpx.Response(503, json={"error": "busy"})
+        texts = json.loads(request.content)["input"]
+        return httpx.Response(200, json={"embeddings": [[0.5] * 1024 for _ in texts]})
+
+    since = _now(sync_engine)
+    result = _embed_run(db_url, stub, [f"t-{i}" for i in range(40)])
+    assert isinstance(result, ModelUnavailableError) and result.error_code == "http_503"
+    assert calls == 2  # stops at the failing batch
+    (row,) = _embed_rows(sync_engine, since)
+    assert (row["outcome"], row["error_code"], row["attempts"]) == ("error", "http_503", 2)
+    assert row["id"] == result.call_id

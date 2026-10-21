@@ -13,6 +13,10 @@ then trace with no Opportunity. Reads need only a role.
 - `mark_reviewed`: last reviewed becomes today, which clears `stale`.
 - `retire_source`: with a reason; retiring a retired Source is a 200 no-op.
 - `retry_parse`: queue a failed latest version's parse again.
+- `retry_embed` (Story 3.3): queue a parsed latest version's chunking and embedding again
+  after it failed, or for the first time when it has no embedding state (a version parsed
+  before Story 3.3: the Embed action), or when it is stuck `queued` / `embedding` because its
+  job died without recording a failure.
 
 `stale` is derived on every read from the last-reviewed date, today and the configured
 months; it is never stored. A rejected upload stores nothing: the type is checked from the
@@ -29,14 +33,20 @@ from uuid import UUID
 
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal, Resource
+from app.modules.knowledge.adapters import chunk_repository as chunks
 from app.modules.knowledge.adapters import source_repository as repo
 from app.modules.knowledge.adapters.source_repository import SourceRecord
 from app.modules.knowledge.application.catalogue import list_catalogue, validate_catalogue_ref
-from app.modules.knowledge.application.jobs import enqueue_parse
+from app.modules.knowledge.application.jobs import (
+    embed_stale_after_s,
+    enqueue_embed,
+    enqueue_parse,
+)
 from app.modules.knowledge.application.source_models import (
     DownloadLink,
     IntegrationTypeTag,
     KnowledgeSource,
+    KnowledgeSourceEmbed,
     KnowledgeSourceList,
     KnowledgeSourceParse,
     KnowledgeSourceVersion,
@@ -48,9 +58,11 @@ from app.modules.knowledge.application.source_models import (
 )
 from app.modules.knowledge.domain import sources as rules
 from app.modules.knowledge.domain.catalogue import Kind
+from app.modules.knowledge.domain.embedding import EmbedErrorCode, EmbedStatus
 from app.platform import downloads, files, trace
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
+    EmbedNotRetryableError,
     FileContentMismatchError,
     FileEmptyError,
     FileTooLargeError,
@@ -68,6 +80,7 @@ from app.platform.multipart import BodyTooLargeError, MultipartError
 from app.platform.parsing.rules import ParseErrorCode, ParseStatus
 from app.platform.storage import BlobStore, BlobTooLargeError, StoredBlob
 from app.platform.trace.catalogue import (
+    KnowledgeSourceEmbedRetried,
     KnowledgeSourceParseRetried,
     KnowledgeSourceRegistered,
     KnowledgeSourceRetagged,
@@ -94,6 +107,9 @@ NOT_FOUND_DETAIL = "No Knowledge Source with this id."
 VERSION_NOT_FOUND_DETAIL = "No such version of this Knowledge Source."
 RETIRED_DETAIL = "A retired Knowledge Source can't be changed."
 NOT_FAILED_DETAIL = "Only a Source whose parse failed can be retried."
+EMBED_NOT_RETRYABLE_DETAIL = (
+    "Only a parsed Source whose embedding failed, or was never started, can be embedded."
+)
 NO_TEXT_DETAIL = "The extracted text of this version isn't available."
 UNKNOWN_USER = "Unknown user"
 OWNER_INVALID_DETAIL = "The owner must be a user who has signed in."
@@ -191,6 +207,15 @@ def _parse_view(status: str, error_code: str | None) -> KnowledgeSourceParse:
     )
 
 
+def _embed_view(status: str | None, error_code: str | None) -> KnowledgeSourceEmbed | None:
+    if status is None:
+        return None
+    return KnowledgeSourceEmbed(
+        status=EmbedStatus(status),
+        error_code=None if error_code is None else EmbedErrorCode(error_code),
+    )
+
+
 async def _views(
     uow: UnitOfWork,
     records: Iterable[SourceRecord],
@@ -238,6 +263,7 @@ async def _views(
                 uploaded_by=_ref(r.uploaded_by, names),
                 uploaded_at=r.uploaded_at,
                 parse=_parse_view(r.parse_status, r.parse_error_code),
+                embed=_embed_view(r.embed_status, r.embed_error_code),
                 row_version=r.row_version,
                 created_at=r.created_at,
             )
@@ -346,6 +372,7 @@ async def read_versions(
                 uploaded_by=_ref(v.uploaded_by, names),
                 uploaded_at=v.uploaded_at,
                 parse=_parse_view(v.parse_status, v.parse_error_code),
+                embed=_embed_view(v.embed_status, v.embed_error_code),
                 char_count=v.char_count,
             )
             for v in versions
@@ -802,6 +829,70 @@ async def retry_parse(
             "source_id": str(source_id),
             "version": record.version,
             "error_code": state.error_code,
+            "actor_id": actor.actor.id,
+        },
+    )
+    return await _view(uow, source_id, stale_months=stale_months, today=today or today_utc())
+
+
+async def retry_embed(
+    uow: UnitOfWork,
+    actor: Principal,
+    source_id: UUID,
+    *,
+    stale_months: int,
+    today: date | None = None,
+) -> KnowledgeSource:
+    """Queue chunking and embedding of the Source's latest version: again after it failed
+    (`failed` → `queued`) or got stuck (`queued` / `embedding` untouched for longer than
+    `embed_stale_after_s`), or for the first time when the parsed version has no embedding
+    state. 409 `embed_not_failed` otherwise (not parsed, ready, or queued or embedding and
+    still live)."""
+    record = await _writable(uow, actor, Action.KNOWLEDGE_SOURCE_RETRY_EMBED, source_id)
+    parse = await repo.parse_state(uow, source_id, record.version)
+    if parse is None or parse.status != ParseStatus.PARSED:
+        raise EmbedNotRetryableError(EMBED_NOT_RETRYABLE_DETAIL)
+    state = await chunks.embed_state(
+        uow, source_id, record.version, for_update=True, stale_after_s=embed_stale_after_s()
+    )
+    error_code: str | None = None
+    if state is None:
+        if not await chunks.queue_embed(uow, source_id, record.version):
+            raise EmbedNotRetryableError(EMBED_NOT_RETRYABLE_DETAIL)  # queued meanwhile
+    elif state.status == EmbedStatus.FAILED and state.error_code is not None:
+        error_code = state.error_code
+        await chunks.update_embed(
+            uow,
+            source_id,
+            record.version,
+            from_statuses=(EmbedStatus.FAILED.value,),
+            status=EmbedStatus.QUEUED.value,
+        )
+    elif state.stale:
+        await chunks.update_embed(
+            uow,
+            source_id,
+            record.version,
+            from_statuses=(EmbedStatus.QUEUED.value, EmbedStatus.EMBEDDING.value),
+            status=EmbedStatus.QUEUED.value,
+        )
+    else:
+        raise EmbedNotRetryableError(EMBED_NOT_RETRYABLE_DETAIL)
+    await enqueue_embed(uow, source_id=source_id, version=record.version)
+    await trace.append(
+        uow,
+        actor=actor.actor,
+        payload=KnowledgeSourceEmbedRetried(version=record.version, error_code=error_code),
+        subject_type=rules.SUBJECT_TYPE,
+        subject_id=source_id,
+        subject_version=record.version,
+    )
+    _log.info(
+        "knowledge.source_embed_retried",
+        extra={
+            "source_id": str(source_id),
+            "version": record.version,
+            "error_code": error_code,
             "actor_id": actor.actor.id,
         },
     )

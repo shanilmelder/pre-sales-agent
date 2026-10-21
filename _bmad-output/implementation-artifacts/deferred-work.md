@@ -149,3 +149,16 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-7-incremental-intake.md`
   summary: Test the "locked since it was read" fallback in `_reconcile` (extraction.py), where `version_extracted` misses and the refinement becomes a pending change.
   evidence: Story 2.7 review, verification-gap layer. No test reaches the branch, because every incremental test locks the Requirement before extraction runs. Hitting it needs a lock injected between `active_requirements` and the UPDATE.
+
+- source_spec: none
+  summary: Story 3.3 part B: `knowledge_chunk` Evidence chips open the inspector at the highlighted span with the Source version, and superseded or retired chips are struck through with a "superseded" label (UX-DR11).
+  evidence: Split from Story 3.3 on 2026-10-21. Nothing cites `knowledge_chunk` until Epic 4/5, so the chip UI has no real consumer yet.
+- source_spec: none
+  summary: Story 3.3 part C: `knowledge.reembed` job, Admin trigger and `make reembed`, the "Re-embedding Knowledge: N of M passages done" banner, and the `knowledge.reembed.started`/`.completed` trace events (AD-14).
+  evidence: Split from Story 3.3 on 2026-10-21. Only `bge-m3` exists, so there is no second model to re-embed into yet.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-chunk-embed-search-knowledge.md`
+  summary: Add a SourcesTab component test (fake timers) proving the Knowledge list keeps polling while a Source is embedding and flips to Ready.
+  evidence: Story 3.3 verification-gap review. `sources-tab.tsx` switched to `isProcessing`; reverting to `isParsePending` fails no test, and SourcesTab had no component test before.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-chunk-embed-search-knowledge.md`
+  summary: Rechain migration `0035_knowledge_chunks` onto `0034_requirement_lifecycle` once PR #58 merges (or add a merge revision).
+  evidence: Both revise `0033_conflict_agent`; whichever merges second leaves two Alembic heads.

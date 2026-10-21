@@ -1,5 +1,5 @@
-"""Persistence for Knowledge Sources, their versions, tags and parse state (Story 3.2).
-Runs inside the caller's Unit of Work."""
+"""Persistence for Knowledge Sources, their versions, tags and parse state (Story 3.2), and
+each version's embedding state (Story 3.3). Runs inside the caller's Unit of Work."""
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -11,6 +11,7 @@ from sqlalchemy.sql.expression import ScalarSelect
 
 from app.modules.knowledge.adapters.models import (
     CatalogueEntryRow,
+    SourceEmbedRow,
     SourceParseRow,
     SourceRow,
     SourceTagRow,
@@ -21,6 +22,7 @@ from app.platform.uow import UnitOfWork
 S = SourceRow
 V = SourceVersionRow
 P = SourceParseRow
+E = SourceEmbedRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,9 @@ class SourceRecord:
     uploaded_at: datetime
     parse_status: str
     parse_error_code: str | None
+    embed_status: str | None
+    """None: no embedding state (a version parsed before Story 3.3, or not parsed yet)."""
+    embed_error_code: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +67,8 @@ class VersionRecord:
     parse_status: str
     parse_error_code: str | None
     char_count: int | None
+    embed_status: str | None
+    embed_error_code: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,10 +105,13 @@ def _select(wanted: Any) -> Select[Any]:
             V,
             P.status.label("parse_status"),
             P.error_code.label("parse_error_code"),
+            E.status.label("embed_status"),
+            E.error_code.label("embed_error_code"),
             _count().label("version_count"),
         )
         .join(V, (V.source_id == S.id) & (V.version == wanted))
         .join(P, (P.source_id == V.source_id) & (P.version == V.version))
+        .outerjoin(E, (E.source_id == V.source_id) & (E.version == V.version))
     )
     return cast("Select[Any]", statement)
 
@@ -129,6 +139,8 @@ def _record(row: Any) -> SourceRecord:
         uploaded_at=version.uploaded_at,
         parse_status=row.parse_status,
         parse_error_code=row.parse_error_code,
+        embed_status=row.embed_status,
+        embed_error_code=row.embed_error_code,
     )
 
 
@@ -329,8 +341,9 @@ async def list_versions(uow: UnitOfWork, source_id: UUID) -> list[VersionRecord]
     """The Source's versions, newest first, each with its parse state."""
     rows = (
         await uow.session.execute(
-            select(V, P.status, P.error_code, P.char_count)
+            select(V, P.status, P.error_code, P.char_count, E.status, E.error_code)
             .join(P, (P.source_id == V.source_id) & (P.version == V.version))
+            .outerjoin(E, (E.source_id == V.source_id) & (E.version == V.version))
             .where(V.source_id == source_id)
             .order_by(V.version.desc())
         )
@@ -347,8 +360,10 @@ async def list_versions(uow: UnitOfWork, source_id: UUID) -> list[VersionRecord]
             parse_status=status,
             parse_error_code=error_code,
             char_count=char_count,
+            embed_status=embed_status,
+            embed_error_code=embed_error_code,
         )
-        for v, status, error_code, char_count in rows
+        for v, status, error_code, char_count, embed_status, embed_error_code in rows
     ]
 
 

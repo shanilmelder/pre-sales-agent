@@ -10,18 +10,24 @@ import {
   loadText,
   markReviewed,
   retireSource,
+  retryEmbed,
   retryParse,
   type SourceResult,
 } from "@/app/knowledge/actions";
-import { RetiredLabel, StaleLabel } from "@/components/knowledge/sources-table";
+import {
+  processingFailure,
+  RetiredLabel,
+  SourceStatusPill,
+  StaleLabel,
+} from "@/components/knowledge/sources-table";
 import type { IntegrationTypeOption } from "@/components/knowledge/source-register-form";
 import { InlineField } from "@/components/opportunities/inline-field";
-import { ParseStatusPill } from "@/components/opportunities/sources-list";
 import { useAnnounce } from "@/components/shell/live-region";
 import type { Role } from "@/lib/navigation";
 import {
   ACCEPTED_FILES,
   canWrite,
+  embedAction,
   exceedsTransportLimit,
   fieldError,
   formatDate,
@@ -29,7 +35,6 @@ import {
   formatSize,
   PRODUCT_VERSION_MAX,
   REASON_MAX,
-  parseFailureReason,
   staleChangeMessage,
   TOO_LARGE,
   type KnowledgeSource,
@@ -41,6 +46,8 @@ const NO_ACCESS = "Only a platform administrator or the owner can change this So
 const GONE = "This Knowledge Source no longer exists.";
 const RETIRED = "This Knowledge Source is retired and can't be changed.";
 const NO_TAGS = "Choose at least one Integration Type.";
+const EMBED_NOT_NEEDED =
+  "This Source can't be embedded now: it isn't parsed yet, or its embedding is already queued, running or done. Reload to see where it stands.";
 
 type Notice = { kind: "stale" } | { kind: "error"; message: string };
 
@@ -52,7 +59,8 @@ const inputClass =
 /** The selected Knowledge Source in the right pane: its metadata, the version history with
  * a download link for every version, and the extracted text. Only a platform administrator
  * or the owner sees the actions: Mark reviewed, edit title, product and Integration Type
- * tags, upload a new version, Retire, and Retry for a failed parse. Writes carry the row
+ * tags, upload a new version, Retire, Retry for a failed parse or embedding, and Embed for a
+ * version parsed before embedding existed (Story 3.3). Writes carry the row
  * version as `If-Match`; a 412 shows a notice with Reload and overwrites nothing. */
 export function SourceInspector({
   source,
@@ -151,9 +159,11 @@ export function SourceInspector({
       case "not-found":
         fail({ kind: "error", message: GONE }, GONE);
         return false;
-      case "conflict":
-        fail({ kind: "error", message: RETIRED }, RETIRED);
+      case "conflict": {
+        const message = result.code === "embed_not_failed" ? EMBED_NOT_NEEDED : RETIRED;
+        fail({ kind: "error", message }, message);
         return false;
+      }
       case "invalid":
       case "rejected": {
         const message = result.kind === "invalid" ? result.detail : result.reason;
@@ -252,6 +262,14 @@ export function SourceInspector({
     );
   }
 
+  function embed() {
+    run(
+      () => retryEmbed(sourceId),
+      () => {},
+      (next) => `Embedding ${next.title}`,
+    );
+  }
+
   function uploadVersion() {
     const invalidVersion = fieldError("product version", productVersion);
     if (invalidVersion || !versionFile) {
@@ -337,6 +355,8 @@ export function SourceInspector({
       .map((t) => ({ id: t.id, name: t.name, retired: true })),
   ];
   const failed = source.parse.status === "failed";
+  const failure = processingFailure(source);
+  const embedding = embedAction(source);
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-4 p-gutter">
@@ -347,11 +367,9 @@ export function SourceInspector({
         <div className="flex flex-wrap items-center gap-1">
           {source.stale ? <StaleLabel /> : null}
           {source.retired ? <RetiredLabel /> : null}
-          <ParseStatusPill parse={source.parse} />
+          <SourceStatusPill source={source} />
         </div>
-        {failed ? (
-          <p className="text-meta text-blocker">{parseFailureReason(source.parse.error_code)}</p>
-        ) : null}
+        {failure ? <p className="text-meta text-blocker">{failure}</p> : null}
         {source.retired && source.retired_reason ? (
           <p className="text-meta">Retired: {source.retired_reason}</p>
         ) : null}
@@ -494,6 +512,16 @@ export function SourceInspector({
                 Retry
               </button>
             ) : null}
+            {embedding && !source.retired ? (
+              <button
+                type="button"
+                onClick={embed}
+                aria-disabled={locked || undefined}
+                className={buttonClass}
+              >
+                {embedding === "retry" ? "Retry" : "Embed"}
+              </button>
+            ) : null}
             <button
               type="button"
               aria-expanded={newVersion}
@@ -617,7 +645,7 @@ export function SourceInspector({
                   </span>
                 </span>
                 <span className="flex items-center gap-2">
-                  <ParseStatusPill parse={v.parse} />
+                  <SourceStatusPill source={v} />
                   <a
                     href={`/api/knowledge/sources/${source.id}/versions/${v.version}/download`}
                     aria-label={`Download version ${v.version}: ${v.filename}`}

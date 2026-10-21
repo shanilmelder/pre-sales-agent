@@ -144,6 +144,12 @@ assessment run's three specialist agents can call at once),
 `PSA_MODEL_MAX_RETRIES` and `PSA_MODEL_TIMEOUT_S`. `demo-chat` sends prompt text to Ollama's
 cloud: until IT approves it, use it only with sample or anonymised Opportunities.
 
+Embeddings (Story 3.3) use the gateway too: `PSA_MODEL_PROFILE_EMBED` (default `bge-m3`,
+1024 dims, Ollama's `/api/embed`; run `ollama pull bge-m3`) embeds Knowledge chunks in the
+worker (`knowledge.embed_source`, `background`) and search queries in the api
+(`GET /api/v1/knowledge/search`), each call writing a `platform_model_calls` row. The api
+process uses its gateway for query embeddings only, never for chat.
+
 Each profile names its provider. `demo-chat` and `local-chat` use Ollama's native API;
 `local-chat-openai` (`qwen3:8b`) uses the OpenAI-compatible adapter: `POST
 {PSA_OPENAI_BASE_URL}/chat/completions` with `response_format` set to the JSON Schema, for
@@ -256,7 +262,8 @@ session and the Auth0 session.
    `knowledge.catalogue_entry.edit`, `knowledge.catalogue_entry.retire`,
    `knowledge.catalogue_entry.reactivate`, `knowledge.source.register`,
    `knowledge.source.add_version`, `knowledge.source.retag`, `knowledge.source.review`,
-   `knowledge.source.retire`, `knowledge.source.retry_parse`, `registry.agent.register`,
+   `knowledge.source.retire`, `knowledge.source.retry_parse`, `knowledge.source.retry_embed`,
+   `registry.agent.register`,
    `registry.agent_config.create`, `registry.agent.set_status`.
 6. **User Management > Roles.** Create the nine roles with these exact names (the API
    ignores any other name): `presales_engineer`, `sales_representative`,
@@ -267,7 +274,7 @@ session and the Auth0 session.
 
    | Role | Permissions |
    | --- | --- |
-   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, six `knowledge.source.*` and three `registry.*` permissions |
+   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*` and three `registry.*` permissions |
    | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
    | `head_of_delivery` | `opportunities.opportunity.read` |
 

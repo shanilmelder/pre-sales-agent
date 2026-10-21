@@ -13,6 +13,10 @@ The content comes from `choices[0].message.content` (anything but a string, incl
 `usage.completion_tokens` (missing or bad = 0); `finish_reason: "length"` means truncated.
 `/v1/models` carries no digest, so the digest is always `unknown`, without a request.
 
+Embeddings (Story 3.3) are one `POST {PSA_OPENAI_BASE_URL}/embeddings` with `input` the list
+of texts; the vectors come from `data[*].embedding` ordered by `index`, the tokens from
+`usage.prompt_tokens`.
+
 Transport problems map to typed errors exactly as for Ollama (`adapter.post_json`). The
 bearer key, if any, is set on the client by the gateway; it never reaches logs or errors.
 """
@@ -25,12 +29,14 @@ import httpx
 from app.platform.model_gateway.adapter import (
     UNKNOWN_DIGEST,
     ChatReply,
+    EmbedReply,
     as_count,
+    as_vectors,
     bad_envelope,
     post_json,
 )
 from app.platform.model_gateway.port import Message
-from app.platform.model_gateway.profiles import ModelProfile
+from app.platform.model_gateway.profiles import EmbedProfile, ModelProfile
 
 _NAME_UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
 _DEFAULT_NAME = "output"
@@ -89,6 +95,19 @@ class OpenAICompatAdapter:
             output_tokens=as_count(usage.get("completion_tokens")),
             truncated=choice.get("finish_reason") == "length",
         )
+
+    async def embed(self, profile: EmbedProfile, texts: list[str], timeout_s: float) -> EmbedReply:
+        body = {"model": profile.model, "input": texts}
+        response = await post_json(self._client, "embeddings", body, timeout_s)
+        try:
+            data = response.json()
+            items = sorted(data["data"], key=lambda item: item["index"])
+            raw = [item["embedding"] for item in items]
+        except (ValueError, KeyError, TypeError):
+            raise bad_envelope() from None
+        usage = data.get("usage")
+        tokens = as_count(usage.get("prompt_tokens")) if isinstance(usage, dict) else 0
+        return EmbedReply(vectors=as_vectors(raw, len(texts), profile.dims), input_tokens=tokens)
 
     async def digest(self, model: str) -> str:
         """Always `unknown`: OpenAI-style servers publish no model digest."""

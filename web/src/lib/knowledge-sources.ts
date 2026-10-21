@@ -71,9 +71,71 @@ export function isParsePending(source: Pick<KnowledgeSource, "parse">): boolean 
   return source.parse.status === "queued" || source.parse.status === "parsing";
 }
 
-/** How often the Sources tab re-reads the list while a parse is pending (polling, no SSE). */
+// --- embedding (Story 3.3) ---------------------------------------------------------------------
+
+export type SourceEmbed = components["schemas"]["KnowledgeSourceEmbed"];
+export type EmbedStatus = components["schemas"]["EmbedStatus"];
+export type EmbedErrorCode = components["schemas"]["EmbedErrorCode"];
+
+/** The embedding status labels: queued and running both read "Embedding". */
+export const EMBED_STATUS_LABELS: Record<EmbedStatus, string> = {
+  queued: "Embedding",
+  embedding: "Embedding",
+  ready: "Ready",
+  failed: "Embedding failed",
+};
+
+/** Why embedding failed, as the Sources tab says it. */
+export const EMBED_FAILURE_REASONS: Record<EmbedErrorCode, string> = {
+  model_unavailable: "The embedding model couldn't be reached",
+  model_timeout: "The embedding model took too long",
+  model_bad_output: "The embedding model returned something unusable",
+  text_missing: "The extracted text is missing",
+  internal_error: "Something went wrong while embedding",
+};
+
+export function embedFailureReason(code: EmbedErrorCode | null | undefined): string {
+  return (code ? EMBED_FAILURE_REASONS[code] : undefined) ?? EMBED_FAILURE_REASONS.internal_error;
+}
+
+/** What the status column shows for a version: its parse state until it is parsed, then its
+ * embedding state (Embedding, Ready, Embedding failed). A version parsed before embedding
+ * existed has none and stays "Parsed" (with an **Embed** action). */
+export type ProcessingStatus =
+  | { kind: "parse"; parse: SourceParse }
+  | { kind: "embed"; embed: SourceEmbed };
+
+export function processingStatus(
+  source: Pick<KnowledgeSource, "parse" | "embed">,
+): ProcessingStatus {
+  if (source.parse.status !== "parsed" || !source.embed) return { kind: "parse", parse: source.parse };
+  return { kind: "embed", embed: source.embed };
+}
+
+/** True while the version is waiting to be (or being) chunked and embedded. */
+export function isEmbedPending(source: Pick<KnowledgeSource, "parse" | "embed">): boolean {
+  const status = source.parse.status === "parsed" ? source.embed?.status : undefined;
+  return status === "queued" || status === "embedding";
+}
+
+/** True while the Source is still being processed: parsing, then embedding. */
+export function isProcessing(source: Pick<KnowledgeSource, "parse" | "embed">): boolean {
+  return isParsePending(source) || isEmbedPending(source);
+}
+
+/** Which embed action a writer sees: **Retry** after a failed embedding, **Embed** for a parsed
+ * version that was never embedded; null otherwise. */
+export function embedAction(
+  source: Pick<KnowledgeSource, "parse" | "embed">,
+): "retry" | "embed" | null {
+  if (source.parse.status !== "parsed") return null;
+  if (!source.embed) return "embed";
+  return source.embed.status === "failed" ? "retry" : null;
+}
+
+/** How often the Sources tab re-reads the list while a Source is processing (polling, no SSE). */
 export const PARSE_POLL_MS = 2000;
-/** Polling stops after this long with a parse continuously pending (a reload resumes it). */
+/** Polling stops after this long with processing continuously pending (a reload resumes it). */
 export const PARSE_POLL_LIMIT_MS = 15 * 60 * 1000;
 
 export type Filters = {

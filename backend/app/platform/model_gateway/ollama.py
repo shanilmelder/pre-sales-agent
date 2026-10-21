@@ -1,4 +1,6 @@
-"""The Ollama adapter: one native `POST /api/chat` request per attempt.
+"""The Ollama adapter: one native `POST /api/chat` request per attempt, and `POST /api/embed`
+for embeddings (Story 3.3: `input` is the list of texts, `embeddings` the vectors and
+`prompt_eval_count` the input tokens).
 
 Each request sets `stream: false`, `format` to the output model's JSON Schema and `options`
 from the profile (`temperature`, `num_ctx`). Token counts come from `prompt_eval_count` and
@@ -22,12 +24,14 @@ from app.platform.logging import get_logger
 from app.platform.model_gateway.adapter import (
     UNKNOWN_DIGEST,
     ChatReply,
+    EmbedReply,
     as_count,
+    as_vectors,
     bad_envelope,
     post_json,
 )
 from app.platform.model_gateway.port import Message
-from app.platform.model_gateway.profiles import ModelProfile
+from app.platform.model_gateway.profiles import EmbedProfile, ModelProfile
 
 _TAGS_TIMEOUT_S = 5.0
 _UNKNOWN_TTL_S = 60.0
@@ -68,6 +72,19 @@ class OllamaAdapter:
             input_tokens=as_count(data.get("prompt_eval_count")),
             output_tokens=as_count(data.get("eval_count")),
             truncated=data.get("done_reason") == "length",
+        )
+
+    async def embed(self, profile: EmbedProfile, texts: list[str], timeout_s: float) -> EmbedReply:
+        body = {"model": profile.model, "input": texts}
+        response = await post_json(self._client, "/api/embed", body, timeout_s)
+        try:
+            data = response.json()
+            raw = data["embeddings"]
+        except (ValueError, KeyError, TypeError):
+            raise bad_envelope() from None
+        return EmbedReply(
+            vectors=as_vectors(raw, len(texts), profile.dims),
+            input_tokens=as_count(data.get("prompt_eval_count")),
         )
 
     async def digest(self, model: str) -> str:

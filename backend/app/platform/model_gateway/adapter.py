@@ -1,5 +1,5 @@
-"""What every model adapter shares: the `ChatAdapter` Protocol, the `ChatReply` it returns,
-and the httpx-transport → typed-error mapping (`post_json`).
+"""What every model adapter shares: the `ChatAdapter` Protocol, the `ChatReply` and
+`EmbedReply` it returns, and the httpx-transport → typed-error mapping (`post_json`).
 
 An adapter sends one chat request per attempt and parses its provider's envelope; validating
 the reply against the output model is the gateway's job. Error messages and codes never
@@ -13,7 +13,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.platform.model_gateway.port import Message, ModelTimeoutError, ModelUnavailableError
-from app.platform.model_gateway.profiles import ModelProfile
+from app.platform.model_gateway.profiles import EmbedProfile, ModelProfile
 
 UNKNOWN_DIGEST = "unknown"
 
@@ -27,6 +27,12 @@ class ChatReply:
     """The reply was cut off at the length limit (`done_reason` / `finish_reason` `length`)."""
 
 
+@dataclass(frozen=True, slots=True)
+class EmbedReply:
+    vectors: list[list[float]] = field(repr=False)
+    input_tokens: int
+
+
 class ChatAdapter(Protocol):
     async def chat(
         self,
@@ -36,9 +42,33 @@ class ChatAdapter(Protocol):
         timeout_s: float,
     ) -> ChatReply: ...
 
+    async def embed(
+        self, profile: EmbedProfile, texts: list[str], timeout_s: float
+    ) -> EmbedReply: ...
+
     async def digest(self, model: str) -> str:
         """The model's digest, or `unknown`; never raises."""
         ...
+
+
+def as_vectors(raw: Any, count: int, dims: int) -> list[list[float]]:
+    """`count` vectors of `dims` finite numbers from a provider envelope, or `bad_envelope`."""
+    if not isinstance(raw, list) or len(raw) != count:
+        raise bad_envelope()
+    vectors: list[list[float]] = []
+    for item in raw:
+        if not isinstance(item, list) or len(item) != dims:
+            raise bad_envelope()
+        vector: list[float] = []
+        for value in item:
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                raise bad_envelope()
+            number = float(value)
+            if number != number or number in (float("inf"), float("-inf")):
+                raise bad_envelope()
+            vector.append(number)
+        vectors.append(vector)
+    return vectors
 
 
 def as_count(value: Any) -> int:

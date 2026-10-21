@@ -20,7 +20,7 @@ import {
   applyFilters,
   canRegister,
   hasFilters,
-  isParsePending,
+  isProcessing,
   mergeSources,
   NO_FILTERS,
   ownersOf,
@@ -68,9 +68,10 @@ export function SourcesTab({
 
   const selected = sources.find((s) => s.id === selectedId) ?? null;
   const visible = applyFilters(sources, filters);
-  const pending = sources.some(isParsePending);
+  const pending = sources.some(isProcessing);
 
-  // While a parse is pending the list is re-read every couple of seconds, for a bounded time.
+  // While a Source is parsing or embedding the list is re-read every couple of seconds, for a
+  // bounded time.
   useEffect(() => {
     if (!pending) return;
     const startedAt = Date.now();

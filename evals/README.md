@@ -187,3 +187,48 @@ predicted Conflicts by Finding key, and any case whose model call failed, counte
 nothing). Exit `0` once the report is written, `2` for an invalid or unknown case.
 
 There are six cases: one per type and two decoys (an aligned design, unrelated topics).
+
+## Knowledge retrieval (`make eval-retrieval`)
+
+Story 3.3 measures Knowledge search: how often the passage that answers a question is in the
+top k, and whether every returned citation resolves. It uses the eval database (the same
+`PSA_EVAL_DATABASE_URL` / `PSA_EVAL_MIGRATIONS_DATABASE_URL` as `make eval`, reset first),
+stores nothing in the main database and has no gate. It needs the embedding model on the
+Ollama server: `ollama pull bge-m3`.
+
+```sh
+make eval-retrieval                       # every case in knowledge/cases.yaml
+make eval-retrieval ARGS="--timeout 3600" # default 1800 s for the whole run
+```
+
+`knowledge/cases.yaml` lists synthetic Sources (Markdown files under `knowledge/sources/`,
+each with a title, product and product version) and questions, each naming the Source that
+answers it and a phrase the answering passage contains:
+
+```yaml
+k: 5
+sources:
+  - {file: autostore-install-guide.md, title: AutoStore installation guide,
+     product: AutoStore, product_version: "2.1"}
+queries:
+  - id: firewall-port
+    query: Which firewall port must be opened for the controller?
+    source: autostore-install-guide.md
+    contains: "4711"          # ignoring case and line breaks
+```
+
+The runner registers the Sources through `knowledge`'s public API, runs the worker loop until
+`knowledge.parse_source` and `knowledge.embed_source` are done (live ModelGateway,
+`PSA_MODEL_PROFILE_EMBED`), then searches every question. It prints and writes to
+`out/retrieval-<timestamp>/report.json`:
+
+- **hit rate at k**: questions whose top k includes a passage of the expected Source containing
+  the phrase;
+- **citation validity**: returned Evidence references `{kind: knowledge_chunk, id, version,
+  span}` that the `knowledge` resolver accepts and whose span slices the stored extracted text
+  to exactly the returned passage (expected: 100%);
+- per question, the rank of the first hit; any Source that didn't reach Ready; any question
+  whose search failed (counted as a miss).
+
+Exit `0` once the report is written, `2` refused (no eval database, or malformed cases),
+`3` timed out.

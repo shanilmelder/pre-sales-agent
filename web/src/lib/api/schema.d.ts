@@ -1526,6 +1526,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge/sources/{source_id}/embed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Knowledge Source Embed
+         * @description Chunk and embed the Source's parsed latest version: again after its embedding failed,
+         *     or for the first time when it has none (a version parsed before embedding existed).
+         *     Platform administrators or the Source's owner.
+         */
+        post: operations["retry_knowledge_source_embed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Knowledge
+         * @description The passages nearest to `q` from Ready, active, latest Source versions, nearest
+         *     first, each with a citable Evidence reference. Any user with a role. The query is never
+         *     logged.
+         */
+        get: operations["search_knowledge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/downloads/{token}": {
         parameters: {
             query?: never;
@@ -2513,6 +2557,17 @@ export interface components {
          */
         DraftStatus: "queued" | "running" | "succeeded" | "failed";
         /**
+         * EmbedErrorCode
+         * @description Why embedding a version failed, once its retries ran out.
+         * @enum {string}
+         */
+        EmbedErrorCode: "model_unavailable" | "model_timeout" | "model_bad_output" | "text_missing" | "internal_error";
+        /**
+         * EmbedStatus
+         * @enum {string}
+         */
+        EmbedStatus: "queued" | "embedding" | "ready" | "failed";
+        /**
          * EnteredPosition
          * @description A different position than the Conflict's own, in words (1-200 characters; for an
          *     `effort` Conflict, hours from 0 to 2,000 to 0.1 h, e.g. "48").
@@ -3205,6 +3260,61 @@ export interface components {
          */
         Kind: "integration_type" | "work_package";
         /**
+         * KnowledgeEvidence
+         * @description A citable Evidence reference to a chunk (AD-13): `id` is the chunk, `version` the
+         *     Source version and `span` the chunk's offsets in that version's extracted text.
+         */
+        KnowledgeEvidence: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "knowledge_chunk";
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            span: components["schemas"]["KnowledgeSpan"];
+        };
+        /**
+         * KnowledgeSearchHit
+         * @description One passage, nearest first. `text` is exactly the cited span of the extracted text.
+         */
+        KnowledgeSearchHit: {
+            /** Text */
+            text: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Title */
+            source_title: string;
+            /** Version */
+            version: number;
+            /** Product */
+            product: string;
+            /** Product Version */
+            product_version: string;
+            /** Stale */
+            stale: boolean;
+            /**
+             * Distance
+             * @description Cosine distance to the query: lower is closer.
+             */
+            distance: number;
+            evidence: components["schemas"]["KnowledgeEvidence"];
+        };
+        /** KnowledgeSearchResult */
+        KnowledgeSearchResult: {
+            /** Items */
+            items: components["schemas"]["KnowledgeSearchHit"][];
+            /**
+             * Model
+             * @description The embedding profile the query and chunks share.
+             */
+            model: string;
+            /** Stale Months */
+            stale_months: number;
+        };
+        /**
          * KnowledgeSource
          * @description A Knowledge Source at its latest version. `stale` is derived: the last-reviewed date
          *     is more than `stale_months` months ago (it is never stored). `retired_reason` is set
@@ -3253,6 +3363,8 @@ export interface components {
              */
             uploaded_at: string;
             parse: components["schemas"]["KnowledgeSourceParse"];
+            /** @description The latest version's embedding state; null until its parse succeeds, and for a version parsed before embedding existed (it can be embedded on request). */
+            embed: components["schemas"]["KnowledgeSourceEmbed"] | null;
             /** Row Version */
             row_version: number;
             /**
@@ -3260,6 +3372,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * KnowledgeSourceEmbed
+         * @description Where chunking and embedding of a parsed version stands (Story 3.3): `ready` means
+         *     its chunks are searchable. `error_code` is set exactly when `failed`.
+         */
+        KnowledgeSourceEmbed: {
+            status: components["schemas"]["EmbedStatus"];
+            error_code: components["schemas"]["EmbedErrorCode"] | null;
         };
         /** KnowledgeSourceList */
         KnowledgeSourceList: {
@@ -3299,6 +3420,7 @@ export interface components {
              */
             uploaded_at: string;
             parse: components["schemas"]["KnowledgeSourceParse"];
+            embed: components["schemas"]["KnowledgeSourceEmbed"] | null;
             /** Char Count */
             char_count: number | null;
         };
@@ -3309,6 +3431,16 @@ export interface components {
         KnowledgeSourceVersionList: {
             /** Items */
             items: components["schemas"]["KnowledgeSourceVersion"][];
+        };
+        /**
+         * KnowledgeSpan
+         * @description Unicode code-point offsets `[start, end)` into the version's extracted text.
+         */
+        KnowledgeSpan: {
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
         };
         /** KnowledgeUserRef */
         KnowledgeUserRef: {
@@ -14417,7 +14549,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14548,7 +14680,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14659,7 +14791,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14793,7 +14925,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -14912,7 +15044,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Source is retired (`knowledge_source_retired`), or its latest version has not failed to parse (`parse_not_failed`) */
+            /** @description The Source is retired (`knowledge_source_retired`), its latest version has not failed to parse (`parse_not_failed`), or is not parsed or its embedding is queued, running or done (`embed_not_failed`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15000,7 +15132,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -15132,7 +15264,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -15260,7 +15392,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Source is retired (`knowledge_source_retired`), or its latest version has not failed to parse (`parse_not_failed`) */
+            /** @description The Source is retired (`knowledge_source_retired`), its latest version has not failed to parse (`parse_not_failed`), or is not parsed or its embedding is queued, running or done (`embed_not_failed`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15348,7 +15480,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -15481,7 +15613,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -15614,7 +15746,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -15729,7 +15861,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Source is retired (`knowledge_source_retired`), or its latest version has not failed to parse (`parse_not_failed`) */
+            /** @description The Source is retired (`knowledge_source_retired`), its latest version has not failed to parse (`parse_not_failed`), or is not parsed or its embedding is queued, running or done (`embed_not_failed`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15817,7 +15949,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -15936,7 +16068,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Source is retired (`knowledge_source_retired`), or its latest version has not failed to parse (`parse_not_failed`) */
+            /** @description The Source is retired (`knowledge_source_retired`), its latest version has not failed to parse (`parse_not_failed`), or is not parsed or its embedding is queued, running or done (`embed_not_failed`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16024,7 +16156,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -16136,7 +16268,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Source is retired (`knowledge_source_retired`), or its latest version has not failed to parse (`parse_not_failed`) */
+            /** @description The Source is retired (`knowledge_source_retired`), its latest version has not failed to parse (`parse_not_failed`), or is not parsed or its embedding is queued, running or done (`embed_not_failed`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16180,7 +16312,282 @@ export interface operations {
                     };
                 };
             };
-            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    retry_knowledge_source_embed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Source, its embedding `queued` */
+            202: {
+                headers: {
+                    /** @description The Source's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeSource"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is neither a platform administrator nor the Source's owner (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Knowledge Source with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Source is retired (`knowledge_source_retired`), its latest version has not failed to parse (`parse_not_failed`), or is not parsed or its embedding is queued, running or done (`embed_not_failed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file (`file_too_large`, `file_type_not_allowed`, `file_content_mismatch`, `file_empty`; the `detail` is the sentence to show), a field that is blank or too long, no active Integration Type tag, a retired tag or an owner with no role, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    search_knowledge: {
+        parameters: {
+            query: {
+                /** @description What to search for (1-2,000 characters). */
+                q: string;
+                /** @description How many passages to return, 1-50. */
+                k?: number;
+                /** @description Only this product (ignoring case). */
+                product?: string | null;
+                /** @description Only Sources tagged with this Integration Type. */
+                integration_type_id?: string | null;
+                /** @description Only Sources whose latest version documents this. */
+                product_version?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeSearchResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is neither a platform administrator nor the Source's owner (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file (`file_too_large`, `file_type_not_allowed`, `file_content_mismatch`, `file_empty`; the `detail` is the sentence to show), a field that is blank or too long, no active Integration Type tag, a retired tag or an owner with no role, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;

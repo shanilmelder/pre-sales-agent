@@ -12,8 +12,13 @@ host Ollama's own `/v1` endpoint. `openai-chat` (`gpt-4.1-mini`) is OpenAI's clo
 (`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` plus `PSA_OPENAI_API_KEY`); like
 `demo-chat` it sends prompt text off the host, so the same data rule applies.
 
+Embedding profiles (Story 3.3) live apart, in `EMBED_PROFILES`, picked by
+`PSA_MODEL_PROFILE_EMBED`: `bge-m3` (1024 dims) on host Ollama's `/api/embed`. An embedding
+profile's name is what `knowledge_chunks.embedding_model` stores, and each one has its own
+partial HNSW index, so changing it is a re-embed, not just a config change.
+
 This module has no imports from the app: `app.platform.config` validates the configured
-profile name against `MODEL_PROFILES` at startup.
+profile names against `MODEL_PROFILES` and `EMBED_PROFILES` at startup.
 """
 
 from collections.abc import Mapping
@@ -68,6 +73,25 @@ MODEL_PROFILES: Mapping[str, ModelProfile] = MappingProxyType(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class EmbedProfile:
+    """A named embedding model. `dims` is the length of every vector it returns; the
+    gateway rejects a reply of any other length."""
+
+    name: str
+    model: str
+    """The model name the provider serves (an Ollama tag, or an OpenAI model id)."""
+    dims: int
+    provider: Provider = "ollama"
+    batch_size: int = 16
+    """Texts per embedding request."""
+
+
+BGE_M3 = EmbedProfile(name="bge-m3", model="bge-m3", dims=1024)
+
+EMBED_PROFILES: Mapping[str, EmbedProfile] = MappingProxyType({BGE_M3.name: BGE_M3})
+
+
 class UnknownModelProfileError(LookupError):
     """A profile name that is not defined here. A programming or config error."""
 
@@ -78,3 +102,13 @@ def get_profile(name: str) -> ModelProfile:
     except KeyError:
         known = ", ".join(sorted(MODEL_PROFILES))
         raise UnknownModelProfileError(f"model profile {name!r} is not defined ({known})") from None
+
+
+def get_embed_profile(name: str) -> EmbedProfile:
+    try:
+        return EMBED_PROFILES[name]
+    except KeyError:
+        known = ", ".join(sorted(EMBED_PROFILES))
+        raise UnknownModelProfileError(
+            f"embedding profile {name!r} is not defined ({known})"
+        ) from None
