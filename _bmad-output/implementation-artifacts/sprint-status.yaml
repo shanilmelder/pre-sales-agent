@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 10-21-2026 19:00
+last_updated: 10-21-2026 19:23
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -198,8 +198,8 @@ development_status:
   16-4-agents-cite-past-projects-as-evidence: backlog
   epic-16-retrospective: optional
 
-  epic-17: backlog
-  17-1-token-layer-and-primitives: backlog
+  epic-17: in-progress
+  17-1-token-layer-and-primitives: review
   17-2-app-shell-settings-and-accessibility-behaviours: backlog
   17-3-refit-built-tabs-to-the-redesign: backlog
   17-4-opportunity-list-and-overview-chrome: backlog

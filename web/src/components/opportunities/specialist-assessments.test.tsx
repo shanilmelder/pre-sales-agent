@@ -1022,11 +1022,13 @@ describe("AgentRunPanel timings", () => {
     }
   });
 
-  it("the running dot is static under reduced motion", () => {
+  it("the running dot is a static icon with no animation", () => {
     render(<SpecialistAssessmentsHeader run={running} />);
     const dot = screen.getByTestId("running-dot");
-    expect(dot.className).toContain("animate-pulse");
-    expect(dot.className).toContain("motion-reduce:animate-none");
+    expect(dot.tagName.toLowerCase()).toBe("svg");
+    expect(dot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(dot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(dot.getAttribute("class") ?? "").not.toContain("animate");
   });
 });
 

@@ -63,7 +63,7 @@ const NOT_ALLOWED =
 const GONE = "This Conflict is no longer there. Reload to see the latest.";
 
 const chipClass =
-  "inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground";
+  "inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground";
 const buttonClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 const primaryClass =

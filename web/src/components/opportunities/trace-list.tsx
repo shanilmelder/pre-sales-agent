@@ -155,7 +155,7 @@ export function TraceList({
                 <Link
                   href={href}
                   tabIndex={-1}
-                  className="rounded-sm text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+                  className="rounded-sm text-primary-text underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   {subjectText(item.subject)}
                 </Link>
@@ -210,7 +210,7 @@ export function TraceInspector({
       className="flex flex-col gap-4 p-gutter"
     >
       <div className="flex flex-col gap-1">
-        <p className="font-mono text-meta text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           {event.event_type}
         </p>
         <h3

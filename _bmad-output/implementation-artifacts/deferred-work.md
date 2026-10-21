@@ -167,3 +167,6 @@
 - source_spec: none
   summary: [post-demo] Remove the six `animate-pulse` running dots and show Running as a static loader icon, updating their tests.
   evidence: Approved Sprint Change Proposal P8 and P9 (Story 17.1) in `_bmad-output/planning-artifacts/sprint-change-proposal-2026-10-21.md`. Built `status-pill.tsx` and five other components still pulse, which the redesign (UX-DR10) no longer allows.
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-1-token-layer-and-primitives.md`
+  summary: Story 17.1b: the shared UI primitives for the redesign (Button 38px and 32px with border-strong, Input and Textarea, Dialog 520px, Card, Select, Table, Skeleton, Avatar, Tooltip, Switch and one tint-filled StatusPill) and migrating the three ad-hoc status pills and the chips onto them.
+  evidence: Split from Story 17.1 on 2026-10-21 because the full spec was about 2,300 tokens. 17.1a covers tokens, the contrast gate, the product name and the running state. 17.1b must land before Story 17.2 starts.

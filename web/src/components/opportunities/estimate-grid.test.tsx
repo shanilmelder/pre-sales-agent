@@ -347,7 +347,11 @@ describe("EstimateHeader", () => {
         "The Estimate is built when the Engineering, PM and Security Agents finish.",
       ),
     ).toBeTruthy();
-    expect(screen.getByTestId("running-dot").className).toContain("motion-reduce:animate-none");
+    const runningDot = screen.getByTestId("running-dot");
+    expect(runningDot.tagName.toLowerCase()).toBe("svg");
+    expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(runningDot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
   });
 
   it("shows nothing before a version when no run is in progress", () => {

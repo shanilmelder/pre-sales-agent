@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { OpportunityListPage } from "@/app/opportunities/list-page";
 
-export const metadata: Metadata = { title: "My Opportunities · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "My Opportunities · Pre Sales Agent Framework" };
 
 /** Opportunities the user owns or collaborates on. */
 export default async function MyOpportunitiesPage({

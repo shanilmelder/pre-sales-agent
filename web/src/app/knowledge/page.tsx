@@ -8,7 +8,7 @@ import type { KnowledgeSource } from "@/lib/knowledge-sources";
 
 import { loadSources } from "./actions";
 
-export const metadata: Metadata = { title: "Knowledge · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "Knowledge · Pre Sales Agent Framework" };
 
 async function activeIntegrationTypes(): Promise<{ id: string; name: string }[] | null> {
   try {

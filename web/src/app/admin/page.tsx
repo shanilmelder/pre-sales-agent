@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
 import { isAdmin } from "@/lib/navigation";
 
-export const metadata: Metadata = { title: "Admin · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "Admin · Pre Sales Agent Framework" };
 
 /** Administrators go straight to the first section, Users & roles (Catalogue is next to it). */
 export default async function AdminPage() {

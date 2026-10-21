@@ -282,7 +282,7 @@ function History({
           >
             <span className="text-numeric">{formatWhen(result.created_at)}</span>
             <ResultPill result={result} />
-            <span className="font-mono text-meta text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               {result.reference_set_version}
             </span>
           </button>

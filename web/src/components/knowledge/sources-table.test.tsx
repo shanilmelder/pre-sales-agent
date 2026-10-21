@@ -68,7 +68,11 @@ describe("SourcesTable", () => {
     expect(within(rowOf("Old guide")).getByText("Ready")).toBeTruthy();
     const embedding = within(rowOf("Embedding guide"));
     expect(embedding.getByText("Embedding")).toBeTruthy();
-    expect(embedding.getByTestId("running-dot")).toBeTruthy();
+    const runningDot = embedding.getByTestId("running-dot");
+    expect(runningDot.tagName.toLowerCase()).toBe("svg");
+    expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(runningDot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
     const failed = within(rowOf("Unembedded guide"));
     expect(failed.getByText("Embedding failed").closest("span")?.querySelector("svg")).toBeTruthy();
     expect(failed.getByText("The embedding model couldn't be reached")).toBeTruthy();

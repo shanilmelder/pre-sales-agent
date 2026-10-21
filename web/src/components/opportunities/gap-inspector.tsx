@@ -178,7 +178,7 @@ export function GapInspector({
         <ul className="flex flex-col gap-1.5">
           {gap.requirements.map((requirement) => (
             <li key={requirement.id} className="flex items-baseline gap-2">
-              <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
+              <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground">
                 {requirement.label}
               </span>
               <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
@@ -404,7 +404,7 @@ function PassageChip({ passage }: { passage: AnswerPassage }) {
   return (
     <figure className="flex flex-col gap-1 rounded-md border border-border p-2">
       <figcaption>
-        <span className="inline-flex h-5 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
+        <span className="inline-flex h-5 items-center rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground">
           {passage.label}
         </span>
       </figcaption>

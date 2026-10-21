@@ -81,7 +81,7 @@ export function PassageView({ passage }: { passage: Passage }) {
     <figure className="flex flex-col gap-1.5">
       <figcaption className="flex items-baseline gap-2 text-meta text-muted-foreground">
         <span className="truncate">{passage.filename}</span>
-        <span className="shrink-0 font-mono">v{passage.source_version}</span>
+        <span className="shrink-0">v{passage.source_version}</span>
       </figcaption>
       <blockquote className="whitespace-pre-wrap break-words text-body">
         {passage.before}
@@ -521,7 +521,7 @@ export function RequirementInspector({
     >
       <div className="flex flex-col gap-1">
         <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
-          <span className="font-mono">{requirementLabel(requirement)}</span>
+          <span>{requirementLabel(requirement)}</span>
           <span aria-hidden="true">·</span>
           <span>{classificationLabel(requirement.classification)}</span>
           <span aria-hidden="true">·</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import {
@@ -352,7 +352,7 @@ export function GapsKeyHints({
       {keys.map((k) => (
         <kbd
           key={k}
-          className="rounded-sm border border-border px-1 font-mono text-meta text-muted-foreground"
+          className="rounded-sm border border-border px-1 text-meta text-muted-foreground"
         >
           {k}
         </kbd>
@@ -399,11 +399,7 @@ export function DetectionStatus({
   if (isDetecting(detection)) {
     return (
       <p className="flex items-center gap-2 text-label" data-status={detection?.status}>
-        <span
-          aria-hidden="true"
-          data-testid="running-dot"
-          className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-        />
+        <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
         {DETECTING}
       </p>
     );

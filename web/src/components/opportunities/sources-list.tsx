@@ -9,6 +9,7 @@ import {
   MailIcon,
   MessageSquareReplyIcon,
   StickyNoteIcon,
+  LoaderCircleIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -66,11 +67,7 @@ export function ParseStatusPill({ parse }: { parse: SourceParse }) {
   switch (parse.status) {
     case "parsing":
       mark = (
-        <span
-          aria-hidden="true"
-          data-testid="running-dot"
-          className="mx-0.5 size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-        />
+        <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
       );
       break;
     case "parsed":

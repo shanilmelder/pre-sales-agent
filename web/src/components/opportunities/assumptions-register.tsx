@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlertIcon, ClipboardCheckIcon, ShieldPlusIcon } from "lucide-react";
+import { CircleAlertIcon, ClipboardCheckIcon, ShieldPlusIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -328,11 +328,7 @@ export function AssumptionsRegister({
 
       {proposing ? (
         <p className="flex items-center gap-2 text-label" data-status={version.proposal_status}>
-          <span
-            aria-hidden="true"
-            data-testid="proposing-dot"
-            className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-          />
+          <LoaderCircleIcon aria-hidden="true" data-testid="proposing-dot" className="size-3 shrink-0 text-agent" />
           {PROPOSING}
         </p>
       ) : version.proposal_status === "failed" || version.proposal_status === null ? (

@@ -7,6 +7,7 @@ import {
   CircleMinusIcon,
   ClockIcon,
   ListChecksIcon,
+  LoaderCircleIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -269,7 +270,7 @@ function EffortTable({ assessment }: { assessment: Assessment }) {
             key={row.requirement.id}
             className="border-b border-border align-baseline"
           >
-            <td className="py-1 pr-3 font-mono text-meta text-muted-foreground">
+            <td className="py-1 pr-3 text-meta text-muted-foreground">
               {row.requirement.label}
             </td>
             <td className="py-1 pr-3 text-right text-numeric">
@@ -451,12 +452,9 @@ export function AgentRunPanel({
             >
               {taskElapsed(task, now)}
             </span>
-            <span className="flex size-1.5 shrink-0" aria-hidden="true">
+            <span className="flex size-3 shrink-0" aria-hidden="true">
               {runningDot ? (
-                <span
-                  data-testid="running-dot"
-                  className="size-1.5 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-                />
+                <LoaderCircleIcon data-testid="running-dot" className="size-3 text-agent" />
               ) : null}
             </span>
             {note ? (

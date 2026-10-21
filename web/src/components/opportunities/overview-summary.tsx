@@ -69,7 +69,7 @@ export type OverviewData = {
 const RECENT_ACTIVITY_LIMIT = 5;
 
 const linkClass =
-  "rounded-sm text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary";
+  "rounded-sm text-primary-text underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary";
 
 function tabLabel(slug: WorkspaceTabSlug) {
   return WORKSPACE_TABS.find((t) => t.slug === slug)!;

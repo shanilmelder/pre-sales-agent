@@ -217,7 +217,11 @@ describe("RedTeamHeader", () => {
   it.each([queued, running])("shows Red Team reviewing with a running dot while $status", (r) => {
     render(<RedTeamHeader review={null} run={r} canStart />);
     expect(screen.getByText("Red Team reviewing")).toBeTruthy();
-    expect(screen.getByTestId("running-dot").className).toContain("motion-reduce:animate-none");
+    const runningDot = screen.getByTestId("running-dot");
+    expect(runningDot.tagName.toLowerCase()).toBe("svg");
+    expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(runningDot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
   });
 
   it("shows the failure reason and Retry for those who may start a review", () => {

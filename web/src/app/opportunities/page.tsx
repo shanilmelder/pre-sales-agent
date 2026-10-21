@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { OpportunityListPage } from "@/app/opportunities/list-page";
 
-export const metadata: Metadata = { title: "All Opportunities · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "All Opportunities · Pre Sales Agent Framework" };
 
 /** Every Opportunity the user can read, with filters for status, owner, product and target
  * proposal date (in the URL query). */
