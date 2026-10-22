@@ -34,6 +34,9 @@ type ShellState = {
   layers: ShellLayer[];
   closeTopLayer: () => void;
   singleKeyShortcuts: boolean;
+  /** No preferences cookie yet: the shell shows the shortcut hint until it is answered. */
+  firstRun: boolean;
+  dismissFirstRun: () => void;
   /** Where `1`–`9` go, in key order, while an Opportunity workspace is mounted (else null).
    * Set through `useWorkspaceTabKeys`; the global key handler applies the single-key rules. */
   workspaceTabs: readonly string[] | null;
@@ -52,23 +55,29 @@ export function useShell(): ShellState {
  * navigation; holds no page content, so it doesn't bypass any page's access gate. */
 export function ShellProviders({
   singleKeyShortcuts,
+  firstRun = false,
   children,
 }: {
   singleKeyShortcuts: boolean;
+  firstRun?: boolean;
   children: ReactNode;
 }) {
   return (
     <LiveRegionProvider>
-      <ShellProvider singleKeyShortcuts={singleKeyShortcuts}>{children}</ShellProvider>
+      <ShellProvider singleKeyShortcuts={singleKeyShortcuts} firstRun={firstRun}>
+        {children}
+      </ShellProvider>
     </LiveRegionProvider>
   );
 }
 
 export function ShellProvider({
   singleKeyShortcuts,
+  firstRun = false,
   children,
 }: {
   singleKeyShortcuts: boolean;
+  firstRun?: boolean;
   children: ReactNode;
 }) {
   const announce = useAnnounce();
@@ -76,6 +85,8 @@ export function ShellProvider({
   const [rightPaneOpen, setRightPaneOpenState] = useState(false);
   const [dialog, setDialog] = useState<ShellDialog | null>(null);
   const [workspaceTabs, setWorkspaceTabs] = useState<readonly string[] | null>(null);
+  const [firstRunAnswered, setFirstRunAnswered] = useState(false);
+  const dismissFirstRun = useCallback(() => setFirstRunAnswered(true), []);
 
   const setRightPaneOpen = useCallback(
     (open: boolean) => {
@@ -113,6 +124,8 @@ export function ShellProvider({
         else if (top) setDialog(null);
       },
       singleKeyShortcuts,
+      firstRun: firstRun && !firstRunAnswered,
+      dismissFirstRun,
       workspaceTabs,
       setWorkspaceTabs,
     };
@@ -122,6 +135,9 @@ export function ShellProvider({
     setRightPaneOpen,
     dialog,
     singleKeyShortcuts,
+    firstRun,
+    firstRunAnswered,
+    dismissFirstRun,
     workspaceTabs,
   ]);
 

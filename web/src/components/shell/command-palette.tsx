@@ -62,9 +62,9 @@ export function CommandPalette({ permissions }: { permissions: readonly Permissi
             </CommandGroup>
           ) : null}
           <CommandGroup heading="Account">
-            <CommandItem value="Settings" onSelect={() => go("/settings")}>
+            <CommandItem value="Open Settings" onSelect={() => go("/settings")}>
               <SettingsIcon aria-hidden="true" />
-              Settings
+              Open Settings
             </CommandItem>
           </CommandGroup>
         </CommandList>

@@ -173,3 +173,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-1b-ui-primitives.md`
   summary: Story 17.1c: migrate the existing status pills and chips onto the new `Pill` and `Chip` primitives (about 12 pill files such as `opportunities/status-pill.tsx`, `conflict-status-pill.tsx`, `severity-pill.tsx`, `SourceStatusPill`, `ParseStatusPill`, `VersionPill`, `GapStatusPill`, `TaskStatusPill` and the evals pills, plus the inline `rounded-full border` pill strings and about 14 `rounded-sm border h-5` chip sites), rewrite `status-pill.test.tsx` for the tint classes, and keep the `data-status`, `data-severity`, `detected-from-text` and `running-dot` test ids.
   evidence: Split from Story 17.1b on 2026-10-22 because including about 30 source files and 9 tests would push the spec far past the 1,600 token target. 17.1b builds and tests the primitives only. 17.1c depends on 17.1b and should land before Story 17.2 and 17.3.
+
+- source_spec: none
+  summary: Story 17.2b: shell chrome. Header with organisation switcher (static current-organisation label, no menu while there is one organisation), Search button and avatar button; sidebar footer user card with theme toggle; one 420px right pane with Inspector and Activity tabs; skip link as first tab stop; polite screen-name announcement on navigation; Settings opened from the avatar button.
+  evidence: Split from Story 17.2 on 2026-10-22 (three independent deliverables). User chose the static organisation label. Survey found the header is a bare 48px bar, Search lives in the sidebar, there is no skip link or screen-name announcement, and the pane has no tabs.
+
+- source_spec: none
+  summary: Story 17.2c: global Offline strip with Retry after 60 s down (reusing the Story 2.3 state, `useEventStreamStatus` and `OFFLINE_AFTER_MS`), a check that editing is disabled below 1024px (the read-only notice is currently message-only), responsive tiers unchanged, and axe across the shell pages.
+  evidence: Split from Story 17.2 on 2026-10-22. The offline state exists only inside the workspace (`ConnectionStatus`); the strip is not global.

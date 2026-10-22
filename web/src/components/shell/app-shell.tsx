@@ -7,6 +7,7 @@ import { CheatSheet } from "@/components/shell/cheat-sheet";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { KeyboardShortcuts } from "@/components/shell/keyboard-shortcuts";
 import { ReadOnlyNotice } from "@/components/shell/read-only-notice";
+import { ShortcutHint } from "@/components/shell/shortcut-hint";
 import { RightPane } from "@/components/shell/right-pane";
 import { RIGHT_PANE_TOGGLE_ID, useShell } from "@/components/shell/shell-context";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -40,6 +41,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
         <Sidebar me={me} />
         <div className="relative flex min-w-0 flex-1">
           <main className="flex min-w-0 flex-1 flex-col overflow-auto">
+            <ShortcutHint />
             <ReadOnlyNotice />
             <div className="flex h-12 shrink-0 items-center justify-end border-b border-border px-gutter">
               <RightPaneToggle />

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useShell } from "@/components/shell/shell-context";
 import { THEME_SCRIPT } from "@/components/theme-script";
 import type { Preferences } from "@/lib/preferences";
 
@@ -10,15 +11,22 @@ vi.mock("next/font/google", () => ({
 }));
 
 const preferences = vi.hoisted(() => ({ current: undefined as unknown as Preferences }));
+const stored = vi.hoisted(() => ({ current: true }));
 vi.mock("@/lib/preferences", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/preferences")>()),
   getPreferences: async () => preferences.current,
+  hasStoredPreferences: async () => stored.current,
 }));
 
 import RootLayout from "./layout";
 
-async function renderLayout(): Promise<Document> {
-  const element = await RootLayout({ children: <p>content</p> } as LayoutProps<"/">);
+function FirstRunProbe() {
+  const { firstRun } = useShell();
+  return <p data-testid="first-run">{String(firstRun)}</p>;
+}
+
+async function renderLayout(children: React.ReactNode = <p>content</p>): Promise<Document> {
+  const element = await RootLayout({ children } as LayoutProps<"/">);
   return new DOMParser().parseFromString(
     `<!doctype html>${renderToStaticMarkup(element)}`,
     "text/html",
@@ -27,7 +35,8 @@ async function renderLayout(): Promise<Document> {
 
 describe("RootLayout", () => {
   beforeEach(() => {
-    preferences.current = { theme: "system", density: "comfortable", singleKeyShortcuts: true };
+    preferences.current = { theme: "system", density: "comfortable", singleKeyShortcuts: false };
+    stored.current = true;
   });
 
   it("Dark + Compact: data attributes and .dark alongside the font variables", async () => {
@@ -45,6 +54,15 @@ describe("RootLayout", () => {
     expect(html.getAttribute("data-density")).toBe("comfortable");
     expect(html.classList.contains("dark")).toBe(false);
     expect(html.classList.contains("__variable_inter")).toBe(true);
+  });
+
+  it.each([
+    [false, "true"],
+    [true, "false"],
+  ])("with stored preferences = %s, firstRun reaches the shell as %s", async (hasStored, expected) => {
+    stored.current = hasStored;
+    const doc = await renderLayout(<FirstRunProbe />);
+    expect(doc.querySelector("[data-testid=first-run]")?.textContent).toBe(expected);
   });
 
   it("inlines the theme script in <head>", async () => {

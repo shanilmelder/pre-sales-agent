@@ -11,7 +11,7 @@ vi.mock("@/app/settings/actions", () => ({ savePreferences }));
 import { LiveRegionProvider } from "./shell/live-region";
 import { SettingsForm } from "./settings-form";
 
-const DEFAULTS: Preferences = { theme: "system", density: "comfortable", singleKeyShortcuts: true };
+const DEFAULTS: Preferences = { theme: "system", density: "comfortable", singleKeyShortcuts: false };
 
 beforeEach(() => {
   savePreferences.mockReset();
@@ -27,18 +27,20 @@ describe("SettingsForm", () => {
     expect((screen.getByRole("radio", { name: "Dark" }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("radio", { name: /Compact/ }) as HTMLInputElement).checked).toBe(true);
     const shortcuts = screen.getByRole("switch", { name: "Single-key shortcuts" });
-    expect((shortcuts as HTMLInputElement).checked).toBe(false);
+    expect(shortcuts.getAttribute("aria-checked")).toBe("false");
     expect(screen.getByText("Off")).toBeTruthy();
   });
 
-  it("defaults: System, Comfortable, shortcuts On", () => {
+  it("defaults: System, Comfortable, shortcuts Off", () => {
     render(<SettingsForm initial={DEFAULTS} />);
     expect((screen.getByRole("radio", { name: "System" }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("radio", { name: /Comfortable/ }) as HTMLInputElement).checked).toBe(
       true,
     );
-    expect((screen.getByRole("switch") as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText("On")).toBeTruthy();
+    expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.getByText("56px rows")).toBeTruthy();
+    expect(screen.getByText("44px rows")).toBeTruthy();
   });
 
   it("is fully keyboard operable and saves every change", async () => {
@@ -62,7 +64,7 @@ describe("SettingsForm", () => {
       expect(savePreferences).toHaveBeenLastCalledWith({
         theme: "light",
         density: "compact",
-        singleKeyShortcuts: true,
+        singleKeyShortcuts: false,
       }),
     );
 
@@ -74,10 +76,10 @@ describe("SettingsForm", () => {
       expect(savePreferences).toHaveBeenLastCalledWith({
         theme: "light",
         density: "compact",
-        singleKeyShortcuts: false,
+        singleKeyShortcuts: true,
       }),
     );
-    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.getByText("On")).toBeTruthy();
   });
 
   it("can go back to System", async () => {
@@ -119,8 +121,23 @@ describe("SettingsForm", () => {
     render(<SettingsForm initial={DEFAULTS} />);
     await user.click(screen.getByRole("switch", { name: "Single-key shortcuts" }));
     await waitFor(() =>
-      expect(savePreferences).toHaveBeenLastCalledWith({ ...DEFAULTS, singleKeyShortcuts: false }),
+      expect(savePreferences).toHaveBeenLastCalledWith({ ...DEFAULTS, singleKeyShortcuts: true }),
     );
+  });
+
+  it("renders the 760px card with a surface-alt footer note", () => {
+    const { container } = render(<SettingsForm initial={DEFAULTS} />);
+    const card = container.querySelector('[data-slot="card"]')!;
+    expect(card.className).toContain("w-settings-width");
+    expect(card.querySelector('[data-slot="card-footer"]')!.className).toContain("bg-surface-alt");
+    expect(screen.getByText(/Saved in this browser/)).toBeTruthy();
+  });
+
+  it("marks the selected option card with the primary border", () => {
+    render(<SettingsForm initial={{ ...DEFAULTS, theme: "dark" }} />);
+    const label = screen.getByRole("radio", { name: "Dark" }).closest("label")!;
+    expect(label.className).toContain("has-checked:border-primary");
+    expect(label.className).toContain("has-checked:bg-primary-tint");
   });
 
   it("has no WCAG 2.1 AA violations", async () => {

@@ -12,7 +12,7 @@ export type Density = (typeof DENSITIES)[number];
 export type Preferences = {
   theme: Theme;
   density: Density;
-  /** Stored here; honoured by the keyboard layer in Story 1.5 Part B. */
+  /** Off until chosen (WCAG 2.1.4); the first-run hint explains how to turn it on. */
   singleKeyShortcuts: boolean;
 };
 
@@ -23,7 +23,7 @@ export const PREFERENCES_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 export const DEFAULT_PREFERENCES: Readonly<Preferences> = Object.freeze({
   theme: "system",
   density: "comfortable",
-  singleKeyShortcuts: true,
+  singleKeyShortcuts: false,
 });
 
 function isTheme(value: unknown): value is Theme {
@@ -86,4 +86,11 @@ export function htmlPreferenceAttributes(preferences: Preferences) {
 export async function getPreferences(): Promise<Preferences> {
   const store = await cookies();
   return parsePreferences(store.get(PREFERENCES_COOKIE)?.value);
+}
+
+/** Whether this browser has saved preferences yet. False drives the first-run hint. Server
+ * only. */
+export async function hasStoredPreferences(): Promise<boolean> {
+  const store = await cookies();
+  return store.has(PREFERENCES_COOKIE);
 }

@@ -46,12 +46,13 @@ async function expectFocusIn(element: Element) {
 function renderShell({
   roles = ["presales_engineer"] as Role[],
   singleKeyShortcuts = true,
+  firstRun = false,
   children = <PlaceholderPage title="Inbox" message="Nothing waiting for you." />,
-}: { roles?: Role[]; singleKeyShortcuts?: boolean; children?: ReactNode } = {}) {
+}: { roles?: Role[]; singleKeyShortcuts?: boolean; firstRun?: boolean; children?: ReactNode } = {}) {
   const user = userEvent.setup();
   // The providers stand in for the root layout.
   const utils = render(
-    <ShellProviders singleKeyShortcuts={singleKeyShortcuts}>
+    <ShellProviders singleKeyShortcuts={singleKeyShortcuts} firstRun={firstRun}>
       <AppShell me={me(roles)}>{children}</AppShell>
     </ShellProviders>,
   );
@@ -69,6 +70,19 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("AppShell first-run hint", () => {
+  it("shows the shortcut hint with no saved preferences, shortcuts Off", () => {
+    renderShell({ singleKeyShortcuts: false, firstRun: true });
+    expect(screen.getByTestId("shortcut-hint")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Turn on" })).toBeTruthy();
+  });
+
+  it("shows no hint once preferences exist", () => {
+    renderShell();
+    expect(screen.queryByTestId("shortcut-hint")).toBeNull();
+  });
+});
 
 describe("AppShell layout", () => {
   it("has one Primary nav, one main and one polite live region", () => {
@@ -241,7 +255,7 @@ describe("command palette", () => {
       "All Opportunities",
       "Knowledge",
       "Reports",
-      "Settings",
+      "Open Settings",
     ]);
     unmount();
     const admin = renderShell({ roles: ["platform_administrator"] });
