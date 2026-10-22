@@ -270,7 +270,7 @@ FR-64: Epic 2 (sources) / Epic 4 (questions and answers)
 FR-65: Epic 3 - Integration Type and Work Package catalogue
 FR-66: Epic 3 - Knowledge Graph (Story 3.6)
 FR-67: Epic 10 - Pipeline report (Story 10.7)
-Epic 17 (redesign refit): no FR; UX-DR1-2, 4-6, 8, 10, 20, 23-24, 26-30; NFR-7, NFR-8
+Epic 17 (redesign refit): no FR; UX-DR1-2, 4-8, 10, 16, 20-21, 23-24, 26-30; NFR-7, NFR-8
 
 ## Epic List
 
@@ -327,9 +327,9 @@ Delivery records Actuals with variance causes. The Head of Delivery sees varianc
 **Also:** NFR-6, AD-31, AD-33; UX-DR22, UX-DR27 (Actuals table)
 
 ### Epic 17: Redesign refit (visual identity and shell)
-The team gets the 2026-10-21 redesign: one token layer and primitive set, the app shell with Settings and the accessibility behaviours, the built tabs refitted, and the Opportunity list and header chrome. Behaviour of built screens does not change. Story 17.1 must precede any new UI story.
+The team gets the 2026-10-21 redesign: one token layer and primitive set, the app shell with Settings and the accessibility behaviours, the built tabs refitted, the Opportunity list and header chrome, and the built pages outside the workspace refitted. Behaviour of built screens does not change. Story 17.1 must precede any new UI story.
 **FRs covered:** none (no FR)
-**Also:** NFR-7, NFR-8; UX-DR1–2, UX-DR4–6, UX-DR8, UX-DR10, UX-DR20, UX-DR23–24, UX-DR26–30
+**Also:** NFR-7, NFR-8; UX-DR1–2, UX-DR4–8, UX-DR10, UX-DR16, UX-DR20–21, UX-DR23–24, UX-DR26–30
 
 ### Release 2: Governance and integration
 
@@ -3309,10 +3309,11 @@ Depends on Story 17.1.
 **Given** the app shell
 **When** a page opens a right pane
 **Then** there is one 420px right pane with Inspector and Activity tabs that replaces the 300px activity rail, and `]` cycles closed, open, closed (UX-DR2)
+**And** the pane is closed by default, selecting a row opens it on the Inspector, `Esc` closes it, and with nothing selected the Inspector reads "Select a gap or estimate line to see its details." (UX-DR2, UX-DR7)
 
 **Given** the sidebar and header
 **When** the shell renders
-**Then** the sidebar collapses to 64px with the 0.16s transition, and the header has the organisation switcher, the Search button and the avatar button, with the shortcuts footer in the sidebar (UX-DR2)
+**Then** the sidebar collapses to 64px with the 0.16s transition (from `[` or the "Collapse sidebar" button), and the header has the organisation switcher, the Search button and the avatar button, with the sidebar footer holding Keyboard shortcuts (`?`), Collapse sidebar (`[`) and the user card with its theme toggle (UX-DR2, UX-DR4)
 
 **Given** the avatar button, or the palette command "Open Settings"
 **When** I open Settings
@@ -3367,6 +3368,7 @@ Depends on Stories 17.1 and 17.2.
 **Given** the Assessments tab
 **When** it renders
 **Then** it uses card surfaces, tint-filled status pills and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR8, UX-DR20, UX-DR29)
+**And** it shows the run header (run number, start time and starter, and the Sources, Requirements and agent config versions it used), the task counters, one card per agent with its role description, model chip, progress and status pill, and **Cancel run** and **Start new run**, over the run data already built (UX-DR10)
 
 **Given** the Conflicts tab
 **When** it renders
@@ -3401,6 +3403,7 @@ Depends on Stories 17.1 and 17.2. The Overview body is Story 8.9.
 **Given** the Opportunity list
 **When** it loads
 **Then** its columns are Opportunity (with the customer), Status, Owner, Proposal date, Open items and Estimate, and the views are All, Mine, Due in 14 days and Blocked (UX-DR5, UX-DR6)
+**And** while loading it shows skeleton rows, and with no Opportunities it shows "No Opportunities yet" with **New Opportunity** (UX-DR20)
 
 **Given** an Opportunity header
 **When** it renders
@@ -3409,6 +3412,38 @@ Depends on Stories 17.1 and 17.2. The Overview body is Story 8.9.
 **Given** the list and the header
 **When** axe runs in CI
 **Then** there are no WCAG 2.1 AA violations, and every status and countdown shows an icon or text, never colour alone (UX-DR23)
+
+### Story 17.5: Refit built pages outside the workspace
+
+As a presales engineer, admin or knowledge expert,
+I want the pages outside the Opportunity workspace in the redesigned layout,
+So that the whole app reads as one product, not only the workspace.
+
+Depends on Stories 17.1 and 17.2.
+
+**Acceptance Criteria:**
+
+**Given** any non-Opportunity page (Opportunities, New Opportunity, Inbox, Knowledge, Reports, Admin, Settings)
+**When** it renders
+**Then** it has the page header: a title, a one-line subtitle, one primary action and the right-pane toggle, with the actions Opportunities → **New Opportunity**, Inbox → **Mark all read**, Knowledge → **Add source**, Reports → **Export**, and none on Settings (UX-DR2)
+**And** Admin shows no primary action until **Invite user** is decided [DECISION PENDING: users are created on first Auth0 sign-in (Story 1.4), so an invite flow needs its own story or is dropped]
+
+**Given** the Inbox
+**When** I press **Mark all read**
+**Then** every item is marked read, the sidebar unread badge clears, and the list keeps its order (UX-DR16)
+**And** the Inbox uses the two-pane list and detail layout with unread dots and kind pills, skeleton rows while loading, and "Inbox is empty" when there is nothing (UX-DR20)
+
+**Given** New Opportunity
+**When** it renders
+**Then** it is a card with the import-from-file section above the fields, field hints from the mockup, and **Create Opportunity** and **Cancel** (UX-DR5)
+
+**Given** Knowledge and Admin
+**When** they render
+**Then** their sub-tabs use the segmented control, and every built sub-tab (Knowledge Sources and any other built when this story starts; Admin Users and roles, Catalogue and Evals) uses padded list rows, tint-filled status pills and card surfaces (UX-DR6, UX-DR8, UX-DR21)
+
+**Given** the refit
+**When** the existing test suites run
+**Then** they pass with updated selectors and no behaviour change, and axe reports no WCAG 2.1 AA violations on these pages (UX-DR23, NFR-7)
 
 ## Epic 11: Policy-driven approvals and notifications
 

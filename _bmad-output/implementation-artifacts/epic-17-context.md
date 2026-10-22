@@ -12,6 +12,7 @@ Apply the 2026-10-21 redesign (roomy, card-based, tint-filled pills, Inter 14px)
 - Story 17.2: App shell, Settings and accessibility behaviours
 - Story 17.3: Refit built tabs to the redesign
 - Story 17.4: Opportunity list and Overview chrome
+- Story 17.5: Refit built pages outside the workspace
 
 ## Requirements & Constraints
 
@@ -87,6 +88,6 @@ Apply the 2026-10-21 redesign (roomy, card-based, tint-filled pills, Inter 14px)
 
 ## Cross-Story Dependencies
 
-- 17.1 precedes all new UI work in any epic. 17.2 depends on 17.1; 17.3 and 17.4 depend on 17.1 and 17.2.
+- 17.1 precedes all new UI work in any epic. 17.2 depends on 17.1; 17.3, 17.4 and 17.5 depend on 17.1 and 17.2.
 - 17.2's Offline strip builds on the Story 2.3 offline state; 17.4 provides the Opportunity header and list chrome while the Overview body is Story 8.9.
 - Story 11.1 has an unresolved pending decision about a notifications control in Settings.
