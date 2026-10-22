@@ -1,22 +1,19 @@
 import { TextSearchIcon } from "lucide-react";
 
+import { Chip } from "@/components/ui/chip";
+import { Pill } from "@/components/ui/pill";
 import { DETECTED_FROM_TEXT, statusInfo, type ConflictStatus } from "@/lib/conflicts";
-import { cn } from "@/lib/utils";
+import { pillToneFor } from "@/lib/pill-tone";
 
-/** A Conflict's status: always an icon and a label, never colour alone. 20px, fully
- * rounded, neutral outline; only the icon is tinted (blocker red for Open, an arrow-up for
- * Escalated). */
+/** A Conflict's status: always an icon and a label, never colour alone. A tint-filled Pill
+ * (blocker for Open, gap for Escalated). */
 export function ConflictStatusPill({ status }: { status: ConflictStatus }) {
   const known = statusInfo(status);
   const Icon = known.icon;
   return (
-    <span
-      data-status={known.value}
-      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
-    >
-      <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
+    <Pill data-status={known.value} tone={pillToneFor(known.tone)} icon={<Icon />} className="shrink-0">
       {known.label}
-    </span>
+    </Pill>
   );
 }
 
@@ -24,12 +21,9 @@ export function ConflictStatusPill({ status }: { status: ConflictStatus }) {
  * text. An icon and a label, in the agent tone, never colour alone. */
 export function DetectedFromTextTag() {
   return (
-    <span
-      data-testid="detected-from-text"
-      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-border bg-background pr-1.5 pl-1 text-meta text-muted-foreground"
-    >
+    <Chip data-testid="detected-from-text" className="shrink-0 whitespace-nowrap">
       <TextSearchIcon className="size-3 shrink-0 text-agent" aria-hidden="true" />
       {DETECTED_FROM_TEXT}
-    </span>
+    </Chip>
   );
 }

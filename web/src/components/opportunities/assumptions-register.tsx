@@ -10,6 +10,7 @@ import {
   type AcceptAllAssumptionsResult,
   type AssumptionAcceptResult,
 } from "@/app/opportunities/actions";
+import { chipLayoutClassName } from "@/components/ui/chip";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -104,10 +105,11 @@ function AssumptionRow({
           aria-pressed={selected}
           aria-label={`Gap: ${assumption.origin.title}`}
           onClick={(event) => onOpenGap(assumption, event.detail === 0)}
-          className={cn(
-            "inline-flex h-5 max-w-64 items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary",
-            selected && "border-primary text-foreground",
-          )}
+          className={`${cn(
+            chipLayoutClassName,
+            "max-w-64 bg-surface outline-none hover:brightness-[.97] focus-visible:ring-2 focus-visible:ring-primary",
+            selected ? "border-primary text-foreground" : "border-border-strong text-primary-text",
+          )} text-label`}
         >
           <span className="font-medium">Gap</span>
           <span className="truncate">{assumption.origin.title}</span>

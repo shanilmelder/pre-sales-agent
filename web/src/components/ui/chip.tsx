@@ -1,6 +1,9 @@
 import * as React from "react"
 import { cn } from "cn"
 
+/** The chip's shape without colours, for button chips that recolour themselves (pressed). */
+const chipLayoutClassName = "inline-flex items-center gap-1 rounded-sm border px-2 py-0.5"
+
 /** The evidence chip: a source reference such as `S2 · email-it-systems`. */
 function Chip({ className, ...props }: React.ComponentProps<"span">) {
   return (
@@ -15,4 +18,4 @@ function Chip({ className, ...props }: React.ComponentProps<"span">) {
   )
 }
 
-export { Chip }
+export { Chip, chipLayoutClassName }

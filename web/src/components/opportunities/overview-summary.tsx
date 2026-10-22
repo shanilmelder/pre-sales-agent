@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { Pill } from "@/components/ui/pill";
 import { RecommendationPill } from "@/components/opportunities/specialist-assessments";
 import {
   agentLabel,
@@ -307,9 +308,7 @@ function EstimateCard({ id, estimate }: { id: string; estimate: EstimateView | n
       extra={
         <>
           {version ? (
-            <span className="inline-flex h-5 items-center rounded-full border border-border bg-background px-2 text-label">
-              {versionStatusLabel(version.status)}
-            </span>
+            <Pill tone="neutral">{versionStatusLabel(version.status)}</Pill>
           ) : null}
           {version ? (
             <span className="text-meta text-muted-foreground">totals calculated by the platform</span>

@@ -305,9 +305,9 @@ describe("SpecialistAssessmentsSection", () => {
     expect(within(engineering).getByText("v2")).toBeTruthy();
     const pill = engineering.querySelector("[data-recommendation]");
     expect(pill?.textContent).toBe("Proceed with conditions");
-    expect(pill?.querySelector("svg")?.getAttribute("class")).toContain(
-      "text-gap",
-    );
+    expect(pill?.getAttribute("data-slot")).toBe("pill");
+    expect(pill?.getAttribute("data-tone")).toBe("gap");
+    expect(pill?.querySelector("svg")).toBeTruthy();
     expect(within(engineering).getByText("Medium confidence")).toBeTruthy();
     expect(within(engineering).getByText(": [BASIS]")).toBeTruthy();
     expect(

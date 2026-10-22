@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 
+import { Chip } from "@/components/ui/chip";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import {
   agentLabel,
@@ -62,9 +63,7 @@ export function AssessmentFindingInspector({
         <ul className="flex flex-col gap-1.5">
           {finding.requirements.map((requirement) => (
             <li key={requirement.id} className="flex items-baseline gap-2">
-              <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground">
-                {requirement.label}
-              </span>
+              <Chip className="shrink-0">{requirement.label}</Chip>
               <span className="min-w-0 break-words text-body">
                 {requirement.excerpt}
               </span>

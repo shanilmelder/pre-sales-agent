@@ -43,4 +43,6 @@ function Pill({ className, tone, icon, children, ...props }: PillProps) {
   )
 }
 
-export { Pill, pillVariants }
+type PillTone = NonNullable<VariantProps<typeof pillVariants>["tone"]>
+
+export { Pill, pillVariants, type PillTone }

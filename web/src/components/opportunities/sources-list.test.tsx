@@ -84,7 +84,7 @@ describe("SourcesList status column", () => {
     const runningDot = within(rowFor("b.eml")).getByTestId("running-dot");
     expect(runningDot.tagName.toLowerCase()).toBe("svg");
     expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
-    expect(runningDot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(runningDot.closest('[data-slot="pill"]')?.getAttribute("data-tone")).toBe("agent");
     expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
     expect(within(rowFor("c.docx")).getByText("Parsed")).toBeTruthy();
     const failedRow = rowFor("d.pdf");

@@ -3,6 +3,8 @@
 import { CircleCheckIcon, CircleDashedIcon, CircleXIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { Pill } from "@/components/ui/pill";
+import { pillToneFor } from "@/lib/pill-tone";
 import {
   agentName,
   agentRows,
@@ -32,13 +34,9 @@ const ICONS = {
 export function EvalStatusPill({ status, label }: { status: BarStatus; label?: string }) {
   const { Icon, tone } = ICONS[status];
   return (
-    <span
-      data-eval-status={status}
-      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
-    >
-      <Icon className={`size-3 shrink-0 ${tone}`} aria-hidden="true" />
+    <Pill data-eval-status={status} tone={pillToneFor(tone)} icon={<Icon />} className="shrink-0">
       {label ?? statusLabel(status)}
-    </span>
+    </Pill>
   );
 }
 

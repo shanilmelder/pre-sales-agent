@@ -71,7 +71,7 @@ describe("SourcesTable", () => {
     const runningDot = embedding.getByTestId("running-dot");
     expect(runningDot.tagName.toLowerCase()).toBe("svg");
     expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
-    expect(runningDot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(runningDot.closest('[data-slot="pill"]')?.getAttribute("data-tone")).toBe("agent");
     expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
     const failed = within(rowOf("Unembedded guide"));
     expect(failed.getByText("Embedding failed").closest("span")?.querySelector("svg")).toBeTruthy();

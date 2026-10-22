@@ -10,6 +10,7 @@ import {
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import { ParseStatusPill } from "@/components/opportunities/sources-list";
+import { Pill, type PillTone } from "@/components/ui/pill";
 import { useShell } from "@/components/shell/shell-context";
 import {
   EMBED_STATUS_LABELS,
@@ -22,16 +23,12 @@ import {
   type KnowledgeSource,
 } from "@/lib/knowledge-sources";
 
-const labelClass =
-  "inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground";
-
 /** "Stale": an icon and a label, never colour alone. */
 export function StaleLabel() {
   return (
-    <span data-label="stale" className={labelClass}>
-      <HourglassIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
+    <Pill data-label="stale" tone="gap" icon={<HourglassIcon />} className="shrink-0">
       Stale
-    </span>
+    </Pill>
   );
 }
 
@@ -43,23 +40,24 @@ export function SourceStatusPill({ source }: { source: Pick<KnowledgeSource, "pa
   if (status.kind === "parse") return <ParseStatusPill parse={status.parse} />;
   const { embed } = status;
   let mark;
+  let tone: PillTone;
   switch (embed.status) {
     case "ready":
-      mark = <CircleCheckIcon aria-hidden="true" className="size-3 shrink-0 text-resolved" />;
+      mark = <CircleCheckIcon />;
+      tone = "resolved";
       break;
     case "failed":
-      mark = <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-blocker" />;
+      mark = <CircleAlertIcon />;
+      tone = "blocker";
       break;
     default:
-      mark = (
-        <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
-      );
+      mark = <LoaderCircleIcon data-testid="running-dot" />;
+      tone = "agent";
   }
   return (
-    <span className={labelClass} data-status={`embed-${embed.status}`}>
-      {mark}
+    <Pill data-status={`embed-${embed.status}`} tone={tone} icon={mark} className="shrink-0">
       {EMBED_STATUS_LABELS[embed.status]}
-    </span>
+    </Pill>
   );
 }
 
@@ -75,10 +73,9 @@ export function processingFailure(source: Pick<KnowledgeSource, "parse" | "embed
 /** "Retired": an icon and a label, never colour alone. */
 export function RetiredLabel() {
   return (
-    <span data-label="retired" className={labelClass}>
-      <ArchiveIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
+    <Pill data-label="retired" tone="neutral" icon={<ArchiveIcon />} className="shrink-0">
       Retired
-    </span>
+    </Pill>
   );
 }
 

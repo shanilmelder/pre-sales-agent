@@ -23,6 +23,7 @@ import {
   ConflictStatusPill,
   DetectedFromTextTag,
 } from "@/components/opportunities/conflict-status-pill";
+import { Chip } from "@/components/ui/chip";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -62,8 +63,6 @@ const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, or the assigned reviewer can decide this Conflict.";
 const GONE = "This Conflict is no longer there. Reload to see the latest.";
 
-const chipClass =
-  "inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground";
 const buttonClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 const primaryClass =
@@ -78,11 +77,9 @@ function RequirementChip({
 }) {
   return (
     <p className="flex min-w-0 items-baseline gap-2">
-      <span
-        className={`${chipClass} ${requirement.label === "Superseded" ? "line-through" : ""}`}
-      >
+      <Chip className={`shrink-0 ${requirement.label === "Superseded" ? "line-through" : ""}`}>
         {requirement.label}
-      </span>
+      </Chip>
       <span className="min-w-0 break-words text-meta">
         {requirement.excerpt}
       </span>

@@ -3,6 +3,7 @@
 import { ArchiveIcon, CircleCheckIcon } from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
 
+import { Pill } from "@/components/ui/pill";
 import { useShell } from "@/components/shell/shell-context";
 import { EMPTY_STATE, groupByKind, type CatalogueEntry } from "@/lib/catalogue";
 
@@ -11,16 +12,14 @@ export function StatusPill({ entry }: { entry: CatalogueEntry }) {
   const retired = entry.retired;
   const Icon = retired ? ArchiveIcon : CircleCheckIcon;
   return (
-    <span
+    <Pill
       data-entry-status={entry.status}
-      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
+      tone={retired ? "neutral" : "resolved"}
+      icon={<Icon />}
+      className="shrink-0"
     >
-      <Icon
-        className={`size-3 shrink-0 ${retired ? "text-muted-foreground" : "text-resolved"}`}
-        aria-hidden="true"
-      />
       {retired ? "Retired" : "Active"}
-    </span>
+    </Pill>
   );
 }
 

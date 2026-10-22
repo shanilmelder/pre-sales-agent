@@ -156,12 +156,8 @@ describe("ConflictsSection", () => {
       "resolved",
     ]);
     for (const pill of statuses) expect(pill.querySelector("svg")).toBeTruthy();
-    expect(statuses[0]!.querySelector("svg")?.getAttribute("class")).toContain(
-      "text-blocker",
-    );
-    expect(statuses[2]!.querySelector("svg")?.getAttribute("class")).toContain(
-      "text-resolved",
-    );
+    expect(statuses[0]!.getAttribute("data-tone")).toBe("blocker");
+    expect(statuses[2]!.getAttribute("data-tone")).toBe("resolved");
     expect(row(/Scope.*Open/).className).toContain("min-h-row");
     // Read-only: no text fields; the rows are the only buttons.
     expect(screen.queryByRole("textbox")).toBeNull();

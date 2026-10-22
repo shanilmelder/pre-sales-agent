@@ -125,10 +125,12 @@ describe("RedTeamList", () => {
     const pills = Array.from(grid.querySelectorAll("[data-severity]"));
     expect(pills.map((p) => p.getAttribute("data-severity"))).toEqual(["critical", "high", "low"]);
     // Blocker red only for critical, gap amber only for high; every pill has an icon.
-    expect(pills[0].querySelector("svg")?.getAttribute("class")).toContain("text-blocker");
-    expect(pills[1].querySelector("svg")?.getAttribute("class")).toContain("text-gap");
-    expect(pills[2].querySelector("svg")?.getAttribute("class")).toContain("text-muted-foreground");
-    expect(grid.querySelectorAll(".text-blocker")).toHaveLength(1);
+    expect(pills.map((p) => p.getAttribute("data-tone"))).toEqual(["blocker", "gap", "neutral"]);
+    for (const pill of pills) {
+      expect(pill.getAttribute("data-slot")).toBe("pill");
+      expect(pill.querySelector("svg")).toBeTruthy();
+    }
+    expect(grid.querySelectorAll('[data-tone="blocker"]')).toHaveLength(1);
     expect(row(3).className).toContain("min-h-row");
     const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
     expect(tabStops).toEqual([row(3)]);
