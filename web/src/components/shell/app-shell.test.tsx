@@ -20,7 +20,12 @@ vi.mock("next/navigation", () => ({
 
 import { AppShell, PlaceholderPage } from "./app-shell";
 import { READ_ONLY_MESSAGE } from "./read-only-notice";
-import { RightPaneContent, ShellProviders, useWorkspaceTabKeys } from "./shell-context";
+import {
+  RightPaneContent,
+  ShellProviders,
+  usePublishStreamState,
+  useWorkspaceTabKeys,
+} from "./shell-context";
 
 const TAB_HREFS = Array.from({ length: 9 }, (_, i) => `/tab-${i + 1}`);
 
@@ -94,11 +99,11 @@ describe("AppShell first-run hint", () => {
 });
 
 describe("AppShell layout", () => {
-  it("has one Primary nav, one main and one polite live region", () => {
+  it("has one Primary nav, one main and two polite live regions (announcements, Offline strip)", () => {
     const { container } = renderShell();
     expect(screen.getAllByRole("navigation", { name: "Primary" })).toHaveLength(1);
     expect(screen.getAllByRole("main")).toHaveLength(1);
-    expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(2);
     expect(container.querySelectorAll("nav")).toHaveLength(1);
   });
 
@@ -162,6 +167,26 @@ describe("AppShell layout", () => {
     const { container } = renderShell();
     expect(await axeViolations(container)).toEqual([]);
   });
+
+  it.each(["light", "dark"])(
+    "has no axe violations with the Offline strip and the read-only notice (%s)",
+    async (theme) => {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      function OfflineWorkspace() {
+        usePublishStreamState("offline", () => undefined);
+        return <p>Workspace</p>;
+      }
+      try {
+        const { container } = renderShell({ children: <OfflineWorkspace /> });
+        const strip = screen.getByTestId("offline-strip");
+        expect(within(strip).getByRole("button", { name: "Retry" })).toBeTruthy();
+        expect(screen.getByTestId("read-only-notice")).toBeTruthy();
+        expect(await axeViolations(container)).toEqual([]);
+      } finally {
+        document.documentElement.classList.remove("dark");
+      }
+    },
+  );
 });
 
 describe("right pane", () => {
@@ -769,7 +794,7 @@ describe("state lives in the layout providers", () => {
     expect(screen.getByRole("heading", { name: "Reports" })).toBeTruthy();
     expect(sidebar().getAttribute("data-collapsed")).toBe("true");
     expect(rightPane()).toBeTruthy();
-    expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(2);
   });
 });
 

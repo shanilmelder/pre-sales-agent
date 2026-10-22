@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { CheatSheet } from "@/components/shell/cheat-sheet";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { KeyboardShortcuts } from "@/components/shell/keyboard-shortcuts";
+import { OfflineStrip } from "@/components/shell/offline-strip";
 import { ReadOnlyNotice } from "@/components/shell/read-only-notice";
 import { ShortcutHint } from "@/components/shell/shortcut-hint";
 import { RightPane } from "@/components/shell/right-pane";
@@ -50,6 +51,7 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
             className="flex min-w-0 flex-1 flex-col overflow-auto outline-none"
           >
             <ShortcutHint />
+            <OfflineStrip />
             <ReadOnlyNotice />
             <div className="flex h-12 shrink-0 items-center justify-end border-b border-border px-gutter">
               <RightPaneToggle />

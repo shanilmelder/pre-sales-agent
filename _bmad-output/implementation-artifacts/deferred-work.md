@@ -189,3 +189,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-2b-shell-chrome.md`
   summary: Unverified (would be medium): `RightPaneContent` returns the pane to Inspector only on mount or a keyed-child change, so an inspector child without a selection-specific key may leave Activity showing after a new selection.
   evidence: To settle, check the roughly 12 `RightPaneContent` consumers for selection-keyed children and whether background polls change keys; the shell test covers only a keyed child.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-2c-offline-strip-and-read-only.md`
+  summary: Unverified (would be medium): read-only below 1024px and offline disables only the workspace tab-panel `fieldset`, so editable controls in the right-pane inspectors (outside it) may still work.
+  evidence: To settle, check whether the inspector components render inputs or buttons that save, and whether they sit inside the disabled `fieldset`; the shell tests cover only the workspace body.

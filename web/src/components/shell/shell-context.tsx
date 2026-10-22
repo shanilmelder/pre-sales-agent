@@ -7,11 +7,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
+import type { StreamStatus } from "@/lib/opportunity-events";
 import { LiveRegionProvider, useAnnounce } from "@/components/shell/live-region";
 // Types only: the preferences module imports next/headers.
 import type { Density, Theme } from "@/lib/preferences";
@@ -52,6 +54,12 @@ type ShellState = {
    * Set through `useWorkspaceTabKeys`; the global key handler applies the single-key rules. */
   workspaceTabs: readonly string[] | null;
   setWorkspaceTabs: (hrefs: readonly string[] | null) => void;
+  /** The Opportunity workspace's event-stream status (Story 17.2c); `connecting` while no
+   * workspace is mounted. The shell's Offline strip reads it. */
+  streamStatus: StreamStatus;
+  /** Reopens the workspace's stream at once; null while no workspace is mounted. */
+  retryStream: (() => void) | null;
+  setStreamState: (state: { status: StreamStatus; retry: (() => void) | null }) => void;
 };
 
 const ShellContext = createContext<ShellState | null>(null);
@@ -110,6 +118,10 @@ export function ShellProvider({
   const [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>("inspector");
   const [dialog, setDialog] = useState<ShellDialog | null>(null);
   const [workspaceTabs, setWorkspaceTabs] = useState<readonly string[] | null>(null);
+  const [stream, setStream] = useState<{ status: StreamStatus; retry: (() => void) | null }>({
+    status: "connecting",
+    retry: null,
+  });
   const [firstRunAnswered, setFirstRunAnswered] = useState(false);
   const dismissFirstRun = useCallback(() => setFirstRunAnswered(true), []);
 
@@ -158,6 +170,9 @@ export function ShellProvider({
       dismissFirstRun,
       workspaceTabs,
       setWorkspaceTabs,
+      streamStatus: stream.status,
+      retryStream: stream.retry,
+      setStreamState: setStream,
     };
   }, [
     sidebarCollapsed,
@@ -172,6 +187,7 @@ export function ShellProvider({
     firstRunAnswered,
     dismissFirstRun,
     workspaceTabs,
+    stream,
   ]);
 
   return (
@@ -191,6 +207,23 @@ export function useWorkspaceTabKeys(hrefs: readonly string[]) {
     setWorkspaceTabs(key ? key.split("\n") : []);
     return () => setWorkspaceTabs(null);
   }, [key, setWorkspaceTabs]);
+}
+
+/** Publishes the workspace's stream status and its retry to the shell (the Offline strip)
+ * while the calling component is mounted. */
+export function usePublishStreamState(status: StreamStatus, retry: () => void) {
+  const { setStreamState } = useShell();
+  const retryRef = useRef(retry);
+  useEffect(() => {
+    retryRef.current = retry;
+  });
+  useEffect(() => {
+    setStreamState({ status, retry: () => retryRef.current() });
+  }, [status, setStreamState]);
+  useEffect(
+    () => () => setStreamState({ status: "connecting", retry: null }),
+    [setStreamState],
+  );
 }
 
 // --- right-pane content slot ----------------------------------------------------------------

@@ -107,7 +107,7 @@ describe.each(SHELL_PAGES)("%s", (_path, Page, title, text) => {
     const { container } = renderPage(await Page());
     expect(screen.getAllByRole("navigation", { name: "Primary" })).toHaveLength(1);
     expect(screen.getAllByRole("main")).toHaveLength(1);
-    expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(2);
     expect(screen.getByRole("heading", { level: 1, name: title })).toBeTruthy();
     expect(screen.getByText(text)).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
