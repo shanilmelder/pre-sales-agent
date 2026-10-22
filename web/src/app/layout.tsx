@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { cn } from "cn";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShellProviders } from "@/components/shell/shell-context";
 import { ThemeScript } from "@/components/theme-script";
 import { getPreferences, htmlPreferenceAttributes } from "@/lib/preferences";
@@ -34,9 +35,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col">
         {/* State only (sidebar, right pane, live region): pages still gate their content. */}
-        <ShellProviders singleKeyShortcuts={preferences.singleKeyShortcuts}>
-          {children}
-        </ShellProviders>
+        <TooltipProvider>
+          <ShellProviders singleKeyShortcuts={preferences.singleKeyShortcuts}>
+            {children}
+          </ShellProviders>
+        </TooltipProvider>
       </body>
     </html>
   );
