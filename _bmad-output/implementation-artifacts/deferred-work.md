@@ -209,3 +209,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-3b-conflicts-estimate-trace-refit.md`
   summary: Trace tab renders nothing when the page is beyond the last page (total > 0 but no items, unfiltered).
   evidence: Edge-case review of `trace-list.tsx:495-503`; the branch is pre-existing and unchanged by 17.3b.
+
+- source_spec: none
+  summary: Story 17.4b: Opportunity header refit (breadcrumb "All Opportunities / title", owner and collaborator chips, proposal date with a day countdown); Submit and "Resolve N blockers" wait for the blocker data from Story 8.6.
+  evidence: Story 17.4 has two independently shippable goals (list and header); split at the user's choice. Backend ticket: the API has no blockers count, submit state or estimate summary.

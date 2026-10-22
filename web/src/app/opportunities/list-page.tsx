@@ -9,13 +9,21 @@ import {
   parsePage,
   type ListScope,
 } from "@/app/opportunities/data";
-import { filtersHref, hasFilters, parseFilters, type Filters } from "@/app/opportunities/filters";
+import {
+  dueSoonFilters,
+  filtersHref,
+  hasFilters,
+  isDueSoon,
+  parseFilters,
+  type Filters,
+} from "@/app/opportunities/filters";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { FilterBar } from "@/components/opportunities/filter-bar";
+import { OpportunityViews } from "@/components/opportunities/opportunity-views";
 import { OpportunitiesTable } from "@/components/opportunities/opportunities-table";
 import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
-import type { OpportunityPage } from "@/lib/opportunities";
+import { utcToday, type OpportunityPage } from "@/lib/opportunities";
 import { canCreateOpportunity, NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
 
 const linkClass =
@@ -89,6 +97,8 @@ export async function OpportunityListPage({
   }
   const filtered = hasFilters(filters);
   const canCreate = canCreateOpportunity(result.me.permissions);
+  const today = utcToday();
+  const view = !filterable ? "mine" : isDueSoon(filters, today) ? "due" : "all";
 
   return (
     <AppShell me={result.me}>
@@ -106,6 +116,10 @@ export async function OpportunityListPage({
             </Link>
           ) : null}
         </div>
+        <OpportunityViews
+          current={view}
+          dueHref={filtersHref("/opportunities", dueSoonFilters(today))}
+        />
         {filterable ? (
           <FilterBar
             basePath={basePath}

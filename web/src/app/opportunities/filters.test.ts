@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  dueSoonFilters,
   filtersHref,
   hasFilters,
   isCalendarDate,
+  isDueSoon,
   parseFilters,
   withFilter,
 } from "@/app/opportunities/filters";
@@ -110,5 +112,22 @@ describe("withFilter and hasFilters", () => {
     expect(withFilter(set, "status", "")).toEqual({ owner: OWNER });
     expect(hasFilters({})).toBe(false);
     expect(hasFilters({ to: "2026-11-30" })).toBe(true);
+  });
+});
+
+describe("dueSoonFilters and isDueSoon", () => {
+  it("covers today to today plus 14 days in UTC, across month and year ends", () => {
+    expect(dueSoonFilters("2026-10-23")).toEqual({ from: "2026-10-23", to: "2026-11-06" });
+    expect(dueSoonFilters("2026-12-25")).toEqual({ from: "2026-12-25", to: "2027-01-08" });
+    expect(dueSoonFilters("2028-02-20")).toEqual({ from: "2028-02-20", to: "2028-03-05" });
+  });
+
+  it("is true only when the filters equal that range", () => {
+    const due = dueSoonFilters("2026-10-23");
+    expect(isDueSoon(due, "2026-10-23")).toBe(true);
+    expect(isDueSoon(due, "2026-10-24")).toBe(false);
+    expect(isDueSoon({ ...due, status: "intake" }, "2026-10-23")).toBe(false);
+    expect(isDueSoon({ from: due.from }, "2026-10-23")).toBe(false);
+    expect(isDueSoon({}, "2026-10-23")).toBe(false);
   });
 });

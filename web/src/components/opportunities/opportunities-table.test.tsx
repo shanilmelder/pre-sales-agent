@@ -62,39 +62,76 @@ describe("OpportunitiesTable", () => {
       vi.advanceTimersByTime(1);
     });
     expect(container.querySelectorAll("[data-skeleton-row]")).toHaveLength(0);
-    expect(row("[CUSTOMER 1]")).toBeTruthy();
+    expect(row("[TITLE 1]")).toBeTruthy();
   });
 
-  it("shows customer, status (icon and label), owner and target date in 32px rows", async () => {
+  it("shows title with customer, status (icon and label), owner and proposal date in padded rows", async () => {
     vi.useFakeTimers();
     renderTable();
     await pastSkeleton();
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "Customer",
+      "Opportunity",
       "Status",
       "Owner",
-      "Target proposal date",
+      "Proposal date",
     ]);
     const rows = screen.getAllByRole("row");
     expect(rows).toHaveLength(4);
-    expect(rows[1].className).toContain("h-row");
+    expect(rows[1].className).toContain("min-h-row");
+    expect(rows[1].textContent).toContain("[CUSTOMER 1]");
     expect(rows[1].textContent).toContain("Intake");
     expect(rows[1].querySelector("svg[aria-hidden='true']")).toBeTruthy();
     expect(rows[1].textContent).toContain("[OWNER 1]");
     expect(rows[1].textContent).toContain("1 Nov 2026");
-    expect(row("[CUSTOMER 1]").getAttribute("href")).toBe(`/opportunities/${ITEMS[0].id}`);
+    expect(row("[TITLE 1]").getAttribute("href")).toBe(`/opportunities/${ITEMS[0].id}`);
   });
 
-  it("empty: the create sentence for creators, a plain one for everyone else", async () => {
+  it("empty: a card with New Opportunity for creators, none for everyone else", async () => {
     vi.useFakeTimers();
     const creator = renderTable({ items: [] });
     await pastSkeleton();
-    expect(screen.getByText("No Opportunities yet. Press c to create one.")).toBeTruthy();
+    expect(screen.getByText("No Opportunities yet")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Create an Opportunity from a customer email, transcript or RFP. The first file becomes its first Source.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "New Opportunity" }).getAttribute("href")).toBe(
+      "/opportunities/new",
+    );
     creator.unmount();
     renderTable({ items: [], canCreate: false });
     await pastSkeleton();
-    expect(screen.getByText("No Opportunities yet.")).toBeTruthy();
-    expect(screen.queryByText(/Press c/)).toBeNull();
+    expect(screen.getByText("No Opportunities yet")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "New Opportunity" })).toBeNull();
+  });
+
+  it("skeleton rows have four cells", () => {
+    vi.useFakeTimers();
+    const { container } = renderTable();
+    expect(container.querySelector("[data-skeleton-row]")?.querySelectorAll("td")).toHaveLength(4);
+    expect(container.querySelector("table")?.getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("filtered empty keeps its sentence and Clear filters", async () => {
+    vi.useFakeTimers();
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <OpportunitiesTable items={[]} caption="All" canCreate clearFiltersHref="/opportunities" />
+      </ShellProviders>,
+    );
+    await pastSkeleton();
+    expect(screen.getByText(/No Opportunities match these filters/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Clear filters" }).getAttribute("href")).toBe(
+      "/opportunities",
+    );
+  });
+
+  it("empty card has no axe violations", async () => {
+    const { container } = renderTable({ items: [] });
+    expect(await axeViolations(container)).toEqual([]);
+    expect(await screen.findByText("No Opportunities yet")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
   });
 
   it("j/k and the arrow keys move between rows; the list is one Tab stop", async () => {
@@ -104,19 +141,19 @@ describe("OpportunitiesTable", () => {
     vi.useRealTimers();
     const user = userEvent.setup();
     await user.tab();
-    expect(document.activeElement).toBe(row("[CUSTOMER 1]"));
+    expect(document.activeElement).toBe(row("[TITLE 1]"));
     await user.keyboard("j");
-    expect(document.activeElement).toBe(row("[CUSTOMER 2]"));
+    expect(document.activeElement).toBe(row("[TITLE 2]"));
     await user.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(row("[CUSTOMER 3]"));
+    expect(document.activeElement).toBe(row("[TITLE 3]"));
     await user.keyboard("j");
-    expect(document.activeElement).toBe(row("[CUSTOMER 3]"));
+    expect(document.activeElement).toBe(row("[TITLE 3]"));
     await user.keyboard("k");
-    expect(document.activeElement).toBe(row("[CUSTOMER 2]"));
+    expect(document.activeElement).toBe(row("[TITLE 2]"));
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "After" }));
     await user.tab({ shift: true });
-    expect(document.activeElement).toBe(row("[CUSTOMER 2]"));
+    expect(document.activeElement).toBe(row("[TITLE 2]"));
   });
 
   it("Enter on a row follows its link to the Opportunity", async () => {
@@ -126,7 +163,7 @@ describe("OpportunitiesTable", () => {
     vi.useRealTimers();
     const user = userEvent.setup();
     const clicked = vi.fn((event: MouseEvent) => event.preventDefault());
-    row("[CUSTOMER 2]").addEventListener("click", clicked);
+    row("[TITLE 2]").addEventListener("click", clicked);
     await user.tab();
     await user.keyboard("j{Enter}");
     expect(clicked).toHaveBeenCalledTimes(1);
@@ -140,9 +177,9 @@ describe("OpportunitiesTable", () => {
     const user = userEvent.setup();
     await user.tab();
     await user.keyboard("j");
-    expect(document.activeElement).toBe(row("[CUSTOMER 1]"));
+    expect(document.activeElement).toBe(row("[TITLE 1]"));
     await user.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(row("[CUSTOMER 2]"));
+    expect(document.activeElement).toBe(row("[TITLE 2]"));
   });
 
   it("has no WCAG 2.1 AA violations, loading or loaded", async () => {

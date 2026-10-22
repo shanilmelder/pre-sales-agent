@@ -6,6 +6,8 @@ import { permissionsFor } from "@/test/permissions";
 
 import type { MeResult } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
+import { dueSoonFilters } from "@/app/opportunities/filters";
+import { utcToday } from "@/lib/opportunities";
 import type { Opportunity, OpportunitySummary } from "@/lib/opportunities";
 import { axeViolations } from "@/test/axe";
 
@@ -208,7 +210,7 @@ describe.each(LISTS)("%s", (_path, Page, title, scope) => {
     expect(screen.getByRole("link", { name: "New Opportunity" }).getAttribute("href")).toBe(
       "/opportunities/new",
     );
-    expect(await screen.findByRole("link", { name: "[CUSTOMER]" })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "[TITLE]" })).toBeTruthy();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities", {
       params: { query: { scope, page: 1, page_size: 50 } },
     });
@@ -222,12 +224,21 @@ describe.each(LISTS)("%s", (_path, Page, title, scope) => {
     expect(screen.queryByRole("link", { name: "New Opportunity" })).toBeNull();
   });
 
-  it("empty: the empty-state sentence after the skeleton", async () => {
+  it("empty: the empty-state card after the skeleton, with views", async () => {
     signedIn(["presales_engineer"]);
     listed([]);
     const { container } = renderPage(await Page({ searchParams: params() }));
     expect(container.querySelector("[data-skeleton-row]")).toBeTruthy();
-    expect(await screen.findByText("No Opportunities yet. Press c to create one.")).toBeTruthy();
+    expect(await screen.findByText("No Opportunities yet")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "New Opportunity" })).toHaveLength(2);
+    const views = screen.getByRole("navigation", { name: "Views" });
+    expect(within(views).getAllByRole("link").map((l) => l.textContent)).toEqual([
+      "All",
+      "Mine",
+      "Due in 14 days",
+    ]);
+    const current = within(views).getByRole("link", { current: "page" });
+    expect(current.textContent).toBe(scope === "mine" ? "Mine" : "All");
   });
 
   it("paginates with Previous and Next, and redirects past the last page", async () => {
@@ -297,7 +308,7 @@ describe("All Opportunities filters", () => {
     expect(screen.getByRole("link", { name: "Clear filters" }).getAttribute("href")).toBe(
       "/opportunities",
     );
-    expect(await screen.findByRole("link", { name: "[CUSTOMER]" })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "[TITLE]" })).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -321,7 +332,7 @@ describe("All Opportunities filters", () => {
     listed([]);
     renderPage(await OpportunitiesPage({ searchParams: query({ status: "closed" }) }));
     expect(await screen.findByText("No Opportunities match these filters.")).toBeTruthy();
-    expect(screen.queryByText("No Opportunities yet. Press c to create one.")).toBeNull();
+    expect(screen.queryByText("No Opportunities yet")).toBeNull();
     const clears = screen.getAllByRole("link", { name: "Clear filters" });
     expect(clears.length).toBe(2);
     for (const link of clears) expect(link.getAttribute("href")).toBe("/opportunities");
@@ -361,7 +372,19 @@ describe("All Opportunities filters", () => {
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities", {
       params: { query: { scope: "mine", page: 1, page_size: 50 } },
     });
-    expect(await screen.findByText("No Opportunities yet. Press c to create one.")).toBeTruthy();
+    expect(await screen.findByText("No Opportunities yet")).toBeTruthy();
+  });
+
+  it("Due in 14 days is current when the range is today to today plus 14", async () => {
+    signedIn(["head_of_delivery"]);
+    listed([SUMMARY]);
+    const { from, to } = dueSoonFilters(utcToday());
+    renderPage(await OpportunitiesPage({ searchParams: query({ from: from!, to: to! }) }));
+    const views = screen.getByRole("navigation", { name: "Views" });
+    expect(within(views).getByRole("link", { current: "page" }).textContent).toBe("Due in 14 days");
+    expect(within(views).getByRole("link", { name: "Due in 14 days" }).getAttribute("href")).toBe(
+      `/opportunities?from=${from}&to=${to}`,
+    );
   });
 });
 

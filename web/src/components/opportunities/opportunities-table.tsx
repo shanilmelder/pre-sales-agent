@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
+import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { StatusPill } from "@/components/opportunities/status-pill";
 import { useShell } from "@/components/shell/shell-context";
 import {
   EMPTY_FILTERED,
-  EMPTY_LIST,
-  EMPTY_LIST_CREATOR,
+  EMPTY_LIST_BODY,
+  EMPTY_LIST_TITLE,
   formatDate,
   SKELETON_MIN_MS,
   type OpportunitySummary,
 } from "@/lib/opportunities";
+import { NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
+import { cn } from "@/lib/utils";
 
 const SKELETON_ROWS = 5;
 
@@ -31,7 +34,7 @@ function Header() {
     <thead className="text-label text-muted-foreground">
       <tr className="h-row border-b border-border">
         <th scope="col" className="w-2/5 px-gutter font-medium">
-          Customer
+          Opportunity
         </th>
         <th scope="col" className="px-2 font-medium">
           Status
@@ -40,14 +43,14 @@ function Header() {
           Owner
         </th>
         <th scope="col" className="px-2 font-medium">
-          Target proposal date
+          Proposal date
         </th>
       </tr>
     </thead>
   );
 }
 
-/** Opportunities, one page at a time, in 32px rows. Each row's customer is a link to the
+/** Opportunities, one page at a time, in padded rows. Each row's title is a link to the
  * Opportunity. The list is one Tab stop (roving tabindex); j/k (or the arrow keys) move
  * between rows and Enter opens one. Skeleton rows show for at least 150 ms on first load. */
 export function OpportunitiesTable({
@@ -79,9 +82,9 @@ export function OpportunitiesTable({
         <Header />
         <tbody>
           {Array.from({ length: SKELETON_ROWS }, (_, index) => (
-            <tr key={index} data-skeleton-row="" className="h-row border-b border-border">
+            <tr key={index} data-skeleton-row="" className="min-h-row border-b border-border">
               {[0, 1, 2, 3].map((cell) => (
-                <td key={cell} className={cell === 0 ? "px-gutter" : "px-2"}>
+                <td key={cell} className={cn("py-3", cell === 0 ? "px-gutter" : "px-2")}>
                   <span className="block h-3 w-3/4 rounded-sm bg-muted" />
                 </td>
               ))}
@@ -108,7 +111,14 @@ export function OpportunitiesTable({
 
   if (items.length === 0) {
     return (
-      <p className="p-gutter text-muted-foreground">{canCreate ? EMPTY_LIST_CREATOR : EMPTY_LIST}</p>
+      <div className="p-gutter">
+        <EmptyTabCard
+          title={EMPTY_LIST_TITLE}
+          body={EMPTY_LIST_BODY}
+          actionLabel={canCreate ? "New Opportunity" : undefined}
+          href={canCreate ? NEW_OPPORTUNITY_HREF : undefined}
+        />
+      </div>
     );
   }
 
@@ -133,8 +143,8 @@ export function OpportunitiesTable({
       <Header />
       <tbody ref={body} onKeyDown={onKeyDown}>
         {items.map((item) => (
-          <tr key={item.id} className="h-row border-b border-border hover:bg-muted/60">
-            <td className="truncate px-gutter">
+          <tr key={item.id} className="min-h-row border-b border-border hover:bg-muted/60">
+            <td className="truncate px-gutter py-3">
               <Link
                 href={`/opportunities/${item.id}`}
                 data-opportunity-row=""
@@ -143,14 +153,17 @@ export function OpportunitiesTable({
                 onFocus={() => setFocusedId(item.id)}
                 className="block w-full truncate rounded-sm text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
-                {item.customer_name}
+                {item.title}
               </Link>
+              <span className="block truncate text-meta text-muted-foreground">
+                {item.customer_name}
+              </span>
             </td>
-            <td className="px-2">
+            <td className="px-2 py-3">
               <StatusPill status={item.status} />
             </td>
-            <td className="truncate px-2">{item.owner.name}</td>
-            <td className="truncate px-2 text-numeric">{formatDate(item.target_proposal_date)}</td>
+            <td className="truncate px-2 py-3">{item.owner.name}</td>
+            <td className="truncate px-2 py-3 text-numeric">{formatDate(item.target_proposal_date)}</td>
           </tr>
         ))}
       </tbody>

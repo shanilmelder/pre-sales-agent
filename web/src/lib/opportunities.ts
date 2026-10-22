@@ -21,10 +21,10 @@ export type UserRef = components["schemas"]["UserRef"];
 export type UserSummary = components["schemas"]["UserSummary"];
 export type OpportunityFacets = components["schemas"]["OpportunityFacets"];
 
-/** The empty-state sentence for people who can create Opportunities. */
-export const EMPTY_LIST_CREATOR = "No Opportunities yet. Press c to create one.";
-/** The empty-state sentence for everyone else (they have no `c`). */
-export const EMPTY_LIST = "No Opportunities yet.";
+/** The empty-state card on a list with no Opportunities and no filters. */
+export const EMPTY_LIST_TITLE = "No Opportunities yet";
+export const EMPTY_LIST_BODY =
+  "Create an Opportunity from a customer email, transcript or RFP. The first file becomes its first Source.";
 /** The empty-state sentence when the All Opportunities filters match nothing. */
 export const EMPTY_FILTERED = "No Opportunities match these filters.";
 /** What anyone sees for an Opportunity they may not read, or one that doesn't exist. */
