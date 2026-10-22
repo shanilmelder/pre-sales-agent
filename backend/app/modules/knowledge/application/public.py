@@ -1,7 +1,10 @@
 """knowledge's public API. Other modules import knowledge only from here.
 
 Story 3.3: `search` (citable top-k chunks) and `resolve_evidence` (the `knowledge_chunk`
-Evidence resolver, also registered with `app.platform.evidence` on import)."""
+Evidence resolver, also registered with `app.platform.evidence` on import).
+
+Story 3.4: the Checklist commands and views, and `find_applicable_checklists` (the latest
+published version of every active Checklist whose scope matches, for Gap detection)."""
 
 from app.modules.knowledge.application.catalogue import (
     create_entry,
@@ -14,6 +17,34 @@ from app.modules.knowledge.application.catalogue import (
     read_versions,
     retire_entry,
     validate_catalogue_ref,
+)
+from app.modules.knowledge.application.checklist_models import (
+    AffectedArea,
+    ApplicableChecklist,
+    ApplicableItem,
+    Checklist,
+    ChecklistDraft,
+    ChecklistItem,
+    ChecklistList,
+    ChecklistVersion,
+    ChecklistVersionList,
+    ChecklistVersionSummary,
+    DraftInput,
+    DraftItemInput,
+    NewChecklist,
+    RetireChecklist,
+)
+from app.modules.knowledge.application.checklists import (
+    create_checklist,
+    find_applicable_checklists,
+    list_checklists,
+    open_draft,
+    publish_checklist,
+    read_checklist,
+    read_checklist_version,
+    read_checklist_versions,
+    retire_checklist,
+    save_draft,
 )
 from app.modules.knowledge.application.evidence import check_chunk_refs, resolve_evidence
 from app.modules.knowledge.application.models import (
@@ -63,6 +94,9 @@ from app.modules.knowledge.application.sources import (
     read_versions as read_source_versions,
 )
 from app.modules.knowledge.domain.catalogue import Kind, Status
+from app.modules.knowledge.domain.checklists import Domain as ChecklistDomain
+from app.modules.knowledge.domain.checklists import Impact as ChecklistImpact
+from app.modules.knowledge.domain.checklists import ItemKind as ChecklistItemKind
 from app.modules.knowledge.domain.embedding import (
     EVIDENCE_KIND,
     SEARCH_K_DEFAULT,
@@ -75,11 +109,26 @@ __all__ = [
     "EVIDENCE_KIND",
     "SEARCH_K_DEFAULT",
     "SEARCH_K_MAX",
+    "AffectedArea",
+    "ApplicableChecklist",
+    "ApplicableItem",
     "CatalogueEntry",
     "CatalogueList",
     "CatalogueVersion",
     "CatalogueVersionList",
+    "Checklist",
+    "ChecklistDomain",
+    "ChecklistDraft",
+    "ChecklistImpact",
+    "ChecklistItem",
+    "ChecklistItemKind",
+    "ChecklistList",
+    "ChecklistVersion",
+    "ChecklistVersionList",
+    "ChecklistVersionSummary",
     "DownloadLink",
+    "DraftInput",
+    "DraftItemInput",
     "EmbedErrorCode",
     "EmbedStatus",
     "EntryChanges",
@@ -96,7 +145,9 @@ __all__ = [
     "KnowledgeSourceVersionList",
     "KnowledgeSpan",
     "KnowledgeUserRef",
+    "NewChecklist",
     "NewEntry",
+    "RetireChecklist",
     "RetireRequest",
     "RetireSource",
     "SourceChanges",
@@ -104,17 +155,25 @@ __all__ = [
     "Status",
     "add_version",
     "check_chunk_refs",
+    "create_checklist",
     "create_entry",
     "download_link",
     "edit_entry",
     "edit_source",
+    "find_applicable_checklists",
     "get_catalogue_entry",
     "list_catalogue",
+    "list_checklists",
     "list_entries",
     "list_sources",
     "mark_reviewed",
     "max_body_bytes",
+    "open_draft",
+    "publish_checklist",
     "reactivate_entry",
+    "read_checklist",
+    "read_checklist_version",
+    "read_checklist_versions",
     "read_entry",
     "read_source",
     "read_source_versions",
@@ -122,10 +181,12 @@ __all__ = [
     "read_versions",
     "register_source",
     "resolve_evidence",
+    "retire_checklist",
     "retire_entry",
     "retire_source",
     "retry_embed",
     "retry_parse",
+    "save_draft",
     "search",
     "search_owners",
     "validate_catalogue_ref",

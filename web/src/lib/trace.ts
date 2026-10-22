@@ -64,6 +64,8 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "knowledge.catalogue_entry.updated": "Catalogue entry updated",
   "knowledge.catalogue_entry.retired": "Catalogue entry retired",
   "knowledge.catalogue_entry.reactivated": "Catalogue entry reactivated",
+  "knowledge.checklist.published": "Checklist published",
+  "knowledge.checklist.retired": "Checklist retired",
   "conflicts.conflict.detected": "Conflict detected",
   "conflicts.conflict.resolved": "Conflict resolved",
   "conflicts.conflict.escalated": "Conflict escalated",
@@ -97,6 +99,7 @@ export const SUBJECTS: Readonly<
   "assessments.assessment_run": { label: "Assessment run", tab: "assessments" },
   "assessments.assessment": { label: "Assessment", tab: "assessments" },
   "knowledge.catalogue_entry": { label: "Catalogue entry", tab: null },
+  "knowledge.checklist": { label: "Checklist", tab: null },
   "conflicts.conflict": { label: "Conflict", tab: "conflicts" },
 };
 

@@ -1570,6 +1570,158 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge/checklists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Knowledge Checklists
+         * @description Checklists by name, each with its current version's items and its draft. Active only
+         *     unless `include_retired`. Any user with a role.
+         */
+        get: operations["list_knowledge_checklists"];
+        put?: never;
+        /**
+         * Create Knowledge Checklist
+         * @description Create a Checklist with a name and a domain. It has a draft and no version yet.
+         */
+        post: operations["create_knowledge_checklist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/checklists/{checklist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Checklist
+         * @description One Checklist, retired or not. Any user with a role.
+         */
+        get: operations["get_knowledge_checklist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/checklists/{checklist_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Knowledge Checklist Versions
+         * @description The published versions, newest first, with publisher and date. Any user with a role.
+         */
+        get: operations["list_knowledge_checklist_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/checklists/{checklist_id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Checklist Version
+         * @description One published version as published, read-only. Any user with a role.
+         */
+        get: operations["get_knowledge_checklist_version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/checklists/{checklist_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Knowledge Checklist Draft
+         * @description Replace the whole draft. A new item (`id` null) gets a stable id.
+         */
+        put: operations["save_knowledge_checklist_draft"];
+        /**
+         * Open Knowledge Checklist Draft
+         * @description Start a draft from the latest published version; its items keep their ids. The
+         *     published version stays in use until the draft is published.
+         */
+        post: operations["open_knowledge_checklist_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/checklists/{checklist_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Knowledge Checklist
+         * @description Publish the draft as the next immutable version and clear the draft. Needs a scope
+         *     entry (a product, the industry or an Integration Type) and at least one complete item.
+         */
+        post: operations["publish_knowledge_checklist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/checklists/{checklist_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire Knowledge Checklist
+         * @description Retire the Checklist with a reason. It no longer applies; its versions stay readable
+         *     and its draft is discarded.
+         */
+        post: operations["retire_knowledge_checklist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/downloads/{token}": {
         parameters: {
             query?: never;
@@ -1832,6 +1984,22 @@ export interface components {
             page_size: number;
             /** Total */
             total: number;
+        };
+        /**
+         * AffectedArea
+         * @description The estimate area an item affects: an Integration Type or a Work Package. A retired
+         *     entry keeps resolving, with `retired` true.
+         */
+        AffectedArea: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["Kind"];
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Retired */
+            retired: boolean;
         };
         /**
          * AgentAssessment
@@ -2263,6 +2431,160 @@ export interface components {
             items: components["schemas"]["CatalogueVersion"][];
         };
         /**
+         * Checklist
+         * @description A Checklist. `name`, `domain`, `products`, `industry`, `integration_types` and `items`
+         *     are the latest published version's (`current_version`, null before the first Publish;
+         *     `name` and `domain` are then the ones given at creation). `draft` is the unpublished
+         *     draft, or null. `retired_reason` is set exactly when `retired`.
+         */
+        Checklist: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            domain: components["schemas"]["Domain"];
+            /** Products */
+            products: string[];
+            /** Industry */
+            industry: string | null;
+            /** Integration Types */
+            integration_types: components["schemas"]["IntegrationTypeTag"][];
+            status: components["schemas"]["Status"];
+            /** Retired */
+            retired: boolean;
+            /** Retired Reason */
+            retired_reason: string | null;
+            /** Current Version */
+            current_version: number | null;
+            /**
+             * Item Count
+             * @description Items in the current version.
+             */
+            item_count: number;
+            /**
+             * Mandatory Count
+             * @description Mandatory items in the current version.
+             */
+            mandatory_count: number;
+            /** Items */
+            items: components["schemas"]["ChecklistItem"][];
+            draft: components["schemas"]["ChecklistDraft"] | null;
+            created_by: components["schemas"]["KnowledgeUserRef"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Row Version */
+            row_version: number;
+        };
+        /**
+         * ChecklistDraft
+         * @description The one unpublished draft: what the next Publish will make the next version.
+         */
+        ChecklistDraft: {
+            /** Name */
+            name: string;
+            domain: components["schemas"]["Domain"];
+            /** Products */
+            products: string[];
+            /** Industry */
+            industry: string | null;
+            /** Integration Types */
+            integration_types: components["schemas"]["IntegrationTypeTag"][];
+            /** Items */
+            items: components["schemas"]["ChecklistItem"][];
+            /**
+             * Publishable
+             * @description True when Publish would succeed.
+             */
+            publishable: boolean;
+            /**
+             * Publish Problem
+             * @description Why the draft can't be published yet (the sentence to show), or null.
+             */
+            publish_problem: string | null;
+        };
+        /**
+         * ChecklistItem
+         * @description One item. `id` is stable across versions: an item carried into the next version keeps
+         *     it. Mandatory items always raise a Gap when unanswered; on a `security` Checklist they are
+         *     mandatory security controls.
+         */
+        ChecklistItem: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["ItemKind"];
+            /** Text */
+            text: string;
+            /** Why It Matters */
+            why_it_matters: string;
+            affected_area: components["schemas"]["AffectedArea"] | null;
+            impact: components["schemas"]["Impact"];
+            /** Mandatory */
+            mandatory: boolean;
+        };
+        /** ChecklistList */
+        ChecklistList: {
+            /** Items */
+            items: components["schemas"]["Checklist"][];
+        };
+        /**
+         * ChecklistVersion
+         * @description One published version, read-only: its name, domain, scope and items as published.
+         */
+        ChecklistVersion: {
+            /** Checklist Id */
+            checklist_id: string;
+            /** Version */
+            version: number;
+            /** Name */
+            name: string;
+            domain: components["schemas"]["Domain"];
+            /** Products */
+            products: string[];
+            /** Industry */
+            industry: string | null;
+            /** Integration Types */
+            integration_types: components["schemas"]["IntegrationTypeTag"][];
+            /** Items */
+            items: components["schemas"]["ChecklistItem"][];
+            published_by: components["schemas"]["KnowledgeUserRef"];
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+        };
+        /**
+         * ChecklistVersionList
+         * @description The Checklist's published versions, newest first.
+         */
+        ChecklistVersionList: {
+            /** Items */
+            items: components["schemas"]["ChecklistVersionSummary"][];
+        };
+        /**
+         * ChecklistVersionSummary
+         * @description One published version, with who published it and when.
+         */
+        ChecklistVersionSummary: {
+            /** Version */
+            version: number;
+            /** Name */
+            name: string;
+            published_by: components["schemas"]["KnowledgeUserRef"];
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Item Count */
+            item_count: number;
+            /** Mandatory Count */
+            mandatory_count: number;
+        };
+        /**
          * ClarificationQuestion
          * @description A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5), then
          *     `sent` and `unanswered` ("No answer", Story 4.6), then `answered` (Story 4.7);
@@ -2533,6 +2855,11 @@ export interface components {
          */
         DismissReasonKind: "not_relevant" | "other";
         /**
+         * Domain
+         * @enum {string}
+         */
+        Domain: "engineering" | "delivery" | "security" | "commercial" | "general";
+        /**
          * DownloadLink
          * @description A short-lived signed link to the original file of a version. `url` is relative to
          *     the API origin.
@@ -2551,6 +2878,45 @@ export interface components {
          * @enum {string}
          */
         DraftErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled";
+        /**
+         * DraftInput
+         * @description The whole draft, replacing the stored one. Products (at most 20, 1-100 characters
+         *     each) and the industry (at most 100) are trimmed; products repeated ignoring case are
+         *     kept once. Integration Types and affected areas must be active catalogue entries.
+         */
+        DraftInput: {
+            /** Name */
+            name: string;
+            domain: components["schemas"]["Domain"];
+            /** Products */
+            products?: string[];
+            /** Industry */
+            industry?: string | null;
+            /** Integration Type Ids */
+            integration_type_ids?: string[];
+            /** Items */
+            items?: components["schemas"]["DraftItemInput"][];
+        };
+        /**
+         * DraftItemInput
+         * @description One item of a draft. `id` null: a new item (it gets a stable id when saved); otherwise
+         *     an id from the draft or an earlier version. Text and "why it matters" may be blank while
+         *     drafting (at most 2,000 characters each); Publish needs both.
+         */
+        DraftItemInput: {
+            /** Id */
+            id?: string | null;
+            kind: components["schemas"]["ItemKind"];
+            /** Text */
+            text: string;
+            /** Why It Matters */
+            why_it_matters: string;
+            /** Affected Entry Id */
+            affected_entry_id?: string | null;
+            impact: components["schemas"]["Impact"];
+            /** Mandatory */
+            mandatory: boolean;
+        };
         /**
          * DraftStatus
          * @enum {string}
@@ -3255,6 +3621,11 @@ export interface components {
             retired: boolean;
         };
         /**
+         * ItemKind
+         * @enum {string}
+         */
+        ItemKind: "question" | "risk";
+        /**
          * Kind
          * @enum {string}
          */
@@ -3537,6 +3908,16 @@ export interface components {
             budgets?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * NewChecklist
+         * @description Create a Checklist: a name (1-200 characters, trimmed) and a domain. It starts with an
+         *     empty draft.
+         */
+        NewChecklist: {
+            /** Name */
+            name: string;
+            domain: components["schemas"]["Domain"];
         };
         /**
          * NewEntry
@@ -4183,6 +4564,14 @@ export interface components {
          * @enum {string}
          */
         RequirementOrigin: "extracted" | "human";
+        /**
+         * RetireChecklist
+         * @description Why the Checklist is retired (1-500 characters, trimmed).
+         */
+        RetireChecklist: {
+            /** Reason */
+            reason: string;
+        };
         /**
          * RetireRequest
          * @description Why the entry is retired (1-500 characters, trimmed).
@@ -16588,6 +16977,1450 @@ export interface operations {
                 };
             };
             /** @description Sign-in service unavailable (`auth_unavailable`), or (search) the embedding model failed (`model_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_knowledge_checklists: {
+        parameters: {
+            query?: {
+                /** @description Include retired Checklists. */
+                include_retired?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_knowledge_checklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewChecklist"];
+            };
+        };
+        responses: {
+            /** @description The new Checklist, with an empty draft */
+            201: {
+                headers: {
+                    /** @description The Checklist's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_knowledge_checklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checklist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Checklist */
+            200: {
+                headers: {
+                    /** @description The Checklist's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Checklist with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_knowledge_checklist_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checklist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistVersionList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Checklist with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_knowledge_checklist_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checklist_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistVersion"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Checklist with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    save_knowledge_checklist_draft: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Checklist as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                checklist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftInput"];
+            };
+        };
+        responses: {
+            /** @description The Checklist */
+            200: {
+                headers: {
+                    /** @description The Checklist's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Checklist with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist is retired (`knowledge_checklist_retired`), already has a draft (`checklist_draft_exists`) or has none (`checklist_no_draft`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    open_knowledge_checklist_draft: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Checklist as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                checklist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Checklist */
+            200: {
+                headers: {
+                    /** @description The Checklist's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Checklist with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist is retired (`knowledge_checklist_retired`), already has a draft (`checklist_draft_exists`) or has none (`checklist_no_draft`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    publish_knowledge_checklist: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Checklist as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                checklist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Checklist */
+            200: {
+                headers: {
+                    /** @description The Checklist's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Checklist with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist is retired (`knowledge_checklist_retired`), already has a draft (`checklist_draft_exists`) or has none (`checklist_no_draft`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    retire_knowledge_checklist: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Checklist as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                checklist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetireChecklist"];
+            };
+        };
+        responses: {
+            /** @description The Checklist */
+            200: {
+                headers: {
+                    /** @description The Checklist's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role, or (for writes) is not an engineering, PM or security reviewer or a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Checklist with this id, or no such version (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist is retired (`knowledge_checklist_retired`), already has a draft (`checklist_draft_exists`) or has none (`checklist_no_draft`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Checklist changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is blank or too long, a retired or unknown Integration Type or affected area, an item id that isn't the Checklist's, a draft that can't be published yet (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
             503: {
                 headers: {
                     [name: string]: unknown;

@@ -1,5 +1,5 @@
-"""The knowledge module's tables: the catalogue (Story 3.1), Knowledge Sources (3.2) and
-their chunks and embedding state (3.3), AD-2."""
+"""The knowledge module's tables: the catalogue (Story 3.1), Knowledge Sources (3.2), their
+chunks and embedding state (3.3) and Checklists (3.4), AD-2."""
 
 from datetime import date, datetime
 from typing import Any
@@ -8,6 +8,7 @@ from uuid import UUID
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -20,7 +21,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.concurrency import RowVersioned
@@ -238,3 +239,108 @@ class ChunkRow(Base):
     embedding_dims: Mapped[int] = mapped_column(Integer)
     embedding: Mapped[Any] = mapped_column(VECTOR())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+# --- Checklists (Story 3.4) -----------------------------------------------------------------
+# `created_by` and `published_by` hold identity's user ids without foreign keys (AD-2).
+
+
+class ChecklistRow(RowVersioned, Base):
+    """A Checklist's mutable header. `name`, `domain`, `products`, `industry` and the tags in
+    `knowledge_checklist_scope_tags` are the latest published version's (the values given at
+    creation until the first Publish); `draft` holds the one unpublished draft as a JSON
+    document (name, domain, products, industry, Integration Type ids and items in order), or
+    null when there is none. `retired_reason` is set exactly when `retired`."""
+
+    __tablename__ = "knowledge_checklists"
+    __table_args__ = (
+        Index(None, "status"),
+        CheckConstraint(
+            "domain IN ('engineering', 'delivery', 'security', 'commercial', 'general')",
+            name="domain",
+        ),
+        CheckConstraint("status IN ('active', 'retired')", name="status"),
+        CheckConstraint(
+            "(status = 'retired') = (retired_reason IS NOT NULL)", name="retired_has_reason"
+        ),
+        CheckConstraint("status = 'active' OR draft IS NULL", name="retired_has_no_draft"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    domain: Mapped[str] = mapped_column(Text)
+    products: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    industry: Mapped[str | None] = mapped_column(Text)
+    draft: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    status: Mapped[str] = mapped_column(Text)
+    retired_reason: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[UUID] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ChecklistScopeTagRow(Base):
+    """One Integration Type of the published scope. Publishing replaces the set."""
+
+    __tablename__ = "knowledge_checklist_scope_tags"
+
+    checklist_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("knowledge_checklists.id"), primary_key=True
+    )
+    entry_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("knowledge_catalogue_entries.id"), primary_key=True
+    )
+
+
+class ChecklistVersionRow(Base):
+    """One published version: its name, domain and scope (`{products, industry,
+    integration_type_ids}`) as published, who published it and when. Insert-only."""
+
+    __tablename__ = "knowledge_checklist_versions"
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(
+            "domain IN ('engineering', 'delivery', 'security', 'commercial', 'general')",
+            name="domain",
+        ),
+    )
+
+    checklist_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("knowledge_checklists.id"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    domain: Mapped[str] = mapped_column(Text)
+    scope: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    published_by: Mapped[UUID] = mapped_column(Uuid)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ChecklistItemRow(Base):
+    """One item of a published version. `item_id` is stable across versions: an item carried
+    into the next version keeps it. Insert-only."""
+
+    __tablename__ = "knowledge_checklist_items"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["checklist_id", "version"],
+            ["knowledge_checklist_versions.checklist_id", "knowledge_checklist_versions.version"],
+        ),
+        UniqueConstraint("checklist_id", "version", "ordinal"),
+        CheckConstraint("ordinal >= 0", name="ordinal"),
+        CheckConstraint("kind IN ('question', 'risk')", name="kind"),
+        CheckConstraint("impact IN ('high', 'medium', 'low')", name="impact"),
+        Index(None, "item_id"),
+    )
+
+    checklist_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    why_it_matters: Mapped[str] = mapped_column(Text)
+    affected_entry_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("knowledge_catalogue_entries.id")
+    )
+    impact: Mapped[str] = mapped_column(Text)
+    mandatory: Mapped[bool] = mapped_column(Boolean)
