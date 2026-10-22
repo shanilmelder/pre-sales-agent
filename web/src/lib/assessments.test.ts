@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   agentLabel,
+  agentRole,
+  START_NEW_RUN,
+  runStatusTone,
+  taskCounters,
   assessmentLabel,
   confidenceLabel,
   formatElapsed,
@@ -170,5 +174,46 @@ describe("skipNote (Story 7.1)", () => {
     expect(skipNote({ status: "skipped", skip_reason: null })).toBeNull(); // a cancel's
     expect(skipNote({ status: "skipped" })).toBeNull();
     expect(skipNote({ status: "failed", skip_reason: null })).toBeNull();
+  });
+});
+
+describe("run header helpers (Story 17.3c)", () => {
+  it("describes each agent's role", () => {
+    expect(agentRole("security_agent")).toBe(
+      "Mandatory controls and the effort they need",
+    );
+    expect(agentRole("pm_agent")).toContain("Delivery approach");
+    expect(agentRole("engineering_agent")).toContain("Feasibility");
+  });
+
+  it("counts tasks, showing only non-zero states after Complete", () => {
+    const t = (status: string) => ({ status }) as never;
+    expect(
+      taskCounters({ tasks: [t("succeeded"), t("running"), t("queued")] }),
+    ).toEqual([
+      { key: "complete", label: "1/3 Complete" },
+      { key: "running", label: "1 Running" },
+      { key: "queued", label: "1 Queued" },
+    ]);
+    expect(
+      taskCounters({ tasks: [t("failed"), t("skipped"), t("skipped")] }).map(
+        (c) => c.label,
+      ),
+    ).toEqual(["0/3 Complete", "1 Failed", "2 Skipped"]);
+  });
+
+  it("labels the restart button", () => {
+    expect(START_NEW_RUN).toBe("Start new run");
+  });
+});
+
+describe("runStatusTone", () => {
+  it("maps each run status to its tone", () => {
+    expect(runStatusTone("succeeded")).toBe("text-resolved");
+    expect(runStatusTone("running")).toBe("text-agent");
+    expect(runStatusTone("partially_failed")).toBe("text-gap");
+    expect(runStatusTone("failed")).toBe("text-blocker");
+    expect(runStatusTone("queued")).toBe("text-muted-foreground");
+    expect(runStatusTone("cancelled")).toBe("text-muted-foreground");
   });
 });

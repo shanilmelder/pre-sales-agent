@@ -213,8 +213,13 @@ function panelRows() {
   return within(progress)
     .getAllByRole("listitem")
     .map((li) =>
-      Array.from(li.children)
-        .map((c) => c.textContent ?? "")
+      Array.from(li.querySelector("[data-slot='card']")?.children ?? [])
+        .map((c, i) =>
+          // The first part holds the agent name, then its role description.
+          i === 0
+            ? (c.firstElementChild?.textContent ?? "")
+            : (c.textContent ?? ""),
+        )
         .filter((t) => t !== ""),
     );
 }
@@ -409,7 +414,7 @@ describe("SpecialistAssessmentsSection", () => {
     expect(
       (
         screen.getByRole("button", {
-          name: "Run assessment",
+          name: "Start new run",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -1176,7 +1181,7 @@ describe("cancelling a run (Story 5.5)", () => {
       ["Security Agent", "Skipped"], // never started: no time
     ]);
     expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
-    const start = screen.getByRole("button", { name: "Run assessment" });
+    const start = screen.getByRole("button", { name: "Start new run" });
     expect((start as HTMLButtonElement).disabled).toBe(false);
     await waitFor(() => expect(document.activeElement).toBe(start));
     await waitFor(() =>
@@ -1206,7 +1211,7 @@ describe("cancelling a run (Story 5.5)", () => {
 
     expect(await screen.findByText("Assessment complete")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
-    const start = screen.getByRole("button", { name: "Run assessment" });
+    const start = screen.getByRole("button", { name: "Start new run" });
     await waitFor(() => expect(document.activeElement).toBe(start));
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toBe(
@@ -1288,6 +1293,90 @@ describe("cancelling a run (Story 5.5)", () => {
     ]);
     expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start new run" })).toBeTruthy();
+  });
+});
+
+describe("Assessments run header and agent cards (Story 17.3c)", () => {
+  it("shows no header card and Run assessment when there is no run", () => {
+    render(<SpecialistAssessmentsHeader run={null} canStart />);
+    expect(screen.queryByTestId("run-header")).toBeNull();
     expect(screen.getByRole("button", { name: "Run assessment" })).toBeTruthy();
+  });
+
+  it("shows the title, status pill, start time, counters and one role-described card per agent", async () => {
+    const { container } = render(
+      <SpecialistAssessmentsHeader run={running} canStart />,
+    );
+    const header = screen.getByTestId("run-header");
+    expect(within(header).getByText("Assessments")).toBeTruthy();
+    expect(
+      header.querySelector("[data-slot='pill'][data-status='running']")
+        ?.textContent,
+    ).toBe("Assessing");
+    expect(
+      within(header).getByText("Started 5 Oct 2026, 09:00 UTC"),
+    ).toBeTruthy();
+    expect(
+      within(header)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["1/3 Complete", "1 Running", "1 Queued"]);
+    const items = within(
+      screen.getByRole("list", { name: "Agent progress" }),
+    ).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(
+      within(items[0]).getByText(
+        "Feasibility, architecture and per-integration effort",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(items[1]).getByText(
+        "Delivery approach, phases and customer dependencies",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(items[2]).getByText("Mandatory controls and the effort they need"),
+    ).toBeTruthy();
+    expect(items[0].querySelector("[data-slot='card']")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start new run" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("counts Failed and offers Retry and Start new run for a partly failed run", () => {
+    render(<SpecialistAssessmentsHeader run={partial} canStart />);
+    expect(
+      within(screen.getByTestId("run-header"))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["2/3 Complete", "1 Failed"]);
+    expect(
+      screen.getByRole("button", { name: "Retry Security Agent" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start new run" })).toBeTruthy();
+  });
+
+  it("reads cancelled with no Retry", () => {
+    const cancelled = run("cancelled", [
+      task("engineering_agent", "succeeded"),
+      task("pm_agent", "failed", "model_timeout"),
+      task("security_agent", "skipped"),
+    ]);
+    render(<SpecialistAssessmentsHeader run={cancelled} canStart />);
+    expect(
+      screen
+        .getByTestId("run-header")
+        .querySelector("[data-slot='pill'][data-status='cancelled']")
+        ?.textContent,
+    ).toBe("Cancelled — completed results kept");
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+  });
+
+  it("shows header and counters but no buttons to a viewer who cannot start", () => {
+    render(<SpecialistAssessmentsHeader run={partial} />);
+    expect(screen.getByTestId("run-header")).toBeTruthy();
+    expect(screen.getByText("1 Failed")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 });

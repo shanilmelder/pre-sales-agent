@@ -20,6 +20,7 @@ import {
   startAssessmentRun,
   type StartAssessmentResult,
 } from "@/app/opportunities/actions";
+import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
@@ -45,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   agentLabel,
+  agentRole,
   CANCEL_RUN,
   CANCEL_RUN_CONFIRM,
   CANCEL_RUN_DESCRIPTION,
@@ -61,7 +63,10 @@ import {
   recommendationInfo,
   RUN_ASSESSMENT,
   runStatusLabel,
+  runStatusTone,
+  START_NEW_RUN,
   STILL_ASSESSING,
+  taskCounters,
   taskElapsed,
   taskStatusLabel,
   WAITING_FOR_WORKER,
@@ -75,6 +80,7 @@ import {
   type Recommendation,
 } from "@/lib/assessments";
 import { hours } from "@/lib/estimates";
+import { formatDateTime } from "@/lib/sources";
 import { useOpportunityEvents } from "@/lib/opportunity-events";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import {
@@ -91,9 +97,6 @@ const START_FAILED = "The assessment could not be started. Try again.";
 const CANCEL_FAILED = "The run could not be cancelled. Try again.";
 const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can run an assessment.";
-
-const actionClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
 /** A recommendation: always an icon and a label, never colour alone. */
 export function RecommendationPill({
@@ -314,10 +317,7 @@ export function AssessmentCard({
   const headingId = useId();
   const assessment = slot.assessment;
   return (
-    <article
-      aria-labelledby={headingId}
-      className="flex flex-col gap-3 rounded-md border border-border p-3"
-    >
+    <Card role="article" aria-labelledby={headingId} className="gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h4 id={headingId} className="text-body-strong">
           {agentLabel(slot.agent)}
@@ -355,7 +355,7 @@ export function AssessmentCard({
       ) : (
         <p className="text-muted-foreground">{NO_AGENT_ASSESSMENT}</p>
       )}
-    </article>
+    </Card>
   );
 }
 
@@ -427,7 +427,7 @@ export function AgentRunPanel({
   const assessing = isAssessing(run);
   const now = useNow(assessing && !stalled);
   return (
-    <ul aria-label="Agent progress" className="flex w-full flex-col">
+    <ul aria-label="Agent progress" className="flex w-full flex-col gap-2">
       {run.tasks.map((task) => {
         const failed = task.status === "failed";
         const runningDot = task.status === "running" && !stalled;
@@ -438,48 +438,58 @@ export function AgentRunPanel({
               ? failureReason(task.error_code)
               : skipNote(task);
         return (
-          <li
-            key={task.agent}
-            data-task-status={task.status}
-            className="flex min-h-row-compact flex-wrap items-center gap-x-3 gap-y-1 text-label"
-          >
-            <span className="w-36 shrink-0 truncate">
-              {agentLabel(task.agent)}
-            </span>
-            <TaskStatusPill status={task.status} />
-            <span
-              data-testid="elapsed"
-              suppressHydrationWarning
-              className="w-12 shrink-0 text-right text-numeric"
-            >
-              {taskElapsed(task, now)}
-            </span>
-            <span className="flex size-3 shrink-0" aria-hidden="true">
-              {runningDot ? (
-                <LoaderCircleIcon data-testid="running-dot" className="size-3 text-agent" />
-              ) : null}
-            </span>
-            {note ? (
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate",
-                  failed ? "text-blocker" : "text-muted-foreground",
-                )}
-              >
-                {note}
+          <li key={task.agent} data-task-status={task.status}>
+            <Card className="flex-row flex-wrap items-center gap-x-3 gap-y-1 p-3 text-label">
+              <span className="flex w-64 max-w-full min-w-0 shrink-0 flex-col">
+                <span className="truncate text-body-strong">
+                  {agentLabel(task.agent)}
+                </span>
+                <span className="text-meta text-muted-foreground">
+                  {agentRole(task.agent)}
+                </span>
               </span>
-            ) : null}
-            {failed && canStart && !assessing && run.status !== "cancelled" ? (
-              <button
-                type="button"
-                disabled={busy}
-                aria-label={`${RETRY} ${agentLabel(task.agent)}`}
-                onClick={() => onRetry?.(task.agent)}
-                className={actionClass}
+              <TaskStatusPill status={task.status} />
+              <span
+                data-testid="elapsed"
+                suppressHydrationWarning
+                className="w-12 shrink-0 text-right text-numeric"
               >
-                {RETRY}
-              </button>
-            ) : null}
+                {taskElapsed(task, now)}
+              </span>
+              <span className="flex size-3 shrink-0" aria-hidden="true">
+                {runningDot ? (
+                  <LoaderCircleIcon
+                    data-testid="running-dot"
+                    className="size-3 text-agent"
+                  />
+                ) : null}
+              </span>
+              {note ? (
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    failed ? "text-blocker" : "text-muted-foreground",
+                  )}
+                >
+                  {note}
+                </span>
+              ) : null}
+              {failed &&
+              canStart &&
+              !assessing &&
+              run.status !== "cancelled" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={busy}
+                  aria-label={`${RETRY} ${agentLabel(task.agent)}`}
+                  onClick={() => onRetry?.(task.agent)}
+                >
+                  {RETRY}
+                </Button>
+              ) : null}
+            </Card>
           </li>
         );
       })}
@@ -502,7 +512,7 @@ function CancelRunButton({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         disabled={busy}
-        render={<button type="button" className={actionClass} />}
+        render={<Button type="button" variant="outline" size="xs" />}
       >
         {CANCEL_RUN}
       </DialogTrigger>
@@ -565,31 +575,50 @@ export function SpecialistAssessmentsHeader({
     if (focusStartRequest > 0) startRef.current?.focus();
   }, [focusStartRequest]);
   return (
-    <div className="flex flex-col items-start gap-1.5">
-      <div className="flex flex-wrap items-center gap-3">
-        {canStart ? (
-          <button
+    <div className="flex flex-col items-start gap-3">
+      {run ? (
+        <Card className="w-full gap-2 p-4" data-testid="run-header">
+          <div className="flex flex-wrap items-center gap-3">
+            <h4 className="text-section">Assessments</h4>
+            <Pill
+              data-status={run.status}
+              tone={pillToneFor(runStatusTone(run.status))}
+            >
+              {runStatusLabel(run)}
+            </Pill>
+            <span className="text-meta text-muted-foreground">
+              Started {formatDateTime(run.queued_at || run.created_at)}
+            </span>
+          </div>
+          {run.tasks.length > 0 ? (
+          <ul
+            aria-label="Task counters"
+            className="flex flex-wrap items-center gap-x-4 gap-y-1 text-label"
+          >
+            {taskCounters(run).map((counter) => (
+              <li key={counter.key} data-counter={counter.key}>
+                {counter.label}
+              </li>
+            ))}
+          </ul>
+          ) : null}
+        </Card>
+      ) : null}
+      {canStart ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
             ref={startRef}
             type="button"
             disabled={busy || assessing}
             onClick={() => onStart?.()}
-            className={actionClass}
           >
-            {RUN_ASSESSMENT}
-          </button>
-        ) : null}
-        {canStart && assessing ? (
-          <CancelRunButton busy={busy} onConfirm={onCancel} />
-        ) : null}
-        {run ? (
-          <p
-            className="text-label text-muted-foreground"
-            data-status={run.status}
-          >
-            {runStatusLabel(run)}
-          </p>
-        ) : null}
-      </div>
+            {run ? START_NEW_RUN : RUN_ASSESSMENT}
+          </Button>
+          {assessing ? (
+            <CancelRunButton busy={busy} onConfirm={onCancel} />
+          ) : null}
+        </div>
+      ) : null}
       {assessing && stalled ? (
         <p className="text-label text-muted-foreground">{STILL_ASSESSING}</p>
       ) : null}

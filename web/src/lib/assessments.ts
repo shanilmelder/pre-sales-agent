@@ -34,6 +34,18 @@ export function agentLabel(value: AssessmentAgent): string {
   return AGENTS.find((a) => a.value === value)?.label ?? value;
 }
 
+/** One line on what each agent assesses, shown on its run card. */
+export const AGENT_ROLES: Record<AssessmentAgent, string> = {
+  engineering_agent: "Feasibility, architecture and per-integration effort",
+  pm_agent: "Delivery approach, phases and customer dependencies",
+  security_agent: "Mandatory controls and the effort they need",
+};
+
+/** An agent's role description ("" for one this build doesn't know). */
+export function agentRole(value: AssessmentAgent): string {
+  return AGENT_ROLES[value] ?? "";
+}
+
 /** The recommendations, each with its label, icon and icon tone (never colour alone). */
 export const RECOMMENDATIONS: readonly {
   value: Recommendation;
@@ -193,6 +205,50 @@ export const NO_AGENT_ASSESSMENT = "No Assessment yet.";
 export const STILL_ASSESSING = "Still assessing — reload to check.";
 
 export const RUN_ASSESSMENT = "Run assessment";
+
+/** The start button's label once a run exists. */
+export const START_NEW_RUN = "Start new run";
+
+/** The task counters of a run: "{done}/{total} Complete" always, then Running, Queued, Failed
+ * and Skipped only when above zero. */
+export function taskCounters(
+  run: Pick<AssessmentRun, "tasks">,
+): { key: string; label: string }[] {
+  const count = (status: AssessmentTask["status"]) =>
+    run.tasks.filter((t) => t.status === status).length;
+  const counters = [
+    {
+      key: "complete",
+      label: `${count("succeeded")}/${run.tasks.length} Complete`,
+    },
+  ];
+  for (const [status, word] of [
+    ["running", "Running"],
+    ["queued", "Queued"],
+    ["failed", "Failed"],
+    ["skipped", "Skipped"],
+  ] as const) {
+    const n = count(status);
+    if (n > 0) counters.push({ key: status, label: `${n} ${word}` });
+  }
+  return counters;
+}
+
+/** The run status pill's tone class (the label carries the meaning too). */
+export function runStatusTone(status: AssessmentRun["status"]): string {
+  switch (status) {
+    case "succeeded":
+      return "text-resolved";
+    case "running":
+      return "text-agent";
+    case "partially_failed":
+      return "text-gap";
+    case "failed":
+      return "text-blocker";
+    default:
+      return "text-muted-foreground";
+  }
+}
 
 /** Cancelling a queued or running run (Story 5.5). */
 export const CANCEL_RUN = "Cancel run";
