@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { AccessGate, hasAccess } from "@/components/access-gate";
+import { KnowledgeNav } from "@/components/knowledge/knowledge-nav";
 import { SourcesTab } from "@/components/knowledge/sources-tab";
 import { AppShell } from "@/components/shell/app-shell";
 import { createServerApiClient, getMe } from "@/lib/api/server";
@@ -25,7 +26,7 @@ async function activeIntegrationTypes(): Promise<{ id: string; name: string }[] 
   }
 }
 
-/** Knowledge → Sources (the Checklists and Coverage tabs come with later stories). */
+/** Knowledge → Sources (Checklists has its own route; Coverage comes with Story 3.5). */
 export default async function KnowledgePage() {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
@@ -39,14 +40,7 @@ export default async function KnowledgePage() {
         <div className="flex flex-col gap-1 p-gutter pb-2">
           <h1 className="text-title">Knowledge</h1>
         </div>
-        <nav aria-label="Knowledge sections" className="flex gap-4 border-b border-border px-gutter">
-          <span
-            aria-current="page"
-            className="-mb-px border-b-2 border-primary py-2 text-label text-foreground"
-          >
-            Sources
-          </span>
-        </nav>
+        <KnowledgeNav current="sources" />
         <div className="h-2" />
         {list.kind === "error" || types === null ? (
           <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>

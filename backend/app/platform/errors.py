@@ -267,6 +267,27 @@ class SourceRetiredError(ConflictError):
     title = "Knowledge Source retired"
 
 
+class ChecklistRetiredError(ConflictError):
+    """A write targeted a retired Checklist (Story 3.4)."""
+
+    code = "knowledge_checklist_retired"
+    title = "Checklist retired"
+
+
+class ChecklistDraftExistsError(ConflictError):
+    """A new draft was asked for while the Checklist already has one (Story 3.4)."""
+
+    code = "checklist_draft_exists"
+    title = "Draft already exists"
+
+
+class ChecklistNoDraftError(ConflictError):
+    """A draft was saved or published while the Checklist has none (Story 3.4)."""
+
+    code = "checklist_no_draft"
+    title = "No draft"
+
+
 class EmbedNotRetryableError(ConflictError):
     """An embedding retry asked for a Knowledge Source version whose embedding hasn't failed
     and isn't missing, or that isn't parsed (Story 3.3)."""

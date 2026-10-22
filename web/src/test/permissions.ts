@@ -2,6 +2,13 @@
 // `permissions` claim (and so `/me`'s `permissions`) holds for each role. Tests only.
 import type { Permission, Role } from "@/lib/navigation";
 
+const CHECKLIST_AUTHOR = [
+  "knowledge.checklist.create",
+  "knowledge.checklist.edit",
+  "knowledge.checklist.publish",
+  "knowledge.checklist.retire",
+] as const;
+
 const SEED: Partial<Record<Role, readonly Permission[]>> = {
   platform_administrator: [
     "identity.user.list",
@@ -9,6 +16,10 @@ const SEED: Partial<Record<Role, readonly Permission[]>> = {
     "knowledge.catalogue_entry.edit",
     "knowledge.catalogue_entry.reactivate",
     "knowledge.catalogue_entry.retire",
+    "knowledge.checklist.create",
+    "knowledge.checklist.edit",
+    "knowledge.checklist.publish",
+    "knowledge.checklist.retire",
     "knowledge.source.add_version",
     "knowledge.source.register",
     "knowledge.source.retag",
@@ -20,6 +31,9 @@ const SEED: Partial<Record<Role, readonly Permission[]>> = {
   ],
   presales_engineer: ["identity.user.search", "opportunities.opportunity.create"],
   head_of_delivery: ["opportunities.opportunity.read"],
+  engineering_reviewer: CHECKLIST_AUTHOR,
+  pm_reviewer: CHECKLIST_AUTHOR,
+  security_reviewer: CHECKLIST_AUTHOR,
 };
 
 /** The permissions Auth0 issues for these roles, sorted like the API returns them. */

@@ -32,6 +32,17 @@ from dotenv import dotenv_values
 from app.modules.identity.actions import Action
 from app.modules.identity.domain.roles import Role
 
+CHECKLIST_AUTHOR: frozenset[Action] = frozenset(
+    {
+        Action.KNOWLEDGE_CHECKLIST_CREATE,
+        Action.KNOWLEDGE_CHECKLIST_EDIT,
+        Action.KNOWLEDGE_CHECKLIST_PUBLISH,
+        Action.KNOWLEDGE_CHECKLIST_RETIRE,
+    }
+)
+"""Authoring Checklists (Story 3.4): the engineering, PM and security reviewers and platform
+administrators, on every Checklist. Reading them needs only a role."""
+
 ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
     Role.PLATFORM_ADMINISTRATOR: frozenset(
         {
@@ -52,6 +63,7 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.KNOWLEDGE_SOURCE_RETIRE,
             Action.KNOWLEDGE_SOURCE_RETRY_PARSE,
             Action.KNOWLEDGE_SOURCE_RETRY_EMBED,
+            *CHECKLIST_AUTHOR,
             # The Agent Registry (Story 7.1): platform administrators only.
             Action.REGISTRY_AGENT_REGISTER,
             Action.REGISTRY_AGENT_CONFIG_CREATE,
@@ -60,6 +72,9 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
     Role.HEAD_OF_DELIVERY: frozenset({Action.OPPORTUNITY_READ}),
+    Role.ENGINEERING_REVIEWER: CHECKLIST_AUTHOR,
+    Role.PM_REVIEWER: CHECKLIST_AUTHOR,
+    Role.SECURITY_REVIEWER: CHECKLIST_AUTHOR,
 }
 """Which role holds which permission (README "Auth0 setup"). Roles not listed hold none:
 their access comes from being an Opportunity's owner or collaborator."""
@@ -81,6 +96,10 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.KNOWLEDGE_SOURCE_RETIRE: "Retire any Knowledge Source",
     Action.KNOWLEDGE_SOURCE_RETRY_PARSE: "Retry a failed Knowledge Source parse",
     Action.KNOWLEDGE_SOURCE_RETRY_EMBED: "Retry or start embedding any Knowledge Source",
+    Action.KNOWLEDGE_CHECKLIST_CREATE: "Create Checklists",
+    Action.KNOWLEDGE_CHECKLIST_EDIT: "Edit the draft of any Checklist",
+    Action.KNOWLEDGE_CHECKLIST_PUBLISH: "Publish any Checklist's draft",
+    Action.KNOWLEDGE_CHECKLIST_RETIRE: "Retire any Checklist",
     Action.OPPORTUNITY_READ: "Read every Opportunity",
     Action.REGISTRY_AGENT_REGISTER: "Register Agents in the Agent Registry",
     Action.REGISTRY_AGENT_CONFIG_CREATE: "Create a new config version of an Agent",

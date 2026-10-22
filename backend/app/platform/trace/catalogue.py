@@ -911,6 +911,34 @@ class KnowledgeSourceEmbedRetried(TracePayload):
     error_code: str | None
 
 
+# Story 3.4. Checklist events have no Opportunity (subject `knowledge.checklist`). Ids,
+# version numbers and counts only, never a name, item text or the retirement reason.
+
+
+@register
+class KnowledgeChecklistPublished(TracePayload):
+    """Someone published a Checklist's draft as its next version. Subject: the Checklist.
+    `item_count` and `mandatory_count`: the new version's items and mandatory items."""
+
+    event_type: ClassVar[str] = "knowledge.checklist.published"
+
+    version: int
+    item_count: int
+    mandatory_count: int
+
+
+@register
+class KnowledgeChecklistRetired(TracePayload):
+    """Someone retired a Checklist; it no longer applies, and its versions stay readable.
+    Subject: the Checklist. `version`: its latest published version (None if it was never
+    published). The reason is not traced."""
+
+    event_type: ClassVar[str] = "knowledge.checklist.retired"
+
+    version: int | None
+    discarded_draft: bool
+
+
 # --- conflicts ------------------------------------------------------------------------------
 
 
