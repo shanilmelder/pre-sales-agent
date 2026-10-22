@@ -448,20 +448,23 @@ describe("EstimateSection", () => {
     expect(screen.queryByRole("button", { name: /^Export/ })).toBeNull();
   });
 
-  it("shows the empty sentence when there is no version and no run", () => {
+  it("shows the empty-tab card when there is no version and no run", () => {
     renderSection(view(null, null));
+    expect(screen.getByTestId("empty-tab-card")).toBeTruthy();
+    expect(screen.getByText("No Estimate yet")).toBeTruthy();
     expect(
-      screen.getByText("No Estimate yet. Run assessment on the Assessments tab to build it."),
+      screen.getByText("Run Assessments to produce Estimate v1 from the confirmed Requirements."),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Run assessment" }).getAttribute("href"),
+    ).toMatch(/\/assessments$/);
   });
 
   it("offers no draft Retry, even after a model draft failed", async () => {
     const { container } = renderSection(view(null, failed));
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect(screen.queryByText(/Estimate draft failed/)).toBeNull();
-    expect(
-      screen.getByText("No Estimate yet. Run assessment on the Assessments tab to build it."),
-    ).toBeTruthy();
+    expect(screen.getByText("No Estimate yet")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -473,6 +476,7 @@ describe("EstimateSection", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/No Estimate yet/)).toBeNull();
+    expect(screen.queryByTestId("empty-tab-card")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -900,6 +904,8 @@ describe("editing a line (Story 8.2)", () => {
     await user.type(reasonBox(), "x{Enter}");
 
     expect(await screen.findByText("Changed by [OTHER] since you opened it.")).toBeTruthy();
+    expect(screen.getByRole("alert").getAttribute("data-slot")).toBe("inline-alert");
+    expect(screen.queryByRole("button", { name: "View diff" })).toBeNull();
     expect(effortButton(2).textContent).toBe("10.0");
     await user.click(screen.getByRole("button", { name: "Reload" }));
     await waitFor(() => expect(effortButton(2).textContent).toBe("4.0"));

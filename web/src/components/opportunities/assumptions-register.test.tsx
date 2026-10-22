@@ -333,6 +333,8 @@ describe("the Assumptions Register", () => {
     expect(
       await within(register()).findByText("Changed by [OTHER] since you opened it."),
     ).toBeTruthy();
+    expect(within(register()).getByRole("alert").getAttribute("data-slot")).toBe("inline-alert");
+    expect(within(register()).queryByRole("button", { name: "View diff" })).toBeNull();
     await user.click(within(register()).getByRole("button", { name: "Reload" }));
     expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
     await waitFor(() => expect(within(register()).queryByText(/Changed by/)).toBeNull());

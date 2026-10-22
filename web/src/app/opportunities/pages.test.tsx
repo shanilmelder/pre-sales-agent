@@ -1221,9 +1221,10 @@ describe("/opportunities/[id] workspace", () => {
     });
     await renderWorkspace("estimate");
     expect(
-      within(screen.getByRole("tabpanel")).getByText(
-        "No Estimate yet. Run assessment on the Assessments tab to build it.",
-      ),
+      within(screen.getByRole("tabpanel")).getByText("No Estimate yet"),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("tabpanel")).getByRole("link", { name: "Run assessment" }),
     ).toBeTruthy();
   });
 
@@ -1714,7 +1715,8 @@ describe("/opportunities/[id] workspace", () => {
     });
     await renderWorkspace("trace");
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByText("No decisions recorded yet.")).toBeTruthy();
+    expect(within(panel).getByText("No trace events")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: "Open Overview" })).toBeTruthy();
     expect(within(panel).queryByRole("group", { name: "Filters" })).toBeNull();
   });
 
@@ -1753,9 +1755,8 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["6Conflicts"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Conflicts" })).toBeTruthy();
-    expect(
-      within(panel).getByText("No Conflicts between the specialist Assessments."),
-    ).toBeTruthy();
+    expect(within(panel).getByText("No Conflicts detected")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: "Open Assessments" })).toBeTruthy();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/conflicts", {
       params: { path: { opportunity_id: OPP_ID } },

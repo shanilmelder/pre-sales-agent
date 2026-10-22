@@ -205,3 +205,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-3a-sources-requirements-gaps-refit.md`
   summary: View diff for the 412 alert on Gaps, Estimate and Conflicts; today only Requirements has a diff view.
   evidence: The AC wants Reload and View diff on every built tab; the user chose to ship View diff only where a diff exists.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3b-conflicts-estimate-trace-refit.md`
+  summary: Trace tab renders nothing when the page is beyond the last page (total > 0 but no items, unfiltered).
+  evidence: Edge-case review of `trace-list.tsx:495-503`; the branch is pre-existing and unchanged by 17.3b.

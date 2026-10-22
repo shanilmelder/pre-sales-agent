@@ -100,6 +100,12 @@ export const DRAFTING = "Drafting Estimate";
 export const NO_ESTIMATE =
   "No Estimate yet. Run assessment on the Assessments tab to build it.";
 
+/** The empty-tab card's copy. */
+export const NO_ESTIMATE_TITLE = "No Estimate yet";
+export const NO_ESTIMATE_BODY =
+  "Run Assessments to produce Estimate v1 from the confirmed Requirements.";
+export const RUN_ASSESSMENT = "Run assessment";
+
 /** The waiting state while an assessment run is queued or running and there is no version. */
 export const BUILDING =
   "The Estimate is built when the Engineering, PM and Security Agents finish.";

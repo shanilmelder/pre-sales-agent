@@ -13,7 +13,10 @@ import {
   AssumptionsRegister,
   OriginGapInspector,
 } from "@/components/opportunities/assumptions-register";
+import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
+import { EmptyTabCard } from "@/components/ui/empty-tab-card";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { Pill } from "@/components/ui/pill";
 import { EstimateExport } from "@/components/opportunities/estimate-export";
 import { EstimateInspector } from "@/components/opportunities/estimate-inspector";
@@ -35,6 +38,9 @@ import {
   isDrafting,
   isProposing,
   NO_ESTIMATE,
+  NO_ESTIMATE_BODY,
+  NO_ESTIMATE_TITLE,
+  RUN_ASSESSMENT,
   keepReason,
   NEW_VERSION_ARRIVED,
   OPEN_CONFLICT,
@@ -63,9 +69,6 @@ import {
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import { cn } from "@/lib/utils";
 import { tabHref } from "@/lib/workspace";
-
-const actionClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
 const num = "px-2.5 text-right text-numeric whitespace-nowrap";
 /** The left rule that sets the Contingency column apart. */
@@ -382,7 +385,7 @@ export function EstimateGrid({
     if (!editable || (!showMixEditor && !prompt && !shownNotice)) return null;
     return (
       <tr key={`${line.id}-editor`} data-line-editor={line.id}>
-        <td colSpan={COLUMNS.length} className="border-b border-border bg-muted/40 px-2.5 py-1.5">
+        <td colSpan={COLUMNS.length} className="border-b border-border bg-muted/40 px-2.5 py-3">
           {showMixEditor ? (
             <RoleMixEditor
               lineTitle={line.title}
@@ -399,24 +402,20 @@ export function EstimateGrid({
               onCancel={() => cancel(line, prompt.change.roleMix ? "mix" : "effort", true)}
             />
           ) : shownNotice ? (
-            <div className="flex flex-wrap items-center gap-2">
+            shownNotice.reload && onReload ? (
+              <InlineAlert
+                lead={shownNotice.message}
+                onReload={() => {
+                  setNotice(null);
+                  onReload();
+                }}
+              />
+            ) : (
               <p className="flex items-center gap-1.5 text-meta text-destructive">
                 <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
                 {shownNotice.message}
               </p>
-              {shownNotice.reload && onReload ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNotice(null);
-                    onReload();
-                  }}
-                  className={actionClass}
-                >
-                  Reload
-                </button>
-              ) : null}
-            </div>
+            )
           ) : null}
         </td>
       </tr>
@@ -424,14 +423,14 @@ export function EstimateGrid({
   }
 
   return (
-    <div
+    <Card
       ref={container}
       onKeyDown={onKeyDown}
       aria-busy={saving || undefined}
-      className="max-h-[70vh] overflow-auto rounded-md border border-border"
+      className="max-h-[70vh] overflow-auto"
     >
       {replaced ? (
-        <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-meta text-destructive">
+        <p className="flex items-center gap-1.5 px-2.5 py-3 text-meta text-destructive">
           <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
           {NEW_VERSION_ARRIVED}
         </p>
@@ -636,7 +635,7 @@ export function EstimateGrid({
           </tr>
         </tfoot>
       </table>
-    </div>
+    </Card>
   );
 }
 
@@ -954,7 +953,12 @@ export function EstimateSection({
           />
         </>
       ) : !building ? (
-        <p className="text-muted-foreground">{NO_ESTIMATE}</p>
+        <EmptyTabCard
+          title={NO_ESTIMATE_TITLE}
+          body={NO_ESTIMATE_BODY}
+          actionLabel={RUN_ASSESSMENT}
+          href={tabHref(opportunityId, "assessments")}
+        />
       ) : null}
       {selected ? (
         <RightPaneContent>

@@ -13,6 +13,8 @@ import {
   type MouseEvent,
 } from "react";
 
+import { Card } from "@/components/ui/card";
+import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import {
   RIGHT_PANE_TOGGLE_ID,
   RightPaneContent,
@@ -27,8 +29,10 @@ import {
   fieldLabel,
   fieldValue,
   hasTraceFilters,
-  NO_EVENTS,
+  NO_EVENTS_BODY,
+  NO_EVENTS_TITLE,
   NO_MATCHES,
+  OPEN_OVERVIEW,
   pageCount,
   relativeTime,
   subjectHref,
@@ -42,6 +46,7 @@ import {
   type TraceFilters,
   type TracePage,
 } from "@/lib/trace";
+import { tabHref } from "@/lib/workspace";
 
 const controlClass =
   "h-8 rounded-md border border-input bg-background px-2 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-primary";
@@ -101,12 +106,12 @@ export function TraceList({
   }
 
   return (
-    <div
+    <Card
       ref={container}
       role="grid"
       aria-label="Decision Trace"
       onKeyDown={onKeyDown}
-      className="flex flex-col"
+      className="overflow-hidden"
     >
       {items.map((item) => {
         const selected = item.id === selectedId;
@@ -129,7 +134,7 @@ export function TraceList({
                 onFocus={() => setFocusedId(item.id)}
                 // A keyboard-activated click has no pointer clicks (detail 0).
                 onClick={(event) => onOpen?.(item, event.detail === 0)}
-                className="flex min-h-row w-full items-center gap-3 rounded-sm px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className="flex min-h-row w-full items-center gap-3 rounded-sm px-1 text-left outline-none focus-visible:ring-inset focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <time
                   dateTime={item.occurred_at}
@@ -168,7 +173,7 @@ export function TraceList({
           </div>
         );
       })}
-    </div>
+    </Card>
   );
 }
 
@@ -489,7 +494,12 @@ export function TraceSection({
           </Link>
         </div>
       ) : page.total === 0 ? (
-        <p className="text-muted-foreground">{NO_EVENTS}</p>
+        <EmptyTabCard
+          title={NO_EVENTS_TITLE}
+          body={NO_EVENTS_BODY}
+          actionLabel={OPEN_OVERVIEW}
+          href={tabHref(opportunityId, "overview")}
+        />
       ) : null}
       <TracePagination
         opportunityId={opportunityId}

@@ -279,6 +279,8 @@ describe("resolving a Conflict", () => {
     expect(
       await screen.findByText("Changed by Alex Owner since you opened it."),
     ).toBeTruthy();
+    expect(screen.getByRole("alert").getAttribute("data-slot")).toBe("inline-alert");
+    expect(screen.queryByRole("button", { name: "View diff" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Reload" }));
     expect(refresh).toHaveBeenCalledTimes(1);
 
