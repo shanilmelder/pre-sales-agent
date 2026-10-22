@@ -17,7 +17,7 @@ function Notice({ children }: { children: ReactNode }) {
 export function SignedInHeader({ me }: { me: Me }) {
   return (
     <header className="flex h-12 items-center justify-between border-b border-border px-4">
-      <span className="text-sm font-semibold">Pre-Sales Agent</span>
+      <span className="text-sm font-semibold">Pre Sales Agent Framework</span>
       <AvatarMenu name={me.name} email={me.email} />
     </header>
   );
@@ -37,7 +37,7 @@ export function AccessGate({ result }: { result: MeResult }) {
     return (
       <Notice>
         <p>Your session has ended.</p>
-        <a href="/auth/login" className="text-primary underline-offset-4 hover:underline">
+        <a href="/auth/login" className="text-primary-text underline-offset-4 hover:underline">
           Sign in again
         </a>
       </Notice>

@@ -11,7 +11,7 @@ import type { components } from "@/lib/api/client";
 import { createServerApiClient, getMe } from "@/lib/api/server";
 import { isAdmin } from "@/lib/navigation";
 
-export const metadata: Metadata = { title: "Users & roles · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "Users & roles · Pre Sales Agent Framework" };
 
 type AdminUserPage = components["schemas"]["AdminUserPage"];
 

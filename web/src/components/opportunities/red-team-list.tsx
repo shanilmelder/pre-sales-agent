@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlertIcon, ListChecksIcon, SigmaIcon } from "lucide-react";
+import { CircleAlertIcon, ListChecksIcon, SigmaIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import {
@@ -8,6 +8,8 @@ import {
   startRedTeamReview,
   type StartRedTeamReviewResult,
 } from "@/app/opportunities/actions";
+import { Chip } from "@/components/ui/chip";
+import { Pill } from "@/components/ui/pill";
 import { useFindingSelection } from "@/components/opportunities/finding-selection";
 import { RedTeamInspector } from "@/components/opportunities/red-team-inspector";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
@@ -46,9 +48,6 @@ const RETRY_NOT_ALLOWED =
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
-const chipClass =
-  "inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground";
-
 /** A count chip: how many Requirements (or Estimate lines) the Finding challenges. */
 function CountChip({ count, kind }: { count: number; kind: "requirement" | "line" }) {
   const Icon = kind === "requirement" ? ListChecksIcon : SigmaIcon;
@@ -61,11 +60,11 @@ function CountChip({ count, kind }: { count: number; kind: "requirement" | "line
         ? " Estimate line"
         : " Estimate lines";
   return (
-    <span className={chipClass}>
+    <Chip className="shrink-0">
       <Icon aria-hidden="true" className="size-3 shrink-0" />
       <span className="[font-variant-numeric:tabular-nums]">{count}</span>
       <span className="sr-only">{noun}</span>
-    </span>
+    </Chip>
   );
 }
 
@@ -203,9 +202,9 @@ export function RedTeamHeader({
       <div className="flex flex-wrap items-center gap-3">
         {review ? (
           <>
-            <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full border border-border bg-background px-2 text-label text-foreground">
+            <Pill tone="neutral" className="shrink-0">
               {reviewLabel(review)}
-            </span>
+            </Pill>
             <SeverityCountsLine review={review} />
           </>
         ) : null}
@@ -213,11 +212,7 @@ export function RedTeamHeader({
           <p className="text-label text-muted-foreground">{STILL_REVIEWING}</p>
         ) : reviewing ? (
           <p className="flex items-center gap-2 text-label" data-status={run?.status}>
-            <span
-              aria-hidden="true"
-              data-testid="running-dot"
-              className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-            />
+            <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
             {REVIEWING}
           </p>
         ) : null}

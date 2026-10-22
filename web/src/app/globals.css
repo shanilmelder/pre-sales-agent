@@ -7,53 +7,95 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Inter for all text; JetBrains Mono only for IDs, versions and verbatim excerpts. */
+  /* Inter for every role (DESIGN.md has no mono face); IDs, versions and excerpts use it too. */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
   --font-heading: var(--font-sans);
 
   /* Type roles (DESIGN.md typography). `text-numeric` also sets tabular figures. */
-  --text-body: 13px;
-  --text-body--line-height: 1.5;
+  --text-body: 14px;
+  --text-body--line-height: 21px;
   --text-body--font-weight: 400;
-  --text-body-strong: 13px;
-  --text-body-strong--line-height: 1.5;
+  --text-body-strong: 14px;
+  --text-body-strong--line-height: 21px;
   --text-body-strong--font-weight: 500;
+  --text-control: 13px;
+  --text-control--line-height: 1.4;
+  --text-control--font-weight: 500;
   --text-label: 12px;
-  --text-label--line-height: 1.4;
+  --text-label--line-height: 16px;
   --text-label--font-weight: 500;
-  --text-meta: 11px;
-  --text-meta--line-height: 1.4;
+  --text-meta: 12px;
+  --text-meta--line-height: 16px;
   --text-meta--font-weight: 400;
-  --text-meta--letter-spacing: 0.01em;
-  --text-title: 18px;
-  --text-title--line-height: 1.3;
+  --text-title: 24px;
+  --text-title--line-height: 32px;
   --text-title--font-weight: 600;
   --text-title--letter-spacing: -0.01em;
-  --text-section: 14px;
-  --text-section--line-height: 1.4;
+  --text-section: 16px;
+  --text-section--line-height: 24px;
   --text-section--font-weight: 600;
-  --text-mono: 12px;
-  --text-mono--line-height: 1.5;
-  --text-mono--font-weight: 400;
+  --text-eyebrow: 12px;
+  --text-eyebrow--line-height: 16px;
+  --text-eyebrow--font-weight: 600;
+  --text-eyebrow--letter-spacing: 0.04em;
+  --text-kpi: 28px;
+  --text-kpi--line-height: 1.2;
+  --text-kpi--font-weight: 600;
 
   /* Size tokens (DESIGN.md spacing): h-row, h-row-compact, w-sidebar, w-inspector,
    * w-rail, p-gutter. `row` follows the density preference. */
   --spacing-row: var(--row-height);
   --spacing-row-compact: var(--row-height-compact);
   --spacing-sidebar: 220px;
+  --spacing-sidebar-collapsed: 64px;
   --spacing-inspector: 420px;
   --spacing-rail: 300px;
-  --spacing-gutter: 16px;
+  --spacing-gutter: 20px;
+  --spacing-graph-detail: 372px;
+  --spacing-graph: 660px;
+  --spacing-dialog-width: 520px;
+  --spacing-settings-width: 760px;
 
-  /* Brand and semantic colours (DESIGN.md), light/dark pairs in :root and .dark. */
+  /* Surfaces, text and semantic colours (DESIGN.md), light/dark pairs in :root and .dark. */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-alt: var(--surface-alt);
+  --color-border-strong: var(--border-strong);
+  --color-text-secondary: var(--text-secondary);
+  --color-primary-tint: var(--primary-tint);
+  --color-primary-text: var(--primary-text);
+  --color-link: var(--link);
   --color-blocker: var(--blocker);
+  --color-blocker-tint: var(--blocker-tint);
   --color-gap: var(--gap);
+  --color-gap-tint: var(--gap-tint);
   --color-resolved: var(--resolved);
+  --color-resolved-tint: var(--resolved-tint);
+  --color-resolved-foreground: var(--resolved-foreground);
+  --color-neutral: var(--neutral);
+  --color-neutral-tint: var(--neutral-tint);
   --color-agent: var(--agent);
+  --color-agent-tint: var(--agent-tint);
+  --color-role-pm: var(--role-pm);
+  --color-role-qa: var(--role-qa);
+  --color-scrim: var(--scrim);
+  --color-graph-canvas: var(--graph-canvas);
+  --color-graph-product: var(--graph-product);
+  --color-graph-integration-type: var(--graph-integration-type);
+  --color-graph-knowledge-source: var(--graph-knowledge-source);
+  --color-graph-checklist: var(--graph-checklist);
+  --color-graph-ready: var(--graph-ready);
+  --color-graph-missing: var(--graph-missing);
+  --color-graph-edge: var(--graph-edge);
+  --color-graph-edge-selected: var(--graph-edge-selected);
+  --color-graph-edge-gap: var(--graph-edge-gap);
+  --color-graph-chip-background: var(--graph-chip-background);
+  --color-graph-chip-border: var(--graph-chip-border);
+  --color-graph-chip-text: var(--graph-chip-text);
+  --color-graph-chip-off-text: var(--graph-chip-off-text);
+  /* Legacy aliases, kept until Story 17.3. */
   --color-diff-tint: var(--diff-tint);
   --color-evidence-highlight: var(--evidence-highlight);
-  --color-blocker-tint: var(--blocker-tint);
   --color-surface-sidebar: var(--surface-sidebar);
   --color-surface-inspector: var(--surface-inspector);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -85,36 +127,83 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* DESIGN.md radii: 4 rows/inputs/chips, 6 buttons/cards, 8 dialogs/palette; `full`
-   * (Tailwind default) for pills and avatars. Larger steps are capped at 8px. */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: var(--radius);
-  --radius-xl: var(--radius);
-  --radius-2xl: var(--radius);
-  --radius-3xl: var(--radius);
-  --radius-4xl: var(--radius);
+
+  /* DESIGN.md radii: sm 6 chips, md 8 buttons/inputs, lg 10 badges, xl 12 cards/dialogs;
+   * `full` (Tailwind default) for pills and avatars. Larger steps are capped at 12px. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+  --radius-4xl: 12px;
+
+  /* Elevation (DESIGN.md): card shadow follows the theme, overlays are the same in both. */
+  --shadow-card: var(--shadow-card-value);
+  --shadow-overlay: 0 16px 40px rgba(0, 0, 0, 0.3);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  /* DESIGN.md colours, light. Plain hex so contrast.test.ts can parse them. */
+  --canvas: #ECEDF2;
+  --background: #F7F7FA;
+  --surface: #FFFFFF;
+  --surface-alt: #F1F2F7;
+  --border: #E3E5EE;
+  --border-strong: #80869D;
+  --text: #171A26;
+  --text-secondary: #555B72;
   --primary: #4F5BD5;
   --primary-foreground: #FFFFFF;
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.537 0 0); /* darkened from 0.556 for AA on the surfaces and tints */
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --primary-tint: #ECEEFC;
+  --primary-text: #3B45B8;
+  --link: #3B45B8;
+  --ring: #4F5BD5;
+  --agent: #3B45B8;
+  --agent-tint: #ECEEFC;
+  --blocker: #B42F29;
+  --blocker-tint: #FDECEA;
+  --gap: #8F5200;
+  --gap-tint: #FDF1D6;
+  --resolved: #17753F;
+  --resolved-tint: #E2F5E9;
+  --resolved-foreground: #FFFFFF;
+  --neutral: #555B72;
+  --neutral-tint: #EEF0F6;
+  --role-pm: #1F8A7E;
+  --role-qa: #6E7490;
+  --scrim: rgba(10, 12, 20, 0.55);
+
+  /* Knowledge graph: always dark, so the same in both themes. */
+  --graph-canvas: #12192D;
+  --graph-product: #9AA3FF;
+  --graph-integration-type: #5FD0C2;
+  --graph-knowledge-source: #7CC8F5;
+  --graph-checklist: #F3BA5C;
+  --graph-ready: #6FD39A;
+  --graph-missing: #FF8A80;
+  --graph-edge: #6D7AA8;
+  --graph-edge-selected: #9AA3FF;
+  --graph-edge-gap: #F3BA5C;
+  --graph-chip-background: #1B2442;
+  --graph-chip-border: #4F5BD5;
+  --graph-chip-text: #E4E8F5;
+  --graph-chip-off-text: #9AA6C8;
+
+  /* shadcn names mapped onto the DESIGN.md surfaces. */
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --secondary: var(--surface-alt);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-alt);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--surface-alt);
+  --accent-foreground: var(--text);
+  --destructive: var(--blocker);
+  --input: var(--border-strong);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -122,29 +211,27 @@
   --chart-5: oklch(0.269 0 0);
   --radius: 8px;
   --sidebar: var(--surface-sidebar);
-  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-foreground: var(--text);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: var(--primary-tint);
+  --sidebar-accent-foreground: var(--primary-text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 
-  --blocker: #DC2626;
-  --gap: #B45309;
-  --resolved: #15803D;
-  --agent: #4F5BD5;
-  --diff-tint: #EEF0FC;
-  --blocker-tint: #FEF2F2;
-  /* The cited span in an Evidence passage. No colour of its own: the primary-hue tint
-   * (DESIGN.md has no evidence-highlight token yet). Follows the dark pair of diff-tint. */
-  --evidence-highlight: var(--diff-tint);
-  --surface-sidebar: #F7F7F8;
-  --surface-inspector: #FBFBFC;
+  /* Legacy aliases pointing at the new values until Story 17.3. */
+  --diff-tint: var(--primary-tint);
+  --evidence-highlight: var(--primary-tint);
+  --surface-sidebar: var(--surface);
+  --surface-inspector: var(--surface);
 
-  /* Row density: one variable, switched by the density preference on <html>. */
-  --row-height-comfortable: 32px;
-  --row-height-compact: 28px;
+  --shadow-card-value: 0 1px 2px rgba(23, 26, 38, 0.06);
+
+  /* Row density: one variable, switched by the density preference on <html>.
+   * DESIGN.md row padding (12 comfortable, 6 compact) around a 32px content line:
+   * 32 + 2 x 12 = 56px comfortable, 32 + 2 x 6 = 44px compact. */
+  --row-height-comfortable: 56px;
+  --row-height-compact: 44px;
   --row-height: var(--row-height-comfortable);
 
   color-scheme: light;
@@ -155,47 +242,35 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: #7C86E8;
-  --primary-foreground: #0E1030;
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: var(--surface-sidebar);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --canvas: #0E1015;
+  --background: #14161D;
+  --surface: #1B1E27;
+  --surface-alt: #232734;
+  --border: #2B3040;
+  --border-strong: #737A94;
+  --text: #E9EBF3;
+  --text-secondary: #A3AAC0;
+  --primary: #4F5BD5;
+  --primary-foreground: #FFFFFF;
+  --primary-tint: #262B52;
+  --primary-text: #B3BAFF;
+  --link: #B3BAFF;
+  --ring: #B3BAFF;
+  --agent: #B3BAFF;
+  --agent-tint: #262B52;
+  --blocker: #FF9C94;
+  --blocker-tint: #3B2026;
+  --gap: #F3BA5C;
+  --gap-tint: #382D17;
+  --resolved: #78D6A0;
+  --resolved-tint: #162F20;
+  --resolved-foreground: #14161D;
+  --neutral: #A3AAC0;
+  --neutral-tint: #262A38;
+  --role-pm: #5FCBBE;
+  --role-qa: #8A91AB;
 
-  --blocker: #F87171;
-  --gap: #FBBF24;
-  --resolved: #4ADE80;
-  --agent: #7C86E8;
-  --diff-tint: #1E2140;
-  --blocker-tint: #2A1414;
-  --evidence-highlight: var(--diff-tint);
-  --surface-sidebar: #111113;
-  --surface-inspector: #16161A;
+  --shadow-card-value: 0 1px 2px rgba(0, 0, 0, 0.3);
 
   color-scheme: dark;
 }
@@ -206,6 +281,7 @@
   }
   body {
     @apply bg-background text-body text-foreground;
+    font-variant-numeric: tabular-nums;
   }
   html {
     @apply font-sans;
@@ -214,8 +290,8 @@
 
 /* Numeric role: every effort, cost, count and date column. */
 @utility text-numeric {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 21px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }

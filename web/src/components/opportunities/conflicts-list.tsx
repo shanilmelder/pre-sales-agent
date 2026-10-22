@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
+import { Chip } from "@/components/ui/chip";
 import { ConflictInspector } from "@/components/opportunities/conflict-inspector";
 import {
   ConflictStatusPill,
@@ -104,9 +105,7 @@ export function ConflictsList({
                   <span className="shrink-0 text-label text-gap">{escalatedLabel(item)}</span>
                 ) : null}
                 {item.requirement ? (
-                  <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
-                    {item.requirement.label}
-                  </span>
+                  <Chip className="shrink-0">{item.requirement.label}</Chip>
                 ) : null}
                 <span className="min-w-0 flex-1 truncate text-body [font-variant-numeric:tabular-nums]">
                   {positionsSummary(item.positions)}

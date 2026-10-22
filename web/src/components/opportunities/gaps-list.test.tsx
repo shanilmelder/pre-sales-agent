@@ -348,7 +348,11 @@ describe("DetectionStatus", () => {
   it.each([queued, running])("shows Detecting Gaps with a running dot while $status", (d) => {
     render(<DetectionStatus detection={d} canStart />);
     expect(screen.getByText("Detecting Gaps")).toBeTruthy();
-    expect(screen.getByTestId("running-dot").className).toContain("motion-reduce:animate-none");
+    const runningDot = screen.getByTestId("running-dot");
+    expect(runningDot.tagName.toLowerCase()).toBe("svg");
+    expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(runningDot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
     expect(screen.queryByRole("button")).toBeNull();
   });
 

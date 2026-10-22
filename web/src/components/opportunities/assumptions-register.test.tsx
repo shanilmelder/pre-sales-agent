@@ -404,6 +404,15 @@ describe("the Assumptions Register", () => {
     expect(within(register()).getByText("Assumptions couldn't be proposed.")).toBeTruthy();
   });
 
+  it("shows a static loader icon while Assumptions are being proposed", () => {
+    renderSection(view(version([], { proposal_status: "running" }, 0)));
+    const proposingDot = screen.getByTestId("proposing-dot");
+    expect(proposingDot.tagName.toLowerCase()).toBe("svg");
+    expect(proposingDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(proposingDot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(proposingDot.getAttribute("class") ?? "").not.toContain("animate");
+  });
+
   it.each([
     ["failed", "Assumptions couldn't be proposed."],
     [null, "No Assumptions were proposed for this version."],

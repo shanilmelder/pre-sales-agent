@@ -161,3 +161,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-3-chunk-embed-search-knowledge.md`
   summary: Add a SourcesTab component test (fake timers) proving the Knowledge list keeps polling while a Source is embedding and flips to Ready.
   evidence: Story 3.3 verification-gap review. `sources-tab.tsx` switched to `isProcessing`; reverting to `isParsePending` fails no test, and SourcesTab had no component test before.
+- source_spec: none
+  summary: [post-demo] Refit built screens to the 2026-10-21 redesign (Epic 17): token layer and primitives, app shell and Settings, built tabs, Opportunity list and Overview chrome (Stories 17.1-17.4).
+  evidence: Approved Sprint Change Proposal P9 in `_bmad-output/planning-artifacts/sprint-change-proposal-2026-10-21.md`. About 67 built `.tsx` files still use the old tokens (`h-row`, type-role classes, `rounded-*`); done specs stay as history.
+- source_spec: none
+  summary: [post-demo] Remove the six `animate-pulse` running dots and show Running as a static loader icon, updating their tests.
+  evidence: Approved Sprint Change Proposal P8 and P9 (Story 17.1) in `_bmad-output/planning-artifacts/sprint-change-proposal-2026-10-21.md`. Built `status-pill.tsx` and five other components still pulse, which the redesign (UX-DR10) no longer allows.
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-1-token-layer-and-primitives.md`
+  summary: Story 17.1b: the shared UI primitives for the redesign (Button 38px and 32px with border-strong, Input and Textarea, Dialog 520px, Card, Select, Table, Skeleton, Avatar, Tooltip, Switch and one tint-filled StatusPill) and migrating the three ad-hoc status pills and the chips onto them.
+  evidence: Split from Story 17.1 on 2026-10-21 because the full spec was about 2,300 tokens. 17.1a covers tokens, the contrast gate, the product name and the running state. 17.1b must land before Story 17.2 starts.
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-1b-ui-primitives.md`
+  summary: Story 17.1c: migrate the existing status pills and chips onto the new `Pill` and `Chip` primitives (about 12 pill files such as `opportunities/status-pill.tsx`, `conflict-status-pill.tsx`, `severity-pill.tsx`, `SourceStatusPill`, `ParseStatusPill`, `VersionPill`, `GapStatusPill`, `TaskStatusPill` and the evals pills, plus the inline `rounded-full border` pill strings and about 14 `rounded-sm border h-5` chip sites), rewrite `status-pill.test.tsx` for the tint classes, and keep the `data-status`, `data-severity`, `detected-from-text` and `running-dot` test ids.
+  evidence: Split from Story 17.1b on 2026-10-22 because including about 30 source files and 9 tests would push the spec far past the 1,600 token target. 17.1b builds and tests the primitives only. 17.1c depends on 17.1b and should land before Story 17.2 and 17.3.

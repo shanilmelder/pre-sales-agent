@@ -23,14 +23,14 @@ export function RequirementDiff({
     <>
       <div className="flex flex-col gap-0.5 text-body">
         <p className="flex gap-2 rounded-sm bg-diff-tint px-1.5 py-0.5">
-          <span aria-hidden="true" className="shrink-0 font-mono text-muted-foreground">
+          <span aria-hidden="true" className="shrink-0 text-muted-foreground">
             −
           </span>
           <span className="sr-only">{`${beforeLabel}: `}</span>
           <span className="min-w-0 break-words">{before.text}</span>
         </p>
         <p className="flex gap-2 rounded-sm bg-diff-tint px-1.5 py-0.5">
-          <span aria-hidden="true" className="shrink-0 font-mono text-muted-foreground">
+          <span aria-hidden="true" className="shrink-0 text-muted-foreground">
             +
           </span>
           <span className="sr-only">{`${afterLabel}: `}</span>

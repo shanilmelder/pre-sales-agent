@@ -4,7 +4,7 @@ import { AccessGate, hasAccess } from "@/components/access-gate";
 import { AppShell, PlaceholderPage } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
 
-export const metadata: Metadata = { title: "Reports · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "Reports · Pre Sales Agent Framework" };
 
 export default async function ReportsPage() {
   const result = await getMe();

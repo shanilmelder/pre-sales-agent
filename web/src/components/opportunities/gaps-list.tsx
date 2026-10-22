@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import {
@@ -32,6 +32,7 @@ import {
   type GapFormOutcome,
   type QuestionField,
 } from "@/components/opportunities/gap-inspector";
+import { Pill } from "@/components/ui/pill";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { QuestionsExport } from "@/components/opportunities/questions-export";
 import { isEditableTarget } from "@/components/shell/keyboard-shortcuts";
@@ -317,13 +318,13 @@ export function GapsList({
                   </span>
                   <span className="flex w-44 shrink-0">
                     {converted ? (
-                      <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full border border-border px-2 text-label text-muted-foreground">
+                      <Pill tone="neutral" className="shrink-0">
                         {convertedLabel(item.converted_to)}
-                      </span>
+                      </Pill>
                     ) : dismissed && item.dismissal ? (
-                      <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full border border-border px-2 text-label text-muted-foreground">
+                      <Pill tone="neutral" className="shrink-0">
                         {`Dismissed · ${dismissReasonLabel(item.dismissal.reason_kind)}`}
-                      </span>
+                      </Pill>
                     ) : item.question ? (
                       <QuestionPill status={item.question.status} />
                     ) : null}
@@ -352,7 +353,7 @@ export function GapsKeyHints({
       {keys.map((k) => (
         <kbd
           key={k}
-          className="rounded-sm border border-border px-1 font-mono text-meta text-muted-foreground"
+          className="rounded-sm border border-border px-1 text-meta text-muted-foreground"
         >
           {k}
         </kbd>
@@ -399,11 +400,7 @@ export function DetectionStatus({
   if (isDetecting(detection)) {
     return (
       <p className="flex items-center gap-2 text-label" data-status={detection?.status}>
-        <span
-          aria-hidden="true"
-          data-testid="running-dot"
-          className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-        />
+        <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
         {DETECTING}
       </p>
     );

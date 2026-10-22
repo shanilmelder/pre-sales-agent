@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlertIcon, ListChecksIcon, PencilIcon } from "lucide-react";
+import { CircleAlertIcon, ListChecksIcon, PencilIcon, LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
@@ -13,6 +13,8 @@ import {
   AssumptionsRegister,
   OriginGapInspector,
 } from "@/components/opportunities/assumptions-register";
+import { Chip } from "@/components/ui/chip";
+import { Pill } from "@/components/ui/pill";
 import { EstimateExport } from "@/components/opportunities/estimate-export";
 import { EstimateInspector } from "@/components/opportunities/estimate-inspector";
 import { ReasonPrompt, RoleMixEditor } from "@/components/opportunities/estimate-line-edit";
@@ -78,20 +80,20 @@ export function VersionPill({
   version: Pick<EstimateVersion, "status" | "version" | "source" | "source_run">;
 }) {
   return (
-    <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-full border border-border bg-background px-2 text-label text-foreground">
+    <Pill tone="neutral" className="shrink-0">
       {versionPillLabel(version)}
-    </span>
+    </Pill>
   );
 }
 
 /** The Covers cell: how many Requirements the line covers, as a chip. */
 export function CoversChip({ count }: { count: number }) {
   return (
-    <span className="inline-flex h-5 items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground">
+    <Chip>
       <ListChecksIcon aria-hidden="true" className="size-3 shrink-0" />
       <span className="[font-variant-numeric:tabular-nums]">{count}</span>
       <span className="sr-only">{count === 1 ? " Requirement" : " Requirements"}</span>
-    </span>
+    </Chip>
   );
 }
 
@@ -682,11 +684,7 @@ export function EstimateHeader({
           <p className="text-label text-muted-foreground">{STILL_BUILDING}</p>
         ) : waiting ? (
           <p className="flex items-center gap-2 text-label" data-status="waiting">
-            <span
-              aria-hidden="true"
-              data-testid="running-dot"
-              className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-            />
+            <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
             {BUILDING}
           </p>
         ) : rebuilding && !stalled ? (
@@ -694,11 +692,7 @@ export function EstimateHeader({
             className="flex items-center gap-2 text-label text-muted-foreground"
             data-status="rebuilding"
           >
-            <span
-              aria-hidden="true"
-              data-testid="running-dot"
-              className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-            />
+            <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
             {REBUILDING}
           </p>
         ) : null}

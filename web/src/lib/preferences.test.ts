@@ -150,13 +150,13 @@ describe("density token in globals.css", () => {
   const testFile = import.meta.url;
   const css = readFileSync(fileURLToPath(new URL("../app/globals.css", testFile)), "utf8");
 
-  it("defines 32px comfortable and 28px compact rows", () => {
-    expect(css).toMatch(/--row-height-comfortable:\s*32px;/);
-    expect(css).toMatch(/--row-height-compact:\s*28px;/);
+  it("defines 56px comfortable and 44px compact rows", () => {
+    expect(css).toMatch(/--row-height-comfortable:\s*56px;/);
+    expect(css).toMatch(/--row-height-compact:\s*44px;/);
     expect(css).toMatch(/:root\s*\{[^}]*--row-height:\s*var\(--row-height-comfortable\);/);
   });
 
-  it("switches the one row variable to 28px under data-density=compact", () => {
+  it("switches the one row variable to the compact height under data-density=compact", () => {
     expect(css).toMatch(
       /\[data-density="compact"\]\s*\{\s*--row-height:\s*var\(--row-height-compact\);\s*\}/,
     );
@@ -169,7 +169,7 @@ describe("density token in globals.css", () => {
       "--spacing-sidebar: 220px",
       "--spacing-inspector: 420px",
       "--spacing-rail: 300px",
-      "--spacing-gutter: 16px",
+      "--spacing-gutter: 20px",
     ]) {
       expect(css).toContain(token);
     }

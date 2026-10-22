@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlertIcon, ClipboardCheckIcon, ShieldPlusIcon } from "lucide-react";
+import { CircleAlertIcon, ClipboardCheckIcon, ShieldPlusIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -10,6 +10,7 @@ import {
   type AcceptAllAssumptionsResult,
   type AssumptionAcceptResult,
 } from "@/app/opportunities/actions";
+import { chipLayoutClassName } from "@/components/ui/chip";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -104,10 +105,11 @@ function AssumptionRow({
           aria-pressed={selected}
           aria-label={`Gap: ${assumption.origin.title}`}
           onClick={(event) => onOpenGap(assumption, event.detail === 0)}
-          className={cn(
-            "inline-flex h-5 max-w-64 items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary",
-            selected && "border-primary text-foreground",
-          )}
+          className={`${cn(
+            chipLayoutClassName,
+            "max-w-64 bg-surface outline-none hover:brightness-[.97] focus-visible:ring-2 focus-visible:ring-primary",
+            selected ? "border-primary text-foreground" : "border-border-strong text-primary-text",
+          )} text-label`}
         >
           <span className="font-medium">Gap</span>
           <span className="truncate">{assumption.origin.title}</span>
@@ -328,11 +330,7 @@ export function AssumptionsRegister({
 
       {proposing ? (
         <p className="flex items-center gap-2 text-label" data-status={version.proposal_status}>
-          <span
-            aria-hidden="true"
-            data-testid="proposing-dot"
-            className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-          />
+          <LoaderCircleIcon aria-hidden="true" data-testid="proposing-dot" className="size-3 shrink-0 text-agent" />
           {PROPOSING}
         </p>
       ) : version.proposal_status === "failed" || version.proposal_status === null ? (

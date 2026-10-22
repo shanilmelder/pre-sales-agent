@@ -81,9 +81,11 @@ describe("SourcesList status column", () => {
     expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
     expect(within(rowFor("a.vtt")).getByText("Queued")).toBeTruthy();
     expect(within(rowFor("b.eml")).getByText("Parsing")).toBeTruthy();
-    expect(within(rowFor("b.eml")).getByTestId("running-dot").className).toContain(
-      "motion-reduce:animate-none",
-    );
+    const runningDot = within(rowFor("b.eml")).getByTestId("running-dot");
+    expect(runningDot.tagName.toLowerCase()).toBe("svg");
+    expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(runningDot.closest('[data-slot="pill"]')?.getAttribute("data-tone")).toBe("agent");
+    expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
     expect(within(rowFor("c.docx")).getByText("Parsed")).toBeTruthy();
     const failedRow = rowFor("d.pdf");
     expect(within(failedRow).getByText("Parse failed")).toBeTruthy();

@@ -7,7 +7,6 @@ import type { Preferences } from "@/lib/preferences";
 // Names shaped like next/font's generated classes (cn would merge two `font-*` names).
 vi.mock("next/font/google", () => ({
   Inter: () => ({ variable: "__variable_inter" }),
-  JetBrains_Mono: () => ({ variable: "__variable_mono" }),
 }));
 
 const preferences = vi.hoisted(() => ({ current: undefined as unknown as Preferences }));
@@ -38,7 +37,6 @@ describe("RootLayout", () => {
     expect(html.getAttribute("data-density")).toBe("compact");
     expect(html.classList.contains("dark")).toBe(true);
     expect(html.classList.contains("__variable_inter")).toBe(true);
-    expect(html.classList.contains("__variable_mono")).toBe(true);
   });
 
   it("System: no .dark from the server (the theme script decides)", async () => {
@@ -47,7 +45,6 @@ describe("RootLayout", () => {
     expect(html.getAttribute("data-density")).toBe("comfortable");
     expect(html.classList.contains("dark")).toBe(false);
     expect(html.classList.contains("__variable_inter")).toBe(true);
-    expect(html.classList.contains("__variable_mono")).toBe(true);
   });
 
   it("inlines the theme script in <head>", async () => {

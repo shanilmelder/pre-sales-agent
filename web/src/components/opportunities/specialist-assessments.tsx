@@ -7,6 +7,7 @@ import {
   CircleMinusIcon,
   ClockIcon,
   ListChecksIcon,
+  LoaderCircleIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -19,6 +20,9 @@ import {
   startAssessmentRun,
   type StartAssessmentResult,
 } from "@/app/opportunities/actions";
+import { Chip } from "@/components/ui/chip";
+import { Pill } from "@/components/ui/pill";
+import { pillToneFor } from "@/lib/pill-tone";
 import { AssessmentFindingInspector } from "@/components/opportunities/assessment-finding-inspector";
 import { useFindingSelection } from "@/components/opportunities/finding-selection";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
@@ -91,9 +95,6 @@ const NOT_ALLOWED =
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
-const chipClass =
-  "inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-meta text-muted-foreground";
-
 /** A recommendation: always an icon and a label, never colour alone. */
 export function RecommendationPill({
   recommendation,
@@ -103,13 +104,14 @@ export function RecommendationPill({
   const known = recommendationInfo(recommendation);
   const Icon = known.icon;
   return (
-    <span
+    <Pill
       data-recommendation={known.value}
-      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
+      tone={pillToneFor(known.tone)}
+      icon={<Icon />}
+      className="shrink-0"
     >
-      <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
       {known.label}
-    </span>
+    </Pill>
   );
 }
 
@@ -219,7 +221,7 @@ export function AssessmentFindingList({
                 <span className="min-w-0 flex-1 truncate text-body">
                   {item.title}
                 </span>
-                <span className={chipClass}>
+                <Chip className="shrink-0">
                   <ListChecksIcon
                     aria-hidden="true"
                     className="size-3 shrink-0"
@@ -230,7 +232,7 @@ export function AssessmentFindingList({
                   <span className="sr-only">
                     {count === 1 ? " Requirement" : " Requirements"}
                   </span>
-                </span>
+                </Chip>
               </button>
             </div>
           </div>
@@ -269,7 +271,7 @@ function EffortTable({ assessment }: { assessment: Assessment }) {
             key={row.requirement.id}
             className="border-b border-border align-baseline"
           >
-            <td className="py-1 pr-3 font-mono text-meta text-muted-foreground">
+            <td className="py-1 pr-3 text-meta text-muted-foreground">
               {row.requirement.label}
             </td>
             <td className="py-1 pr-3 text-right text-numeric">
@@ -322,9 +324,9 @@ export function AssessmentCard({
         </h4>
         {assessment ? (
           <>
-            <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-border bg-background px-2 text-label text-foreground">
+            <Pill tone="neutral" className="shrink-0">
               v{assessment.version}
-            </span>
+            </Pill>
             <RecommendationPill recommendation={assessment.recommendation} />
           </>
         ) : null}
@@ -374,13 +376,14 @@ function TaskStatusPill({ status }: { status: AssessmentTask["status"] }) {
   const known = TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued;
   const Icon = known.icon;
   return (
-    <span
+    <Pill
       data-task-pill={status}
-      className="inline-flex h-5 w-[5.5rem] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
+      tone={pillToneFor(known.tone)}
+      icon={<Icon />}
+      className="w-[5.5rem] shrink-0"
     >
-      <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
       {taskStatusLabel(status)}
-    </span>
+    </Pill>
   );
 }
 
@@ -451,12 +454,9 @@ export function AgentRunPanel({
             >
               {taskElapsed(task, now)}
             </span>
-            <span className="flex size-1.5 shrink-0" aria-hidden="true">
+            <span className="flex size-3 shrink-0" aria-hidden="true">
               {runningDot ? (
-                <span
-                  data-testid="running-dot"
-                  className="size-1.5 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-                />
+                <LoaderCircleIcon data-testid="running-dot" className="size-3 text-agent" />
               ) : null}
             </span>
             {note ? (

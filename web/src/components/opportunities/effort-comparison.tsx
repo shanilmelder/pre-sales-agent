@@ -138,7 +138,7 @@ export function EffortComparisonSection({
                   {comparison.rows.map((row) => (
                     <tr key={row.id} className="border-b border-border align-baseline">
                       <th scope="row" className="py-1 pr-3 text-left font-normal">
-                        <span className="font-mono text-meta text-muted-foreground">
+                        <span className="text-meta text-muted-foreground">
                           {row.label}
                         </span>{" "}
                         <span className="text-body">{row.excerpt}</span>

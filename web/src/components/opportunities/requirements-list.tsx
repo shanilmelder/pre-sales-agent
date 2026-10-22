@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, CircleAlertIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
@@ -309,7 +309,7 @@ export function RequirementsList({
                         </button>
                       )}
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-mono text-meta text-muted-foreground">
+                        <span className="text-meta text-muted-foreground">
                           {requirementLabel(item)}
                         </span>
                         {item.evidence.length > 0 ? (
@@ -388,11 +388,7 @@ export function ExtractionStatus({
   if (isExtracting(extraction)) {
     return (
       <p className="flex items-center gap-2 text-label" data-status={extraction?.status}>
-        <span
-          aria-hidden="true"
-          data-testid="running-dot"
-          className="size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-        />
+        <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
         {EXTRACTING}
       </p>
     );
@@ -1384,7 +1380,7 @@ export function RequirementsSection({
             <p className="text-meta">{outdatedNotice(outdated)}</p>
             <Link
               href={tabHref(opportunityId, "assessments")}
-              className="text-meta text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+              className="text-meta text-primary-text underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
             >
               {OPEN_ASSESSMENTS}
             </Link>

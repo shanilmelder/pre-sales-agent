@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
 import { getPreferences } from "@/lib/preferences";
 
-export const metadata: Metadata = { title: "Settings · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "Settings · Pre Sales Agent Framework" };
 
 export default async function SettingsPage() {
   const result = await getMe();

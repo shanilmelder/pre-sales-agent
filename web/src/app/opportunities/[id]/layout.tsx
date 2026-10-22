@@ -12,7 +12,7 @@ import { openGapCount } from "@/lib/gaps";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 
 // The title stays generic: customer names are not put in the tab title or history.
-export const metadata: Metadata = { title: "Opportunity · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "Opportunity · Pre Sales Agent Framework" };
 
 /** The Opportunity workspace: header and tab strip around every tab. Fetched here once per
  * navigation into the workspace (with the Conflicts and Gaps tabs' counts, which then follow

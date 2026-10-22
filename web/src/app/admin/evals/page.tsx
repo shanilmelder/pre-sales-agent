@@ -8,7 +8,7 @@ import { createServerApiClient, getMe } from "@/lib/api/server";
 import type { EvalResult } from "@/lib/evals";
 import { isAdmin } from "@/lib/navigation";
 
-export const metadata: Metadata = { title: "Evals · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "Evals · Pre Sales Agent Framework" };
 
 type ListResult =
   | { kind: "ok"; results: EvalResult[] }

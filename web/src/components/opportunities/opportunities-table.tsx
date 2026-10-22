@@ -82,7 +82,7 @@ export function OpportunitiesTable({
             <tr key={index} data-skeleton-row="" className="h-row border-b border-border">
               {[0, 1, 2, 3].map((cell) => (
                 <td key={cell} className={cell === 0 ? "px-gutter" : "px-2"}>
-                  <span className="block h-3 w-3/4 animate-pulse rounded-sm bg-muted" />
+                  <span className="block h-3 w-3/4 rounded-sm bg-muted" />
                 </td>
               ))}
             </tr>

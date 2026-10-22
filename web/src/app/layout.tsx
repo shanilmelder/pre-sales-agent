@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import { cn } from "cn";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShellProviders } from "@/components/shell/shell-context";
 import { ThemeScript } from "@/components/theme-script";
 import { getPreferences, htmlPreferenceAttributes } from "@/lib/preferences";
@@ -13,13 +14,8 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Pre-Sales Agent",
+  title: "Pre Sales Agent Framework",
   description: "Agentic AI Presales Platform",
 };
 
@@ -30,7 +26,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       {...preferenceAttributes}
-      className={cn(inter.variable, jetbrainsMono.variable, "h-full antialiased", className)}
+      className={cn(inter.variable, "h-full antialiased", className)}
       // The theme script may add `.dark` before hydration when the theme is System.
       suppressHydrationWarning
     >
@@ -39,9 +35,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col">
         {/* State only (sidebar, right pane, live region): pages still gate their content. */}
-        <ShellProviders singleKeyShortcuts={preferences.singleKeyShortcuts}>
-          {children}
-        </ShellProviders>
+        <TooltipProvider>
+          <ShellProviders singleKeyShortcuts={preferences.singleKeyShortcuts}>
+            {children}
+          </ShellProviders>
+        </TooltipProvider>
       </body>
     </html>
   );

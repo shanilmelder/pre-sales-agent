@@ -41,9 +41,9 @@ Independent checks try to break the multi-agent assessment before anyone estimat
 
 ## UX & Interaction Patterns
 
-- Conflicts are tab 6 of the workspace (key `6`). The badge counts open and escalated Conflicts and updates live over SSE. Rows are 32px and show type, severity, status pill and a positions summary. Semantic Conflicts are labelled "Detected from text".
+- Conflicts are tab 6 of the workspace (key `6`). The badge counts open and escalated Conflicts and updates live over SSE. Rows are padded list rows (density token) and show type, severity, status pill and a positions summary. Semantic Conflicts are labelled "Detected from text".
 - Conflict status pills: Open (blocker colour), Negotiating (agent), Resolved (resolved green), Escalated (arrow-up, gap colour). Colour is always paired with an icon and a label.
-- Conflict view: equal-width position cards, with the agent named by role, the value in tabular figures, Evidence chips and the source Assessment version (struck through when superseded). Resolution requires a reason. Resolved Conflicts stay readable in a resolved section.
+- Conflict view: equal-width position cards, with the agent named by role, the value in tabular figures, Evidence chips and the source Assessment version (struck through when superseded). Resolution requires a reason. Resolved Conflicts stay readable in a resolved section; one resolved against an earlier Assessment version appears there with the tag "Superseded by Assessment v2" and is never reopened.
 - Critic and Red Team Reviews have their own sections in the Assessments tab. Critical open Findings use the blocker colour. Copy is specific and names agents by role, with no emoji.
 
 ## Cross-Story Dependencies

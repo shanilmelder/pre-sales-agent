@@ -4,6 +4,7 @@ import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef } from "react";
 
+import { Chip } from "@/components/ui/chip";
 import { typeLabel } from "@/lib/conflicts";
 import {
   editedLabel,
@@ -67,7 +68,7 @@ export function EstimateInspector({
           {opportunityId ? (
             <Link
               href={tabHref(opportunityId, "conflicts")}
-              className="w-fit rounded-sm text-label text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+              className="w-fit rounded-sm text-label text-primary-text underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
             >
               View on the Conflicts tab
             </Link>
@@ -140,9 +141,7 @@ export function EstimateInspector({
         <ul className="flex flex-col gap-1.5">
           {line.requirements.map((requirement) => (
             <li key={requirement.id} className="flex items-baseline gap-2">
-              <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
-                {requirement.label}
-              </span>
+              <Chip className="shrink-0">{requirement.label}</Chip>
               <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
             </li>
           ))}

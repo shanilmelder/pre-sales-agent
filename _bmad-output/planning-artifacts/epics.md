@@ -9,11 +9,11 @@ inputDocuments:
   - docs/BMAD Implementation Specification — LangGraph Agent Orchestration Engine.md
 ---
 
-# Agentic AI Presales Platform (pre-sales-agent) - Epic Breakdown
+# Pre Sales Agent Framework (pre-sales-agent) - Epic Breakdown
 
 ## Overview
 
-This document breaks the whole platform into epics and stories for all four Releases (R1–R4). It draws on the PRD, the architecture spine (AD-1 to AD-32), the UX design contract (DESIGN.md and EXPERIENCE.md), and the original orchestration engine specification, whose acceptance criteria are reused where they map. **Where the PRD and the architecture spine disagree, the spine wins.** See the spine's "PRD Deviations" section: local Ollama models, a single VPS with queued runs, sops-encrypted secrets, OpenTelemetry to a local collector instead of LangSmith, and SSE only.
+This document breaks the whole Pre Sales Agent Framework into epics and stories for all four Releases (R1–R4), covering FR-1..FR-67. It draws on the PRD, the architecture spine (AD-1 to AD-33), the UX design contract (DESIGN.md and EXPERIENCE.md), and the original orchestration engine specification, whose acceptance criteria are reused where they map. **Where the PRD and the architecture spine disagree, the spine wins.** See the spine's "PRD Deviations" section: local Ollama models, a single VPS with queued runs, sops-encrypted secrets, OpenTelemetry to a local collector instead of LangSmith, and SSE only.
 
 ## Requirements Inventory
 
@@ -28,7 +28,7 @@ This document breaks the whole platform into epics and stories for all four Rele
 **Intake and Requirement Extraction**
 - FR-4 [R1]: Add Opportunity Sources by paste or upload (.eml, .msg, text, .docx, .pdf, .vtt). Sources are stored unchanged and versioned, and treated as untrusted.
 - FR-5 [R1]: Extract and classify Requirements, each linked to its exact source passage. Duplicates are merged and recorded. Quality bar: ≥90% recall on the reference set.
-- FR-6 [R1]: Add, edit, split, merge, delete and confirm Requirements. Human edits are traced and never overwritten by extraction.
+- FR-6 [R1]: Add, edit, split, merge, delete and confirm Requirements. Human edits are traced and never overwritten by extraction. Every Requirement is Unconfirmed, Confirmed or Needs review; the state changes are traced and never block submission.
 - FR-7 [R1]: Incremental intake: extract only new or changed Requirements and flag affected Assessments. In R1 the engineer chooses what to rerun.
 
 **Knowledge Base**
@@ -36,6 +36,7 @@ This document breaks the whole platform into epics and stories for all four Rele
 - FR-9 [R1]: Experts create and version Checklists. Mandatory items always produce a Gap when unanswered.
 - FR-10 [R1]: Coverage view showing products and Integration Types that lack documentation or Checklists.
 - FR-65 [R1]: A versioned Integration Type and Work Package catalogue used by Checklists, Assessment lines, Estimate lines and Actuals.
+- FR-66 [R1]: Knowledge graph. Platform administrators and the roles that can edit Checklists can explore a graph of Products, Integration Types, Knowledge Sources and Checklists with a deterministic Coverage score, search and type filters. The same facts stay available as tables.
 
 **Gap Detection and Clarification**
 - FR-11 [R1]: Detect Gaps against the Knowledge Base and Checklists. Each Gap carries the reason it matters, a trigger citation and an impact rank. Mandatory items are deterministic (100%). Quality bar: ≥80% recall, ≤20% irrelevant.
@@ -73,7 +74,7 @@ This document breaks the whole platform into epics and stories for all four Rele
 **Estimate and Assumptions Register**
 - FR-33 [R1]: Standard Estimate template with lines by Work Package and Integration Type. All arithmetic is deterministic, and lines are tagged from the catalogue.
 - FR-34 [R1]: Assumptions Register. Each Assumption is a Condition (with wording) or a Contingency (with an amount), has an origin link, and names who accepted it and when. Submission is blocked while any Assumption lacks an accepting person.
-- FR-35 [R1]: Edits require a reason and create a new Estimate Version. Versions can be viewed and compared.
+- FR-35 [R1]: Edits require a reason. A draft is edited in place and every edit is traced (before and after values, reason, person). A new Estimate Version comes from an assessment rerun (including a Challenge) or an explicit new draft, with whole-number labels. Submitted, Baseline and superseded versions are read-only. Versions can be viewed and compared.
 - FR-36 [R1]: Export the Estimate, Assumptions Register and Clarification Questions as .xlsx and .docx.
 
 **Human Review, Approval and Challenge**
@@ -100,6 +101,7 @@ This document breaks the whole platform into epics and stories for all four Rele
 **Actuals and Calibration**
 - FR-49 [R1]: Record Actuals per Estimate line, with a variance cause, manually or by file import.
 - FR-50 [R1]: Estimate-vs-actual reporting by Opportunity, product, Integration Type, Work Package and cause, with drill-down to failed Assumptions.
+- FR-67 [R1]: Pipeline report. The Head of Delivery and platform administrator see Opportunities grouped by derived status and those due soon, from platform data only (no CRM pipeline stages).
 - FR-51 [R4]: Calibration suggestions once enough history exists (≥5 closed projects per type), visible and overridable, and never applied silently. Calibration impact is reported separately.
 - FR-52 [R4]: Agents cite closed Opportunities as Evidence.
 
@@ -112,7 +114,7 @@ This document breaks the whole platform into epics and stories for all four Rele
 - FR-56 [R1]: Register and version Agents (capabilities, schema, model and prompt versions, permissions, status). Disabled Agents get no tasks. Every Assessment records the versions that produced it.
 - FR-57 [R1]: Explicit tool permissions checked on every call. Unauthorized calls are blocked and audited. No Agent can send or approve.
 - FR-58 [R1]: SSO sign-in and roles (presales engineer, sales rep, reviewer types, commercial, delivery manager, Head of Delivery, admin), with Opportunity-scoped access.
-- FR-59 [R1]: Observability and cost per run and per Agent, linked by correlation ID, including cost per Opportunity.
+- FR-59 [R1]: Observability and cost per run and per Agent, linked by correlation ID, including cost per Opportunity. The Head of Delivery can view the cost and usage summary read-only, and usage is summarised per Agent.
 - FR-60 [R1]: Evaluation harness against a reference set of 10 or more annotated Opportunities. It acts as a release gate on the FR-5/11/25 bars, includes a single-agent baseline comparison, and applies the 5-point decision rule.
 - FR-61 [R1]: Untrusted content is treated as data. Prompt injection is detected where possible and never grants extra actions.
 
@@ -124,7 +126,7 @@ This document breaks the whole platform into epics and stories for all four Rele
 - NFR-4: Security. Auth0 sign-in is mandatory and authorization is checked on every sensitive operation. Data is encrypted in transit and at rest, secrets are protected (spine: sops/age instead of a managed vault), and sensitive operations are audited.
 - NFR-5: Observability. A correlation ID per run. Every Agent execution, tool call, retry and failure is traceable.
 - NFR-6: Auditability and retention. The trace is append-only and retained for the contract lifetime plus 7 years. Lost Opportunities are retained for 3 years, then purged by the controlled purge job.
-- NFR-7: Accessibility. WCAG 2.1 AA, with axe checks in CI.
+- NFR-7: Accessibility. WCAG 2.1 AA, with axe checks in CI. Single-key keyboard shortcuts can be turned off (WCAG 2.1.4), every screen has a skip link, and live changes are announced politely.
 - NFR-8: Platform. Desktop web on current Chrome and Edge. Minimum width 1280px; read-only below 1024px.
 - NFR-9 (PRD §9 and §10): Privacy and data governance. Agents receive only task-scoped data, there is no customer content in logs, data stays on the EU-located server, and exports are audited.
 - NFR-10 (PRD §9): Cost. Per-run budgets, and cost per Opportunity reported against the sponsor's budget (SM-C2).
@@ -143,11 +145,11 @@ From the architecture spine:
 - **Defaults:** `gpt-oss:20b` for chat and `bge-m3` for embeddings, sized for a 48 GB GPU. An R1 spike validates structured output for every agent schema.
 - **ToolGateway (AD-9).** Read-only, task-scoped tools. Egress allowlist. Research snapshots stored. Data blocks delimited. Injection flag recorded.
 - **Deterministic code (AD-10).** Arithmetic, pricing, policy, mandatory checks, structured-field conflicts, Evidence validation and submission blockers.
-- **Versioning (AD-11).** Immutable Estimate Versions. Requirements carry provenance (`origin`, `locked_by_human`) and receive pending changes rather than overwrites.
+- **Versioning (AD-11).** Immutable Estimate Versions. Requirements carry provenance (`origin`, `locked_by_human`) and a `confirmation_status` (`unconfirmed | confirmed | needs_review`), and receive pending changes rather than overwrites.
 - **Trace (AD-12).** `platform_trace_events`, append-only, with a payload catalogue. `opportunity_id` is nullable for admin and audit events.
 - **Evidence (AD-13).** Typed and versioned references. `source_passage` is owned by `intake`, with code-point offsets into the extracted-text artifact.
 - **Retrieval (AD-14).** pgvector with an untyped vector column and a partial HNSW expression index per model. A re-embed job runs on model change.
-- **Identity (AD-15).** Auth0 for authentication (EU tenant, `@auth0/nextjs-auth0` 4.31 in the web app, API tokens validated with PyJWT against JWKS, `iss`, `aud` and `exp`). Roles and Opportunity membership live in the platform's `identity` module, not Auth0 RBAC. First login provisions a user with no roles until an admin assigns them. Action catalogue `<module>.<entity>.<verb>`. Agent `actor_id` is `<agent_id>@<semver>`.
+- **Identity (AD-15).** Auth0 for authentication (EU tenant, `@auth0/nextjs-auth0` 4.31 in the web app, API tokens validated with PyJWT against JWKS, `iss`, `aud` and `exp`). Auth0 RBAC manages roles and permissions (AD-15 amended; Story 1.9); Opportunity membership stays in the platform's `identity` module. First login provisions a user with no roles until an admin assigns them in Auth0. Action catalogue `<module>.<entity>.<verb>`. Agent `actor_id` is `<agent_id>@<semver>`.
 - **API (AD-16, AD-30).** REST under /api/v1, problem+json errors, a generated TS client. An SSE stream per Opportunity with Last-Event-ID replay. Signed short-lived download URLs.
 - **Integrations (AD-17).** Ports and adapters (HubSpot 2026-09 over httpx, M365, Confluence, pricing, notifications). Outbound writes are idempotent jobs.
 - **Storage (AD-18).** Content-addressed, immutable, reference-counted. Upload limits, allowlist plus magic bytes, sandboxed parsing in the worker, rate limits.
@@ -156,6 +158,7 @@ From the architecture spine:
   - `estimates` owns Assumption, Risk and Baseline (`estimates_baselines`), with a per-Opportunity advisory lock and `get_submission_blockers`.
   - Critic and Red Team contradictions become Conflicts.
   - `reviews` owns requests, decisions and Challenges; a new version supersedes old requests.
+- **Derived read models (AD-33).** The Knowledge Graph, the Pipeline report and Cost and usage are derived read models: no graph store, one Opportunity status query, and `reporting_*` views. The only new table is the insert-only `knowledge_retrievals`, written once agent retrieval is logged.
 - **Retention (AD-31).** A privileged purge job is the only deleter.
 - **Operations (AD-19, AD-20, AD-32):**
   - Docker Compose on one Ubuntu GPU VPS: proxy (Caddy), web, api, worker, postgres (pgvector image), ollama (NVIDIA toolkit), otel-collector and a migrate one-shot. Healthchecks on every service.
@@ -167,31 +170,36 @@ From the architecture spine:
 
 ### UX Design Requirements
 
-- UX-DR1: Implement the DESIGN.md token layer on top of shadcn/ui: the primary colour, the four semantic colours (blocker, gap, agent, resolved), sidebar and inspector surfaces, diff and blocker tints, light and dark pairs, Inter at 13px with the type roles, tabular figures, tight radii (4/6/8) and density tokens (32px or 28px rows, sidebar 220px, inspector 420px, activity rail 300px).
-- UX-DR2: App shell: a sidebar (Inbox, My Opportunities, All Opportunities, Knowledge, Reports, Admin), a main pane, and a right pane (inspector or activity rail, `]` toggles). Responsive tiers at ≥1440, 1280–1439, 1024–1279 and <1024 (read-only notice). Light and dark themes follow the system, with an override. Density setting.
+- UX-DR1: Implement the DESIGN.md token layer on top of shadcn/ui: canvas, background, surface and surface-alt; primary, primary-tint, primary-text, link and ring; the four semantic colours with their tints (blocker, gap, agent, resolved) plus neutral; control borders on `border-strong`; light and dark pairs; Inter at 14px with the type roles (title 24/32, section 16/24, body 14/21, control 13, meta 12, eyebrow, KPI), tabular figures, no mono face; radii 6/8/10/12; card elevation; and density tokens (row padding 12 or 6px, rows about 56-72px, buttons about 38px, sidebar 220px or 64px collapsed, right pane 420px).
+- UX-DR2: App shell: a sidebar (Inbox, My Opportunities, All Opportunities, Knowledge, Reports for the Head of Delivery and platform administrator only, Admin), a main pane, and one 420px right pane with Inspector and Activity tabs (`]` cycles closed, open, closed). Header with organisation switcher, Search button, Settings reached from the avatar button. Skip link as first tab stop. Offline strip. Responsive tiers at ≥1440, 1280–1439, 1024–1279 and <1024 (read-only notice). Light and dark themes follow the system, with an override. Density setting.
 - UX-DR3: Command palette (⌘K) with fuzzy search across Opportunities, Requirements, Gaps and commands, offering context-aware commands first.
 - UX-DR4: Keyboard system: `g` navigation, `1`–`9` tabs, `j`/`k`, Enter, Esc, `x`, `e`, `c`, `v`, `d`, `?` cheat sheet. Single-key shortcuts can be turned off (WCAG 2.1.4).
 - UX-DR5: Opportunity workspace with a 9-tab strip (Overview, Sources, Requirements, Gaps, Assessments, Conflicts, Estimate, Trace, Actuals) and count badges. R2 adds a Proposal tab; R3 adds a Scenarios switcher.
-- UX-DR6: List row component: 32px, hover and focus row actions, a selected indicator bar, `x` multi-select with visible checkboxes, pagination or virtualisation, no infinite scroll.
+- UX-DR6: List row component: padded rows per the density token (about 56-72px comfortable), hover and focus row actions, a selected indicator bar, `x` multi-select with visible checkboxes, pagination or virtualisation, no infinite scroll.
 - UX-DR7: Inspector panel: subject detail, Evidence, version history and actions. Saves on blur with If-Match. Focus moves into it and back. "Open in tab".
 - UX-DR8: Status pill component, plus the Status Vocabulary mapping for Opportunity (derived), Workflow Run, Task, Gap/Unknown, Clarification Question, Conflict, Finding, Estimate Version and Review Request, each with a label, icon and colour token.
 - UX-DR9: Submission Blockers card with two gates ("Blockers to submit" and "Blockers to Baseline"). Updates live. When empty, shows "0 blockers — ready to submit" and makes Submit or Set Baseline the primary action.
-- UX-DR10: Agent run panel and activity rail: a row per task with a status pill, elapsed time, a running dot (reduced-motion fallback), Retry and Skip on failure, Resolve when waiting, Queued with queue position, and cancel with confirmation.
+- UX-DR10: Agent run panel and Activity tab: a row per task with a status pill, elapsed time, a static loader icon for Running (no pulse), model chip and token or time bar, Retry and Skip on failure, Resolve when waiting, Queued with queue position, and cancel with confirmation.
 - UX-DR11: Evidence chip: a kind icon and label. Clicking opens the cited passage in the inspector with the span highlighted. Superseded references are struck through.
 - UX-DR12: Gap card: impact indicator, trigger, inline question draft, question status pill, Convert form (segmented Condition/Contingency control, amount, wording, accepted by), and Dismiss with a required reason (not for mandatory items).
 - UX-DR13: Conflict view: side-by-side positions with Evidence and the Assessment version. Resolution requires a reason. The R3 Negotiation proposal card shows conditions and dissent.
-- UX-DR14: Estimate grid: dense table, tabular figures, sticky header and totals, server-calculated totals, a Contingency column linked to its Assumption, inline editing on drafts only, a version switcher (segmented control plus `v` list), the Baseline marker, and diff toggle `d`.
+- UX-DR14: Estimate grid: dense table, tabular figures, sticky header and totals, server-calculated totals, a Contingency column linked to its Assumption, lines edited from the Inspector's Edit line section on drafts only (cells are read-only in the grid), a version switcher (segmented control plus `v` list), the Baseline marker, and diff toggle `d`.
 - UX-DR15: Assumptions Register: grouped by Condition and Contingency with icons, origin chips, accepted-by, and unaccepted rows shown as blocker rows.
-- UX-DR16: Review panel and author-side outcomes: Approve (disabled for the author) and Reject, with the rest under More. Reasons are required. Inbox items for each decision, with author actions (Reply, New version, linked alternative). Superseded state.
-- UX-DR17: Challenge form, plus a "Confirm reassessment" item for the presales engineer (FR-38 R1). Automatic from R3.
+- UX-DR16: Review panel and author-side outcomes: Approve (disabled for the author), Reject and Challenge, with Request evidence, Request alternative and Escalate as a second row of buttons; a Review outcomes list on the author's own request. Reasons are required. Inbox items for each decision, with author actions (Reply, New version, linked alternative). Superseded state.
+- UX-DR17: Single Challenge dialog (520px) with a required reason and Assessment toggle cards (Suggested, Optional); the owning presales engineer confirms from the same dialog before the run starts (FR-38 R1). Automatic from R3.
 - UX-DR18: Diff view for Estimate Versions and pending Requirement changes: the diff-tint token with +/− text markers. Accept or Reject on pending changes.
 - UX-DR19: Set Baseline confirm dialog listing approvers and warning that it can't be undone. Baseline marker everywhere.
 - UX-DR20: State patterns: skeletons (≥150 ms), first-run empty states, extraction streaming, waiting-for-you, task failed (partial results labelled), budget-stopped banner, no estimate yet, run queued, upload rejected, parse failed, version lifecycle states, superseded review, concurrent-edit (412) with reload or diff, pending Requirement change, reconnecting and offline, weak-coverage banner, low-confidence label, permission denied, empty Inbox.
-- UX-DR21: Knowledge views (Sources with stale flag, Checklist editor, Coverage matrix) and Admin views (Agents with config history, Users and roles, Catalogue, Cost, Evals; R2 adds Approval policies and Integrations).
-- UX-DR22: Reports: variance table grouped by Integration Type, with drill-down to the Actuals tab and Assumptions. Calibration view in R4.
+- UX-DR21: Knowledge views (Sources with stale flag, Checklist editor, Coverage matrix, plus the Knowledge Graph with nodes, filters, legend and node drawer) and Admin views (Users and roles, Agents with config history, Catalogue, Evals; R2 adds Approval policies and Integrations).
+- UX-DR22: Reports: sub-tabs Estimate vs actual (variance by Integration Type, drill-down to the Actuals tab and Assumptions), Pipeline and Cost and usage; Calibration in R4.
 - UX-DR23: Accessibility floor: WCAG 2.1 AA, a polite aria-live region with throttled announcements, focus management, an arrow-key navigable grid with announced headers, no colour-only meaning, and axe in CI.
 - UX-DR24: Voice and tone: glossary terms, counts, specific failure reasons, agents named by role, no emoji or celebration copy.
-- UX-DR25: Visual references: `mockups/opportunity-overview.html`, `mockups/gaps.html` and `mockups/estimate.html`. The spines win on conflict.
+- UX-DR25: Visual reference: `ux-designs/.../imports/presales-agent-design-spec-standalone-v2.html`. The spines win on conflict. The older `mockups/` are superseded.
+- UX-DR26: Settings card (760px) with Theme and Density radio cards and the single-key shortcut switch with a visible On/Off label, opened from the avatar button and the palette command "Open Settings"; plus the Offline strip with Retry and the inline 412 alert ("Changed by [user] since you opened it" with Reload and View diff).
+- UX-DR27: Estimate Version lifecycle stepper (Draft, In review, Approved, Baseline; read-only, with the sentence for the selected version) and version state pills (Superseded, Baseline, Draft) on the version switcher; and the Actuals entry table (Line, Estimate h, Actual h editable, Variance amber when over and green when under, Variance cause; unrecorded lines read "—" and "Not recorded").
+- UX-DR28: Findings table card with a severity summary and columns Severity, Type, Finding, Raised by and Evidence (Critical rows on the blocker tint), and the Trace event Inspector (Payload, Version comparison, Evidence chips and the append-only note).
+- UX-DR29: Submission pipeline (8 read-only steps with states Complete, In progress, Blocked, Pending and a footer count) and KPI tiles on the Overview, and per-tab empty-state cards with the copy in EXPERIENCE State Patterns.
+- UX-DR30: Knowledge Graph: a 660px always-dark canvas, nodes with a glyph, a text label and a status colour, solid edges for documented links and dashed amber edges for missing coverage, search and type filters with counts, a legend, and a 372px node drawer.
 
 ### FR Coverage Map
 
@@ -200,7 +208,7 @@ FR-2: Epic 1 (basic status) / Epic 8 (live blockers summary)
 FR-3: Epic 5 - Live workflow progress
 FR-4: Epic 2 - Add Opportunity Sources
 FR-5: Epic 2 - Extract cited Requirements
-FR-6: Epic 2 - Edit and confirm Requirements
+FR-6: Epic 2 - Edit and confirm Requirements (confirmation state: Story 2.9)
 FR-7: Epic 2 - Incremental intake
 FR-8: Epic 3 (upload) / Epic 13 (connectors)
 FR-9: Epic 3 - Checklists
@@ -253,32 +261,35 @@ FR-55: Epic 13 - Knowledge connectors
 FR-56: Epic 7 - Register and version Agents (seeded registry from Epic 2)
 FR-57: Epic 7 - Tool permissions (ToolGateway enforcement from Epic 5)
 FR-58: Epic 1 - Auth0 sign-in, users, roles and access
-FR-59: Epic 7 - Observability and cost
+FR-59: Epic 7 - Observability and cost (shown under Reports → Cost and usage, Story 7.5)
 FR-60: Epic 7 - Evaluation harness
 FR-61: Epic 2 - Untrusted content handling
 FR-62: Epic 9 - Set Baseline
 FR-63: Epic 5 - Cancel and pin Workflow Runs
 FR-64: Epic 2 (sources) / Epic 4 (questions and answers)
 FR-65: Epic 3 - Integration Type and Work Package catalogue
+FR-66: Epic 3 - Knowledge Graph (Story 3.6)
+FR-67: Epic 10 - Pipeline report (Story 10.7)
+Epic 17 (redesign refit): no FR; UX-DR1-2, 4-8, 10, 16, 20-21, 23-24, 26-30; NFR-7, NFR-8
 
 ## Epic List
 
 ### Release 1: Estimation core
 
 ### Epic 1: Secure workspace on the production server
-The team signs in with Auth0, creates and shares Opportunities, and works inside the Linear-style app shell. The platform runs on the production VPS from day one, with CI/CD, backups and alerts. Delivers the project scaffold and the shared platform layer (Unit of Work, authorization, trace, design tokens).
+The team signs in with Auth0, creates and shares Opportunities, and works inside the app shell. The platform runs on the production VPS from day one, with CI/CD, backups and alerts. Delivers the project scaffold and the shared platform layer (Unit of Work, authorization, trace, design tokens).
 **FRs covered:** FR-1, FR-2 (basic), FR-58
 **Also:** NFR-4, NFR-5, NFR-8, NFR-9; AD-1–3, AD-12, AD-15, AD-16, AD-19, AD-20, AD-25, AD-32; UX-DR1–8, UX-DR23, UX-DR24
 
 ### Epic 2: From customer input to structured Requirements
 Ravi or a sales representative uploads emails, notes and transcripts. The platform extracts classified, cited Requirements that Ravi can edit, and never overwrites his edits. Introduces the job queue, worker, ModelGateway (Ollama) and the first agent.
 **FRs covered:** FR-4, FR-5, FR-6, FR-7, FR-61, FR-64 (sources)
-**Also:** AD-4, AD-7, AD-8, AD-11, AD-13, AD-18, AD-22, AD-29, AD-30; UX-DR11, UX-DR18, UX-DR20 (sources and extraction states)
+**Also:** AD-4, AD-7, AD-8, AD-11, AD-13, AD-18, AD-22, AD-29, AD-30; UX-DR11, UX-DR18, UX-DR20 (sources and extraction states), UX-DR29 (Requirement confirmation state)
 
 ### Epic 3: Knowledge Base and catalogue
 Admins and experts load product and integration documentation, write versioned Checklists, maintain the Integration Type and Work Package catalogue, and see where coverage is weak.
-**FRs covered:** FR-8 (upload), FR-9, FR-10, FR-65
-**Also:** AD-14; UX-DR21 (Knowledge views)
+**FRs covered:** FR-8 (upload), FR-9, FR-10, FR-65, FR-66
+**Also:** AD-14, AD-33; UX-DR21 (Knowledge views), UX-DR30 (Knowledge Graph)
 
 ### Epic 4: Find the gaps before estimating
 The platform raises ranked Gaps and drafts Clarification Questions. Ravi or the sales representative sends them and records the answers. The answers propose updates to Requirements.
@@ -288,7 +299,7 @@ The platform raises ranked Gaps and drafts Clarification Questions. Ravi or the 
 ### Epic 5: Multi-agent assessment with live progress
 Ravi runs the Engineering, PM, Security and Research Agents in parallel and watches them live. Runs are durable, budgeted and cancellable, and they pause and resume for human input.
 **FRs covered:** FR-3, FR-15, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-25, FR-26, FR-63
-**Also:** NFR-1, NFR-2, NFR-3, NFR-10; AD-5, AD-6, AD-9, AD-24; UX-DR10
+**Also:** NFR-1, NFR-2, NFR-3, NFR-10; AD-5, AD-6, AD-9, AD-24; UX-DR10, UX-DR28 (Findings table)
 
 ### Epic 6: Critic, Red Team and conflicts
 Independent agents try to break the assessment. Critical Findings block submission, and Ravi resolves agent Conflicts with a reason.
@@ -298,22 +309,27 @@ Independent agents try to break the assessment. Critical Findings block submissi
 ### Epic 7: Agent quality, cost and administration
 Admins manage Agent versions and permissions, see cost and traces per run, and run the evaluation set as the release gate for model and prompt changes, including the single-agent comparison.
 **FRs covered:** FR-56, FR-57, FR-59, FR-60
-**Also:** AD-21, AD-22; UX-DR21 (Admin views)
+**Also:** AD-21, AD-22, AD-33; UX-DR21 (Admin views), UX-DR22 (Cost and usage under Reports)
 
 ### Epic 8: Estimate and Assumptions Register
 Ravi gets a standard Estimate in which every Unknown is now a Condition or Contingency with an accepting person. The Submission Blockers gate counts down to zero, and he can export to .xlsx and .docx.
 **FRs covered:** FR-14, FR-33, FR-34, FR-35, FR-36, FR-2 (blockers)
-**Also:** AD-10, AD-11, AD-23, AD-27; UX-DR9, UX-DR14, UX-DR15
+**Also:** AD-10, AD-11, AD-23, AD-27; UX-DR9, UX-DR14, UX-DR15, UX-DR27, UX-DR29
 
 ### Epic 9: Review, Challenge, Baseline and Decision Trace
 Reviewers approve, reject or challenge. A Challenge reruns only the affected agents. Ravi sets the Baseline, and anyone can trace any number back to its Evidence.
 **FRs covered:** FR-37, FR-38, FR-62, FR-41, FR-42
-**Also:** AD-26, AD-28; UX-DR16, UX-DR17, UX-DR19
+**Also:** AD-26, AD-28; UX-DR16, UX-DR17, UX-DR19, UX-DR28 (Trace event Inspector)
 
 ### Epic 10: Actuals and delivery reporting
 Delivery records Actuals with variance causes. The Head of Delivery sees variance and traces an overrun to the Assumption that failed.
-**FRs covered:** FR-49, FR-50
-**Also:** NFR-6, AD-31; UX-DR22
+**FRs covered:** FR-49, FR-50, FR-67
+**Also:** NFR-6, AD-31, AD-33; UX-DR22, UX-DR27 (Actuals table)
+
+### Epic 17: Redesign refit (visual identity and shell)
+The team gets the 2026-10-21 redesign: one token layer and primitive set, the app shell with Settings and the accessibility behaviours, the built tabs refitted, the Opportunity list and header chrome, and the built pages outside the workspace refitted. Behaviour of built screens does not change. Story 17.1 must precede any new UI story.
+**FRs covered:** none (no FR)
+**Also:** NFR-7, NFR-8; UX-DR1–2, UX-DR4–8, UX-DR10, UX-DR16, UX-DR20–21, UX-DR23–24, UX-DR26–30
 
 ### Release 2: Governance and integration
 
@@ -348,7 +364,7 @@ Calibration suggestions from estimate-vs-actual history. Agents cite past projec
 
 ## Epic 1: Secure workspace on the production server
 
-The team signs in with Auth0, creates and shares Opportunities, and works inside the Linear-style app shell. The platform runs on the production VPS from day one, with CI/CD, backups and alerts in place.
+The team signs in with Auth0, creates and shares Opportunities, and works inside the app shell. The platform runs on the production VPS from day one, with CI/CD, backups and alerts in place.
 
 ### Story 1.1: Project scaffold and local stack
 
@@ -470,6 +486,8 @@ As a presales engineer,
 I want a fast, dense, keyboard-first app shell,
 So that I can move around the platform without reaching for the mouse.
 
+Superseded in visual identity by Epic 17 (redesign 2026-10-21); behaviour unchanged.
+
 **Acceptance Criteria:**
 
 **Given** the DESIGN.md token layer
@@ -541,7 +559,7 @@ So that the people working on a deal share one workspace and nobody else can see
 
 **Given** My Opportunities and All Opportunities
 **When** the lists load
-**Then** they show customer, derived status, owner and target proposal date in 32px list rows with `j`/`k` selection and Enter to open, paginated with no infinite scroll (UX-DR6)
+**Then** they show customer, derived status, owner and target proposal date in list rows (density token) with `j`/`k` selection and Enter to open, paginated with no infinite scroll (UX-DR6)
 **And** All Opportunities filters by status, owner, product and date
 
 **Given** a list with no items
@@ -556,9 +574,9 @@ So that I have one place to work on a deal and always know where it stands.
 
 **Acceptance Criteria:**
 
-**Given** the visual reference `mockups/opportunity-overview.html`
+**Given** the redesign v2 prototype (UX-DR25)
 **When** this screen is built
-**Then** its layout and density follow the mockup, and where the mockup and the UX spines disagree, the spines win (UX-DR25)
+**Then** its layout and density follow the prototype, and where the prototype and the UX spines disagree, the spines win (UX-DR25)
 
 **Given** an Opportunity I can access
 **When** I open it
@@ -611,6 +629,89 @@ This story reverses AD-15 ("Auth0 RBAC is not used") and replaces Story 1.6's ro
 **Given** a role change in Auth0
 **When** the user's next access token is issued
 **Then** the new access applies, and the display cache updates, without any Auth0 Management API call
+
+### Story 1.10: Invite users
+
+As a platform administrator,
+I want to invite a colleague by email with their roles already set,
+So that they can sign in and start work without me setting them up in Auth0 by hand.
+
+Depends on Story 1.9. This story amends AD-15: the running app calls the Auth0 Management API for invites only. Authorization still comes from the access token alone, and role changes for existing users stay in Auth0.
+
+**Acceptance Criteria:**
+
+**Given** an admin on Admin → Users & roles
+**When** they press **Invite user** (the page header action, Story 17.5)
+**Then** a dialog asks for an email (required), a name (optional) and one or more roles from the nine platform roles, and **Send invite** is disabled until the email is valid and a role is chosen (FR-58)
+
+**Given** a valid invite
+**When** it is sent
+**Then** the `identity.invite_user` command creates the user in the Auth0 database connection, assigns the chosen roles, and has Auth0 send its set-password email, using the existing Machine-to-Machine app (`AUTH0_MGMT_CLIENT_ID`, `AUTH0_MGMT_CLIENT_SECRET`) with the added scopes `create:users` and `create:role_members` (AD-15 amended)
+**And** an `identity_users` row is created for the new Auth0 user with status **Invited**, and the `identity.user.invited` trace event records the actor, the target user ID and the roles, with no name or email (AD-3)
+
+**Given** the invited user signs in for the first time
+**When** their token is provisioned (Story 1.4)
+**Then** the existing row is matched by `auth0_sub` and its status becomes **Active**, and the Users list shows Active or Invited and the last active time
+
+**Given** an Invited user
+**When** the admin presses **Resend invite** in the user Inspector
+**Then** Auth0 sends the set-password email again, and an `identity.user.invite_resent` trace event is appended
+
+**Given** an email that already exists in Auth0 or the platform
+**When** the invite is sent
+**Then** it is rejected with "A user with this email already exists", and nothing is created
+
+**Given** the Auth0 Management API fails or times out
+**When** the invite is sent
+**Then** the dialog shows "The invite could not be sent. Try again.", no platform row or trace event is written, and a retry does not create a second Auth0 user
+
+**Given** a user without the new `identity.user.invite` permission (held by platform administrators only, added by `seed_auth0.py`)
+**When** they call the invite endpoints
+**Then** the API returns 403 and **Invite user** is hidden
+
+**Given** the Management API credentials
+**When** the app runs
+**Then** they are read only by the `api` process, the Management token is cached until shortly before it expires, and neither the credentials nor the token are logged (NFR-4, NFR-9)
+
+### Story 1.11: Saved views on list filters
+
+As a presales engineer,
+I want to save a set of list filters under a name and apply it again in one step,
+So that I don't rebuild the same filters every time I open a list.
+
+Depends on Story 4.4 for the Gap filters.
+
+**Acceptance Criteria:**
+
+**Given** the Gaps tab
+**When** it renders
+**Then** it has filters for Impact, Area and Question status, kept in the URL query like the other filtered lists (UX-DR6)
+
+**Given** any list with filters (All and My Opportunities, Requirements, Gaps, Trace, Knowledge Sources and Admin Users)
+**When** filters are applied
+**Then** a **Saved views** menu in the filter bar offers **Save current view**, which asks for a name (required, unique per list for this user)
+
+**Given** saved views
+**When** I choose one
+**Then** its filters replace the current ones in the URL, and the menu marks the active view
+**And** I can rename or delete my views, and each change saves with `If-Match` (AD-3)
+
+**Given** the storage
+**When** a view is saved
+**Then** it is stored on the server in `identity_saved_views` (owner user, list key, name, filter query, `row_version`), owned by `identity`, so it follows the user across browsers, and it is private to its owner (AD-2)
+**And** views on lists inside an Opportunity are saved per list type, so a Gaps view applies on every Opportunity
+
+**Given** a saved view whose filter value no longer exists (for example a retired catalogue entry)
+**When** it is applied
+**Then** the unknown values are dropped and a note says which filters were skipped
+
+**Given** a list with 20 saved views
+**When** I try to save another
+**Then** it is rejected with "You can keep up to 20 views per list. Delete one first."
+
+**Given** the Saved views menu
+**When** it is used by keyboard or screen reader
+**Then** it is fully keyboard operable, announces the applied view in the polite live region, and axe reports no violations (UX-DR23, NFR-7)
 
 ## Epic 2: From customer input to structured Requirements
 
@@ -748,7 +849,7 @@ So that I start from a complete, checkable list instead of re-reading everything
 
 **Given** the Requirements tab during extraction
 **When** results arrive
-**Then** Requirements appear grouped by classification without a refresh, the header shows "Extracting — 2 of 3 sources" with a running dot, and the tab badge counts up (UX-DR20)
+**Then** Requirements appear grouped by classification without a refresh, the header shows "Extracting — 2 of 3 sources" with the loader icon, and the tab badge counts up (UX-DR20)
 
 **Given** a Requirement row
 **When** I press Enter
@@ -763,6 +864,8 @@ So that I start from a complete, checkable list instead of re-reading everything
 As a presales engineer,
 I want to correct, split, merge, delete and confirm Requirements,
 So that the list reflects my judgement, and my edits are never lost.
+
+Confirmation state vocabulary is extended by Story 2.9.
 
 **Acceptance Criteria:**
 
@@ -830,6 +933,47 @@ So that a malicious or careless document can't steer the agents.
 **When** CI runs
 **Then** the prompt-injection failure tests from spec §28.4 run against the intake agent and pass
 
+### Story 2.9: Requirement confirmation state (Unconfirmed, Confirmed, Needs review)
+
+As a presales engineer,
+I want each Requirement to show whether I have confirmed it and whether it needs another look,
+So that I can see how much of the list I vouch for.
+
+**Acceptance Criteria:**
+
+**Given** an extracted Requirement
+**When** it is created
+**Then** its `confirmation_status` is `unconfirmed` (FR-6, AD-11)
+
+**Given** an unconfirmed Requirement
+**When** I press **Confirm** (or **Confirm all**)
+**Then** it becomes `confirmed` with the confirmer and the time, and an `intake.requirement.confirmed` trace event is appended (FR-6, AD-11)
+
+**Given** a Requirement I create
+**When** it is saved
+**Then** it starts `confirmed`
+
+**Given** a confirmed Requirement
+**When** an accepted pending change (Story 2.7), or an edit by someone other than the confirmer, changes its text, or an agent flags it
+**Then** it becomes `needs_review`, shows a gap-coloured "Needs review" pill with a triangle icon, and an `intake.requirement.needs_review` trace event is appended
+**And** when the confirmer edits it themselves, it stays `confirmed`
+
+**Given** a `needs_review` Requirement
+**When** I press **Confirm**
+**Then** it returns to `confirmed`
+
+**Given** the Requirements tab
+**When** it renders
+**Then** each row shows the confirmation pill, group headers read "n · m confirmed", unconfirmed rows with Low confidence get an amber edge, and the filters offer State (UX-DR29, UX-DR20)
+
+**Given** the Overview
+**When** it renders
+**Then** the KPI "Requirements confirmed n of total" and the pipeline step "Requirements confirmed" read from this status, and confirmation never blocks submission (FR-6, UX-DR29)
+
+**Given** a migration
+**When** it runs
+**Then** it adds `confirmation_status` and backfills `confirmed` for existing rows where `confirmed_at` is set and `unconfirmed` otherwise, and it resolves the `[post-demo]` item in `deferred-work.md` on editing a confirmed Requirement (AD-11)
+
 ## Epic 3: Knowledge Base and catalogue
 
 Admins and experts load product and integration documentation, write versioned Checklists, maintain the Integration Type and Work Package catalogue, and see where coverage is weak.
@@ -868,7 +1012,7 @@ So that Checklists, Assessment lines, Estimate lines and Actuals are all classif
 
 **Given** the Catalogue list
 **When** it renders
-**Then** Integration Types and Work Packages are shown as two groups of 32px list rows with code, name, current version and status pill, `j`/`k` and Enter open the inspector, and the empty state reads "No catalogue entries yet. Press c to add an Integration Type or Work Package." (UX-DR6, UX-DR21)
+**Then** Integration Types and Work Packages are shown as two groups of list rows with code, name, current version and status pill, `j`/`k` and Enter open the inspector, and the empty state reads "No catalogue entries yet. Press c to add an Integration Type or Work Package." (UX-DR6, UX-DR21)
 
 ### Story 3.2: Register Knowledge Sources by upload
 
@@ -903,7 +1047,7 @@ So that the agents have our own documentation to cite, and we can see when it ha
 
 **Given** the Sources sub-tab
 **When** it loads
-**Then** it shows title, product, Integration Types, product version, owner, last-reviewed date, stale flag and processing status (Queued, Parsing, Parsed, Parse failed; Embedding and Ready are added by Story 3.3) in 32px rows updating live, with filters by product, Integration Type, owner and stale, and selecting a row opens the inspector with metadata, extracted text and version history (UX-DR6, UX-DR7, UX-DR21)
+**Then** it shows title, product, Integration Types, product version, owner, last-reviewed date, stale flag and processing status (Queued, Parsing, Parsed, Parse failed; Embedding and Ready are added by Story 3.3) in list rows updating live, with filters by product, Integration Type, owner and stale, and selecting a row opens the inspector with metadata, extracted text and version history (UX-DR6, UX-DR7, UX-DR21)
 **And** an empty list shows "No Knowledge Sources yet. Upload product or integration documentation to start."
 
 **Given** a user without the platform administrator role who is not the Source's owner
@@ -967,7 +1111,7 @@ So that Gap detection always asks what our experts know must be asked.
 **Given** a user with an engineering, PM or security reviewer role, or a platform administrator, on Knowledge → Checklists
 **When** they press `c`, set at least one scope tag, and add items in the item editor
 **Then** a draft Checklist is saved with `If-Match` on each blur, and a Checklist with no scope tag or no items can't be published (FR-9)
-**And** other roles see Checklists read-only, and their write calls return 403
+**And** other roles see Checklists read-only, their write calls return 403, and the UI shows the generic banner "You do not have permission to edit Checklists. Ask an admin for the right role." (no role names)
 
 **Given** a draft Checklist
 **When** the author presses **Publish**
@@ -1001,6 +1145,7 @@ So that I know where Gap detection is weak and whose time to ask for.
 **Given** Knowledge → Coverage
 **When** it loads
 **Then** it shows a matrix with products as rows and active Integration Types as columns, and each cell shows the count of Ready, non-retired Knowledge Sources and the count of active published Checklists for that pair (FR-10, UX-DR21)
+**And** each cell reads Ready, Partial or Missing with an icon and tint (Ready: both a Ready Source and an active Checklist; Partial: one of them, or all Sources stale; Missing: neither), plus the counts
 **And** product rows are the union of product tags on Knowledge Sources and Checklists and the products in scope on Opportunities (read through `opportunities` public queries), so a product we sell but haven't documented still appears
 
 **Given** a cell with no Knowledge Sources or no Checklists
@@ -1019,9 +1164,59 @@ So that I know where Gap detection is weak and whose time to ask for.
 **When** another module calls it
 **Then** it returns, per product and Integration Type, the Knowledge Source and Checklist counts and the stale count, so later screens can warn about weak coverage
 
+**Given** Knowledge
+**When** it loads
+**Then** the sub-tabs read, in this order, Graph, Sources, Checklists, Coverage (the Graph sub-tab is added by Story 3.6 and is not shown before it) (UX-DR21)
+
 **Given** the Coverage view
 **When** axe runs in CI
 **Then** it has no WCAG 2.1 AA violations, and the first load shows skeleton cells for at least 150 ms (UX-DR20, UX-DR23)
+
+### Story 3.6: Knowledge Graph
+
+As a user whose role can edit Checklists under Story 3.4, or a platform administrator,
+I want to see Products, Integration Types, Knowledge Sources and Checklists as a graph with coverage status,
+So that I can see where documentation is thin.
+
+Depends on Stories 3.4 and 3.5.
+
+**Acceptance Criteria:**
+
+**Given** Knowledge → Graph
+**When** it loads
+**Then** `knowledge.public.get_graph` returns nodes and edges from Source and Checklist tags and scopes, computed in Postgres with no graph store (FR-66, AD-33, AD-1)
+
+**Given** the canvas
+**When** it renders
+**Then** it is 660px high on `graph-canvas` (always dark), nodes use the DESIGN.md node and status colours with a glyph and a text label, and edges are solid for documented links and dashed amber for missing coverage (UX-DR30)
+
+**Given** search and type filters with counts
+**When** I use them
+**Then** filtering hides nodes and edges accordingly (FR-66, UX-DR30)
+
+**Given** a node
+**When** I select it
+**Then** a 372px drawer shows type, owner, last reviewed, Coverage score and status pill, the tabs Overview, Connections and Citations, a primary action (Edit checklist, Open source or View coverage) and **Mark reviewed** (for the owner or an administrator, reusing Story 3.2) (FR-66, UX-DR30)
+
+**Given** the Coverage score
+**When** it is calculated
+**Then** it is a pure domain function in `knowledge/domain` with unit tests and boundary tests, using Ready non-stale Knowledge Sources and active published Checklists per product and Integration Type pair (FR-66, AD-10, AD-33)
+
+**Given** a user who cannot use the canvas
+**When** they open Knowledge
+**Then** the Sources table and the Coverage matrix hold the same facts, and graph nodes are keyboard-focusable and announce type, label and status (NFR-7, FR-66)
+
+**Given** the first slice
+**When** the graph and the drawer render
+**Then** retrieval statistics ("Used by agents", "Last retrieved", "Cited by") are not shown at all, not even as zero, until agent retrieval logging exists (FR-66, AD-33)
+
+**Given** a user without a Checklist-editing role who is not a platform administrator
+**When** they call the graph endpoint
+**Then** the API returns 403 (AD-15)
+
+**Given** the Graph sub-tab
+**When** axe runs in CI
+**Then** it has no WCAG 2.1 AA violations (UX-DR23)
 
 ## Epic 4: Find the gaps before estimating
 
@@ -1125,7 +1320,7 @@ So that I start from a prioritised list of what to ask the customer, not a blank
 
 **Given** detection running on an Opportunity
 **When** I watch the Gaps tab
-**Then** the header shows "Detecting Gaps" with a running dot (reduced-motion fallback), and accepted Gaps appear without a refresh (UX-DR20)
+**Then** the header shows "Detecting Gaps" with the loader icon, and accepted Gaps appear without a refresh (UX-DR20)
 
 **Given** the Gap reference fixtures in `evals/gaps/` (at least 3 Opportunities annotated with the Gaps experts identified, and expert relevance labels for raised Gaps)
 **When** `make eval-gaps` runs
@@ -1140,13 +1335,13 @@ So that I can work through the most important missing information first.
 
 **Acceptance Criteria:**
 
-**Given** the visual reference `mockups/gaps.html`
+**Given** the redesign v2 prototype (UX-DR25)
 **When** this screen is built
-**Then** its layout and density follow the mockup, and where the mockup and the UX spines disagree, the spines win (UX-DR25)
+**Then** its layout and density follow the prototype, and where the prototype and the UX spines disagree, the spines win (UX-DR25)
 
 **Given** the Gaps tab
 **When** it loads
-**Then** Gaps and their questions show as Gap cards in 32px rows sorted by impact (High first, mandatory first within a level), each with the impact indicator (High, Medium or Low label and a neutral 3-segment bar), the trigger label (Checklist item or Knowledge Source), the "why it matters" area and the question status pill (UX-DR12, UX-DR8)
+**Then** Gaps and their questions show as Gap cards in list rows sorted by impact (High first, mandatory first within a level), each with the impact indicator (High, Medium or Low label and a 3-segment bar filled in the impact colour (High blocker, Medium gap, Low neutral) plus the word), the trigger label (Checklist item or Knowledge Source), the "why it matters" area and the question status pill (UX-DR12, UX-DR8)
 **And** dismissed Gaps are greyed out at the bottom of the list, and the list supports `j`/`k`, Enter and `x` multi-select (UX-DR6)
 
 **Given** a selected Gap
@@ -1381,7 +1576,7 @@ So that no Finding enters the Opportunity without Evidence or an explicit Unknow
 
 **Given** the `assessments` module
 **When** this story is complete
-**Then** it owns `assessments_assessments` (agent, agent config version, model digest, prompt and schema versions, `contract_version`, run and task, input pins, recommendation, confidence level with basis, needs-human-review flag, `extensions.<agent_id>`, version per capability), `assessments_findings` (kind `claim | unknown | assumption | risk`, severity `info | minor | major | critical`, status `open | resolved | overridden`, optional catalogue Integration Type and Work Package), `assessments_finding_evidence` and `assessments_effort_lines` (per Integration Type and Work Package, effort low/likely/high in person-hours `numeric(10,1)`, complexity) (AD-2, FR-25, FR-26, FR-56)
+**Then** it owns `assessments_assessments` (agent, agent config version, model digest, prompt and schema versions, `contract_version`, run and task, input pins, recommendation, confidence level with basis, needs-human-review flag, `extensions.<agent_id>`, version per capability), `assessments_findings` (kind `claim | unknown | assumption | risk`, severity `low | medium | high | critical`, status `open | resolved | overridden`, optional catalogue Integration Type and Work Package), `assessments_finding_evidence` and `assessments_effort_lines` (per Integration Type and Work Package, effort low/likely/high in person-hours `numeric(10,1)`, complexity) (AD-2, FR-25, FR-26, FR-56)
 
 **Given** an `AgentResult` submitted by a node
 **When** `assessments.accept_assessment` runs
@@ -1404,7 +1599,7 @@ So that no Finding enters the Opportunity without Evidence or an explicit Unknow
 
 **Given** the Assessments tab
 **When** Assessments exist
-**Then** it shows one section per Specialist Agent with its version, recommendation and confidence; Findings as list rows with kind, severity, status pill, Evidence chips and a "Low confidence" label with its basis where applicable; and an effort table per Integration Type and Work Package (UX-DR5, UX-DR8, UX-DR11, UX-DR20)
+**Then** it shows one section per Specialist Agent with its version, recommendation and confidence; a Findings table card with a severity summary ("1 Critical · 3 High · 2 Medium · 0 Low") and columns Severity (icon and label, Critical rows on the blocker tint), Type, Finding (a partial Finding adds "Partial result · blocks submission until resolved", and a "Low confidence" label with its basis where applicable), Raised by (agent role) and Evidence (count, with the Evidence chips in the row inspector); Finding statuses are Open, Resolved and Overridden, and the Challenge, Override and Rerun actions live in the row inspector; and an effort table per Integration Type and Work Package (UX-DR5, UX-DR8, UX-DR11, UX-DR20, UX-DR28)
 **And** Findings citing flagged content show the `injection_suspected` warning, and an info banner appears when Integration Types in scope have no documentation ("No documentation for 2 integration types in scope — Gap detection may be incomplete") (FR-61, UX-DR20)
 
 **Given** Requirements that changed after an Assessment's pinned versions
@@ -1468,7 +1663,7 @@ So that I stay in control without losing completed work.
 
 **Given** a run waiting for human input
 **When** I open the Opportunity's Overview
-**Then** an amber **Waiting for you** pill names the decision ("Security assessment not planned: Security Agent is disabled") with a **Resolve** link, and the same decision appears in the activity rail for the presales engineer who started the run and for the Opportunity owner (UX-DR20)
+**Then** an amber **Waiting for you** pill names the decision ("Security assessment not planned: Security Agent is disabled") with a **Resolve** link, and the same decision appears in the Activity tab for the presales engineer who started the run and for the Opportunity owner (UX-DR20)
 **And** no Inbox item is created in this story; the Story 9.2 Inbox lists waiting runs from the run state once it exists
 
 **Given** an open decision
@@ -1544,7 +1739,7 @@ So that a run never loops, never hides a failure, and never loses the results it
 **When** it is stored or logged
 **Then** it contains typed reason codes and safe messages only, with no prompt or customer text, and the spec §28.4 failure tests (model timeout, invalid output, tool failure, database interruption, duplicate request, unauthorized tool call) pass (NFR-9, spec §21.3)
 
-### Story 5.7: Agent run panel and activity rail
+### Story 5.7: Agent run panel and Activity tab
 
 As a presales engineer,
 I want to watch each task of a run live and act on failures and waits from the same place,
@@ -1554,8 +1749,8 @@ So that I always know what the Agents are doing and what needs me.
 
 **Given** an Opportunity with a current run
 **When** I open Overview
-**Then** the agent run panel shows one 28px row per task with the agent named by role ("Engineering Agent"), a Task status pill, elapsed time in tabular figures and a running dot while active, updating over SSE without a refresh (FR-3, UX-DR10, UX-DR8)
-**And** the running dot is static when the user prefers reduced motion (UX-DR23)
+**Then** the agent run panel shows one row per task with an agent avatar, the agent named by role ("Engineering Agent"), a Task status pill, elapsed time in tabular figures and a static loader icon while Running, updating over SSE without a refresh (FR-3, UX-DR10, UX-DR8)
+**And** the loader icon never pulses, whatever the motion preference (UX-DR10, UX-DR23)
 
 **Given** a queued run
 **When** the panel renders
@@ -1583,16 +1778,17 @@ So that I always know what the Agents are doing and what needs me.
 **Then** the Assessments tab badge counts up and its Findings appear without a refresh (FR-3)
 
 **Given** nothing selected in the workspace
-**When** the right pane shows the activity rail (`]` toggles it)
+**When** the right pane shows the Activity tab (`]` cycles it)
 **Then** it lists task progress and trace events for this Opportunity, newest first and virtualised, and after a reconnect missed events replay from `Last-Event-ID` (UX-DR2, UX-DR10, AD-30)
 
 **Given** the run detail
 **When** I open it
 **Then** it shows the plan version with task dependencies and escalations, the input pins, usage against budgets, and earlier runs with their type, status and starter (FR-15, FR-63)
+**And** tokens, model calls, tool calls and elapsed time show as KPI tiles with the correlation ID, and the token bar turns gap-coloured when it reaches its limit (FR-18, UX-DR29)
 
 **Given** screen-reader users
 **When** run status changes or a run starts waiting
-**Then** the polite `aria-live` region announces it, throttled to one announcement every 5 s during bursts, and axe reports no violations on the panel and rail (UX-DR23, NFR-7)
+**Then** the polite `aria-live` region announces it, throttled to one announcement every 5 s during bursts, and axe reports no violations on the panel and the Activity tab (UX-DR23, NFR-7)
 
 **Given** a sales representative or reviewer with access
 **When** they view the panel
@@ -1715,7 +1911,7 @@ So that disagreements on effort, timeline, resources, scope and mandatory constr
 
 **Given** detected Conflicts
 **When** they are written
-**Then** each appends a `conflicts.conflict.detected` trace event, the Conflicts tab lists them as 32px rows with type, severity, status pill and positions summary, and the tab badge counts open and escalated Conflicts live (UX-DR5, UX-DR6, UX-DR8)
+**Then** each appends a `conflicts.conflict.detected` trace event, the Conflicts tab lists them as list rows with type, severity, status pill and positions summary, and the tab badge counts open and escalated Conflicts live (UX-DR5, UX-DR6, UX-DR8)
 **And** `conflicts.list_open(opportunity_id)` returns open and escalated Conflicts for later blocker checks
 
 **Given** the rule set
@@ -1770,7 +1966,7 @@ So that the decision and the dissenting view are both kept.
 
 **Given** a Conflict I can't settle
 **When** I escalate it to a named reviewer with a reason
-**Then** the status becomes `escalated`, the escalation appears on the Overview and in the activity rail naming the reviewer, and a `conflicts.conflict.escalated` trace event is appended; only reviewers with access to the Opportunity can be chosen (FR-31)
+**Then** the status becomes `escalated`, the escalation appears on the Overview and in the Activity tab naming the reviewer, and a `conflicts.conflict.escalated` trace event is appended; only reviewers with access to the Opportunity can be chosen (FR-31)
 **And** no Inbox item is created in this story; the Story 9.2 Inbox lists Conflicts escalated to a user from the Conflict state once it exists
 
 **Given** an escalated Conflict assigned to me as a reviewer
@@ -1779,7 +1975,8 @@ So that the decision and the dissenting view are both kept.
 
 **Given** a resolution
 **When** it is saved
-**Then** the Conflicts badge and the open list update live, the resolved Conflict moves to the resolved section and stays readable with all positions, and the change appears in the activity rail (FR-31, AD-30)
+**Then** the Conflicts badge and the open list update live, the resolved Conflict moves to the resolved section and stays readable with all positions, and the change appears in the Activity tab (FR-31, AD-30)
+**And** a Conflict resolved against an earlier Assessment version appears under Resolved with the tag "Superseded by Assessment v2" and is never reopened
 
 **Given** another user resolved the same Conflict first
 **When** I save with a stale `row_version`
@@ -1986,7 +2183,7 @@ So that I can change models, prompts, budgets and status without editing code or
 
 **Given** an admin on Admin → Agents
 **When** the view loads
-**Then** it lists every Agent in 32px rows with agent ID, name, capabilities, status pill, current config version, model profile and prompt version, with `j`/`k` selection and Enter to open the inspector (UX-DR21, UX-DR6)
+**Then** it lists every Agent in list rows with agent ID, name, capabilities, status pill, current config version, model profile and prompt version, with `j`/`k` selection and Enter to open the inspector (UX-DR21, UX-DR6)
 
 **Given** an Agent in the inspector
 **When** I open its config history
@@ -2057,12 +2254,12 @@ So that I can diagnose problems and keep model cost within the sponsor's budget.
 **Then** read-only `reporting_*` views aggregate tokens, model calls, tool calls, retries, failures, GPU time, Agent execution time and cost per run, per Agent (and config version) and per Opportunity, and nothing writes to them (AD-2, AD-20)
 **And** cost is computed deterministically from GPU seconds and tokens using rates in `platform.config` (for example `PSA_COST_GPU_HOUR_MINOR` with an ISO-4217 currency), stored as integer minor units (AD-10)
 
-**Given** an admin on Admin → Cost
+**Given** an admin or the Head of Delivery on Reports → Cost and usage
 **When** the view loads
-**Then** it shows cost and tokens per Opportunity and per Agent for a chosen date range, sortable, with tabular figures, and each Opportunity's cost against the configured per-Opportunity budget (FR-59, NFR-10, UX-DR21)
-**And** the Head of Delivery can open the same view read-only; every other role gets 403
+**Then** it shows KPIs (runs, tokens, GPU seconds, cost) and a per-Agent table (runs, tokens, GPU seconds, failures), plus cost and tokens per Opportunity for a chosen date range, sortable, with tabular figures, and each Opportunity's cost against the configured per-Opportunity budget (FR-59, NFR-10, UX-DR22)
+**And** the Head of Delivery has it read-only; every other role gets 403, and Cost is no longer part of Admin (UX-DR21)
 
-**Given** a Workflow Run row in the Cost view
+**Given** a Workflow Run row in the Cost and usage view
 **When** I open it
 **Then** the run detail shows its correlation ID (`workflow_run_id`, copyable, matching the IDs in the `otel-collector` files), each task with Agent and config version, status, latency, retries, failure reason, model calls with tokens and outcome, and tool calls including denials (FR-59, NFR-5, spec US-016)
 **And** Agent execution time is shown separately from API time (NFR-1)
@@ -2073,7 +2270,7 @@ So that I can diagnose problems and keep model cost within the sponsor's budget.
 
 **Given** an Opportunity whose cost crosses 80% or 100% of its budget
 **When** the next model call is recorded
-**Then** the Cost view flags it, and an email alert is sent once per threshold (NFR-10, SM-C2)
+**Then** the Cost and usage view flags it, and an email alert is sent once per threshold (NFR-10, SM-C2)
 
 **Given** the observability views and logs
 **When** they are inspected
@@ -2213,21 +2410,21 @@ So that every Estimate has the same structure and no number depends on a model's
 **When** they call any Estimate write command
 **Then** the API returns 403 (sales representative) or the 404-equivalent (no access), and nothing changes (FR-64)
 
-### Story 8.2: Estimate grid with inline editing
+### Story 8.2: Estimate grid with in-place draft edits
 
 As a presales engineer,
-I want a dense, spreadsheet-like Estimate grid that I can edit inline on a draft,
+I want a dense, spreadsheet-like Estimate grid whose draft lines I can edit in place from the Inspector,
 So that I can shape the Estimate quickly while the platform keeps the numbers correct.
 
 **Acceptance Criteria:**
 
-**Given** the visual reference `mockups/estimate.html`
+**Given** the redesign v2 prototype (UX-DR25)
 **When** this screen is built
-**Then** its layout and density follow the mockup, and where the mockup and the UX spines disagree, the spines win (UX-DR25)
+**Then** its layout and density follow the prototype, and where the prototype and the UX spines disagree, the spines win (UX-DR25)
 
 **Given** the Estimate tab of an Opportunity with no Estimate
 **When** it renders
-**Then** it shows "No Estimate Version yet. Run an assessment to draft one, or start from the template." with **Run assessment** (primary) and **Start blank** (UX-DR20)
+**Then** it shows the empty-tab card "No Estimate yet" with "Run Assessments to produce Estimate v1 from the confirmed Requirements." and one primary action, **Run assessment**, and no Start blank (UX-DR20, UX-DR29)
 
 **Given** an Estimate Version
 **When** the grid renders
@@ -2235,9 +2432,10 @@ So that I can shape the Estimate quickly while the platform keeps the numbers co
 **And** the version's status pill and the version switcher (a segmented control for the two most recent versions plus a `v` list) sit in the tab header, with a reserved slot for the Baseline marker
 
 **Given** a `draft` version
-**When** I edit a cell inline (`e` or typing) and leave it
-**Then** a reason is requested in a compact inline prompt (prefilled with my last reason in this version), the edit saves with `If-Match`, totals refresh from the server response, and an `estimates.estimate_line.edited` trace event records the before and after values and the reason (FR-35)
-**And** a value the server rejects (for example a role mix not summing to 100) rolls back with the inline reason
+**When** I edit a line from the Inspector's **Edit line** section (Engineer effort plus a required reason)
+**Then** the draft is changed in place: the edit saves with `If-Match` and a new `row_version`, totals refresh from the server response, and an `estimates.estimate_line.edited` trace event records the before and after values and the reason (FR-35, AD-11)
+**And** there is no "Save as new version": the version keeps its whole-number label (v1, v2, v3), and **Edit line** is hidden on read-only versions (submitted, Baseline and superseded)
+**And** a value the server rejects (for example a negative effort) shows inline in the Inspector with the reason, and nothing is saved
 
 **Given** a `draft` version
 **When** I add a line (`c`) or delete a line with a reason
@@ -2245,7 +2443,7 @@ So that I can shape the Estimate quickly while the platform keeps the numbers co
 
 **Given** a line with Assessment sources
 **When** I open it in the inspector
-**Then** it shows the line's fields, role-mix breakdown in hours, the Assessment chips it came from (Agent and Assessment version), and its edit history (FR-33, UX-DR7)
+**Then** it shows the line's fields, role-mix breakdown in hours, the Assessment chips it came from (Agent and Assessment version), and its edit history, plus the **Edit line** section on a draft (FR-33, UX-DR7)
 
 **Given** a `submitted` version
 **When** the grid renders
@@ -2257,7 +2455,7 @@ So that I can shape the Estimate quickly while the platform keeps the numbers co
 
 **Given** keyboard and screen-reader users
 **When** they use the grid
-**Then** arrow keys move between cells, Enter starts editing, Esc cancels, row and column headers are announced, and axe reports no WCAG 2.1 AA violations (UX-DR23)
+**Then** arrow keys move between cells, Enter opens the line in the Inspector, Esc closes it, row and column headers are announced, and axe reports no WCAG 2.1 AA violations (UX-DR23)
 
 ### Story 8.3: Draft an Estimate from Assessments
 
@@ -2454,6 +2652,14 @@ So that every change is a new, explained version and I can show exactly what mov
 **When** any client tries to change it through the API
 **Then** the request is rejected with code `estimates.version.immutable`, and a database test proves no command path updates lines or Assumptions of a non-draft version (AD-11)
 
+**Given** the version switcher
+**When** it renders
+**Then** each segment carries a state pill (Superseded, Baseline, Draft) and the version labels are whole numbers (UX-DR27, UX-DR14)
+
+**Given** the Estimate tab
+**When** it renders
+**Then** a Version lifecycle card shows Draft, In review, Approved and Baseline as a read-only stepper, never a control, derived from the Estimate Version status and the Baseline pointer (`submitted` shows as Draft complete), with the sentence for the selected version (EXPERIENCE "Version lifecycle", AD-11, UX-DR27)
+
 ### Story 8.8: Export the Estimate, Assumptions Register and Clarification Questions
 
 As a presales engineer,
@@ -2486,6 +2692,34 @@ So that I can use them in today's proposal process.
 **Given** an export job that fails
 **When** it exhausts its retries
 **Then** the UI shows "Export failed: <reason>" with Retry, and no partial file is offered
+
+### Story 8.9: Overview recomposition
+
+As a presales engineer,
+I want the Overview to show where the submission stands and what needs me,
+So that I can see in one view what is blocking submission and open each blocker.
+
+Depends on Story 8.6.
+
+**Acceptance Criteria:**
+
+**Given** the Overview
+**When** it renders
+**Then** it shows four KPI tiles (Requirements confirmed with a bar, Open Gaps by impact, Open Conflicts, and the current Estimate with its role split) (UX-DR29)
+**And** it shows an 8-step read-only Submission pipeline (Sources added, Requirements extracted, Requirements confirmed, Gaps answered, Assessments run, Conflicts resolved, Estimate accepted, Review and Baseline) with the states Complete, In progress, Blocked and Pending and a footer such as "2 of 8 steps complete · 3 steps blocked" (UX-DR29)
+**And** it shows Needs you, the Submission Blockers card from `estimates.get_submission_blockers` (AD-27, UX-DR9), Recent activity, Latest agent decision and Agent run
+
+**Given** any pipeline step
+**When** I select it
+**Then** it links to its tab, it updates live over SSE, and it uses the same data as the blockers check and never a separate rule (AD-27, AD-30)
+
+**Given** the pipeline
+**When** steps are in any state
+**Then** it is a status tracker and never a forced order, and no action is disabled because an earlier step is incomplete
+
+**Given** the Overview
+**When** axe runs in CI
+**Then** it has no WCAG 2.1 AA violations, and each step state is shown with an icon and a text label, never colour alone (UX-DR23)
 
 ## Epic 9: Review, Challenge, Baseline and Decision Trace
 
@@ -2549,7 +2783,7 @@ So that nothing I owe the team is lost and pending reviews don't stall a proposa
 
 **Given** the Inbox (`g i`)
 **When** it loads
-**Then** it groups items into Review Requests assigned to me, Challenges on my work, runs waiting for my input (read through `workflows.public`), and decision updates, using 32px list rows with `j`/`k`, `Enter` to open and pagination with no infinite scroll (UX-DR2, UX-DR6)
+**Then** it groups items into Review Requests assigned to me, Challenges on my work, runs waiting for my input (read through `workflows.public`), and decision updates, using list rows with `j`/`k`, `Enter` to open and pagination with no infinite scroll (UX-DR2, UX-DR6)
 **And** opening an item marks it read and opens its subject in the inspector (a Review Request opens the review panel)
 
 **Given** runs waiting for a user's decision (Story 5.5) and Conflicts escalated to a user (Story 6.3), including those that existed before this story
@@ -2587,7 +2821,7 @@ So that my judgement is recorded against the exact version I reviewed.
 
 **Given** the review panel
 **When** it renders its actions
-**Then** **Approve** and **Reject** are visible, while Request evidence, Request alternative and Escalate sit under **More** (Story 9.5 adds Challenge there). Every action except Approve requires a reason before it can be confirmed (UX-DR16)
+**Then** **Approve**, **Reject** and **Challenge** are visible, with **Request evidence**, **Request alternative** and **Escalate** as a second row of buttons (Story 9.5 builds the Challenge dialog). Every action except Approve requires a reason before it can be confirmed (UX-DR16)
 **And** **Approve** is disabled for the author of the target, with the tooltip "You authored v2, so you can't approve it"
 
 **Given** any decision
@@ -2639,6 +2873,10 @@ So that I can respond quickly and old approvals never carry over to a changed Es
 **Then** in the same Unit of Work, `reviews.public.supersede_open_requests(uow, old_version, new_version)` sets every `pending` or `challenged` request on each superseded version to `superseded`, and appends one `reviews.review_request.superseded` trace event per request linking the new version (AD-28)
 **And** superseded items in the Inbox and the review panel are greyed out with a "Superseded by v4" link and no actions, and approvals on the old version never count towards the new one (UX-DR16, UX-DR20)
 
+**Given** the author's own Review Request
+**When** I open it
+**Then** a Review outcomes list shows one row per decision (Approved, Challenged, rerun confirmed, Approved after rerun) with who, what, time and note (UX-DR16)
+
 ### Story 9.5: Raise a Challenge and confirm reassessment
 
 As a reviewer or presales engineer,
@@ -2652,27 +2890,33 @@ So that a disagreement leads to targeted reassessment instead of an argument out
 **Then** it owns `reviews_challenges` (id, opportunity_id, target `{kind: finding | assessment, id, version}` with the Finding's Assessment version, the Estimate Version in context, review_request_id if raised from a review, challenger, reason, suggested Assessments, confirmed Assessments, workflow_run_id, status, row_version) (AD-27, AD-28)
 **And** Challenge status follows the spine's Challenge state machine `awaiting_confirmation → reassessing → completed | declined | failed`, enforced in the `reviews` domain, and these statuses are added to the Status Vocabulary pill mapping in this story
 
-**Given** a Finding or Assessment on the Assessments tab, or the review panel's **More → Challenge**
-**When** a reviewer with an open Review Request on the Opportunity, or the owning presales engineer, enters a required reason and submits
+**Given** a Finding or Assessment on the Assessments tab, or the review panel's **Challenge** button
+**When** a reviewer with an open Review Request on the Opportunity, or the owning presales engineer, opens the Challenge dialog, enters a required reason and submits
 **Then** a Challenge is created through `reviews.raise_challenge` with action `reviews.challenge.raise`, a `reviews.challenge.raised` trace event records the target with its version and the reason, and when raised from a review a `challenged` decision is recorded and the Review Request becomes `challenged` (FR-38, UX-DR17)
 **And** a sales representative, or a reviewer without an open request on the Opportunity, gets 403
 
 **Given** a new Challenge
 **When** it is created
 **Then** the platform suggests the affected Assessments by deterministic rules: the Assessment that holds the challenged target, plus Assessments whose Findings cite the same Requirements or the same Integration Type catalogue entries. The Critic and Red Team are listed as always rerunning (FR-38, AD-10)
-**And** the owning presales engineer gets a **Confirm reassessment** Inbox item listing the suggestions with checkboxes, all pre-ticked
 
-**Given** the Confirm reassessment item
+**Given** the Challenge dialog
+**When** it opens
+**Then** it is a single 520px dialog that asks for a required reason and shows toggle cards for the suggested Assessments (Suggested pre-ticked, Optional unticked), with the Critic and Red Team listed as always rerunning (UX-DR17)
+**And** when a reviewer opens it to raise a Challenge, the toggle cards show the suggestions for information only, the primary button reads "Raise Challenge" and is disabled until a reason is typed, and the owning presales engineer then gets an Inbox item that opens the same dialog with the reviewer's reason shown read-only
+**And** when the owning presales engineer opens it, the toggle cards are editable and the primary button reads "Rerun N Assessments", disabled until a reason exists (typed, or the reviewer's) and one Assessment is ticked
+**And** when the owning presales engineer raises a Challenge themself, one submit raises and confirms it in the same Unit of Work, so the Challenge passes through `awaiting_confirmation` to `reassessing` with both trace events recorded
+
+**Given** the Challenge dialog opened by the owning presales engineer
 **When** I confirm with at least one Assessment ticked
-**Then** `reviews.confirm_reassessment` (action `reviews.challenge.confirm`) records the confirmed set, sets the Challenge to `reassessing`, and calls `workflows.start_run(opportunity_id, run_type=challenge, trigger_ref=challenge_id, idempotency_key=run:<opportunity_id>:challenge:<challenge_id>)` in the same Unit of Work. The activity rail shows the run immediately (AD-24, UX-DR10)
+**Then** `reviews.confirm_reassessment` (action `reviews.challenge.confirm`) records the confirmed set, sets the Challenge to `reassessing`, and calls `workflows.start_run(opportunity_id, run_type=challenge, trigger_ref=challenge_id, idempotency_key=run:<opportunity_id>:challenge:<challenge_id>)` in the same Unit of Work. The Activity tab shows the run immediately (AD-24, UX-DR10)
 **And** confirming twice returns the existing run and doesn't start a second one (FR-16)
 
-**Given** the Confirm reassessment item
+**Given** the Challenge dialog opened by the owning presales engineer
 **When** I choose **Decline** with a required reason
 **Then** the Challenge becomes `declined`, the challenger gets an Inbox item with the reason, any `challenged` Review Request returns to `pending` so the reviewer can approve, reject or challenge again, and a `reviews.challenge.declined` trace event is appended
 
 **Given** a Challenge whose Estimate Version in context has since been superseded
-**When** I open its Confirm reassessment item
+**When** I open its Challenge dialog from the Inbox
 **Then** confirmation is blocked with "v2 is superseded by v3. Raise the Challenge again on v3 if it still applies", and the item offers **Raise on v3**
 
 ### Story 9.6: Challenge reassessment run creates a new Estimate Version
@@ -2766,12 +3010,16 @@ So that "how did we arrive at this number?" has a complete, tamper-proof answer.
 
 **Given** the Trace tab (`8`)
 **When** it loads
-**Then** it shows a reverse-chronological timeline from `platform_trace_events` for the Opportunity: time, actor (a user name, or the Agent by role such as "PM Agent" with its version in the inspector), event type in plain words, and a link to the subject. Rows are 32px, paginated, with `j`/`k` and `Enter` (FR-41, UX-DR6, UX-DR24)
+**Then** it shows a reverse-chronological timeline from `platform_trace_events` for the Opportunity: time, actor (a user name, or the Agent by role such as "PM Agent" with its version in the inspector), event type in plain words, and a link to the subject. Rows are padded list rows, paginated, with `j`/`k` and `Enter` (FR-41, UX-DR6, UX-DR24)
 **And** filters narrow by Estimate Version, subject (Requirement, Gap, Finding, Conflict, Assumption, Estimate line, Review Request, Challenge, Baseline), actor type (user, agent, system) and event type, and the filter state lives in the URL so a filtered view can be shared
 
 **Given** a trace row
 **When** I open it
 **Then** the inspector shows the typed payload rendered field by field, with Evidence chips for any Evidence references and the subject version. Superseded references are struck through (UX-DR7, UX-DR11)
+
+**Given** a selected trace row
+**When** it is selected (click or `Enter`)
+**Then** the Trace event Inspector opens automatically with Payload (Event, Actor with the agent version, Subject, Estimate Version, then Correlation ID and Model for an agent, or Reason and authorising action for a human), a Version comparison for an Estimate line edit, Evidence chips and the note "Trace rows are append-only. Model reasoning is not stored, only decisions and Evidence." (FR-41, UX-DR28)
 
 **Given** the trace API and UI
 **When** any user, including an admin, looks for a way to edit or delete a trace row
@@ -2857,6 +3105,15 @@ So that the company builds a reliable history of how estimates compare with deli
 **Then** it lists every Baseline line with its Integration Type, Work Package, estimated effort and cost, recorded Actuals, and server-calculated variance in hours, cost and percent, using tabular figures (FR-49, AD-10, UX-DR14)
 **And** an Opportunity with no Baseline shows "No Baseline yet. Actuals are recorded against the Baseline."
 
+**Given** the Actuals tab with a Baseline
+**When** it renders
+**Then** a table per Baseline line shows Line, Estimate h, Actual h (editable), Variance (server-calculated, amber when over and green when under, with a `+`/`−` sign and label) and Variance cause, with **Import from file** and **Save Actuals**; lines with no Actual read "—" and "Not recorded" and are not counted in variance (FR-49, UX-DR27, UX-DR23)
+**And** the amber rule is deliberate: Actuals is an entry screen where any overrun needs the engineer's attention, while Reports (Story 10.3) shows red only above +10%
+
+**Given** the Actuals tab with no Actuals at all
+**When** it renders
+**Then** it shows the empty-tab card "No Actuals recorded" with the action **Record Actuals** (UX-DR20, UX-DR29)
+
 **Given** a Baseline line
 **When** the delivery manager records an Actual
 **Then** `actuals.record_actual` (action `actuals.actual.record`) stores it and appends an `actuals.actual.recorded` trace event, and the variance updates live
@@ -2932,20 +3189,21 @@ So that I can see where our estimates are consistently wrong.
 **Then** read-only views `reporting_estimate_vs_actual` (one row per Actual with its Baseline line, catalogue tags, product, Opportunity and variance) and `reporting_failed_assumptions` (one row per failed Assumption reference) exist, joining `estimates`, `actuals`, `knowledge` catalogue and `opportunities` tables (AD-2)
 **And** the application DB role has SELECT only on `reporting_*` views, a test proves INSERT, UPDATE and DELETE fail, and all variance arithmetic is in SQL or domain code, never in the browser (AD-10)
 
-**Given** a user with the Head of Delivery role
+**Given** a user with the Head of Delivery or platform administrator role
 **When** they open Reports (`g r`)
-**Then** they see a variance table grouped by Integration Type with: the number of Opportunities, estimated hours, actual hours, variance hours and percent, the most frequent variance cause, and the failed Assumption count. Each group expands into its Opportunities (FR-50, UX-DR22)
+**Then** Reports has the sub-tabs Estimate vs actual, Pipeline and Cost and usage (Stories 10.7 and 7.5). On Estimate vs actual they see KPIs (closed Opportunities, total variance, failed Assumptions) and a variance table grouped by Integration Type with: the number of Opportunities, estimated hours, actual hours, variance hours and percent with a diverging bar (red above +10%), the most frequent variance cause as a main-cause link, and the failed Assumption count. Each group expands into its Opportunities (FR-50, UX-DR22)
 **And** a group-by control switches to Opportunity, product, Work Package or variance cause, and filters narrow by product, Work Package, cause and delivery-closed date range
 
 **Given** the Reports table
 **When** it renders
 **Then** it uses tabular figures, sortable column headers announced to screen readers, the Baseline marker next to each Opportunity's version, and shows variance direction with a `+`/`−` sign and label, never colour alone (UX-DR14, UX-DR23)
 **And** a toggle chooses between final Actuals only (default) and including milestone Actuals
+**And** the red rule is deliberate: Reports is an aggregate view where only a material overrun (above +10%) is a flag, while the Actuals tab (Story 10.1) shows amber per line whenever a line is over
 
-**Given** a delivery manager
+**Given** a platform administrator or the Head of Delivery
 **When** they open Reports
-**Then** they see only Opportunities they can access, because the reporting query filters through `identity.public` before aggregating, while the Head of Delivery role sees every Opportunity with Actuals (FR-58, AD-15)
-**And** other roles don't see Reports in the sidebar and get 403 from the API
+**Then** they see every Opportunity with Actuals, and the reporting queries filter through `identity.public` before aggregating (FR-58, AD-15)
+**And** Reports is visible in the sidebar only to the Head of Delivery and the platform administrator, who are also the viewers of Pipeline and Cost and usage; other roles, including delivery managers, don't see it and get 403 from the API
 
 **Given** no Opportunity has Actuals yet
 **When** Reports loads
@@ -3055,6 +3313,221 @@ So that we meet our deletion duties without weakening the append-only audit trai
 **When** purged data still exists in older backups
 **Then** `ops/runbooks/restore.md` states that it ages out within the 35-day backup retention, and that the purge job must run after any restore and before users are let back in, so restored data past its retention is deleted again (AD-31, AD-32)
 
+### Story 10.7: Pipeline report
+
+As the Head of Delivery,
+I want to see Opportunities by status and which are due soon,
+So that I can see where the proposal workload sits.
+
+Depends on Story 8.6 and the single Opportunity status query (AD-26).
+
+**Acceptance Criteria:**
+
+**Given** Reports → Pipeline
+**When** it loads
+**Then** it shows KPIs, "Opportunities by status" as bars with their counts as text, and a "Due soon" table, built from `opportunities.public.status_summary` (FR-67, AD-26, AD-33, UX-DR29)
+
+**Given** the status derivation
+**When** the report and the Opportunity list compute a status
+**Then** the report reuses the single status query, and a test proves both agree (AD-26)
+
+**Given** roles
+**When** a user opens the report or calls its endpoint
+**Then** only the Head of Delivery and the platform administrator can open it, and others get 403 (FR-67, AD-15)
+
+**Given** 500 Opportunities
+**When** the Pipeline report loads
+**Then** the API answers within 500 ms at P95 (NFR-1)
+
+**Given** the PRD non-goal "not a CRM"
+**When** the report is built
+**Then** it never reads or writes CRM pipeline stages and shows only platform-derived status and dates (FR-67)
+
+**Given** the Pipeline report
+**When** axe runs in CI
+**Then** it has no WCAG 2.1 AA violations, and each status bar carries its count as text, never colour alone (UX-DR23)
+
+## Epic 17: Redesign refit (visual identity and shell)
+
+This Release 1 epic applies the 2026-10-21 redesign (DESIGN.md, EXPERIENCE.md and the v2 prototype) to the built web app and to the shell that later stories build on. It has no FR. It sits here, after the last Release 1 epic by structure, but Story 17.1 must precede any new UI story in any epic, and Story 17.2 follows it. Behaviour of built screens does not change; existing tests pass with updated selectors. Epic 1 stays closed: Story 1.5 is superseded in visual identity by this epic, not reopened.
+
+### Story 17.1: Token layer and primitives
+
+As a developer,
+I want the redesign tokens and UI primitives in one place,
+So that every screen is built on the same colours, type, spacing and components.
+
+**Acceptance Criteria:**
+
+**Given** `globals.css`
+**When** the redesign tokens are applied
+**Then** every colour, type, radius, spacing and shadow token equals the DESIGN.md front matter (light and dark), `border-strong` outlines inputs, secondary buttons, chips and the switch, and JetBrains Mono is removed (UX-DR1)
+
+**Given** `contrast.test.ts`
+**When** tokens change
+**Then** it asserts every pair in the DESIGN.md contrast table (including the seven fixes) and CI fails otherwise (UX-DR23, NFR-7)
+
+**Given** the Button, Status pill, Card, Input, Select, Tabs, Switch, Dialog, Table, Skeleton, Avatar and Tooltip primitives
+**When** they render
+**Then** they match DESIGN.md Components (primary about 38px, secondary 32px, tint-filled pills, 12px cards, disabled opacity .4) (UX-DR1, UX-DR6, UX-DR8)
+
+**Given** a Running state
+**When** it is shown
+**Then** it is a static loader icon, the six `animate-pulse` running dots are removed, and the tests that asserted them are updated (UX-DR10)
+
+**Given** the product name
+**When** any page title renders
+**Then** it reads "Pre Sales Agent Framework"
+
+### Story 17.2: App shell, Settings and accessibility behaviours
+
+As a presales engineer,
+I want the redesigned shell with a Settings card and accessible keyboard behaviour,
+So that I can set up the app for how I work and every screen stays usable by keyboard and screen reader.
+
+Depends on Story 17.1.
+
+**Acceptance Criteria:**
+
+**Given** the app shell
+**When** a page opens a right pane
+**Then** there is one 420px right pane with Inspector and Activity tabs that replaces the 300px activity rail, and `]` cycles closed, open, closed (UX-DR2)
+**And** the pane is closed by default, selecting a row opens it on the Inspector, `Esc` closes it, and with nothing selected the Inspector reads "Select a gap or estimate line to see its details." (UX-DR2, UX-DR7)
+
+**Given** the sidebar and header
+**When** the shell renders
+**Then** the sidebar collapses to 64px with the 0.16s transition (from `[` or the "Collapse sidebar" button), and the header has the organisation switcher, the Search button and the avatar button, with the sidebar footer holding Keyboard shortcuts (`?`), Collapse sidebar (`[`) and the user card with its theme toggle (UX-DR2, UX-DR4)
+
+**Given** the avatar button, or the palette command "Open Settings"
+**When** I open Settings
+**Then** a Settings card (760px) shows Theme and Density radio cards and the single-key shortcut switch with a visible On/Off label (UX-DR26)
+
+**Given** preferences
+**When** I change a Theme, Density or shortcut setting, or use the header toggle
+**Then** the saved preference updates, and preferences stay in the `psa_prefs` cookie read by the root layout (no server table, no localStorage), so server rendering paints the right theme (AD-16)
+
+**Given** a first visit with no saved preference
+**When** the shell loads
+**Then** the single-key shortcut switch defaults to Off (the built code defaults to On, so this story changes it), and a first-run hint explains how to turn shortcuts on (UX-DR4, NFR-7)
+
+**Given** any screen
+**When** the page loads
+**Then** a skip link is the first tab stop, and a polite live region announces the screen name (UX-DR2, UX-DR23, NFR-7)
+
+**Given** the network is lost
+**When** the connection stays down for 60 s (the state from Story 2.3)
+**Then** the Offline strip appears with **Retry** (UX-DR26, UX-DR20)
+
+**Given** viewport widths of ≥1440px, 1280–1439px, 1024–1279px and <1024px
+**When** the shell renders
+**Then** the responsive tiers are unchanged and below 1024px the read-only notice shows (NFR-8)
+
+**Given** the shell pages
+**When** axe runs in CI
+**Then** there are no WCAG 2.1 AA violations (UX-DR23, NFR-7)
+
+### Story 17.3: Refit built tabs to the redesign
+
+As a presales engineer,
+I want the tabs that already exist to look and read like the redesign,
+So that the whole workspace feels like one product.
+
+Depends on Stories 17.1 and 17.2.
+
+**Acceptance Criteria:**
+
+**Given** the Sources tab
+**When** it renders
+**Then** it uses padded list rows, tint-filled status pills, card surfaces and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR6, UX-DR8, UX-DR20, UX-DR29)
+
+**Given** the Requirements tab
+**When** it renders
+**Then** it uses padded list rows, tint-filled status pills, card surfaces and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR6, UX-DR8, UX-DR20, UX-DR29)
+
+**Given** the Gaps tab
+**When** it renders
+**Then** it uses padded list rows, tint-filled status pills, card surfaces and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR6, UX-DR8, UX-DR20, UX-DR29)
+
+**Given** the Assessments tab
+**When** it renders
+**Then** it uses card surfaces, tint-filled status pills and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR8, UX-DR20, UX-DR29)
+**And** it shows the run header (run number, start time and starter, and the Sources, Requirements and agent config versions it used), the task counters, one card per agent with its role description, model chip, progress and status pill, and **Cancel run** and **Start new run**, over the run data already built (UX-DR10)
+
+**Given** the Conflicts tab
+**When** it renders
+**Then** it uses padded list rows, tint-filled status pills, card surfaces and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR6, UX-DR8, UX-DR20, UX-DR29)
+
+**Given** the Estimate tab
+**When** it renders
+**Then** it uses card surfaces, tint-filled status pills and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR8, UX-DR20, UX-DR29)
+
+**Given** the Trace tab
+**When** it renders
+**Then** it uses padded list rows, tint-filled status pills, card surfaces and the empty-tab card with the copy in EXPERIENCE State Patterns (UX-DR6, UX-DR8, UX-DR20, UX-DR29)
+
+**Given** a stale save (412) on any built tab
+**When** the message shows
+**Then** it uses the inline alert with Reload and View diff (UX-DR26, UX-DR20)
+
+**Given** the refit
+**When** the existing test suites run
+**Then** they pass with updated selectors and no behaviour change
+
+### Story 17.4: Opportunity list and Overview chrome
+
+As a presales engineer,
+I want the Opportunity list and the Opportunity header in the redesigned layout,
+So that I can find a deal quickly and see who owns it and when it is due.
+
+Depends on Stories 17.1 and 17.2. The Overview body is Story 8.9.
+
+**Acceptance Criteria:**
+
+**Given** the Opportunity list
+**When** it loads
+**Then** its columns are Opportunity (with the customer), Status, Owner, Proposal date, Open items and Estimate, and the views are All, Mine, Due in 14 days and Blocked (UX-DR5, UX-DR6)
+**And** while loading it shows skeleton rows, and with no Opportunities it shows "No Opportunities yet" with **New Opportunity** (UX-DR20)
+
+**Given** an Opportunity header
+**When** it renders
+**Then** it shows the breadcrumb, the owner and collaborator chips, the due-date countdown, and the **Submit** and "Resolve N blockers" buttons (UX-DR5, UX-DR9)
+
+**Given** the list and the header
+**When** axe runs in CI
+**Then** there are no WCAG 2.1 AA violations, and every status and countdown shows an icon or text, never colour alone (UX-DR23)
+
+### Story 17.5: Refit built pages outside the workspace
+
+As a presales engineer, admin or knowledge expert,
+I want the pages outside the Opportunity workspace in the redesigned layout,
+So that the whole app reads as one product, not only the workspace.
+
+Depends on Stories 17.1 and 17.2.
+
+**Acceptance Criteria:**
+
+**Given** any non-Opportunity page (Opportunities, New Opportunity, Inbox, Knowledge, Reports, Admin, Settings)
+**When** it renders
+**Then** it has the page header: a title, a one-line subtitle, one primary action and the right-pane toggle, with the actions Opportunities → **New Opportunity**, Inbox → **Mark all read**, Knowledge → **Add source**, Reports → **Export**, and none on Settings (UX-DR2)
+**And** Admin → **Invite user** is shown once Story 1.10 is built; until then Admin has no primary action
+
+**Given** the Inbox
+**When** I press **Mark all read**
+**Then** every item is marked read, the sidebar unread badge clears, and the list keeps its order (UX-DR16)
+**And** the Inbox uses the two-pane list and detail layout with unread dots and kind pills, skeleton rows while loading, and "Inbox is empty" when there is nothing (UX-DR20)
+
+**Given** New Opportunity
+**When** it renders
+**Then** it is a card with the import-from-file section above the fields, field hints from the mockup, and **Create Opportunity** and **Cancel** (UX-DR5)
+
+**Given** Knowledge and Admin
+**When** they render
+**Then** their sub-tabs use the segmented control, and every built sub-tab (Knowledge Sources and any other built when this story starts; Admin Users and roles, Catalogue and Evals) uses padded list rows, tint-filled status pills and card surfaces (UX-DR6, UX-DR8, UX-DR21)
+
+**Given** the refit
+**When** the existing test suites run
+**Then** they pass with updated selectors and no behaviour change, and axe reports no WCAG 2.1 AA violations on these pages (UX-DR23, NFR-7)
+
 ## Epic 11: Policy-driven approvals and notifications
 
 Approval rules by value, security and commercial sign-off. Notifications in Teams and by email, with escalation.
@@ -3079,7 +3552,7 @@ So that I don't have to keep checking every Opportunity to find Review Requests,
 
 **Given** a signed-in user
 **When** they open the Story 9.2 Inbox from the sidebar
-**Then** they see these notifications newest first in 32px list rows with an unread marker, `j`/`k` and `Enter` open the subject (Review Request, Challenge, run panel), and opening one marks it read (UX-DR6)
+**Then** they see these notifications newest first in list rows with an unread marker, `j`/`k` and `Enter` open the subject (Review Request, Challenge, run panel), and opening one marks it read (UX-DR6)
 **And** the unread count badge refreshes on navigation and at least every 60 s, and updates live through the Opportunity SSE stream while an Opportunity is open, with no WebSockets (AD-16, AD-30)
 
 **Given** a notification about an Opportunity
@@ -3090,7 +3563,7 @@ So that I don't have to keep checking every Opportunity to find Review Requests,
 **When** it is stored or shown
 **Then** it contains IDs, the Opportunity title, the event type, the actor name and the subject label only, never Opportunity Source text or Requirement text, and no customer content appears in logs (NFR-9, AD-20)
 
-**Given** Settings → Notifications
+**Given** [DECISION PENDING: the redesigned Settings card has no notifications control; either add a Notifications section to the Settings card in R2 or make this an admin policy]
 **When** a user turns an event type off for a channel
 **Then** later deliveries for that event and channel are recorded as `skipped`, while in-platform notifications for Review Requests assigned to them cannot be turned off
 
@@ -3582,7 +4055,7 @@ So that I don't have to save and upload `.msg` files by hand.
 **Acceptance Criteria:**
 
 **Given** a Microsoft 365 connection with the Entra ID app registration configured by an admin
-**When** I choose **Connect Microsoft 365** in Settings
+**When** I choose **Connect Microsoft 365** in Admin → Integrations (R2) or an account section of Settings [DECISION PENDING: location]
 **Then** I sign in through Microsoft's OAuth authorization-code flow with PKCE, granting delegated read-only mail access only, and my refresh token is stored encrypted against my platform user (FR-54, AD-17)
 
 **Given** a connected user on the Sources tab
@@ -3757,7 +4230,7 @@ So that I get an evidence-backed reconciliation attempt without runaway cost.
 
 **Given** the test suite
 **When** CI runs
-**Then** deadlock (positions never converge), timeout, budget exhaustion, worker restart mid-round and invalid-output tests pass, and the Negotiation's model cost is reported per Opportunity on Admin → Cost (FR-59, SM-C2)
+**Then** deadlock (positions never converge), timeout, budget exhaustion, worker restart mid-round and invalid-output tests pass, and the Negotiation's model cost is reported per Opportunity on Reports → Cost and usage (FR-59, SM-C2)
 
 ### Story 14.3: Trade-off analysis and Critic review of the Negotiation
 
@@ -3922,7 +4395,7 @@ So that I get the revised figure without waiting for the presales engineer to co
 
 **Given** a Challenge on a Finding or Assessment
 **When** it is submitted
-**Then** affected Assessments are identified with the Story 15.1 impact rules, and `workflows.start_run(run_type=challenge)` starts automatically, replacing the R1 **Confirm reassessment** step (FR-38, FR-44, UX-DR17)
+**Then** affected Assessments are identified with the Story 15.1 impact rules, and `workflows.start_run(run_type=challenge)` starts automatically, replacing the R1 confirmation in the Challenge dialog (FR-38, FR-44, UX-DR17)
 
 **Given** the automatic Challenge run
 **When** it starts

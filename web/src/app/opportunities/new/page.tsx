@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
 import { canCreateOpportunity } from "@/lib/shortcuts";
 
-export const metadata: Metadata = { title: "New Opportunity · Pre-Sales Agent" };
+export const metadata: Metadata = { title: "New Opportunity · Pre Sales Agent Framework" };
 
 /** Create an Opportunity (with `opportunities.opportunity.create`; the API decides). */
 export default async function NewOpportunityPage() {

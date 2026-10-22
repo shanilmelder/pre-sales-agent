@@ -7,6 +7,7 @@ import { getPassage, type PassageResult } from "@/app/opportunities/actions";
 import { InlineField } from "@/components/opportunities/inline-field";
 import { ReasonInput } from "@/components/opportunities/reason-input";
 import { RequirementDiff } from "@/components/opportunities/requirement-diff";
+import { chipLayoutClassName } from "@/components/ui/chip";
 import { reasonProblem } from "@/lib/gaps";
 import {
   ACCEPT_CHANGE,
@@ -62,10 +63,10 @@ export function EvidenceChip({
       tabIndex={tabIndex}
       // A keyboard-activated click has no pointer clicks (detail 0).
       onClick={(event) => onSelect(event.detail === 0)}
-      className={`inline-flex h-5 max-w-full items-center gap-1 rounded-sm border px-1.5 text-meta outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`${chipLayoutClassName} max-w-full outline-none hover:brightness-[.97] focus-visible:ring-2 focus-visible:ring-primary ${
         pressed
-          ? "border-primary bg-diff-tint text-foreground"
-          : "border-border bg-background text-muted-foreground"
+          ? "border-primary bg-diff-tint text-foreground text-label"
+          : "border-border-strong bg-surface text-primary-text text-label"
       }`}
     >
       <QuoteIcon aria-hidden="true" className="size-3 shrink-0" />
@@ -81,7 +82,7 @@ export function PassageView({ passage }: { passage: Passage }) {
     <figure className="flex flex-col gap-1.5">
       <figcaption className="flex items-baseline gap-2 text-meta text-muted-foreground">
         <span className="truncate">{passage.filename}</span>
-        <span className="shrink-0 font-mono">v{passage.source_version}</span>
+        <span className="shrink-0">v{passage.source_version}</span>
       </figcaption>
       <blockquote className="whitespace-pre-wrap break-words text-body">
         {passage.before}
@@ -521,7 +522,7 @@ export function RequirementInspector({
     >
       <div className="flex flex-col gap-1">
         <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
-          <span className="font-mono">{requirementLabel(requirement)}</span>
+          <span>{requirementLabel(requirement)}</span>
           <span aria-hidden="true">·</span>
           <span>{classificationLabel(requirement.classification)}</span>
           <span aria-hidden="true">·</span>

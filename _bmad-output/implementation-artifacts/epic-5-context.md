@@ -14,7 +14,7 @@ Let a presales engineer press **Run assessment** on an Opportunity and have the 
 - Story 5.4: ToolGateway with task-scoped read-only tools and research snapshots
 - Story 5.5: Pause for human input, resume and cancel
 - Story 5.6: Budgets, timeouts and failure handling
-- Story 5.7: Agent run panel and activity rail
+- Story 5.7: Agent run panel and Activity tab
 - Story 5.8: Engineering and PM Agents
 - Story 5.9: Security and Research Agents and a full assessment run
 - Story 5.10: Single-GPU load test and NFR baseline
@@ -53,11 +53,11 @@ Let a presales engineer press **Run assessment** on an Opportunity and have the 
 
 ## UX & Interaction Patterns
 
-- **Overview agent run panel:** one 28px row per task, showing the agent by role, a Task status pill, elapsed time in tabular figures, and a pulsing running dot (static under reduced motion). It updates over SSE without a refresh.
+- **Overview agent run panel:** one list row per task, showing an agent avatar and role, a Task status pill, elapsed time in tabular figures, and a static loader icon while Running (no pulse). It updates over SSE without a refresh.
 - **Status pills:** run Queued (neutral), Running (agent colour), Waiting for you (amber), Completed, Failed (red), Cancelled. Task statuses are Done, Failed, Timed out and Skipped.
 - **States:** a queued run shows "Position 2 in queue — the model server is busy". A failed task shows a red pill with its specific reason and inline **Retry** and **Skip**, and partial results stay visible, labelled "partial". A waiting run shows an amber **Waiting for you** pill naming the decision, with **Resolve** opening it in the inspector. A budget stop shows the banner "Run stopped: token budget reached. Results so far are kept." with **Rerun selected tasks**, plus **Increase budget** for admins only. **Cancel run** confirms with "Cancel this run? Completed results are kept."
-- **Activity rail:** shown in the right pane when nothing is selected (`]` toggles it). It is a virtualised list of progress and trace events, newest first.
-- **Assessments tab:** one section per Specialist Agent (version, recommendation, confidence), Finding rows with kind, severity, status pill, Evidence chips and a "Low confidence" basis, and an effort table per Integration Type and Work Package. The tab badge counts up live.
+- **Activity tab:** the single 420px right pane has Inspector and Activity tabs (`]` cycles closed, open, closed). Activity is a virtualised list of progress and trace events, newest first, plus run metrics as KPI tiles (tokens, model calls, tool calls, elapsed) with the correlation ID; the token bar turns gap-coloured at its limit.
+- **Assessments tab:** one section per Specialist Agent (version, recommendation, confidence), a Findings table card with a severity summary (for example "1 Critical · 3 High · 2 Medium · 0 Low") and columns Severity (icon and label, Critical rows on the blocker tint), Type, Finding (a partial Finding adds "Partial result · blocks submission until resolved"), Raised by (agent role) and Evidence count. Severity values are `low | medium | high | critical`; Finding statuses are Open, Resolved and Overridden, and Challenge, Override and Rerun actions live in the row inspector. A "Low confidence" basis stays visible. An effort table per Integration Type and Work Package. The tab badge counts up live.
 - **Accessibility:** a polite `aria-live` region announces status changes, throttled to one announcement per 5 s. Axe must report no violations.
 - **Read-only roles:** no Run, Retry, Skip, Resolve or Cancel controls. The UI hides controls, but the API is the enforcement point.
 

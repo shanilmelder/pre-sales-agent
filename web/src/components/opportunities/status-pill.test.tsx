@@ -7,14 +7,14 @@ import { axeViolations } from "@/test/axe";
 import { StatusPill } from "./status-pill";
 
 const EXPECTED: [OpportunityStatus, string, string][] = [
-  ["intake", "Intake", "text-muted-foreground"],
-  ["gaps_open", "Gaps open", "text-gap"],
-  ["assessing", "Assessing", "text-agent"],
-  ["estimating", "Estimating", "text-muted-foreground"],
-  ["in_review", "In review", "text-muted-foreground"],
-  ["baselined", "Baselined", "text-resolved"],
-  ["delivered", "Delivered", "text-muted-foreground"],
-  ["closed", "Closed", "text-muted-foreground"],
+  ["intake", "Intake", "neutral"],
+  ["gaps_open", "Gaps open", "gap"],
+  ["assessing", "Assessing", "agent"],
+  ["estimating", "Estimating", "neutral"],
+  ["in_review", "In review", "neutral"],
+  ["baselined", "Baselined", "resolved"],
+  ["delivered", "Delivered", "neutral"],
+  ["closed", "Closed", "neutral"],
 ];
 
 describe("StatusPill", () => {
@@ -22,19 +22,20 @@ describe("StatusPill", () => {
     expect(EXPECTED.map(([status]) => status).sort()).toEqual(Object.keys(STATUSES).sort());
   });
 
-  it.each(EXPECTED)("%s: icon and label, the icon in %s", async (status, label, tone) => {
+  it.each(EXPECTED)("%s: icon and label, the Pill tone for %s", async (status, label, tone) => {
     const { container } = render(<StatusPill status={status} />);
     const pill = screen.getByText(label);
     expect(pill.textContent).toBe(label);
-    // 20px, fully rounded, neutral outline, label in the foreground colour.
-    for (const cls of ["h-5", "rounded-full", "border-border", "text-foreground"]) {
-      expect(pill.className.split(" ")).toContain(cls);
-    }
+    expect(pill.getAttribute("data-slot")).toBe("pill");
+    expect(pill.getAttribute("data-tone")).toBe(tone);
+    // Tint fill with the tone's text, no outline.
+    const classes = pill.className.split(" ");
+    expect(classes).toContain("rounded-full");
+    expect(classes).toContain(`bg-${tone}-tint`);
+    expect(classes).toContain(`text-${tone}`);
+    expect(classes).not.toContain("border");
     const icon = pill.querySelector("svg")!;
-    expect(icon.getAttribute("aria-hidden")).toBe("true");
-    expect(icon.getAttribute("class")).toContain(tone);
-    // Only the icon is tinted.
-    expect(pill.className).not.toMatch(/text-(gap|agent|resolved)/);
+    expect(icon.parentElement?.getAttribute("aria-hidden")).toBe("true");
     expect(await axeViolations(container)).toEqual([]);
   });
 

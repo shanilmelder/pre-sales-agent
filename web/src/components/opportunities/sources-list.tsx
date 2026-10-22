@@ -9,11 +9,13 @@ import {
   MailIcon,
   MessageSquareReplyIcon,
   StickyNoteIcon,
+  LoaderCircleIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadSources, retryParse, type RetryParseResult } from "@/app/opportunities/actions";
+import { Pill, type PillTone } from "@/components/ui/pill";
 import { SourceInspector } from "@/components/opportunities/source-inspector";
 import { SourceUpload, type SourceUploadHandle } from "@/components/opportunities/source-upload";
 import { useAnnounce } from "@/components/shell/live-region";
@@ -53,8 +55,6 @@ export const PASTE_INSTEAD = "Paste text instead";
 const RETRY_FAILED = "The retry failed. Try again.";
 const RETRY_NOT_ALLOWED = "Only the owner and collaborators can retry parsing.";
 
-const pillClass =
-  "inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground";
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
@@ -63,30 +63,27 @@ const actionClass =
 export function ParseStatusPill({ parse }: { parse: SourceParse }) {
   const label = PARSE_STATUS_LABELS[parse.status] ?? parse.status;
   let mark;
+  let tone: PillTone = "neutral";
   switch (parse.status) {
     case "parsing":
-      mark = (
-        <span
-          aria-hidden="true"
-          data-testid="running-dot"
-          className="mx-0.5 size-1.5 shrink-0 animate-pulse rounded-full bg-agent motion-reduce:animate-none"
-        />
-      );
+      mark = <LoaderCircleIcon data-testid="running-dot" />;
+      tone = "agent";
       break;
     case "parsed":
-      mark = <CircleCheckIcon aria-hidden="true" className="size-3 shrink-0 text-resolved" />;
+      mark = <CircleCheckIcon />;
+      tone = "resolved";
       break;
     case "failed":
-      mark = <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-blocker" />;
+      mark = <CircleAlertIcon />;
+      tone = "blocker";
       break;
     default:
-      mark = <ClockIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />;
+      mark = <ClockIcon />;
   }
   return (
-    <span className={pillClass} data-status={parse.status}>
-      {mark}
+    <Pill data-status={parse.status} tone={tone} icon={mark} className="shrink-0">
       {label}
-    </span>
+    </Pill>
   );
 }
 

@@ -7,8 +7,8 @@ paradigm: 'Modular monolith with hexagonal (ports and adapters) modules; agents 
 scope: 'Whole platform, Releases R1–R4, per PRD prd-pre-sales-agent-2026-10-01'
 status: final
 created: '2026-10-01'
-updated: '2026-10-06'  # amended: Auth0; AD-15 reversed by Story 1.9 (Auth0 RBAC)
-binds: ['FR-1..FR-65', 'NFR-1..NFR-8']
+updated: '2026-10-21'  # amended: Auth0; AD-15 reversed by Story 1.9 (Auth0 RBAC); 2026-10-21: confirmation_status (AD-11), AD-33, UI preferences and UI mapping
+binds: ['FR-1..FR-67', 'NFR-1..NFR-8']
 sources:
   - '../../prds/prd-pre-sales-agent-2026-10-01/prd.md'
   - '../../prds/prd-pre-sales-agent-2026-10-01/addendum.md'
@@ -159,7 +159,7 @@ graph TD
 - **Rule:**
   - An Estimate Version is immutable once submitted. Any change creates a new version through `estimates.create_version`, including Scenario versions (`scenario_id`).
   - Requirements, Assumptions, Checklists and registry configs carry version numbers.
-  - Requirements carry `origin: extracted | human` and `locked_by_human`. Extraction and Gap answers never update a human-touched Requirement; they call `intake.propose_requirement_change`, which creates a pending change for a human to confirm.
+  - Requirements carry `origin: extracted | human`, `locked_by_human` and `confirmation_status: unconfirmed | confirmed | needs_review` (with `confirmed_by`, `confirmed_at` while confirmed). Transitions live in `intake/domain`: unconfirmed to confirmed (a person confirms; creating a Requirement sets confirmed); confirmed to needs_review (an accepted pending change, an edit by someone other than the confirmer, or an agent flag); needs_review to confirmed (a person re-confirms). An edit by the confirmer keeps the Requirement confirmed. Confirmation never blocks submission (decided 2026-10-21). Each transition appends an `intake.requirement.*` trace event. Extraction and Gap answers never update a human-touched Requirement; they call `intake.propose_requirement_change`, which creates a pending change for a human to confirm.
   - Merges and splits are trace events that record lineage.
   - Every mutable row has `row_version`. The API requires `If-Match` and returns 412 on mismatch.
 
@@ -202,7 +202,7 @@ graph TD
 - **Rule:**
   - Authentication uses **Auth0** (EU tenant). The web app signs users in with `@auth0/nextjs-auth0` (v4 `Auth0Client`, Next.js 16 `proxy.ts`) and requests access tokens for the API audience.
   - The API validates the Auth0 access token on every request with PyJWT `PyJWKClient`: RS256, JWKS, `iss`, `aud` (the API identifier) and `exp`. It maps `sub` to a platform user.
-  - **Auth0 RBAC is the single place where roles and permissions are managed** (reversed in Story 1.9; previously roles lived in `identity`). Each Auth0 permission name equals an action name. The access token carries the `permissions` claim (RBAC "Add Permissions in the Access Token") and a namespaced roles claim (`https://pre-sales-agent/roles`) added by the Post-Login Action. The API authorizes from the token alone: a missing claim grants nothing (never a 401), and unknown or malformed values are ignored and logged with the user id. Changes apply when the user's next token is issued. No Auth0 Management API is used.
+  - **Auth0 RBAC is the single place where roles and permissions are managed** (reversed in Story 1.9; previously roles lived in `identity`). Each Auth0 permission name equals an action name. The access token carries the `permissions` claim (RBAC "Add Permissions in the Access Token") and a namespaced roles claim (`https://pre-sales-agent/roles`) added by the Post-Login Action. The API authorizes from the token alone: a missing claim grants nothing (never a 401), and unknown or malformed values are ignored and logged with the user id. Changes apply when the user's next token is issued. The running app calls the Auth0 Management API for one thing only: inviting a user (Story 1.10, amended 2026-10-22). The `api` process uses the existing Machine-to-Machine app with the scopes `create:users` and `create:role_members`, never for authorization and never for role changes on existing users.
   - Opportunity membership (owner, collaborators) stays in the platform, never in Auth0. Owner/member grants and the sales-representative exclusions are code in `identity/domain/policy.py`, evaluated against the token's roles.
   - The user's first login provisions a platform user. `identity_user_roles` is only a display cache of each user's roles as of their last sign-in (rewritten when the token's roles differ), shown read-only on Users & roles; it is never read for authorization or filtering. Roles are not edited in the app.
   - All decisions go through `identity.authorize(actor, action, resource)`, called inside commands and queries.
@@ -220,6 +220,7 @@ graph TD
   - Live updates use one SSE stream per Opportunity at `/api/v1/opportunities/{opportunity_id}/events`, read with fetch-based SSE carrying the bearer token (AD-30).
   - File downloads use short-lived HMAC-signed URLs issued by an authorized API call.
   - There are no WebSockets.
+  - UI preferences: theme, density and the single-key shortcut switch are per-browser preferences stored in the `psa_prefs` cookie read by the root layout (no server table, no localStorage), so server rendering paints the right theme. The single-key shortcut switch defaults to **Off**, with a first-run hint (the built code defaults to On; Story 17.2 changes it).
 
 ### AD-17: External systems behind ports, with idempotent outbound writes
 
@@ -401,13 +402,24 @@ graph TD
     - A monthly patch window covers images, NVIDIA driver and toolkit, Ollama and Postgres minor versions.
     - Postgres major upgrades follow a runbook.
 
+### AD-33: Graph, Pipeline and Cost are derived read models
+
+- **Binds:** FR-10, FR-50, FR-59, FR-66, FR-67; AD-1, AD-2, AD-10, AD-26
+- **Prevents:** a graph database, duplicated status logic, and LLM-derived scores.
+- **Rule:**
+  - The Knowledge Graph is computed by `knowledge.public.get_graph(filters)` over `knowledge_*` tables; there is no graph store (AD-1). Nodes are Products (from tags), Integration Types, Knowledge Sources and Checklists; edges come from tags and Checklist scopes.
+  - Coverage score and status are pure domain functions in `knowledge/domain` (AD-10).
+  - Retrieval statistics come from an insert-only `knowledge_retrievals` table (chunk ID, agent ID, run ID, time; no query text, NFR-9) written by the ToolGateway search tool. Until Story 5.4 and this table exist, the graph omits those fields.
+  - The Pipeline report reuses the single Opportunity status query (AD-26) through `opportunities.public.status_summary()`; it never duplicates the derivation.
+  - Cost and usage read `reporting_*` views over `platform_model_calls` and workflow tables (Story 7.5); roles are enforced in the API (AD-15).
+
 ## Entity Ownership
 
 | Entity | Owner module |
 | --- | --- |
 | Opportunity, collaborators | `opportunities` |
 | Opportunity Source, extracted-text artifact, Source Passage, Requirement, pending Requirement change | `intake` |
-| Knowledge Source, Knowledge Chunk, Checklist, Integration Type / Work Package catalogue, Research Snapshot | `knowledge` |
+| Knowledge Source, Knowledge Chunk, Checklist, Integration Type / Work Package catalogue, Research Snapshot, Knowledge retrieval log (`knowledge_retrievals`, insert-only) | `knowledge` |
 | Gap, Unknown, Clarification Question | `gaps` |
 | Workflow Run, Plan, Task, progress, change set | `workflows` |
 | Assessment, Finding, FindingOverride | `assessments` |
@@ -433,7 +445,7 @@ graph TD
 | Naming | Tables are `<module>_<plural_snake>`. Enum values, Python modules and JSON fields are `snake_case`. TS types are generated only. |
 | Events and actions | Trace events are `<module>.<entity>.<past_tense_verb>`. Actions are `<module>.<entity>.<verb>`. Job types are `<module>.<verb>`. |
 | Glossary | Code, schemas and UI use PRD §3 terms exactly. |
-| Statuses (domain state machines) | **Workflow Run:** `queued, running, waiting_for_human, completed, failed, cancelled`. **Task:** `queued, running, completed, failed, timed_out, skipped`. **Gap/Unknown:** `open, answered, converted, dismissed_with_reason`. **Clarification Question:** `drafted, approved, sent, answered, unanswered`. **Conflict:** `open, negotiating, resolved, escalated`. **Finding:** `open, resolved, overridden`. **Estimate Version:** `draft, submitted, in_review, approved, rejected, superseded`. **Review Request:** `pending, approved, rejected, challenged, superseded, cancelled`. **Challenge:** `awaiting_confirmation, reassessing, completed, declined, failed`. **Proposal:** `draft, in_review, approved, released, superseded`. **Job:** `queued, leased, succeeded, failed, dead`. |
+| Statuses (domain state machines) | **Workflow Run:** `queued, running, waiting_for_human, completed, failed, cancelled`. **Task:** `queued, running, completed, failed, timed_out, skipped`. **Gap/Unknown:** `open, answered, converted, dismissed_with_reason`. **Clarification Question:** `drafted, approved, sent, answered, unanswered`. **Conflict:** `open, negotiating, resolved, escalated`. **Finding:** `open, resolved, overridden`. **Estimate Version:** `draft, submitted, in_review, approved, rejected, superseded`. **Review Request:** `pending, approved, rejected, challenged, superseded, cancelled`. **Challenge:** `awaiting_confirmation, reassessing, completed, declined, failed`. **Proposal:** `draft, in_review, approved, released, superseded`. **Job:** `queued, leased, succeeded, failed, dead`. **Requirement confirmation:** `unconfirmed, confirmed, needs_review` (migration: add the column, backfill `confirmed` where `confirmed_at IS NOT NULL`, else `unconfirmed`). **UI mapping:** the Estimate version lifecycle stepper (Draft, In review, Approved, Baseline) is derived from the Estimate Version status plus the Baseline pointer (`submitted` is shown as Draft-complete; the stepper is never a control). Finding severity values are `low | medium | high | critical` (as built). The UI may show 'Dismissed' on a Clarification Question row only as the status of its Gap. Estimate version labels are whole numbers (v1, v2, v3). Draft lines are edited in place (`row_version` plus a trace event), not as a new version per edit. |
 | Errors | problem+json `{type, title, status, code, detail, instance}`. Domain errors are typed exceptions mapped in one place. |
 | Config | `pydantic-settings`, env vars prefixed `PSA_`, read only in `platform.config`. |
 | Agent IDs | `snake_case` ending in `_agent`, with semver versions. |
@@ -558,6 +570,7 @@ pre-sales-agent/
 | 4.1 Workspace, FR-64 | `opportunities`, `web` | AD-2, AD-15, AD-16, AD-26 (derived status), AD-30 |
 | 4.2 Intake | `intake`, `intake_agent` | AD-4, AD-11, AD-13, AD-18 |
 | 4.3 Knowledge Base, FR-65 | `knowledge` | AD-14, AD-18 |
+| 4.3 Knowledge graph (FR-66) | `knowledge`, `web` | AD-14, AD-33 |
 | 4.4 Gaps and Clarification | `gaps`, `clarification_agent` | AD-10, AD-23 |
 | 4.5 Orchestration, FR-63 | `workflows`, `orchestration`, `platform.jobs` | AD-6, AD-7, AD-24, AD-25, AD-29 |
 | 4.6 Specialist Assessment | `assessments`, `agents/*` | AD-4, AD-5, AD-8, AD-9, AD-13, AD-22 |
@@ -569,6 +582,7 @@ pre-sales-agent/
 | 4.12 Replanning, Scenarios (R3) | `scenarios`, `workflows`, `estimates` | AD-11, AD-24, AD-26 |
 | 4.13 Proposals (R2) | `proposals` | AD-4, AD-13, AD-18 |
 | 4.14 Actuals, Calibration (R4) | `actuals`, `reporting_*` | AD-2, AD-10 |
+| Reports: pipeline and cost (FR-59, FR-67) | `reporting_*`, `opportunities` | AD-2, AD-26, AD-33 |
 | 4.15 Integrations (R2), notifications | `integrations`, `notifications` | AD-17, AD-29 |
 | 4.16 Registry, observability, evals | `registry`, `platform.telemetry`, `evals/` | AD-20, AD-21, AD-22 |
 | 4.17 Untrusted content | `platform.tool_gateway`, `platform.storage` | AD-9, AD-18 |

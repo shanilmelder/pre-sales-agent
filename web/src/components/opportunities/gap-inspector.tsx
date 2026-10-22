@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
+import { Chip } from "@/components/ui/chip";
+import { Pill } from "@/components/ui/pill";
+import { pillToneFor } from "@/lib/pill-tone";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { InlineField } from "@/components/opportunities/inline-field";
 import { ReasonInput, reasonFieldClass } from "@/components/opportunities/reason-input";
@@ -43,7 +46,6 @@ import {
   type Impact,
   type QuestionStatus,
 } from "@/lib/gaps";
-import { cn } from "@/lib/utils";
 
 const actionClass =
   "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
@@ -54,13 +56,14 @@ export function QuestionPill({ status }: { status: QuestionStatus }) {
   const known = questionStatus(status);
   const Icon = known.icon;
   return (
-    <span
+    <Pill
       data-question-status={status}
-      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
+      tone={pillToneFor(known.tone)}
+      icon={<Icon />}
+      className="shrink-0"
     >
-      <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
       {known.label}
-    </span>
+    </Pill>
   );
 }
 
@@ -178,9 +181,7 @@ export function GapInspector({
         <ul className="flex flex-col gap-1.5">
           {gap.requirements.map((requirement) => (
             <li key={requirement.id} className="flex items-baseline gap-2">
-              <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
-                {requirement.label}
-              </span>
+              <Chip className="shrink-0">{requirement.label}</Chip>
               <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
             </li>
           ))}
@@ -365,13 +366,9 @@ export function GapStatusPill({ status }: { status: GapStatus }) {
   const known = gapStatus(status);
   const Icon = known.icon;
   return (
-    <span
-      data-gap-status={status}
-      className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-background pr-2 pl-1.5 text-label text-foreground"
-    >
-      <Icon className={cn("size-3 shrink-0", known.tone)} aria-hidden="true" />
+    <Pill data-gap-status={status} tone={pillToneFor(known.tone)} icon={<Icon />} className="shrink-0">
       {known.label}
-    </span>
+    </Pill>
   );
 }
 
@@ -404,9 +401,7 @@ function PassageChip({ passage }: { passage: AnswerPassage }) {
   return (
     <figure className="flex flex-col gap-1 rounded-md border border-border p-2">
       <figcaption>
-        <span className="inline-flex h-5 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-meta text-muted-foreground">
-          {passage.label}
-        </span>
+        <Chip>{passage.label}</Chip>
       </figcaption>
       {passage.excerpt ? (
         <blockquote className="whitespace-pre-wrap break-words text-body">{passage.excerpt}</blockquote>

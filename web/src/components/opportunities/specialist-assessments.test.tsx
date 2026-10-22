@@ -305,9 +305,9 @@ describe("SpecialistAssessmentsSection", () => {
     expect(within(engineering).getByText("v2")).toBeTruthy();
     const pill = engineering.querySelector("[data-recommendation]");
     expect(pill?.textContent).toBe("Proceed with conditions");
-    expect(pill?.querySelector("svg")?.getAttribute("class")).toContain(
-      "text-gap",
-    );
+    expect(pill?.getAttribute("data-slot")).toBe("pill");
+    expect(pill?.getAttribute("data-tone")).toBe("gap");
+    expect(pill?.querySelector("svg")).toBeTruthy();
     expect(within(engineering).getByText("Medium confidence")).toBeTruthy();
     expect(within(engineering).getByText(": [BASIS]")).toBeTruthy();
     expect(
@@ -1022,11 +1022,13 @@ describe("AgentRunPanel timings", () => {
     }
   });
 
-  it("the running dot is static under reduced motion", () => {
+  it("the running dot is a static icon with no animation", () => {
     render(<SpecialistAssessmentsHeader run={running} />);
     const dot = screen.getByTestId("running-dot");
-    expect(dot.className).toContain("animate-pulse");
-    expect(dot.className).toContain("motion-reduce:animate-none");
+    expect(dot.tagName.toLowerCase()).toBe("svg");
+    expect(dot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
+    expect(dot.getAttribute("class") ?? "").toContain("text-agent");
+    expect(dot.getAttribute("class") ?? "").not.toContain("animate");
   });
 });
 
