@@ -630,6 +630,89 @@ This story reverses AD-15 ("Auth0 RBAC is not used") and replaces Story 1.6's ro
 **When** the user's next access token is issued
 **Then** the new access applies, and the display cache updates, without any Auth0 Management API call
 
+### Story 1.10: Invite users
+
+As a platform administrator,
+I want to invite a colleague by email with their roles already set,
+So that they can sign in and start work without me setting them up in Auth0 by hand.
+
+Depends on Story 1.9. This story amends AD-15: the running app calls the Auth0 Management API for invites only. Authorization still comes from the access token alone, and role changes for existing users stay in Auth0.
+
+**Acceptance Criteria:**
+
+**Given** an admin on Admin → Users & roles
+**When** they press **Invite user** (the page header action, Story 17.5)
+**Then** a dialog asks for an email (required), a name (optional) and one or more roles from the nine platform roles, and **Send invite** is disabled until the email is valid and a role is chosen (FR-58)
+
+**Given** a valid invite
+**When** it is sent
+**Then** the `identity.invite_user` command creates the user in the Auth0 database connection, assigns the chosen roles, and has Auth0 send its set-password email, using the existing Machine-to-Machine app (`AUTH0_MGMT_CLIENT_ID`, `AUTH0_MGMT_CLIENT_SECRET`) with the added scopes `create:users` and `create:role_members` (AD-15 amended)
+**And** an `identity_users` row is created for the new Auth0 user with status **Invited**, and the `identity.user.invited` trace event records the actor, the target user ID and the roles, with no name or email (AD-3)
+
+**Given** the invited user signs in for the first time
+**When** their token is provisioned (Story 1.4)
+**Then** the existing row is matched by `auth0_sub` and its status becomes **Active**, and the Users list shows Active or Invited and the last active time
+
+**Given** an Invited user
+**When** the admin presses **Resend invite** in the user Inspector
+**Then** Auth0 sends the set-password email again, and an `identity.user.invite_resent` trace event is appended
+
+**Given** an email that already exists in Auth0 or the platform
+**When** the invite is sent
+**Then** it is rejected with "A user with this email already exists", and nothing is created
+
+**Given** the Auth0 Management API fails or times out
+**When** the invite is sent
+**Then** the dialog shows "The invite could not be sent. Try again.", no platform row or trace event is written, and a retry does not create a second Auth0 user
+
+**Given** a user without the new `identity.user.invite` permission (held by platform administrators only, added by `seed_auth0.py`)
+**When** they call the invite endpoints
+**Then** the API returns 403 and **Invite user** is hidden
+
+**Given** the Management API credentials
+**When** the app runs
+**Then** they are read only by the `api` process, the Management token is cached until shortly before it expires, and neither the credentials nor the token are logged (NFR-4, NFR-9)
+
+### Story 1.11: Saved views on list filters
+
+As a presales engineer,
+I want to save a set of list filters under a name and apply it again in one step,
+So that I don't rebuild the same filters every time I open a list.
+
+Depends on Story 4.4 for the Gap filters.
+
+**Acceptance Criteria:**
+
+**Given** the Gaps tab
+**When** it renders
+**Then** it has filters for Impact, Area and Question status, kept in the URL query like the other filtered lists (UX-DR6)
+
+**Given** any list with filters (All and My Opportunities, Requirements, Gaps, Trace, Knowledge Sources and Admin Users)
+**When** filters are applied
+**Then** a **Saved views** menu in the filter bar offers **Save current view**, which asks for a name (required, unique per list for this user)
+
+**Given** saved views
+**When** I choose one
+**Then** its filters replace the current ones in the URL, and the menu marks the active view
+**And** I can rename or delete my views, and each change saves with `If-Match` (AD-3)
+
+**Given** the storage
+**When** a view is saved
+**Then** it is stored on the server in `identity_saved_views` (owner user, list key, name, filter query, `row_version`), owned by `identity`, so it follows the user across browsers, and it is private to its owner (AD-2)
+**And** views on lists inside an Opportunity are saved per list type, so a Gaps view applies on every Opportunity
+
+**Given** a saved view whose filter value no longer exists (for example a retired catalogue entry)
+**When** it is applied
+**Then** the unknown values are dropped and a note says which filters were skipped
+
+**Given** a list with 20 saved views
+**When** I try to save another
+**Then** it is rejected with "You can keep up to 20 views per list. Delete one first."
+
+**Given** the Saved views menu
+**When** it is used by keyboard or screen reader
+**Then** it is fully keyboard operable, announces the applied view in the polite live region, and axe reports no violations (UX-DR23, NFR-7)
+
 ## Epic 2: From customer input to structured Requirements
 
 Ravi or a sales representative uploads emails, notes and transcripts. The platform extracts classified, cited Requirements that Ravi can edit, and never overwrites his edits. Introduces the job queue, the worker, the ModelGateway (Ollama) and the first agent.
@@ -3426,7 +3509,7 @@ Depends on Stories 17.1 and 17.2.
 **Given** any non-Opportunity page (Opportunities, New Opportunity, Inbox, Knowledge, Reports, Admin, Settings)
 **When** it renders
 **Then** it has the page header: a title, a one-line subtitle, one primary action and the right-pane toggle, with the actions Opportunities → **New Opportunity**, Inbox → **Mark all read**, Knowledge → **Add source**, Reports → **Export**, and none on Settings (UX-DR2)
-**And** Admin shows no primary action until **Invite user** is decided [DECISION PENDING: users are created on first Auth0 sign-in (Story 1.4), so an invite flow needs its own story or is dropped]
+**And** Admin → **Invite user** is shown once Story 1.10 is built; until then Admin has no primary action
 
 **Given** the Inbox
 **When** I press **Mark all read**

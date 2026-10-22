@@ -45,6 +45,8 @@ development_status:
   1-7-create-and-share-opportunities: done
   1-8-opportunity-workspace-with-tabs-and-status: done
   1-9-auth0-roles-and-permissions: done
+  1-10-invite-users: backlog
+  1-11-saved-views-on-list-filters: backlog
   epic-1-retrospective: optional
 
   epic-2: in-progress
