@@ -3394,9 +3394,9 @@ Depends on Story 17.1.
 **Then** there is one 420px right pane with Inspector and Activity tabs that replaces the 300px activity rail, and `]` cycles closed, open, closed (UX-DR2)
 **And** the pane is closed by default, selecting a row opens it on the Inspector, `Esc` closes it, and with nothing selected the Inspector reads "Select a gap or estimate line to see its details." (UX-DR2, UX-DR7)
 
-**Given** the sidebar and header
+**Given** the sidebar
 **When** the shell renders
-**Then** the sidebar collapses to 64px with the 0.16s transition (from `[` or the "Collapse sidebar" button), and the header has the organisation switcher, the Search button and the avatar button, with the sidebar footer holding Keyboard shortcuts (`?`), Collapse sidebar (`[`) and the user card with its theme toggle (UX-DR2, UX-DR4)
+**Then** the sidebar collapses to 64px with the 0.16s transition (from `[` or the "Collapse sidebar" button), and from top to bottom holds the organisation switcher (while there is one organisation it shows the current one, as the product name until the API returns an organisation name), the Search button, the navigation items, and a footer with Keyboard shortcuts (`?`), Collapse sidebar (`[`) and the user card (avatar button that opens Settings, role and theme toggle) (UX-DR2, UX-DR4)
 
 **Given** the avatar button, or the palette command "Open Settings"
 **When** I open Settings

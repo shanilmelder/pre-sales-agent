@@ -683,7 +683,7 @@ describe("EstimateSection", () => {
 
     expect(screen.getByText("[LINE 9]")).toBeTruthy();
     expect(within(pane()).queryByText("[LINE 1]")).toBeNull();
-    expect(within(pane()).getByText("Nothing selected.")).toBeTruthy();
+    expect(within(pane()).getByText("Select a gap or estimate line to see its details.")).toBeTruthy();
   });
 });
 

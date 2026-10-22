@@ -11,6 +11,8 @@ import { axeViolations } from "@/test/axe";
 
 const push = vi.hoisted(() => vi.fn());
 const pathname = vi.hoisted(() => ({ current: "/inbox" }));
+const savePreferences = vi.hoisted(() => vi.fn());
+vi.mock("@/app/settings/actions", () => ({ savePreferences }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => pathname.current,
@@ -18,7 +20,7 @@ vi.mock("next/navigation", () => ({
 
 import { AppShell, PlaceholderPage } from "./app-shell";
 import { READ_ONLY_MESSAGE } from "./read-only-notice";
-import { ShellProviders, useWorkspaceTabKeys } from "./shell-context";
+import { RightPaneContent, ShellProviders, useWorkspaceTabKeys } from "./shell-context";
 
 const TAB_HREFS = Array.from({ length: 9 }, (_, i) => `/tab-${i + 1}`);
 
@@ -47,12 +49,19 @@ function renderShell({
   roles = ["presales_engineer"] as Role[],
   singleKeyShortcuts = true,
   firstRun = false,
+  density = "comfortable" as "comfortable" | "compact",
   children = <PlaceholderPage title="Inbox" message="Nothing waiting for you." />,
-}: { roles?: Role[]; singleKeyShortcuts?: boolean; firstRun?: boolean; children?: ReactNode } = {}) {
+}: {
+  roles?: Role[];
+  singleKeyShortcuts?: boolean;
+  firstRun?: boolean;
+  density?: "comfortable" | "compact";
+  children?: ReactNode;
+} = {}) {
   const user = userEvent.setup();
   // The providers stand in for the root layout.
   const utils = render(
-    <ShellProviders singleKeyShortcuts={singleKeyShortcuts} firstRun={firstRun}>
+    <ShellProviders singleKeyShortcuts={singleKeyShortcuts} firstRun={firstRun} density={density}>
       <AppShell me={me(roles)}>{children}</AppShell>
     </ShellProviders>,
   );
@@ -97,6 +106,7 @@ describe("AppShell layout", () => {
     renderShell({ roles: ["pm_reviewer"] });
     const links = within(sidebar())
       .getAllByRole("link")
+      .filter((a) => a.getAttribute("aria-label") !== "Open Settings")
       .map((a) => a.textContent);
     expect(links).toEqual([
       "Inbox",
@@ -127,7 +137,9 @@ describe("AppShell layout", () => {
   it("uses the responsive tier classes", () => {
     renderShell();
     // 1024-1279: icons only; 1280+: 220px with labels.
-    expect(sidebar().className).toContain("w-12");
+    expect(sidebar().className).toContain("w-sidebar-collapsed");
+    expect(sidebar().className).toContain("duration-[160ms]");
+    expect(sidebar().className).toContain("motion-reduce:transition-none");
     expect(sidebar().className).toContain("min-[1280px]:w-sidebar");
     expect(within(sidebar()).getByText("Inbox").className).toContain(
       "min-[1280px]:not-sr-only",
@@ -194,12 +206,15 @@ describe("right pane", () => {
     const nav = sidebar();
     const main = screen.getByRole("main");
     const pane = rightPane()!;
+    const skip = screen.getByRole("link", { name: "Skip to main content" });
     const regions: string[] = [];
     for (let i = 0; i < 30; i++) {
       await user.tab();
       const el = document.activeElement;
       if (!el || el === document.body) break;
-      const region = nav.contains(el)
+      const region = el === skip
+        ? "skip"
+        : nav.contains(el)
         ? "sidebar"
         : main.contains(el)
           ? "main"
@@ -209,7 +224,179 @@ describe("right pane", () => {
       if (regions.at(-1) !== region) regions.push(region);
       if (region === "pane") break;
     }
-    expect(regions).toEqual(["sidebar", "main", "pane"]);
+    expect(regions).toEqual(["skip", "sidebar", "main", "pane"]);
+  });
+});
+
+describe("shell chrome", () => {
+  it("makes the skip link the first tab stop and moves focus to main", async () => {
+    const { user } = renderShell();
+    await user.tab();
+    const skip = screen.getByRole("link", { name: "Skip to main content" });
+    expect(document.activeElement).toBe(skip);
+    expect(skip.className).toContain("focus:top-2");
+    expect(skip.className).toContain("bg-primary");
+    await user.keyboard("{Enter}");
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+    expect(screen.getByRole("main").id).toBe("main-content");
+  });
+
+  it("orders the sidebar: organisation, Search, navigation, shortcuts, collapse, user card", () => {
+    renderShell();
+    const org = screen.getByTestId("org-switcher");
+    const order = [
+      org,
+      within(sidebar()).getByRole("button", { name: "Search or run a command" }),
+      within(sidebar()).getByRole("link", { name: "Inbox" }),
+      within(sidebar()).getByRole("button", { name: "Keyboard shortcuts" }),
+      within(sidebar()).getByRole("button", { name: "Collapse sidebar" }),
+      screen.getByTestId("user-card"),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(
+        order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    expect(within(org).getByText("Pre Sales Agent Framework")).toBeTruthy();
+    expect(within(org).queryByRole("button")).toBeNull();
+  });
+
+  it("shows the role in the user card and keeps labels readable when collapsed", async () => {
+    const { user } = renderShell({ roles: ["head_of_delivery"] });
+    const card = screen.getByTestId("user-card");
+    expect(within(card).getByText("Head of Delivery")).toBeTruthy();
+    expect(within(card).getByRole("link", { name: "Open Settings" }).getAttribute("href")).toBe(
+      "/settings",
+    );
+    await user.keyboard("[[");
+    expect(sidebar().getAttribute("data-collapsed")).toBe("true");
+    expect(within(card).getByText("Head of Delivery").parentElement!.className).toContain("sr-only");
+    expect(within(sidebar()).getByText("Inbox").className).toContain("sr-only");
+    expect(within(card).getByRole("button", { name: "Toggle theme" })).toBeTruthy();
+  });
+
+  it("toggles the theme, saving the other preferences", async () => {
+    savePreferences.mockResolvedValue({ ok: true });
+    const { user } = renderShell({ singleKeyShortcuts: true });
+    await user.click(screen.getByRole("button", { name: "Toggle theme" }));
+    expect(savePreferences).toHaveBeenCalledWith({
+      theme: "dark",
+      density: "comfortable",
+      singleKeyShortcuts: true,
+    });
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    document.documentElement.classList.remove("dark");
+  });
+
+  it("keeps a compact density when toggling the theme", async () => {
+    savePreferences.mockResolvedValue({ ok: true });
+    const { user } = renderShell({ density: "compact" });
+    await user.click(screen.getByRole("button", { name: "Toggle theme" }));
+    expect(savePreferences).toHaveBeenCalledWith({
+      theme: "dark",
+      density: "compact",
+      singleKeyShortcuts: true,
+    });
+    document.documentElement.classList.remove("dark");
+  });
+
+  it("rolls the theme back and announces when saving fails", async () => {
+    savePreferences.mockResolvedValue({ ok: false });
+    const { user } = renderShell();
+    await user.click(screen.getByRole("button", { name: "Toggle theme" }));
+    await waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(false));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Your settings could not be saved. Try again.",
+      ),
+    );
+  });
+});
+
+describe("right pane tabs", () => {
+  it("opens on Inspector with the empty text; Activity says no activity yet", async () => {
+    const { user } = renderShell();
+    await user.keyboard("]");
+    const pane = rightPane()!;
+    const inspector = within(pane).getByRole("tab", { name: "Inspector" });
+    expect(inspector.getAttribute("aria-selected")).toBe("true");
+    expect(
+      within(pane).getByText("Select a gap or estimate line to see its details."),
+    ).toBeTruthy();
+    await user.click(within(pane).getByRole("tab", { name: "Activity" }));
+    expect(within(pane).getByText("No activity yet.")).toBeTruthy();
+    expect(within(pane).getByRole("tabpanel", { name: "Activity" })).toBeTruthy();
+  });
+
+  it("reopens on Inspector after being closed on Activity", async () => {
+    const { user } = renderShell();
+    await user.keyboard("]");
+    await user.click(within(rightPane()!).getByRole("tab", { name: "Activity" }));
+    await user.keyboard("]");
+    expect(rightPane()).toBeNull();
+    await user.keyboard("]");
+    expect(
+      within(rightPane()!).getByRole("tab", { name: "Inspector" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("leaves Alt+Arrow to the browser when a tab has focus", async () => {
+    const { user } = renderShell();
+    await user.keyboard("]");
+    const pane = rightPane()!;
+    within(pane).getByRole("tab", { name: "Inspector" }).focus();
+    await user.keyboard("{Alt>}{ArrowRight}{/Alt}");
+    expect(
+      within(pane).getByRole("tab", { name: "Inspector" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("moves between tabs with the arrow keys", async () => {
+    const { user } = renderShell();
+    await user.keyboard("]");
+    const pane = rightPane()!;
+    within(pane).getByRole("tab", { name: "Inspector" }).focus();
+    await user.keyboard("{ArrowRight}");
+    const activity = within(pane).getByRole("tab", { name: "Activity" });
+    expect(document.activeElement).toBe(activity);
+    expect(activity.getAttribute("aria-selected")).toBe("true");
+    await user.keyboard("{ArrowLeft}");
+    expect(document.activeElement).toBe(within(pane).getByRole("tab", { name: "Inspector" }));
+  });
+
+  it("keeps Inspector content mounted on Activity and returns to it on selection", async () => {
+    function Selecting({ id }: { id: string }) {
+      return (
+        <RightPaneContent>
+          <p key={id}>{"Detail " + id}</p>
+        </RightPaneContent>
+      );
+    }
+    const { user, rerender } = renderShell({ children: <Selecting id="a" /> });
+    await user.keyboard("]");
+    const pane = rightPane()!;
+    expect(within(pane).getByText("Detail a")).toBeTruthy();
+    await user.click(within(pane).getByRole("tab", { name: "Activity" }));
+    // Still mounted, only hidden.
+    expect(within(pane).getByText("Detail a")).toBeTruthy();
+    expect(within(pane).queryByRole("tabpanel", { name: "Inspector" })).toBeNull();
+    rerender(
+      <ShellProviders singleKeyShortcuts firstRun={false}>
+        <AppShell me={me(["presales_engineer"])}>
+          <Selecting id="b" />
+        </AppShell>
+      </ShellProviders>,
+    );
+    await waitFor(() => expect(within(pane).getByText("Detail b")).toBeTruthy());
+    expect(
+      within(pane).getByRole("tab", { name: "Inspector" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("has no axe violations with the pane open", async () => {
+    const { user, container } = renderShell();
+    await user.keyboard("]");
+    expect(await axeViolations(container)).toEqual([]);
   });
 });
 

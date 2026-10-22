@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  isValidElement,
   useCallback,
   useContext,
   useEffect,
@@ -12,10 +13,14 @@ import {
 import { createPortal } from "react-dom";
 
 import { LiveRegionProvider, useAnnounce } from "@/components/shell/live-region";
+// Types only: the preferences module imports next/headers.
+import type { Density, Theme } from "@/lib/preferences";
 
 /** DOM ids shared by the right pane and its toggle (for focus return on close). */
 export const RIGHT_PANE_ID = "right-pane";
 export const RIGHT_PANE_TOGGLE_ID = "right-pane-toggle";
+
+export type RightPaneTab = "inspector" | "activity";
 
 export type ShellDialog = "palette" | "cheat-sheet";
 export type ShellLayer = ShellDialog | "right-pane";
@@ -26,6 +31,9 @@ type ShellState = {
   rightPaneOpen: boolean;
   setRightPaneOpen: (open: boolean) => void;
   toggleRightPane: () => void;
+  /** The active right-pane tab. Opening the pane, or selecting a row, shows Inspector. */
+  rightPaneTab: RightPaneTab;
+  setRightPaneTab: (tab: RightPaneTab) => void;
   /** The open dialog, if any. Only one is open at a time. */
   dialog: ShellDialog | null;
   openDialog: (dialog: ShellDialog) => void;
@@ -34,6 +42,9 @@ type ShellState = {
   layers: ShellLayer[];
   closeTopLayer: () => void;
   singleKeyShortcuts: boolean;
+  /** The stored theme and density, for the user card's theme toggle. */
+  theme: Theme;
+  density: Density;
   /** No preferences cookie yet: the shell shows the shortcut hint until it is answered. */
   firstRun: boolean;
   dismissFirstRun: () => void;
@@ -56,15 +67,24 @@ export function useShell(): ShellState {
 export function ShellProviders({
   singleKeyShortcuts,
   firstRun = false,
+  theme = "system",
+  density = "comfortable",
   children,
 }: {
   singleKeyShortcuts: boolean;
   firstRun?: boolean;
+  theme?: Theme;
+  density?: Density;
   children: ReactNode;
 }) {
   return (
     <LiveRegionProvider>
-      <ShellProvider singleKeyShortcuts={singleKeyShortcuts} firstRun={firstRun}>
+      <ShellProvider
+        singleKeyShortcuts={singleKeyShortcuts}
+        firstRun={firstRun}
+        theme={theme}
+        density={density}
+      >
         {children}
       </ShellProvider>
     </LiveRegionProvider>
@@ -74,15 +94,20 @@ export function ShellProviders({
 export function ShellProvider({
   singleKeyShortcuts,
   firstRun = false,
+  theme = "system",
+  density = "comfortable",
   children,
 }: {
   singleKeyShortcuts: boolean;
   firstRun?: boolean;
+  theme?: Theme;
+  density?: Density;
   children: ReactNode;
 }) {
   const announce = useAnnounce();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightPaneOpen, setRightPaneOpenState] = useState(false);
+  const [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>("inspector");
   const [dialog, setDialog] = useState<ShellDialog | null>(null);
   const [workspaceTabs, setWorkspaceTabs] = useState<readonly string[] | null>(null);
   const [firstRunAnswered, setFirstRunAnswered] = useState(false);
@@ -98,6 +123,7 @@ export function ShellProvider({
           document.getElementById(RIGHT_PANE_TOGGLE_ID)?.focus();
         }
       }
+      if (open) setRightPaneTab("inspector");
       setRightPaneOpenState(open);
       announce(open ? "Right pane opened" : "Right pane closed");
     },
@@ -114,6 +140,8 @@ export function ShellProvider({
       rightPaneOpen,
       setRightPaneOpen,
       toggleRightPane: () => setRightPaneOpen(!rightPaneOpen),
+      rightPaneTab,
+      setRightPaneTab,
       dialog,
       openDialog: setDialog,
       closeDialog: () => setDialog(null),
@@ -124,6 +152,8 @@ export function ShellProvider({
         else if (top) setDialog(null);
       },
       singleKeyShortcuts,
+      theme,
+      density,
       firstRun: firstRun && !firstRunAnswered,
       dismissFirstRun,
       workspaceTabs,
@@ -133,8 +163,11 @@ export function ShellProvider({
     sidebarCollapsed,
     rightPaneOpen,
     setRightPaneOpen,
+    rightPaneTab,
     dialog,
     singleKeyShortcuts,
+    theme,
+    density,
     firstRun,
     firstRunAnswered,
     dismissFirstRun,
@@ -166,7 +199,7 @@ type RightPaneSlot = {
   /** The element the right pane renders page content into (null while it is closed). */
   target: HTMLElement | null;
   setTarget: (element: HTMLElement | null) => void;
-  /** How many `RightPaneContent`s are mounted; the pane shows "Nothing selected." at 0. */
+  /** How many `RightPaneContent`s are mounted; the Inspector shows its empty text at 0. */
   contentCount: number;
   register: () => () => void;
 };
@@ -195,9 +228,14 @@ export function useRightPaneSlot(): RightPaneSlot {
 
 /** Renders `children` inside the right pane (e.g. a list's inspector) while the pane is
  * open. The content stays part of the page's React tree, so its state lives with the page;
- * while it is mounted the pane no longer says "Nothing selected." */
+ * while it is mounted the pane no longer shows its empty text. */
 export function RightPaneContent({ children }: { children: ReactNode }) {
+  const { setRightPaneTab } = useShell();
   const { target, register } = useRightPaneSlot();
   useEffect(() => register(), [register]);
+  // Selecting a row mounts the content, or swaps its keyed child: show Inspector then,
+  // even if Activity was the active tab.
+  const childKey = isValidElement(children) ? children.key : null;
+  useEffect(() => setRightPaneTab("inspector"), [childKey, setRightPaneTab]);
   return target ? createPortal(children, target) : null;
 }

@@ -436,7 +436,7 @@ function retryMessage(result: StartGapDetectionResult): string {
 /** The Gaps tab's content: the ranked list in the main pane and the selected Gap's inspector
  * in the right pane (opened if closed). While a detection is queued or running the list is
  * re-read every 2 s: paused while the tab is hidden, and stopped after 15 minutes. A selected
- * Gap that a re-run superseded leaves the pane showing "Nothing selected." Retry only for
+ * Gap that a re-run superseded leaves the pane showing the empty Inspector text. Retry only for
  * those who may start a detection.
  *
  * Story 4.5: for those who may edit questions (`can_edit_questions`), the inspector's question

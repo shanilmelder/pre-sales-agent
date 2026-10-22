@@ -559,7 +559,7 @@ describe("GapsSection", () => {
 
     expect(screen.getByText("[GAP 2]")).toBeTruthy();
     expect(within(pane()).queryByText("[GAP 1]")).toBeNull();
-    expect(within(pane()).getByText("Nothing selected.")).toBeTruthy();
+    expect(within(pane()).getByText("Select a gap or estimate line to see its details.")).toBeTruthy();
   });
 
   it("announces the open Gap count when a detection finishes", async () => {

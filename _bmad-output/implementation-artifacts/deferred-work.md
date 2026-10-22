@@ -175,9 +175,17 @@
   evidence: Split from Story 17.1b on 2026-10-22 because including about 30 source files and 9 tests would push the spec far past the 1,600 token target. 17.1b builds and tests the primitives only. 17.1c depends on 17.1b and should land before Story 17.2 and 17.3.
 
 - source_spec: none
-  summary: Story 17.2b: shell chrome. Header with organisation switcher (static current-organisation label, no menu while there is one organisation), Search button and avatar button; sidebar footer user card with theme toggle; one 420px right pane with Inspector and Activity tabs; skip link as first tab stop; polite screen-name announcement on navigation; Settings opened from the avatar button.
+  summary: Story 17.2b: shell chrome. Sidebar with organisation switcher on top (static label showing the product name, no menu while there is one organisation), Search button, and footer user card (avatar button that opens Settings, role, theme toggle); one 420px right pane with Inspector and Activity tabs; skip link as first tab stop; polite screen-name announcement on navigation; Settings opened from the avatar button.
   evidence: Split from Story 17.2 on 2026-10-22 (three independent deliverables). User chose the static organisation label. Survey found the header is a bare 48px bar, Search lives in the sidebar, there is no skip link or screen-name announcement, and the pane has no tabs.
 
 - source_spec: none
   summary: Story 17.2c: global Offline strip with Retry after 60 s down (reusing the Story 2.3 state, `useEventStreamStatus` and `OFFLINE_AFTER_MS`), a check that editing is disabled below 1024px (the read-only notice is currently message-only), responsive tiers unchanged, and axe across the shell pages.
   evidence: Split from Story 17.2 on 2026-10-22. The offline state exists only inside the workspace (`ConnectionStatus`); the strip is not global.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-2b-shell-chrome.md`
+  summary: The empty Inspector text "Select a gap or estimate line to see its details." shows on every page that uses the right pane (admin users, knowledge, requirements, red team); consider per-page copy via a prop on `RightPaneContent` or a route map.
+  evidence: Story 17.2 AC fixes that exact text, so 17.2b kept it; two reviewers noted it reads wrong outside the gap and estimate screens.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-2b-shell-chrome.md`
+  summary: Unverified (would be medium): `RightPaneContent` returns the pane to Inspector only on mount or a keyed-child change, so an inspector child without a selection-specific key may leave Activity showing after a new selection.
+  evidence: To settle, check the roughly 12 `RightPaneContent` consumers for selection-keyed children and whether background polls change keys; the shell test covers only a keyed child.

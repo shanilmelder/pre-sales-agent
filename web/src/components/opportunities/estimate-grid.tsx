@@ -710,7 +710,7 @@ type Selection = { kind: "line"; id: string } | { kind: "gap"; assumptionId: str
  * model draft left over from before Story 8.3, or the Assumption proposals are queued or
  * running the Estimate is re-read every 2 s:
  * paused while the tab is hidden, and stopped after 15 minutes. A selected line that a new
- * version replaced leaves the pane showing "Nothing selected." Lines of the draft are
+ * version replaced leaves the pane showing the empty Inspector text. Lines of the draft are
  * editable for those who may edit them (Story 8.2), with a note when a new version could not
  * carry some edits; Accept for those who may accept Assumptions. No draft Retry. */
 export function EstimateSection({

@@ -40,6 +40,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <ShellProviders
             singleKeyShortcuts={preferences.singleKeyShortcuts}
             firstRun={firstRun}
+            theme={preferences.theme}
+            density={preferences.density}
           >
             {children}
           </ShellProviders>

@@ -1,14 +1,20 @@
 "use client";
 
 import { cn } from "cn";
-import { KeyboardIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, SearchIcon } from "lucide-react";
+import {
+  BuildingIcon,
+  KeyboardIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SearchIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { AvatarMenu } from "@/components/avatar-menu";
 import { useModKeyLabel } from "@/components/shell/keyboard-shortcuts";
 import { useShell } from "@/components/shell/shell-context";
+import { UserCard } from "@/components/shell/user-card";
 import type { Me } from "@/lib/api/server";
 import { visibleNav } from "@/lib/navigation";
 
@@ -24,7 +30,7 @@ const itemClass =
   "flex h-row w-full items-center gap-2 rounded-sm px-2 text-body text-sidebar-foreground outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-primary";
 
 /** Primary navigation. Below 1280px, or when collapsed with `[`, only icons show. */
-export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "permissions"> }) {
+export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "roles" | "permissions"> }) {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar, openDialog } = useShell();
   const modKey = useModKeyLabel();
@@ -37,10 +43,18 @@ export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "permissions">
       aria-label="Primary"
       data-collapsed={sidebarCollapsed ? "true" : "false"}
       className={cn(
-        "flex h-full w-12 shrink-0 flex-col gap-2 border-r border-sidebar-border bg-surface-sidebar p-1.5",
+        "flex h-full w-sidebar-collapsed shrink-0 flex-col gap-2 border-r border-sidebar-border bg-surface-sidebar p-1.5 transition-[width] duration-[160ms] motion-reduce:transition-none",
         !sidebarCollapsed && "min-[1280px]:w-sidebar",
       )}
     >
+      {/* One organisation, so a static label rather than a switcher. */}
+      <div
+        data-testid="org-switcher"
+        className="flex h-row w-full items-center gap-2 px-2 text-body-strong text-sidebar-foreground"
+      >
+        <BuildingIcon className="size-4 shrink-0" aria-hidden="true" />
+        <span className={cn(label, "truncate")}>Pre Sales Agent Framework</span>
+      </div>
       <button
         type="button"
         title={`Search or run a command (${modKey} K)`}
@@ -104,9 +118,7 @@ export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "permissions">
             <Kbd>[</Kbd>
           </span>
         </button>
-        <div className="px-0.5 pt-1">
-          <AvatarMenu name={me.name} email={me.email} side="top" align="start" />
-        </div>
+        <UserCard me={me} collapsed={sidebarCollapsed} />
       </div>
     </nav>
   );

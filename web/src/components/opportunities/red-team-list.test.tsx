@@ -451,7 +451,7 @@ describe("RedTeamSection", () => {
 
     expect(screen.getByText("Red Team v3")).toBeTruthy();
     expect(within(pane()).queryByText("[ARGUMENT 1]")).toBeNull();
-    expect(within(pane()).getByText("Nothing selected.")).toBeTruthy();
+    expect(within(pane()).getByText("Select a gap or estimate line to see its details.")).toBeTruthy();
   });
 
   it("says so when a finished run had nothing to review", () => {

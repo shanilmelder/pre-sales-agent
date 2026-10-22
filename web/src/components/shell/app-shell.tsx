@@ -9,6 +9,8 @@ import { KeyboardShortcuts } from "@/components/shell/keyboard-shortcuts";
 import { ReadOnlyNotice } from "@/components/shell/read-only-notice";
 import { ShortcutHint } from "@/components/shell/shortcut-hint";
 import { RightPane } from "@/components/shell/right-pane";
+import { ScreenAnnouncer } from "@/components/shell/screen-announcer";
+import { MAIN_ID, SkipLink } from "@/components/shell/skip-link";
 import { RIGHT_PANE_TOGGLE_ID, useShell } from "@/components/shell/shell-context";
 import { Sidebar } from "@/components/shell/sidebar";
 import type { Me } from "@/lib/api/server";
@@ -37,10 +39,16 @@ function RightPaneToggle() {
 export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
   return (
     <>
+      <SkipLink />
+      <ScreenAnnouncer />
       <div className="flex h-dvh min-h-0 w-full overflow-hidden">
         <Sidebar me={me} />
         <div className="relative flex min-w-0 flex-1">
-          <main className="flex min-w-0 flex-1 flex-col overflow-auto">
+          <main
+            id={MAIN_ID}
+            tabIndex={-1}
+            className="flex min-w-0 flex-1 flex-col overflow-auto outline-none"
+          >
             <ShortcutHint />
             <ReadOnlyNotice />
             <div className="flex h-12 shrink-0 items-center justify-end border-b border-border px-gutter">
