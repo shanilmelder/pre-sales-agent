@@ -26,6 +26,9 @@ import {
   type RequirementWriteResult,
   type StartExtractionResult,
 } from "@/app/opportunities/actions";
+import { Card } from "@/components/ui/card";
+import { EmptyTabCard } from "@/components/ui/empty-tab-card";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { InlineInput } from "@/components/opportunities/inline-field";
 import { RequirementDiff, type DiffSide } from "@/components/opportunities/requirement-diff";
 import {
@@ -58,7 +61,9 @@ import {
   isExtracting,
   mergeDraft,
   mergeLabel,
+  ADD_A_SOURCE,
   NO_REQUIREMENTS,
+  NO_REQUIREMENTS_BODY,
   noneFound,
   outdatedNotice,
   requirementCount,
@@ -1329,31 +1334,16 @@ export function RequirementsSection({
       </div>
       {/* Screen readers hear these through the shell's single live region. */}
       {stale ? (
-        <div id={noticeId} className="flex max-w-md flex-col gap-2 rounded-md border border-border p-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-meta">{staleMessage(stale.changedBy)}</p>
-            <span className="flex shrink-0 gap-2">
-              {stale.diff ? (
-                <button
-                  type="button"
-                  aria-expanded={showDiff}
-                  onClick={() => setShowDiff((shown) => !shown)}
-                  className={actionClass}
-                >
-                  {showDiff ? HIDE_DIFF : VIEW_DIFF}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                ref={reloadRef}
-                onClick={() => void reload()}
-                aria-disabled={reloading || undefined}
-                className={actionClass}
-              >
-                {RELOAD}
-              </button>
-            </span>
-          </div>
+        <InlineAlert
+          id={noticeId}
+          lead={staleMessage(stale.changedBy)}
+          onReload={() => void reload()}
+          reloading={reloading}
+          reloadRef={reloadRef}
+          onViewDiff={stale.diff ? () => setShowDiff((shown) => !shown) : undefined}
+          viewDiffLabel={showDiff ? HIDE_DIFF : VIEW_DIFF}
+          diffExpanded={showDiff}
+        >
           {stale.diff && showDiff ? (
             <div data-testid="stale-diff" className="flex flex-col gap-1">
               <RequirementDiff
@@ -1364,7 +1354,7 @@ export function RequirementsSection({
               />
             </div>
           ) : null}
-        </div>
+        </InlineAlert>
       ) : notice ? (
         <p id={noticeId} className="text-meta text-destructive">
           {notice}
@@ -1373,9 +1363,9 @@ export function RequirementsSection({
       {/* Always mounted, so a notice that appears later is announced. */}
       <div role="status" className="empty:hidden">
         {outdated.length > 0 ? (
-          <div
+          <Card
             data-testid="outdated-assessments"
-            className="flex max-w-2xl flex-col items-start gap-1 rounded-md border border-border p-2"
+            className="max-w-2xl items-start gap-1 p-3"
           >
             <p className="text-meta">{outdatedNotice(outdated)}</p>
             <Link
@@ -1384,7 +1374,7 @@ export function RequirementsSection({
             >
               {OPEN_ASSESSMENTS}
             </Link>
-          </div>
+          </Card>
         ) : null}
       </div>
       {canEdit && creating ? (
@@ -1403,10 +1393,10 @@ export function RequirementsSection({
         />
       ) : null}
       {checked.length >= 2 ? (
-        <div
+        <Card
           role="toolbar"
           aria-label="Selected Requirements"
-          className="flex max-w-2xl flex-wrap items-center gap-2 rounded-md border border-border p-2"
+          className="max-w-2xl flex-row flex-wrap items-center gap-2 p-3"
         >
           <span className="text-meta">{`${checked.length} selected`}</span>
           <button
@@ -1426,7 +1416,7 @@ export function RequirementsSection({
           <button type="button" onClick={clearSelection} className={actionClass}>
             Clear selection
           </button>
-        </div>
+        </Card>
       ) : null}
       {merging && checked.length >= 2 ? (
         <RequirementDraftForm
@@ -1458,7 +1448,12 @@ export function RequirementsSection({
       ) : succeeded ? (
         <p className="text-muted-foreground">{noneFound(list.extraction?.source_count)}</p>
       ) : !extracting && !failed ? (
-        <p className="text-muted-foreground">{NO_REQUIREMENTS}</p>
+        <EmptyTabCard
+          title={NO_REQUIREMENTS}
+          body={NO_REQUIREMENTS_BODY}
+          actionLabel={ADD_A_SOURCE}
+          href={tabHref(opportunityId, "sources")}
+        />
       ) : null}
       {selected ? (
         <RightPaneContent>

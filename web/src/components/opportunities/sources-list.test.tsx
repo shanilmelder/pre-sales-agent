@@ -65,6 +65,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("SourcesList empty card", () => {
+  it("shows the empty card and Choose files calls the handler", async () => {
+    const onChooseFiles = vi.fn();
+    render(<SourcesList sources={[]} canAdd onChooseFiles={onChooseFiles} />);
+    expect(screen.getByText("No Sources yet")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Add an email, transcript or document. Requirements and Gaps are extracted from Sources.",
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Choose files" }));
+    expect(onChooseFiles).toHaveBeenCalledOnce();
+  });
+});
+
 describe("SourcesList status column", () => {
   it("shows Queued, Parsing with a running dot, Parsed and Parse failed with its reason", async () => {
     const { container } = render(

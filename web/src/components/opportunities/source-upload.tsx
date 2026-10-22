@@ -53,6 +53,8 @@ function outcome(result: AddSourceResult): { state: RowState; message: string } 
 export type SourceUploadHandle = {
   /** Opens the paste area (if closed) and focuses its text box ("Paste text instead"). */
   openPaste: () => void;
+  /** Opens the file chooser (the empty Sources card's "Choose files"). */
+  openChooser: () => void;
 };
 
 /** Drop files, choose them, or paste text to add them as Sources. Files and pastes go up one
@@ -91,6 +93,9 @@ export function SourceUpload({
   useImperativeHandle(
     ref,
     () => ({
+      openChooser() {
+        inputRef.current?.click();
+      },
       openPaste() {
         // Opening focuses the text box (the effect below); an open one is focused here.
         if (pasting) textareaRef.current?.focus();

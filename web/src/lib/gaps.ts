@@ -238,8 +238,10 @@ export function approvedCount(n: number): string {
 /** The header while a detection is queued or running. */
 export const DETECTING = "Detecting Gaps";
 
-/** The empty-state sentence. */
-export const NO_GAPS = "Gaps appear here after Requirements are extracted.";
+/** The empty-tab card's title; the sentence is `NO_GAPS_BODY`. */
+export const NO_GAPS = "No Gaps";
+export const NO_GAPS_BODY = "Gaps appear after Requirements are checked against Checklists.";
+export const OPEN_REQUIREMENTS = "Open Requirements";
 
 /** A finished detection that raised nothing. */
 export const NONE_FOUND = "No Gaps were found in the Requirements.";

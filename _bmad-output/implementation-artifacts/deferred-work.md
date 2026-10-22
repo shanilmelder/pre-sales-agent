@@ -193,3 +193,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-2c-offline-strip-and-read-only.md`
   summary: Unverified (would be medium): read-only below 1024px and offline disables only the workspace tab-panel `fieldset`, so editable controls in the right-pane inspectors (outside it) may still work.
   evidence: To settle, check whether the inspector components render inputs or buttons that save, and whether they sit inside the disabled `fieldset`; the shell tests cover only the workspace body.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3a-sources-requirements-gaps-refit.md`
+  summary: Story 17.3b: refit Conflicts, Estimate and Trace (empty-tab cards, card surfaces, estimate-grid density, Trace zero-event state) and move the Conflicts, Estimate and assumptions-register 412 messages onto `InlineAlert`.
+  evidence: Story 17.3 spans seven tabs and about 35-45 files, too big for one spec; split into 17.3a, 17.3b, 17.3c.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3a-sources-requirements-gaps-refit.md`
+  summary: Story 17.3c: Assessments run header, task counters, per-agent cards, Cancel run and Start new run from client-derivable data only; no empty-tab card (EXPERIENCE says none, the AC contradicts it). Backend ticket: run_number, started_by, Sources/Requirements/config versions and model per task are not in the API.
+  evidence: Run data in `lib/api/schema.d.ts` lacks those fields; the user chose to omit them and log a backend ticket.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3a-sources-requirements-gaps-refit.md`
+  summary: View diff for the 412 alert on Gaps, Estimate and Conflicts; today only Requirements has a diff view.
+  evidence: The AC wants Reload and View diff on every built tab; the user chose to ship View diff only where a diff exists.

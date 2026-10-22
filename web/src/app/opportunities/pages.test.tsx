@@ -1032,8 +1032,8 @@ describe("/opportunities/[id] workspace", () => {
     foundWithSources({ ...OPPORTUNITY, can_add_sources: true }, []);
     const { container } = await renderWorkspace("sources");
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByRole("button", { name: "Choose files" })).toBeTruthy();
-    expect(within(panel).getByText("No Sources yet.")).toBeTruthy();
+    expect(within(panel).getAllByRole("button", { name: "Choose files" })[0]).toBeTruthy();
+    expect(within(panel).getByText("No Sources yet")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -1106,7 +1106,7 @@ describe("/opportunities/[id] workspace", () => {
     await renderWorkspace("requirements");
     expect(
       within(screen.getByRole("tabpanel")).getByText(
-        "Requirements appear here after Sources are parsed.",
+        "Requirements appear after the first Source is parsed.",
       ),
     ).toBeTruthy();
   });
@@ -1321,7 +1321,7 @@ describe("/opportunities/[id] workspace", () => {
     await renderWorkspace("gaps");
     expect(
       within(screen.getByRole("tabpanel")).getByText(
-        "Gaps appear here after Requirements are extracted.",
+        "Gaps appear after Requirements are checked against Checklists.",
       ),
     ).toBeTruthy();
   });
