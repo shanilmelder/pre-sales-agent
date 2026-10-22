@@ -10,14 +10,14 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 _SEGMENT = r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*"
 EVENT_TYPE_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 # Past tense check on the verb's last word: regular verbs end in "ed"; list irregular
 # past participles here when an event needs one. This is a heuristic, not a guarantee:
 # non-past words that end in "ed" (need, seed) also pass, so reviewers still check names.
-_IRREGULAR_PAST_TENSE = frozenset({"built", "done", "lost", "made", "run", "sent", "won"})
+_IRREGULAR_PAST_TENSE = frozenset({"built", "done", "lost", "made", "run", "sent", "split", "won"})
 
 
 def is_valid_event_type(name: str) -> bool:
@@ -213,6 +213,62 @@ class IntakeRequirementEdited(TracePayload):
 
     fields: list[Literal["text", "classification"]]
     version: int
+
+
+@register
+class IntakeRequirementCreated(TracePayload):
+    """A person added a Requirement the extraction missed (Story 2.6): `human`, locked, no
+    Evidence. Subject: the new Requirement (`intake.requirement`), at `version` 1."""
+
+    event_type: ClassVar[str] = "intake.requirement.created"
+
+    version: int
+
+
+@register
+class IntakeRequirementDeleted(TracePayload):
+    """A person deleted a Requirement with a reason (Story 2.6); it leaves the active list
+    but stays in history. Subject: the Requirement (`intake.requirement`), at the `version`
+    it had. The reason is never in the trace."""
+
+    event_type: ClassVar[str] = "intake.requirement.deleted"
+
+    version: int
+
+
+@register
+class IntakeRequirementSplit(TracePayload):
+    """A person split a Requirement into two new ones (Story 2.6), each citing all of its
+    Evidence; it is now `superseded`. Subject: the original (`intake.requirement`), at the
+    `version` it had. `into`: the new Requirements' ids."""
+
+    event_type: ClassVar[str] = "intake.requirement.split"
+
+    version: int
+    into: list[str]
+
+
+class MergedFrom(BaseModel):
+    """One Requirement a merge took, at the version it had."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str
+    version: int
+
+
+@register
+class IntakeRequirementMerged(TracePayload):
+    """A person merged Requirements into one new one (Story 2.6) citing all their Evidence;
+    the originals are now `superseded`. Subject: the new Requirement (`intake.requirement`),
+    at version 1. `from`: the originals."""
+
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, serialize_by_alias=True, validate_by_name=True
+    )
+    event_type: ClassVar[str] = "intake.requirement.merged"
+
+    from_: list[MergedFrom] = Field(alias="from")
 
 
 @register

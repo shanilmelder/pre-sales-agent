@@ -81,6 +81,7 @@ const PENDING: PendingChange = {
 function requirement(n: number, extra: Partial<Requirement> = {}): Requirement {
   return {
     id: `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`,
+    number: n,
     text: `[REQUIREMENT ${n}]`,
     classification: "functional",
     origin: "human",

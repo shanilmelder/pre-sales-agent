@@ -966,10 +966,13 @@ export type RequirementConfirmInput = {
   rowVersion: number;
 };
 
-export type RequirementWriteResult =
-  | { kind: "ok"; requirement: Requirement }
-  /** 412: someone changed the Requirement first. `changedBy` is null when unknown. */
-  | { kind: "stale"; changedBy: string | null }
+export type RequirementWriteResult = { kind: "ok"; requirement: Requirement } | RequirementFailure;
+
+/** Why a Requirement write failed. */
+export type RequirementFailure =
+  /** 412: someone changed the Requirement first. `changedBy` is null when unknown;
+   * `current` is the Requirement as now saved (null when unknown), for **View diff**. */
+  | { kind: "stale"; changedBy: string | null; current?: Requirement | null }
   /** 422: a readable reason. */
   | { kind: "invalid"; detail: string }
   | { kind: "forbidden" }
@@ -1007,16 +1010,14 @@ function isEditInput(input: unknown): input is RequirementEditInput {
   );
 }
 
-/** Who last changed the Requirement, read again after a 412 (null when unknown). */
-async function requirementChanger(
+/** The Requirement as now saved, read again after a 412 (null when unknown or gone). */
+async function currentRequirement(
   opportunityId: string,
   requirementId: string,
-): Promise<string | null> {
+): Promise<Requirement | null> {
   const current = await listRequirements(opportunityId);
   if (current.kind !== "ok") return null;
-  return (
-    current.list.items.find((item) => item.id === requirementId)?.last_changed_by?.name ?? null
-  );
+  return current.list.items.find((item) => item.id === requirementId) ?? null;
 }
 
 async function requirementWriteFailure(
@@ -1024,13 +1025,12 @@ async function requirementWriteFailure(
   input: RequirementConfirmInput,
   status: number,
   error: unknown,
-): Promise<RequirementWriteResult> {
+): Promise<RequirementFailure> {
   switch (status) {
-    case 412:
-      return {
-        kind: "stale",
-        changedBy: await requirementChanger(input.opportunityId, input.requirementId),
-      };
+    case 412: {
+      const current = await currentRequirement(input.opportunityId, input.requirementId);
+      return { kind: "stale", changedBy: current?.last_changed_by?.name ?? null, current };
+    }
     case 422: {
       const { detail } = problem(error);
       return {
@@ -1136,6 +1136,194 @@ export async function confirmAllRequirements(opportunityId: unknown): Promise<Co
     console.error(
       `confirm all requirements failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
+    return { kind: "error" };
+  }
+}
+
+// --- shaping the Requirement list (Story 2.6) -------------------------------------------------
+
+export type RequirementDraftInput = { text: string; classification: Classification };
+
+export type RequirementCreateInput = RequirementDraftInput & { opportunityId: string };
+
+/** A create or merge: the new Requirement, or why not. */
+export type RequirementCreateResult = RequirementWriteResult;
+
+export type RequirementDeleteInput = RequirementConfirmInput & {
+  /** Why: 1 to 500 code points once trimmed (the API checks again). */
+  reason: string;
+};
+
+export type RequirementDeleteResult = { kind: "ok" } | RequirementFailure;
+
+export type RequirementSplitInput = RequirementConfirmInput & {
+  parts: [RequirementDraftInput, RequirementDraftInput];
+};
+
+export type RequirementSplitResult =
+  | { kind: "ok"; requirements: Requirement[] }
+  | RequirementFailure;
+
+export type RequirementMergeInput = RequirementDraftInput & {
+  opportunityId: string;
+  /** The Requirements to merge, each at the `row_version` last seen. */
+  requirements: { id: string; rowVersion: number }[];
+};
+
+function isDraft(input: unknown): input is RequirementDraftInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { text, classification } = input as Record<string, unknown>;
+  return (
+    typeof text === "string" &&
+    typeof classification === "string" &&
+    KNOWN_CLASSIFICATIONS.has(classification)
+  );
+}
+
+function isId(value: unknown): value is string {
+  return typeof value === "string" && UUID_RE.test(value);
+}
+
+function isMergeRef(value: unknown): value is { id: string; rowVersion: number } {
+  if (typeof value !== "object" || value === null) return false;
+  const { id, rowVersion } = value as Record<string, unknown>;
+  return (
+    isId(id) && typeof rowVersion === "number" && Number.isSafeInteger(rowVersion) && rowVersion >= 1
+  );
+}
+
+/** A failure of a write that names no single Requirement (a create or merge): a 412 has no
+ * one changer to name. */
+function listWriteFailure(action: string, status: number, error: unknown): RequirementFailure {
+  switch (status) {
+    case 412:
+      return { kind: "stale", changedBy: null, current: null };
+    case 422: {
+      const { detail } = problem(error);
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
+      };
+    }
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${action} failed: status=${status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
+}
+
+function thrownName(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.name : "unknown";
+}
+
+/** `POST /api/v1/opportunities/{id}/requirements`: add a Requirement the extraction missed
+ * (`human`, locked, no Evidence). Logs ids and statuses only. */
+export async function createRequirement(input: unknown): Promise<RequirementCreateResult> {
+  if (!isDraft(input) || !isId((input as Record<string, unknown>).opportunityId)) {
+    return { kind: "error" };
+  }
+  const { opportunityId, text, classification } = input as RequirementCreateInput;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/requirements",
+      { params: { path: { opportunity_id: opportunityId } }, body: { text, classification } },
+    );
+    if (data) return { kind: "ok", requirement: data };
+    return listWriteFailure("create requirement", response.status, error);
+  } catch (thrown) {
+    console.error(`create requirement failed: ${thrownName(thrown)}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/requirements/{rid}/delete` with `If-Match` and a
+ * reason. Never retries or overwrites on 412. */
+export async function deleteRequirement(input: unknown): Promise<RequirementDeleteResult> {
+  if (!isRowTarget(input) || typeof (input as Record<string, unknown>).reason !== "string") {
+    return { kind: "error" };
+  }
+  const { opportunityId, requirementId, rowVersion, reason } = input as RequirementDeleteInput;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/delete",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, requirement_id: requirementId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { reason },
+      },
+    );
+    if (data) return { kind: "ok" };
+    return await requirementWriteFailure("delete requirement", input, response.status, error);
+  } catch (thrown) {
+    console.error(`delete requirement failed: ${thrownName(thrown)}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/requirements/{rid}/split` with `If-Match`: two new
+ * Requirements, each citing all the original's Evidence. */
+export async function splitRequirement(input: unknown): Promise<RequirementSplitResult> {
+  if (!isRowTarget(input)) return { kind: "error" };
+  const { parts } = input as Record<string, unknown>;
+  if (!Array.isArray(parts) || parts.length !== 2 || !parts.every(isDraft)) {
+    return { kind: "error" };
+  }
+  const { opportunityId, requirementId, rowVersion } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/split",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, requirement_id: requirementId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { parts: parts.map(({ text, classification }) => ({ text, classification })) },
+      },
+    );
+    if (data) return { kind: "ok", requirements: data.items };
+    return await requirementWriteFailure("split requirement", input, response.status, error);
+  } catch (thrown) {
+    console.error(`split requirement failed: ${thrownName(thrown)}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST /api/v1/opportunities/{id}/requirements/merge`: one new Requirement citing all the
+ * merged ones' Evidence. Each Requirement goes with its `row_version` last seen; any stale
+ * one fails the whole merge (412). */
+export async function mergeRequirements(input: unknown): Promise<RequirementCreateResult> {
+  if (!isDraft(input)) return { kind: "error" };
+  const { opportunityId, requirements } = input as Record<string, unknown>;
+  if (!isId(opportunityId) || !Array.isArray(requirements) || !requirements.every(isMergeRef)) {
+    return { kind: "error" };
+  }
+  const { text, classification } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/requirements/merge",
+      {
+        params: { path: { opportunity_id: opportunityId } },
+        body: {
+          requirements: requirements.map((r) => ({ id: r.id, row_version: r.rowVersion })),
+          text,
+          classification,
+        },
+      },
+    );
+    if (data) return { kind: "ok", requirement: data };
+    return listWriteFailure("merge requirements", response.status, error);
+  } catch (thrown) {
+    console.error(`merge requirements failed: ${thrownName(thrown)}`);
     return { kind: "error" };
   }
 }

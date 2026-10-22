@@ -927,3 +927,22 @@ def test_the_downgrade_returns_answered_questions_to_sent_and_answered_gaps_to_o
         assert kinds == {"note"}
     finally:
         _alembic("upgrade", "head")
+
+
+def test_an_answers_requirement_labels_are_the_stored_numbers(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    from tests.test_intake_requirement_lifecycle import _delete
+
+    headers, opp, questions = sent(client, sync_engine, db_url, gateway, count=1)
+    r1 = _list(client, headers, opp["id"])[0]
+    assert _delete(client, headers, opp["id"], r1, version=r1["row_version"]).is_success
+    assert _answer(client, headers, opp["id"], questions[SAP]).status_code == 200
+    assert drain(db_url, PARSE) == ["succeeded"]
+    gateway.replies = [out(("Exchange ORDERS05 IDocs.", "integration", [("S2", "ORDERS05 IDocs")]))]
+    assert drain(db_url, EXTRACT) == ["succeeded"]
+
+    added = next(r for r in _list(client, headers, opp["id"]) if r["text"].startswith("Exchange"))
+    assert added["number"] == 6  # R1 to R5 extracted first; R1 deleted
+    changes = _by_title(client, headers, opp["id"])[SAP]["answer"]["requirement_changes"]
+    assert changes == [{"requirement_id": added["id"], "label": "R6", "kind": "added"}]

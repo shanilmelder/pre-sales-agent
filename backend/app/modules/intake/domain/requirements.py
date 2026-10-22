@@ -1,6 +1,7 @@
 """Requirement rules (Story 2.5 Part A): classifications, statuses, extraction states and
 error codes, the input budget, and quote resolution; and the reconciliation of a new
-extraction with the active Requirements (Story 2.7). Pure.
+extraction with the active Requirements (Story 2.7), never reviving a deleted one (Story
+2.6). Pure.
 
 `resolve_quote` turns a verbatim quote from the model into Unicode code-point offsets
 `[start, end)` into the Source version's extracted text (Python `str` indices are code
@@ -41,6 +42,9 @@ class RequirementOrigin(StrEnum):
 class RequirementStatus(StrEnum):
     ACTIVE = "active"
     SUPERSEDED = "superseded"
+    """Replaced: by a later extraction (before Story 2.7), or split or merged away (Story 2.6)."""
+    DELETED = "deleted"
+    """Removed by a person with a reason (Story 2.6). Never revived by re-extraction."""
 
 
 class ExtractionStatus(StrEnum):
@@ -240,6 +244,27 @@ def reject_reason(raw: str) -> str:
     return trimmed
 
 
+# --- shaping the list (Story 2.6) -----------------------------------------------------------
+
+MERGE_MIN = 2
+"""The fewest Requirements one merge takes."""
+MERGE_MAX = 20
+"""The most Requirements one merge takes."""
+SPLIT_PARTS = 2
+"""How many Requirements a split makes."""
+
+
+def delete_reason(raw: str) -> str:
+    """Why a person deletes a Requirement: the `reject_reason` rule (trimmed, 1 to
+    `REJECT_REASON_MAX` code points). Raises `ValueError` (with the sentence to show)."""
+    trimmed = raw.strip()
+    if not trimmed:
+        raise ValueError("Give a reason for deleting the Requirement.")
+    if len(trimmed) > REJECT_REASON_MAX:
+        raise ValueError(f"The reason can be at most {REJECT_REASON_MAX} characters.")
+    return trimmed
+
+
 def normalised_text(text: str) -> str:
     """`text` case-folded, with every run of whitespace collapsed to one space and trimmed:
     what the fallback match compares."""
@@ -296,6 +321,9 @@ class ReconcileOutcome(StrEnum):
     """Changed and locked by a human: a pending change."""
     UNCHANGED = "unchanged"
     """Matched, nothing new: nothing is written."""
+    REMOVED = "removed"
+    """Its best match is a Requirement a person deleted, split or merged away (Story 2.6):
+    nothing is written, so re-extraction never revives it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,7 +331,7 @@ class ReconcileStep:
     outcome: ReconcileOutcome
     proposal: ReconcileProposal
     requirement_id: UUID | None
-    """The matched Requirement; None for `add`."""
+    """The matched Requirement (the deleted one for `removed`); None for `add`."""
     new_passages: tuple[PassageKey, ...]
     """The proposal's passages the Requirement doesn't cite yet (overlapping none of its
     passages), in proposal order; every passage for `add`."""
@@ -314,26 +342,34 @@ def _shared(proposal: ReconcileProposal, existing: ExistingRequirement) -> int:
 
 
 def reconcile(
-    proposals: Sequence[ReconcileProposal], existing: Sequence[ExistingRequirement]
+    proposals: Sequence[ReconcileProposal],
+    existing: Sequence[ExistingRequirement],
+    removed: Sequence[ExistingRequirement] = (),
 ) -> tuple[ReconcileStep, ...]:
     """What to do with each proposal (one step per proposal, in proposal order), given the
-    active Requirements, oldest first.
+    active Requirements, oldest first, and the ones a person removed: deleted, split or
+    merged away (Story 2.6).
 
-    Matching is one-to-one. A proposal matches the Requirement it shares the most cited
-    passages with (overlapping spans in the same Source version, or equal normalised text
-    in different versions of the same Source: `PassageKey.overlaps`); the pairs sharing most are
-    matched first, ties going to the oldest Requirement (then the earliest proposal).
-    Failing that, it matches the oldest unmatched Requirement with equal normalised text.
+    Matching is one-to-one, over the active and the removed Requirements together (the
+    removed after the active ones, so an active one wins a tie). A proposal matches the
+    Requirement it shares the most cited passages with (overlapping spans in the same Source
+    version, or equal normalised text in different versions of the same Source:
+    `PassageKey.overlaps`); the pairs sharing most are matched first, ties going to the
+    oldest Requirement (then the earliest proposal). Failing that, it matches the oldest
+    unmatched Requirement with equal normalised text.
 
-    A match is changed when the proposal cites a passage the Requirement doesn't (one
-    sharing none of its passages) and its normalised text or its classification
+    A proposal whose match is a removed Requirement is `removed`: nothing is written. A
+    match with an active one is changed when the proposal cites a passage the Requirement
+    doesn't (one sharing none of its passages) and its normalised text or its classification
     differs; anything else is unchanged. Active Requirements no proposal matches are kept:
     nothing is ever removed."""
+    candidates = [*existing, *removed]
+    gone = len(existing)
     pairs = sorted(
         (
             (-shared, r_index, p_index)
             for p_index, proposal in enumerate(proposals)
-            for r_index, requirement in enumerate(existing)
+            for r_index, requirement in enumerate(candidates)
             if (shared := _shared(proposal, requirement)) > 0
         )
     )
@@ -348,7 +384,7 @@ def reconcile(
         if p_index in matched:
             continue
         wanted = normalised_text(proposal.text)
-        for r_index, requirement in enumerate(existing):
+        for r_index, requirement in enumerate(candidates):
             if r_index not in taken and normalised_text(requirement.text) == wanted:
                 matched[p_index] = r_index
                 taken.add(r_index)
@@ -360,7 +396,10 @@ def reconcile(
         if found is None:
             steps.append(ReconcileStep(ReconcileOutcome.ADD, proposal, None, proposal.passages))
             continue
-        requirement = existing[found]
+        requirement = candidates[found]
+        if found >= gone:
+            steps.append(ReconcileStep(ReconcileOutcome.REMOVED, proposal, requirement.id, ()))
+            continue
         new: list[PassageKey] = []
         for p in proposal.passages:
             if p not in new and not any(p.overlaps(e) for e in requirement.passages):

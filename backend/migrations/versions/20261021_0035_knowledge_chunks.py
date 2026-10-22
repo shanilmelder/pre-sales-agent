@@ -12,11 +12,8 @@
   `((embedding::vector(1024)) vector_cosine_ops) WHERE embedding_model = 'bge-m3'`. Search
   queries use the same cast and filter, so vectors of different models are never compared.
 
-Revises 0033 for now: open PR #58 owns `0034_requirement_lifecycle`; rechain this one onto it
-once #58 merges.
-
 Revision ID: 0035_knowledge_chunks
-Revises: 0033_conflict_agent
+Revises: 0034_requirement_lifecycle
 Create Date: 2026-10-21
 """
 
@@ -28,7 +25,7 @@ from pgvector.sqlalchemy import VECTOR
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0035_knowledge_chunks"
-down_revision: str | None = "0033_conflict_agent"
+down_revision: str | None = "0034_requirement_lifecycle"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -1468,8 +1468,8 @@ describe("/opportunities/[id] workspace", () => {
     const R2_ID = "00000000-0000-7000-8000-0000000000f2";
     const REQUIREMENTS = {
       items: [
-        { id: R1_ID, text: "[REQ ONE]", classification: "integration", version: 1 },
-        { id: R2_ID, text: "[REQ TWO]", classification: "security", version: 1 },
+        { id: R1_ID, number: 1, text: "[REQ ONE]", classification: "integration", version: 1 },
+        { id: R2_ID, number: 2, text: "[REQ TWO]", classification: "security", version: 1 },
       ],
       extraction: null,
       can_start_extraction: false,
