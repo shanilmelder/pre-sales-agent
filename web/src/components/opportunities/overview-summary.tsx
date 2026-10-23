@@ -746,7 +746,7 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
       title="Agent run"
       extra={
         <>
-          <span className="min-w-0 flex-[999] text-control font-normal text-muted-foreground">
+          <span className="min-w-0 flex-1 text-control font-normal text-muted-foreground">
             Assessments · started{" "}
             <time dateTime={run.created_at} className="text-numeric">
               {formatDateTime(run.created_at)}
