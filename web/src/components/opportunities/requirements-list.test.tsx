@@ -107,10 +107,10 @@ describe("RequirementsList", () => {
       </ShellProviders>,
     );
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(headings).toEqual(["Functional 2", "Non-functional 1", "Commercial 1"]);
+    expect(headings).toEqual(["Functional", "Non-functional", "Commercial"]);
     expect(screen.queryByRole("heading", { name: /Integration|Data|Security/ })).toBeNull();
 
-    const functional = screen.getByRole("region", { name: "Functional 2" });
+    const functional = screen.getByRole("region", { name: "Functional 2 · 0 confirmed" });
     const rows = within(functional).getAllByRole("row");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("[REQUIREMENT 2]")).toBeTruthy();
@@ -239,7 +239,7 @@ describe("RequirementsSection", () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(screen.queryByText("Extracting Requirements")).toBeNull();
-    expect(screen.getByRole("heading", { level: 3, name: "Security 1" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Security 1 · 0 confirmed" })).toBeTruthy();
     expect(screen.getByText("S1 · call.vtt")).toBeTruthy();
 
     await act(async () => {

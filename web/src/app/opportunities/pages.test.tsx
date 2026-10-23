@@ -1327,7 +1327,8 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Requirements"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Requirements" })).toBeTruthy();
-    expect(within(panel).getByRole("heading", { level: 3, name: "Integration 1" })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "Integration" })).toBeTruthy();
+    expect(within(panel).getByRole("region", { name: "Integration 1 · 0 confirmed" })).toBeTruthy();
     expect(within(panel).getByText("[REQUIREMENT]")).toBeTruthy();
     expect(within(panel).getByText("S1 · call.vtt")).toBeTruthy();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();

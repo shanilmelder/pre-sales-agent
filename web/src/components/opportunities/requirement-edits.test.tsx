@@ -149,7 +149,9 @@ describe("editing Requirements inline", () => {
         row_version: 2,
       },
     });
-    await user.tab(); // Add Requirement
+    await user.tab(); // the Category filter
+    await user.tab(); // the State filter
+    await user.tab(); // Add requirement
     await user.tab(); // Confirm all (2)
     await user.tab(); // the list's one tab stop: the first row
     expect(document.activeElement).toBe(row(1));
@@ -169,7 +171,7 @@ describe("editing Requirements inline", () => {
     });
     const saved = await screen.findByRole("button", { name: "Fixed wording." });
     await waitFor(() => expect(document.activeElement).toBe(saved));
-    expect(within(saved.closest('[role="row"]') as HTMLElement).getByText("Edited")).toBeTruthy();
+    expect(within(saved.closest('[role="row"]') as HTMLElement).getByText("· Edited")).toBeTruthy();
   });
 
   it("a saved edit reads the outdated Assessments notice again", async () => {
@@ -514,10 +516,10 @@ describe("the inspector", () => {
     await waitFor(() => expect(within(inspector).getByText("Edited")).toBeTruthy());
     expect(within(inspector).getByRole("button", { name: "Edit Requirement text" })).toBeTruthy();
 
-    await user.click(within(inspector).getByRole("button", { name: "Confirm" }));
+    await user.click(within(inspector).getByRole("button", { name: "Confirm requirement" }));
     expect(confirmRequirement).toHaveBeenCalledWith(expect.objectContaining({ rowVersion: 2 }));
     await waitFor(() => expect(within(inspector).getByText("Confirmed")).toBeTruthy());
-    expect(within(inspector).queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: "Confirm requirement" })).toBeNull();
     expect(await axeViolations(document.body)).toEqual([]);
   });
 });
@@ -539,7 +541,12 @@ describe("for those who may not edit (sales representatives, readers)", () => {
         name: "Edit Requirement text",
       }),
     ).toBeNull();
-    expect(within(inspector).queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: "Confirm requirement" })).toBeNull();
+    // No row or inspector actions, and no Add requirement.
+    for (const name of ["Edit", "Split", "Merge", "Add requirement"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    expect(within(inspector).queryByRole("group", { name: "Actions" })).toBeNull();
   });
 
   it("a 403 says who may edit and re-reads the list", async () => {
