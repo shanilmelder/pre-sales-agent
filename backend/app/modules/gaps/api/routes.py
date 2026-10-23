@@ -338,7 +338,12 @@ async def change_gap_impact(
     "/gaps/{gap_id}/dismiss",
     operation_id="dismiss_gap",
     responses=_gap_responses(
-        _NOT_OPEN_409,
+        {
+            "description": "The Gap is not open: it was dismissed, converted or superseded "
+            "(`gap_not_open`), or it is a mandatory Gap whose Checklist still applies "
+            "(`gap_mandatory`); nothing changed",
+            "content": PROBLEM_CONTENT,
+        },
         "an unknown reason kind, no note for `other`, or a note longer than 500 characters "
         "once trimmed",
     ),
@@ -354,7 +359,8 @@ async def dismiss_gap(
 ) -> Gap:
     """Dismiss an open Gap as `not_relevant` (note optional) or `other` (note required). A
     later Gap detection never reopens it, and drops a Gap with the same category and title.
-    The owner and collaborators, except sales representatives."""
+    A mandatory Gap only once its Checklist no longer applies. The owner and collaborators,
+    except sales representatives."""
     dismissed = await gaps.dismiss_gap(uow, actor, opportunity_id, gap_id, body, if_match)
     return _gap_with_etag(response, dismissed)
 

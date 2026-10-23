@@ -26,6 +26,7 @@ from app.platform.db import Base
 
 _NOW = text("now()")
 _FALSE = text("false")
+_TRUE = text("true")
 """`QuestionRow` has a `text` column, which shadows `text()` inside its class body."""
 
 
@@ -86,7 +87,9 @@ class DetectionRow(Base):
 
 
 class GapRow(RowVersioned, Base):
-    """A Gap of an Opportunity. Detection inserts `open`, `detected` Gaps, and a later
+    """A Gap of an Opportunity. Story 4.2: the detection also raises `mandatory_checklist`
+    Gaps, unique per (Opportunity, Checklist id, item id), which are never superseded.
+    Detection inserts `open`, `detected` Gaps, and a later
     detection marks them `superseded`. Accepting an Assumption made from an `open` Gap marks it
     `converted`, recording the Assumption's kind in `converted_to` (Story 8.4). Story 4.4: a
     person may change an `open` Gap's impact, dismiss it (`dismiss_*` / `dismissed_*`, set only
@@ -104,7 +107,7 @@ class GapRow(RowVersioned, Base):
             name="category",
         ),
         CheckConstraint("impact IN ('high', 'medium', 'low')", name="impact"),
-        CheckConstraint("origin IN ('detected')", name="origin"),
+        CheckConstraint("origin IN ('detected', 'mandatory_checklist')", name="origin"),
         CheckConstraint(
             "status IN ('open', 'superseded', 'converted', 'dismissed', 'answered')",
             name="status",
@@ -122,6 +125,14 @@ class GapRow(RowVersioned, Base):
         ),
         CheckConstraint(DISMISSED_FIELDS, name="dismissed_fields"),
         CheckConstraint(ANSWERED_FIELDS, name="answered_fields"),
+        Index(
+            "uq_gaps_gaps_mandatory_item",
+            "opportunity_id",
+            text("(trigger ->> 'checklist_id')"),
+            text("(trigger ->> 'item_id')"),
+            unique=True,
+            postgresql_where=text("origin = 'mandatory_checklist'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -146,6 +157,13 @@ class GapRow(RowVersioned, Base):
     answered_on: Mapped[date | None] = mapped_column(Date)
     answered_by: Mapped[UUID | None] = mapped_column(Uuid)
     answer_passage_id: Mapped[UUID | None] = mapped_column(Uuid)
+    checklist_applies: Mapped[bool] = mapped_column(Boolean, server_default=_TRUE)
+    """Story 4.2: for a `mandatory_checklist` Gap in any status, whether its Checklist item
+    is still a mandatory item of an applicable version (set by every detection); true for
+    every other Gap."""
+    why_entry_id: Mapped[UUID | None] = mapped_column(Uuid)
+    """Story 4.2: the catalogue entry (Integration Type or Work Package) the Gap's
+    `why_it_matters` names, from its Checklist item; no foreign key (AD-2)."""
 
 
 class GapHistoryRow(Base):
@@ -225,6 +243,8 @@ class QuestionRow(RowVersioned, Base):
     answered_on: Mapped[date | None] = mapped_column(Date)
     answered_by: Mapped[UUID | None] = mapped_column(Uuid)
     answer_passage_id: Mapped[UUID | None] = mapped_column(Uuid)
+    from_checklist: Mapped[bool] = mapped_column(Boolean, server_default=_FALSE)
+    """Story 4.2: drafted from a mandatory Checklist item's wording, not by the agent."""
 
 
 class AnswerMatchRow(RowVersioned, Base):

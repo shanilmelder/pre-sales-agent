@@ -32,6 +32,7 @@ import {
   type GapFormOutcome,
   type QuestionField,
 } from "@/components/opportunities/gap-inspector";
+import { MandatoryLabel } from "@/components/knowledge/mandatory-label";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { Pill } from "@/components/ui/pill";
@@ -51,6 +52,7 @@ import {
   approveSelectedLabel,
   APPROVED,
   categoryLabel,
+  checklistNoLongerApplies,
   dismissReasonLabel,
   DETECTING,
   DETECTION_POLL_LIMIT_MS,
@@ -63,11 +65,13 @@ import {
   gapStatus,
   impactLabel,
   isDetecting,
+  isMandatory,
   isSent,
   markAllSentLabel,
   markSelectedSentLabel,
   NO_ANSWER,
   NO_GAPS,
+  NO_LONGER_APPLIES,
   NO_GAPS_BODY,
   OPEN_REQUIREMENTS,
   NONE_FOUND,
@@ -105,6 +109,8 @@ export const EDIT_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can edit and approve questions.";
 export const GAP_NOT_OPEN =
   "This Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection.";
+export const GAP_MANDATORY =
+  "A mandatory Gap can be dismissed only once its Checklist no longer applies.";
 export const GAP_NOT_DISMISSED =
   "This Gap is no longer dismissed or answered: someone reopened it.";
 export const GAP_EDIT_NOT_ALLOWED =
@@ -134,8 +140,10 @@ const actionClass =
  * low, then lists converted and dismissed ones in the same order). Each row shows the Gap's
  * status icon (Open, Converted or Dismissed, with its label for assistive technology), the
  * title, the impact label with its 3-segment bar, what it affects (its category), its trigger
- * ("Clarification Agent · {category}") and the question's "Draft" or "Approved" pill (none
- * when the viewer may not see the question). A converted Gap's row is greyed out and
+ * ("Clarification Agent · {category}", or "Checklist · {name} v{n}") and the question's
+ * "Draft" or "Approved" pill (none when the viewer may not see the question). Story 4.2: a
+ * mandatory Gap shows the "Mandatory" label, and "Checklist no longer applies" once its
+ * Checklist no longer applies. A converted Gap's row is greyed out and
  * labelled "Converted to Condition" or "Converted to Contingency" (Story 8.4) instead of the
  * pill; a dismissed Gap's row is greyed out (Story 4.4). Both keep their focus and keys.
  *
@@ -311,7 +319,13 @@ export function GapsList({
                         {possibleAnswerLabel(item.answer_suggestions[0])}
                       </span>
                     ) : null}
+                    {item.status === "open" && checklistNoLongerApplies(item) ? (
+                      <span className="ml-2 text-meta text-muted-foreground">
+                        {NO_LONGER_APPLIES}
+                      </span>
+                    ) : null}
                   </span>
+                  {isMandatory(item) ? <MandatoryLabel /> : null}
                   <span className={greyed ? "opacity-60" : undefined}>
                     <ImpactBar impact={item.impact} />
                   </span>
@@ -1057,6 +1071,10 @@ export function GapsSection({
       case "gap-not-reopenable":
         say(GAP_NOT_DISMISSED);
         void refresh();
+        return "failed";
+      case "gap-mandatory":
+        say(GAP_MANDATORY);
+        void refresh(); // its Checklist applies again: Dismiss goes away
         return "failed";
       case "forbidden":
         say(GAP_EDIT_NOT_ALLOWED);

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from app.modules.gaps.adapters import repository as repo
 from app.modules.gaps.adapters.repository import GapRecord
-from app.modules.gaps.domain.gaps import impact_rank
+from app.modules.gaps.domain.gaps import GapOrigin, impact_rank
 from app.platform.uow import UnitOfWork
 
 
@@ -30,7 +30,15 @@ class GapSummary:
 
 
 def _ranked(records: list[GapRecord]) -> list[GapRecord]:
-    return sorted(records, key=lambda g: (impact_rank(g.impact), g.created_at, g.id))
+    return sorted(
+        records,
+        key=lambda g: (
+            impact_rank(g.impact),
+            g.origin != GapOrigin.MANDATORY_CHECKLIST,
+            g.created_at,
+            g.id,
+        ),
+    )
 
 
 async def _summaries(uow: UnitOfWork, records: list[GapRecord]) -> list[GapSummary]:

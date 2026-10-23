@@ -326,7 +326,9 @@ class IntakeRequirementChangeRejected(TracePayload):
 @register
 class GapsGapRaised(TracePayload):
     """A detection raised a Gap. Subject: the Gap (`gaps.gap`). Actor: the agent
-    (`clarification_agent@<semver>`). `requirement_ids`: the Requirements it relates to."""
+    (`clarification_agent@<semver>`), or for a mandatory Gap (Story 4.2, `origin`
+    `mandatory_checklist`) the system (`gaps.detect_gaps`). `requirement_ids`: the
+    Requirements it relates to (none for a mandatory Gap)."""
 
     event_type: ClassVar[str] = "gaps.gap.raised"
 
@@ -334,6 +336,7 @@ class GapsGapRaised(TracePayload):
     category: str
     impact: str
     requirement_ids: list[str]
+    origin: str = "detected"
 
 
 @register

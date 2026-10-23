@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
+import { MandatoryLabel } from "@/components/knowledge/mandatory-label";
 import { Chip } from "@/components/ui/chip";
 import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
@@ -15,17 +16,22 @@ import {
   answerRecordedBy,
   answerTextProblem,
   approvedLabel,
+  canDismiss,
   categoryLabel,
+  checklistNoLongerApplies,
   DISMISS_REASONS,
   dismissedLabel,
+  FROM_CHECKLIST,
   gapStatus,
   historyAction,
   historyByline,
   IMPACTS,
   INJECTION_SUSPECTED,
   isAnswerable,
+  isMandatory,
   isSent,
   localToday,
+  NO_LONGER_APPLIES,
   noteProblem,
   possibleAnswerLabel,
   questionStatus,
@@ -91,7 +97,10 @@ export type QuestionEditing = {
  * **Approve**; an approved one says who approved it and when. With `gapEdit`, an open Gap has
  * an impact select with a required reason and a **Dismiss** form ("Not relevant" / "Other"
  * with a note); a dismissed one says why, by whom and when, and has **Reopen** with a reason.
- * Convert is not offered here (Epic 8 does it from the Estimate). With `send` (Story 4.6), an
+ * Story 4.2: a mandatory Gap shows the "Mandatory" label (and "Checklist no longer applies"
+ * once it doesn't), its question "from Checklist", no Related Requirements, and no **Dismiss**
+ * while its Checklist still applies. Convert is not offered here (Epic 8 does it from the
+ * Estimate). With `send` (Story 4.6), an
  * approved question of an open Gap has **Mark sent** (a date, today by default) and a sent one
  * **No answer**; a sent question says "Sent {date} by {name}" and can't be edited or approved.
  * Story 4.7: with `send`, a sent or "No answer" question of an open Gap has **Record answer**
@@ -165,6 +174,14 @@ export function GapInspector({
       <div className="flex flex-col gap-1">
         <h4 className="text-label text-muted-foreground">Trigger</h4>
         <p className="text-body">{triggerLabel(gap)}</p>
+        {isMandatory(gap) ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <MandatoryLabel />
+            {gap.status === "open" && checklistNoLongerApplies(gap) ? (
+              <span className="text-meta text-muted-foreground">{NO_LONGER_APPLIES}</span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1">
@@ -176,22 +193,29 @@ export function GapInspector({
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <h4 className="text-label text-muted-foreground">Related Requirements</h4>
-        <ul className="flex flex-col gap-1.5">
-          {gap.requirements.map((requirement) => (
-            <li key={requirement.id} className="flex items-baseline gap-2">
-              <Chip className="shrink-0">{requirement.label}</Chip>
-              <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {gap.requirements.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-label text-muted-foreground">Related Requirements</h4>
+          <ul className="flex flex-col gap-1.5">
+            {gap.requirements.map((requirement) => (
+              <li key={requirement.id} className="flex items-baseline gap-2">
+                <Chip className="shrink-0">{requirement.label}</Chip>
+                <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {question ? (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between gap-2">
-            <h4 className="text-label text-muted-foreground">Clarification Question</h4>
+            <h4 className="text-label text-muted-foreground">
+              Clarification Question
+              {question.from_checklist ? (
+                <span className="ml-2 font-normal">{FROM_CHECKLIST}</span>
+              ) : null}
+            </h4>
             <QuestionPill status={question.status} />
           </div>
           <p className="text-meta text-muted-foreground">{statusSince(question)}</p>
@@ -341,7 +365,7 @@ export function GapInspector({
 
       {gap.answer ? <AnswerSection answer={gap.answer} opportunityId={opportunityId} /> : null}
 
-      {gapEdit && gap.status === "open" ? (
+      {gapEdit && gap.status === "open" && canDismiss(gap) ? (
         <div className="flex flex-col gap-1.5">
           <h4 className="text-label text-muted-foreground">Dismiss</h4>
           <DismissForm edit={gapEdit} />

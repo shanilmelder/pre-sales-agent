@@ -309,10 +309,33 @@ export function gapStatus(status: GapStatus): {
     : GAP_STATUSES.open;
 }
 
-/** "Clarification Agent · Data volumes": what raised the Gap. */
-export function triggerLabel(gap: Pick<Gap, "category">): string {
+/** What raised the Gap: "Clarification Agent · Data volumes", or for a mandatory Checklist
+ * item (Story 4.2) "Checklist · Security baseline v2". */
+export function triggerLabel(gap: Pick<Gap, "category" | "trigger">): string {
+  if (gap.trigger.kind === "checklist_item") {
+    return `Checklist · ${gap.trigger.checklist_name} v${gap.trigger.version}`;
+  }
   return `Clarification Agent · ${categoryLabel(gap.category)}`;
 }
+
+/** Raised from a mandatory Checklist item (Story 4.2). */
+export function isMandatory(gap: Pick<Gap, "origin">): boolean {
+  return gap.origin === "mandatory_checklist";
+}
+
+/** A mandatory Gap whose Checklist no longer applies: it is kept, and may be dismissed. */
+export function checklistNoLongerApplies(gap: Pick<Gap, "origin" | "checklist_applies">): boolean {
+  return isMandatory(gap) && !gap.checklist_applies;
+}
+
+/** Whether Dismiss is offered: never for a mandatory Gap while its Checklist still applies. */
+export function canDismiss(gap: Pick<Gap, "origin" | "checklist_applies">): boolean {
+  return !isMandatory(gap) || !gap.checklist_applies;
+}
+
+export const NO_LONGER_APPLIES = "Checklist no longer applies";
+/** Next to a question drafted from the Checklist item's wording (Story 4.2). */
+export const FROM_CHECKLIST = "from Checklist";
 
 /** "9 Gaps · 7 open · ranked by impact". */
 export function gapsSummary(items: readonly Pick<Gap, "status">[]): string {
@@ -395,14 +418,17 @@ export function historyByline(entry: GapHistoryEntry): string {
 
 const STATUS_ORDER: Record<string, number> = { open: 0, answered: 1, converted: 2, dismissed: 3 };
 
-/** Open Gaps, then answered, then converted, then dismissed; each ranked by impact, then oldest
- * first (the API's order, kept after a local change). */
+/** Open Gaps, then answered, then converted, then dismissed; each ranked by impact, mandatory
+ * first within an impact (Story 4.2), then oldest first (the API's order, kept after a local
+ * change). */
 export function rankGaps(items: readonly Gap[]): Gap[] {
   const rank = (impact: Impact) => IMPACTS.findIndex((i) => i.value === impact);
+  const mandatory = (gap: Gap) => (isMandatory(gap) ? 0 : 1);
   return [...items].sort(
     (a, b) =>
       (STATUS_ORDER[a.status] ?? 4) - (STATUS_ORDER[b.status] ?? 4) ||
       rank(a.impact) - rank(b.impact) ||
+      mandatory(a) - mandatory(b) ||
       a.created_at.localeCompare(b.created_at) ||
       a.id.localeCompare(b.id),
   );

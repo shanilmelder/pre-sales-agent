@@ -225,3 +225,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-assessments-tab.md`
   summary: Findings tables (Assessments, and the pattern in Conflicts and Trace) put a whole row in one gridcell button, so screen readers read Severity, Type, Finding and Raised by as one run-on string with no column headers.
   evidence: Review of the Assessments redesign; the structure is inherited from `AssessmentFindingList` and `RedTeamList`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-deterministic-mandatory-gaps.md`
+  summary: clarification_agent can propose a Gap that duplicates an open mandatory Checklist Gap; dedupe agent candidates against open mandatory Gaps (or pass them to the agent) when the Story 4.3 Checklist-aware remainder lands.
+  evidence: maybe-false — `_without_settled` only dedupes against dismissed/answered Gaps; settle by running detection on an Opportunity with a mandatory "SSO" item and Requirements mentioning SSO and checking for a near-duplicate detected Gap.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-deterministic-mandatory-gaps.md`
+  summary: Migration 0037 downgrade deletes mandatory Gaps (leaving Assumption `origin_ref` ids dangling) and has no downgrade test.
+  evidence: `downgrade()` runs `DELETE FROM gaps_gaps WHERE origin = 'mandatory_checklist'`; no test seeds a mandatory Gap before downgrading. Prod-hardening track, skipped for now.

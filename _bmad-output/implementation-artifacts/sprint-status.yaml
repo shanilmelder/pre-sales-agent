@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 10-22-2026 21:50
+last_updated: 10-23-2026 20:27
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -72,7 +72,7 @@ development_status:
 
   epic-4: in-progress
   4-1-integration-types-in-scope-and-applicable-checklists: backlog
-  4-2-deterministic-gaps-from-mandatory-checklist-items: backlog
+  4-2-deterministic-gaps-from-mandatory-checklist-items: review
   4-3-detect-gaps-and-draft-clarification-questions-with-the-clari: done
   4-4-gaps-tab-with-ranked-gap-cards: done
   4-5-edit-merge-drop-and-approve-clarification-questions: done
