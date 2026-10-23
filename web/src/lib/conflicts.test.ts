@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  agentPillLabel,
+  conflictNote,
+  headerCounts,
   openCountLabel,
   positionRole,
-  positionSource,
-  positionsSummary,
+  positionVersion,
+  resolvedLine,
+  resolvedTag,
+  rowSubline,
   sections,
   statusInfo,
   typeLabel,
@@ -40,33 +45,62 @@ const ESTIMATE = position({
 });
 
 describe("conflicts display", () => {
-  it("names positions by role and source version", () => {
+  it("names positions by role", () => {
     expect(positionRole(position({}))).toBe("Engineering");
     expect(positionRole(position({ agent: "pm_agent" }))).toBe("PM");
-    expect(positionSource(position({}))).toBe("Engineering Assessment v2");
-    expect(positionSource(position({ agent: "security_agent", assessment_version: 1 }))).toBe(
-      "Security Assessment v1",
-    );
     expect(positionRole(ESTIMATE)).toBe("Estimate v3");
-    expect(positionSource(ESTIMATE)).toBe("Estimate v3");
   });
 
-  it("summarises the positions in a row", () => {
-    expect(
-      positionsSummary([
-        position({}),
-        position({ position: 2, agent: "pm_agent", summary: "Not sized", value: null }),
-      ]),
-    ).toBe("Engineering: 24 h · PM: not sized");
-    expect(
-      positionsSummary([
-        position({ summary: "Proceed", value: null }),
-        position({ position: 2, agent: "security_agent", summary: "Do not proceed", value: null }),
-      ]),
-    ).toBe("Engineering: proceed · Security: do not proceed");
-    expect(positionsSummary([position({ summary: "60 h" }), ESTIMATE])).toBe(
-      "Engineering: 60 h · Estimate v3: 131 h",
+  it("labels the position cards' agent pill and version", () => {
+    expect(agentPillLabel(position({}))).toBe("Engineering Agent");
+    expect(agentPillLabel(position({ agent: "pm_agent" }))).toBe("PM Agent");
+    expect(agentPillLabel(ESTIMATE)).toBe("Estimate v3");
+    expect(positionVersion(position({}))).toBe("Assessment v2");
+    expect(positionVersion(position({ assessment_version: null }))).toBeNull();
+    expect(positionVersion(ESTIMATE)).toBeNull();
+  });
+
+  it("builds the header counts, row sub-lines and the decision note", () => {
+    const c = (id: string, status: Conflict["status"]) => ({ id, status }) as Conflict;
+    expect(headerCounts([c("a", "open"), c("b", "escalated"), c("c", "resolved")])).toBe(
+      "2 open · 1 resolved",
     );
+    expect(headerCounts([])).toBe("0 open · 0 resolved");
+    const r1 = { id: "r", version: 1, label: "R1", excerpt: "" };
+    expect(rowSubline({ type: "effort", requirement: r1, detected_by: "rule" })).toBe("Effort · R1");
+    expect(rowSubline({ type: "security", requirement: null, detected_by: "rule" })).toBe(
+      "Security",
+    );
+    expect(rowSubline({ type: "architecture", requirement: r1, detected_by: "semantic" })).toBe(
+      "Architecture · R1 · Detected from text",
+    );
+    expect(conflictNote({ type: "effort", severity: "medium", detected_by: "rule" })).toBe(
+      "Effort Conflict · Medium severity",
+    );
+    expect(conflictNote({ type: "scope", severity: "critical", detected_by: "semantic" })).toBe(
+      "Scope Conflict · Critical severity · Detected from text",
+    );
+  });
+
+  it("tags and describes a resolved row", () => {
+    expect(resolvedTag({ resolved_by_name: "Alex" })).toBe("Resolved by Alex");
+    expect(resolvedTag({ resolved_by_name: null })).toBe("No longer present");
+    const base = {
+      status: "resolved",
+      resolved_by_name: null,
+      entered_position: null,
+      chosen_position: null,
+      positions: [position({})],
+      resolution_reason: "No longer present in PM Assessment v2",
+    } as unknown as Conflict;
+    expect(resolvedLine(base)).toBe("No longer present in PM Assessment v2");
+    expect(resolvedLine({ ...base, resolved_by_name: "Alex", chosen_position: 1 })).toBe(
+      "Engineering's position, 24 h",
+    );
+    expect(
+      resolvedLine({ ...base, resolved_by_name: "Alex", entered_position: "In scope: PM in v2" }),
+    ).toBe("In scope: PM in v2");
+    expect(resolvedLine({ ...base, resolution_reason: null })).toBeNull();
   });
 
   it("labels types and statuses, each status with an icon", () => {

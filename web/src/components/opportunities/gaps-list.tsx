@@ -1,7 +1,14 @@
 "use client";
 
-import { CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import {
   approveAllClarificationQuestions,
@@ -29,9 +36,13 @@ import {
   GapInspector,
   MarkSentForm,
   QuestionPill,
+  TriggerPill,
   type GapFormOutcome,
   type QuestionField,
 } from "@/components/opportunities/gap-inspector";
+import { GapsFilters } from "@/components/opportunities/gaps-filters";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { Pill } from "@/components/ui/pill";
@@ -51,16 +62,20 @@ import {
   approveSelectedLabel,
   APPROVED,
   categoryLabel,
+  CLARIFICATION_AGENT,
+  CLEAR_FILTERS,
   dismissReasonLabel,
   DETECTING,
   DETECTION_POLL_LIMIT_MS,
   DETECTION_POLL_MS,
   detectionFailure,
+  filterGaps,
   gapCount,
   gapsChangedAnnouncement,
   GAPS_FALLBACK_POLL_MS,
   gapsSummary,
   gapStatus,
+  hasGapFilters,
   impactLabel,
   isDetecting,
   isSent,
@@ -68,6 +83,8 @@ import {
   markSelectedSentLabel,
   NO_ANSWER,
   NO_GAPS,
+  NO_FILTER_MATCH,
+  NO_GAP_FILTERS,
   NO_GAPS_BODY,
   OPEN_REQUIREMENTS,
   NONE_FOUND,
@@ -79,12 +96,12 @@ import {
   STILL_DETECTING,
   toApprove,
   toSend,
-  triggerLabel,
   type AnswerSuggestion,
   type ClarificationQuestion,
   type Detection,
   type DismissReasonKind,
   type Gap,
+  type GapFilters,
   type GapList,
   type Impact,
 } from "@/lib/gaps";
@@ -127,25 +144,31 @@ export const ANSWER_NOT_ALLOWED = "Only the owner and collaborators can record a
 export const SUGGESTION_GONE = "This suggested answer is no longer available.";
 const FIELD_NAMES: Record<QuestionField, string> = { text: "Question", topic: "Topic" };
 
-const actionClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
+/** The table's columns: the checkbox (only with select rights), impact, the Gap, the
+ * question. Below `md` the rows stack (the checkbox keeps its own column). */
+const GRID_SELECTABLE =
+  "grid-cols-[28px_minmax(0,1fr)] md:grid-cols-[28px_112px_minmax(0,1fr)_120px]";
+const GRID_PLAIN = "grid-cols-1 md:grid-cols-[112px_minmax(0,1fr)_120px]";
 
-/** The Gaps as 32px card rows, in the order given (the API ranks the open ones high, medium,
- * low, then lists converted and dismissed ones in the same order). Each row shows the Gap's
- * status icon (Open, Converted or Dismissed, with its label for assistive technology), the
- * title, the impact label with its 3-segment bar, what it affects (its category), its trigger
- * ("Clarification Agent · {category}") and the question's "Draft" or "Approved" pill (none
- * when the viewer may not see the question). A converted Gap's row is greyed out and
- * labelled "Converted to Condition" or "Converted to Contingency" (Story 8.4) instead of the
- * pill; a dismissed Gap's row is greyed out (Story 4.4). Both keep their focus and keys.
+/** The Gaps as a table card (Gaps tab redesign): a header row of meta labels on the alt
+ * surface, then one grid row per Gap, in the order given (the API ranks the open ones high,
+ * medium, low, then lists answered, converted and dismissed ones in the same order). Each row
+ * shows the checkbox (with `onToggle`), the impact bar coloured by impact, the title with a meta
+ * line "{category} · Clarification Agent" (and the answer or possible-answer hint), and the
+ * question's pill (none when the viewer may not see the question). A converted Gap's row is
+ * greyed out and labelled "Converted to Condition" or "Converted to Contingency" (Story 8.4)
+ * instead of the pill; a dismissed Gap's row is greyed out with "Dismissed · {reason}" (Story
+ * 4.4). The opened row has the primary tint; otherwise an open High-impact Gap has the blocker
+ * tint and a 3px blocker bar on its left.
  *
  * The list is one Tab stop (roving tabindex: the last focused, else the opened, else the
- * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows, and
- * Enter, Space or a click opens the row (`aria-current`). With `onEdit`, `e` (single-key
- * shortcuts on) on a row opens it with its question text being edited. With `onToggle`
- * (Story 4.4), a checkbox column appears and `x` (single-key shortcuts on) toggles the focused
- * row's selection (`aria-selected`); Esc clears the selection while the inspector is
- * closed. */
+ * first row); each row's open button has a stretched hit area, so a click anywhere opens it.
+ * j/k (with single-key shortcuts on) or the arrow keys move between rows, and Enter, Space or a
+ * click opens the row (`aria-current`). With `onEdit`, `e` (single-key shortcuts on) on a row
+ * opens it with its question text being edited. With `onToggle` (Story 4.4), a checkbox column
+ * appears and `x` (single-key shortcuts on) toggles the focused row's selection
+ * (`aria-selected`); Esc clears the selection while the inspector is closed. With `empty`, it
+ * shows in the card instead of rows when `items` is empty (a filter matched nothing). */
 export function GapsList({
   items,
   selectedId = null,
@@ -155,6 +178,7 @@ export function GapsList({
   onEdit,
   onToggle,
   onClearSelection,
+  empty,
 }: {
   items: readonly Gap[];
   /** The opened Gap. */
@@ -170,6 +194,8 @@ export function GapsList({
   /** `x` on a row or its checkbox; left out for those who may not approve questions. */
   onToggle?: (item: Gap) => void;
   onClearSelection?: () => void;
+  /** Shown in the card when there are no rows. */
+  empty?: ReactNode;
 }) {
   const { singleKeyShortcuts } = useShell();
   const container = useRef<HTMLDivElement>(null);
@@ -178,6 +204,9 @@ export function GapsList({
     [focusedId, selectedId].find((id) => id !== null && items.some((i) => i.id === id)) ??
     items[0]?.id;
   const selectable = onToggle !== undefined;
+  const grid = selectable ? GRID_SELECTABLE : GRID_PLAIN;
+  // Below `md` the cells after the checkbox stack in its second column.
+  const cell = selectable ? "col-start-2 md:col-start-auto" : "";
 
   function rowItem(target: EventTarget): Gap | undefined {
     const rowId =
@@ -227,125 +256,144 @@ export function GapsList({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <Card className="overflow-hidden">
       <div
         aria-hidden="true"
-        className="flex items-center gap-3 border-b border-border px-1 pb-1 text-meta text-muted-foreground"
+        className={`hidden gap-3 border-b border-border bg-surface-alt px-4 py-2 text-label text-text-secondary md:grid ${grid}`}
       >
-        {selectable ? <span className="w-4 shrink-0" /> : null}
-        <span className="w-4 shrink-0" />
-        <span className="min-w-0 flex-1">Gap</span>
-        <span className="w-[4.75rem] shrink-0">Impact</span>
-        <span className="hidden w-36 shrink-0 md:block">Affects</span>
-        <span className="hidden w-56 shrink-0 lg:block">Trigger</span>
-        <span className="w-44 shrink-0">Question</span>
+        {selectable ? <span /> : null}
+        <span>Impact</span>
+        <span>Gap · affected area · trigger</span>
+        <span>Question</span>
       </div>
-      <div
-        ref={container}
-        role="grid"
-        aria-label="Gaps"
-        aria-multiselectable={selectable || undefined}
-        onKeyDown={onKeyDown}
-        className="flex flex-col"
-      >
-        {items.map((item) => {
-          const opened = item.id === selectedId;
-          const checked = checkedIds?.has(item.id) ?? false;
-          const converted = item.status === "converted";
-          const dismissed = item.status === "dismissed";
-          const greyed = converted || dismissed;
-          const status = gapStatus(item.status);
-          const StatusIcon = status.icon;
-          return (
-            <div
-              key={item.id}
-              role="row"
-              aria-selected={selectable ? checked : undefined}
-              aria-current={opened || undefined}
-              data-converted={converted ? "" : undefined}
-              data-dismissed={dismissed ? "" : undefined}
-              className={`flex items-center border-b border-border ${
-                opened ? "bg-muted" : checked ? "bg-muted/40" : "hover:bg-muted/60"
-              } ${greyed ? "text-muted-foreground" : ""}`}
-            >
-              {selectable ? (
-                <div role="gridcell" className="flex w-6 shrink-0 justify-center">
-                  <input
-                    type="checkbox"
-                    tabIndex={-1}
-                    checked={checked}
-                    onChange={() => onToggle?.(item)}
-                    aria-label={`Select ${item.title}`}
-                    className="size-3.5 accent-primary"
-                  />
-                </div>
-              ) : null}
-              <div role="gridcell" className="min-w-0 flex-1">
-                <button
-                  type="button"
-                  data-gap-row=""
-                  data-gap-id={item.id}
-                  tabIndex={item.id === tabStopId ? 0 : -1}
-                  onFocus={() => setFocusedId(item.id)}
-                  // A keyboard-activated click has no pointer clicks (detail 0).
-                  onClick={(event) => onOpen?.(item, event.detail === 0)}
-                  className="flex min-h-row w-full items-center gap-3 rounded-sm px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  <span className="inline-flex w-4 shrink-0 justify-center" title={status.label}>
-                    <StatusIcon
-                      aria-hidden="true"
-                      className={`size-3.5 ${greyed ? "text-muted-foreground" : status.tone}`}
-                    />
-                    <span className="sr-only">{status.label}</span>
-                  </span>
-                  <span
-                    className={`min-w-0 flex-1 truncate text-body ${greyed ? "text-muted-foreground" : ""}`}
+      {items.length === 0 && empty ? (
+        empty
+      ) : (
+        <div
+          ref={container}
+          role="grid"
+          aria-label="Gaps"
+          aria-multiselectable={selectable || undefined}
+          onKeyDown={onKeyDown}
+          className="flex flex-col"
+        >
+          {items.map((item, index) => {
+            const opened = item.id === selectedId;
+            const checked = checkedIds?.has(item.id) ?? false;
+            const converted = item.status === "converted";
+            const dismissed = item.status === "dismissed";
+            const greyed = converted || dismissed;
+            const urgent = item.status === "open" && item.impact === "high";
+            const state = opened
+              ? "bg-primary-tint"
+              : checked
+                ? "bg-muted/40"
+                : urgent
+                ? "bg-blocker-tint shadow-[inset_3px_0_0_var(--color-blocker)]"
+                : "hover:bg-muted/60";
+            return (
+              <div
+                key={item.id}
+                role="row"
+                aria-selected={selectable ? checked : undefined}
+                aria-current={opened || undefined}
+                data-converted={converted ? "" : undefined}
+                data-dismissed={dismissed ? "" : undefined}
+                data-urgent={urgent && !opened && !checked ? "" : undefined}
+                className={`relative grid items-start gap-x-3 gap-y-2 px-4 py-3 ${grid} ${
+                  index > 0 ? "border-t border-border" : ""
+                } ${state} ${greyed ? "text-muted-foreground" : ""}`}
+              >
+                {selectable ? (
+                  <div
+                    role="gridcell"
+                    className="relative z-10 row-span-3 flex pt-0.5 md:row-span-1"
                   >
+                    <span className="relative inline-flex size-[18px]">
+                      <input
+                        type="checkbox"
+                        tabIndex={-1}
+                        checked={checked}
+                        onChange={() => onToggle?.(item)}
+                        aria-label={`Select ${item.title}`}
+                        className="peer size-[18px] cursor-pointer appearance-none rounded-[5px] border-[1.5px] border-border-strong bg-transparent outline-none checked:border-primary checked:bg-primary focus-visible:ring-2 focus-visible:ring-primary"
+                      />
+                      <CheckIcon
+                        aria-hidden="true"
+                        strokeWidth={3}
+                        className="pointer-events-none absolute inset-0 m-auto size-3 text-primary-foreground opacity-0 peer-checked:opacity-100"
+                      />
+                    </span>
+                  </div>
+                ) : null}
+                <div role="gridcell" className={`flex pt-px ${cell} ${greyed ? "opacity-60" : ""}`}>
+                  <ImpactBar impact={item.impact} coloured />
+                </div>
+                <div role="gridcell" className={`min-w-0 ${cell}`}>
+                  <button
+                    type="button"
+                    data-gap-row=""
+                    data-gap-id={item.id}
+                    tabIndex={item.id === tabStopId ? 0 : -1}
+                    onFocus={() => setFocusedId(item.id)}
+                    // A keyboard-activated click has no pointer clicks (detail 0).
+                    onClick={(event) => onOpen?.(item, event.detail === 0)}
+                    className={`text-left text-body-strong [overflow-wrap:anywhere] outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset ${
+                      greyed ? "text-muted-foreground" : ""
+                    }`}
+                  >
+                    <span className="sr-only">{gapStatus(item.status).label} </span>
                     {item.title}
+                  </button>
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-text-secondary">
+                    <span>{categoryLabel(item.category)}</span>
+                    <span aria-hidden="true">·</span>
+                    <TriggerPill>{CLARIFICATION_AGENT}</TriggerPill>
                     {item.answer ? (
-                      <span className="ml-2 text-meta text-muted-foreground">
-                        {answeredLabel(item.answer.answered_on)}
-                      </span>
+                      <span>{answeredLabel(item.answer.answered_on)}</span>
                     ) : item.answer_suggestions[0] ? (
-                      <span className="ml-2 text-meta text-muted-foreground">
-                        {possibleAnswerLabel(item.answer_suggestions[0])}
-                      </span>
+                      <span>{possibleAnswerLabel(item.answer_suggestions[0])}</span>
                     ) : null}
-                  </span>
-                  <span className={greyed ? "opacity-60" : undefined}>
-                    <ImpactBar impact={item.impact} />
-                  </span>
-                  <span className="hidden w-36 shrink-0 truncate text-meta text-muted-foreground md:block">
-                    {categoryLabel(item.category)}
-                  </span>
-                  <span className="hidden w-56 shrink-0 truncate text-meta text-muted-foreground lg:block">
-                    {triggerLabel(item)}
-                  </span>
-                  <span className="flex w-44 shrink-0">
-                    {converted ? (
-                      <Pill tone="neutral" className="shrink-0">
-                        {convertedLabel(item.converted_to)}
-                      </Pill>
-                    ) : dismissed && item.dismissal ? (
-                      <Pill tone="neutral" className="shrink-0">
-                        {`Dismissed · ${dismissReasonLabel(item.dismissal.reason_kind)}`}
-                      </Pill>
-                    ) : item.question ? (
-                      <QuestionPill status={item.question.status} />
-                    ) : null}
-                  </span>
-                </button>
+                  </p>
+                </div>
+                <div role="gridcell" className={`flex min-w-0 ${cell}`}>
+                  {/* The longer neutral labels wrap inside the 120px column. */}
+                  {converted ? (
+                    <Pill tone="neutral" className="min-w-0 whitespace-normal">
+                      {convertedLabel(item.converted_to)}
+                    </Pill>
+                  ) : dismissed && item.dismissal ? (
+                    <Pill tone="neutral" className="min-w-0 whitespace-normal">
+                      {`Dismissed · ${dismissReasonLabel(item.dismissal.reason_kind)}`}
+                    </Pill>
+                  ) : item.question ? (
+                    <QuestionPill status={item.question.status} />
+                  ) : null}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
   );
 }
 
-/** The key hints under the list. `canSelect` (default `canEdit`): `x` selects rows (Story 4.6:
- * those who may send questions select too). */
+/** The key hints under the card, as one meta line: "j / k move · x select · Enter open · e edit
+ * question · ] inspector", leaving out what the viewer may not do. `canSelect` (default
+ * `canEdit`): `x` selects rows (Story 4.6: those who may send questions select too). */
+export function gapsKeyHints(canEdit: boolean, canSelect: boolean = canEdit): string {
+  return [
+    "j / k move",
+    canSelect ? "x select" : null,
+    "Enter open",
+    canEdit ? "e edit question" : null,
+    "] inspector",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export function GapsKeyHints({
   canEdit,
   canSelect = canEdit,
@@ -353,28 +401,7 @@ export function GapsKeyHints({
   canEdit: boolean;
   canSelect?: boolean;
 }) {
-  const hint = (keys: string[], label: string) => (
-    <span key={label} className="inline-flex items-center gap-1">
-      {keys.map((k) => (
-        <kbd
-          key={k}
-          className="rounded-sm border border-border px-1 text-meta text-muted-foreground"
-        >
-          {k}
-        </kbd>
-      ))}
-      {label}
-    </span>
-  );
-  return (
-    <p className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted-foreground">
-      {hint(["j", "k"], "move")}
-      {canSelect ? hint(["x"], "select") : null}
-      {hint(["Enter"], "open")}
-      {canEdit ? hint(["e"], "edit question") : null}
-      {hint(["Esc"], canSelect ? "close inspector or clear selection" : "close inspector")}
-    </p>
-  );
+  return <p className="text-meta text-text-secondary">{gapsKeyHints(canEdit, canSelect)}</p>;
 }
 
 /** The detection's state above the list: "Detecting Gaps" with a running dot while queued
@@ -418,9 +445,9 @@ export function DetectionStatus({
         {detectionFailure(detection.error_code)}
       </p>
       {canStart ? (
-        <button type="button" disabled={busy} onClick={() => onRetry?.()} className={actionClass}>
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onRetry?.()}>
           {RETRY}
-        </button>
+        </Button>
       ) : null}
       {message ? <span className="text-meta text-destructive">{message}</span> : null}
     </div>
@@ -519,7 +546,17 @@ export function GapsSection({
   const [markSentFor, setMarkSentFor] = useState<Gap[] | null>(null);
   // Multi-select (Story 4.4): Gap ids; ids no longer listed drop out.
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
-  const checkedIds = new Set(list.items.filter((g) => checked.has(g.id)).map((g) => g.id));
+  // Client-side filters (not persisted). A change drops checked rows it hides.
+  const [filters, setFilters] = useState<GapFilters>(NO_GAP_FILTERS);
+  const shown = filterGaps(list.items, filters);
+  // Only shown rows count as checked (a list change may hide a checked row).
+  const checkedIds = new Set(shown.filter((g) => checked.has(g.id)).map((g) => g.id));
+
+  function changeFilters(next: GapFilters) {
+    setFilters(next);
+    const visible = new Set(filterGaps(list.items, next).map((g) => g.id));
+    setChecked((current) => new Set([...current].filter((id) => visible.has(id))));
+  }
 
   // Story 4.7: another person's change arrives over the event stream; the list is read again
   // (unless a local change happened meanwhile) and a count change is announced.
@@ -583,7 +620,11 @@ export function GapsSection({
     returnFocusTo.current = null;
     const active = document.activeElement;
     if (id && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
-      document.querySelector<HTMLElement>(`[data-gap-id="${id}"]`)?.focus();
+      // A filtered-out row isn't rendered: fall back to the grid's tab-stop row.
+      (
+        document.querySelector<HTMLElement>(`[data-gap-id="${id}"]`) ??
+        document.querySelector<HTMLElement>('button[data-gap-row][tabindex="0"]')
+      )?.focus();
     }
   }, [rightPaneOpen]);
 
@@ -1233,60 +1274,76 @@ export function GapsSection({
   const sendable = canSend ? toSend(list.items) : [];
   const selectedToSend = canSend ? toSend(list.items.filter((g) => checkedIds.has(g.id))) : [];
   const toMark = selectedToSend.length > 0 ? selectedToSend : sendable;
+  const filtering = hasGapFilters(filters);
+  const hasActions = selectedToApprove.length > 0 || approvable > 0 || toMark.length > 0;
   return (
     <div className="flex flex-col gap-4" aria-busy={approvingAll || reloading || undefined}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <DetectionStatus
-          detection={list.detection}
-          canStart={list.can_start_detection}
-          busy={busy}
-          message={message}
-          stalled={stalled}
-          onRetry={() => void retry()}
-        />
+      <div className="flex flex-wrap items-center gap-2">
+        {/* With no Gaps the empty card speaks for the tab; the heading stays for structure. */}
+        <h2 className={list.items.length > 0 ? "mr-2 text-section" : "sr-only"}>Gaps</h2>
         {list.items.length > 0 ? (
-          <p className="text-label">
-            {gapsSummary(list.items)}
+          <p className="text-control font-normal text-text-secondary">
+            {gapsSummary(list.items, filtering ? shown.length : undefined)}
           </p>
         ) : null}
-        {selectedToApprove.length > 0 || approvable > 0 || toMark.length > 0 ? (
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="flex-1" />
+        {list.items.length > 0 ? (
+          <GapsFilters items={list.items} filters={filters} onChange={changeFilters} />
+        ) : null}
+        {filtering ? (
+          <Button type="button" variant="ghost" size="sm" onClick={() => changeFilters(NO_GAP_FILTERS)}>
+            {CLEAR_FILTERS}
+          </Button>
+        ) : null}
+        {hasActions ? (
+          <div className="flex flex-wrap items-center gap-2">
             {selectedToApprove.length > 0 ? (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 disabled={locked || busyIds.size > 0}
                 onClick={() => void approveSelected(selectedToApprove)}
-                className={actionClass}
               >
                 {approveSelectedLabel(selectedToApprove.length)}
-              </button>
+              </Button>
             ) : approvable > 0 ? (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 disabled={locked || busyIds.size > 0}
                 onClick={() => void approveAll()}
-                className={actionClass}
               >
                 {approveAllLabel(approvable)}
-              </button>
+              </Button>
             ) : null}
             {toMark.length > 0 ? (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 aria-expanded={markSentFor !== null}
                 disabled={locked || busyIds.size > 0}
                 onClick={() => setMarkSentFor((current) => (current ? null : toMark))}
-                className={actionClass}
               >
                 {selectedToSend.length > 0
                   ? markSelectedSentLabel(selectedToSend.length)
                   : markAllSentLabel(sendable.length)}
-              </button>
+              </Button>
             ) : null}
             {sendable.length > 0 ? <QuestionsExport opportunityId={opportunityId} /> : null}
           </div>
         ) : null}
       </div>
+      <DetectionStatus
+        detection={list.detection}
+        canStart={list.can_start_detection}
+        busy={busy}
+        message={message}
+        stalled={stalled}
+        onRetry={() => void retry()}
+      />
       {markSentFor && markSentFor.length > 0 ? (
         <MarkSentForm
           label="Mark questions sent"
@@ -1322,7 +1379,7 @@ export function GapsSection({
       {list.items.length > 0 ? (
         <>
           <GapsList
-            items={list.items}
+            items={shown}
             selectedId={selected?.id ?? null}
             checkedIds={checkedIds}
             inspectorOpen={rightPaneOpen && selected !== null}
@@ -1330,6 +1387,19 @@ export function GapsSection({
             onEdit={canEdit ? startEdit : undefined}
             onToggle={canSelect ? toggle : undefined}
             onClearSelection={clearSelection}
+            empty={
+              <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+                <p className="text-body text-text-secondary">{NO_FILTER_MATCH}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => changeFilters(NO_GAP_FILTERS)}
+                >
+                  {CLEAR_FILTERS}
+                </Button>
+              </div>
+            }
           />
           <GapsKeyHints canEdit={canEdit} canSelect={canSelect} />
         </>

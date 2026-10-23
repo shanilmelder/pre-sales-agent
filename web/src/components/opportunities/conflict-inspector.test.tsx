@@ -37,7 +37,6 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { LiveRegionProvider } from "../shell/live-region";
-import { RightPane } from "../shell/right-pane";
 import { ShellProviders } from "../shell/shell-context";
 import { ConflictInspector } from "./conflict-inspector";
 import { ConflictsSection } from "./conflicts-list";
@@ -133,7 +132,7 @@ function renderInspector(conflict: Conflict, reviewers = [SAM]) {
 }
 
 const resolveForm = () =>
-  screen.getByRole("form", { name: "Resolve the Conflict" });
+  screen.getByRole("form", { name: "Decide the Conflict" });
 
 beforeEach(() => {
   resolveConflict.mockReset();
@@ -157,7 +156,7 @@ describe("resolving a Conflict", () => {
       screen.getByText("Choose a position, or enter a different one."),
     ).toBeTruthy();
     expect(screen.getByText("Give a reason for the decision.")).toBeTruthy();
-    expect(screen.getByLabelText("Reason").getAttribute("aria-invalid")).toBe(
+    expect(screen.getByLabelText("Reason (required)").getAttribute("aria-invalid")).toBe(
       "true",
     );
     expect(resolveConflict).not.toHaveBeenCalled();
@@ -172,7 +171,7 @@ describe("resolving a Conflict", () => {
     ]);
     await user.click(radios[0]!);
     await user.type(
-      screen.getByLabelText("Reason"),
+      screen.getByLabelText("Reason (required)"),
       "  Matches the interface list.  ",
     );
     await user.click(
@@ -218,7 +217,7 @@ describe("resolving a Conflict", () => {
       screen.getByRole("radio", { name: "A different position" }),
     );
     await user.type(screen.getByLabelText("Hours"), "about two days");
-    await user.type(screen.getByLabelText("Reason"), "Our own figure.");
+    await user.type(screen.getByLabelText("Reason (required)"), "Our own figure.");
     await user.click(
       within(resolveForm()).getByRole("button", { name: "Resolve" }),
     );
@@ -253,7 +252,7 @@ describe("resolving a Conflict", () => {
       screen.getByLabelText("The position"),
       "In scope: PM to size in v2",
     );
-    await user.type(screen.getByLabelText("Reason"), "PM agrees.");
+    await user.type(screen.getByLabelText("Reason (required)"), "PM agrees.");
     await user.click(
       within(resolveForm()).getByRole("button", { name: "Resolve" }),
     );
@@ -272,7 +271,7 @@ describe("resolving a Conflict", () => {
     renderInspector(effortConflict());
 
     await user.click(within(resolveForm()).getAllByRole("radio")[2]!);
-    await user.type(screen.getByLabelText("Reason"), "Keep it.");
+    await user.type(screen.getByLabelText("Reason (required)"), "Keep it.");
     await user.click(
       within(resolveForm()).getByRole("button", { name: "Resolve" }),
     );
@@ -309,32 +308,45 @@ describe("resolving a Conflict", () => {
     );
     expect(screen.queryByRole("form")).toBeNull();
     expect(screen.queryByRole("radio")).toBeNull();
-    expect(screen.queryByText("Escalate to a reviewer")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
   });
 });
 
 describe("escalating a Conflict", () => {
-  it("escalates to a chosen reviewer with a reason", async () => {
+  it("reveals the reviewer select, then escalates with the shared reason", async () => {
     const user = userEvent.setup();
     escalateConflict.mockResolvedValue({
       kind: "ok",
       conflict: effortConflict(),
     });
     const { container } = renderInspector(effortConflict());
+    const escalate = () => within(resolveForm()).getByRole("button", { name: "Escalate" });
 
-    await user.click(screen.getByText("Escalate to a reviewer"));
-    const form = screen.getByRole("form", { name: "Escalate the Conflict" });
-    await user.click(within(form).getByRole("button", { name: "Escalate" }));
+    // Resolve and Escalate share one row with the hint; the select appears on the first press,
+    // clearing a Resolve attempt's errors and switching the hint.
+    expect(screen.getByText("Choose a position, then give a reason.")).toBeTruthy();
+    expect(screen.queryByLabelText("Reviewer")).toBeNull();
+    await user.click(within(resolveForm()).getByRole("button", { name: "Resolve" }));
+    expect(screen.getByText("Choose a position, or enter a different one.")).toBeTruthy();
+    await user.click(escalate());
+    expect(document.activeElement).toBe(screen.getByLabelText("Reviewer"));
+    expect(screen.queryByText("Choose a position, or enter a different one.")).toBeNull();
+    expect(screen.queryByText("Give a reason for the decision.")).toBeNull();
+    expect(screen.getByText("Choose a reviewer, then give a reason.")).toBeTruthy();
+    expect(screen.queryByText("Choose a position, then give a reason.")).toBeNull();
+    expect(escalateConflict).not.toHaveBeenCalled();
+
+    await user.click(escalate());
     expect(screen.getByText("Choose a reviewer.")).toBeTruthy();
+    expect(screen.getByText("Give a reason for the decision.")).toBeTruthy();
+    // Escalating needs no position.
+    expect(screen.queryByText("Choose a position, or enter a different one.")).toBeNull();
     expect(escalateConflict).not.toHaveBeenCalled();
 
     await user.selectOptions(screen.getByLabelText("Reviewer"), SAM.id);
-    await user.type(
-      screen.getByLabelText("Reason for escalating"),
-      "Needs the lead's call.",
-    );
-    await user.click(within(form).getByRole("button", { name: "Escalate" }));
+    await user.type(screen.getByLabelText("Reason (required)"), "Needs the lead's call.");
+    await user.click(escalate());
 
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(escalateConflict).toHaveBeenCalledWith({
@@ -344,7 +356,14 @@ describe("escalating a Conflict", () => {
       reviewerId: SAM.id,
       reason: "Needs the lead's call.",
     });
+    expect(resolveConflict).not.toHaveBeenCalled();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("offers no Escalate without reviewers", () => {
+    renderInspector(effortConflict(), []);
+    expect(within(resolveForm()).getByRole("button", { name: "Resolve" })).toBeTruthy();
+    expect(within(resolveForm()).queryByRole("button", { name: "Escalate" })).toBeNull();
   });
 
   it("shows an escalated Conflict's reviewer and offers only Resolve", () => {
@@ -361,7 +380,7 @@ describe("escalating a Conflict", () => {
     expect(screen.getByText("Escalated to Sam Reviewer")).toBeTruthy();
     expect(screen.getByText(/Needs the lead's call\./)).toBeTruthy();
     expect(resolveForm()).toBeTruthy();
-    expect(screen.queryByText("Escalate to a reviewer")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Escalate" })).toBeNull();
   });
 });
 
@@ -411,6 +430,13 @@ describe("a resolved Conflict", () => {
     ).toBeTruthy();
   });
 
+  it("shows the Conflict's Requirement with its excerpt under the note", () => {
+    renderInspector(effortConflict());
+    const excerpt = screen.getByText("[EXCERPT R2]");
+    expect(excerpt.parentElement!.textContent).toBe("R2[EXCERPT R2]");
+    expect(excerpt.parentElement!.querySelector('[data-slot="chip"]')?.textContent).toBe("R2");
+  });
+
   it("notes an earlier decision on a Conflict raised again", () => {
     renderInspector(
       effortConflict({
@@ -438,7 +464,6 @@ describe("the Conflicts list", () => {
     const { container } = render(
       <ShellProviders singleKeyShortcuts>
         <ConflictsSection initial={view} opportunityId={OPP_ID} />
-        <RightPane />
       </ShellProviders>,
     );
     const row = screen.getByRole("button", {
@@ -487,18 +512,20 @@ function textConflict(overrides: Partial<Conflict> = {}): Conflict {
 }
 
 describe("a Conflict detected from text", () => {
-  it("is tagged in the header and shows each cited Finding's kind and title above its stance", async () => {
+  it("is named in the note and shows each cited Finding's title as the basis line", async () => {
     const { container } = renderInspector(textConflict());
-    expect(screen.getByTestId("detected-from-text").textContent).toBe("Detected from text");
-    expect(screen.getByRole("heading", { name: "Architecture Conflict" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "[SEMANTIC SUMMARY]" })).toBeTruthy();
+    expect(
+      screen.getByText("Architecture Conflict · High severity · Detected from text"),
+    ).toBeTruthy();
     const findings = screen.getAllByTestId("position-finding");
     expect(findings.map((f) => f.textContent)).toEqual([
-      "Risk[SSO FINDING]",
-      "Constraint[IDP FINDING]",
+      "Risk · [SSO FINDING]",
+      "Constraint · [IDP FINDING]",
     ]);
-    // The Finding comes before the stance on its card.
+    // The stance (the value) comes before its basis on the card.
     const card = findings[0]!.parentElement!;
-    expect(card.textContent).toMatch(/\[SSO FINDING\].*\[ENGINEERING STANCE\]/);
+    expect(card.textContent).toMatch(/\[ENGINEERING STANCE\].*\[SSO FINDING\]/);
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -511,7 +538,7 @@ describe("a Conflict detected from text", () => {
     renderInspector(textConflict());
     const radios = within(resolveForm()).getAllByRole("radio");
     await user.click(radios[1]!);
-    await user.type(screen.getByLabelText("Reason"), "Security policy wins.");
+    await user.type(screen.getByLabelText("Reason (required)"), "Security policy wins.");
     await user.click(within(resolveForm()).getByRole("button", { name: "Resolve" }));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(resolveConflict).toHaveBeenCalledWith(
@@ -528,12 +555,11 @@ describe("a Conflict detected from text", () => {
     const { container } = render(
       <ShellProviders singleKeyShortcuts>
         <ConflictsSection initial={view} opportunityId={OPP_ID} />
-        <RightPane />
       </ShellProviders>,
     );
     const rows = within(screen.getByRole("grid", { name: "Open Conflicts" })).getAllByRole("row");
-    expect(within(rows[0]!).getByTestId("detected-from-text")).toBeTruthy();
-    expect(within(rows[1]!).queryByTestId("detected-from-text")).toBeNull();
+    expect(rows[0]!.textContent).toContain("Detected from text");
+    expect(rows[1]!.textContent).not.toContain("Detected from text");
     expect(await axeViolations(container)).toEqual([]);
   });
 });
