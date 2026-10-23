@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageContent, PageHeader } from "@/components/shell/page-header";
 import { getMe } from "@/lib/api/server";
 import { isAdmin } from "@/lib/navigation";
 
@@ -16,9 +17,10 @@ export default async function AdminPage() {
 
   return (
     <AppShell me={result.me}>
-      <div className="p-gutter">
+      <PageHeader title="No access" />
+      <PageContent>
         <p>You don&apos;t have access to this page</p>
-      </div>
+      </PageContent>
     </AppShell>
   );
 }

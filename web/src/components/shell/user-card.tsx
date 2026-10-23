@@ -61,27 +61,33 @@ export function UserCard({
   }
 
   const text = collapsed ? "sr-only" : "sr-only min-[1280px]:not-sr-only";
-  const wide = collapsed ? "" : "min-[1280px]:flex-row min-[1280px]:items-center";
+  const wide = collapsed
+    ? ""
+    : "min-[1280px]:flex-row min-[1280px]:items-center min-[1280px]:gap-2.5 min-[1280px]:pl-1";
 
   return (
     <div
       data-testid="user-card"
-      className={cn("flex flex-col items-center gap-1 rounded-md px-0.5 pt-1", wide)}
+      className={cn("mt-1 flex flex-col items-center gap-1.5 border-t border-border pt-2.5", wide)}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <Link
           href="/settings"
           aria-label="Open Settings"
           title="Open Settings"
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Avatar>
-            <AvatarFallback aria-hidden="true">{initials(me.name)}</AvatarFallback>
+          <Avatar className="size-8 bg-primary-tint text-primary-text">
+            <AvatarFallback aria-hidden="true" className="font-semibold">
+              {initials(me.name)}
+            </AvatarFallback>
           </Avatar>
         </Link>
         <div className={cn("min-w-0 flex-1", text)}>
-          <p className="truncate text-body-strong">{me.name}</p>
-          {role ? <p className="truncate text-meta text-text-secondary">{role}</p> : null}
+          <p className="truncate text-[13px] leading-[1.3] font-medium">{me.name}</p>
+          {role ? (
+            <p className="truncate text-[12px] leading-[1.3] text-text-secondary">{role}</p>
+          ) : null}
         </div>
       </div>
       <button
@@ -90,10 +96,10 @@ export function UserCard({
         title="Switch between light and dark"
         aria-disabled={pending}
         onClick={toggleTheme}
-        className="flex size-7 shrink-0 items-center justify-center rounded-sm outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-primary"
+        className="flex size-[30px] shrink-0 items-center justify-center rounded-md border border-border bg-surface text-text-secondary outline-none hover:bg-surface-alt hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
       >
-        <SunIcon className="hidden size-4 dark:block" aria-hidden="true" />
-        <MoonIcon className="size-4 dark:hidden" aria-hidden="true" />
+        <SunIcon className="hidden size-[15px] dark:block" aria-hidden="true" />
+        <MoonIcon className="size-[15px] dark:hidden" aria-hidden="true" />
       </button>
       <AvatarMenu name={me.name} email={me.email} side="top" align="start" compact />
     </div>

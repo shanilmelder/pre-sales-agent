@@ -11,6 +11,7 @@ import { FindingSelectionProvider } from "@/components/opportunities/finding-sel
 import { SpecialistAssessmentsSection } from "@/components/opportunities/specialist-assessments";
 import { getMe } from "@/lib/api/server";
 import type { AssessmentsView } from "@/lib/assessments";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** The view shown when the Assessments read fails, so the Red Team still renders. */
 const EMPTY_ASSESSMENTS: AssessmentsView = { run: null, assessments: [], can_start: false };
@@ -35,7 +36,7 @@ export async function AssessmentsTab({ id }: { id: string }) {
   ]);
 
   return (
-    <div className="flex flex-col gap-6 p-gutter">
+    <div className={`flex flex-col gap-6 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Assessments</h2>
       <FindingSelectionProvider key={opportunity.id}>
         <SpecialistAssessmentsSection

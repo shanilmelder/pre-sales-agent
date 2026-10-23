@@ -1,4 +1,4 @@
-// All Opportunities filters in the URL query (Story 1.7 Part B). Safe on server and client.
+// The Opportunities list filters in the URL query (Story 1.7 Part B). Safe on server and client.
 import { STATUSES, UUID_RE, type OpportunityStatus } from "@/lib/opportunities";
 
 /** The filters, as the API takes them. Every one is optional; they combine with AND. */

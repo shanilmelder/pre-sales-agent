@@ -44,7 +44,7 @@ export function CatalogueTable({
     groupByKind(entries).find((g) => g.entries.length > 0)?.entries[0]?.id;
 
   if (entries.length === 0) {
-    return <p className="p-gutter text-muted-foreground">{EMPTY_STATE}</p>;
+    return <p className="text-muted-foreground">{EMPTY_STATE}</p>;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -68,18 +68,18 @@ export function CatalogueTable({
         <section key={group.kind} aria-labelledby={`catalogue-${group.kind}`}>
           <h2
             id={`catalogue-${group.kind}`}
-            className="px-gutter py-1 text-label text-muted-foreground"
+            className="px-3 py-1 text-label text-muted-foreground"
           >
             {group.plural}
           </h2>
           {group.entries.length === 0 ? (
-            <p className="px-gutter text-meta text-muted-foreground">None yet.</p>
+            <p className="px-3 text-meta text-muted-foreground">None yet.</p>
           ) : (
             <table className="w-full table-fixed border-collapse text-left">
               <caption className="sr-only">{group.plural}</caption>
               <thead className="text-label text-muted-foreground">
                 <tr className="h-row border-b border-border">
-                  <th scope="col" className="w-1/5 px-gutter font-medium">
+                  <th scope="col" className="w-1/5 px-3 font-medium">
                     Code
                   </th>
                   <th scope="col" className="px-2 font-medium">
@@ -101,7 +101,7 @@ export function CatalogueTable({
                       key={entry.id}
                       className={`h-row border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
                     >
-                      <td className="truncate px-gutter text-numeric text-muted-foreground">
+                      <td className="truncate px-3 text-numeric text-muted-foreground">
                         {entry.code}
                       </td>
                       <td className="truncate px-2">

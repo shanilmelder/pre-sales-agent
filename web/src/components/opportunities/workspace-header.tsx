@@ -1,6 +1,11 @@
 import { CalendarIcon } from "lucide-react";
 
-import { Breadcrumb, DueCountdown, PersonChip } from "@/components/opportunities/header-parts";
+import {
+  BreadcrumbRow,
+  DueCountdown,
+  PersonChip,
+  WORKSPACE_BAND,
+} from "@/components/opportunities/header-parts";
 import { EditableWorkspaceHeader } from "@/components/opportunities/inline-field";
 import { StatusPill } from "@/components/opportunities/status-pill";
 import { formatDate, type Opportunity } from "@/lib/opportunities";
@@ -33,13 +38,13 @@ export function WorkspaceHeader({
   }
 
   return (
-    <header className="flex shrink-0 flex-col gap-1.5 px-gutter pt-gutter pb-3">
-      <Breadcrumb title={opportunity.title} />
+    <header className={WORKSPACE_BAND}>
+      <BreadcrumbRow title={opportunity.title} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h1 className="min-w-0 text-title">{opportunity.title}</h1>
         {badge}
       </div>
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-label text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] leading-5 text-text-secondary">
         {meta}
         <span className="inline-flex items-center gap-1.5">
           <CalendarIcon className="size-3 shrink-0" aria-hidden="true" />

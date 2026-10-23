@@ -10,6 +10,7 @@ import {
   TRACE_LOAD_FAILED,
   traceHref,
 } from "@/lib/trace";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -42,7 +43,7 @@ export async function TraceTab({
   }
 
   return (
-    <div className="flex flex-col gap-4 p-gutter">
+    <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Trace</h2>
       {listed.kind === "ok" ? (
         <TraceSection

@@ -25,7 +25,7 @@ export type OpportunityFacets = components["schemas"]["OpportunityFacets"];
 export const EMPTY_LIST_TITLE = "No Opportunities yet";
 export const EMPTY_LIST_BODY =
   "Create an Opportunity from a customer email, transcript or RFP. The first file becomes its first Source.";
-/** The empty-state sentence when the All Opportunities filters match nothing. */
+/** The empty-state sentence when the Opportunities list filters match nothing. */
 export const EMPTY_FILTERED = "No Opportunities match these filters.";
 /** What anyone sees for an Opportunity they may not read, or one that doesn't exist. */
 export const NO_ACCESS_TO_OPPORTUNITY = "You don't have access to this Opportunity";
@@ -115,3 +115,6 @@ export function sliceCodePoints(value: string, max: number): string {
 }
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The New Opportunity form's id, so the page header's Create Opportunity button submits it. */
+export const CREATE_FORM_ID = "create-opportunity-form";

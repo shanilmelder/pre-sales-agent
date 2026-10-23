@@ -2,6 +2,7 @@ import { getOpportunity, listSources } from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { SourcesSection } from "@/components/opportunities/sources-list";
 import { getMe } from "@/lib/api/server";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** Tab 2: the Opportunity's Sources, with the upload area for its owner and collaborators.
  * Renders nothing when the user may not read the Opportunity; the workspace layout shows
@@ -15,7 +16,7 @@ export async function SourcesTab({ id }: { id: string }) {
   const listed = await listSources(opportunity.id);
 
   return (
-    <div className="flex flex-col gap-4 p-gutter">
+    <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Sources</h2>
       {listed.kind === "ok" ? (
         <SourcesSection

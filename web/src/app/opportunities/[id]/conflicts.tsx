@@ -4,6 +4,7 @@ import { ConflictsSection } from "@/components/opportunities/conflicts-list";
 import { ConflictsLiveRefresh } from "@/components/opportunities/conflicts-live-refresh";
 import { getMe } from "@/lib/api/server";
 import { CONFLICTS_NOT_LOADED } from "@/lib/conflicts";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** Tab 6: the Conflicts between the specialist Assessments (and the Estimate), found by the
  * rules at the end of each assessment run (Story 6.1, demo slice) and by the Conflict Agent
@@ -21,7 +22,7 @@ export async function ConflictsTab({ id }: { id: string }) {
   const conflicts = await getConflicts(opportunity.id);
 
   return (
-    <div className="flex flex-col gap-4 p-gutter">
+    <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Conflicts</h2>
       <ConflictsLiveRefresh opportunityId={opportunity.id} />
       {conflicts.kind === "ok" ? (

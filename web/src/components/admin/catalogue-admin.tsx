@@ -98,7 +98,7 @@ export function CatalogueAdmin({ initialEntries }: { initialEntries: readonly Ca
 
   return (
     <>
-      <div className="flex items-center justify-between gap-2 px-gutter pb-2">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-meta text-muted-foreground">
           Every Checklist, Assessment line, Estimate line and Actual is classified by these entries.
         </p>

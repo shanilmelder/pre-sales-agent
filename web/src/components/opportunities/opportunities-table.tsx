@@ -33,7 +33,7 @@ function Header() {
   return (
     <thead className="text-label text-muted-foreground">
       <tr className="h-row border-b border-border">
-        <th scope="col" className="w-2/5 px-gutter font-medium">
+        <th scope="col" className="w-2/5 px-3 font-medium">
           Opportunity
         </th>
         <th scope="col" className="px-2 font-medium">
@@ -84,7 +84,7 @@ export function OpportunitiesTable({
           {Array.from({ length: SKELETON_ROWS }, (_, index) => (
             <tr key={index} data-skeleton-row="" className="min-h-row border-b border-border">
               {[0, 1, 2, 3].map((cell) => (
-                <td key={cell} className={cn("py-3", cell === 0 ? "px-gutter" : "px-2")}>
+                <td key={cell} className={cn("py-3", cell === 0 ? "px-3" : "px-2")}>
                   <span className="block h-3 w-3/4 rounded-sm bg-muted" />
                 </td>
               ))}
@@ -97,7 +97,7 @@ export function OpportunitiesTable({
 
   if (items.length === 0 && clearFiltersHref !== undefined) {
     return (
-      <p className="flex items-center gap-3 p-gutter text-muted-foreground">
+      <p className="flex items-center gap-3 text-muted-foreground">
         {EMPTY_FILTERED}
         <Link
           href={clearFiltersHref}
@@ -111,7 +111,7 @@ export function OpportunitiesTable({
 
   if (items.length === 0) {
     return (
-      <div className="p-gutter">
+      <div>
         <EmptyTabCard
           title={EMPTY_LIST_TITLE}
           body={EMPTY_LIST_BODY}
@@ -144,7 +144,7 @@ export function OpportunitiesTable({
       <tbody ref={body} onKeyDown={onKeyDown}>
         {items.map((item) => (
           <tr key={item.id} className="min-h-row border-b border-border hover:bg-muted/60">
-            <td className="truncate px-gutter py-3">
+            <td className="truncate px-3 py-3">
               <Link
                 href={`/opportunities/${item.id}`}
                 data-opportunity-row=""

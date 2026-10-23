@@ -4,6 +4,7 @@ import { AccessGate, hasAccess } from "@/components/access-gate";
 import { KnowledgeNav } from "@/components/knowledge/knowledge-nav";
 import { SourcesTab } from "@/components/knowledge/sources-tab";
 import { AppShell } from "@/components/shell/app-shell";
+import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
 import type { KnowledgeSource } from "@/lib/knowledge-sources";
 
@@ -36,14 +37,11 @@ export default async function KnowledgePage() {
 
   return (
     <AppShell me={result.me}>
-      <div className="flex flex-col">
-        <div className="flex flex-col gap-1 p-gutter pb-2">
-          <h1 className="text-title">Knowledge</h1>
-        </div>
+      <PageHeader title="Knowledge" subtitle={PAGE_SUBTITLES.knowledge} />
+      <PageContent>
         <KnowledgeNav current="sources" />
-        <div className="h-2" />
         {list.kind === "error" || types === null ? (
-          <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>
+          <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : (
           <SourcesTab
             initialSources={sources}
@@ -51,7 +49,7 @@ export default async function KnowledgePage() {
             me={{ id: result.me.id, roles: result.me.roles }}
           />
         )}
-      </div>
+      </PageContent>
     </AppShell>
   );
 }

@@ -89,6 +89,8 @@ describe("AppShell first-run hint", () => {
   it("shows the shortcut hint with no saved preferences, shortcuts Off", () => {
     renderShell({ singleKeyShortcuts: false, firstRun: true });
     expect(screen.getByTestId("shortcut-hint")).toBeTruthy();
+    // Spans the main column, so it takes the page inset.
+    expect(screen.getByTestId("shortcut-hint").className).toContain("px-page");
     expect(screen.getByRole("button", { name: "Turn on" })).toBeTruthy();
   });
 
@@ -115,8 +117,7 @@ describe("AppShell layout", () => {
       .map((a) => a.textContent);
     expect(links).toEqual([
       "Inbox",
-      "My Opportunities",
-      "All Opportunities",
+      "Opportunities",
       "Knowledge",
       "Reports",
     ]);
@@ -463,8 +464,7 @@ describe("command palette", () => {
     await user.keyboard("{Control>}k{/Control}");
     expect(options()).toEqual([
       "Inbox",
-      "My Opportunities",
-      "All Opportunities",
+      "Opportunities",
       "Knowledge",
       "Reports",
       "Open Settings",
@@ -478,11 +478,11 @@ describe("command palette", () => {
   it("fuzzy-filters as you type", async () => {
     const { user } = renderShell();
     await user.keyboard("{Control>}k{/Control}");
-    await user.keyboard("myop");
+    await user.keyboard("opps");
     const options = within(palette()!)
       .getAllByRole("option")
       .map((o) => o.textContent);
-    expect(options[0]).toBe("My Opportunities");
+    expect(options[0]).toBe("Opportunities");
     expect(options).not.toContain("Inbox");
   });
 
@@ -552,8 +552,7 @@ describe("cheat sheet", () => {
 describe("g navigation", () => {
   it.each([
     ["i", "/inbox"],
-    ["m", "/my-opportunities"],
-    ["a", "/opportunities"],
+    ["o", "/opportunities"],
     ["k", "/knowledge"],
     ["r", "/reports"],
   ])("g then %s goes to %s", async (key, href) => {
@@ -865,6 +864,81 @@ describe("key matching", () => {
     await user.keyboard("]");
     expect(push).not.toHaveBeenCalled();
     expect(rightPane()).toBeNull();
+  });
+});
+
+describe("mockup chrome (theme and shell redesign)", () => {
+  it("has no top bar: the pane toggle sits in the page header band", () => {
+    renderShell();
+    const main = screen.getByRole("main");
+    expect(main.querySelector(".h-12")).toBeNull();
+    const header = within(main).getByTestId("page-header");
+    expect(within(header).getByRole("heading", { level: 1, name: "Inbox" })).toBeTruthy();
+    expect(within(header).getByRole("button", { name: "Right pane" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Right pane" })).toHaveLength(1);
+  });
+
+  it("] and the header toggle open the pane; Esc returns focus to the header toggle", async () => {
+    const { user } = renderShell();
+    const toggle = within(screen.getByTestId("page-header")).getByRole("button", {
+      name: "Right pane",
+    });
+    await user.keyboard("]");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    screen.getByRole("button", { name: "Close right pane" }).focus();
+    await user.keyboard("{Escape}");
+    expect(rightPane()).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("sidebar: PS org tile, bordered Search, active item in the primary tint", () => {
+    renderShell();
+    const org = screen.getByTestId("org-switcher");
+    expect(within(org).getByText("PS").className).toContain("bg-primary");
+    const search = within(sidebar()).getByRole("button", { name: "Search or run a command" });
+    expect(search.className).toContain("bg-surface-alt");
+    expect(search.className).toContain("border-border");
+    const active = within(sidebar()).getByRole("link", { name: "Inbox" });
+    expect(active.className).toContain("bg-primary-tint");
+    expect(active.className).toContain("text-primary-text");
+    expect(within(active).getByText("Inbox").className).toContain("font-semibold");
+    const inactive = within(sidebar()).getByRole("link", { name: "Knowledge" });
+    expect(inactive.className).toContain("text-text-secondary");
+    expect(within(inactive).getByText("Knowledge").className).toContain("font-medium");
+    const theme = within(screen.getByTestId("user-card")).getByRole("button", {
+      name: "Toggle theme",
+    });
+    expect(theme.className).toContain("size-[30px]");
+    expect(theme.className).toContain("border-border");
+  });
+
+  it("collapsed with [: the org tile and icons stay, labels are screen-reader only", async () => {
+    const { user } = renderShell();
+    await user.keyboard("[[");
+    expect(sidebar().getAttribute("data-collapsed")).toBe("true");
+    expect(sidebar().className).not.toContain("min-[1280px]:w-sidebar");
+    const org = screen.getByTestId("org-switcher");
+    expect(within(org).getByText("PS")).toBeTruthy();
+    expect(within(org).getByText("Pre Sales Agent Framework").className).toContain("sr-only");
+    expect(within(org).getByText("Pre Sales Agent Framework").className).not.toContain(
+      "not-sr-only",
+    );
+    expect(within(sidebar()).getByRole("link", { name: "Knowledge" })).toBeTruthy();
+  });
+
+  it("right pane tabs are segmented buttons, the selected one in the primary tint", async () => {
+    const { user, container } = renderShell();
+    await user.keyboard("]");
+    const inspector = screen.getByRole("tab", { name: "Inspector" });
+    const activity = screen.getByRole("tab", { name: "Activity" });
+    expect(inspector.className).toContain("bg-primary-tint");
+    expect(inspector.className).toContain("rounded-[7px]");
+    expect(inspector.className).not.toContain("border-b-2");
+    expect(activity.className).toContain("text-text-secondary");
+    await user.click(activity);
+    expect(activity.getAttribute("aria-selected")).toBe("true");
+    expect(activity.className).toContain("bg-primary-tint");
+    expect(await axeViolations(container)).toEqual([]);
   });
 });
 

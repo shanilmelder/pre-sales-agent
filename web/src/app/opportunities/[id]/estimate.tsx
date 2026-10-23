@@ -2,6 +2,7 @@ import { getEstimate, getOpportunity } from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { EstimateSection } from "@/components/opportunities/estimate-grid";
 import { getMe } from "@/lib/api/server";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** Tab 7: the Opportunity's current draft Estimate Version as a read-only grid, with every
  * total calculated by the server, and the state of its latest draft (Story 8.1 + 8.2, demo
@@ -16,7 +17,7 @@ export async function EstimateTab({ id }: { id: string }) {
   const estimate = await getEstimate(opportunity.id);
 
   return (
-    <div className="flex flex-col gap-4 p-gutter">
+    <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Estimate</h2>
       {estimate.kind === "ok" ? (
         <EstimateSection

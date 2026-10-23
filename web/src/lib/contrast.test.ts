@@ -137,15 +137,11 @@ const BOTH: Pair[] = [
   ...on("gap", ["surface", "surface-alt"], TEXT), // v2 gap text
   ["resolved", "surface", TEXT], // v2 resolved text
   ["resolved-foreground", "resolved", TEXT], // Fix 5 lifecycle check
-  ...on(
-    "border-strong",
-    ["surface", "surface-alt", "background", "neutral-tint"],
-    UI,
-  ), // Fix 2, 6
+  // border-strong takes the mockup's lighter value (#CDD1E0 / #3A4054), accepted below the
+  // 3:1 non-text minimum (theme and shell redesign), so it has no pair here.
   ...on("ring", ["surface", "background", "surface-alt", "primary-tint"], UI), // Fix 4, 7
   ...on("role-qa", ["surface", "surface-alt"], UI), // Fix 3
   ["role-pm", "surface", UI],
-  ["#FFFFFF", "border-strong", UI], // Fix 6 switch knob on the off track
   // Knowledge graph, always dark.
   ...[
     "graph-product",
@@ -198,9 +194,6 @@ describe("DESIGN.md published ratios", () => {
     ["gap", "gap-tint", 5.55, 7.71],
     ["resolved", "resolved-tint", 5.06, 8.16],
     ["neutral", "neutral-tint", 5.9, 6.17],
-    ["border-strong", "surface", 3.61, 3.92],
-    ["border-strong", "background", 3.38, 4.25],
-    ["border-strong", "neutral-tint", 3.17, 3.36],
     ["role-qa", "surface", 4.6, 5.33],
     ["ring", "surface", 5.54, 9.02],
     ["resolved-foreground", "resolved", 5.75, 10.26],
@@ -229,7 +222,7 @@ describe("DESIGN.md colour values", () => {
     ["surface", "#FFFFFF", "#1B1E27"],
     ["surface-alt", "#F1F2F7", "#232734"],
     ["border", "#E3E5EE", "#2B3040"],
-    ["border-strong", "#80869D", "#737A94"],
+    ["border-strong", "#CDD1E0", "#3A4054"],
     ["text", "#171A26", "#E9EBF3"],
     ["text-secondary", "#555B72", "#A3AAC0"],
     ["primary", "#4F5BD5", "#4F5BD5"],

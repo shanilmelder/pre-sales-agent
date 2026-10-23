@@ -17,6 +17,9 @@ import {
 } from "@/lib/opportunity-events";
 import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
 
+/** Tabs whose count is open blocking work, shown in the blocker tint. */
+const BLOCKER_COUNT_TABS: ReadonlySet<WorkspaceTabSlug> = new Set(["gaps", "conflicts"]);
+
 /** The workspace tab strip and the selected tab's panel. A `tablist` of links (each tab has
  * its own URL), the selected one marked by the route; `1`–`9` reach the tabs through the
  * shell's key handler, and Left/Right/Home/End move focus along the strip. A tab with a
@@ -138,7 +141,7 @@ export function WorkspaceTabs({
         role="tablist"
         aria-label="Opportunity workspace"
         onKeyDown={onKeyDown}
-        className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-border px-gutter"
+        className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-surface pr-page pl-[calc(var(--spacing-page)-10px)] [scrollbar-width:none]"
       >
         {WORKSPACE_TABS.map((tab, index) => {
           const isSelected = tab.slug === selected;
@@ -154,21 +157,22 @@ export function WorkspaceTabs({
               aria-controls={isSelected ? panelId : undefined}
               aria-keyshortcuts={singleKeyShortcuts ? tab.key : undefined}
               tabIndex={focusable ? 0 : -1}
-              className={cn(
-                "-mb-px flex h-[34px] shrink-0 items-center gap-1.5 border-b-2 px-2 text-label whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset",
+              className={`${cn(
+                "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-3 whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset",
                 isSelected
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
+                  ? "border-primary text-primary-text"
+                  : "border-transparent text-text-secondary hover:text-foreground",
+              )} text-[14px] leading-5 ${isSelected ? "font-semibold" : "font-medium"}`}
             >
-              <span className="text-meta text-muted-foreground" aria-hidden="true">
-                {tab.key}
-              </span>
               {tab.label}
               {(counts[tab.slug] ?? 0) > 0 ? (
                 <span
                   data-testid={`tab-count-${tab.slug}`}
-                  className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border px-1 text-meta text-foreground [font-variant-numeric:tabular-nums]"
+                  className={`inline-flex min-w-5 items-center justify-center rounded-[10px] px-[7px] text-[12px] leading-4 font-medium [font-variant-numeric:tabular-nums] ${
+                    BLOCKER_COUNT_TABS.has(tab.slug)
+                      ? "bg-blocker-tint text-blocker"
+                      : "bg-surface-alt text-text-secondary"
+                  }`}
                 >
                   <span aria-hidden="true">{counts[tab.slug]}</span>
                   <span className="sr-only">, {openCountLabel(counts[tab.slug] ?? 0)}</span>

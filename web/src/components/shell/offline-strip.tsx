@@ -24,7 +24,7 @@ export function OfflineStrip() {
   return (
     <div aria-live="polite" aria-atomic="true" data-testid="offline-strip">
       {offline ? (
-        <div className="flex items-center gap-2 border-b border-border bg-muted px-gutter py-2 text-body">
+        <div className="flex items-center gap-2 border-b border-border bg-muted px-page py-2 text-body">
           <WifiOffIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
           <span className="flex-1">{OFFLINE_MESSAGE}</span>
           <Button type="button" variant="outline" size="sm" onClick={retry}>

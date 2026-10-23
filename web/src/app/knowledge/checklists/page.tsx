@@ -4,6 +4,7 @@ import { AccessGate, hasAccess } from "@/components/access-gate";
 import { ChecklistsTab, type CatalogueOption } from "@/components/knowledge/checklists-tab";
 import { KnowledgeNav } from "@/components/knowledge/knowledge-nav";
 import { AppShell } from "@/components/shell/app-shell";
+import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
 
 import { loadChecklists } from "./actions";
@@ -36,14 +37,11 @@ export default async function KnowledgeChecklistsPage() {
 
   return (
     <AppShell me={result.me}>
-      <div className="flex flex-col">
-        <div className="flex flex-col gap-1 p-gutter pb-2">
-          <h1 className="text-title">Knowledge</h1>
-        </div>
+      <PageHeader title="Knowledge" subtitle={PAGE_SUBTITLES.knowledge} />
+      <PageContent>
         <KnowledgeNav current="checklists" />
-        <div className="h-2" />
         {list.kind === "error" || catalogue === null ? (
-          <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>
+          <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : (
           <ChecklistsTab
             initialChecklists={list.checklists}
@@ -51,7 +49,7 @@ export default async function KnowledgeChecklistsPage() {
             permissions={result.me.permissions}
           />
         )}
-      </div>
+      </PageContent>
     </AppShell>
   );
 }

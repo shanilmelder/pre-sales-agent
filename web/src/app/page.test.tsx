@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { permissionsFor } from "@/test/permissions";
@@ -70,11 +70,23 @@ function signedIn(roles: Role[]) {
   getMe.mockResolvedValue({ kind: "ok", me: me(roles) });
 }
 
-const SHELL_PAGES: [string, () => Promise<ReactElement>, string, string][] = [
-  ["/inbox", InboxPage, "Inbox", "Nothing waiting for you."],
-  ["/knowledge", KnowledgePage, "Knowledge", NO_KNOWLEDGE_SOURCES],
-  ["/reports", ReportsPage, "Reports", "Not available yet."],
-  ["/settings", SettingsPage, "Settings", "Saved in this browser."],
+const SHELL_PAGES: [string, () => Promise<ReactElement>, string, string, string][] = [
+  ["/inbox", InboxPage, "Inbox", "Nothing waiting for you.", "Review requests and notifications."],
+  [
+    "/knowledge",
+    KnowledgePage,
+    "Knowledge",
+    NO_KNOWLEDGE_SOURCES,
+    "Knowledge Sources, Checklists and coverage.",
+  ],
+  [
+    "/reports",
+    ReportsPage,
+    "Reports",
+    "Not available yet.",
+    "Estimate accuracy, pipeline and cost across Opportunities.",
+  ],
+  ["/settings", SettingsPage, "Settings", "Saved in this browser.", "Saved in this browser."],
 ];
 
 beforeEach(() => {
@@ -83,9 +95,9 @@ beforeEach(() => {
 });
 
 describe("/ landing", () => {
-  it("sends presales engineers to My Opportunities", async () => {
+  it("sends presales engineers to their Opportunities", async () => {
     signedIn(["presales_engineer", "pm_reviewer"]);
-    await expect(Home()).rejects.toThrow("NEXT_REDIRECT /my-opportunities");
+    await expect(Home()).rejects.toThrow("NEXT_REDIRECT /opportunities?view=mine");
   });
 
   it("sends everyone else to Inbox", async () => {
@@ -101,7 +113,7 @@ describe("/ landing", () => {
   });
 });
 
-describe.each(SHELL_PAGES)("%s", (_path, Page, title, text) => {
+describe.each(SHELL_PAGES)("%s", (_path, Page, title, text, subtitle) => {
   it("renders inside the shell with its title and text", async () => {
     signedIn(["platform_administrator"]);
     const { container } = renderPage(await Page());
@@ -109,7 +121,17 @@ describe.each(SHELL_PAGES)("%s", (_path, Page, title, text) => {
     expect(screen.getAllByRole("main")).toHaveLength(1);
     expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(2);
     expect(screen.getByRole("heading", { level: 1, name: title })).toBeTruthy();
-    expect(screen.getByText(text)).toBeTruthy();
+    // Settings shows its text in both the subtitle and the form.
+    expect(screen.getAllByText(text).length).toBeGreaterThan(0);
+    // No top bar: the header band holds the subtitle and the right-pane toggle.
+    const header = screen.getByTestId("page-header");
+    expect(within(header).getByText(subtitle)).toBeTruthy();
+    expect(within(header).getByRole("button", { name: "Right pane" })).toBeTruthy();
+    // The content area alone owns the 32px inset: nothing directly inside adds a gutter.
+    const content = screen.getByTestId("page-content");
+    for (const child of Array.from(content.children)) {
+      expect(child.className).not.toMatch(/p[xy]?-gutter/);
+    }
     expect(await axeViolations(container)).toEqual([]);
   });
 

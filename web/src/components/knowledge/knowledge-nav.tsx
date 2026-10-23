@@ -8,7 +8,7 @@ const TABS = [
 /** Knowledge's sub-tabs as links (the Coverage tab comes with Story 3.5). */
 export function KnowledgeNav({ current }: { current: (typeof TABS)[number]["id"] }) {
   return (
-    <nav aria-label="Knowledge sections" className="flex gap-4 border-b border-border px-gutter">
+    <nav aria-label="Knowledge sections" className="flex gap-4 border-b border-border">
       {TABS.map((tab) => {
         const active = tab.id === current;
         return (

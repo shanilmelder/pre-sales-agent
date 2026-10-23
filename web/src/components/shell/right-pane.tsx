@@ -52,8 +52,8 @@ export function RightPane() {
       aria-label="Details"
       className="absolute inset-y-0 right-0 z-10 flex w-inspector max-w-full shrink-0 flex-col border-l border-border bg-surface-inspector shadow-lg min-[1440px]:static min-[1440px]:shadow-none"
     >
-      <div className="flex h-12 items-center justify-between border-b border-border pr-gutter pl-2">
-        <div role="tablist" aria-label="Right pane" className="flex h-full items-stretch gap-1">
+      <div className="flex items-center justify-between gap-1 border-b border-border px-4 py-3">
+        <div role="tablist" aria-label="Right pane" className="flex items-center gap-1">
           {TABS.map((tab, index) => {
             const active = rightPaneTab === tab.id;
             return (
@@ -71,13 +71,13 @@ export function RightPane() {
                 onClick={() => setRightPaneTab(tab.id)}
                 onKeyDown={(event) => onKeyDown(event, index)}
                 className={cn(
-                  "flex items-center border-b-2 px-3 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                  "flex items-center rounded-[7px] px-3 py-[5px] outline-none focus-visible:ring-2 focus-visible:ring-primary",
                   active
-                    ? "border-primary font-semibold text-primary-text"
-                    : "border-transparent text-text-secondary hover:text-foreground",
+                    ? "bg-primary-tint text-primary-text"
+                    : "text-text-secondary hover:bg-surface-alt hover:text-foreground",
                 )}
               >
-                {tab.label}
+                <span className="text-control">{tab.label}</span>
               </button>
             );
           })}
@@ -86,7 +86,7 @@ export function RightPane() {
           type="button"
           aria-label="Close right pane"
           onClick={() => setRightPaneOpen(false)}
-          className="flex size-7 items-center justify-center rounded-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
+          className="flex size-7 items-center justify-center rounded-[7px] text-text-secondary outline-none hover:bg-surface-alt hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
         >
           <XIcon className="size-4" aria-hidden="true" />
         </button>
