@@ -2,7 +2,6 @@
 // landing redirect. Safe to import from server and client code.
 import {
   BookOpenIcon,
-  BriefcaseBusinessIcon,
   ChartColumnIcon,
   FolderKanbanIcon,
   InboxIcon,
@@ -21,7 +20,7 @@ export type Permission = string;
 export const USER_LIST_PERMISSION = "identity.user.list";
 
 export type NavItem = {
-  id: "inbox" | "my-opportunities" | "opportunities" | "knowledge" | "reports" | "admin";
+  id: "inbox" | "opportunities" | "knowledge" | "reports" | "admin";
   label: string;
   href: string;
   icon: LucideIcon;
@@ -34,18 +33,11 @@ export type NavItem = {
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: "inbox", label: "Inbox", href: "/inbox", icon: InboxIcon, gKey: "i" },
   {
-    id: "my-opportunities",
-    label: "My Opportunities",
-    href: "/my-opportunities",
-    icon: BriefcaseBusinessIcon,
-    gKey: "m",
-  },
-  {
     id: "opportunities",
-    label: "All Opportunities",
+    label: "Opportunities",
     href: "/opportunities",
     icon: FolderKanbanIcon,
-    gKey: "a",
+    gKey: "o",
   },
   { id: "knowledge", label: "Knowledge", href: "/knowledge", icon: BookOpenIcon, gKey: "k" },
   { id: "reports", label: "Reports", href: "/reports", icon: ChartColumnIcon, gKey: "r" },
@@ -63,7 +55,10 @@ export function visibleNav(permissions: readonly Permission[]): NavItem[] {
   return NAV_ITEMS.filter((item) => !item.adminOnly || admin);
 }
 
-/** Where `/` sends a user: presales engineers to My Opportunities, everyone else to Inbox. */
+/** The Opportunities list on its Mine view. */
+export const MY_OPPORTUNITIES_HREF = "/opportunities?view=mine";
+
+/** Where `/` sends a user: presales engineers to their Opportunities, everyone else to Inbox. */
 export function landingFor(roles: readonly Role[]): string {
-  return roles.includes("presales_engineer") ? "/my-opportunities" : "/inbox";
+  return roles.includes("presales_engineer") ? MY_OPPORTUNITIES_HREF : "/inbox";
 }

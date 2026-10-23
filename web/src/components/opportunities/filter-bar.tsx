@@ -35,7 +35,7 @@ function isCompleteDate(value: string): boolean {
   return isCalendarDate(value) && Number(value.slice(0, 4)) >= 1000;
 }
 
-/** The All Opportunities filters. Values come from the URL (`filters`) and every change
+/** The Opportunities list filters. Values come from the URL (`filters`) and every change
  * replaces the URL, on page 1, so filters survive reload and sharing without piling up
  * history. Owner and product choices come from the facets; a value from a shared URL that
  * isn't among them is still shown so the control never lies about what is applied. */

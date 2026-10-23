@@ -117,8 +117,7 @@ describe("AppShell layout", () => {
       .map((a) => a.textContent);
     expect(links).toEqual([
       "Inbox",
-      "My Opportunities",
-      "All Opportunities",
+      "Opportunities",
       "Knowledge",
       "Reports",
     ]);
@@ -465,8 +464,7 @@ describe("command palette", () => {
     await user.keyboard("{Control>}k{/Control}");
     expect(options()).toEqual([
       "Inbox",
-      "My Opportunities",
-      "All Opportunities",
+      "Opportunities",
       "Knowledge",
       "Reports",
       "Open Settings",
@@ -480,11 +478,11 @@ describe("command palette", () => {
   it("fuzzy-filters as you type", async () => {
     const { user } = renderShell();
     await user.keyboard("{Control>}k{/Control}");
-    await user.keyboard("myop");
+    await user.keyboard("opps");
     const options = within(palette()!)
       .getAllByRole("option")
       .map((o) => o.textContent);
-    expect(options[0]).toBe("My Opportunities");
+    expect(options[0]).toBe("Opportunities");
     expect(options).not.toContain("Inbox");
   });
 
@@ -554,8 +552,7 @@ describe("cheat sheet", () => {
 describe("g navigation", () => {
   it.each([
     ["i", "/inbox"],
-    ["m", "/my-opportunities"],
-    ["a", "/opportunities"],
+    ["o", "/opportunities"],
     ["k", "/knowledge"],
     ["r", "/reports"],
   ])("g then %s goes to %s", async (key, href) => {

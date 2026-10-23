@@ -95,9 +95,9 @@ beforeEach(() => {
 });
 
 describe("/ landing", () => {
-  it("sends presales engineers to My Opportunities", async () => {
+  it("sends presales engineers to their Opportunities", async () => {
     signedIn(["presales_engineer", "pm_reviewer"]);
-    await expect(Home()).rejects.toThrow("NEXT_REDIRECT /my-opportunities");
+    await expect(Home()).rejects.toThrow("NEXT_REDIRECT /opportunities?view=mine");
   });
 
   it("sends everyone else to Inbox", async () => {

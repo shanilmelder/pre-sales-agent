@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { MY_OPPORTUNITIES_HREF } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 export type OpportunityView = "all" | "mine" | "due";
@@ -14,7 +15,7 @@ export function OpportunityViews({
 }) {
   const views: { id: OpportunityView; label: string; href: string }[] = [
     { id: "all", label: "All", href: "/opportunities" },
-    { id: "mine", label: "Mine", href: "/my-opportunities" },
+    { id: "mine", label: "Mine", href: MY_OPPORTUNITIES_HREF },
     { id: "due", label: "Due in 14 days", href: dueHref },
   ];
   return (

@@ -25,7 +25,7 @@ export type OpportunityFacets = components["schemas"]["OpportunityFacets"];
 export const EMPTY_LIST_TITLE = "No Opportunities yet";
 export const EMPTY_LIST_BODY =
   "Create an Opportunity from a customer email, transcript or RFP. The first file becomes its first Source.";
-/** The empty-state sentence when the All Opportunities filters match nothing. */
+/** The empty-state sentence when the Opportunities list filters match nothing. */
 export const EMPTY_FILTERED = "No Opportunities match these filters.";
 /** What anyone sees for an Opportunity they may not read, or one that doesn't exist. */
 export const NO_ACCESS_TO_OPPORTUNITY = "You don't have access to this Opportunity";

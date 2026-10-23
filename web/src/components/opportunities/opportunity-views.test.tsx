@@ -13,7 +13,9 @@ describe("OpportunityViews", () => {
     const nav = screen.getByRole("navigation", { name: "Views" });
     expect(nav).toBeTruthy();
     expect(screen.getByRole("link", { name: "All" }).getAttribute("href")).toBe("/opportunities");
-    expect(screen.getByRole("link", { name: "Mine" }).getAttribute("href")).toBe("/my-opportunities");
+    expect(screen.getByRole("link", { name: "Mine" }).getAttribute("href")).toBe(
+      "/opportunities?view=mine",
+    );
     expect(screen.getByRole("link", { name: "Due in 14 days" }).getAttribute("href")).toBe(DUE);
   });
 

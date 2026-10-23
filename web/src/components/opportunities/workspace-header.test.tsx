@@ -50,7 +50,7 @@ describe("WorkspaceHeader", () => {
   it("shows breadcrumb, title with pill, chips and the date with a countdown", async () => {
     const { container } = renderHeader();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    const all = within(crumbs).getByRole("link", { name: "All Opportunities" });
+    const all = within(crumbs).getByRole("link", { name: "Opportunities" });
     expect(all.getAttribute("href")).toBe("/opportunities");
     const current = crumbs.querySelector('[aria-current="page"]');
     expect(current?.textContent).toBe("[TITLE]");

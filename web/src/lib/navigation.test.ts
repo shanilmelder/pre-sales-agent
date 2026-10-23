@@ -7,8 +7,7 @@ describe("NAV_ITEMS", () => {
   it("lists the sidebar items in order, each with an icon", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Inbox",
-      "My Opportunities",
-      "All Opportunities",
+      "Opportunities",
       "Knowledge",
       "Reports",
       "Admin",
@@ -16,11 +15,10 @@ describe("NAV_ITEMS", () => {
     for (const item of NAV_ITEMS) expect(item.icon).toBeTruthy();
   });
 
-  it("gives g-keys i, m, a, k and r", () => {
+  it("gives g-keys i, o, k and r", () => {
     expect(NAV_ITEMS.flatMap((item) => (item.gKey ? [item.gKey] : []))).toEqual([
       "i",
-      "m",
-      "a",
+      "o",
       "k",
       "r",
     ]);
@@ -33,7 +31,7 @@ describe("visibleNav", () => {
       (i) => i.label,
     );
     expect(labels).not.toContain("Admin");
-    expect(labels).toHaveLength(5);
+    expect(labels).toHaveLength(4);
     expect(visibleNav([]).map((i) => i.label)).not.toContain("Admin");
   });
 
@@ -44,8 +42,8 @@ describe("visibleNav", () => {
 
 describe("landingFor", () => {
   it.each<[Role[], string]>([
-    [["presales_engineer"], "/my-opportunities"],
-    [["pm_reviewer", "presales_engineer"], "/my-opportunities"],
+    [["presales_engineer"], "/opportunities?view=mine"],
+    [["pm_reviewer", "presales_engineer"], "/opportunities?view=mine"],
     [["pm_reviewer"], "/inbox"],
     [["platform_administrator"], "/inbox"],
     [["sales_representative", "commercial"], "/inbox"],

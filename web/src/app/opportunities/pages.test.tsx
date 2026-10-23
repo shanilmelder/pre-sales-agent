@@ -63,7 +63,7 @@ vi.mock("next/navigation", () => ({
     back: vi.fn(),
     refresh: vi.fn(),
   }),
-  usePathname: () => "/my-opportunities",
+  usePathname: () => "/opportunities",
   useSelectedLayoutSegment: () => segment.current,
 }));
 
@@ -196,11 +196,16 @@ beforeEach(() => {
 });
 
 const LISTS = [
-  ["/my-opportunities", MyOpportunitiesPage, "My Opportunities", "mine"],
-  ["/opportunities", OpportunitiesPage, "All Opportunities", "all"],
+  ["/opportunities?view=mine", { view: "mine" }, "mine"],
+  ["/opportunities", {}, "all"],
 ] as const;
 
-describe.each(LISTS)("%s", (_path, Page, title, scope) => {
+describe.each(LISTS)("%s", (_path, view, scope) => {
+  const title = "Opportunities";
+  const Page = ({ searchParams }: { searchParams: ReturnType<typeof params> }) =>
+    OpportunitiesPage({ searchParams: searchParams.then((values) => ({ ...view, ...values })) });
+  const pageHref = (n: number) => `${_path}${_path.includes("?") ? "&" : "?"}page=${n}`;
+
   it("lists Opportunities in the shell; New Opportunity for presales engineers", async () => {
     signedIn(["presales_engineer"]);
     listed([SUMMARY]);
@@ -264,11 +269,11 @@ describe.each(LISTS)("%s", (_path, Page, title, scope) => {
     listed([SUMMARY], 120, 2);
     renderPage(await Page({ searchParams: params("2") }));
     expect(screen.getByText("51–51 of 120")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Previous" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Next" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Previous" }).getAttribute("href")).toBe(_path);
+    expect(screen.getByRole("link", { name: "Next" }).getAttribute("href")).toBe(pageHref(3));
     listed([], 120, 9);
     await expect(Page({ searchParams: params("9") })).rejects.toThrow(
-      `NEXT_REDIRECT ${_path}?page=3`,
+      `NEXT_REDIRECT ${pageHref(3)}`,
     );
   });
 
@@ -292,6 +297,12 @@ describe.each(LISTS)("%s", (_path, Page, title, scope) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     renderPage(await Page({ searchParams: params() }));
     expect(screen.getByText(/not reachable right now/)).toBeTruthy();
+  });
+});
+
+describe("/my-opportunities", () => {
+  it("redirects to the Mine view of Opportunities", () => {
+    expect(() => MyOpportunitiesPage()).toThrow("NEXT_REDIRECT /opportunities?view=mine");
   });
 });
 
@@ -379,11 +390,13 @@ describe("All Opportunities filters", () => {
     expect(redirect).toHaveBeenLastCalledWith(`/opportunities?owner=${OWNER_ID}`);
   });
 
-  it("My Opportunities has no filter bar and ignores filter params", async () => {
+  it("the Mine view has no filter bar and ignores filter params", async () => {
     signedIn(["presales_engineer"]);
     listed([]);
     renderPage(
-      await MyOpportunitiesPage({ searchParams: query({ status: "closed", owner: OWNER_ID }) }),
+      await OpportunitiesPage({
+        searchParams: query({ view: "mine", status: "closed", owner: OWNER_ID }),
+      }),
     );
     expect(screen.queryByRole("group", { name: "Filters" })).toBeNull();
     expect(apiGet).toHaveBeenCalledTimes(1);

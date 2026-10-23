@@ -29,7 +29,7 @@ function renderTable({
 }: { items?: OpportunitySummary[]; canCreate?: boolean; singleKeyShortcuts?: boolean } = {}) {
   return render(
     <ShellProviders singleKeyShortcuts={singleKeyShortcuts}>
-      <OpportunitiesTable items={items} caption="My Opportunities" canCreate={canCreate} />
+      <OpportunitiesTable items={items} caption="Opportunities" canCreate={canCreate} />
       <button type="button">After</button>
     </ShellProviders>,
   );

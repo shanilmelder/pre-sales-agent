@@ -9,7 +9,7 @@ import { countdownLabel, daysUntil } from "@/lib/opportunities";
  * the 32px page inset. Shared by both workspace headers. */
 export const WORKSPACE_BAND = "flex shrink-0 flex-col gap-1.5 bg-surface px-page pt-6 pb-4";
 
-/** "All Opportunities / title": the title is the current item, truncated, not a link. */
+/** "Opportunities / title": the title is the current item, truncated, not a link. */
 export function Breadcrumb({ title }: { title: string }) {
   return (
     <nav aria-label="Breadcrumb" className="min-w-0 text-meta text-text-secondary">
@@ -19,7 +19,7 @@ export function Breadcrumb({ title }: { title: string }) {
             href="/opportunities"
             className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-primary"
           >
-            All Opportunities
+            Opportunities
           </Link>
         </li>
         <li aria-hidden="true" className="shrink-0">

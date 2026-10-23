@@ -1,20 +1,8 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { OpportunityListPage } from "@/app/opportunities/list-page";
+import { MY_OPPORTUNITIES_HREF } from "@/lib/navigation";
 
-export const metadata: Metadata = { title: "My Opportunities · Pre Sales Agent Framework" };
-
-/** Opportunities the user owns or collaborates on. */
-export default async function MyOpportunitiesPage({
-  searchParams,
-}: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  // Called, not rendered as an element, so the page resolves to its finished tree.
-  return OpportunityListPage({
-    title: "My Opportunities",
-    scope: "mine",
-    basePath: "/my-opportunities",
-    searchParams,
-  });
+/** The old My Opportunities page: now the Mine view of the Opportunities list. */
+export default function MyOpportunitiesPage() {
+  redirect(MY_OPPORTUNITIES_HREF);
 }
