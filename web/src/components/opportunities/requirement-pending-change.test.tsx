@@ -54,6 +54,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { RightPane } from "../shell/right-pane";
+import { RightPaneToggle } from "../shell/right-pane-toggle";
 import { ShellProviders } from "../shell/shell-context";
 import { RequirementsSection } from "./requirements-list";
 
@@ -396,5 +397,271 @@ describe("the ?requirement= deep link (Story 4.7)", () => {
       </ShellProviders>,
     );
     expect(screen.queryByTestId("pending-change")).toBeNull();
+  });
+});
+
+describe("the redesigned tab", () => {
+  const done = (item: Requirement): Requirement => ({
+    ...item,
+    confirmed_at: "2026-10-19T10:00:00Z",
+    confirmed_by: ME,
+  });
+  // 3 confirmed, 1 unconfirmed, 1 with a pending change.
+  const MIXED = [
+    done(requirement(1)),
+    done(requirement(2)),
+    done(requirement(3, { classification: "security" })),
+    requirement(4, { classification: "security" }),
+    requirement(5, { classification: "data", pending_change: PENDING }),
+  ];
+  const rowOf = (n: number) => row(n).closest('[role="row"]') as HTMLElement;
+  const pillOf = (n: number) => rowOf(n).querySelector('[data-slot="pill"]')!;
+  const banner = () =>
+    screen.getByRole("region", { name: "1 pending change from incremental intake" });
+
+  it("mixed list: counts, pills, the amber edge and the banner", async () => {
+    const { container } = renderSection(list(MIXED));
+
+    expect(screen.getByText("5 total · 3 confirmed · 2 to review")).toBeTruthy();
+    expect([1, 2, 3, 4, 5].map((n) => pillOf(n).getAttribute("data-tone"))).toEqual([
+      "resolved",
+      "resolved",
+      "resolved",
+      "neutral",
+      "gap",
+    ]);
+    expect(pillOf(4).textContent).toBe("Unconfirmed");
+    expect(pillOf(5).textContent).toBe("Pending change");
+    expect(rowOf(5).className).toContain("inset_3px");
+    expect(rowOf(4).className).not.toContain("inset_3px");
+    expect(within(rowOf(4)).getByRole("button", { name: "Confirm: [REQUIREMENT 4]" })).toBeTruthy();
+    expect(within(rowOf(1)).queryByRole("button", { name: /^Confirm/ })).toBeNull();
+    expect(screen.getByRole("region", { name: "Functional 2 · 2 confirmed" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Security 2 · 1 confirmed" })).toBeTruthy();
+
+    const lines = within(banner()).getAllByRole("listitem");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.textContent).toContain("Current: R5 [REQUIREMENT 5]");
+    expect(lines[0]!.textContent).toContain("Proposed: R5 [PROPOSED TEXT]");
+    expect(lines[0]!.textContent).toContain("Classification: Data → Integration");
+    // Read-only: no Accept or Reject in the banner.
+    expect(within(banner()).queryByRole("button", { name: /Accept|Reject/ })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the banner's Review opens that Requirement in the inspector, with Accept and Reject", async () => {
+    const user = userEvent.setup();
+    renderSection(list(MIXED));
+
+    await user.click(within(banner()).getByRole("button", { name: "Review R5" }));
+
+    expect(within(pane()).getByRole("heading", { name: "[REQUIREMENT 5]" })).toBeTruthy();
+    expect(within(section()).getByRole("button", { name: "Accept" })).toBeTruthy();
+    expect(within(section()).getByRole("button", { name: "Reject" })).toBeTruthy();
+    expect(rowOf(5).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("no pending changes: no banner", () => {
+    renderSection(list([requirement(1)]));
+    expect(screen.queryByTestId("pending-changes")).toBeNull();
+  });
+
+  it("State = Confirmed shows only confirmed rows; j/k skip the hidden ones", async () => {
+    const user = userEvent.setup();
+    renderSection(list(MIXED));
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "State" }), "confirmed");
+
+    expect(screen.queryByRole("button", { name: "[REQUIREMENT 4]" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "[REQUIREMENT 5]" })).toBeNull();
+    expect(screen.queryByRole("region", { name: /^Data/ })).toBeNull();
+    expect(screen.getByRole("region", { name: "Security 1 · 1 confirmed" })).toBeTruthy();
+    // The counts are the whole list's.
+    expect(screen.getByText("5 total · 3 confirmed · 2 to review")).toBeTruthy();
+
+    row(1).focus();
+    await user.keyboard("jj");
+    expect(document.activeElement).toBe(row(3));
+    await user.keyboard("j");
+    expect(document.activeElement).toBe(row(3));
+    await user.keyboard("k");
+    expect(document.activeElement).toBe(row(2));
+  });
+
+  it("a filter that leaves nothing says so, and Clear filters shows every row", async () => {
+    const user = userEvent.setup();
+    renderSection(list(MIXED));
+    const category = screen.getByRole("combobox", { name: "Category" }) as HTMLSelectElement;
+    expect(Array.from(category.options).map((o) => o.textContent)).toEqual([
+      "Category",
+      "Category: Functional",
+      "Category: Data",
+      "Category: Security",
+    ]);
+
+    await user.selectOptions(category, "security");
+    await user.selectOptions(screen.getByRole("combobox", { name: "State" }), "pending");
+
+    expect(screen.getByText("No Requirements match these filters.")).toBeTruthy();
+    expect(screen.queryAllByRole("row")).toEqual([]);
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getAllByRole("row")).toHaveLength(5);
+    expect(category.value).toBe("");
+  });
+
+  it("a Requirement a person added reads Added by a person, with no chips", () => {
+    renderSection(list([requirement(1, { evidence: [] }), requirement(2)]));
+    expect(within(rowOf(1)).getByText("· Added by a person")).toBeTruthy();
+    expect(rowOf(1).querySelector("[data-passage-id]")).toBeNull();
+    expect(within(rowOf(2)).getByText("· Edited by [OWNER]")).toBeTruthy();
+    expect(within(rowOf(2)).getByRole("button", { name: "S1 · call.txt" })).toBeTruthy();
+  });
+
+  it("the selected row has Edit, Split and Merge", async () => {
+    const user = userEvent.setup();
+    renderSection(list([requirement(1), requirement(2)]));
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+
+    await user.click(row(1));
+    expect(rowOf(1).className).toContain("bg-agent-tint");
+    const merge = within(rowOf(1)).getByRole("button", { name: "Merge" });
+    expect(merge.getAttribute("aria-pressed")).toBe("false");
+    await user.click(merge);
+    const selected = within(rowOf(1)).getByRole("button", { name: "Selected for merge" });
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
+    expect(rowOf(1).hasAttribute("data-checked")).toBe(true);
+    // The inspector's Merge is the same toggle.
+    await user.click(within(pane()).getByRole("button", { name: "Selected for merge" }));
+    expect(rowOf(1).hasAttribute("data-checked")).toBe(false);
+
+    await user.click(within(rowOf(1)).getByRole("button", { name: "Split" }));
+    const first = within(pane()).getByRole("textbox", { name: "First Requirement" });
+    expect(document.activeElement).toBe(first);
+
+    await user.click(within(rowOf(1)).getByRole("button", { name: "Edit" }));
+    const input = screen.getByRole("textbox", { name: "Requirement text" });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("the inspector: meta line, state pill, Evidence and Actions", async () => {
+    const user = userEvent.setup();
+    renderSection(list([requirement(1), done(requirement(2))]));
+
+    await user.click(row(1));
+    const inspector = pane();
+    const meta = within(inspector).getByText("Edited by [OWNER]").closest("p")!;
+    expect(meta.textContent).toBe("Functional·R1·Edited by [OWNER]");
+    expect(within(inspector).getByText("Unconfirmed")).toBeTruthy();
+    const actions = within(inspector).getByRole("group", { name: "Actions" });
+    expect(within(actions).getByRole("button", { name: "Confirm requirement" })).toBeTruthy();
+    for (const name of ["Edit", "Split", "Merge", "Delete"]) {
+      expect(within(actions).getByRole("button", { name })).toBeTruthy();
+    }
+    await user.click(within(actions).getByRole("button", { name: "Edit" }));
+    expect(document.activeElement).toBe(
+      within(inspector).getByRole("textbox", { name: "Requirement text" }),
+    );
+    await user.keyboard("{Escape}");
+
+    await user.click(row(2));
+    expect(within(pane()).getByText("Confirmed")).toBeTruthy();
+    expect(within(pane()).queryByRole("button", { name: "Confirm requirement" })).toBeNull();
+    expect(await axeViolations(document.body)).toEqual([]);
+  });
+
+  it("viewers get no Add, Confirm, Confirm all, Edit, Split or Merge", async () => {
+    const user = userEvent.setup();
+    renderSection(list(MIXED, false));
+    await user.click(row(4));
+    for (const name of [
+      "Add requirement",
+      "Confirm all (2)",
+      "Confirm: [REQUIREMENT 4]",
+      "Confirm requirement",
+      "Edit",
+      "Split",
+      "Merge",
+    ]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    expect(within(pane()).getByRole("heading", { name: "[REQUIREMENT 4]" })).toBeTruthy();
+  });
+
+  it("Review on a Requirement the filters hide clears them and selects its row", async () => {
+    const user = userEvent.setup();
+    renderSection(list(MIXED));
+    const state = screen.getByRole("combobox", { name: "State" }) as HTMLSelectElement;
+    await user.selectOptions(state, "confirmed");
+    expect(screen.queryByRole("button", { name: "[REQUIREMENT 5]" })).toBeNull();
+
+    await user.click(within(banner()).getByRole("button", { name: "Review R5" }));
+
+    expect(state.value).toBe("");
+    expect(rowOf(5).getAttribute("aria-selected")).toBe("true");
+    expect(within(pane()).getByRole("heading", { name: "[REQUIREMENT 5]" })).toBeTruthy();
+  });
+
+  it("changing a filter clears the merge selection", async () => {
+    const user = userEvent.setup();
+    renderSection(list(MIXED));
+    for (const n of [1, 4]) {
+      row(n).focus();
+      await user.keyboard("x");
+    }
+    expect(screen.getByRole("toolbar", { name: "Selected Requirements" })).toBeTruthy();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "State" }), "confirmed");
+
+    expect(screen.queryByRole("toolbar", { name: "Selected Requirements" })).toBeNull();
+    expect(rowOf(1).hasAttribute("data-checked")).toBe(false);
+  });
+
+  it("a chosen Category stays after a reload drops its last Requirement", async () => {
+    const user = userEvent.setup();
+    renderSection(list(MIXED));
+    acceptRequirementChange.mockResolvedValue({ kind: "no-change" });
+    loadRequirements.mockResolvedValue({
+      kind: "ok",
+      list: list(MIXED.filter((item) => item.classification !== "security")),
+    });
+    await user.click(within(banner()).getByRole("button", { name: "Review R5" }));
+    const category = screen.getByRole("combobox", { name: "Category" }) as HTMLSelectElement;
+    await user.selectOptions(category, "security");
+
+    // Already decided: the list is read again, now without Security.
+    await user.click(within(section()).getByRole("button", { name: "Accept" }));
+
+    await waitFor(() => expect(loadRequirements).toHaveBeenCalledWith(OPP_ID));
+    await waitFor(() =>
+      expect(screen.getByText("No Requirements match these filters.")).toBeTruthy(),
+    );
+    expect(category.value).toBe("security");
+    expect(Array.from(category.options).map((o) => o.textContent)).toContain("Category: Security");
+  });
+
+  it("a row's Split request is dropped once another row opens or the pane closes", async () => {
+    const user = userEvent.setup();
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <RightPaneToggle />
+        <RequirementsSection opportunityId={OPP_ID} initial={list([requirement(1), requirement(2)])} />
+        <RightPane />
+      </ShellProviders>,
+    );
+    const first = () => screen.queryByRole("textbox", { name: "First Requirement" });
+
+    await user.click(row(1));
+    await user.click(within(rowOf(1)).getByRole("button", { name: "Split" }));
+    expect(first()).toBeTruthy();
+    await user.click(row(2));
+    await user.click(row(1));
+    expect(first()).toBeNull();
+
+    await user.click(within(rowOf(1)).getByRole("button", { name: "Split" }));
+    expect(first()).toBeTruthy();
+    await user.click(within(pane()).getByRole("button", { name: "Close right pane" }));
+    await user.click(screen.getByRole("button", { name: "Right pane" }));
+    expect(within(pane()).getByRole("heading", { name: "[REQUIREMENT 1]" })).toBeTruthy();
+    expect(first()).toBeNull();
   });
 });
