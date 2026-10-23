@@ -113,3 +113,20 @@ export function formatCost(cost: EvalResult["cost"]): string {
 export function formatWhen(iso: string): string {
   return new Date(iso).toISOString().slice(0, 16).replace("T", " ") + " UTC";
 }
+
+/** "1 Opportunity", "3 Opportunities". */
+function opportunities(count: number): string {
+  return `${count} ${count === 1 ? "Opportunity" : "Opportunities"}`;
+}
+
+/** "Run 2026-10-13 21:37 UTC · reference set 6fe2d288d456 · 1 Opportunity · 68 evidence pairs
+ * pending review". The reference set version is cut to its first 12 characters. */
+export function runSummary(result: EvalResult): string {
+  const pairs = result.pending_count === 1 ? "pair" : "pairs";
+  return [
+    `Run ${formatWhen(result.created_at)}`,
+    `reference set ${result.reference_set_version.slice(0, 12)}`,
+    opportunities(result.opportunity_count),
+    `${result.pending_count.toLocaleString("en-GB")} evidence ${pairs} pending review`,
+  ].join(" · ");
+}
