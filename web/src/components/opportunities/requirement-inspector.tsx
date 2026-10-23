@@ -18,6 +18,7 @@ import {
 } from "react";
 
 import { getPassage, type PassageResult } from "@/app/opportunities/actions";
+import { RetiredLabel } from "@/components/knowledge/sources-table";
 import { InlineField } from "@/components/opportunities/inline-field";
 import { ReasonInput } from "@/components/opportunities/reason-input";
 import { RequirementDiff } from "@/components/opportunities/requirement-diff";
@@ -33,9 +34,11 @@ import {
   DELETE_REASON_LABEL,
   DELETE_REQUIREMENT,
   EDIT,
+  INTEGRATION_TYPES,
   LOADING_PASSAGE,
   MERGE,
   NO_EVIDENCE,
+  NO_INTEGRATION_TYPES,
   originLine,
   PASSAGE_FAILED,
   PASSAGE_GONE,
@@ -492,7 +495,82 @@ export type InspectorEditing = {
   onSplit: (parts: [SplitPart, SplitPart]) => Promise<ChangeFormOutcome>;
   /** Delete the Requirement with this (trimmed) reason. */
   onDelete: (reason: string) => Promise<ChangeFormOutcome>;
+  /** The active catalogue Integration Types to choose from (Story 4.1). */
+  integrationTypes?: readonly { id: string; name: string }[];
+  /** Save this whole set of Integration Type ids at once (Story 4.1). Left out: read-only. */
+  onTag?: (integrationTypeIds: string[]) => void;
 };
+
+/** The Integration Types section (Story 4.1). Editors get a checkbox per active Integration
+ * Type (plus any stored tag retired since, labelled "Retired"); each toggle saves the whole set
+ * at once. Everyone else sees the stored tags, or "None". */
+function IntegrationTypesSection({
+  requirement,
+  edit,
+}: {
+  requirement: Requirement;
+  edit?: InspectorEditing;
+}) {
+  const headingId = useId();
+  const stored = requirement.integration_types;
+  const storedIds = stored.map((t) => t.id);
+  const onTag = edit?.onTag;
+  if (!edit || !onTag) {
+    return (
+      <section aria-labelledby={headingId} className="flex flex-col gap-1.5">
+        <h4 id={headingId} className="text-label text-muted-foreground">
+          {INTEGRATION_TYPES}
+        </h4>
+        {stored.length > 0 ? (
+          <ul className="flex flex-col gap-1">
+            {stored.map((t) => (
+              <li key={t.id} className="flex min-h-6 items-center gap-2 text-body">
+                {t.name}
+                {t.retired ? <RetiredLabel /> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground">{NO_INTEGRATION_TYPES}</p>
+        )}
+      </section>
+    );
+  }
+  const active = edit.integrationTypes ?? [];
+  const activeIds = new Set(active.map((t) => t.id));
+  // A stored tag that is no longer active (retired since) stays listed so it can be removed.
+  const options = [
+    ...active.map((t) => ({ ...t, retired: false })),
+    ...stored.filter((t) => !activeIds.has(t.id)),
+  ];
+  function toggle(id: string) {
+    onTag?.(storedIds.includes(id) ? storedIds.filter((s) => s !== id) : [...storedIds, id]);
+  }
+  return (
+    <fieldset className="flex flex-col gap-1" disabled={edit.locked || edit.busy}>
+      <legend className="mb-1 text-label text-muted-foreground">{INTEGRATION_TYPES}</legend>
+      {options.length > 0 ? (
+        <ul className="flex max-h-48 flex-col overflow-y-auto">
+          {options.map((option) => (
+            <li key={option.id}>
+              <label className="flex min-h-row items-center gap-2 text-body">
+                <input
+                  type="checkbox"
+                  checked={storedIds.includes(option.id)}
+                  onChange={() => toggle(option.id)}
+                />
+                {option.name}
+                {option.retired ? <RetiredLabel /> : null}
+              </label>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground">{NO_INTEGRATION_TYPES}</p>
+      )}
+    </fieldset>
+  );
+}
 
 /** The selected Requirement in the right pane: a meta line ("Functional · R4 · Extracted"),
  * its text as the title, its state pill, its pending change (Story 2.7), then **Evidence**:
@@ -501,7 +579,7 @@ export type InspectorEditing = {
  * **Actions** block offers **Confirm requirement** (while unconfirmed), **Edit**, **Split**,
  * **Merge** (toggles the Requirement in the list's merge selection), the classification and
  * **Delete** (Story 2.6); the pending change gets **Accept** and **Reject**. Without it,
- * read-only. */
+ * read-only. Last come its Integration Types (Story 4.1). */
 export function RequirementInspector({
   opportunityId,
   requirement,
@@ -760,6 +838,7 @@ export function RequirementInspector({
           ) : null}
         </div>
       ) : null}
+      <IntegrationTypesSection requirement={requirement} edit={edit} />
     </section>
   );
 }

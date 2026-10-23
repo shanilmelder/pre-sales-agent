@@ -17,6 +17,7 @@ import {
   rejectRequirementChange,
   splitRequirement,
   startExtraction,
+  tagRequirementIntegrationTypes,
   type ConfirmAllResult,
   type RequirementChangeResult,
   type RequirementCreateResult,
@@ -69,6 +70,7 @@ import {
   groupSummary,
   HIDE_DIFF,
   isExtracting,
+  isUntaggedIntegration,
   mergeDraft,
   mergeLabel,
   MERGE,
@@ -88,9 +90,12 @@ import {
   requirementCount,
   requirementLabel,
   requirementTextProblem,
+  SHOW_ALL,
   STILL_EXTRACTING,
+  TAG_SAVED,
   TOO_MUCH_TEXT,
   unconfirmed,
+  untaggedFilterStatus,
   VIEW_DIFF,
   type Classification,
   type Extraction,
@@ -666,9 +671,16 @@ export function RequirementsSection({
   initial,
   initialOutdated = NO_OUTDATED,
   initialSelectedId = null,
+  integrationTypes,
+  untaggedOnly = false,
 }: {
   opportunityId: string;
   initial: RequirementList;
+  /** The active catalogue Integration Types, for tagging (Story 4.1). */
+  integrationTypes?: readonly { id: string; name: string }[];
+  /** `?untagged=integration` (Story 4.1): list only integration Requirements with no
+   * Integration Type. */
+  untaggedOnly?: boolean;
   /** The Assessments that used outdated Requirement versions, as the page loaded. */
   initialOutdated?: readonly OutdatedAssessment[];
   /** A Requirement to open in the inspector as the page loads (`?requirement=<id>`, Story
@@ -1219,6 +1231,32 @@ export function RequirementsSection({
     }
   }
 
+  /** Save the Requirement's whole Integration Type set (Story 4.1). A 412 shows the stale
+   * notice with Reload. */
+  async function tag(item: Requirement, integrationTypeIds: string[]) {
+    if (locked || busyIds.has(item.id)) return;
+    setNotice(null);
+    markBusy(item.id, true);
+    let result: RequirementWriteResult;
+    try {
+      result = await tagRequirementIntegrationTypes({
+        opportunityId,
+        requirementId: item.id,
+        rowVersion: item.row_version,
+        integrationTypeIds,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(item.id, false);
+    if (result.kind === "ok") {
+      replace(result.requirement);
+      announce(TAG_SAVED);
+      return;
+    }
+    writeFailed(item, result, null, "inspector");
+  }
+
   // --- shaping the list (Story 2.6) ------------------------------------------------------
 
   function toggle(item: Requirement) {
@@ -1416,7 +1454,12 @@ export function RequirementsSection({
 
   const failed = list.extraction?.status === "failed";
   const succeeded = list.extraction?.status === "succeeded";
-  const shown = filterRequirements(list.items, filters);
+  const filtered = filterRequirements(list.items, filters);
+  const untaggedCount = untaggedOnly ? list.items.filter(isUntaggedIntegration).length : 0;
+  // The open Requirement stays listed after it is tagged, so focus and keys keep their target.
+  const shown = untaggedOnly
+    ? filtered.filter((i) => isUntaggedIntegration(i) || i.id === selected?.id)
+    : filtered;
   const pendingItems = list.items.filter((item) => item.pending_change);
   const categories = categoriesPresent(list.items);
   // A chosen category stays a choice after its last Requirement goes.
@@ -1481,6 +1524,21 @@ export function RequirementsSection({
           </Card>
         ) : null}
       </div>
+      {untaggedOnly ? (
+        <div
+          role="status"
+          data-testid="untagged-filter"
+          className="flex flex-wrap items-center gap-2.5 rounded-[10px] bg-gap-tint px-3.5 py-2.5 text-control font-medium text-gap"
+        >
+          <span>{untaggedFilterStatus(untaggedCount)}</span>
+          <Link
+            href={tabHref(opportunityId, "requirements")}
+            className="ml-auto font-semibold text-gap underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {SHOW_ALL}
+          </Link>
+        </div>
+      ) : null}
       {pendingItems.length > 0 ? (
         <PendingChangesBanner
           items={pendingItems}
@@ -1607,14 +1665,14 @@ export function RequirementsSection({
           }}
         />
       ) : null}
-      {list.items.length > 0 && shown.length === 0 ? (
+      {list.items.length > 0 && shown.length === 0 && !(untaggedOnly && untaggedCount === 0) ? (
         <Card className="items-center gap-3 p-6 text-center">
           <p>{NO_MATCH}</p>
           <Button variant="outline" size="sm" onClick={() => changeFilters(NO_FILTERS)}>
             {CLEAR_FILTERS}
           </Button>
         </Card>
-      ) : list.items.length > 0 ? (
+      ) : shown.length > 0 ? (
         <RequirementsList
           items={shown}
           selectedId={selected?.id ?? null}
@@ -1626,7 +1684,7 @@ export function RequirementsSection({
           onSplit={canEdit ? requestSplit : undefined}
           onClearSelection={clearSelection}
         />
-      ) : succeeded ? (
+      ) : untaggedOnly && list.items.length > 0 ? null : succeeded ? (
         <p className="text-muted-foreground">{noneFound(list.extraction?.source_count)}</p>
       ) : !extracting && !failed ? (
         <EmptyTabCard
@@ -1664,6 +1722,8 @@ export function RequirementsSection({
                     onReject: (reason) => decide(selected, reason),
                     onSplit: (parts) => split(selected, parts),
                     onDelete: (reason) => deleteOne(selected, reason),
+                    integrationTypes,
+                    onTag: (ids) => void tag(selected, ids),
                   }
                 : undefined
             }

@@ -203,6 +203,29 @@ class RequirementRow(RowVersioned, Base):
     removal_reason: Mapped[str | None] = mapped_column(Text)
 
 
+class RequirementIntegrationTypeRow(Base):
+    """One catalogue Integration Type a person tagged a Requirement with (Story 4.1).
+    Human-owned: extraction never reads or writes it, and it is not versioned with the
+    Requirement. Saving replaces the set (`psa_app` has no UPDATE). `entry_id` is a knowledge
+    catalogue entry without a foreign key (AD-2); `tagged_by` a user's id."""
+
+    __tablename__ = "intake_requirement_integration_types"
+    __table_args__ = (Index(None, "entry_id"),)
+
+    requirement_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "intake_requirements.id",
+            ondelete="CASCADE",
+            name="fk_intake_requirement_integration_types_requirement_id",
+        ),
+        primary_key=True,
+    )
+    entry_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tagged_by: Mapped[UUID] = mapped_column(Uuid)
+    tagged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
 class RequirementVersionRow(Base):
     """One version of a Requirement's text and classification (Story 2.6). Immutable
     (`psa_app` has no UPDATE or DELETE): extraction writes version 1, every human edit the

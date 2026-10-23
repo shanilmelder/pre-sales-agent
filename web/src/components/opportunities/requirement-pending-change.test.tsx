@@ -94,6 +94,7 @@ function requirement(n: number, extra: Partial<Requirement> = {}): Requirement {
     confirmed_by: null,
     last_changed_by: ME,
     pending_change: null,
+    integration_types: [],
     evidence: [
       {
         passage_id: OLD_PASSAGE,
@@ -113,6 +114,7 @@ function list(items: Requirement[], canEdit = true): RequirementList {
     extraction: { status: "succeeded", error_code: null, source_count: 2 },
     can_start_extraction: canEdit,
     can_edit_requirements: canEdit,
+    untagged_integration_count: 0,
   };
 }
 

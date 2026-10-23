@@ -305,3 +305,27 @@ export const EXTRACTION_POLL_MS = 2000;
 
 /** Polling stops after this long of continuous extracting (a reload resumes it). */
 export const EXTRACTION_POLL_LIMIT_MS = 15 * 60 * 1000;
+
+// --- Integration Type tags (Story 4.1) --------------------------------------------------------
+
+export type RequirementIntegrationType = components["schemas"]["RequirementIntegrationType"];
+
+export const INTEGRATION_TYPES = "Integration Types";
+export const NO_INTEGRATION_TYPES = "None";
+export const TAG_SAVED = "Integration Types saved";
+/** The `?untagged=` value that lists only integration Requirements with no Integration Type. */
+export const UNTAGGED_INTEGRATION = "integration";
+export const SHOW_ALL = "Show all";
+
+/** An active Requirement classified `integration` with no Integration Type. */
+export function isUntaggedIntegration(
+  item: Pick<Requirement, "classification" | "integration_types">,
+): boolean {
+  return item.classification === "integration" && item.integration_types.length === 0;
+}
+
+/** The `?untagged=integration` status bar. */
+export function untaggedFilterStatus(n: number): string {
+  const noun = n === 1 ? "Requirement" : "Requirements";
+  return `Showing ${n} integration ${noun} with no Integration Type`;
+}

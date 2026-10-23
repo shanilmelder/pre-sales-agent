@@ -416,3 +416,10 @@ def reconcile(
             outcome = ReconcileOutcome.VERSION
         steps.append(ReconcileStep(outcome, proposal, requirement.id, tuple(new)))
     return tuple(steps)
+
+
+# --- Integration Type tags (Story 4.1) ------------------------------------------------------
+
+INTEGRATION_TYPES_MAX = 50
+"""The most Integration Types one Requirement can be tagged with."""
+INACTIVE_INTEGRATION_TYPE_MESSAGE = "A retired or unknown Integration Type can't be chosen."

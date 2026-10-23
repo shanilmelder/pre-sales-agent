@@ -40,6 +40,7 @@ import {
   type GapFormOutcome,
   type QuestionField,
 } from "@/components/opportunities/gap-inspector";
+import { ChecklistPane, GapsContextBar } from "@/components/opportunities/gaps-context";
 import { GapsFilters } from "@/components/opportunities/gaps-filters";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -103,6 +104,8 @@ import {
   type Gap,
   type GapFilters,
   type GapList,
+  type GapsContext,
+  type GapsContextChecklist,
   type Impact,
 } from "@/lib/gaps";
 import { tabHref } from "@/lib/workspace";
@@ -499,9 +502,13 @@ function retryMessage(result: StartGapDetectionResult): string {
 export function GapsSection({
   opportunityId,
   initial,
+  context = null,
 }: {
   opportunityId: string;
   initial: GapList;
+  /** The applicable Checklists, untagged integration Requirements and uncovered scope (Story
+   * 4.1); null when it couldn't be read: the strip and banners are left out. */
+  context?: GapsContext | null;
 }) {
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
@@ -509,6 +516,9 @@ export function GapsSection({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
+  // Story 4.1: the applicable Checklist shown read-only in the right pane (instead of a Gap).
+  const [openChecklist, setOpenChecklist] = useState<GapsContextChecklist | null>(null);
+  const returnToChecklist = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -618,7 +628,14 @@ export function GapsSection({
     if (rightPaneOpen) return;
     const id = returnFocusTo.current;
     returnFocusTo.current = null;
+    const chip = returnToChecklist.current;
+    returnToChecklist.current = null;
     const active = document.activeElement;
+    if (chip && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
+      // Closing the Checklist view (Esc) puts focus back on its chip.
+      document.querySelector<HTMLElement>(`[data-checklist-chip="${chip}"]`)?.focus();
+      return;
+    }
     if (id && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
       // A filtered-out row isn't rendered: fall back to the grid's tab-stop row.
       (
@@ -628,7 +645,18 @@ export function GapsSection({
     }
   }, [rightPaneOpen]);
 
+  function openChecklistView(checklist: GapsContextChecklist, viaKeyboard: boolean) {
+    setSelectedId(null);
+    setOpenChecklist(checklist);
+    returnFocusTo.current = null;
+    returnToChecklist.current = checklist.checklist_id;
+    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
+
   function open(item: Gap, viaKeyboard: boolean) {
+    setOpenChecklist(null);
+    returnToChecklist.current = null;
     setSelectedId(item.id);
     returnFocusTo.current = viaKeyboard ? item.id : null;
     setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
@@ -639,6 +667,8 @@ export function GapsSection({
   /** `e` on a row: open it with its question text being edited. */
   function startEdit(item: Gap) {
     if (locked) return;
+    setOpenChecklist(null);
+    returnToChecklist.current = null;
     setSelectedId(item.id);
     returnFocusTo.current = item.id;
     setFocusRequest(0);
@@ -1336,6 +1366,14 @@ export function GapsSection({
           </div>
         ) : null}
       </div>
+      {context ? (
+        <GapsContextBar
+          opportunityId={opportunityId}
+          context={context}
+          openChecklistId={rightPaneOpen ? (openChecklist?.checklist_id ?? null) : null}
+          onOpenChecklist={openChecklistView}
+        />
+      ) : null}
       <DetectionStatus
         detection={list.detection}
         canStart={list.can_start_detection}
@@ -1412,6 +1450,15 @@ export function GapsSection({
           actionLabel={OPEN_REQUIREMENTS}
           href={tabHref(opportunityId, "requirements")}
         />
+      ) : null}
+      {openChecklist && !selected ? (
+        <RightPaneContent>
+          <ChecklistPane
+            key={`checklist:${openChecklist.checklist_id}`}
+            checklist={openChecklist}
+            focusRequest={focusRequest}
+          />
+        </RightPaneContent>
       ) : null}
       {selected ? (
         <RightPaneContent>

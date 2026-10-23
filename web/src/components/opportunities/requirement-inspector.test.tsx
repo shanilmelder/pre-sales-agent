@@ -49,6 +49,7 @@ function requirement(n: number, classification: Classification, ...files: string
     confirmed_by: null,
     last_changed_by: null,
     pending_change: null,
+    integration_types: [],
     evidence: files.map((file, i) => ({
       passage_id: passageId(n, i),
       source_id: `00000000-0000-7000-8000-0000000000b${i}`,
@@ -86,6 +87,7 @@ function list(items: Requirement[], status: "succeeded" | "running" = "succeeded
     extraction: { status, error_code: null, source_count: 2 },
     can_start_extraction: true,
     can_edit_requirements: false,
+    untagged_integration_count: 0,
   };
 }
 

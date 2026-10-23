@@ -147,6 +147,20 @@ export type Filters = {
 
 export const NO_FILTERS: Filters = { product: "", integrationTypeId: "", ownerId: "", staleOnly: false };
 
+/** The filters a link asks for (Story 4.1): `?integration_type=<id>` and `?product=<name>`;
+ * anything else starts empty. */
+export function initialSourceFilters(
+  params: Record<string, string | string[] | undefined>,
+): Filters {
+  const one = (value: string | string[] | undefined) =>
+    typeof value === "string" ? value.trim() : "";
+  return {
+    ...NO_FILTERS,
+    product: one(params.product),
+    integrationTypeId: one(params.integration_type),
+  };
+}
+
 export function hasFilters(filters: Filters): boolean {
   return (
     filters.product !== "" ||

@@ -49,6 +49,7 @@ function requirement(n: number, classification: Classification, ...labels: strin
     confirmed_by: null,
     last_changed_by: null,
     pending_change: null,
+    integration_types: [],
     evidence: labels.map((label, i) => ({
       passage_id: `00000000-0000-7000-8000-0000000${String(n).padStart(3, "0")}${i}aa`,
       source_id: "00000000-0000-7000-8000-0000000000b1",
@@ -70,7 +71,13 @@ function list(
   canStart = true,
   canEdit = false,
 ): RequirementList {
-  return { items, extraction, can_start_extraction: canStart, can_edit_requirements: canEdit };
+  return {
+    items,
+    extraction,
+    can_start_extraction: canStart,
+    can_edit_requirements: canEdit,
+    untagged_integration_count: 0,
+  };
 }
 
 function renderSection(initial: RequirementList) {

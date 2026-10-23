@@ -14,6 +14,7 @@ import {
   formatDate,
   formatSize,
   hasFilters,
+  initialSourceFilters,
   isParsePending,
   isProcessing,
   mergeSources,
@@ -47,6 +48,16 @@ describe("knowledge source helpers", () => {
     expect(applyFilters(all, { ...NO_FILTERS, staleOnly: true })).toEqual([b]);
     expect(hasFilters(NO_FILTERS)).toBe(false);
     expect(hasFilters({ ...NO_FILTERS, staleOnly: true })).toBe(true);
+  });
+
+  it("reads the initial filters from ?integration_type= and ?product= (Story 4.1)", () => {
+    expect(initialSourceFilters({})).toEqual(NO_FILTERS);
+    expect(initialSourceFilters({ integration_type: "t2", product: " AutoStore " })).toEqual({
+      ...NO_FILTERS,
+      integrationTypeId: "t2",
+      product: "AutoStore",
+    });
+    expect(initialSourceFilters({ product: ["a", "b"], owner: "x" })).toEqual(NO_FILTERS);
   });
 
   it("lists distinct products and owners", () => {

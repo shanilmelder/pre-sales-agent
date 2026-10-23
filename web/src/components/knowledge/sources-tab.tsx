@@ -41,17 +41,31 @@ const selectClass =
 export function SourcesTab({
   initialSources,
   integrationTypes,
+  initialFilters = NO_FILTERS,
   me,
 }: {
   initialSources: readonly KnowledgeSource[];
   /** The active Integration Types, for tagging. */
   integrationTypes: readonly IntegrationTypeOption[];
+  /** The filters the page opens with (Story 4.1: from `?integration_type=` and `?product=`). */
+  initialFilters?: Filters;
   me: { id: string; roles: readonly Role[] };
 }) {
   const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();
   const [sources, setSources] = useState<readonly KnowledgeSource[]>(initialSources);
   const [syncedFrom, setSyncedFrom] = useState(initialSources);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() => {
+    // A linked product takes the spelling the Sources use (products compare ignoring case).
+    const wanted = initialFilters.product.toLowerCase();
+    const match = productsOf(initialSources).find((p) => p.toLowerCase() === wanted);
+    // A linked Integration Type the picker can't show (retired or unknown) is dropped.
+    const knownType = integrationTypes.some((t) => t.id === initialFilters.integrationTypeId);
+    return {
+      ...initialFilters,
+      product: match ?? initialFilters.product,
+      integrationTypeId: knownType ? initialFilters.integrationTypeId : "",
+    };
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -158,7 +172,13 @@ export function SourcesTab({
     }
   }
 
-  const products = productsOf(sources);
+  // A product asked for by a link may have no Source yet: it stays choosable (no rows).
+  const known = productsOf(sources);
+  const products =
+    filters.product !== "" &&
+    !known.some((p) => p.toLowerCase() === filters.product.toLowerCase())
+      ? [...known, filters.product]
+      : known;
   const owners = ownersOf(sources);
 
   return (

@@ -45,6 +45,14 @@ extraction never supersedes it.
   proposed text and classification the next version (origin `human`, locked) and cites the
   new passages; reject records the reason (1 to 500 characters) and keeps the version.
 
+- `tag_requirement_integration_types` (Story 4.1): replace the Requirement's Integration
+  Type tags with `If-Match` (428/412), bumping its `row_version` (not its version: tags are
+  human-owned and not versioned). A newly added tag must be an active catalogue Integration
+  Type (422 otherwise); a stored one may stay after it was retired. Appends
+  `intake.requirement.integration_types_tagged` with the added and removed ids. An unchanged
+  set writes nothing (200; a stale `If-Match` is still 412). Split children inherit the
+  original's tags and a merge takes the union; extraction never touches them.
+
 Trace and logs carry ids, versions and field names only, never the text or a reason.
 """
 
@@ -64,12 +72,14 @@ from app.modules.intake.application.models import (
     RequirementChanges,
     RequirementDeletion,
     RequirementDraft,
+    RequirementIntegrationTypes,
     RequirementMerge,
     RequirementSplit,
     SplitResult,
 )
 from app.modules.intake.application.requirements import requirement_views
 from app.modules.intake.domain.requirements import (
+    INACTIVE_INTEGRATION_TYPE_MESSAGE,
     REQUIREMENT_SUBJECT_TYPE,
     ChangeStatus,
     RequirementOrigin,
@@ -78,6 +88,7 @@ from app.modules.intake.domain.requirements import (
     reject_reason,
     requirement_text,
 )
+from app.modules.knowledge.application import public as knowledge
 from app.modules.opportunities.application import public as opportunities
 from app.platform import trace
 from app.platform.actor import Actor
@@ -99,6 +110,7 @@ from app.platform.trace.catalogue import (
     IntakeRequirementCreated,
     IntakeRequirementDeleted,
     IntakeRequirementEdited,
+    IntakeRequirementIntegrationTypesTagged,
     IntakeRequirementMerged,
     IntakeRequirementSplit,
     MergedFrom,
@@ -438,6 +450,9 @@ async def split_requirement(
         await _insert_human(uow, actor, opportunity_id, text, classification, passage_ids)
         for text, classification in parts
     ]
+    # Story 4.1: both parts keep the original's Integration Types.
+    for child in made:
+        await repo.copy_integration_types(uow, [requirement_id], child.id, tagged_by=user_id)
     into = [str(r.id) for r in made]
     await trace.append(
         uow,
@@ -486,6 +501,8 @@ async def merge_requirements(
     merged = await _insert_human(
         uow, actor, opportunity_id, text, merge.classification.value, passage_ids
     )
+    # Story 4.1: the merged Requirement takes the union of their Integration Types.
+    await repo.copy_integration_types(uow, ids, merged.id, tagged_by=user_id)
     await trace.append(
         uow,
         actor=actor.actor,
@@ -507,6 +524,70 @@ async def merge_requirements(
         },
     )
     return await _view(uow, opportunity_id, merged)
+
+
+# --- Integration Type tags (Story 4.1) ------------------------------------------------------
+
+
+async def _check_addable(uow: UnitOfWork, entry_ids: list[UUID]) -> None:
+    """422 unless every id is an active catalogue Integration Type."""
+    for entry_id in entry_ids:
+        entry = await knowledge.get_catalogue_entry(uow, entry_id)
+        if entry is None or entry.kind != knowledge.Kind.INTEGRATION_TYPE or entry.retired:
+            raise UnprocessableError(INACTIVE_INTEGRATION_TYPE_MESSAGE)
+
+
+async def tag_requirement_integration_types(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    body: RequirementIntegrationTypes,
+    if_match: str | None,
+) -> Requirement:
+    """Replace the Requirement's Integration Type tags. `if_match` is the raw `If-Match`
+    header (428/412)."""
+    user_id = await _authorized(uow, actor, opportunity_id)
+    record = await _load(uow, opportunity_id, requirement_id)
+    wanted = list(dict.fromkeys(body.integration_type_ids))
+    current = (await repo.integration_type_ids(uow, [requirement_id])).get(requirement_id, [])
+    added = [e for e in wanted if e not in current]
+    removed = [e for e in current if e not in wanted]
+    # A missing (428) or stale (412) If-Match wins over an invalid id (422).
+    expected = _expected(if_match)
+    if record.row_version != expected:
+        raise _stale()
+    await _check_addable(uow, added)
+    if not added and not removed:
+        return await _view(uow, opportunity_id, record)
+    updated = await repo.bump_row_version(uow, requirement_id, expected_row_version=expected)
+    if updated is None:
+        raise _stale()
+    await repo.change_integration_types(
+        uow, requirement_id, add=added, remove=removed, tagged_by=user_id
+    )
+    await trace.append(
+        uow,
+        actor=actor.actor,
+        payload=IntakeRequirementIntegrationTypesTagged(
+            added=[str(e) for e in added], removed=[str(e) for e in removed]
+        ),
+        subject_type=REQUIREMENT_SUBJECT_TYPE,
+        subject_id=requirement_id,
+        opportunity_id=opportunity_id,
+        subject_version=updated.version,
+    )
+    _log.info(
+        "intake.requirement_integration_types_tagged",
+        extra={
+            "opportunity_id": str(opportunity_id),
+            "requirement_id": str(requirement_id),
+            "actor_id": str(user_id),
+            "added": len(added),
+            "removed": len(removed),
+        },
+    )
+    return await _view(uow, opportunity_id, updated)
 
 
 # --- pending changes (Story 2.7) ------------------------------------------------------------

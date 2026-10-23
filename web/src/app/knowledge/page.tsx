@@ -6,7 +6,7 @@ import { SourcesTab } from "@/components/knowledge/sources-tab";
 import { AppShell } from "@/components/shell/app-shell";
 import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
-import type { KnowledgeSource } from "@/lib/knowledge-sources";
+import { initialSourceFilters, type KnowledgeSource } from "@/lib/knowledge-sources";
 
 import { loadSources } from "./actions";
 
@@ -27,8 +27,15 @@ async function activeIntegrationTypes(): Promise<{ id: string; name: string }[] 
   }
 }
 
-/** Knowledge → Sources (Checklists has its own route; Coverage comes with Story 3.5). */
-export default async function KnowledgePage() {
+/** Knowledge → Sources (Checklists has its own route; Coverage comes with Story 3.5).
+ * `?integration_type=<id>` and `?product=<name>` seed the filters (Story 4.1: the Gaps tab's
+ * coverage banner links here). */
+export default async function KnowledgePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
+  const filters = initialSourceFilters((await searchParams) ?? {});
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
 
@@ -46,6 +53,7 @@ export default async function KnowledgePage() {
           <SourcesTab
             initialSources={sources}
             integrationTypes={types}
+            initialFilters={filters}
             me={{ id: result.me.id, roles: result.me.roles }}
           />
         )}
