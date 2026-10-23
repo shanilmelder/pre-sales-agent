@@ -4,6 +4,7 @@ import { SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
+import { MandatoryLabel } from "@/components/knowledge/mandatory-label";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Pill } from "@/components/ui/pill";
@@ -17,9 +18,12 @@ import {
   answerRecordedBy,
   answerTextProblem,
   approvedLabel,
+  canDismiss,
   categoryLabel,
+  checklistNoLongerApplies,
   DISMISS_REASONS,
   dismissedLabel,
+  FROM_CHECKLIST,
   gapStatus,
   historyAction,
   historyByline,
@@ -28,8 +32,10 @@ import {
   impactTone,
   INJECTION_SUSPECTED,
   isAnswerable,
+  isMandatory,
   isSent,
   localToday,
+  NO_LONGER_APPLIES,
   noteProblem,
   possibleAnswerLabel,
   questionFlow,
@@ -121,14 +127,17 @@ export type QuestionEditing = {
  * reverts) and a drafted question has **Approve question**; an approved one says who approved
  * it and when. With `gapEdit`, an open Gap has an impact select with a required reason and a
  * **Dismiss** form ("Not relevant" / "Other" with a note); a dismissed one says why, by whom and
- * when, and has **Reopen** with a reason. Convert is not offered here (Epic 8 does it from the
- * Estimate). With `send` (Story 4.6), an approved question of an open Gap has **Mark as sent**
- * (a date, today by default) and a sent one **Record answer** and **No answer**; a sent question
- * says "Sent {date} by {name}" and can't be edited or approved. Story 4.7: with `send`, a sent or
- * "No answer" question of an open Gap has **Record answer** (the answer, a date, and whether it
- * settles the Gap), and each suggested answer has **Confirm** and **Not an answer**; an answered
- * Gap shows "Answered by customer, {date}" with the answer passage as Evidence and links to the
- * Requirements the answer changed, and (with `gapEdit`) **Reopen**. Without them, read-only. */
+ * when, and has **Reopen** with a reason. Story 4.2: a mandatory Gap shows the "Mandatory" label
+ * by its trigger (and "Checklist no longer applies" once it doesn't), its question "from
+ * Checklist", no Related Requirements, and no **Dismiss** while its Checklist still applies.
+ * Convert is not offered here (Epic 8 does it from the Estimate). With `send` (Story 4.6), an
+ * approved question of an open Gap has **Mark as sent** (a date, today by default) and a sent one
+ * **Record answer** and **No answer**; a sent question says "Sent {date} by {name}" and can't be
+ * edited or approved. Story 4.7: with `send`, a sent or "No answer" question of an open Gap has
+ * **Record answer** (the answer, a date, and whether it settles the Gap), and each suggested answer
+ * has **Confirm** and **Not an answer**; an answered Gap shows "Answered by customer, {date}" with
+ * the answer passage as Evidence and links to the Requirements the answer changed, and (with
+ * `gapEdit`) **Reopen**. Without them, read-only. */
 export function GapInspector({
   gap,
   opportunityId,
@@ -191,27 +200,38 @@ export function GapInspector({
       <Section>
         <SectionHeading>Why it matters</SectionHeading>
         <p className="whitespace-pre-wrap break-words text-body">{gap.why_it_matters}</p>
-        <div className="mt-1 flex">
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <TriggerPill>{triggerLabel(gap)}</TriggerPill>
+          {isMandatory(gap) ? <MandatoryLabel /> : null}
+          {gap.status === "open" && checklistNoLongerApplies(gap) ? (
+            <span className="text-meta text-text-secondary">{NO_LONGER_APPLIES}</span>
+          ) : null}
         </div>
       </Section>
 
-      <Section>
-        <SectionHeading>Related Requirements</SectionHeading>
-        <ul className="flex flex-col gap-2">
-          {gap.requirements.map((requirement) => (
-            <li key={requirement.id} className="flex items-baseline gap-2.5">
-              <Chip className="shrink-0">{requirement.label}</Chip>
-              <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
-            </li>
-          ))}
-        </ul>
-      </Section>
+      {gap.requirements.length > 0 ? (
+        <Section>
+          <SectionHeading>Related Requirements</SectionHeading>
+          <ul className="flex flex-col gap-2">
+            {gap.requirements.map((requirement) => (
+              <li key={requirement.id} className="flex items-baseline gap-2.5">
+                <Chip className="shrink-0">{requirement.label}</Chip>
+                <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
 
       {question ? (
         <Section>
           <div className="flex items-center gap-2">
-            <SectionHeading className="flex-1">Clarification Question</SectionHeading>
+            <SectionHeading className="flex-1">
+              Clarification Question
+              {question.from_checklist ? (
+                <span className="ml-2 font-normal">{FROM_CHECKLIST}</span>
+              ) : null}
+            </SectionHeading>
             <QuestionPill status={question.status} />
           </div>
           {editable ? (
@@ -391,7 +411,7 @@ export function GapInspector({
         ) : null}
       </Section>
 
-      {gapEdit && gap.status === "open" ? (
+      {gapEdit && gap.status === "open" && canDismiss(gap) ? (
         <Section>
           <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
             <h4 className="text-body-strong">Dismiss</h4>

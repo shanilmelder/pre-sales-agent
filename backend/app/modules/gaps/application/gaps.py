@@ -1,6 +1,7 @@
 """Gap queries and the detection start command (Story 4.3).
 
-- `list_gaps`: the Opportunity's open Gaps, ranked by impact, then its answered Gaps (Story
+- `list_gaps`: the Opportunity's open Gaps, ranked by impact (mandatory first within an
+  impact, Story 4.2), then its answered Gaps (Story
   4.7), then its converted Gaps (Story 8.4), then its dismissed Gaps (Story 4.4), each group
   in the same order, each with the answer to its question and the open answer suggestions
   (Story 4.7), the
@@ -36,6 +37,7 @@ from app.modules.gaps.application.detection import (
     stale_after,
 )
 from app.modules.gaps.application.models import (
+    GAP_TRIGGER,
     AnswerPassage,
     AnswerSuggestion,
     ClarificationQuestion,
@@ -47,7 +49,6 @@ from app.modules.gaps.application.models import (
     GapHistoryEntryKind,
     GapList,
     GapRequirement,
-    GapTrigger,
     IrrelevanceShare,
 )
 from app.modules.gaps.domain.gaps import (
@@ -116,8 +117,17 @@ def _detection(record: DetectionRecord | None) -> Detection | None:
 
 
 def _ranked(records: list[GapRecord]) -> list[GapRecord]:
-    """High, medium, low; oldest first within an impact."""
-    return sorted(records, key=lambda g: (impact_rank(g.impact), g.created_at, g.id))
+    """High, medium, low; mandatory Gaps first within an impact (Story 4.2), then oldest
+    first."""
+    return sorted(
+        records,
+        key=lambda g: (
+            impact_rank(g.impact),
+            g.origin != GapOrigin.MANDATORY_CHECKLIST,
+            g.created_at,
+            g.id,
+        ),
+    )
 
 
 def question_view(question: QuestionRecord, names: Mapping[UUID, str]) -> ClarificationQuestion:
@@ -141,6 +151,7 @@ def question_view(question: QuestionRecord, names: Mapping[UUID, str]) -> Clarif
         sent_by=ref(question.sent_by),
         answered_on=question.answered_on,
         answered_by=ref(question.answered_by),
+        from_checklist=question.from_checklist,
     )
 
 
@@ -329,7 +340,7 @@ async def gap_views(
                 id=str(g.id),
                 title=g.title,
                 category=GapCategory(g.category),
-                trigger=GapTrigger.model_validate(g.trigger),
+                trigger=GAP_TRIGGER.validate_python(g.trigger),
                 why_it_matters=g.why_it_matters,
                 impact=Impact(g.impact),
                 impact_basis=g.impact_basis,
@@ -347,6 +358,8 @@ async def gap_views(
                 last_changed_by=None if g.changed_by is None else _user_ref(g.changed_by, names),
                 answer=_gap_answer(answers[g.id], passages, changes, names),
                 answer_suggestions=suggested.get(g.id, []),
+                checklist_applies=g.checklist_applies,
+                why_entry_id=None if g.why_entry_id is None else str(g.why_entry_id),
             )
         )
     return views

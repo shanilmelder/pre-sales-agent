@@ -8,14 +8,15 @@ event, in the caller's Unit of Work. Each takes the Opportunity's detection lock
 change must not race a detection, which keeps Gaps a person touched.
 
 Order of checks: authorize (403/404) → Gap in this Opportunity (404) → body (422) →
-`If-Match` (428) → status (409 `gap_not_open` / `gap_not_reopenable`) → stale (412) → no-op
-or write.
+`If-Match` (428) → status (409 `gap_not_open` / `gap_not_reopenable`; `gap_mandatory` for a
+mandatory Gap whose Checklist still applies, Story 4.2) → stale (412) → no-op or write.
 
 - `change_impact`: an `open` Gap's impact, with a reason; sets `touched_by_human`. The same
   impact: 200 with nothing written (a stale `If-Match` is still 412). Trace
   `gaps.gap.impact_changed`.
 - `dismiss_gap`: an `open` Gap `dismissed` with `not_relevant` (note optional) or `other`
-  (note required). Trace `gaps.gap.dismissed`.
+  (note required). A mandatory Gap only once its Checklist no longer applies (409
+  `gap_mandatory`, Story 4.2). Trace `gaps.gap.dismissed`.
 - `reopen_gap`: a `dismissed` or `answered` (Story 4.7) Gap `open` again, its dismissal or
   answer cleared, with a reason; sets `touched_by_human`. The question of an answered Gap is
   `sent` again, its answer cleared. Trace `gaps.gap.reopened`.
@@ -43,6 +44,7 @@ from app.modules.gaps.domain.gaps import (
     GAP_SUBJECT_TYPE,
     DismissReasonKind,
     GapHistoryKind,
+    GapOrigin,
     GapState,
     GapStatus,
     Impact,
@@ -56,6 +58,7 @@ from app.platform import trace
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
     ForbiddenError,
+    GapMandatoryError,
     GapNotOpenError,
     GapNotReopenableError,
     NotFoundError,
@@ -131,6 +134,12 @@ def _state(record: GapRecord) -> GapState:
         answered_by=record.answered_by,
         answer_passage_id=record.answer_passage_id,
     )
+
+
+def _mandatory_applies(record: GapRecord) -> bool:
+    """A mandatory Gap whose Checklist item still applies (Story 4.2): it can't be
+    dismissed."""
+    return record.origin == GapOrigin.MANDATORY_CHECKLIST and record.checklist_applies
 
 
 async def _write(
@@ -289,10 +298,17 @@ async def dismiss_gap(
     at = datetime.now(UTC)
     try:
         state = rules.dismiss_gap(
-            _state(record), kind=body.reason_kind, note=note, user_id=user_id, at=at
+            _state(record),
+            kind=body.reason_kind,
+            note=note,
+            user_id=user_id,
+            at=at,
+            mandatory_applies=_mandatory_applies(record),
         )
     except rules.GapNotOpenTransitionError:
         raise GapNotOpenError(NOT_OPEN_DETAIL) from None
+    except rules.GapMandatoryError:
+        raise GapMandatoryError(rules.MANDATORY_DISMISS_DETAIL) from None
     if record.row_version != expected:
         raise _stale()
     updated = await _write(

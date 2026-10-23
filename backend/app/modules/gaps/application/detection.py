@@ -9,6 +9,10 @@ Opportunity's detection lock until commit.
 
 **The handler.**
 
+0. Story 4.2, first, in step 1's Unit of Work and before the Agent Registry check:
+   `raise_mandatory_gaps` raises one `mandatory_checklist` Gap per mandatory item of an
+   applicable Checklist that has none yet and refreshes `checklist_applies` (no model output
+   is read). These Gaps are never superseded by step 4.
 1. Short Unit of Work: reads the Opportunity's active Requirements at their current versions
    (`intake.active_requirement_snapshots`), labelled `R<n>`, and marks the detection
    `running`.
@@ -53,6 +57,7 @@ from app.agents.clarification_agent.agent import (
 from app.agents.clarification_agent.schema import ClarificationOutput
 from app.agents.contract import AgentResult
 from app.modules.gaps.adapters import repository as repo
+from app.modules.gaps.application.mandatory import raise_mandatory_gaps
 from app.modules.gaps.domain.gaps import (
     DETECTION_SUBJECT_TYPE,
     GAP_SUBJECT_TYPE,
@@ -447,8 +452,9 @@ async def _start(
 ) -> tuple[UUID, list[DetectionRequirement], registry.ConfigVersion] | None:
     """Read the Opportunity's active Requirements and the agent's current config version, and
     mark the detection `running`; None if it is no longer queued or running (a duplicate or
-    late run). While the agent is disabled (or `eval_only`) in the Agent Registry the
-    detection is marked `failed` / `registry_agent_disabled` instead, with no retry."""
+    late run). Raises the mandatory Gaps first (Story 4.2). While the agent is disabled (or
+    `eval_only`) in the Agent Registry the detection is marked `failed` /
+    `registry_agent_disabled` instead, with no retry."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_detection(uow, detection_id)
         if record is None:
@@ -457,6 +463,9 @@ async def _start(
         record = await repo.get_detection(uow, detection_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:
             return None
+        # Story 4.2: the deterministic mandatory step, committed with this Unit of Work even
+        # when the agent is disabled below, fails later, or there are no Requirements.
+        await raise_mandatory_gaps(uow, record.opportunity_id, detection_id)
         agent = await registry.current_config(uow, CLARIFICATION_AGENT)
         if not agent.runs_tasks:
             await repo.update_detection(

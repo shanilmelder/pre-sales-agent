@@ -1911,6 +1911,8 @@ export type GapWriteResult =
   | { kind: "gap-not-open" }
   /** 409 `gap_not_reopenable`: the Gap is neither dismissed nor answered (reopened meanwhile). */
   | { kind: "gap-not-reopenable" }
+  /** 409 `gap_mandatory` (Story 4.2): a mandatory Gap whose Checklist still applies. */
+  | { kind: "gap-mandatory" }
   | { kind: "forbidden" }
   /** 404: the Opportunity can't be read, or the Gap is gone. */
   | { kind: "not-found" }
@@ -1954,10 +1956,12 @@ async function gapWriteFailure(
           detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
       };
     }
-    case 409:
-      return problem(error).code === "gap_not_reopenable"
-        ? { kind: "gap-not-reopenable" }
-        : { kind: "gap-not-open" };
+    case 409: {
+      const { code } = problem(error);
+      if (code === "gap_not_reopenable") return { kind: "gap-not-reopenable" };
+      if (code === "gap_mandatory") return { kind: "gap-mandatory" };
+      return { kind: "gap-not-open" };
+    }
     case 403:
       return { kind: "forbidden" };
     case 404:
