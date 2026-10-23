@@ -24,7 +24,7 @@
 - Every write that changes what the Conflicts tab shows also sends `conflicts.changed` on
   the Opportunity's event stream (Story 6.2; delivered on commit, ids only).
 - `list_open`: the Opportunity's open and escalated Conflicts (no authorization; for other
-  modules).
+  modules). `open_conflict_counts`: how many each of several Opportunities has.
 - `open_by_requirement`: its open and escalated `effort` and `scope` Conflicts by Requirement
   (no authorization; Story 8.3, the Estimate's Open Conflict markers).
 - `get_conflicts`: the Conflicts tab (anyone who can read the Opportunity), with what the
@@ -328,6 +328,13 @@ async def detect_for_run(
         },
     )
     return Detection(detection_pass=detection_pass, raised=raised)
+
+
+async def open_conflict_counts(uow: UnitOfWork, opportunity_ids: Sequence[UUID]) -> dict[UUID, int]:
+    """How many open and escalated Conflicts each of these Opportunities has (the tab
+    badge's rule; Opportunity list rows), in one query; one with none counts 0."""
+    found = await repo.counts_in(uow, opportunity_ids, tuple(sorted(s.value for s in BLOCKING)))
+    return {opportunity_id: found.get(opportunity_id, 0) for opportunity_id in opportunity_ids}
 
 
 async def list_open(uow: UnitOfWork, opportunity_id: UUID) -> list[OpenConflict]:

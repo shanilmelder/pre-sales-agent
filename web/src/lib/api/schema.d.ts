@@ -3121,6 +3121,17 @@ export interface components {
             subtotal: components["schemas"]["Totals"];
         };
         /**
+         * EstimateSummary
+         * @description A list row's current (draft) Estimate Version: its number and total hours,
+         *     Contingency included.
+         */
+        EstimateSummary: {
+            /** Version */
+            version: number;
+            /** Total Hours */
+            total_hours: number;
+        };
+        /**
          * EstimateVersion
          * @description An Estimate Version. `sections`: only those with lines, in template order.
          *     `totals`: the overall effort, Contingency and total, with the per-role totals; the
@@ -4207,7 +4218,9 @@ export interface components {
         OpportunityStatus: "intake" | "gaps_open" | "assessing" | "estimating" | "in_review" | "baselined" | "delivered" | "closed";
         /**
          * OpportunitySummary
-         * @description A list row.
+         * @description A list row. `open_gaps`: its `open` Gaps; `open_conflicts`: its open and escalated
+         *     Conflicts (the Conflicts tab badge); `estimate`: its current draft Estimate Version,
+         *     null when it has none.
          */
         OpportunitySummary: {
             /** Id */
@@ -4228,6 +4241,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Open Gaps */
+            open_gaps: number;
+            /** Open Conflicts */
+            open_conflicts: number;
+            estimate: components["schemas"]["EstimateSummary"] | null;
         };
         /**
          * OriginGap

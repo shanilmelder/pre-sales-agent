@@ -339,6 +339,23 @@ async def current_version(uow: UnitOfWork, opportunity_id: UUID) -> VersionRecor
     return None if row is None else _version(row)
 
 
+async def current_versions(
+    uow: UnitOfWork, opportunity_ids: list[UUID]
+) -> dict[UUID, VersionRecord]:
+    """Each of these Opportunities' `draft` version (as `current_version`), in one query;
+    ones with none are left out."""
+    if not opportunity_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(EstimateVersionRow).where(
+            EstimateVersionRow.opportunity_id.in_(opportunity_ids),
+            EstimateVersionRow.status == "draft",
+        )
+    )
+    # At most one `draft` per Opportunity (a unique partial index).
+    return {row.opportunity_id: _version(row) for row in rows.scalars()}
+
+
 def _line(row: EstimateLineRow) -> LineRecord:
     return LineRecord(
         id=row.id,
@@ -365,6 +382,24 @@ async def lines_of(uow: UnitOfWork, version_id: UUID) -> list[LineRecord]:
         .execution_options(populate_existing=True)
     )
     return [_line(row) for row in rows.scalars()]
+
+
+async def lines_of_versions(
+    uow: UnitOfWork, version_ids: list[UUID]
+) -> dict[UUID, list[LineRecord]]:
+    """These versions' lines by version, each in order, in one query."""
+    found: dict[UUID, list[LineRecord]] = {}
+    if not version_ids:
+        return found
+    rows = await uow.session.execute(
+        select(EstimateLineRow)
+        .where(EstimateLineRow.version_id.in_(version_ids))
+        .order_by(EstimateLineRow.version_id, EstimateLineRow.position)
+        .execution_options(populate_existing=True)
+    )
+    for row in rows.scalars():
+        found.setdefault(row.version_id, []).append(_line(row))
+    return found
 
 
 # --- line edits (Story 8.2) -----------------------------------------------------------------
@@ -671,6 +706,24 @@ async def assumptions_of(
         statement = statement.where(AssumptionRow.accepted_at.is_not(None))
     rows = await uow.session.execute(statement)
     return [_assumption(row) for row in rows.scalars()]
+
+
+async def assumptions_of_versions(
+    uow: UnitOfWork, version_ids: list[UUID]
+) -> dict[UUID, list[AssumptionRecord]]:
+    """These versions' Assumptions by version, each in order, in one query."""
+    found: dict[UUID, list[AssumptionRecord]] = {}
+    if not version_ids:
+        return found
+    rows = await uow.session.execute(
+        select(AssumptionRow)
+        .where(AssumptionRow.version_id.in_(version_ids))
+        .order_by(AssumptionRow.version_id, AssumptionRow.position)
+        .execution_options(populate_existing=True)
+    )
+    for row in rows.scalars():
+        found.setdefault(row.version_id, []).append(_assumption(row))
+    return found
 
 
 async def get_assumption(uow: UnitOfWork, assumption_id: UUID) -> AssumptionRecord | None:

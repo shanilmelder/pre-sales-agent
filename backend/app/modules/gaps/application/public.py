@@ -6,7 +6,12 @@ from app.modules.gaps.application import answer_matching, detection
 from app.modules.gaps.application.answer_matching import confirm_match, reject_match
 from app.modules.gaps.application.conversion import mark_converted
 from app.modules.gaps.application.gap_commands import change_impact, dismiss_gap, reopen_gap
-from app.modules.gaps.application.gap_refs import GapSummary, gap_summaries, open_gap_summaries
+from app.modules.gaps.application.gap_refs import (
+    GapSummary,
+    gap_summaries,
+    open_gap_counts,
+    open_gap_summaries,
+)
 from app.modules.gaps.application.gaps import irrelevance_share, list_gaps, start_detection
 from app.modules.gaps.application.models import (
     AnswerPassage,
@@ -114,6 +119,7 @@ __all__ = [
     "mark_converted",
     "mark_sent",
     "mark_unanswered",
+    "open_gap_counts",
     "open_gap_summaries",
     "reject_match",
     "reopen_gap",

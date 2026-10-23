@@ -40,6 +40,7 @@ from app.modules.estimates.application.models import (
     AssumptionCounts,
     AssumptionGroups,
     AssumptionLine,
+    CurrentEstimate,
     EstimateDraft,
     EstimateLine,
     EstimateLineChanges,
@@ -320,12 +321,11 @@ async def _register(
     return groups, counts, unconverted
 
 
-async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersion:
-    """The version with its sections, lines, covered Requirements, its Assumptions Register
-    and every total."""
-    lines = await repo.lines_of(uow, record.id)
-    covered = await _requirements(uow, record.opportunity_id, lines)
-    assumptions = await repo.assumptions_of(uow, record.id)
+def _calculate(
+    lines: list[LineRecord], assumptions: list[AssumptionRecord]
+) -> tuple[list[arithmetic.LineInput], arithmetic.EstimateTotals]:
+    """The lines' arithmetic inputs and every total, each Contingency amount (accepted or
+    not) counted on its line, or as unallocated when it is linked to none."""
     linked: dict[UUID, list[Decimal]] = defaultdict(list)
     unallocated: list[Decimal] = []
     for a in assumptions:
@@ -344,7 +344,16 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
         )
         for line in lines
     ]
-    calculated = arithmetic.estimate_totals(inputs, unallocated)
+    return inputs, arithmetic.estimate_totals(inputs, unallocated)
+
+
+async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersion:
+    """The version with its sections, lines, covered Requirements, its Assumptions Register
+    and every total."""
+    lines = await repo.lines_of(uow, record.id)
+    covered = await _requirements(uow, record.opportunity_id, lines)
+    assumptions = await repo.assumptions_of(uow, record.id)
+    inputs, calculated = _calculate(lines, assumptions)
     groups, counts, unconverted = await _register(uow, record, lines, assumptions)
     editors = await identity.user_names(
         uow, {line.edited_by for line in lines if line.edited_by is not None}
@@ -412,6 +421,28 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
         source=VersionSource(record.source),
         source_run=await _run_number(uow, record),
     )
+
+
+async def current_estimates(
+    uow: UnitOfWork, opportunity_ids: list[UUID]
+) -> dict[UUID, CurrentEstimate]:
+    """Each of these Opportunities' current `draft` Estimate Version number and its total
+    hours, Contingency included (the same as `get_estimate`'s `totals.total_hours`), for
+    the Opportunity list. No authorization (the caller lists only Opportunities the actor
+    may read). Three queries whatever the count; ones with no draft are left out."""
+    versions = await repo.current_versions(uow, opportunity_ids)
+    if not versions:
+        return {}
+    version_ids = [v.id for v in versions.values()]
+    lines = await repo.lines_of_versions(uow, version_ids)
+    assumptions = await repo.assumptions_of_versions(uow, version_ids)
+    found: dict[UUID, CurrentEstimate] = {}
+    for opportunity_id, version in versions.items():
+        _, calculated = _calculate(lines.get(version.id, []), assumptions.get(version.id, []))
+        found[opportunity_id] = CurrentEstimate(
+            version=version.version, total_hours=_hours(calculated.overall.total)
+        )
+    return found
 
 
 async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> EstimateView:

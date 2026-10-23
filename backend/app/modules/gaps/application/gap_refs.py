@@ -67,3 +67,10 @@ async def gap_summaries(
     Gaps, or unknown ones, are left out."""
     found = await repo.gaps_by_id(uow, opportunity_id, gap_ids)
     return {s.id: s for s in await _summaries(uow, list(found.values()))}
+
+
+async def open_gap_counts(uow: UnitOfWork, opportunity_ids: list[UUID]) -> dict[UUID, int]:
+    """How many `open` Gaps each of these Opportunities has (Opportunity list rows), in one
+    query; one with none counts 0."""
+    found = await repo.open_counts(uow, opportunity_ids)
+    return {opportunity_id: found.get(opportunity_id, 0) for opportunity_id in opportunity_ids}

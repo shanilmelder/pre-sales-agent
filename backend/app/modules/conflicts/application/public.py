@@ -13,6 +13,7 @@ from app.modules.conflicts.application.conflicts import (
     get_conflicts,
     list_open,
     open_by_requirement,
+    open_conflict_counts,
     raise_conflict,
 )
 from app.modules.conflicts.application.decisions import (
@@ -89,6 +90,7 @@ __all__ = [
     "get_conflicts",
     "list_open",
     "open_by_requirement",
+    "open_conflict_counts",
     "queue_semantic_detection",
     "raise_conflict",
     "resolve_conflict",

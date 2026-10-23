@@ -79,6 +79,44 @@ export function formatDate(value: string): string {
   return DATE_FORMAT.format(new Date(Date.UTC(Number(y), Number(m) - 1, Number(d))));
 }
 
+const SHORT_DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+/** A calendar date (`YYYY-MM-DD`) as "4 Oct", without the year (filter chips). */
+export function formatShortDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [, y, m, d] = match;
+  return SHORT_DATE_FORMAT.format(new Date(Date.UTC(Number(y), Number(m) - 1, Number(d))));
+}
+
+const HOURS_FORMAT = new Intl.NumberFormat("en-GB", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/** Hours with one decimal and thousands separators: "6,644.0 h". */
+export function formatHours(hours: number): string {
+  return `${HOURS_FORMAT.format(hours)} h`;
+}
+
+/** "1 gap", "3 gaps": a count with its noun, singular for exactly one. */
+export function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** A person's initials: the first letters of their first and last words ("?" for none). */
+export function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  const first = Array.from(words[0])[0] ?? "";
+  const last = words.length > 1 ? (Array.from(words[words.length - 1])[0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
 /** Today's date in UTC as `YYYY-MM-DD`: the API checks "not in the past" against it. */
 export function utcToday(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);

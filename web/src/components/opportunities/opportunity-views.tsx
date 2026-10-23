@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 
 export type OpportunityView = "all" | "mine" | "due";
 
-/** Where each view goes; `dueHref` carries the Due range (today to today plus 14, UTC). */
+/** The views as a segmented control. Where each view goes; `dueHref` carries the Due range
+ * (today to today plus 14, UTC). */
 export function OpportunityViews({
   current,
   dueHref,
@@ -19,18 +20,21 @@ export function OpportunityViews({
     { id: "due", label: "Due in 14 days", href: dueHref },
   ];
   return (
-    <nav aria-label="Views" className="flex items-center gap-1 border-b border-border">
+    <nav
+      aria-label="Views"
+      className="flex items-center gap-0.5 rounded-[9px] bg-surface-alt p-[3px]"
+    >
       {views.map((view) => (
         <Link
           key={view.id}
           href={view.href}
           aria-current={view.id === current ? "page" : undefined}
           className={`${cn(
-            "-mb-px rounded-sm border-b-2 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            "rounded-[7px] px-3 py-[5px] outline-none focus-visible:ring-2 focus-visible:ring-primary",
             view.id === current
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground",
-          )} text-label`}
+              ? "bg-surface text-foreground"
+              : "text-text-secondary hover:text-foreground",
+          )} text-control`}
         >
           {view.label}
         </Link>

@@ -20,7 +20,10 @@ import {
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { FilterBar } from "@/components/opportunities/filter-bar";
 import { OpportunityViews } from "@/components/opportunities/opportunity-views";
-import { OpportunitiesTable } from "@/components/opportunities/opportunities-table";
+import {
+  OpportunitiesCard,
+  OpportunitiesTable,
+} from "@/components/opportunities/opportunities-table";
 import { AppShell } from "@/components/shell/app-shell";
 import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -126,19 +129,26 @@ export async function OpportunityListPage({
         }
       />
       <PageContent>
-        <OpportunityViews
-          current={view}
-          dueHref={filtersHref(BASE_PATH, dueSoonFilters(today))}
-        />
-        {filterable ? (
-          <FilterBar
-            basePath={BASE_PATH}
-            filters={filters}
-            facets={facets?.kind === "ok" ? facets.facets : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <OpportunityViews
+            current={view}
+            dueHref={filtersHref(BASE_PATH, dueSoonFilters(today))}
           />
-        ) : null}
+          <div className="flex-1" />
+          {filterable ? (
+            <FilterBar
+              basePath={BASE_PATH}
+              filters={filters}
+              facets={facets?.kind === "ok" ? facets.facets : null}
+            />
+          ) : null}
+        </div>
         {list.kind === "error" ? (
-          <p>The platform is not reachable right now. Try again in a moment.</p>
+          <OpportunitiesCard>
+            <p className="px-6 py-14 text-center text-text-secondary">
+              The platform is not reachable right now. Try again in a moment.
+            </p>
+          </OpportunitiesCard>
         ) : (
           <>
             <OpportunitiesTable

@@ -23,6 +23,7 @@ from app.modules.identity.application.public import Action, Principal, Resource
 from app.modules.opportunities.adapters import repository
 from app.modules.opportunities.adapters.repository import OpportunityRecord, Where
 from app.modules.opportunities.application.models import (
+    EstimateSummary,
     NewOpportunity,
     Opportunity,
     OpportunityChanges,
@@ -180,7 +181,17 @@ async def _page(
     records, total = await repository.list_page(
         uow, where, offset=(page - 1) * page_size, limit=page_size
     )
+    # Imported here: gaps, conflicts and estimates import opportunities' public API.
+    from app.modules.conflicts.application import public as conflicts
+    from app.modules.estimates.application import public as estimates
+    from app.modules.gaps.application import public as gaps
+
+    ids = [r.id for r in records]
     names = await identity.user_names(uow, {r.owner_id for r in records})
+    # One batched read per module, whatever the page size.
+    open_gaps = await gaps.open_gap_counts(uow, ids)
+    open_conflicts = await conflicts.open_conflict_counts(uow, ids)
+    current = await estimates.current_estimates(uow, ids)
     return OpportunityPage(
         items=[
             OpportunitySummary(
@@ -191,6 +202,11 @@ async def _page(
                 owner=_ref(r.owner_id, names),
                 target_proposal_date=r.target_proposal_date,
                 created_at=r.created_at,
+                open_gaps=open_gaps.get(r.id, 0),
+                open_conflicts=open_conflicts.get(r.id, 0),
+                estimate=None
+                if (e := current.get(r.id)) is None
+                else EstimateSummary(version=e.version, total_hours=e.total_hours),
             )
             for r in records
         ],
