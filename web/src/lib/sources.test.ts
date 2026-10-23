@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { isParsePending, mergeSources, parseFailureReason, type Source } from "@/lib/sources";
+import {
+  isParsePending,
+  mergeSources,
+  parseFailureReason,
+  parseSummary,
+  sourceMeta,
+  type Source,
+} from "@/lib/sources";
 
 function source(n: number, overrides: Partial<Source> = {}): Source {
   return {
@@ -64,5 +71,33 @@ describe("parse helpers", () => {
   it("an unknown or missing failure code reads as unreadable", () => {
     expect(parseFailureReason(null)).toBe("The file couldn't be read");
     expect(parseFailureReason("timeout")).toBe("Parsing took too long");
+  });
+});
+
+describe("Sources card helpers", () => {
+  it("sourceMeta reads kind, version of count and size", () => {
+    expect(sourceMeta(source(1))).toBe("Document · v1 of 1 · 10 B");
+    expect(
+      sourceMeta(source(1, { kind: "transcript", version: 2, version_count: 3, size_bytes: 2048 })),
+    ).toBe("Transcript · v2 of 3 · 2.0 KB");
+  });
+
+  it("parseSummary counts each status, leaving out zeros", () => {
+    const with_ = (status: "queued" | "parsing" | "parsed" | "failed") =>
+      source(1, { parse: { status, error_code: null } });
+    expect(
+      parseSummary([
+        with_("parsed"),
+        with_("parsed"),
+        with_("parsed"),
+        with_("parsed"),
+        with_("parsing"),
+        with_("failed"),
+      ]),
+    ).toBe("4 parsed · 1 parsing · 1 failed");
+    expect(parseSummary([with_("queued"), with_("parsed"), source(2, { parse: null })])).toBe(
+      "1 parsed · 1 queued",
+    );
+    expect(parseSummary([])).toBe("");
   });
 });

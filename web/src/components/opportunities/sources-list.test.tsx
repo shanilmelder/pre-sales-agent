@@ -45,7 +45,7 @@ const parsed: SourceParse = { status: "parsed", error_code: null };
 const failed = (code: ParseErrorCode): SourceParse => ({ status: "failed", error_code: code });
 
 function rowFor(name: string) {
-  return within(screen.getByRole("table")).getByText(name).closest("tr")!;
+  return within(screen.getByRole("list", { name: /^Sources/ })).getByText(name).closest("li")!;
 }
 
 function renderSection(initial: Source[], canAdd = true) {
@@ -93,7 +93,9 @@ describe("SourcesList status column", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
+    // One card, no column headers.
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByRole("columnheader")).toBeNull();
     expect(within(rowFor("a.vtt")).getByText("Queued")).toBeTruthy();
     expect(within(rowFor("b.eml")).getByText("Parsing")).toBeTruthy();
     const runningDot = within(rowFor("b.eml")).getByTestId("running-dot");
@@ -140,6 +142,68 @@ describe("SourcesList status column", () => {
   it("a Source with no parse state shows no pill", () => {
     render(<SourcesList sources={[source(1, "old.pdf", null)]} />);
     expect(within(rowFor("old.pdf")).queryByText(/Queued|Parsing|Parsed|Parse failed/)).toBeNull();
+  });
+});
+
+describe("SourcesList card", () => {
+  it("a mixed list: header count, summary, and a bar on the parsing row only", async () => {
+    const { container } = render(
+      <SourcesList
+        sources={[
+          source(1, "a.pdf", parsed),
+          source(2, "b.pdf", parsed),
+          source(3, "c.pdf", parsed),
+          source(4, "d.pdf", parsed),
+          source(5, "e.vtt", parsing),
+          source(6, "f.pdf", failed("unreadable")),
+        ]}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 2, name: "Sources 6" })).toBeTruthy();
+    expect(screen.getByText("4 parsed · 1 parsing · 1 failed")).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(6);
+    const parsingRow = rowFor("e.vtt");
+    expect(within(parsingRow).getByTestId("parsing-bar")).toBeTruthy();
+    expect(within(parsingRow).getByText("Extracting text")).toBeTruthy();
+    expect(screen.getAllByTestId("parsing-bar")).toHaveLength(1);
+    // The sweep holds still under reduced motion.
+    const sweep = within(parsingRow).getByTestId("parsing-bar").firstElementChild!;
+    expect(sweep.className).toContain("motion-reduce:animate-none");
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a queued term is its own, and a list with no failures leaves failed out", () => {
+    render(<SourcesList sources={[source(1, "a.pdf", queued), source(2, "b.pdf", parsed)]} />);
+    expect(screen.getByText("1 parsed · 1 queued")).toBeTruthy();
+  });
+
+  it("each row shows the kind tile, meta line, uploader and time", () => {
+    const transcript: Source = {
+      ...source(1, "call.vtt", parsed),
+      kind: "transcript",
+      version: 2,
+      version_count: 3,
+      size_bytes: 2048,
+    };
+    render(<SourcesList sources={[transcript]} />);
+    const row = rowFor("call.vtt");
+    expect(within(row).getByText("Transcript · v2 of 3 · 2.0 KB")).toBeTruthy();
+    expect(row.querySelector("svg.lucide-mic")).toBeTruthy();
+    expect(within(row).getByText("[UPLOADER]")).toBeTruthy();
+    expect(within(row).getByText("4 Oct 2026, 13:05 UTC")).toBeTruthy();
+  });
+
+  it("the selected row is tinted and its open button is current; one Tab stop per row", () => {
+    const onOpen = vi.fn();
+    const rows = [source(1, "a.pdf", parsed), source(2, "b.pdf", failed("timeout"))];
+    render(<SourcesList sources={rows} canAdd selectedId={rows[0].id} onOpen={onOpen} />);
+    expect(rowFor("a.pdf").className).toContain("bg-primary-tint");
+    expect(rowFor("b.pdf").className).not.toContain("bg-primary-tint");
+    const open = screen.getByRole("button", { name: "a.pdf" });
+    expect(open.getAttribute("aria-current")).toBe("true");
+    // The open button's hit area covers the row; the failed row's actions sit above it.
+    expect(open.className).toContain("after:inset-0");
+    expect(screen.getByRole("button", { name: "Retry: b.pdf" }).className).toContain("z-10");
   });
 });
 

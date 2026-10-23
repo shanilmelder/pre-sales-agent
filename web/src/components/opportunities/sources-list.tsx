@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  CaptionsIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   ClockIcon,
@@ -10,11 +9,13 @@ import {
   MessageSquareReplyIcon,
   StickyNoteIcon,
   LoaderCircleIcon,
+  MicIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { loadSources, retryParse, type RetryParseResult } from "@/app/opportunities/actions";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { Pill, type PillTone } from "@/components/ui/pill";
@@ -39,7 +40,8 @@ import {
   PARSE_POLL_MS,
   PARSE_STATUS_LABELS,
   parseFailureReason,
-  SOURCE_KIND_LABELS,
+  parseSummary,
+  sourceMeta,
   withSource,
   type Source,
   type SourceKind,
@@ -49,18 +51,19 @@ import {
 const KIND_ICONS: Record<SourceKind, LucideIcon> = {
   email: MailIcon,
   note: StickyNoteIcon,
-  transcript: CaptionsIcon,
+  transcript: MicIcon,
   document: FileTextIcon,
   clarification_answer: MessageSquareReplyIcon,
 };
 
 export const RETRY = "Retry";
 export const PASTE_INSTEAD = "Paste text instead";
+export const EXTRACTING_TEXT = "Extracting text";
 const RETRY_FAILED = "The retry failed. Try again.";
 const RETRY_NOT_ALLOWED = "Only the owner and collaborators can retry parsing.";
 
-const actionClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
+/** Row actions sit above the open button's stretched hit area. */
+const actionClass = "relative z-10";
 
 /** A Source version's parse state: an icon (or the running dot) and a label, never colour
  * alone. Parse failed has a red icon; its reason is shown next to it by the row. */
@@ -91,10 +94,31 @@ export function ParseStatusPill({ parse }: { parse: SourceParse }) {
   );
 }
 
-/** The Opportunity's Sources, newest first: kind, file name, version, parse status, uploader
- * and time (of the latest version). A failed parse shows its reason and, for those who may
- * add Sources, **Retry** and **Paste text instead**. With `onOpen`, each file name is a
- * button (one Tab stop per row) that opens the Source in the inspector, by click or Enter. */
+/** The indeterminate bar under a Parsing pill: the Assessments sweep (under reduced motion, a
+ * still, pale full-width bar). The API reports no percentage. */
+function ParsingBar() {
+  return (
+    <div className="flex w-full flex-col gap-0.5">
+      <div
+        aria-hidden="true"
+        data-testid="parsing-bar"
+        className="relative h-1.5 w-full overflow-hidden rounded-full bg-surface-alt"
+      >
+        <div className="h-full w-full animate-in duration-[1.6s] ease-in-out slide-in-from-left-full repeat-infinite motion-reduce:animate-none">
+          <div className="ml-[60%] h-full w-2/5 rounded-full bg-primary motion-reduce:ml-0 motion-reduce:w-full motion-reduce:opacity-40" />
+        </div>
+      </div>
+      <span className="text-meta text-text-secondary">{EXTRACTING_TEXT}</span>
+    </div>
+  );
+}
+
+/** The Opportunity's Sources card, newest first. Each row: the kind icon, file name and a meta
+ * line (kind, version of count, size); the parse pill (with a bar while Parsing; the reason
+ * and, for those who may add Sources, **Retry** and **Paste text instead** when it failed);
+ * and the uploader and time of the latest version. With `onOpen`, each file name is a button
+ * (one Tab stop per row) whose hit area covers the row; it opens the Source in the inspector,
+ * by click or Enter. */
 export function SourcesList({
   sources,
   canAdd = false,
@@ -121,82 +145,70 @@ export function SourcesList({
   /** Opens the file chooser from the empty card; without it the card has no button. */
   onChooseFiles?: () => void;
 }) {
+  const headingId = useId();
   if (sources.length === 0) {
     return (
-      <EmptyTabCard
-        title={NO_SOURCES}
-        body={NO_SOURCES_BODY}
-        actionLabel={onChooseFiles ? CHOOSE_FILES : undefined}
-        onClick={onChooseFiles}
-      />
+      <>
+        <h2 className="sr-only">Sources</h2>
+        <EmptyTabCard
+          title={NO_SOURCES}
+          body={NO_SOURCES_BODY}
+          actionLabel={onChooseFiles ? CHOOSE_FILES : undefined}
+          onClick={onChooseFiles}
+        />
+      </>
     );
   }
   return (
-    <Card className="overflow-hidden px-5">
-    <table className="w-full table-fixed border-collapse text-left">
-      <caption className="sr-only">Sources, newest first</caption>
-      <thead className="text-label text-muted-foreground">
-        <tr className="h-row border-b border-border">
-          <th scope="col" className="w-32 pr-2 font-medium">
-            Kind
-          </th>
-          <th scope="col" className="px-2 font-medium">
-            File
-          </th>
-          <th scope="col" className="w-20 px-2 font-medium">
-            Version
-          </th>
-          <th scope="col" className="w-72 px-2 font-medium">
-            Status
-          </th>
-          <th scope="col" className="w-40 px-2 font-medium">
-            Added by
-          </th>
-          <th scope="col" className="w-48 px-2 font-medium">
-            Added
-          </th>
-        </tr>
-      </thead>
-      <tbody>
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-4">
+        <h2 id={headingId} className="flex-1 text-section">
+          Sources <span className="font-normal text-text-secondary">{sources.length}</span>
+        </h2>
+        <span className="text-meta text-text-secondary">{parseSummary(sources)}</span>
+      </div>
+      <ul aria-labelledby={headingId} className="flex flex-col">
         {sources.map((source) => {
           const Icon = KIND_ICONS[source.kind] ?? FileTextIcon;
-          const failed = source.parse?.status === "failed";
+          const status = source.parse?.status;
+          const failed = status === "failed";
           const busy = retrying.has(source.id);
           const retryMessage = retryMessages[source.id];
           const selected = source.id === selectedId;
           return (
-            <tr
+            <li
               key={source.id}
-              className={`min-h-row border-b border-border align-top ${selected ? "bg-muted" : onOpen ? "hover:bg-muted/60" : ""}`}
+              data-selected={selected || undefined}
+              className={`relative grid grid-cols-1 items-start gap-3 border-t border-border px-5 py-3.5 md:grid-cols-[minmax(0,1fr)_200px_120px] md:gap-4 ${selected ? "bg-primary-tint" : onOpen ? "hover:bg-muted/60" : ""}`}
             >
-              <td className="py-3 pr-2">
-                <span className="inline-flex items-center gap-1.5">
-                  <Icon aria-hidden className="size-3.5 text-muted-foreground" />
-                  {SOURCE_KIND_LABELS[source.kind] ?? source.kind}
+              <div className="flex min-w-0 gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-alt text-text-secondary">
+                  <Icon aria-hidden className="size-[18px]" />
                 </span>
-              </td>
-              <td className="truncate px-2 py-3" title={source.filename}>
-                {onOpen ? (
-                  <button
-                    type="button"
-                    data-source-row=""
-                    data-source-id={source.id}
-                    aria-current={selected ? "true" : undefined}
-                    // A keyboard-activated click has no pointer clicks (detail 0).
-                    onClick={(event) => onOpen(source, event.detail === 0)}
-                    className="w-full truncate rounded-sm text-left text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  >
-                    {source.filename}
-                  </button>
-                ) : (
-                  source.filename
-                )}
-              </td>
-              <td className="px-2 py-3 text-numeric">v{source.version}</td>
-              <td className="px-2 py-3">
+                <div className="min-w-0">
+                  {onOpen ? (
+                    <button
+                      type="button"
+                      data-source-row=""
+                      data-source-id={source.id}
+                      aria-current={selected ? "true" : undefined}
+                      // A keyboard-activated click has no pointer clicks (detail 0).
+                      onClick={(event) => onOpen(source, event.detail === 0)}
+                      className="text-left text-body-strong [overflow-wrap:anywhere] outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-inset"
+                    >
+                      {source.filename}
+                    </button>
+                  ) : (
+                    <p className="text-body-strong [overflow-wrap:anywhere]">{source.filename}</p>
+                  )}
+                  <p className="text-meta text-text-secondary">{sourceMeta(source)}</p>
+                </div>
+              </div>
+              <div className="flex flex-col items-start gap-1.5">
                 {source.parse ? (
-                  <div className="flex flex-col items-start gap-1">
+                  <>
                     <ParseStatusPill parse={source.parse} />
+                    {status === "parsing" ? <ParsingBar /> : null}
                     {failed ? (
                       <>
                         <span className="text-meta text-blocker">
@@ -206,41 +218,46 @@ export function SourcesList({
                           <span className="flex flex-wrap gap-1.5">
                             {/* Retrying can't help a format with no parser yet. */}
                             {source.parse.error_code !== "not_supported" ? (
-                              <button
+                              <Button
                                 type="button"
+                                variant="outline"
+                                size="xs"
                                 disabled={busy}
                                 onClick={() => onRetry?.(source)}
                                 aria-label={`${RETRY}: ${source.filename}`}
                                 className={actionClass}
                               >
                                 {RETRY}
-                              </button>
+                              </Button>
                             ) : null}
-                            <button
+                            <Button
                               type="button"
+                              variant="outline"
+                              size="xs"
                               onClick={() => onPasteInstead?.()}
                               aria-label={`${PASTE_INSTEAD}: ${source.filename}`}
                               className={actionClass}
                             >
                               {PASTE_INSTEAD}
-                            </button>
+                            </Button>
                           </span>
                         ) : null}
                       </>
                     ) : null}
-                    {retryMessage ? (
-                      <span className="text-meta text-destructive">{retryMessage}</span>
-                    ) : null}
-                  </div>
+                  </>
                 ) : null}
-              </td>
-              <td className="truncate px-2 py-3">{source.uploaded_by.name}</td>
-              <td className="px-2 py-3 text-numeric">{formatDateTime(source.uploaded_at)}</td>
-            </tr>
+                {retryMessage ? (
+                  <span className="text-meta text-destructive">{retryMessage}</span>
+                ) : null}
+              </div>
+              <div className="min-w-0">
+                <p className="text-body [overflow-wrap:anywhere]">{source.uploaded_by.name}</p>
+                <p className="text-meta text-text-secondary">{formatDateTime(source.uploaded_at)}</p>
+              </div>
+            </li>
           );
         })}
-      </tbody>
-    </table>
+      </ul>
     </Card>
   );
 }
@@ -426,7 +443,7 @@ export function SourcesSection({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {canAdd ? (
         <SourceUpload
           ref={uploadRef}

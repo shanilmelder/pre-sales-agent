@@ -1082,9 +1082,12 @@ describe("/opportunities/[id] workspace", () => {
     const { container } = await renderWorkspace("sources");
     expect(selectedTabs()).toEqual(["Sources"]);
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByRole("heading", { level: 2, name: "Sources" })).toBeTruthy();
     expect(within(panel).getByText("call.vtt")).toBeTruthy();
-    expect(within(panel).getByText("v2")).toBeTruthy();
+    expect(within(panel).getByText("Transcript · v2 of 2 · 61 B")).toBeTruthy();
+    // Exactly one level-2 heading: the card's.
+    expect(within(panel).getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "Sources 1",
+    ]);
     expect(within(panel).queryByRole("button", { name: "Choose files" })).toBeNull();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/sources", {
@@ -1100,6 +1103,9 @@ describe("/opportunities/[id] workspace", () => {
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getAllByRole("button", { name: "Choose files" })[0]).toBeTruthy();
     expect(within(panel).getByText("No Sources yet")).toBeTruthy();
+    expect(within(panel).getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "Sources",
+    ]);
     expect(await axeViolations(container)).toEqual([]);
   });
 

@@ -106,6 +106,21 @@ describe("SourceInspector (Story 2.3)", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
+  it("is styled to the mockup: fixed label column, outline download, boxed text", async () => {
+    loadSourceText.mockResolvedValue({ kind: "ok", version: 2, text: "Body", charCount: 4 });
+    const { container } = renderInspector(PARSED);
+
+    expect(container.querySelector("dl")!.className).toContain("grid-cols-[90px_minmax(0,1fr)]");
+    const download = screen.getByRole("link", { name: "Download original: kickoff.eml" });
+    expect(download.className).toContain("border-border-strong");
+    expect(download.querySelector("svg")).toBeTruthy();
+    const label = screen.getByRole("heading", { name: "Extracted text", level: 4 });
+    expect(label.className).toContain("uppercase");
+    const text = await screen.findByLabelText("Extracted text of kickoff.eml");
+    expect(text.className).toContain("bg-background");
+    expect(text.className).toContain("border-border");
+  });
+
   it("says the text comes once parsing finishes, without loading it", () => {
     renderInspector(source(2, "notes.txt", { status: "parsing", error_code: null }));
     expect(screen.getByText("Available once parsing finishes")).toBeTruthy();
@@ -179,6 +194,22 @@ describe("opening a Source from the Sources tab (Story 2.3)", () => {
 
     const heading = await screen.findByRole("heading", { name: "kickoff.eml", level: 3 });
     await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+
+  it("closing the pane after a keyboard open returns focus to the row", async () => {
+    loadSourceText.mockResolvedValue({ kind: "ok", version: 2, text: "Body", charCount: 4 });
+    const user = userEvent.setup();
+    renderTab([PARSED]);
+
+    screen.getByRole("button", { name: "kickoff.eml" }).focus();
+    await user.keyboard("{Enter}");
+    const heading = await screen.findByRole("heading", { name: "kickoff.eml", level: 3 });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+
+    await user.click(screen.getByRole("button", { name: "Close right pane" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "kickoff.eml" })),
+    );
   });
 });
 
