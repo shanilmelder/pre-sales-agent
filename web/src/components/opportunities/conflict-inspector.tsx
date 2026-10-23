@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, CheckIcon, SparklesIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -19,18 +19,19 @@ import {
   type ConflictChoice,
   type ConflictDecisionResult,
 } from "@/app/opportunities/actions";
-import {
-  ConflictStatusPill,
-  DetectedFromTextTag,
-} from "@/components/opportunities/conflict-status-pill";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { InlineAlert } from "@/components/ui/inline-alert";
-import { SeverityPill } from "@/components/opportunities/severity-pill";
+import { Pill } from "@/components/ui/pill";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
+  agentPillLabel,
   agentsTotalEffect,
   CHOICE_REQUIRED,
+  conflictNote,
   DECISION_REASON_MAX,
   decisionLabel,
   DIFFERENT_POSITION,
@@ -40,14 +41,11 @@ import {
   estimateEffect,
   HOURS_REQUIRED,
   isEnteredHours,
-  isFromText,
   positionName,
-  positionRole,
-  positionSource,
+  positionVersion,
   previousDecisionLabel,
   REASON_REQUIRED,
   REVIEWER_REQUIRED,
-  typeLabel,
   type Conflict,
   type ConflictPosition,
   type Person,
@@ -57,106 +55,89 @@ import { codePointLength } from "@/lib/opportunities";
 
 type ConflictRequirement = NonNullable<ConflictPosition["requirement"]>;
 
+/** What a saved decision did: resolved the Conflict or escalated it. */
+export type DecisionKind = "resolved" | "escalated";
+
 export const RESOLVE = "Resolve";
 export const ESCALATE = "Escalate";
 export const RELOAD = "Reload";
+export const DECISION_HINT = "Choose a position, then give a reason.";
+export const ESCALATE_HINT = "Choose a reviewer, then give a reason.";
 const DECISION_FAILED = "The decision could not be saved. Try again.";
 const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, or the assigned reviewer can decide this Conflict.";
 const GONE = "This Conflict is no longer there. Reload to see the latest.";
 
-const primaryClass =
-  "h-6 shrink-0 self-start rounded-md bg-primary px-2 text-label text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 disabled:cursor-default disabled:opacity-60";
 const fieldClass =
-  "rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary aria-[invalid=true]:border-destructive";
+  "h-[38px] rounded-md border border-border-strong bg-surface-alt px-3 text-body outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-[invalid=true]:border-destructive";
 
-function RequirementChip({
-  requirement,
-}: {
-  requirement: ConflictRequirement;
-}) {
+/** The evidence chip of a position's Requirement (struck through when superseded). */
+function RequirementChip({ requirement }: { requirement: ConflictRequirement }) {
   return (
-    <p className="flex min-w-0 items-baseline gap-2">
-      <Chip className={`shrink-0 ${requirement.label === "Superseded" ? "line-through" : ""}`}>
-        {requirement.label}
-      </Chip>
-      <span className="min-w-0 break-words text-meta">
-        {requirement.excerpt}
-      </span>
-    </p>
+    <Chip className={`self-start ${requirement.label === "Superseded" ? "line-through" : ""}`}>
+      {requirement.label}
+    </Chip>
   );
 }
 
-const sameRequirement = (
-  a: ConflictRequirement | null,
-  b: ConflictRequirement | null,
-) => a !== null && b !== null && a.id === b.id && a.version === b.version;
-
-/** One position's content: the agent by role (or the Estimate), the cited Finding's title and
- * kind for a Conflict found in the text (Story 6.2), the value (or the Finding's stance) in
- * tabular figures, its Requirement chip when it differs from the Conflict's, and the source
- * version. */
-function PositionBody({
-  position,
-  shown,
-  chosen,
-}: {
-  position: ConflictPosition;
-  shown: ConflictRequirement | null;
-  chosen: boolean;
-}) {
-  const requirement = position.requirement;
+/** One position card's content: the agent pill (primary tint, sparkle) with the version, the
+ * value at 20px in tabular figures (a Finding's stance smaller), the cited Finding's title as the
+ * basis line, and the Requirement as the evidence chip. */
+function PositionBody({ position, chosen }: { position: ConflictPosition; chosen: boolean }) {
+  const version = positionVersion(position);
   return (
     <>
-      <span className="flex items-center gap-1.5 text-label text-muted-foreground">
-        {positionRole(position)}
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 rounded-full bg-primary-tint py-0.5 pr-2.5 pl-2 text-label text-primary-text">
+          <SparklesIcon aria-hidden="true" className="size-3 shrink-0" />
+          {agentPillLabel(position)}
+        </span>
+        {version ? <span className="text-meta text-muted-foreground">{version}</span> : null}
         {chosen ? (
-          <span className="rounded-sm bg-resolved/15 px-1 text-meta text-resolved">
+          <Pill tone="resolved" icon={<CheckIcon />} className="ml-auto">
             Chosen
-          </span>
+          </Pill>
         ) : null}
       </span>
-      {position.finding ? (
-        <span className="flex min-w-0 flex-col gap-0.5" data-testid="position-finding">
-          <span className="text-meta text-muted-foreground">
-            {kindLabel(position.finding.kind as FindingKind)}
-          </span>
-          <span className="min-w-0 break-words text-label">{position.finding.title}</span>
-        </span>
-      ) : null}
       <span
         className={
           position.finding
-            ? "min-w-0 break-words text-body"
-            : "text-body-strong [font-variant-numeric:tabular-nums]"
+            ? "min-w-0 break-words text-section"
+            : "text-[20px] leading-7 font-semibold [font-variant-numeric:tabular-nums]"
         }
       >
         {position.summary}
       </span>
-      {requirement && !sameRequirement(requirement, shown) ? (
-        <RequirementChip requirement={requirement} />
+      {position.finding ? (
+        <span
+          data-testid="position-finding"
+          className="min-w-0 break-words text-body text-muted-foreground"
+        >
+          {`${kindLabel(position.finding.kind as FindingKind)} · ${position.finding.title}`}
+        </span>
       ) : null}
-      <span className="text-meta text-muted-foreground">
-        {positionSource(position)}
-      </span>
+      {position.requirement ? <RequirementChip requirement={position.requirement} /> : null}
     </>
   );
 }
 
-const cardClass =
-  "min-w-0 gap-1.5 rounded-md border border-border p-2 shadow-none";
-const gridClass = "grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2";
+const cardClass = "flex min-w-0 flex-col gap-3 rounded-xl border-2 p-5";
 
-/** A labelled multi-line field with a live character count and an inline error. */
+/** Two columns from `md` (one below), auto-fit when there are three or more positions. */
+function gridClass(count: number): string {
+  return count > 2
+    ? "grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]"
+    : "grid grid-cols-1 gap-4 md:grid-cols-2";
+}
+
+/** The required reason, with a live character count and an inline error. */
 function ReasonField({
-  label,
   value,
   onChange,
   error,
   disabled,
   textareaRef,
 }: {
-  label: string;
   value: string;
   onChange: (value: string) => void;
   error: string | null;
@@ -168,11 +149,11 @@ function ReasonField({
   const errorId = useId();
   const length = codePointLength(value.trim());
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-label">
-        {label}
+        Reason (required)
       </label>
-      <textarea
+      <Textarea
         id={id}
         ref={textareaRef}
         rows={3}
@@ -181,11 +162,10 @@ function ReasonField({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${countId} ${errorId}` : countId}
         onChange={(event) => onChange(event.target.value)}
-        className={`${fieldClass} py-1`}
       />
       <span
         id={countId}
-        className={`text-meta [font-variant-numeric:tabular-nums] ${length > DECISION_REASON_MAX ? "text-destructive" : "text-muted-foreground"}`}
+        className={`self-end text-meta [font-variant-numeric:tabular-nums] ${length > DECISION_REASON_MAX ? "text-destructive" : "text-muted-foreground"}`}
       >
         {`${length}/${DECISION_REASON_MAX}`}
       </span>
@@ -198,23 +178,17 @@ function ReasonField({
   );
 }
 
-type Outcome =
-  { kind: "stale"; message: string } | { kind: "message"; text: string } | null;
+type Outcome = { kind: "stale"; message: string } | { kind: "message"; text: string } | null;
 
 /** What to show after a failed decision. */
-function failure(
-  result: Exclude<ConflictDecisionResult, { kind: "ok" }>,
-): Outcome {
+function failure(result: Exclude<ConflictDecisionResult, { kind: "ok" }>): Outcome {
   switch (result.kind) {
     case "stale":
       return { kind: "stale", message: result.message };
     case "invalid":
       return { kind: "message", text: result.detail };
     case "conflict":
-      return {
-        kind: "message",
-        text: `${result.detail} Reload to see the latest.`,
-      };
+      return { kind: "message", text: `${result.detail} Reload to see the latest.` };
     case "forbidden":
       return { kind: "message", text: NOT_ALLOWED };
     case "not-found":
@@ -224,13 +198,17 @@ function failure(
   }
 }
 
-function useDecision() {
+function useDecision(onDecided?: (kind: DecisionKind) => void) {
   const router = useRouter();
   const announce = useAnnounce();
   const [pending, startTransition] = useTransition();
   const [outcome, setOutcome] = useState<Outcome>(null);
 
-  function submit(run: () => Promise<ConflictDecisionResult>, done: string) {
+  function submit(
+    run: () => Promise<ConflictDecisionResult>,
+    done: string,
+    kind: DecisionKind,
+  ) {
     setOutcome(null);
     startTransition(async () => {
       let result: ConflictDecisionResult;
@@ -241,15 +219,14 @@ function useDecision() {
       }
       if (result.kind === "ok") {
         announce(done);
-        // The badge, the Open and Resolved sections and the Estimate markers update.
+        onDecided?.(kind);
+        // The badge, the Open and Resolved cards and the Estimate markers update.
         router.refresh();
         return;
       }
       const next = failure(result);
       setOutcome(next);
-      announce(
-        next?.kind === "stale" ? next.message : (next?.text ?? DECISION_FAILED),
-      );
+      announce(next?.kind === "stale" ? next.message : (next?.text ?? DECISION_FAILED));
     });
   }
 
@@ -271,53 +248,67 @@ function useDecision() {
 
 const DIFFERENT = "different";
 
-/** The Resolve form: a radio card per position (on the equal-width cards), "A different
- * position" with a text field, a required reason, then Resolve. Blank choices and reasons are
- * blocked inline before anything is sent. */
-function ResolveForm({
+type Errors = { choice?: string; entered?: string; reason?: string; reviewer?: string };
+
+/** The decision form: a radio card per position, "A different position" with a text field, one
+ * required reason, then Resolve and (when allowed) Escalate on one row. The first Escalate press
+ * reveals the reviewer select; the second sends the escalation with the same reason. Blank
+ * choices, reviewers and reasons are blocked inline before anything is sent. */
+function DecisionForm({
   conflict,
   opportunityId,
+  reviewers,
+  escalating,
+  onDecided,
 }: {
   conflict: Conflict;
   opportunityId: string;
+  reviewers: readonly Person[];
+  escalating: boolean;
+  onDecided?: (kind: DecisionKind) => void;
 }) {
   const [choice, setChoice] = useState<string | null>(null);
   const [entered, setEntered] = useState("");
   const [reason, setReason] = useState("");
-  const [errors, setErrors] = useState<{
-    choice?: string;
-    entered?: string;
-    reason?: string;
-  }>({});
-  const { pending, submit, notice } = useDecision();
+  const [reviewer, setReviewer] = useState("");
+  const [showReviewer, setShowReviewer] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
+  const { pending, submit, notice } = useDecision(onDecided);
   const groupName = useId();
   const choiceErrorId = useId();
   const enteredId = useId();
   const enteredErrorId = useId();
+  const selectId = useId();
+  const selectErrorId = useId();
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const selectRef = useRef<HTMLSelectElement>(null);
   const effort = conflict.type === "effort";
   const chosen = conflict.positions.find((p) => String(p.position) === choice);
   const agentEffect =
-    effort && chosen?.source === "assessment"
-      ? agentsTotalEffect(conflict.positions)
-      : null;
+    effort && chosen?.source === "assessment" ? agentsTotalEffect(conflict.positions) : null;
+
+  useEffect(() => {
+    if (showReviewer) selectRef.current?.focus();
+  }, [showReviewer]);
+
+  function reasonError(trimmed: string): string | undefined {
+    return !trimmed || codePointLength(trimmed) > DECISION_REASON_MAX ? REASON_REQUIRED : undefined;
+  }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (pending) return;
-    const found: typeof errors = {};
+    const found: Errors = {};
     let picked: ConflictChoice | null = null;
     if (choice === null) found.choice = CHOICE_REQUIRED;
     else if (choice === DIFFERENT) {
       const text = entered.trim();
-      if (!text || codePointLength(text) > ENTERED_MAX)
-        found.entered = ENTERED_REQUIRED;
+      if (!text || codePointLength(text) > ENTERED_MAX) found.entered = ENTERED_REQUIRED;
       else if (effort && !isEnteredHours(text)) found.entered = HOURS_REQUIRED;
       else picked = { entered: text };
     } else picked = { position: Number(choice) };
     const trimmed = reason.trim();
-    if (!trimmed || codePointLength(trimmed) > DECISION_REASON_MAX)
-      found.reason = REASON_REQUIRED;
+    found.reason = reasonError(trimmed);
     setErrors(found);
     if (found.reason) reasonRef.current?.focus();
     if (!picked || found.reason) return;
@@ -332,30 +323,52 @@ function ResolveForm({
           reason: trimmed,
         }),
       "Conflict resolved",
+      "resolved",
+    );
+  }
+
+  function onEscalate() {
+    if (pending) return;
+    if (!showReviewer) {
+      setErrors({});
+      setShowReviewer(true);
+      return;
+    }
+    const trimmed = reason.trim();
+    const found: Errors = {};
+    if (!reviewer) found.reviewer = REVIEWER_REQUIRED;
+    found.reason = reasonError(trimmed);
+    setErrors(found);
+    if (found.reviewer) selectRef.current?.focus();
+    else if (found.reason) reasonRef.current?.focus();
+    if (found.reviewer || found.reason) return;
+    const name = reviewers.find((r) => r.id === reviewer)?.name ?? "the reviewer";
+    submit(
+      () =>
+        escalateConflict({
+          opportunityId,
+          conflictId: conflict.id,
+          rowVersion: conflict.row_version,
+          reviewerId: reviewer,
+          reason: trimmed,
+        }),
+      `Conflict escalated to ${name}`,
+      "escalated",
     );
   }
 
   return (
-    <form
-      aria-label="Resolve the Conflict"
-      onSubmit={onSubmit}
-      className="flex flex-col gap-3"
-    >
+    <form aria-label="Decide the Conflict" onSubmit={onSubmit} className="flex flex-col gap-4">
       <fieldset
-        className="flex flex-col gap-1.5"
+        className="flex flex-col gap-3"
         aria-describedby={errors.choice ? choiceErrorId : undefined}
       >
-        <legend className="mb-1.5 text-label text-muted-foreground">
-          Choose a position
-        </legend>
-        {conflict.requirement ? (
-          <RequirementChip requirement={conflict.requirement} />
-        ) : null}
-        <div className={gridClass}>
+        <legend className="mb-3 text-label text-muted-foreground">Choose a position</legend>
+        <div className={gridClass(conflict.positions.length)}>
           {conflict.positions.map((position) => (
             <label
               key={position.position}
-              className={`flex flex-col ${cardClass} cursor-pointer has-[:checked]:border-primary has-[:checked]:ring-1 has-[:checked]:ring-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary`}
+              className={`${cardClass} cursor-pointer border-border bg-surface hover:bg-surface-alt has-[:checked]:border-primary has-[:checked]:bg-primary-tint has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2`}
             >
               <input
                 type="radio"
@@ -367,11 +380,7 @@ function ResolveForm({
                 aria-label={`${positionName(position)}, ${position.summary}`}
                 className="sr-only"
               />
-              <PositionBody
-                position={position}
-                shown={conflict.requirement}
-                chosen={false}
-              />
+              <PositionBody position={position} chosen={false} />
             </label>
           ))}
         </div>
@@ -388,10 +397,7 @@ function ResolveForm({
         </label>
         {choice === DIFFERENT ? (
           <div className="flex flex-col gap-1 pl-5">
-            <label
-              htmlFor={enteredId}
-              className="text-meta text-muted-foreground"
-            >
+            <label htmlFor={enteredId} className="text-meta text-muted-foreground">
               {effort ? "Hours" : "The position"}
             </label>
             <input
@@ -403,7 +409,7 @@ function ResolveForm({
               aria-invalid={errors.entered ? true : undefined}
               aria-describedby={errors.entered ? enteredErrorId : undefined}
               onChange={(event) => setEntered(event.target.value)}
-              className={`${fieldClass} h-6`}
+              className={`${fieldClass} max-w-sm`}
             />
             {errors.entered ? (
               <p id={enteredErrorId} className="text-meta text-destructive">
@@ -424,7 +430,6 @@ function ResolveForm({
         ) : null}
       </fieldset>
       <ReasonField
-        label="Reason"
         value={reason}
         onChange={setReason}
         error={errors.reason ?? null}
@@ -432,119 +437,72 @@ function ResolveForm({
         textareaRef={reasonRef}
       />
       {notice}
-      <button type="submit" disabled={pending} className={primaryClass}>
-        {RESOLVE}
-      </button>
-    </form>
-  );
-}
-
-/** The Escalate form of an open Conflict: a reviewer (the Opportunity's owner and
- * collaborators, without the viewer) and a required reason. */
-function EscalateForm({
-  conflict,
-  opportunityId,
-  reviewers,
-}: {
-  conflict: Conflict;
-  opportunityId: string;
-  reviewers: readonly Person[];
-}) {
-  const [reviewer, setReviewer] = useState("");
-  const [reason, setReason] = useState("");
-  const [errors, setErrors] = useState<{ reviewer?: string; reason?: string }>(
-    {},
-  );
-  const { pending, submit, notice } = useDecision();
-  const selectId = useId();
-  const selectErrorId = useId();
-
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (pending) return;
-    const trimmed = reason.trim();
-    const found: typeof errors = {};
-    if (!reviewer) found.reviewer = REVIEWER_REQUIRED;
-    if (!trimmed || codePointLength(trimmed) > DECISION_REASON_MAX)
-      found.reason = REASON_REQUIRED;
-    setErrors(found);
-    if (found.reviewer || found.reason) return;
-    const name =
-      reviewers.find((r) => r.id === reviewer)?.name ?? "the reviewer";
-    submit(
-      () =>
-        escalateConflict({
-          opportunityId,
-          conflictId: conflict.id,
-          rowVersion: conflict.row_version,
-          reviewerId: reviewer,
-          reason: trimmed,
-        }),
-      `Conflict escalated to ${name}`,
-    );
-  }
-
-  return (
-    <form
-      aria-label="Escalate the Conflict"
-      onSubmit={onSubmit}
-      className="flex flex-col gap-3"
-    >
-      <div className="flex flex-col gap-1">
-        <label htmlFor={selectId} className="text-label">
-          Reviewer
-        </label>
-        <select
-          id={selectId}
-          value={reviewer}
-          disabled={pending}
-          aria-invalid={errors.reviewer ? true : undefined}
-          aria-describedby={errors.reviewer ? selectErrorId : undefined}
-          onChange={(event) => setReviewer(event.target.value)}
-          className={`${fieldClass} h-6`}
-        >
-          <option value="">Choose a reviewer</option>
-          {reviewers.map((person) => (
-            <option key={person.id} value={person.id}>
-              {person.name}
-            </option>
-          ))}
-        </select>
-        {errors.reviewer ? (
-          <p id={selectErrorId} className="text-meta text-destructive">
-            {errors.reviewer}
-          </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={pending}>
+          {RESOLVE}
+        </Button>
+        {escalating ? (
+          <Button type="button" variant="outline" disabled={pending} onClick={onEscalate}>
+            <ArrowUpIcon aria-hidden="true" />
+            {ESCALATE}
+          </Button>
         ) : null}
+        {escalating && showReviewer ? (
+          <div className="flex flex-col gap-1">
+            <label htmlFor={selectId} className="sr-only">
+              Reviewer
+            </label>
+            <span className="w-56">
+              <Select
+                id={selectId}
+                ref={selectRef}
+                value={reviewer}
+                disabled={pending}
+                aria-invalid={errors.reviewer ? true : undefined}
+                aria-describedby={errors.reviewer ? selectErrorId : undefined}
+                onChange={(event) => setReviewer(event.target.value)}
+              >
+                <option value="">Choose a reviewer</option>
+                {reviewers.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.name}
+                  </option>
+                ))}
+              </Select>
+            </span>
+          </div>
+        ) : null}
+        <span className="text-meta text-muted-foreground">
+          {showReviewer ? ESCALATE_HINT : DECISION_HINT}
+        </span>
       </div>
-      <ReasonField
-        label="Reason for escalating"
-        value={reason}
-        onChange={setReason}
-        error={errors.reason ?? null}
-        disabled={pending}
-      />
-      {notice}
-      <button type="submit" disabled={pending} className={primaryClass}>
-        {ESCALATE}
-      </button>
+      {errors.reviewer ? (
+        <p id={selectErrorId} className="text-meta text-destructive">
+          {errors.reviewer}
+        </p>
+      ) : null}
     </form>
   );
 }
 
-/** The selected Conflict in the right pane: its severity, type and status, the summary, the
- * decision or escalation, and the positions as equal-width cards. While it is open or
- * escalated and the viewer may decide, the cards become a choice with a reason (Resolve), and
- * an open one can be escalated to a reviewer. */
+/** The decision card of the selected Conflict, inline under the Open card: its summary as the
+ * title, a note (type and severity, an earlier decision, the escalation), then the positions as
+ * big cards. While it is open or escalated and the viewer may decide, the cards become a choice
+ * with a required reason, Resolve, and (for an open one) Escalate. Otherwise the cards are
+ * static, the chosen one marked, under the decision line, its reason and the Estimate effect. */
 export function ConflictInspector({
   conflict,
   focusRequest = 0,
   opportunityId = "",
   reviewers = [],
+  onDecided,
 }: {
   conflict: Conflict;
   focusRequest?: number;
   opportunityId?: string;
   reviewers?: readonly Person[];
+  /** Called after a decision is saved, before the refresh. */
+  onDecided?: (kind: DecisionKind) => void;
 }) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -557,33 +515,36 @@ export function ConflictInspector({
   const effect = decision ? estimateEffect(conflict) : null;
   const escalated = escalatedLabel(conflict);
   const earlier = previousDecisionLabel(conflict);
-  const deciding = conflict.can_resolve && opportunityId !== "";
-  const escalating =
-    conflict.can_escalate && opportunityId !== "" && reviewers.length > 0;
+  const deciding =
+    conflict.can_resolve && conflict.status !== "resolved" && opportunityId !== "";
+  const escalating = conflict.can_escalate && opportunityId !== "" && reviewers.length > 0;
 
   return (
-    <section
+    <Card
+      role="region"
       aria-labelledby={headingId}
-      className="flex flex-col gap-4 p-gutter"
+      data-testid="conflict-decision-card"
+      className="min-w-0 gap-4 p-6"
     >
       <div className="flex flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <SeverityPill severity={conflict.severity} />
-          <ConflictStatusPill status={conflict.status} />
-          {isFromText(conflict) ? <DetectedFromTextTag /> : null}
-        </div>
         <h3
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
-          className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="rounded-sm text-section outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
-          {typeLabel(conflict.type)} Conflict
+          {conflict.summary}
         </h3>
-        <p className="text-body">{conflict.summary}</p>
-        {earlier ? (
-          <p className="text-meta text-muted-foreground">{earlier}</p>
+        <p className="text-meta text-muted-foreground">{conflictNote(conflict)}</p>
+        {conflict.requirement ? (
+          <p className="flex min-w-0 items-baseline gap-2">
+            <RequirementChip requirement={conflict.requirement} />
+            <span className="min-w-0 break-words text-meta text-muted-foreground">
+              {conflict.requirement.excerpt}
+            </span>
+          </p>
         ) : null}
+        {earlier ? <p className="text-meta text-muted-foreground">{earlier}</p> : null}
         {escalated ? (
           <div className="flex flex-col gap-0.5">
             <p className="flex items-center gap-1.5 text-label text-gap">
@@ -598,72 +559,46 @@ export function ConflictInspector({
             ) : null}
           </div>
         ) : null}
-        {decision ? (
-          <div
-            className="flex flex-col gap-0.5"
-            data-testid="conflict-decision"
-          >
-            <p className="text-label">{decision}</p>
-            {conflict.resolution_reason ? (
-              <p className="text-meta text-muted-foreground">
-                {conflict.resolution_reason}
-              </p>
-            ) : null}
-            {effect ? (
-              <p className="text-meta text-muted-foreground">{effect}</p>
-            ) : null}
-          </div>
-        ) : conflict.resolution_reason ? (
-          <p className="text-meta text-muted-foreground">
-            {conflict.resolution_reason}
-          </p>
-        ) : null}
       </div>
 
       {deciding ? (
-        <ResolveForm
-          key={`resolve-${conflict.row_version}`}
+        <DecisionForm
+          key={`decide-${conflict.row_version}`}
           conflict={conflict}
           opportunityId={opportunityId}
+          reviewers={reviewers}
+          escalating={escalating}
+          onDecided={onDecided}
         />
       ) : (
-        <div className="flex flex-col gap-1.5">
-          <h4 className="text-label text-muted-foreground">Positions</h4>
-          {conflict.requirement ? (
-            <RequirementChip requirement={conflict.requirement} />
+        <div className="flex flex-col gap-4">
+          {decision ? (
+            <div className="flex flex-col gap-0.5" data-testid="conflict-decision">
+              <p className="text-body-strong">{decision}</p>
+              {conflict.resolution_reason ? (
+                <p className="text-body text-muted-foreground">{conflict.resolution_reason}</p>
+              ) : null}
+              {effect ? <p className="text-meta text-muted-foreground">{effect}</p> : null}
+            </div>
+          ) : conflict.resolution_reason ? (
+            <p className="text-body text-muted-foreground">{conflict.resolution_reason}</p>
           ) : null}
-          {/* Equal-width cards, wrapping to a new row when the pane is too narrow for all. */}
-          <ul className={gridClass}>
-            {conflict.positions.map((position) => (
-              <li key={position.position} className="flex">
-                <Card className={`${cardClass} flex-1`}>
-                  <PositionBody
-                    position={position}
-                    shown={conflict.requirement}
-                    chosen={position.position === conflict.chosen_position}
-                  />
-                </Card>
-              </li>
-            ))}
+          <h4 className="sr-only">Positions</h4>
+          <ul className={gridClass(conflict.positions.length)}>
+            {conflict.positions.map((position) => {
+              const chosen = position.position === conflict.chosen_position;
+              return (
+                <li
+                  key={position.position}
+                  className={`${cardClass} ${chosen ? "border-primary bg-primary-tint" : "border-border bg-surface"}`}
+                >
+                  <PositionBody position={position} chosen={chosen} />
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
-
-      {escalating ? (
-        <details className="flex flex-col gap-2 border-t border-border pt-3">
-          <summary className="cursor-pointer text-label outline-none focus-visible:ring-2 focus-visible:ring-primary">
-            Escalate to a reviewer
-          </summary>
-          <div className="pt-2">
-            <EscalateForm
-              key={`escalate-${conflict.row_version}`}
-              conflict={conflict}
-              opportunityId={opportunityId}
-              reviewers={reviewers}
-            />
-          </div>
-        </details>
-      ) : null}
-    </section>
+    </Card>
   );
 }

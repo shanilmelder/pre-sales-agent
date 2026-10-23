@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import { StatusPill as CatalogueStatusPill } from "@/components/admin/catalogue-table";
 import { EvalStatusPill } from "@/components/admin/evals-view";
 import { CoversChip, VersionPill } from "@/components/opportunities/estimate-grid";
-import { DetectedFromTextTag } from "@/components/opportunities/conflict-status-pill";
 import { GapStatusPill, QuestionPill } from "@/components/opportunities/gap-inspector";
 import { axeViolations } from "@/test/axe";
 
@@ -70,23 +69,19 @@ describe("migrated neutral pills and chips", () => {
     expect(toneOf(container, '[data-slot="pill"]')).toBe("neutral");
   });
 
-  it("CoversChip, DetectedFromTextTag and Chip render the chip look", async () => {
+  it("CoversChip and Chip render the chip look", async () => {
     const { container } = render(
       <div>
         <CoversChip count={3} />
-        <DetectedFromTextTag />
         <Chip>S2</Chip>
       </div>,
     );
     const chips = container.querySelectorAll('[data-slot="chip"]');
-    expect(chips).toHaveLength(3);
+    expect(chips).toHaveLength(2);
     for (const chip of chips) {
       expect(chip.className).toContain("border-border-strong");
       expect(chip.className).toContain("text-primary-text");
     }
-    expect(container.querySelector('[data-testid="detected-from-text"]')?.getAttribute("data-slot")).toBe(
-      "chip",
-    );
     expect(await axeViolations(container)).toEqual([]);
   });
 });
