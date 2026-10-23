@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
 import { AccessGate, hasAccess } from "@/components/access-gate";
-import { AdminNav } from "@/components/admin/admin-nav";
+import { AdminNav, ADMIN_SUBTITLE } from "@/components/admin/admin-nav";
 import { CatalogueAdmin } from "@/components/admin/catalogue-admin";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
 import type { CatalogueEntry } from "@/lib/catalogue";
 import { isAdmin } from "@/lib/navigation";
@@ -54,11 +55,9 @@ export default async function AdminCataloguePage() {
   return (
     <AppShell me={result.me}>
       <div className="flex flex-col">
-        <div className="flex flex-col gap-1 p-gutter pb-2">
-          <h1 className="text-title">Catalogue</h1>
-        </div>
+        <PageHeader title="Admin" subtitle={ADMIN_SUBTITLE} />
         <AdminNav current="/admin/catalogue" />
-        <div className="h-2" />
+        <div className="h-3" />
         {list.kind === "forbidden" ? <NoAccess /> : null}
         {list.kind === "error" ? (
           <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>

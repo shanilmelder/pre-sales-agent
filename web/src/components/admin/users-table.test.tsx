@@ -116,3 +116,11 @@ describe("UsersTable", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 });
+
+describe("UsersTable card", () => {
+  it("sits in a card with padded rows", () => {
+    renderTable();
+    expect(screen.getByRole("table").closest('[data-slot="card"]')).toBeTruthy();
+    expect(row("[USER 1]").closest("td")?.className).toContain("px-4");
+  });
+});

@@ -10,6 +10,7 @@ import {
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import { ParseStatusPill } from "@/components/opportunities/sources-list";
+import { Card } from "@/components/ui/card";
 import { Pill, type PillTone } from "@/components/ui/pill";
 import { useShell } from "@/components/shell/shell-context";
 import {
@@ -125,87 +126,89 @@ export function SourcesTable({
   }
 
   return (
-    <div ref={root} onKeyDown={onKeyDown}>
-      <table className="w-full table-fixed border-collapse text-left">
-        <caption className="sr-only">Knowledge Sources, longest-unreviewed first</caption>
-        <thead className="text-label text-muted-foreground">
-          <tr className="h-row border-b border-border">
-            <th scope="col" className="px-gutter font-medium">
-              Title
-            </th>
-            <th scope="col" className="w-32 px-2 font-medium">
-              Product
-            </th>
-            <th scope="col" className="w-48 px-2 font-medium">
-              Integration Types
-            </th>
-            <th scope="col" className="w-36 px-2 font-medium">
-              Owner
-            </th>
-            <th scope="col" className="w-48 px-2 font-medium">
-              Last reviewed
-            </th>
-            <th scope="col" className="w-16 px-2 font-medium">
-              Version
-            </th>
-            <th scope="col" className="w-56 px-2 font-medium">
-              Status
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {sources.map((source) => {
-            const selected = source.id === selectedId;
-            const failure = processingFailure(source);
-            const types = source.integration_types.map((t) => t.name).join(", ");
-            return (
-              <tr
-                key={source.id}
-                className={`h-row border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
-              >
-                <td className="truncate px-gutter">
-                  <button
-                    type="button"
-                    data-source-row=""
-                    data-source-id={source.id}
-                    tabIndex={source.id === tabStopId ? 0 : -1}
-                    aria-current={selected ? "true" : undefined}
-                    onFocus={() => setFocusedId(source.id)}
-                    // A keyboard-activated click has no pointer clicks (detail 0).
-                    onClick={(event) => onOpen(source, event.detail === 0)}
-                    className="w-full truncate rounded-sm text-left text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  >
-                    {source.title}
-                  </button>
-                </td>
-                <td className="truncate px-2" title={source.product}>
-                  {source.product}
-                </td>
-                <td className="truncate px-2" title={types}>
-                  {types}
-                </td>
-                <td className="truncate px-2" title={source.owner.name}>
-                  {source.owner.name}
-                </td>
-                <td className="px-2">
-                  <span className="inline-flex items-center gap-2">
-                    <span className="text-numeric">{formatDate(source.last_reviewed_on)}</span>
-                    {source.stale ? <StaleLabel /> : null}
-                  </span>
-                </td>
-                <td className="px-2 text-numeric">v{source.version}</td>
-                <td className="px-2">
-                  <span className="flex flex-wrap items-center gap-1">
-                    <SourceStatusPill source={source} />
-                    {source.retired ? <RetiredLabel /> : null}
-                    {failure ? <span className="text-meta text-blocker">{failure}</span> : null}
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div ref={root} onKeyDown={onKeyDown} className="px-gutter pb-gutter">
+      <Card className="overflow-hidden">
+        <table className="w-full table-fixed border-collapse text-left">
+          <caption className="sr-only">Knowledge Sources, longest-unreviewed first</caption>
+          <thead className="text-label text-muted-foreground">
+            <tr className="h-row border-b border-border">
+              <th scope="col" className="px-4 font-medium">
+                Title
+              </th>
+              <th scope="col" className="w-32 px-2 font-medium">
+                Product
+              </th>
+              <th scope="col" className="w-48 px-2 font-medium">
+                Integration Types
+              </th>
+              <th scope="col" className="w-36 px-2 font-medium">
+                Owner
+              </th>
+              <th scope="col" className="w-48 px-2 font-medium">
+                Last reviewed
+              </th>
+              <th scope="col" className="w-16 px-2 font-medium">
+                Version
+              </th>
+              <th scope="col" className="w-56 px-2 font-medium">
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sources.map((source) => {
+              const selected = source.id === selectedId;
+              const failure = processingFailure(source);
+              const types = source.integration_types.map((t) => t.name).join(", ");
+              return (
+                <tr
+                  key={source.id}
+                  className={`h-row border-b border-border last:border-b-0 ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
+                >
+                  <td className="truncate px-4">
+                    <button
+                      type="button"
+                      data-source-row=""
+                      data-source-id={source.id}
+                      tabIndex={source.id === tabStopId ? 0 : -1}
+                      aria-current={selected ? "true" : undefined}
+                      onFocus={() => setFocusedId(source.id)}
+                      // A keyboard-activated click has no pointer clicks (detail 0).
+                      onClick={(event) => onOpen(source, event.detail === 0)}
+                      className="w-full truncate rounded-sm text-left text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      {source.title}
+                    </button>
+                  </td>
+                  <td className="truncate px-2" title={source.product}>
+                    {source.product}
+                  </td>
+                  <td className="truncate px-2" title={types}>
+                    {types}
+                  </td>
+                  <td className="truncate px-2" title={source.owner.name}>
+                    {source.owner.name}
+                  </td>
+                  <td className="px-2">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="text-numeric">{formatDate(source.last_reviewed_on)}</span>
+                      {source.stale ? <StaleLabel /> : null}
+                    </span>
+                  </td>
+                  <td className="px-2 text-numeric">v{source.version}</td>
+                  <td className="px-2">
+                    <span className="flex flex-wrap items-center gap-1">
+                      <SourceStatusPill source={source} />
+                      {source.retired ? <RetiredLabel /> : null}
+                      {failure ? <span className="text-meta text-blocker">{failure}</span> : null}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }

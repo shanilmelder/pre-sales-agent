@@ -3,6 +3,7 @@
 import { CircleCheckIcon, CircleDashedIcon, CircleXIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { Card } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
 import {
@@ -49,22 +50,16 @@ function ResultPill({ result }: { result: EvalResult }) {
   );
 }
 
-function Section({
-  id,
-  title,
-  children,
-}: {
-  id: string;
-  title: string;
-  children: ReactNode;
-}) {
+function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-2">
-      <h2 id={id} className="text-section">
-        {title}
-      </h2>
-      {children}
-    </section>
+    <Card className="p-4">
+      <section aria-labelledby={id} className="flex flex-col gap-2">
+        <h2 id={id} className="text-section">
+          {title}
+        </h2>
+        {children}
+      </section>
+    </Card>
   );
 }
 
@@ -280,9 +275,7 @@ function History({
           >
             <span className="text-numeric">{formatWhen(result.created_at)}</span>
             <ResultPill result={result} />
-            <span className="text-meta text-muted-foreground">
-              {result.reference_set_version}
-            </span>
+            <span className="text-meta text-muted-foreground">{result.reference_set_version}</span>
           </button>
         </li>
       ))}

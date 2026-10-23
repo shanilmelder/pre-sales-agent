@@ -3,9 +3,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AccessGate, hasAccess } from "@/components/access-gate";
-import { AdminNav } from "@/components/admin/admin-nav";
+import { AdminNav, ADMIN_SUBTITLE } from "@/components/admin/admin-nav";
 import { UsersAdmin } from "@/components/admin/users-admin";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageHeader } from "@/components/shell/page-header";
 import { auth0UsersUrl, ROLES_AS_OF_NOTE } from "@/lib/admin";
 import type { components } from "@/lib/api/client";
 import { createServerApiClient, getMe } from "@/lib/api/server";
@@ -103,22 +104,20 @@ export default async function AdminUsersPage({
   return (
     <AppShell me={result.me}>
       <div className="flex flex-col">
-        <div className="flex flex-col gap-1 p-gutter">
-          <h1 className="text-title">Users &amp; roles</h1>
-          <p className="text-meta text-muted-foreground">
-            {ROLES_AS_OF_NOTE}{" "}
-            <a
-              href={manageRolesUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-sm underline outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              Manage roles in Auth0
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          </p>
-        </div>
+        <PageHeader title="Admin" subtitle={ADMIN_SUBTITLE} />
         <AdminNav current="/admin/users" />
+        <p className="px-gutter pt-3 text-meta text-muted-foreground">
+          {ROLES_AS_OF_NOTE}{" "}
+          <a
+            href={manageRolesUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-sm underline outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Manage roles in Auth0
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        </p>
         {list.kind === "forbidden" ? <NoAccess /> : null}
         {list.kind === "error" ? (
           <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>

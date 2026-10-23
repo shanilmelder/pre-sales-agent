@@ -81,3 +81,13 @@ describe("CatalogueTable", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 });
+
+describe("CatalogueTable card", () => {
+  it("puts each kind's table in its own card under its heading", () => {
+    renderTable();
+    const tables = screen.getAllByRole("table");
+    expect(tables.length).toBeGreaterThan(0);
+    for (const table of tables) expect(table.closest('[data-slot="card"]')).toBeTruthy();
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBeGreaterThan(0);
+  });
+});

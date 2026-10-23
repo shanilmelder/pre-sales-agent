@@ -5,6 +5,7 @@ import { useRef, useState, type KeyboardEvent } from "react";
 
 import { Pill } from "@/components/ui/pill";
 import { useShell } from "@/components/shell/shell-context";
+import { Card } from "@/components/ui/card";
 import { EMPTY_STATE, groupByKind, type CatalogueEntry } from "@/lib/catalogue";
 
 /** The entry's status: always an icon and a label, never colour alone. */
@@ -63,71 +64,70 @@ export function CatalogueTable({
   }
 
   return (
-    <div ref={root} onKeyDown={onKeyDown} className="flex flex-col gap-4">
+    <div ref={root} onKeyDown={onKeyDown} className="flex flex-col gap-4 px-gutter pb-gutter">
       {groupByKind(entries).map((group) => (
         <section key={group.kind} aria-labelledby={`catalogue-${group.kind}`}>
-          <h2
-            id={`catalogue-${group.kind}`}
-            className="px-gutter py-1 text-label text-muted-foreground"
-          >
+          <h2 id={`catalogue-${group.kind}`} className="py-1 text-label text-muted-foreground">
             {group.plural}
           </h2>
           {group.entries.length === 0 ? (
-            <p className="px-gutter text-meta text-muted-foreground">None yet.</p>
+            <p className="text-meta text-muted-foreground">None yet.</p>
           ) : (
-            <table className="w-full table-fixed border-collapse text-left">
-              <caption className="sr-only">{group.plural}</caption>
-              <thead className="text-label text-muted-foreground">
-                <tr className="h-row border-b border-border">
-                  <th scope="col" className="w-1/5 px-gutter font-medium">
-                    Code
-                  </th>
-                  <th scope="col" className="px-2 font-medium">
-                    Name
-                  </th>
-                  <th scope="col" className="w-20 px-2 font-medium">
-                    Version
-                  </th>
-                  <th scope="col" className="w-28 px-2 font-medium">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.entries.map((entry) => {
-                  const selected = entry.id === selectedId;
-                  return (
-                    <tr
-                      key={entry.id}
-                      className={`h-row border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
-                    >
-                      <td className="truncate px-gutter text-numeric text-muted-foreground">
-                        {entry.code}
-                      </td>
-                      <td className="truncate px-2">
-                        <button
-                          type="button"
-                          data-entry-row=""
-                          data-entry-id={entry.id}
-                          tabIndex={entry.id === tabStopId ? 0 : -1}
-                          aria-current={selected ? "true" : undefined}
-                          onFocus={() => setFocusedId(entry.id)}
-                          // A keyboard-activated click has no pointer clicks (detail 0).
-                          onClick={(event) => onOpen(entry, event.detail === 0)}
-                          className="w-full truncate rounded-sm text-left text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                        >
-                          {entry.name}
-                        </button>
-                      </td>
-                      <td className="px-2 text-numeric">v{entry.current_version}</td>
-                      <td className="px-2">
-                        <StatusPill entry={entry} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <Card className="overflow-hidden">
+              <table className="w-full table-fixed border-collapse text-left">
+                <caption className="sr-only">{group.plural}</caption>
+                <thead className="text-label text-muted-foreground">
+                  <tr className="h-row border-b border-border">
+                    <th scope="col" className="w-1/5 px-4 font-medium">
+                      Code
+                    </th>
+                    <th scope="col" className="px-2 font-medium">
+                      Name
+                    </th>
+                    <th scope="col" className="w-20 px-2 font-medium">
+                      Version
+                    </th>
+                    <th scope="col" className="w-28 px-2 font-medium">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.entries.map((entry) => {
+                    const selected = entry.id === selectedId;
+                    return (
+                      <tr
+                        key={entry.id}
+                        className={`h-row border-b border-border last:border-b-0 ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
+                      >
+                        <td className="truncate px-4 text-numeric text-muted-foreground">
+                          {entry.code}
+                        </td>
+                        <td className="truncate px-2">
+                          <button
+                            type="button"
+                            data-entry-row=""
+                            data-entry-id={entry.id}
+                            tabIndex={entry.id === tabStopId ? 0 : -1}
+                            aria-current={selected ? "true" : undefined}
+                            onFocus={() => setFocusedId(entry.id)}
+                            // A keyboard-activated click has no pointer clicks (detail 0).
+                            onClick={(event) => onOpen(entry, event.detail === 0)}
+                            className="w-full truncate rounded-sm text-left text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          >
+                            {entry.name}
+                          </button>
+                        </td>
+                        <td className="px-2 text-numeric">v{entry.current_version}</td>
+                        <td className="px-2">
+                          <StatusPill entry={entry} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </Card>
           )}
         </section>
       ))}

@@ -8,7 +8,10 @@ import {
   SourceRegisterForm,
   type IntegrationTypeOption,
 } from "@/components/knowledge/source-register-form";
+import { KnowledgeNav, KNOWLEDGE_SUBTITLE } from "@/components/knowledge/knowledge-nav";
 import { SourcesTable } from "@/components/knowledge/sources-table";
+import { PageHeader } from "@/components/shell/page-header";
+import { Button } from "@/components/ui/button";
 import { isEditableTarget } from "@/components/shell/keyboard-shortcuts";
 import {
   RIGHT_PANE_TOGGLE_ID,
@@ -163,7 +166,19 @@ export function SourcesTab({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 px-gutter pb-2">
+      <PageHeader
+        title="Knowledge"
+        subtitle={KNOWLEDGE_SUBTITLE}
+        action={
+          mayRegister ? (
+            <Button type="button" onClick={startCreate} aria-keyshortcuts="c">
+              Add source
+            </Button>
+          ) : null
+        }
+      />
+      <KnowledgeNav />
+      <div className="flex flex-wrap items-center gap-2 px-gutter py-3">
         <label className="flex items-center gap-1 text-label text-muted-foreground">
           Product
           <select
@@ -224,16 +239,6 @@ export function SourcesTab({
             className="h-7 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
           >
             Clear filters
-          </button>
-        ) : null}
-        {mayRegister ? (
-          <button
-            type="button"
-            onClick={startCreate}
-            aria-keyshortcuts="c"
-            className="ml-auto h-7 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            Register Source
           </button>
         ) : null}
       </div>

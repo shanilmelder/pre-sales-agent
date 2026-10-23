@@ -75,7 +75,14 @@ describe("/admin/users", () => {
     listed([TARGET]);
     const { container } = renderPage(await AdminUsersPage({ searchParams: searchParams() }));
 
-    expect(screen.getByRole("heading", { level: 1, name: "Users & roles" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Admin" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Users & roles" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(
+      within(screen.getByRole("navigation", { name: "Admin sections" })).getAllByRole("link"),
+    ).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /invite/i })).toBeNull();
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Admin" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("button", { name: "[TARGET]" })).toBeTruthy();
@@ -134,7 +141,9 @@ describe("/admin/users", () => {
     expect(screen.getByText(/shown as of each person's last sign-in/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "[TARGET]" }));
     const pane = await screen.findByRole("complementary", { name: "Details" });
-    expect(within(pane).queryByText("Select a gap or estimate line to see its details.")).toBeNull();
+    expect(
+      within(pane).queryByText("Select a gap or estimate line to see its details."),
+    ).toBeNull();
     expect(within(pane).getByRole("heading", { name: "Roles as of last sign-in" })).toBeTruthy();
     expect(within(pane).getByText("Commercial")).toBeTruthy();
     expect(within(pane).queryAllByRole("switch")).toHaveLength(0);
@@ -142,7 +151,9 @@ describe("/admin/users", () => {
     const links = screen.getAllByRole("link", { name: /Manage roles in Auth0/ });
     expect(links).toHaveLength(2);
     for (const link of links) {
-      expect(link.getAttribute("href")).toBe("https://manage.auth0.com/dashboard/eu/psa-test/users");
+      expect(link.getAttribute("href")).toBe(
+        "https://manage.auth0.com/dashboard/eu/psa-test/users",
+      );
     }
     expect(await axeViolations(container)).toEqual([]);
   });
@@ -167,7 +178,7 @@ describe("/admin/users", () => {
     signedIn(["presales_engineer"]);
     const { container } = renderPage(await AdminUsersPage({ searchParams: searchParams() }));
     expect(screen.getByText("You don't have access to this page")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Users & roles" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Admin" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Admin" })).toBeNull();
     expect(apiGet).not.toHaveBeenCalled();
     expect(await axeViolations(container)).toEqual([]);

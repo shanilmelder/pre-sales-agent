@@ -70,7 +70,7 @@ describe("/admin/evals", () => {
     respond([LATEST, PREVIOUS]);
     const { container } = renderPage(await AdminEvalsPage());
 
-    expect(screen.getByRole("heading", { level: 1, name: "Evals" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Admin" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Evals" }).getAttribute("aria-current")).toBe("page");
     expect(apiGet).toHaveBeenCalledWith("/api/v1/registry/evals");
 

@@ -95,3 +95,14 @@ describe("SourcesTable", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 });
+
+describe("SourcesTable card", () => {
+  it("sits in a card with padded rows, and an empty list is not carded", () => {
+    const { unmount } = renderTable();
+    expect(screen.getByRole("table").closest('[data-slot="card"]')).toBeTruthy();
+    expect(rowOf("Old guide").querySelector("td")?.className).toContain("px-4");
+    unmount();
+    renderTable([], 0);
+    expect(document.querySelector('[data-slot="card"]')).toBeNull();
+  });
+});
