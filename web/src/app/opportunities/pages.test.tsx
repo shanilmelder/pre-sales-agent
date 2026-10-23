@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -1983,9 +1983,14 @@ describe("/opportunities/[id] workspace", () => {
     expect(within(panel).getByRole("heading", { level: 2, name: "Trace" })).toBeTruthy();
     const rows = within(panel).getAllByRole("row");
     expect(rows.map((r) => r.textContent)).toEqual([
-      expect.stringContaining("Red Team AgentRed Team Review completed"),
+      expect.stringContaining("RARed Team AgentRed Team Review completed"),
       expect.stringContaining("[OWNER]Opportunity created"),
     ]);
+    expect(rows.map((r) => r.getAttribute("data-actor-type"))).toEqual(["agent", "user"]);
+    expect(
+      within(panel).getByText("Trace rows are append-only and cannot be edited."),
+    ).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Actor" })).toBeTruthy();
     expect(
       within(panel).getByRole("link", { name: "Red Team Review v1" }).getAttribute("href"),
     ).toBe(`/opportunities/${OPP_ID}/assessments`);
@@ -2007,6 +2012,11 @@ describe("/opportunities/[id] workspace", () => {
         query: { page: 2, page_size: 50, actor_type: "agent" },
       },
     });
+    const actorChip = screen.getByRole("button", { name: "Actor: Agent" });
+    expect(actorChip.className).toContain("bg-primary-tint");
+    expect(screen.getByRole("link", { name: "Clear filters" })).toBeTruthy();
+    fireEvent.click(actorChip);
+    await screen.findByRole("dialog", { name: "Actor filter" });
     const actor = screen.getByLabelText("Actor") as HTMLSelectElement;
     expect(actor.value).toBe("agent");
     expect(actor.selectedOptions[0].textContent).toBe("Agent");
@@ -2050,6 +2060,8 @@ describe("/opportunities/[id] workspace", () => {
         "The Decision Trace could not be loaded. Try again in a moment.",
       ),
     ).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Trace" })).toBeTruthy();
+    expect(screen.queryByRole("grid")).toBeNull();
   });
 
   it.each([["actuals", "Actuals"]])(

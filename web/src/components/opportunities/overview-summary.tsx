@@ -20,6 +20,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { Pill, type PillTone } from "@/components/ui/pill";
+import { ActorTile } from "@/components/opportunities/actor-tile";
 import {
   RecommendationPill,
   TaskStatusPill,
@@ -37,7 +38,6 @@ import {
 import { hours, type EstimateView } from "@/lib/estimates";
 import { daysUntil } from "@/lib/opportunities";
 import {
-  actorInitials,
   assessmentsStarted,
   ATTENTION_INCOMPLETE,
   attentionIncomplete,
@@ -608,37 +608,24 @@ function RecentActivity({ id, trace }: { id: string; trace: TraceEvent[] | null 
           <Muted>{NO_EVENTS}</Muted>
         ) : (
           <ul className="flex flex-col">
-            {items.map((item) => {
-              const person = item.actor.type === "user";
-              return (
-                <li key={item.id} data-actor-type={item.actor.type} className="flex gap-3 py-2.5">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "flex size-6 shrink-0 items-center justify-center text-label",
-                      person
-                        ? "rounded-full bg-resolved-tint text-resolved"
-                        : "rounded-md bg-primary-tint text-primary-text",
-                    )}
-                  >
-                    {actorInitials(item.actor.name)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-control font-normal">{eventLabel(item.event_type)}</div>
-                    <div className="text-meta text-muted-foreground">
-                      {item.actor.name} ·{" "}
-                      <time
-                        dateTime={item.occurred_at}
-                        title={absoluteTime(item.occurred_at)}
-                        className="text-numeric"
-                      >
-                        {relativeTime(item.occurred_at)}
-                      </time>
-                    </div>
+            {items.map((item) => (
+              <li key={item.id} data-actor-type={item.actor.type} className="flex gap-3 py-2.5">
+                <ActorTile actor={item.actor} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-control font-normal">{eventLabel(item.event_type)}</div>
+                  <div className="text-meta text-muted-foreground">
+                    {item.actor.name} ·{" "}
+                    <time
+                      dateTime={item.occurred_at}
+                      title={absoluteTime(item.occurred_at)}
+                      className="text-numeric"
+                    >
+                      {relativeTime(item.occurred_at)}
+                    </time>
                   </div>
-                </li>
-              );
-            })}
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </div>
