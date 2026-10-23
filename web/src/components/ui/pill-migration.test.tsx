@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { StatusPill as CatalogueStatusPill } from "@/components/admin/catalogue-table";
 import { EvalStatusPill } from "@/components/admin/evals-view";
-import { CoversChip, VersionPill } from "@/components/opportunities/estimate-grid";
+import { CoversChips, VersionPill } from "@/components/opportunities/estimate-grid";
 import { DetectedFromTextTag } from "@/components/opportunities/conflict-status-pill";
 import { GapStatusPill, QuestionPill } from "@/components/opportunities/gap-inspector";
 import { axeViolations } from "@/test/axe";
@@ -63,17 +63,17 @@ describe("migrated status pills carry the right Pill tone", () => {
 });
 
 describe("migrated neutral pills and chips", () => {
-  it("VersionPill is a neutral Pill", () => {
-    const { container } = render(
-      <VersionPill version={{ status: "draft", version: 2, source: "manual", source_run: null } as never} />,
-    );
+  it("VersionPill is a primary-tint Pill for a draft and neutral once superseded", () => {
+    const { container, rerender } = render(<VersionPill version={{ status: "draft", version: 2 }} />);
+    expect(toneOf(container, '[data-slot="pill"]')).toBe("agent");
+    rerender(<VersionPill version={{ status: "superseded", version: 2 }} />);
     expect(toneOf(container, '[data-slot="pill"]')).toBe("neutral");
   });
 
-  it("CoversChip, DetectedFromTextTag and Chip render the chip look", async () => {
+  it("CoversChips, DetectedFromTextTag and Chip render the chip look", async () => {
     const { container } = render(
       <div>
-        <CoversChip count={3} />
+        <CoversChips line={{ requirements: [{ id: "r1", version: 1, label: "R1", excerpt: "" }] }} />
         <DetectedFromTextTag />
         <Chip>S2</Chip>
       </div>,

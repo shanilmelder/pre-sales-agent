@@ -1437,7 +1437,9 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Estimate"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Estimate" })).toBeTruthy();
-    expect(within(panel).getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
+    expect(within(panel).getByText("v1 · Draft")).toBeTruthy();
+    expect(within(panel).getByText("From Assessments (run 1)")).toBeTruthy();
+    expect(within(panel).getByRole("region", { name: "Assumptions Register" })).toBeTruthy();
     expect(within(panel).getByRole("button", { name: "[LINE]" })).toBeTruthy();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/estimate", {

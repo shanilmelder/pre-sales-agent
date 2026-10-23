@@ -1,197 +1,316 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { CircleAlertIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
+import { Button } from "@/components/ui/button";
+import { InlineAlert } from "@/components/ui/inline-alert";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { codePointLength } from "@/lib/opportunities";
-import { mixSum, REASON_LABEL, REASON_MAX, ROLES, type RoleMix } from "@/lib/estimates";
+import {
+  EDIT_SAVE_FAILED,
+  EFFORT_RULE,
+  hours,
+  keepReason,
+  mixSum,
+  parseEffort,
+  readKeptReason,
+  REASON_LABEL,
+  REASON_MAX,
+  ROLES,
+  roundHours,
+  type EstimateLine,
+  type RoleMix,
+} from "@/lib/estimates";
+import { cn } from "@/lib/utils";
 
-const buttonClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
-const primaryClass =
-  "h-6 shrink-0 rounded-md bg-primary px-2 text-label text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 disabled:cursor-default disabled:opacity-60";
-const inputClass =
-  "h-6 rounded-md border border-input bg-background px-1.5 text-numeric outline-none focus-visible:ring-2 focus-visible:ring-primary";
+/** A change to a line, before its reason is given. */
+export type LineChange = { effortHours?: number; roleMix?: RoleMix };
 
-/** Esc anywhere in an editor cancels it (and stays inside it: the grid sees nothing). */
-function onEscape(cancel: () => void) {
-  return (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      cancel();
-    }
-  };
+/** What saving a change came to: on failure, the sentence to show, and whether a Reload is
+ * offered (stale or replaced version). */
+export type EditOutcome = { ok: true } | { ok: false; message: string; reload?: boolean };
+
+export type SaveLine = (
+  line: EstimateLine,
+  change: LineChange,
+  reason: string,
+  rowVersion: number,
+) => Promise<EditOutcome>;
+
+/** The note beside Save. */
+export const EDIT_TRACED = "Each edit needs a reason and is traced.";
+
+/** The line as it was when editing started: its `row_version` goes in `If-Match`, so a
+ * colleague's save in between is a 412, never silently overwritten. */
+type Base = { rowVersion: number; effort: number; mix: RoleMix };
+
+function baseOf(line: EstimateLine): Base {
+  return { rowVersion: line.row_version, effort: line.effort_hours, mix: line.role_mix };
 }
 
-/** The compact role-mix editor: one whole-number field per role and a live "= {sum}%" check;
- * Save is disabled until the shares are whole numbers adding up to 100. Esc or Cancel
- * closes it unchanged. */
-export function RoleMixEditor({
-  lineTitle,
-  initial,
+function mixTexts(mix: RoleMix): Record<string, string> {
+  return Object.fromEntries(ROLES.map((role) => [role.value, String(mix[role.value])]));
+}
+
+/** The inspector's "Edit line" form (Story 8.2, moved out of the grid): Effort (h), one
+ * whole-number share per role (adding up to 100), and a required reason prefilled with the
+ * user's last reason in this version. Save sends only the changed fields with the
+ * `row_version` seen when editing started, and stays disabled until something changed and a
+ * reason is given. A failure shows as an inline alert here (Reload for a stale line or a
+ * replaced version); a success leaves the form on the saved values. */
+export function EditLineForm({
+  line,
+  versionId,
+  reasonKey,
   onSave,
-  onCancel,
+  onReload,
+  onDirtyChange,
+  focusRequest = 0,
 }: {
-  lineTitle: string;
-  initial: RoleMix;
-  onSave: (mix: RoleMix) => void;
-  onCancel: () => void;
+  line: EstimateLine;
+  /** The version the line belongs to: the kept reason is per version. */
+  versionId: string;
+  /** Where the last reason is kept in the browser (one key per Opportunity). */
+  reasonKey: string;
+  onSave: SaveLine;
+  onReload?: () => void;
+  /** Told whether the form holds unsaved changes. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Bumped to move focus to the Effort field. */
+  focusRequest?: number;
 }) {
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(ROLES.map((role) => [role.value, String(initial[role.value])])),
-  );
-  const firstRef = useRef<HTMLInputElement>(null);
+  const formId = useId();
+  const effortId = useId();
+  const effortRuleId = useId();
   const sumId = useId();
   const ruleId = useId();
+  const reasonId = useId();
+  const countId = useId();
+  const noteId = useId();
+  const effortRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    firstRef.current?.focus();
-  }, []);
+  const [base, setBase] = useState<Base>(() => baseOf(line));
+  const [effortText, setEffortText] = useState(() => hours(line.effort_hours));
+  const [mixValues, setMixValues] = useState(() => mixTexts(line.role_mix));
+  const [reason, setReason] = useState(() => readKeptReason(reasonKey, versionId));
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<{ message: string; reload: boolean } | null>(null);
+  /** Bumped when a save settles: focus goes back to Effort (Save was disabled meanwhile). */
+  const [refocus, setRefocus] = useState(0);
+  /** Take the line's stored values again on the next render (after a save or a Reload). */
+  const [resync, setResync] = useState(false);
 
-  const parsed = ROLES.map((role) => {
-    const text = values[role.value].trim();
+  const effort = parseEffort(effortText);
+  const effortChanged = effort !== null && roundHours(effort) !== roundHours(base.effort);
+  const parsedMix = ROLES.map((role) => {
+    const text = mixValues[role.value].trim();
     return /^\d{1,3}$/.test(text) ? Number(text) : null;
   });
-  const fieldValid = parsed.map((v) => v !== null && v <= 100);
-  const whole = parsed.every((v, i): v is number => fieldValid[i]);
+  const fieldValid = parsedMix.map((v) => v !== null && v <= 100);
+  const whole = fieldValid.every(Boolean);
   const mix = whole
-    ? (Object.fromEntries(ROLES.map((role, i) => [role.value, parsed[i]])) as RoleMix)
+    ? (Object.fromEntries(ROLES.map((role, i) => [role.value, parsedMix[i]])) as RoleMix)
     : null;
-  const sum = parsed.reduce<number>((total, v) => total + (v ?? 0), 0);
-  const valid = mix !== null && mixSum(mix) === 100;
+  const sum = parsedMix.reduce<number>((total, v) => total + (v ?? 0), 0);
+  const mixValid = mix !== null && mixSum(mix) === 100;
+  const mixChanged =
+    mix !== null && ROLES.some((role) => mix[role.value] !== base.mix[role.value]);
+  const dirty = effortChanged || mixChanged || effort === null || !whole;
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (valid && mix) onSave(mix);
+  // A save or a refresh brought new stored values: show them unless the user is mid-edit.
+  if (resync || (!dirty && !saving && line.row_version !== base.rowVersion)) {
+    setResync(false);
+    setBase(baseOf(line));
+    setEffortText(hours(line.effort_hours));
+    setMixValues(mixTexts(line.role_mix));
   }
-
-  return (
-    <form
-      aria-label={`Role mix of ${lineTitle}`}
-      onSubmit={submit}
-      onKeyDown={onEscape(onCancel)}
-      className="flex flex-wrap items-center gap-2"
-    >
-      {ROLES.map((role, i) => (
-        <label key={role.value} className="flex items-center gap-1 text-label">
-          <span>{role.label} (%)</span>
-          <input
-            ref={i === 0 ? firstRef : undefined}
-            type="text"
-            inputMode="numeric"
-            aria-describedby={fieldValid[i] ? sumId : `${sumId} ${ruleId}`}
-            aria-invalid={fieldValid[i] ? undefined : true}
-            value={values[role.value]}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                [role.value]: event.target.value,
-              }))
-            }
-            className={`${inputClass} w-12 text-right`}
-          />
-        </label>
-      ))}
-      <span
-        id={sumId}
-        aria-live="polite"
-        data-valid={valid}
-        className={`text-label [font-variant-numeric:tabular-nums] ${valid ? "text-muted-foreground" : "text-destructive"}`}
-      >
-        {`= ${sum}%`}
-      </span>
-      {whole ? null : (
-        <span id={ruleId} className="text-label text-destructive">
-          Whole numbers 0–100
-        </span>
-      )}
-      <button type="submit" disabled={!valid} className={primaryClass}>
-        Save
-      </button>
-      <button type="button" onClick={onCancel} className={buttonClass}>
-        Cancel
-      </button>
-    </form>
-  );
-}
-
-/** The compact reason prompt shown before a change is saved: prefilled with the user's last
- * reason in this version. Save is disabled while the trimmed reason is empty or longer than
- * 300 characters; Esc or Cancel drops the change. */
-export function ReasonPrompt({
-  summary,
-  initial,
-  busy = false,
-  onSave,
-  onCancel,
-}: {
-  /** What is about to change, e.g. "Effort 40.0 h → 32.0 h". */
-  summary: string;
-  initial: string;
-  busy?: boolean;
-  onSave: (reason: string) => void;
-  onCancel: () => void;
-}) {
-  const [reason, setReason] = useState(initial);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = useId();
-  const summaryId = useId();
-  const countId = useId();
 
   useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  // Unmounted (another line or a Gap opened): no unsaved change is left open.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+  useEffect(() => {
+    if (focusRequest > 0) effortRef.current?.focus();
+  }, [focusRequest]);
+
+  useEffect(() => {
+    if (refocus > 0 && !saving) effortRef.current?.focus();
+  }, [refocus, saving]);
 
   const length = codePointLength(reason.trim());
-  const valid = length > 0 && length <= REASON_MAX;
+  const reasonValid = length > 0 && length <= REASON_MAX;
+  const canSave =
+    !saving &&
+    (effortChanged || mixChanged) &&
+    effort !== null &&
+    mixValid &&
+    reasonValid;
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (valid && !busy) onSave(reason.trim());
+    if (!canSave) return;
+    const change: LineChange = {
+      ...(effortChanged && effort !== null ? { effortHours: effort } : {}),
+      ...(mixChanged && mix ? { roleMix: mix } : {}),
+    };
+    const given = reason.trim();
+    setSaving(true);
+    setNotice(null);
+    let outcome: EditOutcome;
+    try {
+      outcome = await onSave(line, change, given, base.rowVersion);
+    } catch {
+      outcome = { ok: false, message: EDIT_SAVE_FAILED };
+    }
+    setSaving(false);
+    setRefocus((n) => n + 1);
+    if (outcome.ok) {
+      keepReason(reasonKey, versionId, given);
+      setReason(given);
+      setResync(true);
+    } else {
+      setNotice({ message: outcome.message, reload: outcome.reload ?? false });
+    }
   }
 
   return (
-    <form
-      aria-label={REASON_LABEL}
-      onSubmit={submit}
-      onKeyDown={onEscape(() => {
-        if (!busy) onCancel();
-      })}
-      className="flex flex-wrap items-center gap-2"
+    <section
+      aria-labelledby={formId}
+      data-edit-line=""
+      className="flex flex-col gap-3 border-t border-border pt-4"
     >
-      <span id={summaryId} className="text-label text-muted-foreground">
-        {summary}
-      </span>
-      <label htmlFor={inputId} className="text-label">
-        {REASON_LABEL}
-      </label>
-      <input
-        id={inputId}
-        ref={inputRef}
-        type="text"
-        value={reason}
-        maxLength={REASON_MAX * 2}
-        aria-describedby={`${summaryId} ${countId}`}
-        disabled={busy}
-        onChange={(event) => setReason(event.target.value)}
-        className={`${inputClass} min-w-48 flex-1 text-body`}
-      />
-      <span
-        id={countId}
-        data-over={length > REASON_MAX || undefined}
-        className={`text-meta [font-variant-numeric:tabular-nums] ${length > REASON_MAX ? "text-destructive" : "text-muted-foreground"}`}
+      <h4 id={formId} className="text-eyebrow text-muted-foreground uppercase">
+        Edit line
+      </h4>
+      {notice ? (
+        notice.reload && onReload ? (
+          <InlineAlert
+            lead={notice.message}
+            onReload={() => {
+              setNotice(null);
+              setResync(true);
+              onReload();
+            }}
+          />
+        ) : (
+          <div
+            role="alert"
+            data-slot="inline-alert"
+            className="flex max-w-md items-start gap-2 rounded-lg border border-blocker bg-blocker-tint p-3"
+          >
+            <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-3 shrink-0 text-blocker" />
+            <p className="text-meta text-foreground">{notice.message}</p>
+          </div>
+        )
+      ) : null}
+      <form
+        aria-busy={saving || undefined}
+        onSubmit={(event) => void submit(event)}
+        className="flex flex-col gap-3"
       >
-        {length > REASON_MAX
-          ? `${length}/${REASON_MAX}: shorten the reason to save`
-          : `${length}/${REASON_MAX}`}
-      </span>
-      <button type="submit" disabled={!valid || busy} className={primaryClass}>
-        Save
-      </button>
-      <button type="button" disabled={busy} onClick={onCancel} className={buttonClass}>
-        Cancel
-      </button>
-    </form>
+        <div className="flex flex-col gap-1">
+          <label htmlFor={effortId} className="text-label">
+            Effort (h)
+          </label>
+          <Input
+            id={effortId}
+            ref={effortRef}
+            type="text"
+            inputMode="decimal"
+            value={effortText}
+            disabled={saving}
+            aria-invalid={effort === null ? true : undefined}
+            aria-describedby={effort === null ? effortRuleId : undefined}
+            onChange={(event) => setEffortText(event.target.value)}
+            className="h-8 w-28 text-right"
+          />
+          {effort === null ? (
+            <p id={effortRuleId} className="text-meta text-destructive">
+              {EFFORT_RULE}
+            </p>
+          ) : null}
+        </div>
+        <fieldset className="flex flex-col gap-1">
+          <legend className="text-label">Role mix</legend>
+          <div className="flex flex-wrap items-end gap-2">
+            {ROLES.map((role, i) => (
+              <label key={role.value} className="flex flex-col gap-1 text-meta">
+                <span>{`${role.label} (%)`}</span>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={mixValues[role.value]}
+                  disabled={saving}
+                  aria-invalid={fieldValid[i] ? undefined : true}
+                  aria-describedby={fieldValid[i] ? sumId : `${sumId} ${ruleId}`}
+                  onChange={(event) =>
+                    setMixValues((current) => ({ ...current, [role.value]: event.target.value }))
+                  }
+                  className="h-8 w-16 text-right"
+                />
+              </label>
+            ))}
+            <span
+              id={sumId}
+              aria-live="polite"
+              data-valid={mixValid}
+              className={cn(
+                "pb-2 [font-variant-numeric:tabular-nums]",
+                mixValid ? "text-muted-foreground" : "text-destructive",
+              )}
+            >
+              <span className="text-label">{`= ${sum}%`}</span>
+            </span>
+          </div>
+          {whole ? null : (
+            <p id={ruleId} className="text-meta text-destructive">
+              Whole numbers 0–100
+            </p>
+          )}
+        </fieldset>
+        <div className="flex flex-col gap-1">
+          <label htmlFor={reasonId} className="text-label">
+            {REASON_LABEL}
+          </label>
+          <Textarea
+            id={reasonId}
+            value={reason}
+            required
+            rows={2}
+            maxLength={REASON_MAX * 2}
+            disabled={saving}
+            aria-describedby={countId}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <span
+            id={countId}
+            data-over={length > REASON_MAX || undefined}
+            className={cn(
+              "[font-variant-numeric:tabular-nums]",
+              length > REASON_MAX ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
+            <span className="text-meta">
+              {length > REASON_MAX
+                ? `${length}/${REASON_MAX}: shorten the reason to save`
+                : `${length}/${REASON_MAX}`}
+            </span>
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={!canSave} aria-describedby={noteId}>
+            Save
+          </Button>
+          <p id={noteId} className="text-meta text-muted-foreground">
+            {EDIT_TRACED}
+          </p>
+        </div>
+      </form>
+    </section>
   );
 }
