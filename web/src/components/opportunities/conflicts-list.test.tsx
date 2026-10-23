@@ -164,11 +164,16 @@ describe("ConflictsSection", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("shows the empty sentence without Conflicts", async () => {
+  it("shows the empty-tab card without Conflicts", async () => {
     const { container } = renderSection({ conflicts: [], open_count: 0, reviewers: [] });
+    expect(screen.getByTestId("empty-tab-card")).toBeTruthy();
+    expect(screen.getByText("No Conflicts detected")).toBeTruthy();
     expect(
-      screen.getByText("No Conflicts between the specialist Assessments."),
+      screen.getByText("Conflicts appear when Assessments or Sources disagree."),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Open Assessments" }).getAttribute("href"),
+    ).toMatch(/\/assessments$/);
     expect(screen.queryByRole("grid")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });

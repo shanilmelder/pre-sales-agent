@@ -134,7 +134,7 @@ describe("/admin/users", () => {
     expect(screen.getByText(/shown as of each person's last sign-in/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "[TARGET]" }));
     const pane = await screen.findByRole("complementary", { name: "Details" });
-    expect(within(pane).queryByText("Nothing selected.")).toBeNull();
+    expect(within(pane).queryByText("Select a gap or estimate line to see its details.")).toBeNull();
     expect(within(pane).getByRole("heading", { name: "Roles as of last sign-in" })).toBeTruthy();
     expect(within(pane).getByText("Commercial")).toBeTruthy();
     expect(within(pane).queryAllByRole("switch")).toHaveLength(0);

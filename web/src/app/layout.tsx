@@ -5,7 +5,7 @@ import { cn } from "cn";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShellProviders } from "@/components/shell/shell-context";
 import { ThemeScript } from "@/components/theme-script";
-import { getPreferences, htmlPreferenceAttributes } from "@/lib/preferences";
+import { getPreferences, hasStoredPreferences, htmlPreferenceAttributes } from "@/lib/preferences";
 
 import "./globals.css";
 
@@ -21,6 +21,7 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const preferences = await getPreferences();
+  const firstRun = !(await hasStoredPreferences());
   const { className, ...preferenceAttributes } = htmlPreferenceAttributes(preferences);
   return (
     <html
@@ -36,7 +37,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         {/* State only (sidebar, right pane, live region): pages still gate their content. */}
         <TooltipProvider>
-          <ShellProviders singleKeyShortcuts={preferences.singleKeyShortcuts}>
+          <ShellProviders
+            singleKeyShortcuts={preferences.singleKeyShortcuts}
+            firstRun={firstRun}
+            theme={preferences.theme}
+            density={preferences.density}
+          >
             {children}
           </ShellProviders>
         </TooltipProvider>

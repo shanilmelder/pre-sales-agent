@@ -54,7 +54,7 @@ export const SOURCE_EVENTS: readonly string[] = [
 /** How long the stream waits before reopening after the browser gave up, by attempt; the
  * last value repeats. */
 export const RECONNECT_DELAYS_MS: readonly number[] = [1000, 2000, 5000, 10000];
-/** After this long down, the status bar reads "Offline — edits disabled". */
+/** After this long down, the shell shows the Offline strip ("Offline — edits disabled"). */
 export const OFFLINE_AFTER_MS = 60_000;
 
 /** The shared connection's state. `connecting` only before the first open; after a drop it
@@ -203,6 +203,19 @@ export function subscribe(opportunityId: string, subscriber: StreamSubscriber): 
       if (sharedConnections.get(opportunityId) === current) sharedConnections.delete(opportunityId);
     }
   };
+}
+
+/** Reopens the Opportunity's stream at once (the Offline strip's Retry): drops a source that
+ * is down, cancels the pending backoff, resets it and keeps `lastEventId`. Does nothing when
+ * the Opportunity has no shared connection or its stream is already open. */
+export function retryEventStream(opportunityId: string): void {
+  const shared = sharedConnections.get(opportunityId);
+  if (!shared || shared.status === "open") return;
+  shared.source?.close();
+  if (shared.reopenTimer) clearTimeout(shared.reopenTimer);
+  shared.reopenTimer = null;
+  shared.attempt = 0;
+  open(shared);
 }
 
 /** Subscribe while `enabled`; returns the connection's status (`connecting` while disabled

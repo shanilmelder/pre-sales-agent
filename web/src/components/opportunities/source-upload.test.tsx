@@ -74,6 +74,31 @@ beforeEach(() => {
   addTextSource.mockReset();
 });
 
+describe("SourcesSection empty card", () => {
+  it("its Choose files opens the file chooser, and a viewer who cannot add gets no button", async () => {
+    const user = userEvent.setup();
+    apiAnswers();
+    const { unmount } = render(
+      <ShellProviders singleKeyShortcuts>
+        <SourcesSection opportunityId={OPP_ID} canAdd initial={[]} />
+      </ShellProviders>,
+    );
+    const input = screen.getByTestId("source-file-input") as HTMLInputElement;
+    const click = vi.spyOn(input, "click");
+    const card = screen.getByTestId("empty-tab-card");
+    await user.click(within(card).getByRole("button", { name: "Choose files" }));
+    expect(click).toHaveBeenCalled();
+    unmount();
+
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <SourcesSection opportunityId={OPP_ID} canAdd={false} initial={[]} />
+      </ShellProviders>,
+    );
+    expect(within(screen.getByTestId("empty-tab-card")).queryByRole("button")).toBeNull();
+  });
+});
+
 describe("SourcesSection with uploads", () => {
   it("dropping three files incl. an .exe: two Sources appear, the .exe row says why", async () => {
     apiAnswers();
@@ -82,7 +107,7 @@ describe("SourcesSection with uploads", () => {
         <SourcesSection opportunityId={OPP_ID} canAdd initial={[]} />
       </ShellProviders>,
     );
-    expect(screen.getByText("No Sources yet.")).toBeTruthy();
+    expect(screen.getByText("No Sources yet")).toBeTruthy();
 
     drop([file("call.vtt"), file("setup.exe"), file("rfp.pdf")]);
 
@@ -99,7 +124,7 @@ describe("SourcesSection with uploads", () => {
     expect(within(rows[0]).getByText("rfp.pdf")).toBeTruthy();
     expect(within(rows[1]).getByText("call.vtt")).toBeTruthy();
     expect(within(rows[1]).getByText("Transcript")).toBeTruthy();
-    expect(screen.queryByText("No Sources yet.")).toBeNull();
+    expect(screen.queryByText("No Sources yet")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -201,7 +226,7 @@ describe("SourceUpload", () => {
     const input = screen.getByTestId("source-file-input") as HTMLInputElement;
     const click = vi.spyOn(input, "click");
 
-    await user.click(screen.getByRole("button", { name: "Choose files" }));
+    await user.click(screen.getAllByRole("button", { name: "Choose files" })[0]);
     expect(click).toHaveBeenCalled();
     expect(input.accept).toBe(".eml,.msg,.txt,.vtt,.docx,.pdf");
     expect(input.multiple).toBe(true);
@@ -448,7 +473,7 @@ describe("Paste text", () => {
     await user.keyboard("{Escape}");
     expect(textarea().value).toBe("note");
 
-    const elsewhere = screen.getByRole("button", { name: "Choose files" });
+    const elsewhere = screen.getAllByRole("button", { name: "Choose files" })[0];
     act(() => elsewhere.focus());
     await act(async () => resolve({ kind: "ok", source: source("Pasted text") }));
 

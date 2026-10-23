@@ -361,7 +361,14 @@ describe("TraceSection", () => {
         options: { subject_types: [], actor_types: [], event_types: [] },
       }),
     );
-    expect(screen.getByText("No decisions recorded yet.")).toBeTruthy();
+    expect(screen.getByTestId("empty-tab-card")).toBeTruthy();
+    expect(screen.getByText("No trace events")).toBeTruthy();
+    expect(
+      screen.getByText("Decisions and Evidence are recorded here as work happens."),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Open Overview" }).getAttribute("href"),
+    ).toMatch(/\/overview$/);
     expect(screen.queryByRole("group", { name: "Filters" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Pagination" })).toBeNull();
   });
@@ -372,6 +379,7 @@ describe("TraceSection", () => {
       event: "x.y.z",
     });
     expect(screen.getByText("No events match these filters.")).toBeTruthy();
+    expect(screen.queryByTestId("empty-tab-card")).toBeNull();
     const clears = screen.getAllByRole("link", { name: "Clear filters" });
     expect(clears.map((link) => link.getAttribute("href"))).toEqual([
       `/opportunities/${OPP_ID}/trace`,

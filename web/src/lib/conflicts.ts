@@ -16,8 +16,10 @@ export type ConflictPosition = components["schemas"]["ConflictPosition"];
 export type ConflictType = components["schemas"]["ConflictType"];
 export type ConflictStatus = components["schemas"]["ConflictStatus"];
 
-/** The empty-state sentence. */
-export const NO_CONFLICTS = "No Conflicts between the specialist Assessments.";
+/** The empty-tab card's copy. */
+export const NO_CONFLICTS_TITLE = "No Conflicts detected";
+export const NO_CONFLICTS_BODY = "Conflicts appear when Assessments or Sources disagree.";
+export const OPEN_ASSESSMENTS = "Open Assessments";
 
 /** Shown when the Conflicts could not be read. */
 export const CONFLICTS_NOT_LOADED = "The Conflicts could not be loaded. Try again in a moment.";

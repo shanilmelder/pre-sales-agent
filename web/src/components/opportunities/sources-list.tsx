@@ -15,6 +15,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadSources, retryParse, type RetryParseResult } from "@/app/opportunities/actions";
+import { Card } from "@/components/ui/card";
+import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { Pill, type PillTone } from "@/components/ui/pill";
 import { SourceInspector } from "@/components/opportunities/source-inspector";
 import { SourceUpload, type SourceUploadHandle } from "@/components/opportunities/source-upload";
@@ -28,9 +30,11 @@ import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import { useSourceEvents } from "@/lib/opportunity-events";
 import {
   formatDateTime,
+  CHOOSE_FILES,
   isParsePending,
   mergeSources,
   NO_SOURCES,
+  NO_SOURCES_BODY,
   PARSE_POLL_LIMIT_MS,
   PARSE_POLL_MS,
   PARSE_STATUS_LABELS,
@@ -98,6 +102,7 @@ export function SourcesList({
   retryMessages = {},
   onRetry,
   onPasteInstead,
+  onChooseFiles,
   selectedId = null,
   onOpen,
 }: {
@@ -113,11 +118,21 @@ export function SourcesList({
   retryMessages?: Readonly<Record<string, string>>;
   onRetry?: (source: Source) => void;
   onPasteInstead?: () => void;
+  /** Opens the file chooser from the empty card; without it the card has no button. */
+  onChooseFiles?: () => void;
 }) {
   if (sources.length === 0) {
-    return <p className="text-muted-foreground">{NO_SOURCES}</p>;
+    return (
+      <EmptyTabCard
+        title={NO_SOURCES}
+        body={NO_SOURCES_BODY}
+        actionLabel={onChooseFiles ? CHOOSE_FILES : undefined}
+        onClick={onChooseFiles}
+      />
+    );
   }
   return (
+    <Card className="overflow-hidden px-5">
     <table className="w-full table-fixed border-collapse text-left">
       <caption className="sr-only">Sources, newest first</caption>
       <thead className="text-label text-muted-foreground">
@@ -152,15 +167,15 @@ export function SourcesList({
           return (
             <tr
               key={source.id}
-              className={`h-row border-b border-border align-top ${selected ? "bg-muted" : onOpen ? "hover:bg-muted/60" : ""}`}
+              className={`min-h-row border-b border-border align-top ${selected ? "bg-muted" : onOpen ? "hover:bg-muted/60" : ""}`}
             >
-              <td className="py-1.5 pr-2">
+              <td className="py-3 pr-2">
                 <span className="inline-flex items-center gap-1.5">
                   <Icon aria-hidden className="size-3.5 text-muted-foreground" />
                   {SOURCE_KIND_LABELS[source.kind] ?? source.kind}
                 </span>
               </td>
-              <td className="truncate px-2 py-1.5" title={source.filename}>
+              <td className="truncate px-2 py-3" title={source.filename}>
                 {onOpen ? (
                   <button
                     type="button"
@@ -177,8 +192,8 @@ export function SourcesList({
                   source.filename
                 )}
               </td>
-              <td className="px-2 py-1.5 text-numeric">v{source.version}</td>
-              <td className="px-2 py-1.5">
+              <td className="px-2 py-3 text-numeric">v{source.version}</td>
+              <td className="px-2 py-3">
                 {source.parse ? (
                   <div className="flex flex-col items-start gap-1">
                     <ParseStatusPill parse={source.parse} />
@@ -219,13 +234,14 @@ export function SourcesList({
                   </div>
                 ) : null}
               </td>
-              <td className="truncate px-2 py-1.5">{source.uploaded_by.name}</td>
-              <td className="px-2 py-1.5 text-numeric">{formatDateTime(source.uploaded_at)}</td>
+              <td className="truncate px-2 py-3">{source.uploaded_by.name}</td>
+              <td className="px-2 py-3 text-numeric">{formatDateTime(source.uploaded_at)}</td>
             </tr>
           );
         })}
       </tbody>
     </table>
+    </Card>
   );
 }
 
@@ -425,6 +441,7 @@ export function SourcesSection({
         retryMessages={retryMessages}
         onRetry={(source) => void retry(source)}
         onPasteInstead={() => uploadRef.current?.openPaste()}
+        onChooseFiles={canAdd ? () => uploadRef.current?.openChooser() : undefined}
         selectedId={selectedId}
         onOpen={open}
       />

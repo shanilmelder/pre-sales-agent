@@ -15,9 +15,8 @@ export default async function SettingsPage() {
   const preferences = await getPreferences();
   return (
     <AppShell me={result.me}>
-      <div className="flex w-full max-w-xl flex-col p-gutter">
+      <div className="flex w-full flex-col gap-4 p-gutter">
         <h1 className="text-title">Settings</h1>
-        <p className="text-meta text-muted-foreground">Saved in this browser.</p>
         <SettingsForm initial={preferences} />
       </div>
     </AppShell>

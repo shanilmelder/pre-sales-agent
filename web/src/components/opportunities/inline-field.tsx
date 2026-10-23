@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { loadOpportunity, updateOpportunity } from "@/app/opportunities/actions";
+import { Breadcrumb, DueCountdown } from "@/components/opportunities/header-parts";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
   codePointLength,
@@ -266,9 +267,15 @@ const FIELD_NAMES: Record<Field, string> = {
 export function EditableWorkspaceHeader({
   opportunity,
   meta,
+  badge,
+  today,
 }: {
   opportunity: Opportunity;
   meta: ReactNode;
+  /** The status pill, shown right of the title. */
+  badge: ReactNode;
+  /** Today in UTC (`YYYY-MM-DD`), from the server, for the countdown. */
+  today: string;
 }) {
   const announce = useAnnounce();
   const router = useRouter();
@@ -407,20 +414,24 @@ export function EditableWorkspaceHeader({
       className="flex shrink-0 flex-col gap-1.5 px-gutter pt-gutter pb-3"
       aria-busy={saving !== null || reloading}
     >
-      <InlineField
-        label="Edit title"
-        inputLabel="Title"
-        type="text"
-        value={title}
-        error={errors.title}
-        locked={locked}
-        onCommit={(next) => void save("title", next)}
-        className="flex flex-col gap-0.5"
-        inputClassName="h-9 w-full max-w-3xl rounded-md border border-input bg-transparent px-1.5 text-title outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        <h1 className="text-title">{title}</h1>
-      </InlineField>
-      <div className="flex flex-wrap items-start gap-x-3.5 gap-y-1 text-label text-muted-foreground">
+      <Breadcrumb title={title} />
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+        <InlineField
+          label="Edit title"
+          inputLabel="Title"
+          type="text"
+          value={title}
+          error={errors.title}
+          locked={locked}
+          onCommit={(next) => void save("title", next)}
+          className="flex min-w-0 flex-col gap-0.5"
+          inputClassName="h-9 w-full max-w-3xl rounded-md border border-input bg-transparent px-1.5 text-title outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <h1 className="text-title">{title}</h1>
+        </InlineField>
+        <span className="inline-flex h-8 items-center">{badge}</span>
+      </div>
+      <div className="flex flex-wrap items-start gap-x-3.5 gap-y-1.5 text-label text-muted-foreground">
         {meta}
         <span className="inline-flex items-start gap-1.5">
           <span className="inline-flex h-5 items-center gap-1.5">
@@ -443,6 +454,9 @@ export function EditableWorkspaceHeader({
               {formatDate(targetDate)}
             </span>
           </InlineField>
+          <span className="inline-flex h-5 items-center">
+            <DueCountdown date={targetDate} today={today} />
+          </span>
         </span>
       </div>
       {/* Screen readers hear these through the shell's single live region. */}

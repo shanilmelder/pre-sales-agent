@@ -40,7 +40,7 @@ function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
 function header(initial: Opportunity = opportunity()) {
   return (
     <LiveRegionProvider>
-      <EditableWorkspaceHeader opportunity={initial} meta={<span>[META]</span>} />
+      <EditableWorkspaceHeader opportunity={initial} meta={<span>[META]</span>} badge={<span>[BADGE]</span>} today="2026-10-21" />
     </LiveRegionProvider>
   );
 }
@@ -145,6 +145,9 @@ describe("EditableWorkspaceHeader", () => {
     expect(screen.getByRole("button", { name: "Edit target proposal date" })).toBeTruthy();
     expect(screen.getByText("1 Nov 2026")).toBeTruthy();
     expect(screen.getByText("[META]")).toBeTruthy();
+    expect(screen.getByText("[BADGE]")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeTruthy();
+    expect(screen.getByText("11 days left")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
 
     await user.click(screen.getByRole("button", { name: "Edit target proposal date" }));
@@ -173,6 +176,7 @@ describe("EditableWorkspaceHeader", () => {
     });
     // Optimistic: the new title shows before the API answers.
     expect(screen.getByRole("heading", { level: 1, name: "Phase 2" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" }).querySelector("[aria-current]")?.textContent).toBe("Phase 2");
 
     answer.resolve({ kind: "ok", opportunity: opportunity({ title: "Phase 2", row_version: 3 }) });
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
@@ -194,6 +198,8 @@ describe("EditableWorkspaceHeader", () => {
       target_proposal_date: "2026-12-24",
     });
     expect(await screen.findByText("24 Dec 2026")).toBeTruthy();
+    // The countdown follows the saved date.
+    expect(screen.getByText("64 days left")).toBeTruthy();
   });
 
   it("a blank title shows the customer name; an unchanged one sends nothing", async () => {

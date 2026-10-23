@@ -28,8 +28,11 @@ export function exceedsTransportLimit(size: number): boolean {
   return size > UPLOAD_BODY_LIMIT_BYTES - FRAMING_BYTES;
 }
 
-/** The empty-state sentence. */
-export const NO_SOURCES = "No Sources yet.";
+/** The empty-tab card's title; the sentence is `NO_SOURCES_BODY`. */
+export const NO_SOURCES = "No Sources yet";
+export const NO_SOURCES_BODY =
+  "Add an email, transcript or document. Requirements and Gaps are extracted from Sources.";
+export const CHOOSE_FILES = "Choose files";
 
 /** `source` first when it is new; in place when it is a newer version of a listed one. */
 export function withSource(sources: readonly Source[], source: Source): Source[] {

@@ -10,7 +10,9 @@ import {
   type AcceptAllAssumptionsResult,
   type AssumptionAcceptResult,
 } from "@/app/opportunities/actions";
+import { Card } from "@/components/ui/card";
 import { chipLayoutClassName } from "@/components/ui/chip";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -343,24 +345,18 @@ export function AssumptionsRegister({
       ) : null}
 
       {stale ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-label text-foreground">{staleMessage(stale.changedBy)}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setStale(null);
-              void reload();
-            }}
-            className={actionClass}
-          >
-            {RELOAD}
-          </button>
-        </div>
+        <InlineAlert
+          lead={staleMessage(stale.changedBy)}
+          onReload={() => {
+            setStale(null);
+            void reload();
+          }}
+        />
       ) : null}
       {message ? <p className="text-meta text-destructive">{message}</p> : null}
 
       {counts.total > 0 ? (
-        <div className="flex flex-col overflow-hidden rounded-md border border-border">
+        <Card className="overflow-hidden">
           <Group
             title={CONDITIONS}
             icon={<ClipboardCheckIcon aria-hidden="true" className="size-3.5 shrink-0" />}
@@ -374,16 +370,16 @@ export function AssumptionsRegister({
             total={`${hours(contingency_hours)} h`}
             {...rowProps}
           />
-        </div>
+        </Card>
       ) : version.proposal_status === "succeeded" ? (
         <p className="text-muted-foreground">No Assumptions for this version.</p>
       ) : null}
 
       {unconverted.length > 0 ? (
-        <div
+        <Card
           role="note"
           aria-labelledby={`${headingId}-unconverted`}
-          className="flex flex-col gap-1.5 rounded-md border border-border p-3"
+          className="gap-1.5 p-3"
         >
           <h4 id={`${headingId}-unconverted`} className="flex items-center gap-1.5 text-label">
             <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
@@ -403,7 +399,7 @@ export function AssumptionsRegister({
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       ) : null}
     </section>
   );

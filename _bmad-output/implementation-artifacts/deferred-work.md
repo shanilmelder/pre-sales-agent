@@ -173,3 +173,43 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-1b-ui-primitives.md`
   summary: Story 17.1c: migrate the existing status pills and chips onto the new `Pill` and `Chip` primitives (about 12 pill files such as `opportunities/status-pill.tsx`, `conflict-status-pill.tsx`, `severity-pill.tsx`, `SourceStatusPill`, `ParseStatusPill`, `VersionPill`, `GapStatusPill`, `TaskStatusPill` and the evals pills, plus the inline `rounded-full border` pill strings and about 14 `rounded-sm border h-5` chip sites), rewrite `status-pill.test.tsx` for the tint classes, and keep the `data-status`, `data-severity`, `detected-from-text` and `running-dot` test ids.
   evidence: Split from Story 17.1b on 2026-10-22 because including about 30 source files and 9 tests would push the spec far past the 1,600 token target. 17.1b builds and tests the primitives only. 17.1c depends on 17.1b and should land before Story 17.2 and 17.3.
+
+- source_spec: none
+  summary: Story 17.2b: shell chrome. Sidebar with organisation switcher on top (static label showing the product name, no menu while there is one organisation), Search button, and footer user card (avatar button that opens Settings, role, theme toggle); one 420px right pane with Inspector and Activity tabs; skip link as first tab stop; polite screen-name announcement on navigation; Settings opened from the avatar button.
+  evidence: Split from Story 17.2 on 2026-10-22 (three independent deliverables). User chose the static organisation label. Survey found the header is a bare 48px bar, Search lives in the sidebar, there is no skip link or screen-name announcement, and the pane has no tabs.
+
+- source_spec: none
+  summary: Story 17.2c: global Offline strip with Retry after 60 s down (reusing the Story 2.3 state, `useEventStreamStatus` and `OFFLINE_AFTER_MS`), a check that editing is disabled below 1024px (the read-only notice is currently message-only), responsive tiers unchanged, and axe across the shell pages.
+  evidence: Split from Story 17.2 on 2026-10-22. The offline state exists only inside the workspace (`ConnectionStatus`); the strip is not global.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-2b-shell-chrome.md`
+  summary: The empty Inspector text "Select a gap or estimate line to see its details." shows on every page that uses the right pane (admin users, knowledge, requirements, red team); consider per-page copy via a prop on `RightPaneContent` or a route map.
+  evidence: Story 17.2 AC fixes that exact text, so 17.2b kept it; two reviewers noted it reads wrong outside the gap and estimate screens.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-2b-shell-chrome.md`
+  summary: Unverified (would be medium): `RightPaneContent` returns the pane to Inspector only on mount or a keyed-child change, so an inspector child without a selection-specific key may leave Activity showing after a new selection.
+  evidence: To settle, check the roughly 12 `RightPaneContent` consumers for selection-keyed children and whether background polls change keys; the shell test covers only a keyed child.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-2c-offline-strip-and-read-only.md`
+  summary: Unverified (would be medium): read-only below 1024px and offline disables only the workspace tab-panel `fieldset`, so editable controls in the right-pane inspectors (outside it) may still work.
+  evidence: To settle, check whether the inspector components render inputs or buttons that save, and whether they sit inside the disabled `fieldset`; the shell tests cover only the workspace body.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3a-sources-requirements-gaps-refit.md`
+  summary: Story 17.3b: refit Conflicts, Estimate and Trace (empty-tab cards, card surfaces, estimate-grid density, Trace zero-event state) and move the Conflicts, Estimate and assumptions-register 412 messages onto `InlineAlert`.
+  evidence: Story 17.3 spans seven tabs and about 35-45 files, too big for one spec; split into 17.3a, 17.3b, 17.3c.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3a-sources-requirements-gaps-refit.md`
+  summary: Story 17.3c: Assessments run header, task counters, per-agent cards, Cancel run and Start new run from client-derivable data only; no empty-tab card (EXPERIENCE says none, the AC contradicts it). Backend ticket: run_number, started_by, Sources/Requirements/config versions and model per task are not in the API.
+  evidence: Run data in `lib/api/schema.d.ts` lacks those fields; the user chose to omit them and log a backend ticket.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3a-sources-requirements-gaps-refit.md`
+  summary: View diff for the 412 alert on Gaps, Estimate and Conflicts; today only Requirements has a diff view.
+  evidence: The AC wants Reload and View diff on every built tab; the user chose to ship View diff only where a diff exists.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-3b-conflicts-estimate-trace-refit.md`
+  summary: Trace tab renders nothing when the page is beyond the last page (total > 0 but no items, unfiltered).
+  evidence: Edge-case review of `trace-list.tsx:495-503`; the branch is pre-existing and unchanged by 17.3b.
+
+- source_spec: none
+  summary: Story 17.4b: Opportunity header refit (breadcrumb "All Opportunities / title", owner and collaborator chips, proposal date with a day countdown); Submit and "Resolve N blockers" wait for the blocker data from Story 8.6.
+  evidence: Story 17.4 has two independently shippable goals (list and header); split at the user's choice. Backend ticket: the API has no blockers count, submit state or estimate summary.

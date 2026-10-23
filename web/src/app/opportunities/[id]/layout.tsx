@@ -9,7 +9,7 @@ import { WorkspaceTabs } from "@/components/opportunities/workspace-tabs";
 import { AppShell } from "@/components/shell/app-shell";
 import { getMe } from "@/lib/api/server";
 import { openGapCount } from "@/lib/gaps";
-import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
+import { NO_ACCESS_TO_OPPORTUNITY, utcToday } from "@/lib/opportunities";
 
 // The title stays generic: customer names are not put in the tab title or history.
 export const metadata: Metadata = { title: "Opportunity · Pre Sales Agent Framework" };
@@ -52,7 +52,7 @@ export default async function OpportunityLayout({
         <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>
       ) : (
         <>
-          <WorkspaceHeader opportunity={loaded.opportunity} />
+          <WorkspaceHeader opportunity={loaded.opportunity} today={utcToday()} />
           <WorkspaceTabs
             id={loaded.opportunity.id}
             counts={counts}

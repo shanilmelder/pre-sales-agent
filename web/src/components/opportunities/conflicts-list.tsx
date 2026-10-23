@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { Chip } from "@/components/ui/chip";
+import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { ConflictInspector } from "@/components/opportunities/conflict-inspector";
 import {
   ConflictStatusPill,
@@ -17,7 +18,9 @@ import {
 import {
   escalatedLabel,
   isFromText,
-  NO_CONFLICTS,
+  NO_CONFLICTS_BODY,
+  NO_CONFLICTS_TITLE,
+  OPEN_ASSESSMENTS,
   OPEN_SECTION,
   positionsSummary,
   RESOLVED_SECTION,
@@ -26,6 +29,7 @@ import {
   type Conflict,
   type ConflictsView,
 } from "@/lib/conflicts";
+import { tabHref } from "@/lib/workspace";
 
 /** Conflicts as dense 32px rows, in the order given (the API ranks them critical to low,
  * then newest first). Each row shows the type, the severity pill, the status pill and the
@@ -166,7 +170,14 @@ export function ConflictsSection({
   }
 
   if (initial.conflicts.length === 0) {
-    return <p className="text-muted-foreground">{NO_CONFLICTS}</p>;
+    return (
+      <EmptyTabCard
+        title={NO_CONFLICTS_TITLE}
+        body={NO_CONFLICTS_BODY}
+        actionLabel={OPEN_ASSESSMENTS}
+        href={tabHref(opportunityId, "assessments")}
+      />
+    );
   }
 
   return (

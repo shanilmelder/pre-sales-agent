@@ -23,7 +23,7 @@ import {
 import type { EstimateVersion } from "@/lib/estimates";
 import type { Requirement } from "@/lib/requirements";
 
-const NUMERIC = "py-1 pl-3 text-right text-numeric whitespace-nowrap";
+const NUMERIC = "py-2.5 pl-3 text-right text-numeric whitespace-nowrap";
 
 /** One row's (or the totals row's) number cells. */
 function ValueCells({
@@ -107,27 +107,27 @@ export function EffortComparisonSection({
                 </caption>
                 <thead>
                   <tr className="border-b border-border text-label text-muted-foreground">
-                    <th scope="col" className="py-1 pr-3 font-normal">
+                    <th scope="col" className="py-2.5 pr-3 font-normal">
                       Requirement
                     </th>
                     {AGENTS.map((agent) => (
                       <th
                         key={agent.value}
                         scope="col"
-                        className="py-1 pl-3 text-right font-normal"
+                        className="py-2.5 pl-3 text-right font-normal"
                       >
                         {agentColumn(agent.value)}
                       </th>
                     ))}
-                    <th scope="col" className="py-1 pl-3 text-right font-normal">
+                    <th scope="col" className="py-2.5 pl-3 text-right font-normal">
                       {AGENTS_TOTAL}
                     </th>
                     {withEstimate ? (
                       <>
-                        <th scope="col" className="py-1 pl-3 text-right font-normal">
+                        <th scope="col" className="py-2.5 pl-3 text-right font-normal">
                           {ESTIMATE_ALLOCATED}
                         </th>
-                        <th scope="col" className="py-1 pl-3 text-right font-normal">
+                        <th scope="col" className="py-2.5 pl-3 text-right font-normal">
                           {DIFFERENCE}
                         </th>
                       </>
@@ -137,7 +137,7 @@ export function EffortComparisonSection({
                 <tbody>
                   {comparison.rows.map((row) => (
                     <tr key={row.id} className="border-b border-border align-baseline">
-                      <th scope="row" className="py-1 pr-3 text-left font-normal">
+                      <th scope="row" className="py-2.5 pr-3 text-left font-normal">
                         <span className="text-meta text-muted-foreground">
                           {row.label}
                         </span>{" "}
@@ -149,7 +149,7 @@ export function EffortComparisonSection({
                 </tbody>
                 <tfoot>
                   <tr className="text-body-strong align-baseline">
-                    <th scope="row" className="py-1 pr-3 text-left font-semibold">
+                    <th scope="row" className="py-2.5 pr-3 text-left font-semibold">
                       Total
                       {comparison.unlinkedHours ? (
                         <span className="block text-meta font-normal text-muted-foreground">

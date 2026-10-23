@@ -79,3 +79,25 @@ export function withFilter(filters: Filters, key: FilterKey, value: string): Fil
   else delete next[key];
   return next;
 }
+
+/** The days ahead the "Due in 14 days" view covers. */
+export const DUE_SOON_DAYS = 14;
+
+/** `today` (`YYYY-MM-DD`) plus `days`, in UTC. */
+function addDays(today: string, days: number): string {
+  const [y, m, d] = today.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** The filters of the "Due in 14 days" view: `from` today, `to` today plus 14 (UTC). */
+export function dueSoonFilters(today: string): Filters {
+  return { from: today, to: addDays(today, DUE_SOON_DAYS) };
+}
+
+/** Whether `filters` are exactly the "Due in 14 days" range. */
+export function isDueSoon(filters: Filters, today: string): boolean {
+  const due = dueSoonFilters(today);
+  return (
+    FILTER_KEYS.every((key) => filters[key] === due[key])
+  );
+}

@@ -32,6 +32,8 @@ import {
   type GapFormOutcome,
   type QuestionField,
 } from "@/components/opportunities/gap-inspector";
+import { EmptyTabCard } from "@/components/ui/empty-tab-card";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { Pill } from "@/components/ui/pill";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { QuestionsExport } from "@/components/opportunities/questions-export";
@@ -66,6 +68,8 @@ import {
   markSelectedSentLabel,
   NO_ANSWER,
   NO_GAPS,
+  NO_GAPS_BODY,
+  OPEN_REQUIREMENTS,
   NONE_FOUND,
   possibleAnswerLabel,
   questionTextProblem,
@@ -84,6 +88,7 @@ import {
   type GapList,
   type Impact,
 } from "@/lib/gaps";
+import { tabHref } from "@/lib/workspace";
 import { convertedLabel } from "@/lib/estimates";
 import { NO_ACCESS_TO_OPPORTUNITY, staleMessage } from "@/lib/opportunities";
 import { useGapsEvents } from "@/lib/opportunity-events";
@@ -436,7 +441,7 @@ function retryMessage(result: StartGapDetectionResult): string {
 /** The Gaps tab's content: the ranked list in the main pane and the selected Gap's inspector
  * in the right pane (opened if closed). While a detection is queued or running the list is
  * re-read every 2 s: paused while the tab is hidden, and stopped after 15 minutes. A selected
- * Gap that a re-run superseded leaves the pane showing "Nothing selected." Retry only for
+ * Gap that a re-run superseded leaves the pane showing the empty Inspector text. Retry only for
  * those who may start a detection.
  *
  * Story 4.5: for those who may edit questions (`can_edit_questions`), the inspector's question
@@ -1302,21 +1307,13 @@ export function GapsSection({
       ) : null}
       {/* Screen readers hear these through the shell's single live region. */}
       {stale ? (
-        <div
+        <InlineAlert
           id={noticeId}
-          className="flex max-w-md items-center justify-between gap-2 rounded-md border border-border p-2"
-        >
-          <p className="text-meta">{staleMessage(stale.changedBy)}</p>
-          <button
-            type="button"
-            ref={reloadRef}
-            onClick={() => void reload()}
-            aria-disabled={reloading || undefined}
-            className={actionClass}
-          >
-            {RELOAD}
-          </button>
-        </div>
+          lead={staleMessage(stale.changedBy)}
+          onReload={() => void reload()}
+          reloading={reloading}
+          reloadRef={reloadRef}
+        />
       ) : notice ? (
         <p id={noticeId} className="text-meta text-destructive">
           {notice}
@@ -1339,7 +1336,12 @@ export function GapsSection({
       ) : succeeded ? (
         <p className="text-muted-foreground">{NONE_FOUND}</p>
       ) : !detecting && !failed ? (
-        <p className="text-muted-foreground">{NO_GAPS}</p>
+        <EmptyTabCard
+          title={NO_GAPS}
+          body={NO_GAPS_BODY}
+          actionLabel={OPEN_REQUIREMENTS}
+          href={tabHref(opportunityId, "requirements")}
+        />
       ) : null}
       {selected ? (
         <RightPaneContent>

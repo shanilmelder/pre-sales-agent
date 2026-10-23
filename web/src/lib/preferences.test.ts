@@ -11,6 +11,7 @@ vi.mock("next/headers", () => ({
       name === "psa_prefs" && cookieStore.value !== undefined
         ? { name, value: cookieStore.value }
         : undefined,
+    has: (name: string) => name === "psa_prefs" && cookieStore.value !== undefined,
   }),
 }));
 
@@ -18,6 +19,7 @@ import {
   DEFAULT_PREFERENCES,
   PREFERENCES_COOKIE,
   getPreferences,
+  hasStoredPreferences,
   htmlPreferenceAttributes,
   isPreferences,
   parsePreferences,
@@ -25,10 +27,10 @@ import {
   type Preferences,
 } from "./preferences";
 
-const DEFAULTS: Preferences = { theme: "system", density: "comfortable", singleKeyShortcuts: true };
+const DEFAULTS: Preferences = { theme: "system", density: "comfortable", singleKeyShortcuts: false };
 
 describe("defaults", () => {
-  it("are System, comfortable (32px) and shortcuts on", () => {
+  it("are System, comfortable and shortcuts off", () => {
     expect(DEFAULT_PREFERENCES).toEqual(DEFAULTS);
     expect(PREFERENCES_COOKIE).toBe("psa_prefs");
   });
@@ -141,6 +143,32 @@ describe("getPreferences (server reader)", () => {
       density: "compact",
       singleKeyShortcuts: false,
     });
+  });
+});
+
+describe("existing and partial cookies", () => {
+  it("keeps a stored true", () => {
+    expect(parsePreferences('{"theme":"dark","density":"compact","singleKeyShortcuts":true}')).toEqual({
+      theme: "dark",
+      density: "compact",
+      singleKeyShortcuts: true,
+    });
+  });
+
+  it("a partial cookie without the shortcut field parses to Off", () => {
+    expect(parsePreferences('{"theme":"dark"}').singleKeyShortcuts).toBe(false);
+  });
+});
+
+describe("hasStoredPreferences (first-run check)", () => {
+  beforeEach(() => {
+    cookieStore.value = undefined;
+  });
+
+  it("is false with no cookie and true once one exists", async () => {
+    expect(await hasStoredPreferences()).toBe(false);
+    cookieStore.value = serializePreferences(DEFAULTS);
+    expect(await hasStoredPreferences()).toBe(true);
   });
 });
 

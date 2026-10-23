@@ -289,7 +289,7 @@ describe("the connection status bar (Story 2.3)", () => {
   function body() {
     return (
       <>
-        <button type="button">Retry</button>
+        <button type="button">Save changes</button>
         <input aria-label="Filter" />
         <a href="https://example.invalid/elsewhere">Elsewhere</a>
       </>
@@ -309,13 +309,17 @@ describe("the connection status bar (Story 2.3)", () => {
     FakeSource.last!.readyState = 0; // the browser retries by itself
     await act(async () => FakeSource.last!.emit("error"));
     expect(bar.textContent).toBe("Reconnecting…");
-    expect(screen.getByRole("button", { name: "Retry" }).matches(":disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Save changes" }).matches(":disabled")).toBe(false);
 
     await act(async () => vi.advanceTimersByTime(60_000));
-    expect(bar.textContent).toBe("Offline — edits disabled");
+    expect(bar.textContent).toBe(""); // the Offline strip owns the text now
+    const strip = screen.getByTestId("offline-strip");
+    expect(strip.getAttribute("aria-live")).toBe("polite");
+    expect(strip.textContent).toContain("Offline — edits disabled");
     // The tab panel's controls go inert; links and the tabs still work.
-    expect(screen.getByRole("button", { name: "Retry" }).matches(":disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save changes" }).matches(":disabled")).toBe(true);
     expect(screen.getByRole("textbox", { name: "Filter" }).matches(":disabled")).toBe(true);
+    expect(screen.getByRole("group", { name: "Edits disabled while offline" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Elsewhere" }).getAttribute("href")).toBe(
       "https://example.invalid/elsewhere",
     );
@@ -326,6 +330,91 @@ describe("the connection status bar (Story 2.3)", () => {
 
     await act(async () => FakeSource.last!.emit("open"));
     expect(bar.textContent).toBe("");
-    expect(screen.getByRole("button", { name: "Retry" }).matches(":disabled")).toBe(false);
+    expect(screen.getByTestId("offline-strip").textContent).toBe("");
+    expect(screen.getByRole("button", { name: "Save changes" }).matches(":disabled")).toBe(false);
+  });
+
+  it("Retry in the strip reopens the stream at once and the strip goes when it opens", async () => {
+    render(tree(body()));
+    await act(async () => FakeSource.last!.emit("open"));
+    FakeSource.last!.readyState = 0;
+    await act(async () => FakeSource.last!.emit("error"));
+    await act(async () => vi.advanceTimersByTime(60_000));
+    const before = FakeSource.last!;
+    const strip = screen.getByTestId("offline-strip");
+
+    await act(async () => within(strip).getByRole("button", { name: "Retry" }).click());
+    expect(FakeSource.last).not.toBe(before);
+    expect(before.readyState).toBe(2);
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+    expect(strip.textContent).toContain("Offline"); // still down until it opens
+
+    await act(async () => FakeSource.last!.emit("open"));
+    expect(strip.textContent).toBe("");
+  });
+
+  it("the strip goes when the workspace unmounts", async () => {
+    const view = render(tree(body()));
+    await act(async () => FakeSource.last!.emit("open"));
+    FakeSource.last!.readyState = 0;
+    await act(async () => FakeSource.last!.emit("error"));
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(screen.getByTestId("offline-strip").textContent).toContain("Offline");
+    view.rerender(
+      <ShellProviders singleKeyShortcuts>
+        <AppShell me={ME}>
+          <p>Elsewhere page</p>
+        </AppShell>
+      </ShellProviders>,
+    );
+    expect(screen.getByTestId("offline-strip").textContent).toBe("");
+  });
+});
+
+describe("read-only below 1024px (Story 17.2c)", () => {
+  let matches = false;
+  const listeners = new Set<() => void>();
+
+  beforeEach(() => {
+    matches = false;
+    listeners.clear();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() {
+        return matches;
+      },
+      media: query,
+      addEventListener: (_: string, l: () => void) => listeners.add(l),
+      removeEventListener: (_: string, l: () => void) => listeners.delete(l),
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const body = () => (
+    <>
+      <button type="button">Save</button>
+      <input aria-label="Filter" />
+    </>
+  );
+
+  it("disables the workspace controls when narrow and enables them when wide again", async () => {
+    matches = true;
+    const { container } = render(tree(body()));
+    expect(screen.getByRole("button", { name: "Save" }).matches(":disabled")).toBe(true);
+    expect(screen.getByRole("textbox", { name: "Filter" }).matches(":disabled")).toBe(true);
+    expect(screen.getByTestId("read-only-notice")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Edits disabled on a narrow screen" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    matches = false;
+    await act(async () => listeners.forEach((l) => l()));
+    expect(screen.getByRole("button", { name: "Save" }).matches(":disabled")).toBe(false);
+  });
+
+  it("leaves the controls enabled at 1024px and wider", () => {
+    render(tree(body()));
+    expect(screen.getByRole("button", { name: "Save" }).matches(":disabled")).toBe(false);
   });
 });

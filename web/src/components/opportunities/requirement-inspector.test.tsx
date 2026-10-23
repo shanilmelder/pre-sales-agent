@@ -294,7 +294,7 @@ describe("Requirements list and Evidence inspector", () => {
     expect(within(pane()!).queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
-  it("shows Nothing selected. when a poll removes the selected Requirement", async () => {
+  it("shows the empty text when a poll removes the selected Requirement", async () => {
     const user = userEvent.setup();
     const R3 = requirement(3, "functional", "call.vtt");
     loadRequirements.mockResolvedValue({ kind: "ok", list: list([R3]) });
@@ -308,7 +308,7 @@ describe("Requirements list and Evidence inspector", () => {
 
     expect(pane()).not.toBeNull();
     // The pane's content count drops in an effect, a render after the list updates.
-    expect(await within(pane()!).findByText("Nothing selected.")).toBeTruthy();
+    expect(await within(pane()!).findByText("Select a gap or estimate line to see its details.")).toBeTruthy();
     expect(within(pane()!).queryByText("[REQUIREMENT 1]")).toBeNull();
   }, 10_000);
 

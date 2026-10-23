@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   OFFLINE_AFTER_MS,
+  retryEventStream,
   useConflictsEvents,
   useEventStreamStatus,
   useGapsEvents,
@@ -261,6 +262,55 @@ describe("the shared reconnecting connection (Story 2.3)", () => {
     await act(async () => latest.emit("open"));
     expect(view.getByTestId("status").textContent).toBe("open");
     expect(sources.mock.calls.length).toBe(callsBefore + 1); // re-reads on reconnect
+  });
+
+  it("retryEventStream reopens at once with the last frame id and resets the backoff", async () => {
+    function Probe() {
+      useSourceEvents(ID, vi.fn());
+      return <p data-testid="status">{useEventStreamStatus(ID)}</p>;
+    }
+    const view = render(<Probe />);
+    const first = FakeSource.instances[0]!;
+    await act(async () => first.emit("open"));
+    await act(async () =>
+      first.emit("intake.source.added", { lastEventId: "0199-b", data: "{}" }),
+    );
+    await act(async () => first.fail());
+    await act(async () => vi.advanceTimersByTime(1000)); // attempt 1 reopens
+    await act(async () => FakeSource.instances[1]!.fail()); // 2 s backoff pending
+    expect(FakeSource.instances).toHaveLength(2);
+
+    await act(async () => retryEventStream(ID));
+    expect(FakeSource.instances).toHaveLength(3);
+    expect(FakeSource.instances[1]!.closed).toBe(true);
+    expect(FakeSource.instances[2]!.url).toBe(
+      `/api/opportunities/${ID}/events?last_event_id=0199-b`,
+    );
+    // The cancelled 2 s reopen never fires.
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(FakeSource.instances).toHaveLength(3);
+    // The backoff restarted at 1 s.
+    await act(async () => FakeSource.instances[2]!.fail());
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(FakeSource.instances).toHaveLength(4);
+    await act(async () => FakeSource.instances[3]!.emit("open"));
+    expect(view.getByTestId("status").textContent).toBe("open");
+  });
+
+  it("retryEventStream leaves an open stream alone", async () => {
+    function Probe() {
+      return <p data-testid="status">{useEventStreamStatus(ID)}</p>;
+    }
+    render(<Probe />);
+    await act(async () => FakeSource.instances[0]!.emit("open"));
+    await act(async () => retryEventStream(ID));
+    expect(FakeSource.instances).toHaveLength(1);
+    expect(FakeSource.instances[0]!.closed).toBe(false);
+  });
+
+  it("retryEventStream does nothing without a connection", () => {
+    retryEventStream("00000000-0000-7000-8000-0000000000ff");
+    expect(FakeSource.instances).toHaveLength(0);
   });
 
   it("leaves a browser-side retry (CONNECTING) to the browser", async () => {

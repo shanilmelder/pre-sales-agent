@@ -171,8 +171,10 @@ export function groupRequirements(items: readonly Requirement[]): RequirementGro
 /** The header while an extraction is queued or running. */
 export const EXTRACTING = "Extracting Requirements";
 
-/** The empty-state sentence. */
-export const NO_REQUIREMENTS = "Requirements appear here after Sources are parsed.";
+/** The empty-tab card's title; the sentence is `NO_REQUIREMENTS_BODY`. */
+export const NO_REQUIREMENTS = "No Requirements yet";
+export const NO_REQUIREMENTS_BODY = "Requirements appear after the first Source is parsed.";
+export const ADD_A_SOURCE = "Add a Source";
 
 /** What replaces Retry when the Sources are over the extraction's input budget. */
 export const TOO_MUCH_TEXT = "Too much source text for one extraction — remove or shorten a Source.";

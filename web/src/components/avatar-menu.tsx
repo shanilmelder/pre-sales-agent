@@ -1,6 +1,7 @@
 "use client";
 
 import { Menu } from "@base-ui/react/menu";
+import { EllipsisIcon } from "lucide-react";
 
 function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -15,20 +16,31 @@ export function AvatarMenu({
   email,
   side = "bottom",
   align = "end",
+  compact = false,
 }: {
   name: string;
   email: string;
   /** Where the menu opens: below the header avatar, or above the sidebar footer one. */
   side?: "top" | "bottom";
   align?: "start" | "end";
+  /** An icon-only trigger (the sidebar user card, where the avatar itself opens Settings). */
+  compact?: boolean;
 }) {
   return (
     <Menu.Root>
       <Menu.Trigger
         aria-label={`Account menu for ${name}`}
-        className="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className={
+          compact
+            ? "flex size-7 shrink-0 items-center justify-center rounded-sm outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-primary"
+            : "flex size-8 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        }
       >
-        <span aria-hidden="true">{initials(name)}</span>
+        {compact ? (
+          <EllipsisIcon className="size-4" aria-hidden="true" />
+        ) : (
+          <span aria-hidden="true">{initials(name)}</span>
+        )}
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side={side} align={align} sideOffset={6}>

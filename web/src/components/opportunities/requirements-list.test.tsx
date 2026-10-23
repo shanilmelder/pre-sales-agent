@@ -207,7 +207,10 @@ describe("ExtractionStatus", () => {
 describe("RequirementsSection", () => {
   it("shows the empty sentence when nothing has been extracted", () => {
     renderSection(list([], null));
-    expect(screen.getByText("Requirements appear here after Sources are parsed.")).toBeTruthy();
+    expect(screen.getByText("Requirements appear after the first Source is parsed.")).toBeTruthy();
+    expect(screen.getByText("No Requirements yet")).toBeTruthy();
+    const link = screen.getByRole("link", { name: "Add a Source" });
+    expect(link.getAttribute("href")).toBe(`/opportunities/${OPP_ID}/sources`);
   });
 
   it("polls every 2 s while extracting, then shows the grouped Requirements", async () => {
@@ -220,7 +223,7 @@ describe("RequirementsSection", () => {
       });
     renderSection(list([], queued));
     expect(screen.getByText("Extracting Requirements")).toBeTruthy();
-    expect(screen.queryByText("Requirements appear here after Sources are parsed.")).toBeNull();
+    expect(screen.queryByText("Requirements appear after the first Source is parsed.")).toBeNull();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1999);
@@ -423,7 +426,7 @@ describe("RequirementsSection after review", () => {
   it("a finished run with no Requirements says how many Sources it read", () => {
     renderSection(list([], succeeded));
     expect(screen.getByText("No Requirements were found in 2 Sources.")).toBeTruthy();
-    expect(screen.queryByText("Requirements appear here after Sources are parsed.")).toBeNull();
+    expect(screen.queryByText("Requirements appear after the first Source is parsed.")).toBeNull();
   });
 
   it("uses the singular for one Source", () => {

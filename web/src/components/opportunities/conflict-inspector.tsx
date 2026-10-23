@@ -23,7 +23,9 @@ import {
   ConflictStatusPill,
   DetectedFromTextTag,
 } from "@/components/opportunities/conflict-status-pill";
+import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
+import { InlineAlert } from "@/components/ui/inline-alert";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -63,8 +65,6 @@ const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, or the assigned reviewer can decide this Conflict.";
 const GONE = "This Conflict is no longer there. Reload to see the latest.";
 
-const buttonClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 const primaryClass =
   "h-6 shrink-0 self-start rounded-md bg-primary px-2 text-label text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 disabled:cursor-default disabled:opacity-60";
 const fieldClass =
@@ -144,7 +144,7 @@ function PositionBody({
 }
 
 const cardClass =
-  "flex min-w-0 flex-col gap-1.5 rounded-md border border-border p-2";
+  "min-w-0 gap-1.5 rounded-md border border-border p-2 shadow-none";
 const gridClass = "grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2";
 
 /** A labelled multi-line field with a live character count and an inline error. */
@@ -255,19 +255,13 @@ function useDecision() {
 
   const notice: ReactNode =
     outcome?.kind === "stale" ? (
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="text-label text-foreground">{outcome.message}</p>
-        <button
-          type="button"
-          onClick={() => {
-            setOutcome(null);
-            router.refresh();
-          }}
-          className={buttonClass}
-        >
-          {RELOAD}
-        </button>
-      </div>
+      <InlineAlert
+        lead={outcome.message}
+        onReload={() => {
+          setOutcome(null);
+          router.refresh();
+        }}
+      />
     ) : outcome?.kind === "message" ? (
       <p className="text-meta text-destructive">{outcome.text}</p>
     ) : null;
@@ -361,7 +355,7 @@ function ResolveForm({
           {conflict.positions.map((position) => (
             <label
               key={position.position}
-              className={`${cardClass} cursor-pointer has-[:checked]:border-primary has-[:checked]:ring-1 has-[:checked]:ring-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary`}
+              className={`flex flex-col ${cardClass} cursor-pointer has-[:checked]:border-primary has-[:checked]:ring-1 has-[:checked]:ring-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary`}
             >
               <input
                 type="radio"
@@ -641,12 +635,14 @@ export function ConflictInspector({
           {/* Equal-width cards, wrapping to a new row when the pane is too narrow for all. */}
           <ul className={gridClass}>
             {conflict.positions.map((position) => (
-              <li key={position.position} className={cardClass}>
-                <PositionBody
-                  position={position}
-                  shown={conflict.requirement}
-                  chosen={position.position === conflict.chosen_position}
-                />
+              <li key={position.position} className="flex">
+                <Card className={`${cardClass} flex-1`}>
+                  <PositionBody
+                    position={position}
+                    shown={conflict.requirement}
+                    chosen={position.position === conflict.chosen_position}
+                  />
+                </Card>
               </li>
             ))}
           </ul>

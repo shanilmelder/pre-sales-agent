@@ -10,6 +10,9 @@ export type TraceOptions = components["schemas"]["TraceFilterOptions"];
 
 export const TRACE_PAGE_SIZE = 50;
 export const NO_EVENTS = "No decisions recorded yet.";
+export const NO_EVENTS_TITLE = "No trace events";
+export const NO_EVENTS_BODY = "Decisions and Evidence are recorded here as work happens.";
+export const OPEN_OVERVIEW = "Open Overview";
 export const NO_MATCHES = "No events match these filters.";
 export const CLEAR_FILTERS = "Clear filters";
 export const TRACE_LOAD_FAILED =

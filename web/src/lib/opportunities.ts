@@ -21,10 +21,10 @@ export type UserRef = components["schemas"]["UserRef"];
 export type UserSummary = components["schemas"]["UserSummary"];
 export type OpportunityFacets = components["schemas"]["OpportunityFacets"];
 
-/** The empty-state sentence for people who can create Opportunities. */
-export const EMPTY_LIST_CREATOR = "No Opportunities yet. Press c to create one.";
-/** The empty-state sentence for everyone else (they have no `c`). */
-export const EMPTY_LIST = "No Opportunities yet.";
+/** The empty-state card on a list with no Opportunities and no filters. */
+export const EMPTY_LIST_TITLE = "No Opportunities yet";
+export const EMPTY_LIST_BODY =
+  "Create an Opportunity from a customer email, transcript or RFP. The first file becomes its first Source.";
 /** The empty-state sentence when the All Opportunities filters match nothing. */
 export const EMPTY_FILTERED = "No Opportunities match these filters.";
 /** What anyone sees for an Opportunity they may not read, or one that doesn't exist. */
@@ -82,6 +82,25 @@ export function formatDate(value: string): string {
 /** Today's date in UTC as `YYYY-MM-DD`: the API checks "not in the past" against it. */
 export function utcToday(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
+}
+
+/** Whole calendar days from `today` to `date` (both `YYYY-MM-DD`, UTC): negative once past.
+ * `NaN` for anything that is not a date. */
+export function daysUntil(date: string, today: string): number {
+  const parse = (value: string) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : Number.NaN;
+  };
+  return Math.round((parse(date) - parse(today)) / 86_400_000);
+}
+
+/** The countdown text: "11 days left", "Due tomorrow", "Due today", "3 days overdue". */
+export function countdownLabel(days: number): string {
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  if (days > 1) return `${days} days left`;
+  const late = -days;
+  return `${late} ${late === 1 ? "day" : "days"} overdue`;
 }
 
 /** Length in Unicode code points, as the API (Python) counts it; `.length` counts UTF-16

@@ -390,7 +390,10 @@ describe("DetectionStatus", () => {
 describe("GapsSection", () => {
   it("shows the empty sentence before any detection", () => {
     renderSection(list([], null));
-    expect(screen.getByText("Gaps appear here after Requirements are extracted.")).toBeTruthy();
+    expect(screen.getByText("Gaps appear after Requirements are checked against Checklists.")).toBeTruthy();
+    expect(screen.getByText("No Gaps")).toBeTruthy();
+    const link = screen.getByRole("link", { name: "Open Requirements" });
+    expect(link.getAttribute("href")).toBe(`/opportunities/${OPP_ID}/requirements`);
   });
 
   it("says when a finished detection found no Gaps", () => {
@@ -405,7 +408,7 @@ describe("GapsSection", () => {
       .mockResolvedValue({ kind: "ok", list: list([gap(1, "high"), gap(2, "low")], succeeded) });
     renderSection(list([], queued));
     expect(screen.getByText("Detecting Gaps")).toBeTruthy();
-    expect(screen.queryByText("Gaps appear here after Requirements are extracted.")).toBeNull();
+    expect(screen.queryByText("Gaps appear after Requirements are checked against Checklists.")).toBeNull();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1999);
@@ -559,7 +562,7 @@ describe("GapsSection", () => {
 
     expect(screen.getByText("[GAP 2]")).toBeTruthy();
     expect(within(pane()).queryByText("[GAP 1]")).toBeNull();
-    expect(within(pane()).getByText("Nothing selected.")).toBeTruthy();
+    expect(within(pane()).getByText("Select a gap or estimate line to see its details.")).toBeTruthy();
   });
 
   it("announces the open Gap count when a detection finishes", async () => {
@@ -708,6 +711,9 @@ describe("editing questions", () => {
     await user.type(input, "[[MY TEXT]{Enter}");
 
     const reload = await screen.findByRole("button", { name: "Reload" });
+    // The stale message is an inline alert with Reload only (no diff on Gaps).
+    expect(screen.getByRole("alert").textContent).toContain("Changed by Colleague");
+    expect(screen.queryByRole("button", { name: "View diff" })).toBeNull();
     expect(screen.getAllByText("Changed by Colleague since you opened it.").length).toBeGreaterThan(
       0,
     );

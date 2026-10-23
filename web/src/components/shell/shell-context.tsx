@@ -2,20 +2,27 @@
 
 import {
   createContext,
+  isValidElement,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
+import type { StreamStatus } from "@/lib/opportunity-events";
 import { LiveRegionProvider, useAnnounce } from "@/components/shell/live-region";
+// Types only: the preferences module imports next/headers.
+import type { Density, Theme } from "@/lib/preferences";
 
 /** DOM ids shared by the right pane and its toggle (for focus return on close). */
 export const RIGHT_PANE_ID = "right-pane";
 export const RIGHT_PANE_TOGGLE_ID = "right-pane-toggle";
+
+export type RightPaneTab = "inspector" | "activity";
 
 export type ShellDialog = "palette" | "cheat-sheet";
 export type ShellLayer = ShellDialog | "right-pane";
@@ -26,6 +33,9 @@ type ShellState = {
   rightPaneOpen: boolean;
   setRightPaneOpen: (open: boolean) => void;
   toggleRightPane: () => void;
+  /** The active right-pane tab. Opening the pane, or selecting a row, shows Inspector. */
+  rightPaneTab: RightPaneTab;
+  setRightPaneTab: (tab: RightPaneTab) => void;
   /** The open dialog, if any. Only one is open at a time. */
   dialog: ShellDialog | null;
   openDialog: (dialog: ShellDialog) => void;
@@ -34,10 +44,22 @@ type ShellState = {
   layers: ShellLayer[];
   closeTopLayer: () => void;
   singleKeyShortcuts: boolean;
+  /** The stored theme and density, for the user card's theme toggle. */
+  theme: Theme;
+  density: Density;
+  /** No preferences cookie yet: the shell shows the shortcut hint until it is answered. */
+  firstRun: boolean;
+  dismissFirstRun: () => void;
   /** Where `1`–`9` go, in key order, while an Opportunity workspace is mounted (else null).
    * Set through `useWorkspaceTabKeys`; the global key handler applies the single-key rules. */
   workspaceTabs: readonly string[] | null;
   setWorkspaceTabs: (hrefs: readonly string[] | null) => void;
+  /** The Opportunity workspace's event-stream status (Story 17.2c); `connecting` while no
+   * workspace is mounted. The shell's Offline strip reads it. */
+  streamStatus: StreamStatus;
+  /** Reopens the workspace's stream at once; null while no workspace is mounted. */
+  retryStream: (() => void) | null;
+  setStreamState: (state: { status: StreamStatus; retry: (() => void) | null }) => void;
 };
 
 const ShellContext = createContext<ShellState | null>(null);
@@ -52,30 +74,56 @@ export function useShell(): ShellState {
  * navigation; holds no page content, so it doesn't bypass any page's access gate. */
 export function ShellProviders({
   singleKeyShortcuts,
+  firstRun = false,
+  theme = "system",
+  density = "comfortable",
   children,
 }: {
   singleKeyShortcuts: boolean;
+  firstRun?: boolean;
+  theme?: Theme;
+  density?: Density;
   children: ReactNode;
 }) {
   return (
     <LiveRegionProvider>
-      <ShellProvider singleKeyShortcuts={singleKeyShortcuts}>{children}</ShellProvider>
+      <ShellProvider
+        singleKeyShortcuts={singleKeyShortcuts}
+        firstRun={firstRun}
+        theme={theme}
+        density={density}
+      >
+        {children}
+      </ShellProvider>
     </LiveRegionProvider>
   );
 }
 
 export function ShellProvider({
   singleKeyShortcuts,
+  firstRun = false,
+  theme = "system",
+  density = "comfortable",
   children,
 }: {
   singleKeyShortcuts: boolean;
+  firstRun?: boolean;
+  theme?: Theme;
+  density?: Density;
   children: ReactNode;
 }) {
   const announce = useAnnounce();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightPaneOpen, setRightPaneOpenState] = useState(false);
+  const [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>("inspector");
   const [dialog, setDialog] = useState<ShellDialog | null>(null);
   const [workspaceTabs, setWorkspaceTabs] = useState<readonly string[] | null>(null);
+  const [stream, setStream] = useState<{ status: StreamStatus; retry: (() => void) | null }>({
+    status: "connecting",
+    retry: null,
+  });
+  const [firstRunAnswered, setFirstRunAnswered] = useState(false);
+  const dismissFirstRun = useCallback(() => setFirstRunAnswered(true), []);
 
   const setRightPaneOpen = useCallback(
     (open: boolean) => {
@@ -87,6 +135,7 @@ export function ShellProvider({
           document.getElementById(RIGHT_PANE_TOGGLE_ID)?.focus();
         }
       }
+      if (open) setRightPaneTab("inspector");
       setRightPaneOpenState(open);
       announce(open ? "Right pane opened" : "Right pane closed");
     },
@@ -103,6 +152,8 @@ export function ShellProvider({
       rightPaneOpen,
       setRightPaneOpen,
       toggleRightPane: () => setRightPaneOpen(!rightPaneOpen),
+      rightPaneTab,
+      setRightPaneTab,
       dialog,
       openDialog: setDialog,
       closeDialog: () => setDialog(null),
@@ -113,16 +164,30 @@ export function ShellProvider({
         else if (top) setDialog(null);
       },
       singleKeyShortcuts,
+      theme,
+      density,
+      firstRun: firstRun && !firstRunAnswered,
+      dismissFirstRun,
       workspaceTabs,
       setWorkspaceTabs,
+      streamStatus: stream.status,
+      retryStream: stream.retry,
+      setStreamState: setStream,
     };
   }, [
     sidebarCollapsed,
     rightPaneOpen,
     setRightPaneOpen,
+    rightPaneTab,
     dialog,
     singleKeyShortcuts,
+    theme,
+    density,
+    firstRun,
+    firstRunAnswered,
+    dismissFirstRun,
     workspaceTabs,
+    stream,
   ]);
 
   return (
@@ -144,13 +209,30 @@ export function useWorkspaceTabKeys(hrefs: readonly string[]) {
   }, [key, setWorkspaceTabs]);
 }
 
+/** Publishes the workspace's stream status and its retry to the shell (the Offline strip)
+ * while the calling component is mounted. */
+export function usePublishStreamState(status: StreamStatus, retry: () => void) {
+  const { setStreamState } = useShell();
+  const retryRef = useRef(retry);
+  useEffect(() => {
+    retryRef.current = retry;
+  });
+  useEffect(() => {
+    setStreamState({ status, retry: () => retryRef.current() });
+  }, [status, setStreamState]);
+  useEffect(
+    () => () => setStreamState({ status: "connecting", retry: null }),
+    [setStreamState],
+  );
+}
+
 // --- right-pane content slot ----------------------------------------------------------------
 
 type RightPaneSlot = {
   /** The element the right pane renders page content into (null while it is closed). */
   target: HTMLElement | null;
   setTarget: (element: HTMLElement | null) => void;
-  /** How many `RightPaneContent`s are mounted; the pane shows "Nothing selected." at 0. */
+  /** How many `RightPaneContent`s are mounted; the Inspector shows its empty text at 0. */
   contentCount: number;
   register: () => () => void;
 };
@@ -179,9 +261,14 @@ export function useRightPaneSlot(): RightPaneSlot {
 
 /** Renders `children` inside the right pane (e.g. a list's inspector) while the pane is
  * open. The content stays part of the page's React tree, so its state lives with the page;
- * while it is mounted the pane no longer says "Nothing selected." */
+ * while it is mounted the pane no longer shows its empty text. */
 export function RightPaneContent({ children }: { children: ReactNode }) {
+  const { setRightPaneTab } = useShell();
   const { target, register } = useRightPaneSlot();
   useEffect(() => register(), [register]);
+  // Selecting a row mounts the content, or swaps its keyed child: show Inspector then,
+  // even if Activity was the active tab.
+  const childKey = isValidElement(children) ? children.key : null;
+  useEffect(() => setRightPaneTab("inspector"), [childKey, setRightPaneTab]);
   return target ? createPortal(children, target) : null;
 }
