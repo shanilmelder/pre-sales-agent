@@ -1,28 +1,58 @@
-// Overview summary derivations (Story 1.8, demo slice). Pure and safe on server and client.
-// Every number is counted from what the tabs' reads return; Estimate totals come from the
-// server and are never added up here.
-import { agentLabel, type AssessmentsView } from "@/lib/assessments";
-import { typeLabel, type ConflictsView } from "@/lib/conflicts";
-import { hours, type Assumption, type EstimateView } from "@/lib/estimates";
-import { isSent, type Gap, type GapList } from "@/lib/gaps";
+// Overview summary derivations (Story 1.8, redesigned to the new mockups). Pure and safe on
+// server and client. Every number is counted from what the tabs' reads return; Estimate
+// totals come from the server and are never added up here.
+import {
+  agentLabel,
+  isAssessing,
+  runStatusLabel,
+  type Assessment,
+  type AssessmentFinding,
+  type AssessmentsView,
+} from "@/lib/assessments";
+import { isUnresolved, typeLabel, type ConflictsView } from "@/lib/conflicts";
+import {
+  DRAFTING,
+  hours,
+  isDrafting,
+  type Assumption,
+  type EstimateView,
+  type RoleHours,
+} from "@/lib/estimates";
+import type { Gap, GapList } from "@/lib/gaps";
 import type { RedTeamView, Severity } from "@/lib/red-team";
-import { groupRequirements, type RequirementList } from "@/lib/requirements";
+import { unconfirmed, type RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
+import type { TraceEvent } from "@/lib/trace";
 import type { WorkspaceTabSlug } from "@/lib/workspace";
 
-/** How many Needs attention rows the Overview shows before "+N more". */
+/** One read's outcome: its data, or `null` when it failed. */
+export type OverviewReads = {
+  sources: Source[] | null;
+  requirements: RequirementList | null;
+  gaps: GapList | null;
+  estimate: EstimateView | null;
+  assessments: AssessmentsView | null;
+  redTeam: RedTeamView | null;
+  trace: TraceEvent[] | null;
+  /** Story 6.3: for the escalated Conflicts (left out by older callers). */
+  conflicts?: ConflictsView | null;
+};
+
+/** How many Needs you rows the Overview shows before "+N more". */
 export const ATTENTION_LIMIT = 8;
 
 export const NOTHING_NEEDS_ATTENTION = "Nothing needs attention.";
 export const ATTENTION_INCOMPLETE = "Some items could not be loaded, so this list may be incomplete.";
 export const NO_ESTIMATE_YET = "No Estimate yet.";
-export const NO_ASSESSMENT_YET = "No assessment yet.";
 export const NOT_RUN = "—";
+export const READY_TO_SUBMIT = "0 blockers · ready to submit";
 
 /** A card whose read failed. */
 export function couldNotLoad(what: string): string {
   return `${what} could not be loaded. Try again in a moment.`;
 }
+
+// --- Needs you -------------------------------------------------------------------------------
 
 export type AttentionKind =
   | "critical-finding"
@@ -97,13 +127,7 @@ export function attentionItems({
   gaps,
   estimate,
   conflicts = null,
-}: {
-  redTeam: RedTeamView | null;
-  assessments: AssessmentsView | null;
-  gaps: GapList | null;
-  estimate: EstimateView | null;
-  conflicts?: ConflictsView | null;
-}): AttentionItem[] {
+}: Pick<OverviewReads, "redTeam" | "assessments" | "gaps" | "estimate" | "conflicts">): AttentionItem[] {
   const items: AttentionItem[] = [
     ...findingItems("Red Team", redTeam?.review?.findings ?? []),
     ...escalatedConflictItems(conflicts),
@@ -132,6 +156,17 @@ export function attentionItems({
   return items.sort((a, b) => RANK[a.kind] - RANK[b.kind]);
 }
 
+/** True when a read the Needs you list draws on failed, so it may be incomplete. */
+export function attentionIncomplete(data: OverviewReads): boolean {
+  return (
+    data.redTeam === null ||
+    data.assessments === null ||
+    data.gaps === null ||
+    data.estimate === null ||
+    data.conflicts === null
+  );
+}
+
 /** The first `limit` items and, when some are cut, how many and the tab "+N more" links to:
  * only when every cut item lives on that one tab (otherwise `null`, plain text). */
 export function cutAttention(
@@ -149,6 +184,13 @@ export function moreLabel(n: number): string {
   return `+${n} more`;
 }
 
+/** "3 items". */
+export function itemCountLabel(n: number): string {
+  return `${n} ${n === 1 ? "item" : "items"}`;
+}
+
+// --- Counts ----------------------------------------------------------------------------------
+
 export type SourceCounts = { parsed: number; failed: number; total: number };
 
 /** Sources parsed (and failed) of total, or null when there are none yet. */
@@ -159,6 +201,12 @@ export function sourceCounts(sources: readonly Source[]): SourceCounts | null {
     failed: sources.filter((s) => s.parse?.status === "failed").length,
     total: sources.length,
   };
+}
+
+/** "3 of 4 parsed", "2 of 3 parsed, 1 failed". */
+export function parsedLabel(counts: SourceCounts): string {
+  const parsed = `${counts.parsed} of ${counts.total} parsed`;
+  return counts.failed > 0 ? `${parsed}, ${counts.failed} failed` : parsed;
 }
 
 /** A step with nothing to count yet: still running ("Extracting…") or failed. */
@@ -173,94 +221,354 @@ function stepStatus(run: StepRun, itemCount: number, running: string): StepStatu
   return { status: run.status === "failed" ? "Failed" : running };
 }
 
-export type RequirementCounts = {
-  active: number;
-  byType: { label: string; count: number }[];
-};
-
-/** The active Requirements by type; the extraction's status while there is nothing to count
- * and it hasn't succeeded; null when no extraction has run. */
-export function requirementCounts(list: RequirementList): RequirementCounts | StepStatus | null {
-  if (list.extraction === null && list.items.length === 0) return null;
-  const pending = stepStatus(list.extraction, list.items.length, "Extracting…");
-  if (pending) return pending;
-  return {
-    active: list.items.length,
-    byType: groupRequirements(list.items).map((g) => ({ label: g.label, count: g.items.length })),
-  };
-}
-
-/** `sent`: questions sent (sent, "No answer" or answered, Story 4.7); `awaiting`: sent and
- * not yet answered (Story 4.6). */
-export type GapCounts = { open: number; high: number; sent: number; awaiting: number };
-
-/** The open Gaps and how many are high impact, and how many questions were sent and still
- * await an answer; the detection's status while there is nothing to count and it hasn't
- * succeeded; null when no detection has run. */
-export function gapCounts(list: GapList): GapCounts | StepStatus | null {
-  if (list.detection === null && list.items.length === 0) return null;
-  const pending = stepStatus(list.detection, list.items.length, "Detecting…");
-  if (pending) return pending;
-  const open = openGaps(list);
-  const statuses = open.map((g) => g.question?.status);
-  return {
-    open: open.length,
-    high: open.filter((g) => g.impact === "high").length,
-    sent: statuses.filter((s) => s !== undefined && isSent(s)).length,
-    awaiting: statuses.filter((s) => s === "sent").length,
-  };
-}
-
-/** "3 questions sent · 2 awaiting an answer". */
-export function sentQuestionsLabel(counts: Pick<GapCounts, "sent" | "awaiting">): string {
-  const sent = `${counts.sent} ${counts.sent === 1 ? "question" : "questions"} sent`;
-  return `${sent} · ${counts.awaiting} awaiting an answer`;
-}
-
 /** True for a step's status rather than its counts. */
 export function isStepStatus(value: object): value is StepStatus {
   return "status" in value;
 }
 
-/** "3 Functional · 1 Integration". */
-export function byTypeLabel(byType: RequirementCounts["byType"]): string {
-  return byType.map((t) => `${t.count} ${t.label}`).join(" · ");
+/** The active Requirements and how many are confirmed. */
+export type RequirementCounts = { active: number; confirmed: number; unconfirmed: number };
+
+/** The active Requirements and how many are confirmed; the extraction's status while there is
+ * nothing to count and it hasn't succeeded; null when no extraction has run. */
+export function requirementCounts(list: RequirementList): RequirementCounts | StepStatus | null {
+  if (list.extraction === null && list.items.length === 0) return null;
+  const pending = stepStatus(list.extraction, list.items.length, "Extracting…");
+  if (pending) return pending;
+  const waiting = unconfirmed(list.items).length;
+  return { active: list.items.length, confirmed: list.items.length - waiting, unconfirmed: waiting };
 }
 
-/** "3 of 4 parsed", "2 of 3 parsed, 1 failed". */
-export function parsedLabel(counts: SourceCounts): string {
-  const parsed = `${counts.parsed} of ${counts.total} parsed`;
-  return counts.failed > 0 ? `${parsed}, ${counts.failed} failed` : parsed;
+/** "3 awaiting confirmation". */
+export function awaitingLabel(n: number): string {
+  return `${n} awaiting confirmation`;
 }
 
-/** "3 items". */
-export function itemCountLabel(n: number): string {
-  return `${n} ${n === 1 ? "item" : "items"}`;
+/** The open Gaps by impact. */
+export type GapCounts = { open: number; high: number; medium: number; low: number };
+
+/** The open Gaps by impact; the detection's status while there is nothing to count and it
+ * hasn't succeeded; null when no detection has run. */
+export function gapCounts(list: GapList): GapCounts | StepStatus | null {
+  if (list.detection === null && list.items.length === 0) return null;
+  const pending = stepStatus(list.detection, list.items.length, "Detecting…");
+  if (pending) return pending;
+  const open = openGaps(list);
+  const count = (impact: Gap["impact"]) => open.filter((g) => g.impact === impact).length;
+  return { open: open.length, high: count("high"), medium: count("medium"), low: count("low") };
 }
 
-/** "2 high impact". */
-export function highImpactLabel(n: number): string {
-  return `${n} high impact`;
+/** "2 High, 1 Medium, 0 Low". */
+export function impactLabel(counts: Pick<GapCounts, "high" | "medium" | "low">): string {
+  return `${counts.high} High, ${counts.medium} Medium, ${counts.low} Low`;
 }
 
-/** "Estimate v2". */
-export function estimateTitle(version: number): string {
-  return `Estimate v${version}`;
+/** The Conflicts not yet resolved, and how many of them are escalated. */
+export function conflictCounts(conflicts: ConflictsView): { unresolved: number; escalated: number } {
+  const open = conflicts.conflicts.filter(isUnresolved);
+  return { unresolved: open.length, escalated: open.filter((c) => c.status === "escalated").length };
 }
 
-/** True when there is nothing yet to show on the Assessments card. */
-export function noAssessmentYet(
-  assessments: AssessmentsView | null,
-  redTeam: RedTeamView | null,
-): boolean {
-  const anySpecialist =
+/** True once an Assessment run or an Assessment exists. */
+export function assessmentsStarted(assessments: AssessmentsView | null): boolean {
+  return (
     assessments !== null &&
-    (assessments.run !== null || assessments.assessments.some((s) => s.assessment !== null));
-  const anyRedTeam = redTeam !== null && (redTeam.review !== null || redTeam.run !== null);
-  return !anySpecialist && !anyRedTeam;
+    (assessments.run !== null || assessments.assessments.some((s) => s.assessment !== null))
+  );
 }
 
-/** "1 critical · 2 high". */
-export function criticalHighLabel(counts: { critical: number; high: number }): string {
-  return `${counts.critical} critical · ${counts.high} high`;
+/** "Engineer 225.4 h · PM 52.6 h", plus " · QA 8.0 h" when QA has hours. */
+export function roleHoursLabel(roles: RoleHours): string {
+  const parts = [`Engineer ${hours(roles.engineer)} h`, `PM ${hours(roles.project_manager)} h`];
+  if (roles.qa > 0) parts.push(`QA ${hours(roles.qa)} h`);
+  return parts.join(" · ");
+}
+
+/** "From Assessments run 2". */
+export function sourceRunLabel(run: number): string {
+  return `From Assessments run ${run}`;
+}
+
+/** "Estimate · v3", or "Estimate" before there is one. */
+export function estimateKpiLabel(version: number | null): string {
+  return version === null ? "Estimate" : `Estimate · v${version}`;
+}
+
+/** The Estimate's status before a version exists: drafting, or none yet. */
+export function estimatePending(estimate: EstimateView): string {
+  return isDrafting(estimate.draft) ? DRAFTING : NO_ESTIMATE_YET;
+}
+
+// --- Submission pipeline ---------------------------------------------------------------------
+
+export type PipelineState = "complete" | "in-progress" | "blocked" | "not-started" | "unknown";
+
+export type PipelineStep = {
+  key: string;
+  title: string;
+  sub: string;
+  state: PipelineState;
+};
+
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function sourcesStep(sources: Source[] | null): Omit<PipelineStep, "key" | "title"> {
+  if (sources === null) return { sub: couldNotLoad("Sources"), state: "unknown" };
+  const counts = sourceCounts(sources);
+  if (counts === null) return { sub: "No Sources yet", state: "not-started" };
+  const state: PipelineState =
+    counts.failed > 0 ? "blocked" : counts.parsed < counts.total ? "in-progress" : "complete";
+  return { sub: parsedLabel(counts), state };
+}
+
+function extractedStep(list: RequirementList | null): Omit<PipelineStep, "key" | "title"> {
+  if (list === null) return { sub: couldNotLoad("Requirements"), state: "unknown" };
+  const counts = requirementCounts(list);
+  if (counts === null) return { sub: "Not extracted yet", state: "not-started" };
+  if (isStepStatus(counts))
+    return { sub: counts.status, state: counts.status === "Failed" ? "blocked" : "in-progress" };
+  const running = list.extraction?.status === "queued" || list.extraction?.status === "running";
+  return { sub: plural(counts.active, "Requirement"), state: running ? "in-progress" : "complete" };
+}
+
+function confirmedStep(list: RequirementList | null): Omit<PipelineStep, "key" | "title"> {
+  if (list === null) return { sub: couldNotLoad("Requirements"), state: "unknown" };
+  const counts = requirementCounts(list);
+  if (counts === null || isStepStatus(counts) || counts.active === 0)
+    return { sub: "Nothing to confirm yet", state: "not-started" };
+  const sub = `${counts.confirmed} of ${counts.active}`;
+  if (counts.unconfirmed === 0) return { sub, state: "complete" };
+  return { sub, state: counts.confirmed > 0 ? "in-progress" : "not-started" };
+}
+
+function gapsStep(list: GapList | null): Omit<PipelineStep, "key" | "title"> {
+  if (list === null) return { sub: couldNotLoad("Open Gaps"), state: "unknown" };
+  const counts = gapCounts(list);
+  if (counts === null) return { sub: "Gaps not detected yet", state: "not-started" };
+  if (isStepStatus(counts))
+    return { sub: counts.status, state: counts.status === "Failed" ? "blocked" : "in-progress" };
+  if (counts.open === 0) return { sub: "No open Gaps", state: "complete" };
+  return { sub: `${counts.open} open, ${counts.high} High`, state: "blocked" };
+}
+
+function assessmentsStep(view: AssessmentsView | null): Omit<PipelineStep, "key" | "title"> {
+  if (view === null) return { sub: couldNotLoad("The Assessments"), state: "unknown" };
+  const run = view.run;
+  if (run === null) {
+    const done = view.assessments.filter((s) => s.assessment !== null).length;
+    return done > 0
+      ? { sub: plural(done, "Assessment"), state: "complete" }
+      : { sub: "Not run yet", state: "not-started" };
+  }
+  const sub = runStatusLabel(run);
+  if (run.status === "succeeded") return { sub, state: "complete" };
+  if (run.status === "queued" || run.status === "running") return { sub, state: "in-progress" };
+  return { sub, state: "blocked" };
+}
+
+function conflictsStep(
+  conflicts: ConflictsView | null | undefined,
+  assessments: AssessmentsView | null,
+): Omit<PipelineStep, "key" | "title"> {
+  if (!conflicts) return { sub: couldNotLoad("The Conflicts"), state: "unknown" };
+  const { unresolved, escalated } = conflictCounts(conflicts);
+  if (unresolved > 0)
+    return {
+      sub: escalated > 0 ? `${unresolved} open, ${escalated} escalated` : `${unresolved} open`,
+      state: "blocked",
+    };
+  if (conflicts.conflicts.length === 0 && !assessmentsStarted(assessments))
+    return { sub: "Appear after the Assessments", state: "not-started" };
+  if (conflicts.conflicts.length === 0 && isAssessing(assessments?.run))
+    return { sub: "Waiting for the Assessments", state: "in-progress" };
+  return { sub: "No open Conflicts", state: "complete" };
+}
+
+function estimateStep(estimate: EstimateView | null): Omit<PipelineStep, "key" | "title"> {
+  if (estimate === null) return { sub: couldNotLoad("The Estimate"), state: "unknown" };
+  const version = estimate.version;
+  if (version === null) {
+    if (isDrafting(estimate.draft)) return { sub: DRAFTING, state: "in-progress" };
+    if (estimate.draft?.status === "failed") return { sub: "Drafting failed", state: "blocked" };
+    return { sub: NO_ESTIMATE_YET, state: "not-started" };
+  }
+  const waiting = version.counts.not_accepted;
+  if (waiting > 0)
+    return { sub: `${plural(waiting, "Assumption")} not accepted`, state: "blocked" };
+  if (version.uncovered_count > 0)
+    return {
+      sub: `${plural(version.uncovered_count, "Requirement")} not covered`,
+      state: "blocked",
+    };
+  return { sub: `Estimate v${version.version}, every Assumption accepted`, state: "complete" };
+}
+
+/** The seven submission steps, each with a sub-line and a state, from the reads alone. */
+export function pipelineSteps(data: OverviewReads): PipelineStep[] {
+  return [
+    { key: "sources", title: "Sources added", ...sourcesStep(data.sources) },
+    { key: "extracted", title: "Requirements extracted", ...extractedStep(data.requirements) },
+    { key: "confirmed", title: "Requirements confirmed", ...confirmedStep(data.requirements) },
+    { key: "gaps", title: "Gaps answered", ...gapsStep(data.gaps) },
+    { key: "assessments", title: "Assessments run", ...assessmentsStep(data.assessments) },
+    {
+      key: "conflicts",
+      title: "Conflicts resolved",
+      ...conflictsStep(data.conflicts, data.assessments),
+    },
+    { key: "estimate", title: "Estimate accepted", ...estimateStep(data.estimate) },
+  ];
+}
+
+/** How many steps are complete, in progress and blocked, of all. */
+export function pipelineProgress(steps: readonly PipelineStep[]): {
+  done: number;
+  inProgress: number;
+  blocked: number;
+  total: number;
+} {
+  const count = (state: PipelineState) => steps.filter((s) => s.state === state).length;
+  return {
+    done: count("complete"),
+    inProgress: count("in-progress"),
+    blocked: count("blocked"),
+    total: steps.length,
+  };
+}
+
+/** "Proposal due in 11 days", "Proposal due today", "Overdue by 3 days"; `null` for a bad date. */
+export function dueLabel(days: number): { text: string; overdue: boolean } | null {
+  if (Number.isNaN(days)) return null;
+  if (days < 0) return { text: `Overdue by ${plural(-days, "day")}`, overdue: true };
+  if (days === 0) return { text: "Proposal due today", overdue: false };
+  return { text: `Proposal due in ${plural(days, "day")}`, overdue: false };
+}
+
+// --- Submission blockers ---------------------------------------------------------------------
+
+export type Blocker = {
+  key: string;
+  count: number;
+  title: string;
+  meta: string;
+  tab: WorkspaceTabSlug;
+  action: string;
+};
+
+/** What stands between the Opportunity and a submission, derived from the reads: open Gaps,
+ * unresolved Conflicts, Requirements without an Estimate line and unaccepted Assumptions (each
+ * only when above zero), their total, and the reads that failed (so "ready" is never claimed
+ * on missing data). Read-only; it blocks nothing. */
+export function blockers(data: OverviewReads): {
+  items: Blocker[];
+  total: number;
+  failed: string[];
+} {
+  const items: Blocker[] = [];
+  const failed: string[] = [];
+
+  if (data.gaps === null) failed.push(couldNotLoad("The Gaps"));
+  else {
+    const counts = gapCounts(data.gaps);
+    if (counts && !isStepStatus(counts) && counts.open > 0)
+      items.push({
+        key: "gaps",
+        count: counts.open,
+        title: `${counts.open} open ${counts.open === 1 ? "Gap" : "Gaps"}`,
+        meta: `${impactLabel(counts)}. Answer, convert to an Assumption or dismiss.`,
+        tab: "gaps",
+        action: "Open Gaps",
+      });
+  }
+
+  if (!data.conflicts) failed.push(couldNotLoad("The Conflicts"));
+  else {
+    const { unresolved, escalated } = conflictCounts(data.conflicts);
+    if (unresolved > 0)
+      items.push({
+        key: "conflicts",
+        count: unresolved,
+        title: `${unresolved} open ${unresolved === 1 ? "Conflict" : "Conflicts"}`,
+        meta:
+          escalated > 0
+            ? `Each needs a decision; ${escalated} escalated.`
+            : "Each needs a decision.",
+        tab: "conflicts",
+        action: "Open Conflicts",
+      });
+  }
+
+  if (data.estimate === null) failed.push(couldNotLoad("The Estimate"));
+  else if (data.estimate.version) {
+    const version = data.estimate.version;
+    if (version.uncovered_count > 0)
+      items.push({
+        key: "uncovered",
+        count: version.uncovered_count,
+        title: `${plural(version.uncovered_count, "Requirement")} not covered`,
+        meta: `No line in Estimate v${version.version} covers ${version.uncovered_count === 1 ? "it" : "them"}.`,
+        tab: "estimate",
+        action: "Open Estimate",
+      });
+    const waiting = version.counts.not_accepted;
+    if (waiting > 0)
+      items.push({
+        key: "assumptions",
+        count: waiting,
+        title: `${plural(waiting, "Assumption")} not accepted`,
+        meta: "Each needs a named accepting person.",
+        tab: "estimate",
+        action: "Open Estimate",
+      });
+  }
+
+  return { items, total: items.reduce((sum, b) => sum + b.count, 0), failed };
+}
+
+/** "3 blockers", "1 blocker". */
+export function blockerCountLabel(n: number): string {
+  return plural(n, "blocker");
+}
+
+// --- Latest agent decision -------------------------------------------------------------------
+
+const SEVERITY_RANK: Record<Severity, number> ={ critical: 0, high: 1, medium: 2, low: 3 };
+
+/** The newest specialist Assessment and its most severe Finding (`null` when it has none);
+ * `null` when there is no Assessment. */
+export function latestDecision(
+  assessments: AssessmentsView | null,
+): { assessment: Assessment; finding: AssessmentFinding | null } | null {
+  const all = (assessments?.assessments ?? [])
+    .map((s) => s.assessment)
+    .filter((a): a is Assessment => a !== null);
+  if (all.length === 0) return null;
+  const newest = all.reduce((a, b) => (Date.parse(b.created_at) > Date.parse(a.created_at) ? b : a));
+  const finding =
+    [...newest.findings].sort(
+      (a, b) =>
+        (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9) ||
+        a.position - b.position,
+    )[0] ?? null;
+  return { assessment: newest, finding };
+}
+
+// --- Recent activity -------------------------------------------------------------------------
+
+/** "Sam Delivery" -> "SD", "Red Team Agent" -> "RA", "system" -> "S"; "?" for an empty name. */
+export function actorInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  const first = Array.from(words[0])[0] ?? "";
+  const last = words.length > 1 ? (Array.from(words[words.length - 1])[0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
+// --- Agent run -------------------------------------------------------------------------------
+
+/** "2 of 3 tasks complete". */
+export function tasksCompleteLabel(done: number, total: number): string {
+  return `${done} of ${total} ${total === 1 ? "task" : "tasks"} complete`;
 }

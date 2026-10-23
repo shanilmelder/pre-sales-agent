@@ -1,160 +1,465 @@
 import {
   ArrowUpIcon,
+  CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
+  CircleHelpIcon,
   ClipboardListIcon,
+  ClockIcon,
+  LoaderCircleIcon,
   OctagonAlertIcon,
+  QuoteIcon,
+  SparklesIcon,
   TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { Pill } from "@/components/ui/pill";
-import { RecommendationPill } from "@/components/opportunities/specialist-assessments";
+import { buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
+import { Pill, type PillTone } from "@/components/ui/pill";
+import {
+  RecommendationPill,
+  TaskStatusPill,
+} from "@/components/opportunities/specialist-assessments";
 import {
   agentLabel,
   confidenceLabel,
-  isAssessing,
-  NO_AGENT_ASSESSMENT,
-  runStatusLabel,
+  evidenceLabels,
+  failureReason,
+  skipNote,
+  type AssessmentRun,
   type AssessmentsView,
+  type Confidence,
 } from "@/lib/assessments";
-import type { ConflictsView } from "@/lib/conflicts";
-import { hours, versionStatusLabel, type EstimateView } from "@/lib/estimates";
-import type { GapList } from "@/lib/gaps";
+import { hours, type EstimateView } from "@/lib/estimates";
+import { daysUntil } from "@/lib/opportunities";
 import {
+  actorInitials,
+  assessmentsStarted,
   ATTENTION_INCOMPLETE,
+  attentionIncomplete,
   attentionItems,
-  byTypeLabel,
+  awaitingLabel,
+  blockerCountLabel,
+  blockers,
+  conflictCounts,
   couldNotLoad,
-  criticalHighLabel,
   cutAttention,
-  estimateTitle,
+  dueLabel,
+  estimateKpiLabel,
+  estimatePending,
   gapCounts,
-  highImpactLabel,
   isStepStatus,
   itemCountLabel,
+  latestDecision,
   moreLabel,
-  NO_ASSESSMENT_YET,
-  NO_ESTIMATE_YET,
-  noAssessmentYet,
   NOT_RUN,
   NOTHING_NEEDS_ATTENTION,
-  parsedLabel,
+  pipelineProgress,
+  pipelineSteps,
+  READY_TO_SUBMIT,
   requirementCounts,
-  sentQuestionsLabel,
-  sourceCounts,
+  roleHoursLabel,
+  sourceRunLabel,
+  tasksCompleteLabel,
   type AttentionKind,
+  type OverviewReads,
+  type PipelineState,
 } from "@/lib/overview";
-import { isReviewing, REVIEWING, type RedTeamView } from "@/lib/red-team";
-import type { RequirementList } from "@/lib/requirements";
-import type { Source } from "@/lib/sources";
+import { formatDateTime } from "@/lib/sources";
 import { absoluteTime, eventLabel, NO_EVENTS, relativeTime, type TraceEvent } from "@/lib/trace";
 import { cn } from "@/lib/utils";
-import { tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
+import { tabHref } from "@/lib/workspace";
 
 /** One read's outcome: its data, or `null` when it failed. */
-export type OverviewData = {
-  sources: Source[] | null;
-  requirements: RequirementList | null;
-  gaps: GapList | null;
-  estimate: EstimateView | null;
-  assessments: AssessmentsView | null;
-  redTeam: RedTeamView | null;
-  trace: TraceEvent[] | null;
-  /** Story 6.3: for the escalated Conflicts (left out by older callers). */
-  conflicts?: ConflictsView | null;
-};
+export type OverviewData = OverviewReads;
 
 const RECENT_ACTIVITY_LIMIT = 5;
 
 const linkClass =
-  "rounded-sm text-primary-text underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary";
+  "rounded-sm text-control text-primary-text underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary";
 
-function tabLabel(slug: WorkspaceTabSlug) {
-  return WORKSPACE_TABS.find((t) => t.slug === slug)!;
-}
-
-/** "Open Estimate" with the tab's key as a visual hint. */
-function OpenTab({ id, tab }: { id: string; tab: WorkspaceTabSlug }) {
-  const known = tabLabel(tab);
-  return (
-    <Link href={tabHref(id, tab)} className={cn(linkClass, "ml-auto text-label")}>
-      Open {known.label}
-      <kbd aria-hidden="true" className="ml-1 text-meta text-muted-foreground">
-        {known.key}
-      </kbd>
-    </Link>
-  );
-}
-
-function Card({
-  id,
-  title,
-  extra,
-  children,
-}: {
-  id: string;
-  title: ReactNode;
-  extra?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section aria-labelledby={id} className="flex flex-col gap-2 rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 id={id} className="text-section">
-          {title}
-        </h3>
-        {extra}
-      </div>
-      {children}
-    </section>
-  );
-}
+const outlineLink = `${buttonVariants({ variant: "outline", size: "sm" })} text-control`;
 
 const Muted = ({ children }: { children: ReactNode }) => (
   <p className="text-muted-foreground">{children}</p>
 );
 
-/** Each kind's icon and type label (none for an Assumption: its row text already says
- * "Unaccepted Assumption"). Blocker red only for critical; amber for the rest. */
-const ATTENTION_DISPLAY: Record<
-  AttentionKind,
-  { type: string | null; icon: LucideIcon; tone: string }
+/** A summary card: `ui/card` with a 16px-semibold header row over a bottom border. */
+function SummaryCard({
+  id,
+  title,
+  extra,
+  children,
+  footer,
+}: {
+  id: string;
+  title: ReactNode;
+  extra?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <Card role="region" aria-labelledby={id} className="min-w-0">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-[18px]">
+        <h3 id={id} className="min-w-0 flex-1 text-section">
+          {title}
+        </h3>
+        {extra}
+      </div>
+      {children}
+      {footer ? <div className="border-t border-border px-5 py-3">{footer}</div> : null}
+    </Card>
+  );
+}
+
+// --- KPI row ---------------------------------------------------------------------------------
+
+function KpiTile({
+  label,
+  href,
+  value,
+  unit,
+  children,
+}: {
+  label: string;
+  href: string;
+  value: ReactNode;
+  /** A smaller trailing part of the value: " of 12", " h". */
+  unit?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <Card className="min-w-0">
+      <Link
+        href={href}
+        className="flex h-full flex-col rounded-xl p-5 text-foreground outline-none hover:bg-surface-alt focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <span className="text-label text-muted-foreground">{label}</span>
+        <span className="mt-1 text-kpi text-numeric">
+          {value}
+          {unit ? (
+            <span className="text-section font-normal text-muted-foreground">{unit}</span>
+          ) : null}
+        </span>
+        {children}
+      </Link>
+    </Card>
+  );
+}
+
+const KpiNote = ({ children }: { children: ReactNode }) => (
+  <span className="mt-2 text-meta text-muted-foreground">{children}</span>
+);
+
+function RequirementsKpi({ id, data }: { id: string; data: OverviewData }) {
+  const href = tabHref(id, "requirements");
+  const label = "Requirements confirmed";
+  if (data.requirements === null)
+    return (
+      <KpiTile label={label} href={href} value={NOT_RUN}>
+        <KpiNote>{couldNotLoad("Requirements")}</KpiNote>
+      </KpiTile>
+    );
+  const counts = requirementCounts(data.requirements);
+  if (counts === null || isStepStatus(counts))
+    return (
+      <KpiTile label={label} href={href} value={NOT_RUN}>
+        {counts ? <KpiNote>{counts.status}</KpiNote> : null}
+      </KpiTile>
+    );
+  const pct = counts.active === 0 ? 0 : Math.round((counts.confirmed / counts.active) * 100);
+  return (
+    <KpiTile label={label} href={href} value={counts.confirmed} unit={` of ${counts.active}`}>
+      <span aria-hidden="true" className="mt-2 block h-1.5 rounded-full bg-surface-alt">
+        <span className="block h-1.5 rounded-full bg-resolved" style={{ width: `${pct}%` }} />
+      </span>
+      <KpiNote>{awaitingLabel(counts.unconfirmed)}</KpiNote>
+    </KpiTile>
+  );
+}
+
+function GapsKpi({ id, data }: { id: string; data: OverviewData }) {
+  const href = tabHref(id, "gaps");
+  const label = "Open Gaps";
+  if (data.gaps === null)
+    return (
+      <KpiTile label={label} href={href} value={NOT_RUN}>
+        <KpiNote>{couldNotLoad("Open Gaps")}</KpiNote>
+      </KpiTile>
+    );
+  const counts = gapCounts(data.gaps);
+  if (counts === null || isStepStatus(counts))
+    return (
+      <KpiTile label={label} href={href} value={NOT_RUN}>
+        {counts ? <KpiNote>{counts.status}</KpiNote> : null}
+      </KpiTile>
+    );
+  return (
+    <KpiTile label={label} href={href} value={counts.open}>
+      {counts.high > 0 || counts.medium > 0 ? (
+        <span className="mt-2 flex flex-wrap gap-1.5">
+          {counts.high > 0 ? (
+            <Pill tone="blocker" icon={<CircleAlertIcon />}>
+              {counts.high} High
+            </Pill>
+          ) : null}
+          {counts.medium > 0 ? (
+            <Pill tone="gap" icon={<TriangleAlertIcon />}>
+              {counts.medium} Medium
+            </Pill>
+          ) : null}
+        </span>
+      ) : null}
+      <KpiNote>{counts.low} Low</KpiNote>
+    </KpiTile>
+  );
+}
+
+function ConflictsKpi({ id, data }: { id: string; data: OverviewData }) {
+  const href = tabHref(id, "conflicts");
+  const label = "Open Conflicts";
+  if (!data.conflicts)
+    return (
+      <KpiTile label={label} href={href} value={NOT_RUN}>
+        <KpiNote>{couldNotLoad("The Conflicts")}</KpiNote>
+      </KpiTile>
+    );
+  if (data.conflicts.conflicts.length === 0 && !assessmentsStarted(data.assessments))
+    return <KpiTile label={label} href={href} value={NOT_RUN} />;
+  const { unresolved, escalated } = conflictCounts(data.conflicts);
+  return (
+    <KpiTile label={label} href={href} value={unresolved}>
+      {unresolved > 0 ? (
+        <span className="mt-2 flex">
+          <Pill tone="blocker" icon={<CircleAlertIcon />}>
+            Needs a decision
+          </Pill>
+        </span>
+      ) : null}
+      {escalated > 0 ? <KpiNote>{escalated} escalated</KpiNote> : null}
+    </KpiTile>
+  );
+}
+
+function EstimateKpi({ id, estimate }: { id: string; estimate: EstimateView | null }) {
+  const href = tabHref(id, "estimate");
+  const version = estimate?.version ?? null;
+  const label = estimateKpiLabel(version?.version ?? null);
+  if (estimate === null)
+    return (
+      <KpiTile label={label} href={href} value={NOT_RUN}>
+        <KpiNote>{couldNotLoad("The Estimate")}</KpiNote>
+      </KpiTile>
+    );
+  if (version === null)
+    return (
+      <KpiTile label={label} href={href} value={NOT_RUN}>
+        <KpiNote>{estimatePending(estimate)}</KpiNote>
+      </KpiTile>
+    );
+  return (
+    <KpiTile label={label} href={href} value={hours(version.totals.total_hours)} unit=" h">
+      <KpiNote>{roleHoursLabel(version.totals.role_hours)}</KpiNote>
+      {version.source_run != null ? (
+        <span className="text-meta text-muted-foreground">{sourceRunLabel(version.source_run)}</span>
+      ) : null}
+    </KpiTile>
+  );
+}
+
+function KpiRow({ id, data }: { id: string; data: OverviewData }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <RequirementsKpi id={id} data={data} />
+      <GapsKpi id={id} data={data} />
+      <ConflictsKpi id={id} data={data} />
+      <EstimateKpi id={id} estimate={data.estimate} />
+    </div>
+  );
+}
+
+// --- Submission pipeline ---------------------------------------------------------------------
+
+const STEP_DISPLAY: Record<
+  PipelineState,
+  { label: string; tone: PillTone; icon: LucideIcon; circle: string }
 > = {
-  "critical-finding": { type: "Critical", icon: OctagonAlertIcon, tone: "text-blocker" },
-  "escalated-conflict": { type: "Escalated", icon: ArrowUpIcon, tone: "text-gap" },
-  "high-finding": { type: "High", icon: TriangleAlertIcon, tone: "text-gap" },
-  gap: { type: "High impact", icon: CircleAlertIcon, tone: "text-gap" },
-  assumption: { type: null, icon: ClipboardListIcon, tone: "text-gap" },
+  complete: {
+    label: "Complete",
+    tone: "resolved",
+    icon: CircleCheckIcon,
+    circle: "border-resolved bg-resolved text-resolved-foreground",
+  },
+  "in-progress": {
+    label: "In progress",
+    tone: "agent",
+    icon: LoaderCircleIcon,
+    circle: "border-primary bg-primary-tint text-primary-text",
+  },
+  blocked: {
+    label: "Blocked",
+    tone: "blocker",
+    icon: CircleAlertIcon,
+    circle: "border-blocker bg-blocker-tint text-blocker",
+  },
+  "not-started": {
+    label: "Not started",
+    tone: "neutral",
+    icon: ClockIcon,
+    circle: "border-border-strong bg-surface text-muted-foreground",
+  },
+  unknown: {
+    label: "Unknown",
+    tone: "neutral",
+    icon: CircleHelpIcon,
+    circle: "border-border-strong bg-surface text-muted-foreground",
+  },
 };
 
-/** Needs attention: up to 8 rows, most severe first, each an icon plus a label and a link to
- * its tab. Read-only; it blocks nothing. */
-function NeedsAttention({ id, data }: { id: string; data: OverviewData }) {
-  const items = attentionItems(data);
-  const { shown, more, moreTab } = cutAttention(items);
-  const incomplete =
-    data.redTeam === null ||
-    data.assessments === null ||
-    data.gaps === null ||
-    data.estimate === null ||
-    data.conflicts === null;
+function SubmissionPipeline({
+  data,
+  proposalDate,
+  today,
+}: {
+  data: OverviewData;
+  proposalDate: string;
+  today: string;
+}) {
+  const steps = pipelineSteps(data);
+  const progress = pipelineProgress(steps);
+  const due = dueLabel(daysUntil(proposalDate, today));
+  const pct = (n: number) => `${(n / progress.total) * 100}%`;
   return (
-    <Card
-      id="overview-attention"
-      title="Needs attention"
+    <SummaryCard
+      id="overview-pipeline"
+      title="Submission pipeline"
       extra={
-        items.length > 0 ? (
+        due ? (
           <span
-            role="img"
-            aria-label={itemCountLabel(items.length)}
-            className="text-label text-numeric text-muted-foreground"
+            className={cn(
+              "inline-flex items-center gap-1 text-control",
+              due.overdue ? "text-blocker" : "text-muted-foreground",
+            )}
           >
-            {items.length}
+            {due.overdue ? <TriangleAlertIcon aria-hidden="true" className="size-3.5" /> : null}
+            {due.text}
           </span>
         ) : null
+      }
+      footer={
+        <div className="flex flex-col gap-1.5 pt-0.5 pb-1.5">
+          <div className="flex justify-between gap-2 text-control">
+            <span className="text-body-strong">
+              {progress.done} of {progress.total} steps complete
+            </span>
+            <span className="text-muted-foreground">{progress.blocked} blocked</span>
+          </div>
+          <div aria-hidden="true" className="flex h-2 overflow-hidden rounded-full bg-surface-alt">
+            <div className="bg-resolved" style={{ width: pct(progress.done) }} />
+            <div className="bg-primary" style={{ width: pct(progress.inProgress) }} />
+            <div className="bg-blocker" style={{ width: pct(progress.blocked) }} />
+          </div>
+        </div>
+      }
+    >
+      <ol className="px-5 py-2">
+        {steps.map((step, i) => {
+          const display = STEP_DISPLAY[step.state];
+          const Icon = display.icon;
+          const last = i === steps.length - 1;
+          return (
+            <li key={step.key} data-step-state={step.state} className="flex items-stretch gap-3.5">
+              <div aria-hidden="true" className="flex flex-col items-center">
+                <span
+                  className={cn(
+                    "mt-2 flex size-7 shrink-0 items-center justify-center rounded-full border-2 text-label",
+                    display.circle,
+                  )}
+                >
+                  {step.state === "complete" ? <CheckIcon className="size-3.5" /> : i + 1}
+                </span>
+                {last ? null : (
+                  <span
+                    className={cn(
+                      "min-h-2 w-0.5 flex-1",
+                      step.state === "complete" ? "bg-resolved" : "bg-border",
+                    )}
+                  />
+                )}
+              </div>
+              <div
+                className={cn(
+                  "flex min-w-0 flex-1 items-center gap-3 py-2.5",
+                  last ? null : "border-b border-border",
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={
+                      step.state === "not-started" || step.state === "unknown"
+                        ? "text-body"
+                        : "text-body-strong"
+                    }
+                  >
+                    {step.title}
+                  </div>
+                  <div className="text-meta text-muted-foreground">{step.sub}</div>
+                </div>
+                <Pill tone={display.tone} icon={<Icon />}>
+                  {display.label}
+                </Pill>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </SummaryCard>
+  );
+}
+
+// --- Needs you -------------------------------------------------------------------------------
+
+/** Each kind's icon, state line and action. Blocker red only for critical; amber for the rest. */
+const ATTENTION_DISPLAY: Record<
+  AttentionKind,
+  { state: string; icon: LucideIcon; tone: string; action: string }
+> = {
+  "critical-finding": {
+    state: "Critical",
+    icon: OctagonAlertIcon,
+    tone: "text-blocker",
+    action: "Review",
+  },
+  "escalated-conflict": {
+    state: "Escalated",
+    icon: ArrowUpIcon,
+    tone: "text-gap",
+    action: "Resolve",
+  },
+  "high-finding": { state: "High", icon: TriangleAlertIcon, tone: "text-gap", action: "Review" },
+  gap: { state: "High impact", icon: CircleAlertIcon, tone: "text-gap", action: "Resolve" },
+  assumption: { state: "Not accepted", icon: ClipboardListIcon, tone: "text-gap", action: "Open" },
+};
+
+/** Needs you: up to 8 rows, most severe first, each an icon, its title, a state line and a
+ * link to its tab. Read-only; it blocks nothing. */
+function NeedsYou({ id, data }: { id: string; data: OverviewData }) {
+  const items = attentionItems(data);
+  const { shown, more, moreTab } = cutAttention(items);
+  const incomplete = attentionIncomplete(data);
+  return (
+    <SummaryCard
+      id="overview-attention"
+      title="Needs you"
+      extra={items.length > 0 ? <Pill tone="gap">{itemCountLabel(items.length)}</Pill> : null}
+      footer={
+        <p className="text-control text-muted-foreground">
+          In your queue <b className="text-numeric text-foreground">{items.length}</b>
+        </p>
       }
     >
       {shown.length > 0 ? (
@@ -163,315 +468,378 @@ function NeedsAttention({ id, data }: { id: string; data: OverviewData }) {
             const display = ATTENTION_DISPLAY[item.kind];
             const Icon = display.icon;
             return (
-              <li key={item.key} className="border-t border-border first:border-t-0">
+              <li
+                key={item.key}
+                data-kind={item.kind}
+                className={cn(
+                  "flex items-start gap-3 border-t border-border px-5 py-3 first:border-t-0",
+                  item.kind === "critical-finding" && "bg-blocker-tint",
+                )}
+              >
+                <Icon aria-hidden="true" className={cn("mt-0.5 size-4.5 shrink-0", display.tone)} />
+                <div className="min-w-0 flex-1">
+                  <div title={item.label} className="truncate text-body-strong">
+                    {item.label}
+                  </div>
+                  <div className={cn("text-label", display.tone)}>{display.state}</div>
+                </div>
                 <Link
                   href={tabHref(id, item.tab)}
-                  className="flex min-h-row items-center gap-2 rounded-sm px-1 outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-primary"
+                  aria-label={`${display.action} ${item.label}`}
+                  className={outlineLink}
                 >
-                  <Icon aria-hidden="true" className={cn("size-3.5 shrink-0", display.tone)} />
-                  <span className="w-24 shrink-0 text-label">{display.type}</span>
-                  <span title={item.label} className="min-w-0 flex-1 truncate text-body">
-                    {item.label}
-                  </span>
-                  <span className="shrink-0 text-meta text-muted-foreground">
-                    {tabLabel(item.tab).label}
-                  </span>
+                  {display.action}
                 </Link>
               </li>
             );
           })}
         </ul>
-      ) : incomplete ? null : (
-        <Muted>{NOTHING_NEEDS_ATTENTION}</Muted>
-      )}
-      {more > 0 && moreTab ? (
-        <Link href={tabHref(id, moreTab)} className={cn(linkClass, "self-start text-label")}>
-          {moreLabel(more)}
-        </Link>
-      ) : more > 0 ? (
-        <p className="text-label text-muted-foreground">{moreLabel(more)}</p>
       ) : null}
-      {incomplete ? <Muted>{ATTENTION_INCOMPLETE}</Muted> : null}
-    </Card>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  detail,
-  extra,
-  href,
-}: {
-  label: string;
-  value: ReactNode;
-  detail?: ReactNode;
-  /** A second detail line. */
-  extra?: ReactNode;
-  href?: string;
-}) {
-  const body = (
-    <>
-      <span className="text-meta text-muted-foreground">{label}</span>
-      <span className="text-title text-numeric">{value}</span>
-      {detail ? <span className="text-meta text-muted-foreground">{detail}</span> : null}
-      {extra ? <span className="text-meta text-muted-foreground">{extra}</span> : null}
-    </>
-  );
-  return href ? (
-    <Link
-      href={href}
-      className="flex min-w-32 flex-col gap-0.5 rounded-sm text-foreground outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-primary"
-    >
-      {body}
-    </Link>
-  ) : (
-    <div className="flex min-w-32 flex-col gap-0.5">{body}</div>
-  );
-}
-
-/** Pipeline: Sources, Requirements and open Gaps, each linking to its tab ("—" before the
- * step has run). */
-function Pipeline({ id, data }: { id: string; data: OverviewData }) {
-  const sources = data.sources === null ? null : sourceCounts(data.sources);
-  const requirements = data.requirements === null ? null : requirementCounts(data.requirements);
-  const gaps = data.gaps === null ? null : gapCounts(data.gaps);
-  return (
-    <Card id="overview-pipeline" title="Pipeline">
-      <div className="flex flex-wrap gap-6">
-        <PipelineStat
-          label="Sources"
-          failed={data.sources === null}
-          href={tabHref(id, "sources")}
-          value={sources?.total}
-          detail={sources ? parsedLabel(sources) : null}
-        />
-        <PipelineStat
-          label="Requirements"
-          failed={data.requirements === null}
-          href={tabHref(id, "requirements")}
-          value={requirements && !isStepStatus(requirements) ? requirements.active : undefined}
-          detail={
-            requirements === null
-              ? null
-              : isStepStatus(requirements)
-                ? requirements.status
-                : requirements.byType.length > 0
-                  ? byTypeLabel(requirements.byType)
-                  : null
-          }
-        />
-        <PipelineStat
-          label="Open Gaps"
-          failed={data.gaps === null}
-          href={tabHref(id, "gaps")}
-          value={gaps && !isStepStatus(gaps) ? gaps.open : undefined}
-          detail={
-            gaps === null ? null : isStepStatus(gaps) ? gaps.status : highImpactLabel(gaps.high)
-          }
-          extra={gaps && !isStepStatus(gaps) ? sentQuestionsLabel(gaps) : null}
-        />
-      </div>
-    </Card>
-  );
-}
-
-function PipelineStat({
-  label,
-  failed,
-  href,
-  value,
-  detail,
-  extra = null,
-}: {
-  label: string;
-  failed: boolean;
-  href: string;
-  value: number | undefined;
-  detail: string | null;
-  /** A second detail line (Story 4.6: questions sent and awaiting an answer). */
-  extra?: string | null;
-}) {
-  if (failed) {
-    return <Stat label={label} value={NOT_RUN} detail={couldNotLoad(label)} href={href} />;
-  }
-  return <Stat label={label} value={value ?? NOT_RUN} detail={detail} extra={extra} href={href} />;
-}
-
-/** The current Estimate Version's server totals and its Assumptions. */
-function EstimateCard({ id, estimate }: { id: string; estimate: EstimateView | null }) {
-  const version = estimate?.version ?? null;
-  return (
-    <Card
-      id="overview-estimate"
-      title={version ? estimateTitle(version.version) : "Estimate"}
-      extra={
-        <>
-          {version ? (
-            <Pill tone="neutral">{versionStatusLabel(version.status)}</Pill>
-          ) : null}
-          {version ? (
-            <span className="text-meta text-muted-foreground">totals calculated by the platform</span>
-          ) : null}
-          <OpenTab id={id} tab="estimate" />
-        </>
-      }
-    >
-      {estimate === null ? (
-        <p>{couldNotLoad("The Estimate")}</p>
-      ) : version === null ? (
-        <Muted>{NO_ESTIMATE_YET}</Muted>
-      ) : (
-        <div className="flex flex-wrap gap-6">
-          <Stat label="Effort" value={`${hours(version.totals.effort_hours)} h`} />
-          <Stat label="Contingency" value={`${hours(version.totals.contingency_hours)} h`} />
-          <Stat label="Total" value={`${hours(version.totals.total_hours)} h`} />
-          <Stat
-            label="Assumptions"
-            value={version.counts.total}
-            detail={
-              <span className="inline-flex flex-wrap items-center gap-1">
-                <CircleCheckIcon aria-hidden="true" className="size-3 text-resolved" />
-                <span className="text-numeric">{version.counts.accepted}</span> accepted ·{" "}
-                <ClipboardListIcon aria-hidden="true" className="size-3 text-blocker" />
-                <span className="text-numeric">{version.counts.not_accepted}</span> not accepted
-              </span>
-            }
-          />
+      {shown.length === 0 && !incomplete ? (
+        <div className="px-5 py-4">
+          <Muted>{NOTHING_NEEDS_ATTENTION}</Muted>
         </div>
-      )}
-    </Card>
+      ) : null}
+      {more > 0 || incomplete ? (
+        <div className="flex flex-col gap-1 border-t border-border px-5 py-3">
+          {more > 0 && moreTab ? (
+            <Link href={tabHref(id, moreTab)} className={cn(linkClass, "self-start")}>
+              {moreLabel(more)}
+            </Link>
+          ) : more > 0 ? (
+            <p className="text-control text-muted-foreground">{moreLabel(more)}</p>
+          ) : null}
+          {incomplete ? <Muted>{ATTENTION_INCOMPLETE}</Muted> : null}
+        </div>
+      ) : null}
+    </SummaryCard>
   );
 }
 
-/** One line per specialist agent with its recommendation and confidence, the Red Team's
- * critical/high counts, and the latest run's status while it is queued or running. */
-function AssessmentsCard({
-  id,
-  assessments,
-  redTeam,
-}: {
-  id: string;
-  assessments: AssessmentsView | null;
-  redTeam: RedTeamView | null;
-}) {
-  const bothFailed = assessments === null && redTeam === null;
-  const empty = assessments !== null && redTeam !== null && noAssessmentYet(assessments, redTeam);
-  const running = assessments && isAssessing(assessments.run) ? assessments.run : null;
+// --- Submission blockers ---------------------------------------------------------------------
+
+/** What stands between the Opportunity and a submission, derived from the reads. No Baseline
+ * group; read-only, it blocks nothing. */
+function SubmissionBlockers({ id, data }: { id: string; data: OverviewData }) {
+  const { items, total, failed } = blockers(data);
+  const ready = items.length === 0 && failed.length === 0;
+  const hasEstimate = !!data.estimate?.version;
   return (
-    <Card
-      id="overview-assessments"
-      title="Assessments"
+    <SummaryCard
+      id="overview-blockers"
+      title="Submission blockers"
       extra={
-        <>
-          {running ? (
-            <span className="text-label text-muted-foreground" data-status={running.status}>
-              {runStatusLabel(running)}
-            </span>
-          ) : null}
-          {redTeam && isReviewing(redTeam.run) ? (
-            <span className="text-label text-muted-foreground">{REVIEWING}</span>
-          ) : null}
-          <OpenTab id={id} tab="assessments" />
-        </>
+        total === 0 && failed.length > 0 ? null : (
+          <Pill
+            tone={total > 0 ? "blocker" : ready && hasEstimate ? "resolved" : "neutral"}
+            icon={
+              total > 0 ? <CircleAlertIcon /> : ready && hasEstimate ? <CircleCheckIcon /> : null
+            }
+          >
+            {blockerCountLabel(total)}
+          </Pill>
+        )
       }
     >
-      {bothFailed ? (
-        <p>{couldNotLoad("The Assessments")}</p>
-      ) : empty ? (
-        <Muted>{NO_ASSESSMENT_YET}</Muted>
-      ) : (
+      {items.length > 0 ? (
         <ul className="flex flex-col">
-          {assessments === null ? (
-            <li className="min-h-row-compact py-1">{couldNotLoad("The Specialist Assessments")}</li>
-          ) : (
-            assessments.assessments.map((slot) => (
-              <li key={slot.agent} className="flex min-h-row-compact flex-wrap items-center gap-3">
-                <span className="w-36 shrink-0 text-label">{agentLabel(slot.agent)}</span>
-                {slot.assessment ? (
-                  <>
-                    <RecommendationPill recommendation={slot.assessment.recommendation} />
-                    <span className="text-meta text-muted-foreground">
-                      {confidenceLabel(slot.assessment.confidence)}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-meta text-muted-foreground">{NO_AGENT_ASSESSMENT}</span>
-                )}
-              </li>
-            ))
-          )}
-          {redTeam === null ? (
-            <li className="min-h-row-compact py-1">{couldNotLoad("The Red Team Review")}</li>
-          ) : (
-            <li className="flex min-h-row-compact flex-wrap items-center gap-3">
-              <span className="w-36 shrink-0 text-label">Red Team</span>
-              {redTeam.review ? (
-                <span className="text-meta text-numeric">
-                  {criticalHighLabel(redTeam.review.counts)}
-                </span>
-              ) : (
-                <span className="text-meta text-muted-foreground">No review yet.</span>
-              )}
-            </li>
-          )}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-/** The five newest trace events: time, actor and the event in plain words. */
-function RecentActivity({ id, trace }: { id: string; trace: TraceEvent[] | null }) {
-  const items = trace?.slice(0, RECENT_ACTIVITY_LIMIT) ?? [];
-  return (
-    <Card id="overview-activity" title="Recent activity" extra={<OpenTab id={id} tab="trace" />}>
-      {trace === null ? (
-        <p>{couldNotLoad("The recent activity")}</p>
-      ) : items.length === 0 ? (
-        <Muted>{NO_EVENTS}</Muted>
-      ) : (
-        <ul className="flex flex-col">
-          {items.map((item) => (
-            <li key={item.id} className="flex min-h-row-compact items-center gap-3">
-              <time
-                dateTime={item.occurred_at}
-                title={absoluteTime(item.occurred_at)}
-                className="w-24 shrink-0 truncate text-meta text-muted-foreground text-numeric"
-              >
-                {relativeTime(item.occurred_at)}
-              </time>
-              <span
-                title={item.actor.name}
-                className="w-40 shrink-0 truncate text-meta text-muted-foreground"
-              >
-                {item.actor.name}
-              </span>
-              <span title={eventLabel(item.event_type)} className="min-w-0 flex-1 truncate text-body">
-                {eventLabel(item.event_type)}
-              </span>
+          {items.map((b) => (
+            <li
+              key={b.key}
+              data-blocker={b.key}
+              className="flex items-start gap-3 border-t border-border bg-blocker-tint px-5 py-3 first:border-t-0"
+            >
+              <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blocker" />
+              <div className="min-w-0 flex-1">
+                <div className="text-body-strong">{b.title}</div>
+                <div className="text-meta text-muted-foreground">{b.meta}</div>
+              </div>
+              <Link href={tabHref(id, b.tab)} className={linkClass}>
+                {b.action}
+              </Link>
             </li>
           ))}
         </ul>
-      )}
-    </Card>
+      ) : null}
+      {failed.length > 0 ? (
+        <div className="flex flex-col gap-1 border-t border-border px-5 py-3 first:border-t-0">
+          {failed.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      ) : null}
+      {ready ? (
+        hasEstimate ? (
+          <div className="px-4 py-8 text-center">
+            <p className="inline-flex items-center gap-2 text-section text-resolved">
+              <CircleCheckIcon aria-hidden="true" className="size-5" />
+              {READY_TO_SUBMIT}
+            </p>
+          </div>
+        ) : (
+          <div className="px-5 py-4">
+            <Muted>Nothing blocks yet. Blockers appear as the pipeline runs.</Muted>
+          </div>
+        )
+      ) : null}
+    </SummaryCard>
   );
 }
 
-/** The Overview's read-only summary (Story 1.8, demo slice): Needs attention, the Pipeline
- * counts, the Estimate, the Assessments and the recent activity, each linking to its tab.
- * Each card stands alone: a failed read only affects its own card. Same for every role that
- * can read the Opportunity. Rendered on navigation; no polling. */
-export function OverviewSummary({ opportunityId, data }: { opportunityId: string; data: OverviewData }) {
+// --- Recent activity -------------------------------------------------------------------------
+
+/** The five newest trace events: who (an initials tile), what in plain words, and when. */
+function RecentActivity({ id, trace }: { id: string; trace: TraceEvent[] | null }) {
+  const items = trace?.slice(0, RECENT_ACTIVITY_LIMIT) ?? [];
   return (
-    <div className="flex flex-col gap-4">
-      <NeedsAttention id={opportunityId} data={data} />
-      <Pipeline id={opportunityId} data={data} />
-      <div className="grid gap-4 xl:grid-cols-2">
-        <EstimateCard id={opportunityId} estimate={data.estimate} />
-        <AssessmentsCard id={opportunityId} assessments={data.assessments} redTeam={data.redTeam} />
+    <SummaryCard
+      id="overview-activity"
+      title="Recent activity"
+      extra={
+        <Link href={tabHref(id, "trace")} className={linkClass}>
+          Open Trace
+        </Link>
+      }
+    >
+      <div className="px-5 pt-3 pb-4">
+        {trace === null ? (
+          <p>{couldNotLoad("The recent activity")}</p>
+        ) : items.length === 0 ? (
+          <Muted>{NO_EVENTS}</Muted>
+        ) : (
+          <ul className="flex flex-col">
+            {items.map((item) => {
+              const person = item.actor.type === "user";
+              return (
+                <li key={item.id} data-actor-type={item.actor.type} className="flex gap-3 py-2.5">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "flex size-6 shrink-0 items-center justify-center text-label",
+                      person
+                        ? "rounded-full bg-resolved-tint text-resolved"
+                        : "rounded-md bg-primary-tint text-primary-text",
+                    )}
+                  >
+                    {actorInitials(item.actor.name)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-control font-normal">{eventLabel(item.event_type)}</div>
+                    <div className="text-meta text-muted-foreground">
+                      {item.actor.name} ·{" "}
+                      <time
+                        dateTime={item.occurred_at}
+                        title={absoluteTime(item.occurred_at)}
+                        className="text-numeric"
+                      >
+                        {relativeTime(item.occurred_at)}
+                      </time>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
-      <RecentActivity id={opportunityId} trace={data.trace} />
-    </div>
+    </SummaryCard>
+  );
+}
+
+// --- Latest agent decision -------------------------------------------------------------------
+
+const CONFIDENCE_DISPLAY: Record<Confidence, { tone: PillTone; icon: LucideIcon }> = {
+  high: { tone: "resolved", icon: CircleCheckIcon },
+  medium: { tone: "neutral", icon: CircleCheckIcon },
+  low: { tone: "gap", icon: TriangleAlertIcon },
+};
+
+/** The newest specialist Assessment: its most severe Finding, the reasoning, the evidence, the
+ * recommendation and the confidence. Hidden when there is no Assessment. */
+function LatestDecision({ id, assessments }: { id: string; assessments: AssessmentsView | null }) {
+  const latest = latestDecision(assessments);
+  if (latest === null) return null;
+  const { assessment, finding } = latest;
+  const reasons = [finding?.detail, assessment.confidence_basis].filter(
+    (r): r is string => !!r && r.trim() !== "",
+  );
+  const evidence = evidenceLabels(assessment.findings, assessment.effort);
+  const confidence = CONFIDENCE_DISPLAY[assessment.confidence] ?? CONFIDENCE_DISPLAY.medium;
+  const ConfidenceIcon = confidence.icon;
+  return (
+    <SummaryCard
+      id="overview-decision"
+      title="Latest agent decision"
+      extra={
+        <Pill tone="agent" icon={<SparklesIcon />}>
+          {agentLabel(assessment.agent)}
+        </Pill>
+      }
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-3.5 border-border p-5 max-lg:border-b lg:border-r">
+          <p className="flex items-center gap-3 rounded-[10px] border border-primary bg-primary-tint px-4 py-3.5 text-section text-primary-text">
+            <SparklesIcon aria-hidden="true" className="size-5 shrink-0" />
+            {finding ? finding.title : "No Findings."}
+          </p>
+          {reasons.length > 0 ? (
+            <>
+              <h4 className="text-eyebrow text-muted-foreground uppercase">Reasoning</h4>
+              <ul className="flex flex-col gap-2">
+                {reasons.map((reason, i) => (
+                  <li key={i} className="flex items-start gap-2.5">
+                    <CircleCheckIcon
+                      aria-hidden="true"
+                      className="mt-0.5 size-4 shrink-0 text-resolved"
+                    />
+                    <span className="min-w-0 flex-1">{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {evidence.length > 0 ? (
+            <ul aria-label="Evidence" className="flex flex-wrap gap-1.5">
+              {evidence.map((e) => (
+                <li key={e.id}>
+                  <Chip className="border-transparent bg-primary-tint">
+                    <QuoteIcon aria-hidden="true" className="size-3" />
+                    {e.label}
+                  </Chip>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-3.5 p-5">
+          <div className="flex flex-wrap gap-2">
+            <RecommendationPill recommendation={assessment.recommendation} />
+            <Pill tone={confidence.tone} icon={<ConfidenceIcon />}>
+              {confidenceLabel(assessment.confidence)}
+            </Pill>
+          </div>
+          <div className="flex-1" />
+          <Link href={tabHref(id, "assessments")} className={cn(outlineLink, "self-start")}>
+            Open Assessments
+          </Link>
+        </div>
+      </div>
+    </SummaryCard>
+  );
+}
+
+// --- Agent run -------------------------------------------------------------------------------
+
+function taskNote(task: AssessmentRun["tasks"][number]): string | null {
+  return task.status === "failed" ? failureReason(task.error_code) : skipNote(task);
+}
+
+/** The latest Assessment run: when it started, how many tasks are done, and a compact card per
+ * task. Shown only when a run exists; read-only (no Cancel here). */
+function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsView | null }) {
+  const run = assessments?.run ?? null;
+  if (run === null) return null;
+  const done = run.tasks.filter((t) => t.status === "succeeded").length;
+  return (
+    <SummaryCard
+      id="overview-run"
+      title="Agent run"
+      extra={
+        <>
+          <span className="min-w-0 flex-1 text-control font-normal text-muted-foreground">
+            Assessments · started{" "}
+            <time dateTime={run.created_at} className="text-numeric">
+              {formatDateTime(run.created_at)}
+            </time>{" "}
+            · {tasksCompleteLabel(done, run.tasks.length)}
+          </span>
+          <Link href={tabHref(id, "assessments")} className={outlineLink}>
+            Open Assessments
+          </Link>
+        </>
+      }
+    >
+      {run.tasks.length > 0 ? (
+        <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-3">
+          {run.tasks.map((task) => {
+            const note = taskNote(task);
+            return (
+              <li
+                key={task.agent}
+                data-task-status={task.status}
+                className={cn(
+                  "flex flex-col gap-2.5 rounded-[10px] border border-border p-3.5",
+                  task.status === "failed" && "bg-blocker-tint",
+                )}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary-tint text-primary-text"
+                  >
+                    <SparklesIcon className="size-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-body-strong">
+                    {agentLabel(task.agent)}
+                  </span>
+                </div>
+                <div className="flex">
+                  <TaskStatusPill status={task.status} />
+                </div>
+                {note ? (
+                  <p
+                    className={cn(
+                      "text-control font-normal",
+                      task.status === "failed" ? "text-blocker" : "text-muted-foreground",
+                    )}
+                  >
+                    {note}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </SummaryCard>
+  );
+}
+
+// --- The summary -----------------------------------------------------------------------------
+
+const ROW = "grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]";
+
+/** The Overview's read-only summary (Story 1.8, redesigned to the new mockups): the KPI row,
+ * the Submission pipeline beside Needs you, the Submission blockers beside Recent activity,
+ * then the Latest agent decision and the Agent run. Each card stands alone: a failed read only
+ * affects its own card. Same for every role that can read the Opportunity. Rendered on
+ * navigation; no polling. */
+export function OverviewSummary({
+  opportunityId,
+  data,
+  proposalDate,
+  today,
+}: {
+  opportunityId: string;
+  data: OverviewData;
+  /** The target proposal date (`YYYY-MM-DD`). */
+  proposalDate: string;
+  /** Today in UTC (`YYYY-MM-DD`), from the server so server and client agree. */
+  today: string;
+}) {
+  return (
+    <>
+      <KpiRow id={opportunityId} data={data} />
+      <div className={ROW}>
+        <SubmissionPipeline data={data} proposalDate={proposalDate} today={today} />
+        <NeedsYou id={opportunityId} data={data} />
+      </div>
+      <div className={ROW}>
+        <SubmissionBlockers id={opportunityId} data={data} />
+        <RecentActivity id={opportunityId} trace={data.trace} />
+      </div>
+      <LatestDecision id={opportunityId} assessments={data.assessments} />
+      <AgentRun id={opportunityId} assessments={data.assessments} />
+    </>
   );
 }

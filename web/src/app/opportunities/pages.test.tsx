@@ -623,7 +623,7 @@ describe("/opportunities/[id] workspace", () => {
 
   describe("Overview summary", () => {
     const uid = (n: number) => `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
-    const finding = (n: number, severity: string, title: string) => ({
+    const finding = (n: number, severity: string, title: string, requirements: unknown[] = []) => ({
       id: uid(n),
       position: n,
       kind: "risk",
@@ -632,7 +632,7 @@ describe("/opportunities/[id] workspace", () => {
       title,
       detail: "[DETAIL]",
       argument: "[ARGUMENT]",
-      requirements: [],
+      requirements,
       lines: [],
     });
     const assessment = (
@@ -641,6 +641,7 @@ describe("/opportunities/[id] workspace", () => {
       recommendation: string,
       confidence: string,
       findings: unknown[] = [],
+      createdAt = "2026-10-05T09:00:00Z",
     ) => ({
       id: uid(n),
       agent,
@@ -651,7 +652,7 @@ describe("/opportunities/[id] workspace", () => {
       confidence,
       confidence_basis: "[BASIS]",
       dropped_count: 0,
-      created_at: "2026-10-05T09:00:00Z",
+      created_at: createdAt,
       counts: { critical: 0, high: 0, medium: 0, low: 0 },
       findings,
       effort: [],
@@ -684,99 +685,150 @@ describe("/opportunities/[id] workspace", () => {
       created_at: "2026-10-04T12:00:00Z",
       parse: { status, error_code: null },
     });
-    const requirement = (n: number, classification: string) => ({
+    const requirement = (n: number, confirmed: boolean) => ({
       id: uid(n),
+      number: n,
       text: "[REQ]",
-      classification,
+      classification: "functional",
+      confirmed_at: confirmed ? "2026-10-05T09:00:00Z" : null,
     });
-    const run = (status: string) => ({
+    const task = (agent: string, status: string, errorCode: string | null = null) => ({
+      agent,
+      status,
+      error_code: errorCode,
+      skip_reason: null,
+      started_at: null,
+      finished_at: null,
+    });
+    const run = (status: string, tasks: unknown[] = []) => ({
       id: uid(900),
       status,
-      created_at: "2026-10-05T09:00:00Z",
-      queued_at: "2026-10-05T09:00:00Z",
+      created_at: "2026-10-05T09:31:00Z",
+      queued_at: "2026-10-05T09:31:00Z",
       finished_at: null,
-      tasks: [],
+      tasks,
     });
+    const estimateView = (notAccepted: boolean, uncovered = 1) => ({
+      version: {
+        id: uid(30),
+        version: 3,
+        status: "draft",
+        uncovered_count: uncovered,
+        source: "assessments",
+        source_run: 2,
+        totals: {
+          effort_hours: 250,
+          contingency_hours: 28,
+          total_hours: 278,
+          role_hours: { engineer: 225.4, project_manager: 52.6, qa: 0 },
+        },
+        counts: notAccepted
+          ? { total: 3, accepted: 1, not_accepted: 2 }
+          : { total: 1, accepted: 1, not_accepted: 0 },
+        assumptions: {
+          conditions: [assumption(31, "[COND]", null, true)],
+          contingencies: notAccepted
+            ? [assumption(32, "[ERP MAPPING]", 80), assumption(33, "[HOSTING]", null)]
+            : [],
+          contingency_hours: 28,
+        },
+      },
+      draft: null,
+      can_start_draft: false,
+      can_accept_assumptions: false,
+      can_export: false,
+    });
+    const RUNNING_TASKS = [
+      task("engineering_agent", "succeeded"),
+      task("pm_agent", "running"),
+      task("security_agent", "queued"),
+    ];
 
-    const FULL: Record<string, unknown> = {
-      "/sources": { items: [source(1, "parsed"), source(2, "parsed"), source(3, "failed")] },
+    /** The matrix's mid-way Opportunity: 6 Sources parsed, 9 of 12 confirmed, 3 open Gaps (2
+     * High), 2 open Conflicts, Estimate v3 draft. */
+    const MID: Record<string, unknown> = {
+      "/sources": { items: Array.from({ length: 6 }, (_, i) => source(1 + i, "parsed")) },
       "/requirements": {
-        items: [
-          requirement(10, "functional"),
-          requirement(11, "functional"),
-          requirement(12, "security"),
-        ],
-        extraction: { status: "succeeded", error_code: null, source_count: 3 },
+        items: Array.from({ length: 12 }, (_, i) => requirement(10 + i, i < 9)),
+        extraction: { status: "succeeded", error_code: null, source_count: 6 },
         can_start_extraction: false,
         can_edit_requirements: false,
       },
       "/gaps": {
         items: [
-          gap(20, "[GAP HIGH 1]", "high"),
-          gap(21, "[GAP HIGH 2]", "high"),
-          gap(22, "[GAP LOW]", "low"),
+          gap(40, "[GAP HIGH 1]", "high"),
+          gap(41, "[GAP HIGH 2]", "high"),
+          gap(42, "[GAP MEDIUM]", "medium"),
         ],
         detection: { status: "succeeded", error_code: null },
         can_start_detection: false,
         can_edit_questions: false,
       },
-      "/estimate": {
-        version: {
-          id: uid(30),
-          version: 2,
-          status: "draft",
-          totals: { effort_hours: 1332, contingency_hours: 120, total_hours: 1452 },
-          counts: { total: 3, accepted: 2, not_accepted: 1 },
-          assumptions: {
-            conditions: [assumption(31, "[COND]", null, true)],
-            contingencies: [assumption(32, "[ERP MAPPING]", 80), assumption(33, "[OK]", 40, true)],
-            contingency_hours: 120,
-          },
-        },
-        draft: null,
-        can_start_draft: false,
-        can_accept_assumptions: false,
-        can_export: false,
-      },
+      "/estimate": estimateView(true),
       "/assessments": {
-        run: run("succeeded"),
+        run: run("running", RUNNING_TASKS),
         assessments: [
           {
             agent: "engineering_agent",
-            assessment: assessment(40, "engineering_agent", "proceed", "high"),
+            assessment: assessment(50, "engineering_agent", "proceed", "high"),
           },
           {
             agent: "pm_agent",
-            assessment: assessment(41, "pm_agent", "proceed_with_conditions", "medium"),
+            assessment: assessment(51, "pm_agent", "proceed_with_conditions", "medium"),
           },
           {
             agent: "security_agent",
-            assessment: assessment(42, "security_agent", "do_not_proceed", "low", [
-              finding(43, "high", "[SSO]"),
-              finding(44, "low", "[LOW FINDING]"),
-            ]),
+            assessment: assessment(
+              52,
+              "security_agent",
+              "do_not_proceed",
+              "low",
+              [
+                finding(53, "high", "[SSO]", [
+                  { id: uid(10), version: 1, label: "R10", excerpt: "[E]" },
+                ]),
+                finding(54, "low", "[LOW FINDING]"),
+              ],
+              "2026-10-05T10:00:00Z",
+            ),
           },
         ],
         can_start: false,
       },
       "/red-team": {
         review: {
-          id: uid(50),
+          id: uid(60),
           version: 1,
           status: "current",
           counts: { critical: 1, high: 0, medium: 0, low: 0 },
-          findings: [finding(51, "critical", "[ERP FIELDS]")],
+          findings: [finding(61, "critical", "[ERP FIELDS]")],
         },
         run: { status: "succeeded", error_code: null },
         can_start: false,
       },
+      "/conflicts": {
+        conflicts: [
+          conflictFixture(),
+          conflictFixture({
+            id: uid(70),
+            status: "escalated",
+            escalated_to: { id: uid(71), name: "Sam" },
+          }),
+          conflictFixture({ id: uid(72), status: "resolved" }),
+        ],
+        open_count: 2,
+        reviewers: [],
+      },
       "/trace": {
         items: Array.from({ length: 6 }, (_, i) => ({
-          id: uid(60 + i),
+          id: uid(80 + i),
           occurred_at: `2026-10-05T09:0${i}:00Z`,
           event_type: i === 0 ? "estimates.estimate_version.created" : "gaps.gap.raised",
-          actor: { type: "agent", id: "a", name: `[ACTOR ${i}]` },
-          subject: { type: "gaps.gap", id: uid(70 + i), version: null },
+          actor:
+            i === 1
+              ? { type: "user", id: "u", name: "Sam Delivery" }
+              : { type: "agent", id: "a", name: `Red Team ${i}` },
+          subject: { type: "gaps.gap", id: uid(90 + i), version: null },
           payload: {},
         })),
         page: 1,
@@ -785,84 +837,295 @@ describe("/opportunities/[id] workspace", () => {
         options: { subject_types: [], actor_types: [], event_types: [] },
       },
     };
+    const FUTURE = { ...OPPORTUNITY, target_proposal_date: "2099-01-01" };
 
     const card = (name: string) => screen.getByRole("region", { name });
     const href = (tab: string) => `/opportunities/${OPP_ID}/${tab}`;
+    const kpi = (name: RegExp) => screen.getByRole("link", { name });
+    const stepStates = () =>
+      Array.from(card("Submission pipeline").querySelectorAll("li[data-step-state]")).map((li) =>
+        li.getAttribute("data-step-state"),
+      );
 
-    it("Fresh: every card says nothing has happened yet; the fields stay below", async () => {
+    it("New Opportunity: KPIs '—', every step not started, nothing needs you, no decision or run", async () => {
       signedIn(["presales_engineer"]);
       found();
       const { container } = await renderWorkspace();
-      expect(within(card("Needs attention")).getByText("Nothing needs attention.")).toBeTruthy();
-      const pipeline = card("Pipeline");
-      expect(within(pipeline).getAllByText("—")).toHaveLength(3);
-      expect(within(pipeline).getByRole("link", { name: /Sources/ }).getAttribute("href")).toBe(
-        href("sources"),
+      for (const [name, tab] of [
+        [/^Requirements confirmed\s*—$/, "requirements"],
+        [/^Open Gaps\s*—$/, "gaps"],
+        [/^Open Conflicts\s*—$/, "conflicts"],
+        [/^Estimate\s*—\s*No Estimate yet\.$/, "estimate"],
+      ] as const)
+        expect(kpi(name).getAttribute("href")).toBe(href(tab));
+      expect(stepStates()).toEqual(Array(7).fill("not-started"));
+      expect(within(card("Submission pipeline")).getAllByText("Not started")).toHaveLength(7);
+      expect(within(card("Submission pipeline")).getByText("0 of 7 steps complete")).toBeTruthy();
+      expect(within(card("Needs you")).getByText("Nothing needs attention.")).toBeTruthy();
+      expect(within(card("Needs you")).getByText("In your queue").textContent).toBe(
+        "In your queue 0",
       );
-      expect(within(card("Estimate")).getByText("No Estimate yet.")).toBeTruthy();
-      expect(within(card("Assessments")).getByText("No assessment yet.")).toBeTruthy();
+      expect(within(card("Submission blockers")).getByText("0 blockers")).toBeTruthy();
       expect(within(card("Recent activity")).getByText("No decisions recorded yet.")).toBeTruthy();
-      expect(screen.getByText("Retail")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Latest agent decision" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Agent run" })).toBeNull();
+      const details = card("Details");
+      expect(within(details).getByText("Retail")).toBeTruthy();
+      expect(within(details).getByRole("heading", { name: "People" })).toBeTruthy();
       expect(await axeViolations(container)).toEqual([]);
     });
 
-    it("Full: counts, totals, recommendations, ranked attention and links to each tab", async () => {
+    it("Mid-way: the mockup's numbers, in the mockup's order, each linking to its tab", async () => {
       signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, FULL);
+      found(FUTURE, MID);
       const { container } = await renderWorkspace();
 
-      const rows = within(card("Needs attention")).getAllByRole("link");
-      expect(rows.map((r) => [r.textContent, r.getAttribute("href")])).toEqual([
-        ["CriticalRed Team: [ERP FIELDS]Assessments", href("assessments")],
-        ["HighSecurity Agent: [SSO]Assessments", href("assessments")],
-        ["High impactOpen Gap: [GAP HIGH 1]Gaps", href("gaps")],
-        ["High impactOpen Gap: [GAP HIGH 2]Gaps", href("gaps")],
-        ["Unaccepted Assumption: [ERP MAPPING] — 80.0 hEstimate", href("estimate")],
-      ]);
-
-      const pipeline = card("Pipeline");
+      // KPI row.
       expect(
-        within(pipeline).getByRole("link", { name: /Sources\s*3\s*2 of 3 parsed, 1 failed/ }),
-      ).toBeTruthy();
-      expect(within(card("Needs attention")).getByRole("img", { name: "5 items" })).toBeTruthy();
+        kpi(/^Requirements confirmed\s*9\s*of 12\s*3 awaiting confirmation$/).getAttribute("href"),
+      ).toBe(href("requirements"));
+      expect(kpi(/^Open Gaps\s*3\s*2 High\s*1 Medium\s*0 Low$/).getAttribute("href")).toBe(
+        href("gaps"),
+      );
       expect(
-        within(pipeline).getByRole("link", { name: /Requirements\s*3\s*2 Functional · 1 Security/ }),
-      ).toBeTruthy();
-      const gapsLink = within(pipeline).getByRole("link", {
-        name: /Open Gaps\s*3\s*2 high impact\s*0 questions sent · 0 awaiting an answer/,
-      });
-      expect(gapsLink.getAttribute("href")).toBe(href("gaps"));
-
-      const estimate = card("Estimate v2");
-      expect(within(estimate).getByText("Draft")).toBeTruthy();
-      expect(within(estimate).getByText("1332.0 h")).toBeTruthy();
-      expect(within(estimate).getByText("120.0 h")).toBeTruthy();
-      expect(within(estimate).getByText("1452.0 h")).toBeTruthy();
-      expect(estimate.textContent).toContain("Assumptions32 accepted · 1 not accepted");
+        kpi(/^Open Conflicts\s*2\s*Needs a decision\s*1 escalated$/).getAttribute("href"),
+      ).toBe(href("conflicts"));
       expect(
-        within(estimate).getByRole("link", { name: /Open Estimate/ }).getAttribute("href"),
+        kpi(
+          /^Estimate · v3\s*278\.0\s*h\s*Engineer 225\.4 h · PM 52\.6 h\s*From Assessments run 2$/,
+        ).getAttribute("href"),
       ).toBe(href("estimate"));
 
-      const assessments = card("Assessments");
-      expect(within(assessments).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-        "Engineering AgentProceedHigh confidence",
-        "PM AgentProceed with conditionsMedium confidence",
-        "Security AgentDo not proceedLow confidence",
-        "Red Team1 critical · 0 high",
+      // The cards in the mockup's order.
+      const regions = screen
+        .getAllByRole("region")
+        .map((r) => r.querySelector("h3")?.textContent)
+        .filter(Boolean);
+      expect(regions).toEqual([
+        "Submission pipeline",
+        "Needs you",
+        "Submission blockers",
+        "Recent activity",
+        "Latest agent decision",
+        "Agent run",
+        "Details",
       ]);
-      expect(within(assessments).queryByText("Assessing")).toBeNull();
 
+      // Submission pipeline.
+      const pipeline = card("Submission pipeline");
+      expect(stepStates()).toEqual([
+        "complete",
+        "complete",
+        "in-progress",
+        "blocked",
+        "in-progress",
+        "blocked",
+        "blocked",
+      ]);
+      expect(within(pipeline).getByText("6 of 6 parsed")).toBeTruthy();
+      expect(within(pipeline).getByText("9 of 12")).toBeTruthy();
+      expect(within(pipeline).getByText("3 open, 2 High")).toBeTruthy();
+      expect(within(pipeline).getByText("2 open, 1 escalated")).toBeTruthy();
+      expect(within(pipeline).getByText(/^Proposal due in \d+ days$/)).toBeTruthy();
+      expect(within(pipeline).getByText("2 of 7 steps complete")).toBeTruthy();
+      expect(within(pipeline).getByText("3 blocked")).toBeTruthy();
+
+      // Needs you: ranked, each with a state line and an action to its tab.
+      const needs = card("Needs you");
+      const rows = within(needs).getAllByRole("listitem");
+      expect(rows.map((r) => r.getAttribute("data-kind"))).toEqual([
+        "critical-finding",
+        "escalated-conflict",
+        "high-finding",
+        "gap",
+        "gap",
+        "assumption",
+        "assumption",
+      ]);
+      expect(rows[0].className).toContain("bg-blocker-tint");
+      expect(rows[0].textContent).toBe("Red Team: [ERP FIELDS]CriticalReview");
+      for (const [name, tab] of [
+        ["Review Red Team: [ERP FIELDS]", "assessments"],
+        ["Resolve Effort Conflict on R2 escalated to Sam", "conflicts"],
+        ["Review Security Agent: [SSO]", "assessments"],
+        ["Resolve Open Gap: [GAP HIGH 1]", "gaps"],
+        ["Open Unaccepted Assumption: [ERP MAPPING] — 80.0 h", "estimate"],
+      ])
+        expect(within(needs).getByRole("link", { name }).getAttribute("href")).toBe(href(tab));
+      expect(within(needs).getByText("7 items")).toBeTruthy();
+      expect(within(needs).getByText("In your queue").textContent).toBe("In your queue 7");
+
+      // Submission blockers.
+      const blockersCard = card("Submission blockers");
+      expect(within(blockersCard).getByText("8 blockers")).toBeTruthy();
+      const blockerRows = within(blockersCard).getAllByRole("listitem");
+      expect(blockerRows.map((r) => r.getAttribute("data-blocker"))).toEqual([
+        "gaps",
+        "conflicts",
+        "uncovered",
+        "assumptions",
+      ]);
+      expect(blockerRows[0].textContent).toContain("3 open Gaps");
+      expect(blockerRows[0].textContent).toContain("2 High, 1 Medium, 0 Low");
+      expect(within(blockerRows[1]).getByRole("link").getAttribute("href")).toBe(
+        href("conflicts"),
+      );
+      expect(blockerRows[2].textContent).toContain("1 Requirement not covered");
+      expect(blockerRows[3].textContent).toContain("2 Assumptions not accepted");
+      expect(within(blockersCard).queryByText(/ready to submit/)).toBeNull();
+
+      // Recent activity: 5 newest, initials tiles, actor and time.
       const activity = card("Recent activity");
       const events = within(activity).getAllByRole("listitem");
       expect(events).toHaveLength(5);
-      expect(events[0].textContent).toContain("[ACTOR 0]");
       expect(events[0].textContent).toContain("Estimate Version created");
+      expect(events[0].textContent).toContain("Red Team 0 · ");
+      expect(events[1].getAttribute("data-actor-type")).toBe("user");
+      expect(events[1].textContent).toMatch(/^SD/);
+      expect(within(activity).getByRole("link", { name: "Open Trace" }).getAttribute("href")).toBe(
+        href("trace"),
+      );
+
+      // Latest agent decision: the newest Assessment (Security) and its most severe Finding.
+      const decision = card("Latest agent decision");
+      expect(within(decision).getAllByText("Security Agent").length).toBeGreaterThan(0);
+      expect(within(decision).getByText("[SSO]")).toBeTruthy();
+      expect(within(decision).getByText("[DETAIL]")).toBeTruthy();
+      expect(within(decision).getByText("[BASIS]")).toBeTruthy();
+      expect(within(decision).getByText("R10")).toBeTruthy();
+      expect(within(decision).getByText("Do not proceed")).toBeTruthy();
+      expect(within(decision).getByText("Low confidence")).toBeTruthy();
       expect(
-        within(activity).getByRole("link", { name: /Open Trace/ }).getAttribute("href"),
-      ).toBe(href("trace"));
-      // Read-only: no Submit.
-      expect(screen.queryByRole("button", { name: /Submit/ })).toBeNull();
+        within(decision).getByRole("link", { name: "Open Assessments" }).getAttribute("href"),
+      ).toBe(href("assessments"));
+
+      // Read-only: no Submit, no Cancel.
+      expect(screen.queryByRole("button", { name: /Submit|Cancel run/ })).toBeNull();
       expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Run in progress: 1 of 3 tasks complete, task pills match", async () => {
+      signedIn(["presales_engineer"]);
+      found(FUTURE, MID);
+      await renderWorkspace();
+      const runCard = card("Agent run");
+      expect(runCard.textContent).toContain("1 of 3 tasks complete");
+      expect(runCard.textContent).toContain("Assessments · started 5 Oct 2026, 09:31 UTC");
+      const tasks = within(runCard).getAllByRole("listitem");
+      expect(tasks.map((t) => t.querySelector("[data-task-pill]")?.getAttribute("data-task-pill")))
+        .toEqual(["succeeded", "running", "queued"]);
+      expect(tasks.map((t) => t.textContent)).toEqual([
+        "Engineering AgentDone",
+        "PM AgentRunning",
+        "Security AgentQueued",
+      ]);
+      expect(
+        within(runCard).getByRole("link", { name: "Open Assessments" }).getAttribute("href"),
+      ).toBe(href("assessments"));
+    });
+
+    it("Run: a failed task gives its reason", async () => {
+      signedIn(["presales_engineer"]);
+      const current = MID["/assessments"] as Record<string, unknown>;
+      found(FUTURE, {
+        ...MID,
+        "/assessments": {
+          ...current,
+          run: run("partially_failed", [
+            task("engineering_agent", "succeeded"),
+            task("pm_agent", "failed", "model_timeout"),
+          ]),
+        },
+      });
+      await renderWorkspace();
+      const runCard = card("Agent run");
+      expect(runCard.textContent).toContain("1 of 2 tasks complete");
+      const failed = within(runCard).getAllByRole("listitem")[1];
+      expect(failed.className).toContain("bg-blocker-tint");
+      expect(failed.textContent).toMatch(/^PM AgentFailed.+/);
+    });
+
+    it("Read fails: the Open Gaps KPI and its step say so; the other cards render", async () => {
+      signedIn(["presales_engineer"]);
+      found(FUTURE, { ...MID, "/gaps": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const { container } = await renderWorkspace();
+      const message = "Open Gaps could not be loaded. Try again in a moment.";
+      expect(kpi(/^Open Gaps\s*—\s*Open Gaps could not be loaded/).getAttribute("href")).toBe(
+        href("gaps"),
+      );
+      expect(within(card("Submission pipeline")).getByText(message)).toBeTruthy();
+      expect(stepStates()[3]).toBe("unknown");
+      expect(
+        within(card("Submission blockers")).getByText(
+          "The Gaps could not be loaded. Try again in a moment.",
+        ),
+      ).toBeTruthy();
+      expect(within(card("Needs you")).getByText(/may be incomplete/)).toBeTruthy();
+      expect(kpi(/^Requirements confirmed\s*9\s*of 12/)).toBeTruthy();
+      expect(card("Latest agent decision")).toBeTruthy();
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Overdue: the pipeline header says so in red", async () => {
+      signedIn(["presales_engineer"]);
+      found({ ...OPPORTUNITY, target_proposal_date: "2026-01-01" }, MID);
+      await renderWorkspace();
+      const overdue = within(card("Submission pipeline")).getByText(/^Overdue by \d+ days$/);
+      expect(overdue.className).toContain("text-blocker");
+    });
+
+    const READY: Record<string, unknown> = {
+      ...MID,
+      "/gaps": {
+        items: [],
+        detection: { status: "succeeded", error_code: null },
+        can_start_detection: false,
+        can_edit_questions: false,
+      },
+      "/conflicts": {
+        conflicts: [conflictFixture({ status: "resolved" })],
+        open_count: 0,
+        reviewers: [],
+      },
+      "/estimate": estimateView(false, 0),
+    };
+
+    it("Ready: nothing blocks once the Estimate is accepted and nothing is open", async () => {
+      signedIn(["presales_engineer"]);
+      found(FUTURE, READY);
+      const { container } = await renderWorkspace();
+      const blockersCard = card("Submission blockers");
+      expect(within(blockersCard).getByText("0 blockers")).toBeTruthy();
+      expect(within(blockersCard).getByText("0 blockers · ready to submit")).toBeTruthy();
+      expect(within(blockersCard).queryAllByRole("listitem")).toHaveLength(0);
+      expect(stepStates().slice(5)).toEqual(["complete", "complete"]);
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
+    it("Ready, but a read failed: no ready state and no count pill", async () => {
+      signedIn(["presales_engineer"]);
+      found(FUTURE, { ...READY, "/conflicts": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      const blockersCard = card("Submission blockers");
+      expect(within(blockersCard).queryByText(/ready to submit/)).toBeNull();
+      expect(within(blockersCard).queryByText("0 blockers")).toBeNull();
+      expect(
+        within(blockersCard).getByText("The Conflicts could not be loaded. Try again in a moment."),
+      ).toBeTruthy();
+    });
+
+    it("Partial failure: Requirements says so on its KPI", async () => {
+      signedIn(["presales_engineer"]);
+      found(FUTURE, { ...MID, "/requirements": null });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await renderWorkspace();
+      expect(
+        kpi(/^Requirements confirmed\s*—\s*Requirements could not be loaded\. Try again in a moment\.$/)
+          .getAttribute("href"),
+      ).toBe(href("requirements"));
+      expect(stepStates().slice(1, 3)).toEqual(["unknown", "unknown"]);
     });
 
     it("Cut: 8 rows and '+N more' linking to the tab", async () => {
@@ -876,181 +1139,49 @@ describe("/opportunities/[id] workspace", () => {
         },
       });
       const { container } = await renderWorkspace();
-      const attention = card("Needs attention");
-      expect(within(attention).getAllByRole("listitem")).toHaveLength(8);
-      expect(within(attention).getByRole("link", { name: "+4 more" }).getAttribute("href")).toBe(
+      const needs = card("Needs you");
+      expect(within(needs).getAllByRole("listitem")).toHaveLength(8);
+      expect(within(needs).getByRole("link", { name: "+4 more" }).getAttribute("href")).toBe(
         href("gaps"),
       );
+      expect(within(needs).getByText("12 items")).toBeTruthy();
       expect(await axeViolations(container)).toEqual([]);
     });
 
-    it("Partial failure: only the Estimate card says it could not be loaded", async () => {
+    it("Partial failure: the Estimate KPI and step say so; the rest render", async () => {
       signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, { ...FULL, "/estimate": null });
+      found(FUTURE, { ...MID, "/estimate": null });
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
-      const { container } = await renderWorkspace();
-      expect(
-        within(card("Estimate")).getByText(
-          "The Estimate could not be loaded. Try again in a moment.",
-        ),
-      ).toBeTruthy();
-      expect(within(card("Assessments")).getByText("Proceed")).toBeTruthy();
-      expect(within(card("Pipeline")).getByText("2 of 3 parsed, 1 failed")).toBeTruthy();
-      const attention = card("Needs attention");
-      expect(within(attention).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
-      expect(
-        within(attention).getByText(
-          "Some items could not be loaded, so this list may be incomplete.",
-        ),
-      ).toBeTruthy();
+      await renderWorkspace();
+      expect(kpi(/^Estimate\s*—\s*The Estimate could not be loaded/)).toBeTruthy();
+      expect(stepStates()[6]).toBe("unknown");
+      expect(within(card("Needs you")).getByText(/may be incomplete/)).toBeTruthy();
+      expect(within(card("Needs you")).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
+      expect(kpi(/^Open Gaps\s*3/)).toBeTruthy();
       // Logged with the status only.
       expect(error).toHaveBeenCalledWith("GET estimate failed: status=500");
-      expect(await axeViolations(container)).toEqual([]);
     });
 
-    it("Partial failure: Sources", async () => {
+    it("Partial failure: Conflicts, Assessments and Trace each stay in their own card", async () => {
       signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, { ...FULL, "/sources": null });
+      found(FUTURE, { ...MID, "/conflicts": null, "/assessments": null, "/trace": null });
       vi.spyOn(console, "error").mockImplementation(() => {});
       await renderWorkspace();
-      expect(
-        within(card("Pipeline")).getByText("Sources could not be loaded. Try again in a moment."),
-      ).toBeTruthy();
-      expect(within(card("Pipeline")).getByText("2 high impact")).toBeTruthy();
-      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
-      expect(within(card("Needs attention")).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
-    });
-
-    it("Partial failure: Red Team", async () => {
-      signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, { ...FULL, "/red-team": null });
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      await renderWorkspace();
-      const assessments = card("Assessments");
-      expect(
-        within(assessments).getByText(
-          "The Red Team Review could not be loaded. Try again in a moment.",
-        ),
-      ).toBeTruthy();
-      expect(within(assessments).getByText("Do not proceed")).toBeTruthy();
-      const attention = card("Needs attention");
-      expect(within(attention).queryByText("Red Team: [ERP FIELDS]")).toBeNull();
-      expect(within(attention).getByText("Security Agent: [SSO]")).toBeTruthy();
-      expect(
-        within(attention).getByText(
-          "Some items could not be loaded, so this list may be incomplete.",
-        ),
-      ).toBeTruthy();
-      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
-    });
-
-    it("Partial failure: Specialist Assessments and Red Team", async () => {
-      signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, { ...FULL, "/assessments": null, "/red-team": null });
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      await renderWorkspace();
-      expect(
-        within(card("Assessments")).getByText(
-          "The Assessments could not be loaded. Try again in a moment.",
-        ),
-      ).toBeTruthy();
-      expect(within(card("Needs attention")).getByText("Open Gap: [GAP HIGH 1]")).toBeTruthy();
-      expect(within(card("Pipeline")).getByText("2 of 3 parsed, 1 failed")).toBeTruthy();
-      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
-    });
-
-    it("Partial failure: Trace", async () => {
-      signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, { ...FULL, "/trace": null });
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      await renderWorkspace();
+      expect(kpi(/^Open Conflicts\s*—\s*The Conflicts could not be loaded/)).toBeTruthy();
       expect(
         within(card("Recent activity")).getByText(
           "The recent activity could not be loaded. Try again in a moment.",
         ),
       ).toBeTruthy();
-      expect(within(card("Assessments")).getByText("Proceed")).toBeTruthy();
-      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Latest agent decision" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Agent run" })).toBeNull();
+      expect(stepStates()[4]).toBe("unknown");
+      expect(stepStates()[5]).toBe("unknown");
+      expect(within(card("Needs you")).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
+      expect(kpi(/^Estimate · v3\s*278\.0\s*h/)).toBeTruthy();
     });
 
-    it("Escalated Conflicts are listed naming the reviewer, linking to the Conflicts tab", async () => {
-      signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, {
-        "/conflicts": {
-          conflicts: [
-            conflictFixture({
-              status: "escalated",
-              escalated_to: { id: "00000000-0000-7000-8000-0000000000e1", name: "Sam" },
-            }),
-          ],
-          open_count: 1,
-          reviewers: [],
-        },
-      });
-      const { container } = await renderWorkspace();
-      const attention = card("Needs attention");
-      const link = within(attention).getByRole("link", {
-        name: /Effort Conflict on R2 escalated to Sam/,
-      });
-      expect(link.getAttribute("href")).toBe(href("conflicts"));
-      expect(await axeViolations(container)).toEqual([]);
-    });
-
-    it("Partial failure: Conflicts says the list may be incomplete", async () => {
-      signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, { "/conflicts": null });
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      await renderWorkspace();
-      expect(
-        within(card("Needs attention")).getByText(
-          "Some items could not be loaded, so this list may be incomplete.",
-        ),
-      ).toBeTruthy();
-    });
-
-    it("Partial failure: Gaps with nothing else to attend to says the list may be incomplete", async () => {
-      signedIn(["presales_engineer"]);
-      found(OPPORTUNITY, { "/gaps": null });
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      await renderWorkspace();
-      const attention = card("Needs attention");
-      expect(
-        within(attention).getByText(
-          "Some items could not be loaded, so this list may be incomplete.",
-        ),
-      ).toBeTruthy();
-      expect(within(attention).queryByText("Nothing needs attention.")).toBeNull();
-      expect(
-        within(card("Pipeline")).getByText("Open Gaps could not be loaded. Try again in a moment."),
-      ).toBeTruthy();
-      expect(within(card("Estimate")).getByText("No Estimate yet.")).toBeTruthy();
-    });
-
-    it("Running: the run status alongside the current results", async () => {
-      signedIn(["presales_engineer"]);
-      const current = FULL["/assessments"] as Record<string, unknown>;
-      found(OPPORTUNITY, { ...FULL, "/assessments": { ...current, run: run("running") } });
-      const { container } = await renderWorkspace();
-      const assessments = card("Assessments");
-      expect(within(assessments).getByText("Assessing")).toBeTruthy();
-      expect(within(assessments).getByText("Do not proceed")).toBeTruthy();
-      expect(await axeViolations(container)).toEqual([]);
-    });
-
-    it("Running: a Red Team run says so", async () => {
-      signedIn(["presales_engineer"]);
-      const current = FULL["/red-team"] as Record<string, unknown>;
-      found(OPPORTUNITY, {
-        ...FULL,
-        "/red-team": { ...current, run: { status: "running", error_code: null } },
-      });
-      await renderWorkspace();
-      const assessments = card("Assessments");
-      expect(within(assessments).getByText("Red Team reviewing")).toBeTruthy();
-      expect(within(assessments).getByText("1 critical · 0 high")).toBeTruthy();
-    });
-
-    it("Pipeline: a first extraction running or a failed detection is not zero", async () => {
+    it("Before a step has run: the KPI is '—' with the step's status", async () => {
       signedIn(["presales_engineer"]);
       found(OPPORTUNITY, {
         "/requirements": {
@@ -1067,20 +1198,17 @@ describe("/opportunities/[id] workspace", () => {
         },
       });
       await renderWorkspace();
-      const pipeline = card("Pipeline");
-      expect(
-        within(pipeline).getByRole("link", { name: /Requirements\s*—\s*Extracting…/ }),
-      ).toBeTruthy();
-      expect(within(pipeline).getByRole("link", { name: /Open Gaps\s*—\s*Failed/ })).toBeTruthy();
-      expect(within(pipeline).queryByText("0")).toBeNull();
+      expect(kpi(/^Requirements confirmed\s*—\s*Extracting…$/)).toBeTruthy();
+      expect(kpi(/^Open Gaps\s*—\s*Failed$/)).toBeTruthy();
+      expect(stepStates().slice(1, 4)).toEqual(["in-progress", "not-started", "blocked"]);
     });
 
     it("Who: a sales representative sees the same read-only summary", async () => {
       signedIn(["sales_representative"]);
-      found(OPPORTUNITY, FULL);
+      found(FUTURE, MID);
       const { container } = await renderWorkspace();
-      expect(within(card("Needs attention")).getAllByRole("listitem")).toHaveLength(5);
-      expect(within(card("Estimate v2")).getByText("1452.0 h")).toBeTruthy();
+      expect(within(card("Needs you")).getAllByRole("listitem")).toHaveLength(7);
+      expect(kpi(/^Estimate · v3\s*278\.0\s*h/)).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Run assessment" })).toBeNull();
       expect(await axeViolations(container)).toEqual([]);
     });
