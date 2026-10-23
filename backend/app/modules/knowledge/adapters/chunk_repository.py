@@ -273,6 +273,46 @@ async def chunk_refs(uow: UnitOfWork, ids: Sequence[UUID]) -> dict[UUID, ChunkRe
     }
 
 
+@dataclass(frozen=True, slots=True)
+class ChunkText:
+    """A chunk with its text and its Source's title (Story 5.4: `knowledge.chunk.read`)."""
+
+    id: UUID
+    source_id: UUID
+    version: int
+    start: int
+    end: int
+    title: str = field(repr=False)
+    text: str = field(repr=False)
+
+
+async def chunk_texts(uow: UnitOfWork, ids: Sequence[UUID]) -> dict[UUID, ChunkText]:
+    """These chunks with their text, by id; unknown ids are left out."""
+    if not ids:
+        return {}
+    rows = (
+        await uow.session.execute(
+            select(
+                C.id, C.source_id, C.version, C.start_offset, C.end_offset, C.text, SourceRow.title
+            )
+            .join(SourceRow, SourceRow.id == C.source_id)
+            .where(C.id.in_(list(ids)))
+        )
+    ).all()
+    return {
+        r.id: ChunkText(
+            id=r.id,
+            source_id=r.source_id,
+            version=r.version,
+            start=r.start_offset,
+            end=r.end_offset,
+            title=r.title,
+            text=r.text,
+        )
+        for r in rows
+    }
+
+
 def _vector_literal(vector: Sequence[float]) -> str:
     return "[" + ",".join(repr(float(v)) for v in vector) + "]"
 

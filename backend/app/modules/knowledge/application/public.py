@@ -7,8 +7,13 @@ Story 3.4: the Checklist commands and views, and `find_applicable_checklists` (t
 published version of every active Checklist whose scope matches, for Gap detection).
 
 Story 4.1: `get_coverage` (whether active, embedded Sources document the products and
-Integration Types in scope)."""
+Integration Types in scope).
 
+Story 5.4: the ToolGateway handlers (`tools`, registered on import), Research Snapshots
+(`capture_research_snapshot`, the `research_snapshot` Evidence resolver `check_snapshot_refs`,
+also registered on import) and `ResearchPage`, what the research fetch returns."""
+
+from app.modules.knowledge.application import tools as tools  # registers the tool handlers
 from app.modules.knowledge.application.catalogue import (
     create_entry,
     edit_entry,
@@ -59,6 +64,14 @@ from app.modules.knowledge.application.models import (
     EntryChanges,
     NewEntry,
     RetireRequest,
+)
+from app.modules.knowledge.application.research import (
+    EVIDENCE_KIND as RESEARCH_SNAPSHOT_KIND,
+)
+from app.modules.knowledge.application.research import (
+    ResearchPage,
+    capture_research_snapshot,
+    check_snapshot_refs,
 )
 from app.modules.knowledge.application.search import search
 from app.modules.knowledge.application.source_models import (
@@ -114,6 +127,7 @@ from app.modules.knowledge.domain.embedding import (
 
 __all__ = [
     "EVIDENCE_KIND",
+    "RESEARCH_SNAPSHOT_KIND",
     "SEARCH_K_DEFAULT",
     "SEARCH_K_MAX",
     "AffectedArea",
@@ -157,6 +171,7 @@ __all__ = [
     "NewChecklist",
     "NewEntry",
     "ProductCoverage",
+    "ResearchPage",
     "RetireChecklist",
     "RetireRequest",
     "RetireSource",
@@ -164,7 +179,9 @@ __all__ = [
     "SourceText",
     "Status",
     "add_version",
+    "capture_research_snapshot",
     "check_chunk_refs",
+    "check_snapshot_refs",
     "create_checklist",
     "create_entry",
     "download_link",

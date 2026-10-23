@@ -79,6 +79,7 @@ from app.platform.errors import (
     RegistryConfigIncompatibleContractError,
     RegistryConfigNotDeployedError,
     RowVersionMismatchError,
+    ToolPermissionNotReadOnlyError,
     UnprocessableError,
 )
 from app.platform.ids import new_id
@@ -200,7 +201,12 @@ def check_deployed(agent_id: str, new: NewAgentConfig) -> _CheckedConfig:
     """The field rules, then the manifest: every referenced prompt, schema and profile must
     be deployed, and the output schema written for `CONTRACT_VERSION`."""
     semver = _invalid(new.semver, rules.semver)
-    tool_permissions = _invalid(new.tool_permissions, rules.tool_permissions)
+    try:
+        tool_permissions = rules.tool_permissions(new.tool_permissions)
+    except rules.ToolPermissionNotReadOnly as exc:  # only READ tools (Story 5.4)
+        raise ToolPermissionNotReadOnlyError(str(exc)) from None
+    except ValueError as exc:
+        raise UnprocessableError(str(exc)) from None
     budgets = _invalid(new.budgets, rules.budgets)
     profile = new.model_profile.strip()
     manifest = deployed.load()

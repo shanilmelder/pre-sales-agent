@@ -135,6 +135,7 @@ async def _views(
                     title=f.title,
                     detail=f.detail,
                     requirements=cited.get(f.id, []),
+                    injection_suspected=f.injection_suspected,
                 )
                 for f in sorted(own, key=lambda f: (severity_rank(f.severity), f.position))
             ],

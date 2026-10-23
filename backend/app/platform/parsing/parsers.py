@@ -5,7 +5,7 @@ child process (`app.platform.parsing.cli`)."""
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.platform.parsing.formats import docx, md, pdf, txt
+from app.platform.parsing.formats import docx, html, md, pdf, txt
 from app.platform.parsing.rules import ParseError, ParseErrorCode, finish
 
 
@@ -25,6 +25,7 @@ PARSERS: dict[str, Parser] = {
     ".md": Parser(md.NAME, md.parse),
     ".docx": Parser(docx.NAME, docx.parse),
     ".pdf": Parser(pdf.NAME, pdf.parse),
+    ".html": Parser(html.NAME, html.parse),  # Research Snapshots only (Story 5.4)
 }
 
 

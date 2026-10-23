@@ -951,6 +951,28 @@ class KnowledgeChecklistRetired(TracePayload):
     discarded_draft: bool
 
 
+# Story 5.4: Research Snapshots. Ids, codes, sizes and hashes only, never the URL or page text.
+
+
+@register
+class KnowledgeResearchSnapshotCaptured(TracePayload):
+    """The research fetch kept a page as an immutable Research Snapshot. Subject: the snapshot
+    (`knowledge.research_snapshot`). Actor: the Agent (`<agent_id>@<semver>`). The URL is not
+    traced (it may carry customer terms); the row holds it."""
+
+    event_type: ClassVar[str] = "knowledge.research_snapshot.captured"
+
+    run_id: str | None
+    task_id: str | None
+    http_status: int
+    content_type: Literal["text/html", "text/plain"]
+    content_sha256: str
+    text_sha256: str
+    byte_count: int
+    char_count: int
+    parser: str
+
+
 # --- conflicts ------------------------------------------------------------------------------
 
 
@@ -1111,3 +1133,21 @@ class RegistryEvalCompleted(TracePayload):
     failure_count: int
     passed: bool
     accepted: bool
+
+
+# --- platform -----------------------------------------------------------------------------
+
+
+@register
+class PlatformToolCallDenied(TracePayload):
+    """The ToolGateway refused an Agent's tool call (Story 5.4). Subject: the call's
+    `platform_tool_calls` row (`platform.tool_call`). Actor: the Agent. `actor_id`:
+    `<agent_id>@<semver>`; `reason`: `tool_not_permitted | out_of_scope | unknown_tool |
+    not_allowlisted`. Ids and codes only."""
+
+    event_type: ClassVar[str] = "platform.tool_call.denied"
+
+    actor_id: str
+    tool: str
+    reason: Literal["tool_not_permitted", "out_of_scope", "unknown_tool", "not_allowlisted"]
+    task_id: str | None
