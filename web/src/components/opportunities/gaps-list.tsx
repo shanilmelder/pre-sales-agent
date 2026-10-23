@@ -306,21 +306,23 @@ export function GapsList({
                     />
                     <span className="sr-only">{status.label}</span>
                   </span>
-                  <span
-                    className={`min-w-0 flex-1 truncate text-body ${greyed ? "text-muted-foreground" : ""}`}
-                  >
-                    {item.title}
-                    {item.answer ? (
-                      <span className="ml-2 text-meta text-muted-foreground">
-                        {answeredLabel(item.answer.answered_on)}
-                      </span>
-                    ) : item.answer_suggestions[0] ? (
-                      <span className="ml-2 text-meta text-muted-foreground">
-                        {possibleAnswerLabel(item.answer_suggestions[0])}
-                      </span>
-                    ) : null}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span
+                      className={`truncate text-body ${greyed ? "text-muted-foreground" : ""}`}
+                    >
+                      {item.title}
+                      {item.answer ? (
+                        <span className="ml-2 text-meta text-muted-foreground">
+                          {answeredLabel(item.answer.answered_on)}
+                        </span>
+                      ) : item.answer_suggestions[0] ? (
+                        <span className="ml-2 text-meta text-muted-foreground">
+                          {possibleAnswerLabel(item.answer_suggestions[0])}
+                        </span>
+                      ) : null}
+                    </span>
                     {item.status === "open" && checklistNoLongerApplies(item) ? (
-                      <span className="ml-2 text-meta text-muted-foreground">
+                      <span className="truncate text-meta text-muted-foreground">
                         {NO_LONGER_APPLIES}
                       </span>
                     ) : null}
