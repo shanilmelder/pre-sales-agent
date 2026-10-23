@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.modules.gaps.application import answer_matching, detection
 from app.modules.gaps.application.answer_matching import confirm_match, reject_match
+from app.modules.gaps.application.context import gaps_context
 from app.modules.gaps.application.conversion import mark_converted
 from app.modules.gaps.application.gap_commands import change_impact, dismiss_gap, reopen_gap
 from app.modules.gaps.application.gap_refs import (
@@ -29,6 +30,8 @@ from app.modules.gaps.application.models import (
     GapList,
     GapReopening,
     GapRequirement,
+    GapsContext,
+    GapsContextChecklist,
     GapTrigger,
     ImpactChange,
     IrrelevanceShare,
@@ -39,6 +42,8 @@ from app.modules.gaps.application.models import (
     QuestionExportFormat,
     QuestionExportRequest,
     QuestionVersion,
+    UncoveredIntegrationType,
+    UncoveredScope,
 )
 from app.modules.gaps.application.question_export import ExportStorage, export_questions
 from app.modules.gaps.application.questions import (
@@ -92,6 +97,8 @@ __all__ = [
     "GapRequirement",
     "GapSummary",
     "GapTrigger",
+    "GapsContext",
+    "GapsContextChecklist",
     "Impact",
     "ImpactChange",
     "IrrelevanceShare",
@@ -102,6 +109,8 @@ __all__ = [
     "QuestionExportFormat",
     "QuestionExportRequest",
     "QuestionVersion",
+    "UncoveredIntegrationType",
+    "UncoveredScope",
     "answer_question",
     "approve_all",
     "approve_question",
@@ -114,6 +123,7 @@ __all__ = [
     "enqueue_detection",
     "export_questions",
     "gap_summaries",
+    "gaps_context",
     "irrelevance_share",
     "list_gaps",
     "mark_converted",

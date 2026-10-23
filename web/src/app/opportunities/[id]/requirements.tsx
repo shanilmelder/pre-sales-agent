@@ -1,18 +1,21 @@
 import {
   getOpportunity,
+  listActiveIntegrationTypes,
   listOutdatedAssessments,
   listRequirements,
 } from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { RequirementsSection } from "@/components/opportunities/requirements-list";
 import { getMe } from "@/lib/api/server";
+import { UNTAGGED_INTEGRATION } from "@/lib/requirements";
 import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** Tab 3: the Opportunity's Requirements, grouped by classification, with the state of its
  * latest extraction, and a notice of the Assessments that used Requirement versions that
  * have changed since (Story 2.7). `?requirement=<id>` opens that Requirement's inspector (Story
- * 4.7: the links under a Gap's answer). Renders nothing when the user may not read the
- * Opportunity; the workspace layout shows why. */
+ * 4.7: the links under a Gap's answer). `?untagged=integration` lists only the integration
+ * Requirements with no Integration Type (Story 4.1). Renders nothing when the user may not
+ * read the Opportunity; the workspace layout shows why. */
 export async function RequirementsTab({
   id,
   searchParams = {},
@@ -22,14 +25,16 @@ export async function RequirementsTab({
 }) {
   const requested = searchParams.requirement;
   const requirementId = typeof requested === "string" ? requested : null;
+  const untaggedOnly = searchParams.untagged === UNTAGGED_INTEGRATION;
   const result = await getMe();
   if (!hasAccess(result)) return null;
   const loaded = await getOpportunity(id);
   if (loaded.kind !== "ok") return null;
   const { opportunity } = loaded;
-  const [listed, outdated] = await Promise.all([
+  const [listed, outdated, integrationTypes] = await Promise.all([
     listRequirements(opportunity.id),
     listOutdatedAssessments(opportunity.id),
+    listActiveIntegrationTypes(),
   ]);
 
   return (
@@ -42,6 +47,8 @@ export async function RequirementsTab({
           initial={listed.list}
           initialOutdated={outdated.kind === "ok" ? outdated.items : []}
           initialSelectedId={requirementId}
+          integrationTypes={integrationTypes ?? undefined}
+          untaggedOnly={untaggedOnly}
         />
       ) : (
         <p>The Requirements could not be loaded. Try again in a moment.</p>

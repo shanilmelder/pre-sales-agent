@@ -78,6 +78,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   dismissGap,
   reopenGap,
 }));
+vi.mock("@/app/knowledge/checklists/actions", () => ({ loadChecklistVersion: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => "/opportunities/x/gaps",

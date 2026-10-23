@@ -41,6 +41,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "intake.requirement.deleted": "Requirement deleted",
   "intake.requirement.split": "Requirement split",
   "intake.requirement.merged": "Requirements merged",
+  "intake.requirement.integration_types_tagged": "Integration Types tagged",
   "intake.requirement_change.proposed": "Requirement change proposed",
   "intake.requirement_change.accepted": "Requirement change accepted",
   "intake.requirement_change.rejected": "Requirement change rejected",

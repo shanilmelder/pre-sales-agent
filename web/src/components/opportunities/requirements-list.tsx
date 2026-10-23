@@ -17,6 +17,7 @@ import {
   rejectRequirementChange,
   splitRequirement,
   startExtraction,
+  tagRequirementIntegrationTypes,
   type ConfirmAllResult,
   type RequirementChangeResult,
   type RequirementCreateResult,
@@ -59,6 +60,7 @@ import {
   groupRequirements,
   HIDE_DIFF,
   isExtracting,
+  isUntaggedIntegration,
   mergeDraft,
   mergeLabel,
   ADD_A_SOURCE,
@@ -70,9 +72,12 @@ import {
   requirementLabel,
   requirementOrigin,
   requirementTextProblem,
+  SHOW_ALL,
   STILL_EXTRACTING,
+  TAG_SAVED,
   TOO_MUCH_TEXT,
   unconfirmed,
+  untaggedFilterStatus,
   VIEW_DIFF,
   type Classification,
   type Extraction,
@@ -572,9 +577,16 @@ export function RequirementsSection({
   initial,
   initialOutdated = NO_OUTDATED,
   initialSelectedId = null,
+  integrationTypes,
+  untaggedOnly = false,
 }: {
   opportunityId: string;
   initial: RequirementList;
+  /** The active catalogue Integration Types, for tagging (Story 4.1). */
+  integrationTypes?: readonly { id: string; name: string }[];
+  /** `?untagged=integration` (Story 4.1): list only integration Requirements with no
+   * Integration Type. */
+  untaggedOnly?: boolean;
   /** The Assessments that used outdated Requirement versions, as the page loaded. */
   initialOutdated?: readonly OutdatedAssessment[];
   /** A Requirement to open in the inspector as the page loads (`?requirement=<id>`, Story
@@ -1106,6 +1118,32 @@ export function RequirementsSection({
     }
   }
 
+  /** Save the Requirement's whole Integration Type set (Story 4.1). A 412 shows the stale
+   * notice with Reload. */
+  async function tag(item: Requirement, integrationTypeIds: string[]) {
+    if (locked || busyIds.has(item.id)) return;
+    setNotice(null);
+    markBusy(item.id, true);
+    let result: RequirementWriteResult;
+    try {
+      result = await tagRequirementIntegrationTypes({
+        opportunityId,
+        requirementId: item.id,
+        rowVersion: item.row_version,
+        integrationTypeIds,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(item.id, false);
+    if (result.kind === "ok") {
+      replace(result.requirement);
+      announce(TAG_SAVED);
+      return;
+    }
+    writeFailed(item, result, null, "inspector");
+  }
+
   // --- shaping the list (Story 2.6) ------------------------------------------------------
 
   function toggle(item: Requirement) {
@@ -1296,6 +1334,11 @@ export function RequirementsSection({
 
   const failed = list.extraction?.status === "failed";
   const succeeded = list.extraction?.status === "succeeded";
+  const untaggedCount = untaggedOnly ? list.items.filter(isUntaggedIntegration).length : 0;
+  // The open Requirement stays listed after it is tagged, so focus and keys keep their target.
+  const shownItems = untaggedOnly
+    ? list.items.filter((i) => isUntaggedIntegration(i) || i.id === selected?.id)
+    : list.items;
   return (
     <div className="flex flex-col gap-4" aria-busy={confirmingAll || reloading || undefined}>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1377,6 +1420,21 @@ export function RequirementsSection({
           </Card>
         ) : null}
       </div>
+      {untaggedOnly ? (
+        <div
+          role="status"
+          data-testid="untagged-filter"
+          className="flex flex-wrap items-center gap-2.5 rounded-[10px] bg-gap-tint px-3.5 py-2.5 text-control font-medium text-gap"
+        >
+          <span>{untaggedFilterStatus(untaggedCount)}</span>
+          <Link
+            href={tabHref(opportunityId, "requirements")}
+            className="ml-auto font-semibold text-gap underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {SHOW_ALL}
+          </Link>
+        </div>
+      ) : null}
       {canEdit && creating ? (
         <RequirementDraftForm
           key={creating.seq}
@@ -1434,9 +1492,9 @@ export function RequirementsSection({
           }}
         />
       ) : null}
-      {list.items.length > 0 ? (
+      {shownItems.length > 0 ? (
         <RequirementsList
-          items={list.items}
+          items={shownItems}
           selectedId={selected?.id ?? null}
           onOpen={open}
           edit={edit}
@@ -1445,7 +1503,7 @@ export function RequirementsSection({
           onToggle={canEdit ? toggle : undefined}
           onClearSelection={clearSelection}
         />
-      ) : succeeded ? (
+      ) : untaggedOnly && list.items.length > 0 ? null : succeeded ? (
         <p className="text-muted-foreground">{noneFound(list.extraction?.source_count)}</p>
       ) : !extracting && !failed ? (
         <EmptyTabCard
@@ -1480,6 +1538,8 @@ export function RequirementsSection({
                     onReject: (reason) => decide(selected, reason),
                     onSplit: (parts) => split(selected, parts),
                     onDelete: (reason) => deleteOne(selected, reason),
+                    integrationTypes,
+                    onTag: (ids) => void tag(selected, ids),
                   }
                 : undefined
             }

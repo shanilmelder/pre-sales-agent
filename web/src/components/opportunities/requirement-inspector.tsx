@@ -4,6 +4,7 @@ import { CheckIcon, GitCompareArrowsIcon, QuoteIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from "react";
 
 import { getPassage, type PassageResult } from "@/app/opportunities/actions";
+import { RetiredLabel } from "@/components/knowledge/sources-table";
 import { InlineField } from "@/components/opportunities/inline-field";
 import { ReasonInput } from "@/components/opportunities/reason-input";
 import { RequirementDiff } from "@/components/opportunities/requirement-diff";
@@ -16,8 +17,10 @@ import {
   CONFIRMED,
   DELETE_REASON_LABEL,
   DELETE_REQUIREMENT,
+  INTEGRATION_TYPES,
   LOADING_PASSAGE,
   NO_EVIDENCE,
+  NO_INTEGRATION_TYPES,
   PASSAGE_FAILED,
   PASSAGE_GONE,
   PENDING_CHANGE,
@@ -451,7 +454,82 @@ export type InspectorEditing = {
   onSplit: (parts: [SplitPart, SplitPart]) => Promise<ChangeFormOutcome>;
   /** Delete the Requirement with this (trimmed) reason. */
   onDelete: (reason: string) => Promise<ChangeFormOutcome>;
+  /** The active catalogue Integration Types to choose from (Story 4.1). */
+  integrationTypes?: readonly { id: string; name: string }[];
+  /** Save this whole set of Integration Type ids at once (Story 4.1). Left out: read-only. */
+  onTag?: (integrationTypeIds: string[]) => void;
 };
+
+/** The Integration Types section (Story 4.1). Editors get a checkbox per active Integration
+ * Type (plus any stored tag retired since, labelled "Retired"); each toggle saves the whole set
+ * at once. Everyone else sees the stored tags, or "None". */
+function IntegrationTypesSection({
+  requirement,
+  edit,
+}: {
+  requirement: Requirement;
+  edit?: InspectorEditing;
+}) {
+  const headingId = useId();
+  const stored = requirement.integration_types;
+  const storedIds = stored.map((t) => t.id);
+  const onTag = edit?.onTag;
+  if (!edit || !onTag) {
+    return (
+      <section aria-labelledby={headingId} className="flex flex-col gap-1.5">
+        <h4 id={headingId} className="text-label text-muted-foreground">
+          {INTEGRATION_TYPES}
+        </h4>
+        {stored.length > 0 ? (
+          <ul className="flex flex-col gap-1">
+            {stored.map((t) => (
+              <li key={t.id} className="flex min-h-6 items-center gap-2 text-body">
+                {t.name}
+                {t.retired ? <RetiredLabel /> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground">{NO_INTEGRATION_TYPES}</p>
+        )}
+      </section>
+    );
+  }
+  const active = edit.integrationTypes ?? [];
+  const activeIds = new Set(active.map((t) => t.id));
+  // A stored tag that is no longer active (retired since) stays listed so it can be removed.
+  const options = [
+    ...active.map((t) => ({ ...t, retired: false })),
+    ...stored.filter((t) => !activeIds.has(t.id)),
+  ];
+  function toggle(id: string) {
+    onTag?.(storedIds.includes(id) ? storedIds.filter((s) => s !== id) : [...storedIds, id]);
+  }
+  return (
+    <fieldset className="flex flex-col gap-1" disabled={edit.locked || edit.busy}>
+      <legend className="mb-1 text-label text-muted-foreground">{INTEGRATION_TYPES}</legend>
+      {options.length > 0 ? (
+        <ul className="flex max-h-48 flex-col overflow-y-auto">
+          {options.map((option) => (
+            <li key={option.id}>
+              <label className="flex min-h-row items-center gap-2 text-body">
+                <input
+                  type="checkbox"
+                  checked={storedIds.includes(option.id)}
+                  onChange={() => toggle(option.id)}
+                />
+                {option.name}
+                {option.retired ? <RetiredLabel /> : null}
+              </label>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground">{NO_INTEGRATION_TYPES}</p>
+      )}
+    </fieldset>
+  );
+}
 
 /** The selected Requirement in the right pane: its text, classification and origin, its
  * pending change (Story 2.7), its Evidence chips in citation order, and the shown chip's
@@ -459,7 +537,8 @@ export type InspectorEditing = {
  * With `edit`, the text is click-to-edit, the classification a select, an unconfirmed
  * Requirement has **Confirm**, a pending change **Accept** and **Reject**, and every
  * Requirement **Split** and **Delete** (Story 2.6); without it, read-only. The header shows
- * its stable `R<n>` and its origin ("Manual" for one a person added). */
+ * its stable `R<n>` and its origin ("Manual" for one a person added). After the Evidence come
+ * its Integration Types (Story 4.1). */
 export function RequirementInspector({
   opportunityId,
   requirement,
@@ -691,6 +770,7 @@ export function RequirementInspector({
           )}
         </div>
       ) : null}
+      <IntegrationTypesSection requirement={requirement} edit={edit} />
     </section>
   );
 }

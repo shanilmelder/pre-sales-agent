@@ -225,3 +225,13 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-assessments-tab.md`
   summary: Findings tables (Assessments, and the pattern in Conflicts and Trace) put a whole row in one gridcell button, so screen readers read Severity, Type, Finding and Raised by as one run-on string with no column headers.
   evidence: Review of the Assessments redesign; the structure is inherited from `AssessmentFindingList` and `RedTeamList`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
+  summary: Add a test that `psa_app` cannot UPDATE `intake_requirement_integration_types` (the migration 0037 REVOKE).
+  evidence: Default privileges grant UPDATE on new tables; only the REVOKE removes it, and no test pins it (cf. `test_jobs.py:294`).
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
+  summary: Re-chain migration 0037 once Story 4.1 (`0037_requirement_tags`) and Story 4.2 (`20261023_0037_mandatory_gaps.py`) both land.
+  evidence: Both revise `0036_knowledge_checklists`, so Alembic would end up with two heads. Whichever merges second re-points `down_revision` and renumbers to 0038.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
+  summary: Reconcile Story 4.1's `knowledge.get_coverage` with the Story 3.5 branch, which adds its own `get_coverage` in the same `coverage.py`.
+  evidence: The `story/3-5-knowledge-coverage-view` worktree adds `knowledge/application/coverage.py` and `tests/test_knowledge_coverage.py` with a different `get_coverage` shape. The second branch to merge adopts the other's API and points the banner link at `/knowledge/coverage`.

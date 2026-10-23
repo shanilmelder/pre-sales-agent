@@ -7,13 +7,26 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import any_, func, insert, select, text, tuple_, update
+from sqlalchemy import (
+    Uuid,
+    any_,
+    delete,
+    exists,
+    func,
+    insert,
+    literal,
+    select,
+    text,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.modules.intake.adapters.models import (
     ExtractionRow,
     RequirementChangeRow,
     RequirementEvidenceRow,
+    RequirementIntegrationTypeRow,
     RequirementRow,
     RequirementVersionRow,
     SourceParseRow,
@@ -1056,3 +1069,90 @@ async def source_opportunity(uow: UnitOfWork, source_id: UUID) -> UUID | None:
     return (
         await uow.session.execute(select(SourceRow.opportunity_id).where(SourceRow.id == source_id))
     ).scalar_one_or_none()
+
+
+# --- Integration Type tags (Story 4.1) ------------------------------------------------------
+
+T = RequirementIntegrationTypeRow
+
+
+async def integration_type_ids(
+    uow: UnitOfWork, requirement_ids: list[UUID]
+) -> dict[UUID, list[UUID]]:
+    """`{requirement_id: [Integration Type entry ids]}` for the Requirements that have tags,
+    each list in the order they were tagged (then by id)."""
+    if not requirement_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(T.requirement_id, T.entry_id)
+        .where(T.requirement_id.in_(requirement_ids))
+        .order_by(T.requirement_id, T.tagged_at, T.entry_id)
+    )
+    result: dict[UUID, list[UUID]] = {}
+    for requirement_id, entry_id in rows:
+        result.setdefault(requirement_id, []).append(entry_id)
+    return result
+
+
+async def change_integration_types(
+    uow: UnitOfWork,
+    requirement_id: UUID,
+    *,
+    add: list[UUID],
+    remove: list[UUID],
+    tagged_by: UUID,
+) -> None:
+    """Add and remove these tags of the Requirement."""
+    if remove:
+        await uow.session.execute(
+            delete(T).where(T.requirement_id == requirement_id, T.entry_id.in_(remove))
+        )
+    if add:
+        await uow.session.execute(
+            insert(T),
+            [
+                {"requirement_id": requirement_id, "entry_id": e, "tagged_by": tagged_by}
+                for e in add
+            ],
+        )
+
+
+async def copy_integration_types(
+    uow: UnitOfWork, from_ids: list[UUID], to_id: UUID, *, tagged_by: UUID
+) -> None:
+    """Tag the Requirement `to_id` with the union of the tags of `from_ids` (a split child
+    inherits its parent's, a merge takes the union)."""
+    if not from_ids:
+        return
+    entries = select(T.entry_id).where(T.requirement_id.in_(from_ids)).distinct().subquery()
+    await uow.session.execute(
+        pg_insert(T)
+        .from_select(
+            ["requirement_id", "entry_id", "tagged_by"],
+            select(literal(to_id, Uuid), entries.c.entry_id, literal(tagged_by, Uuid)),
+        )
+        .on_conflict_do_nothing(index_elements=["requirement_id", "entry_id"])
+    )
+
+
+async def integration_scope(uow: UnitOfWork, opportunity_id: UUID) -> tuple[list[UUID], int]:
+    """The union of the tags of the Opportunity's active Requirements (sorted), and how many
+    of its active Requirements classified `integration` have no tag."""
+    active = (RequirementRow.opportunity_id == opportunity_id) & (RequirementRow.status == "active")
+    tags = await uow.session.execute(
+        select(T.entry_id)
+        .join(RequirementRow, RequirementRow.id == T.requirement_id)
+        .where(active)
+        .distinct()
+        .order_by(T.entry_id)
+    )
+    untagged = await uow.session.execute(
+        select(func.count())
+        .select_from(RequirementRow)
+        .where(
+            active,
+            RequirementRow.classification == "integration",
+            ~exists().where(T.requirement_id == RequirementRow.id),
+        )
+    )
+    return list(tags.scalars()), int(untagged.scalar_one())

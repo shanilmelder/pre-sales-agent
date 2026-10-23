@@ -171,3 +171,30 @@ class KnowledgeSearchResult(BaseModel):
     items: list[KnowledgeSearchHit]
     model: str = Field(description="The embedding profile the query and chunks share.")
     stale_months: int = Field(ge=1)
+
+
+# --- coverage (Story 4.1) -------------------------------------------------------------------
+
+
+class ProductCoverage(BaseModel):
+    """Whether a product has documentation: an active Source for it (trimmed, ignoring case)
+    whose latest version is embedded."""
+
+    product: str
+    ready: bool
+
+
+class IntegrationTypeCoverage(BaseModel):
+    """Whether an Integration Type has documentation: an active Source tagged with it whose
+    latest version is embedded."""
+
+    id: str
+    ready: bool
+
+
+class Coverage(BaseModel):
+    """`knowledge.get_coverage`: per product (blank ones dropped, repeats ignoring case
+    once, first spelling kept) and per Integration Type, in the order asked."""
+
+    products: list[ProductCoverage]
+    integration_types: list[IntegrationTypeCoverage]

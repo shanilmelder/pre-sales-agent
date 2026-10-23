@@ -133,7 +133,7 @@ forbidden_modules = [
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "intake uses identity, opportunities, gaps, assessments, conflicts and workflows only through their public APIs (AD-2)"
+name = "intake uses identity, opportunities, gaps, assessments, conflicts, workflows and knowledge only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.intake"]
 forbidden_modules = [
@@ -153,11 +153,14 @@ forbidden_modules = [
     "app.modules.workflows.domain",
     "app.modules.workflows.adapters",
     "app.modules.workflows.api",
+    "app.modules.knowledge.domain",
+    "app.modules.knowledge.adapters",
+    "app.modules.knowledge.api",
 ]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "gaps uses identity, opportunities, intake, estimates, assessments, conflicts and workflows only through their public APIs (AD-2)"
+name = "gaps uses identity, opportunities, intake, estimates, assessments, conflicts, workflows and knowledge only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.gaps"]
 forbidden_modules = [
@@ -182,6 +185,9 @@ forbidden_modules = [
     "app.modules.workflows.domain",
     "app.modules.workflows.adapters",
     "app.modules.workflows.api",
+    "app.modules.knowledge.domain",
+    "app.modules.knowledge.adapters",
+    "app.modules.knowledge.api",
 ]
 allow_indirect_imports = true
 

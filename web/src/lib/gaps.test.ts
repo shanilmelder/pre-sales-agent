@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  checklistChipLabel,
+  coverageBanner,
+  coverageHref,
+  untaggedBanner,
+  untaggedHref,
   areaFilterOptions,
   approveAllLabel,
   approvedCount,
@@ -243,5 +248,41 @@ describe("Gaps tab redesign helpers", () => {
       "No answer",
       "Answered",
     ]);
+  });
+});
+
+describe("the Gaps tab context copy (Story 4.1)", () => {
+  it("labels a Checklist chip with its version", () => {
+    expect(checklistChipLabel({ name: "Security baseline", version: 3 })).toBe(
+      "Security baseline · v3",
+    );
+  });
+
+  it("uses has for one untagged Requirement and have for more", () => {
+    expect(untaggedBanner(1)).toBe(
+      "1 integration Requirement has no Integration Type — Checklists may not apply",
+    );
+    expect(untaggedBanner(3)).toBe(
+      "3 integration Requirements have no Integration Type — Checklists may not apply",
+    );
+    expect(untaggedHref("o 1")).toBe("/opportunities/o%201/requirements?untagged=integration");
+  });
+
+  it("joins the uncovered parts, leaving out zero ones, or is null with none", () => {
+    const type = { id: "t1", name: "EDI" };
+    expect(coverageBanner({ products: [], integration_types: [] })).toBeNull();
+    expect(coverageBanner({ products: ["A"], integration_types: [type, type] })).toBe(
+      "No documentation for 2 integration types and 1 product in scope — Gap detection may be " +
+        "incomplete",
+    );
+    expect(coverageBanner({ products: ["A", "B"], integration_types: [] })).toBe(
+      "No documentation for 2 products in scope — Gap detection may be incomplete",
+    );
+    expect(coverageHref({ products: ["A&B"], integration_types: [type] })).toBe(
+      "/knowledge?integration_type=t1",
+    );
+    expect(coverageHref({ products: ["A&B"], integration_types: [] })).toBe(
+      "/knowledge?product=A%26B",
+    );
   });
 });
