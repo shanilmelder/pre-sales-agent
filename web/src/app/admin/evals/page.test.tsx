@@ -70,7 +70,7 @@ describe("/admin/evals", () => {
     respond([LATEST, PREVIOUS]);
     const { container } = renderPage(await AdminEvalsPage());
 
-    expect(screen.getByRole("heading", { level: 1, name: "Evals" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Admin" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Evals" }).getAttribute("aria-current")).toBe("page");
     expect(apiGet).toHaveBeenCalledWith("/api/v1/registry/evals");
 
@@ -78,8 +78,25 @@ describe("/admin/evals", () => {
     const gapRow = within(bars).getByRole("row", { name: /Gap recall/ });
     expect(within(gapRow).getByText("84.0%")).toBeTruthy();
     expect(within(gapRow).getByText("≥ 80%")).toBeTruthy();
-    expect(within(gapRow).getByText("−7.0")).toBeTruthy();
+    expect(within(gapRow).getByText("−7.0 vs accepted (regressed)")).toBeTruthy();
     expect(within(gapRow).getByText("Fail")).toBeTruthy(); // icon plus label
+    expect(within(gapRow).getByText("FR-11")).toBeTruthy();
+    expect(within(bars).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
+      "Bar",
+      "Value",
+      "Threshold",
+      "Status",
+    ]);
+    const summary = screen.getByRole("heading", { name: "Latest result" }).parentElement!;
+    const tone = (el: HTMLElement) => el.closest('[data-slot="pill"]')?.getAttribute("data-tone");
+    expect(tone(within(summary).getByText("Failed"))).toBe("blocker");
+    expect(tone(within(gapRow).getByText("Fail"))).toBe("blocker");
+    expect(
+      within(summary).getByText(
+        "Run 2026-10-12 09:00 UTC · reference set b5f4499df5a5 · 10 Opportunities · 4 evidence pairs pending review",
+      ),
+    ).toBeTruthy();
+    expect(summary.textContent).toContain("123,456 tokens · 812.4 GPU s · 12.34 EUR");
     const evidenceRow = within(bars).getByRole("row", { name: /Evidence support/ });
     expect(within(evidenceRow).getByText("Not measured")).toBeTruthy();
 
@@ -109,6 +126,19 @@ describe("/admin/evals", () => {
       screen.getByText("This is the first result: there is nothing to compare it with."),
     ).toBeTruthy();
     expect(screen.getAllByText("Passed · accepted").length).toBeGreaterThan(0);
+  });
+
+  it("a result with failures lists them in a Failures card", async () => {
+    signedIn(["platform_administrator"]);
+    const failed = evalResult(3, { extraction_recall: 92 }, {
+      failures: [{ slug: "acme-wms", stage: "gap_detection", code: "timeout" }],
+    });
+    respond([failed]);
+    renderPage(await AdminEvalsPage());
+    const card = screen.getByRole("region", { name: "Failures" });
+    expect(
+      within(card).getByText("acme-wms: gap detection failed (timeout); its later metrics scored 0"),
+    ).toBeTruthy();
   });
 
   it("an empty history says how to create a result", async () => {
