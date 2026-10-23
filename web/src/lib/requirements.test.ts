@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  categoriesPresent,
   CLASSIFICATIONS,
   confirmAllLabel,
+  countsLine,
   extractionFailure,
+  filterRequirements,
   groupRequirements,
+  groupSummary,
   isExtracting,
+  NO_FILTERS,
   noneFound,
-  originLabel,
+  originLine,
+  pendingChangesTitle,
   requirementCount,
+  requirementCounts,
+  requirementState,
   requirementTextProblem,
   unconfirmed,
   type Classification,
@@ -30,6 +38,7 @@ function requirement(n: number, classification: Classification): Requirement {
     confirmed_by: null,
     last_changed_by: null,
     pending_change: null,
+    integration_types: [],
     evidence: [],
   };
 }
@@ -112,8 +121,6 @@ describe("counts", () => {
 
 describe("editing helpers (Story 2.6)", () => {
   it("labels origins, counts and text problems", () => {
-    expect(originLabel("extracted")).toBe("Extracted");
-    expect(originLabel("human")).toBe("Edited");
     expect(confirmAllLabel(3)).toBe("Confirm all (3)");
     expect(requirementTextProblem(" ok ")).toBeNull();
     expect(requirementTextProblem("  ")).toBe("The Requirement text can't be blank.");
@@ -126,5 +133,84 @@ describe("editing helpers (Story 2.6)", () => {
       { ...requirement(2, "data"), confirmed_at: "2026-10-04T14:00:00Z" },
     ];
     expect(unconfirmed(items).map((i) => i.id)).toEqual(["r1"]);
+  });
+});
+
+describe("state, counts, origin and filters (Requirements tab redesign)", () => {
+  const EVIDENCE = {
+    passage_id: "p1",
+    source_id: "s1",
+    source_version: 1,
+    filename: "call.vtt",
+    label: "S1 · call.vtt",
+  };
+  const ANN = { id: "u1", name: "Ann Lee" };
+  const PENDING: Requirement["pending_change"] = {
+    id: "c1",
+    text: "Proposed.",
+    classification: "functional",
+    evidence: [],
+    proposed_at: "2026-10-04T15:00:00Z",
+  };
+  const done = (item: Requirement): Requirement => ({
+    ...item,
+    confirmed_at: "2026-10-04T14:00:00Z",
+  });
+  // 3 confirmed, 1 unconfirmed, 1 with a pending change.
+  const items = [
+    done(requirement(1, "functional")),
+    done(requirement(2, "functional")),
+    done(requirement(3, "security")),
+    requirement(4, "security"),
+    { ...requirement(5, "data"), pending_change: PENDING },
+  ];
+
+  it("states: a pending change outranks confirmation", () => {
+    expect(items.map(requirementState)).toEqual([
+      "confirmed",
+      "confirmed",
+      "confirmed",
+      "unconfirmed",
+      "pending",
+    ]);
+    expect(requirementState({ ...done(requirement(6, "data")), pending_change: PENDING })).toBe(
+      "pending",
+    );
+  });
+
+  it("counts the total, the confirmed and those left to review", () => {
+    expect(requirementCounts(items)).toEqual({ total: 5, confirmed: 3, toReview: 2 });
+    expect(countsLine(items)).toBe("5 total · 3 confirmed · 2 to review");
+    expect(groupSummary(items.slice(2, 4))).toBe("2 · 1 confirmed");
+    // Confirmed with a pending change: its pill says Pending change, so it is to review.
+    const both = [...items, { ...done(requirement(6, "data")), pending_change: PENDING }];
+    expect(requirementCounts(both)).toEqual({ total: 6, confirmed: 3, toReview: 3 });
+    expect(countsLine(both)).toBe("6 total · 3 confirmed · 3 to review");
+    expect(groupSummary(both.slice(4))).toBe("2 · 0 confirmed");
+    expect(pendingChangesTitle(1)).toBe("1 pending change from incremental intake");
+    expect(pendingChangesTitle(2)).toBe("2 pending changes from incremental intake");
+  });
+
+  it("says where a Requirement came from", () => {
+    expect(originLine(requirement(1, "data"))).toBe("Extracted");
+    const edited = { ...requirement(1, "data"), origin: "human" as const, evidence: [EVIDENCE] };
+    expect(originLine({ ...edited, last_changed_by: ANN })).toBe("Edited by Ann Lee");
+    expect(originLine(edited)).toBe("Edited");
+    expect(originLine({ ...requirement(1, "data"), origin: "human" })).toBe("Added by a person");
+  });
+
+  it("filters by category and state, keeping order", () => {
+    expect(filterRequirements(items, NO_FILTERS)).toHaveLength(5);
+    const ids = (f: Parameters<typeof filterRequirements>[1]) =>
+      filterRequirements(items, f).map((i) => i.id);
+    expect(ids({ category: null, state: "confirmed" })).toEqual(["r1", "r2", "r3"]);
+    expect(ids({ category: "security", state: null })).toEqual(["r3", "r4"]);
+    expect(ids({ category: "security", state: "unconfirmed" })).toEqual(["r4"]);
+    expect(ids({ category: "commercial", state: null })).toEqual([]);
+    expect(categoriesPresent(items).map((c) => c.label)).toEqual([
+      "Functional",
+      "Data",
+      "Security",
+    ]);
   });
 });

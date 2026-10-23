@@ -11,10 +11,8 @@ import {
   saveDraft,
   type ChecklistResult,
 } from "@/app/knowledge/checklists/actions";
-import {
-  ChecklistItemEditor,
-  ChecklistItemView,
-} from "@/components/knowledge/checklist-item-editor";
+import { ChecklistItemEditor } from "@/components/knowledge/checklist-item-editor";
+import { ChecklistReadOnly } from "@/components/knowledge/checklist-read-only";
 import type { CatalogueOption } from "@/components/knowledge/checklists-tab";
 import { DraftLabel } from "@/components/knowledge/checklists-table";
 import { MandatoryLabel } from "@/components/knowledge/mandatory-label";
@@ -33,7 +31,6 @@ import {
   newItem,
   parseProducts,
   REASON_MAX,
-  scopeText,
   staleChangeMessage,
   type Checklist,
   type ChecklistDomain,
@@ -590,17 +587,7 @@ export function ChecklistInspector({
               This Checklist hasn&apos;t been published yet.
             </p>
           ) : (
-            <>
-              <p className="text-meta">
-                <span className="text-muted-foreground">Scope: </span>
-                {scopeText(checklist)}
-              </p>
-              <ol className="flex flex-col">
-                {checklist.items.map((item, index) => (
-                  <ChecklistItemView key={item.id} item={item} index={index} />
-                ))}
-              </ol>
-            </>
+            <ChecklistReadOnly checklist={checklist} />
           )}
           {mayAuthor && !checklist.retired && draft === null ? (
             <div>
@@ -718,15 +705,7 @@ export function ChecklistInspector({
             {domainLabel(shown.domain)} · {shown.published_by.name} ·{" "}
             {formatWhen(shown.published_at)}
           </p>
-          <p className="text-meta">
-            <span className="text-muted-foreground">Scope: </span>
-            {scopeText(shown)}
-          </p>
-          <ol className="flex flex-col">
-            {shown.items.map((item, index) => (
-              <ChecklistItemView key={item.id} item={item} index={index} />
-            ))}
-          </ol>
+          <ChecklistReadOnly checklist={shown} />
         </section>
       ) : null}
     </section>

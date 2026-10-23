@@ -1,7 +1,8 @@
 """Requirement queries and the extraction start command (Story 2.5 Part A).
 
 - `list_requirements`: the Opportunity's active Requirements by number, with their
-  evidence, and its latest extraction (anyone who can read the Opportunity).
+  evidence and Integration Type tags (Story 4.1), and its latest extraction (anyone who can
+  read the Opportunity).
 - `start_extraction`: queue a new extraction, e.g. to retry a failed one
   (`intake.extraction.start`: the owner and collaborators; other readers 403, everyone else
   the Opportunity's 404). 409 `extraction_in_progress` while one is queued or running; one
@@ -30,6 +31,7 @@ from app.modules.intake.application.models import (
     PendingChange,
     Requirement,
     RequirementEvidence,
+    RequirementIntegrationType,
     RequirementList,
 )
 from app.modules.intake.domain.requirements import (
@@ -39,6 +41,7 @@ from app.modules.intake.domain.requirements import (
     ExtractionStatus,
     RequirementOrigin,
 )
+from app.modules.knowledge.application import public as knowledge
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import UserRef
 from app.modules.registry.application import public as registry
@@ -81,6 +84,21 @@ def _user_id(actor_id: str) -> UUID | None:
         return UUID(actor_id)
     except ValueError:
         return None
+
+
+async def integration_type_views(
+    uow: UnitOfWork, entry_ids: list[UUID]
+) -> dict[UUID, RequirementIntegrationType]:
+    """The catalogue entries behind these tags, keyed by id. A retired entry still resolves;
+    one that no longer exists is left out."""
+    views: dict[UUID, RequirementIntegrationType] = {}
+    for entry_id in dict.fromkeys(entry_ids):
+        entry = await knowledge.get_catalogue_entry(uow, entry_id)
+        if entry is not None:
+            views[entry_id] = RequirementIntegrationType(
+                id=entry.id, code=entry.code, name=entry.name, retired=entry.retired
+            )
+    return views
 
 
 async def requirement_views(
@@ -149,6 +167,8 @@ async def requirement_views(
         r.confirmed_by for r in records if r.confirmed_by is not None
     }
     names = await identity.user_names(uow, wanted)
+    tags = await repo.integration_type_ids(uow, [r.id for r in records])
+    tag_views = await integration_type_views(uow, [e for ids in tags.values() for e in ids])
 
     def ref(user_id: UUID | None) -> UserRef | None:
         if user_id is None:
@@ -172,6 +192,7 @@ async def requirement_views(
             # Stable sort: Source order, then the span order the query returned.
             evidence=[e for _, e in sorted(evidence[r.id], key=lambda pair: pair[0])],
             pending_change=pending(r.id),
+            integration_types=[tag_views[e] for e in tags.get(r.id, []) if e in tag_views],
         )
         for r in records
     ]
@@ -182,12 +203,21 @@ async def list_requirements(
 ) -> RequirementList:
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     records = await repo.active_requirements(uow, opportunity_id)
+    _, untagged = await repo.integration_scope(uow, opportunity_id)
     return RequirementList(
         items=await requirement_views(uow, opportunity_id, records),
         extraction=_extraction(await repo.latest_extraction(uow, opportunity_id)),
         can_start_extraction=identity.can(actor, Action.EXTRACTION_START, resource),
         can_edit_requirements=identity.can(actor, Action.REQUIREMENT_EDIT, resource),
+        untagged_integration_count=untagged,
     )
+
+
+async def integration_scope(uow: UnitOfWork, opportunity_id: UUID) -> tuple[list[UUID], int]:
+    """`intake.integration_scope` (Story 4.1, for gaps): the union of the Integration Type
+    tags on the Opportunity's active Requirements, and how many of its active `integration`
+    Requirements have none. No authorization: the caller decides what it may show."""
+    return await repo.integration_scope(uow, opportunity_id)
 
 
 async def start_extraction(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> Extraction:

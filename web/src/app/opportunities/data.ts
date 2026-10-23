@@ -10,7 +10,7 @@ import { UUID_RE } from "@/lib/opportunities";
 import type { AssessmentsView } from "@/lib/assessments";
 import type { ConflictsView } from "@/lib/conflicts";
 import type { EstimateView } from "@/lib/estimates";
-import type { GapList } from "@/lib/gaps";
+import type { GapList, GapsContext } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
 import type { OutdatedAssessment, RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
@@ -27,6 +27,9 @@ export type OutdatedAssessmentsResult =
   | { kind: "ok"; items: OutdatedAssessment[] }
   | { kind: "error" };
 export type GapsResult = { kind: "ok"; list: GapList } | { kind: "error" };
+export type GapsContextResult = { kind: "ok"; context: GapsContext } | { kind: "error" };
+/** An active catalogue Integration Type, for tagging a Requirement (Story 4.1). */
+export type IntegrationTypeOption = { id: string; name: string };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
 export type TraceResult = { kind: "ok"; page: TracePage } | { kind: "error" };
 export type RedTeamResult = { kind: "ok"; redTeam: RedTeamView } | { kind: "error" };
@@ -173,6 +176,44 @@ export async function listGaps(id: string): Promise<GapsResult> {
   } catch (thrown) {
     console.error(`GET gaps failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/gaps/context` (Story 4.1): the applicable Checklists, the
+ * untagged integration Requirements and the uncovered scope. Logs statuses only. */
+export async function getGapsContext(id: string): Promise<GapsContextResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/gaps/context",
+      { params: { path: { opportunity_id: id } } },
+    );
+    if (data) return { kind: "ok", context: data };
+    console.error(`GET gaps context failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET gaps context failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** The active catalogue Integration Types (Story 4.1: the Requirement inspector's picker);
+ * null when they can't be read. */
+export async function listActiveIntegrationTypes(): Promise<IntegrationTypeOption[] | null> {
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/catalogue/entries", {
+      params: { query: { kind: "integration_type" } },
+    });
+    if (data) return data.items.map((entry) => ({ id: entry.id, name: entry.name }));
+    console.error(`GET integration types failed: status=${response.status}`);
+    return null;
+  } catch (thrown) {
+    console.error(
+      `GET integration types failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return null;
   }
 }
 

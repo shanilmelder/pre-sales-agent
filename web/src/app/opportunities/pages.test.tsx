@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -1327,7 +1327,8 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Requirements"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Requirements" })).toBeTruthy();
-    expect(within(panel).getByRole("heading", { level: 3, name: "Integration 1" })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "Integration" })).toBeTruthy();
+    expect(within(panel).getByRole("region", { name: "Integration 1 · 0 confirmed" })).toBeTruthy();
     expect(within(panel).getByText("[REQUIREMENT]")).toBeTruthy();
     expect(within(panel).getByText("S1 · call.vtt")).toBeTruthy();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
@@ -1335,6 +1336,65 @@ describe("/opportunities/[id] workspace", () => {
       params: { path: { opportunity_id: OPP_ID } },
     });
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /requirements?untagged=integration: untagged rows and the type picker", async () => {
+    signedIn(["presales_engineer"]);
+    const requirement = (n: number, classification: string, tagged: boolean) => ({
+      id: `00000000-0000-7000-8000-0000000000e${n}`,
+      number: n,
+      text: `[REQUIREMENT ${n}]`,
+      classification,
+      origin: "extracted",
+      locked_by_human: false,
+      version: 1,
+      row_version: 1,
+      created_at: "2026-10-04T13:05:00Z",
+      confirmed_at: null,
+      confirmed_by: null,
+      last_changed_by: null,
+      pending_change: null,
+      evidence: [],
+      integration_types: tagged
+        ? [{ id: "00000000-0000-7000-8000-0000000000a1", code: "SAP", name: "SAP", retired: false }]
+        : [],
+    });
+    apiGet.mockImplementation(async (path: string) =>
+      path === "/api/v1/catalogue/entries"
+        ? {
+            data: { items: [{ id: "00000000-0000-7000-8000-0000000000a2", name: "[EDI]" }] },
+            response: new Response(null, { status: 200 }),
+          }
+        : path.endsWith("/requirements")
+          ? {
+              data: {
+                items: [
+                  requirement(1, "integration", true),
+                  requirement(2, "integration", false),
+                  requirement(3, "functional", false),
+                ],
+                extraction: { status: "succeeded", error_code: null, source_count: 1 },
+                can_start_extraction: true,
+                can_edit_requirements: true,
+                untagged_integration_count: 1,
+              },
+              response: new Response(null, { status: 200 }),
+            }
+          : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+    await renderWorkspace("requirements", OPP_ID, { untagged: "integration" });
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByTestId("untagged-filter").textContent).toContain(
+      "Showing 1 integration Requirement with no Integration Type",
+    );
+    expect(within(panel).queryByText("[REQUIREMENT 1]")).toBeNull();
+    expect(within(panel).queryByText("[REQUIREMENT 3]")).toBeNull();
+    await userEvent.setup().click(within(panel).getByText("[REQUIREMENT 2]"));
+    const details = await screen.findByRole("complementary", { name: "Details" });
+    expect(within(details).getByRole("checkbox", { name: "[EDI]" })).toBeTruthy();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/catalogue/entries", {
+      params: { query: { kind: "integration_type" } },
+    });
   });
 
   it("tab URL /requirements: the empty state", async () => {
@@ -1437,7 +1497,9 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Estimate"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Estimate" })).toBeTruthy();
-    expect(within(panel).getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
+    expect(within(panel).getByText("v1 · Draft")).toBeTruthy();
+    expect(within(panel).getByText("From Assessments (run 1)")).toBeTruthy();
+    expect(within(panel).getByRole("region", { name: "Assumptions Register" })).toBeTruthy();
     expect(within(panel).getByRole("button", { name: "[LINE]" })).toBeTruthy();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/estimate", {
@@ -1477,15 +1539,51 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
-  function foundWithGaps(body: unknown) {
+  /** `context`: the Gaps tab context (Story 4.1); left out, its read fails. */
+  function foundWithGaps(body: unknown, context?: unknown) {
     apiGet.mockImplementation(async (path: string) =>
-      path.endsWith("/gaps")
-        ? body
-          ? { data: body, response: new Response(null, { status: 200 }) }
+      path.endsWith("/gaps/context")
+        ? context
+          ? { data: context, response: new Response(null, { status: 200 }) }
           : { response: new Response(null, { status: 500 }) }
-        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+        : path.endsWith("/gaps")
+          ? body
+            ? { data: body, response: new Response(null, { status: 200 }) }
+            : { response: new Response(null, { status: 500 }) }
+          : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
     );
   }
+
+  it("tab URL /gaps: the applicable Checklists and banners under the header", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithGaps(
+      { items: [], detection: null, can_start_detection: true, can_edit_questions: true },
+      {
+        applicable_checklists: [
+          {
+            checklist_id: "00000000-0000-7000-8000-0000000000c1",
+            version: 2,
+            name: "[CHECKLIST]",
+            domain: "security",
+          },
+        ],
+        untagged_integration_count: 1,
+        uncovered: { products: ["[PRODUCT]"], integration_types: [] },
+      },
+    );
+    await renderWorkspace("gaps");
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("button", { name: "[CHECKLIST] · v2" })).toBeTruthy();
+    expect(within(panel).getByTestId("untagged-banner").textContent).toContain(
+      "1 integration Requirement has no Integration Type",
+    );
+    expect(within(panel).getByTestId("coverage-banner").textContent).toContain(
+      "No documentation for 1 product in scope",
+    );
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps/context", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+  });
 
   it("tab URL /gaps: the ranked Gaps with their category and Draft question", async () => {
     signedIn(["sales_representative"]);
@@ -1537,9 +1635,11 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Gaps1, 1 open"]);
     expect(screen.getByTestId("tab-count-gaps").textContent).toBe("1, 1 open");
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
+    // One "Gaps" heading: the section's header row.
+    expect(within(panel).getAllByRole("heading", { level: 2, name: "Gaps" })).toHaveLength(1);
+    expect(within(panel).getByText("1 total · 1 open · ranked by impact")).toBeTruthy();
     expect(within(panel).getByRole("row").textContent).toBe(
-      "Open[GAP]HighIntegration detailsClarification Agent · Integration detailsApproved",
+      "HighOpen [GAP]Integration details·Clarification AgentApproved",
     );
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps", {
@@ -1562,6 +1662,9 @@ describe("/opportunities/[id] workspace", () => {
         "Gaps appear after Requirements are checked against Checklists.",
       ),
     ).toBeTruthy();
+    expect(
+      within(screen.getByRole("tabpanel")).getAllByRole("heading", { level: 2, name: "Gaps" }),
+    ).toHaveLength(1);
   });
 
   it("tab URL /gaps: a failed read says so", async () => {
@@ -1574,6 +1677,9 @@ describe("/opportunities/[id] workspace", () => {
         "The Gaps could not be loaded. Try again in a moment.",
       ),
     ).toBeTruthy();
+    expect(
+      within(screen.getByRole("tabpanel")).getAllByRole("heading", { level: 2, name: "Gaps" }),
+    ).toHaveLength(1);
   });
 
   const NO_ASSESSMENTS = {
@@ -1983,9 +2089,14 @@ describe("/opportunities/[id] workspace", () => {
     expect(within(panel).getByRole("heading", { level: 2, name: "Trace" })).toBeTruthy();
     const rows = within(panel).getAllByRole("row");
     expect(rows.map((r) => r.textContent)).toEqual([
-      expect.stringContaining("Red Team AgentRed Team Review completed"),
+      expect.stringContaining("RARed Team AgentRed Team Review completed"),
       expect.stringContaining("[OWNER]Opportunity created"),
     ]);
+    expect(rows.map((r) => r.getAttribute("data-actor-type"))).toEqual(["agent", "user"]);
+    expect(
+      within(panel).getByText("Trace rows are append-only and cannot be edited."),
+    ).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Actor" })).toBeTruthy();
     expect(
       within(panel).getByRole("link", { name: "Red Team Review v1" }).getAttribute("href"),
     ).toBe(`/opportunities/${OPP_ID}/assessments`);
@@ -2007,6 +2118,11 @@ describe("/opportunities/[id] workspace", () => {
         query: { page: 2, page_size: 50, actor_type: "agent" },
       },
     });
+    const actorChip = screen.getByRole("button", { name: "Actor: Agent" });
+    expect(actorChip.className).toContain("bg-primary-tint");
+    expect(screen.getByRole("link", { name: "Clear filters" })).toBeTruthy();
+    fireEvent.click(actorChip);
+    await screen.findByRole("dialog", { name: "Actor filter" });
     const actor = screen.getByLabelText("Actor") as HTMLSelectElement;
     expect(actor.value).toBe("agent");
     expect(actor.selectedOptions[0].textContent).toBe("Agent");
@@ -2050,6 +2166,8 @@ describe("/opportunities/[id] workspace", () => {
         "The Decision Trace could not be loaded. Try again in a moment.",
       ),
     ).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Trace" })).toBeTruthy();
+    expect(screen.queryByRole("grid")).toBeNull();
   });
 
   it.each([["actuals", "Actuals"]])(
@@ -2094,6 +2212,9 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Conflicts"]);
     expect(screen.getByRole("tab", { name: "Conflicts" })).toBeTruthy();
     expect(screen.queryByTestId("tab-count-conflicts")).toBeNull();
+    expect(
+      within(screen.getByRole("tabpanel")).getByRole("heading", { level: 2, name: "Conflicts" }),
+    ).toBeTruthy();
     expect(
       within(screen.getByRole("tabpanel")).getByText(
         "The Conflicts could not be loaded. Try again in a moment.",
@@ -2161,8 +2282,13 @@ describe("/opportunities/[id] workspace", () => {
     const panel = screen.getByRole("tabpanel");
     const grid = within(panel).getByRole("grid", { name: "Open Conflicts" });
     expect(within(grid).getAllByRole("row").map((r) => r.textContent)).toEqual([
-      "ScopeMediumOpenR4Engineering: 24 h · PM: not sized",
+      "[SUMMARY]Scope · R4Open",
     ]);
+    // The first open Conflict's decision card, inline and read-only for a sales representative.
+    const card = within(panel).getByTestId("conflict-decision-card");
+    expect(within(card).getByRole("heading", { level: 3, name: "[SUMMARY]" })).toBeTruthy();
+    expect(within(card).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(panel).queryByRole("form")).toBeNull();
     expect(within(panel).queryByRole("textbox")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
@@ -2190,10 +2316,18 @@ describe("/opportunities/[id] workspace", () => {
       </ShellProviders>,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Engineering: 60 h/ }));
-    const form = await screen.findByRole("form", { name: "Resolve the Conflict" });
+    // The first open Conflict is selected on load; its decision card sits under the rows.
+    expect(
+      screen.getByRole("button", { name: /\[SUMMARY\]/ }).closest("[role=row]")?.getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
+    const form = await screen.findByRole("form", { name: "Decide the Conflict" });
     await user.click(within(form).getAllByRole("radio")[0]!);
-    await user.type(within(form).getByLabelText("Reason"), "Matches the interface list.");
+    await user.type(
+      within(form).getByLabelText("Reason (required)"),
+      "Matches the interface list.",
+    );
     await user.click(within(form).getByRole("button", { name: "Resolve" }));
     await waitFor(() => expect(resolveConflict).toHaveBeenCalled());
     expect(resolveConflict.mock.calls[0]![0]).toMatchObject({

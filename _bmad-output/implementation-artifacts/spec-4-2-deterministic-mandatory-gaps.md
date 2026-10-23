@@ -52,7 +52,7 @@ context:
 
 - `backend/app/modules/gaps/domain/gaps.py` -- add `GapOrigin.MANDATORY_CHECKLIST`, `CHECKLIST_TRIGGER_KIND`, a pure `mandatory_gaps(applicable, existing_keys)` planner (new Gaps + applies set), category map, cut helper, `GapMandatoryError` rule for dismiss (`dismiss_gap` gets a `mandatory_applies` flag).
 - `backend/app/modules/gaps/adapters/models.py:107` -- widen `origin` CHECK; add `checklist_applies` (bool, server default true), `why_entry_id` (uuid null); `QuestionRow.from_checklist` (bool default false); the unique partial index.
-- `backend/migrations/versions/` -- new `20261023_0037_mandatory_gaps.py` after `0036_knowledge_checklists`.
+- `backend/migrations/versions/` -- new `20261023_0038_mandatory_gaps.py` after `0037_requirement_tags` (renumbered from 0037 when Story 4.1 merged first).
 - `backend/app/modules/gaps/adapters/repository.py:338` -- `insert_mandatory_gap` (pg_insert on_conflict_do_nothing, returns bool), `mandatory_keys`, `set_checklist_applies`; extend `GapRecord`/`_gap`/`QuestionRecord`. `supersede_detected` :288 already filters `origin == 'detected'` — keep.
 - `backend/app/modules/gaps/application/detection.py:420` (`_start`) -- call new `raise_mandatory_gaps(uow, opportunity_id, detection_id)` (new file `application/mandatory.py`) reading scope via `opportunities.public` and checklists via `knowledge.public.find_applicable_checklists(products, industry, integration_type_ids=[])`.
 - `backend/app/modules/gaps/application/gap_commands.py:272` -- pass mandatory/applies into the rule; map to 409.

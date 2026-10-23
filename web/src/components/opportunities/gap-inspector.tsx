@@ -1,9 +1,11 @@
 "use client";
 
+import { SparklesIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { MandatoryLabel } from "@/components/knowledge/mandatory-label";
+import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
@@ -25,7 +27,9 @@ import {
   gapStatus,
   historyAction,
   historyByline,
+  impactLabel,
   IMPACTS,
+  impactTone,
   INJECTION_SUSPECTED,
   isAnswerable,
   isMandatory,
@@ -34,6 +38,7 @@ import {
   NO_LONGER_APPLIES,
   noteProblem,
   possibleAnswerLabel,
+  questionFlow,
   questionStatus,
   reasonProblem,
   requirementChangeLabel,
@@ -53,20 +58,41 @@ import {
   type QuestionStatus,
 } from "@/lib/gaps";
 
-const actionClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
+/** The primary-tint pill with a sparkle: what raised the Gap ("Clarification Agent"). */
+export function TriggerPill({ children }: { children: ReactNode }) {
+  return (
+    <Pill icon={<SparklesIcon />} className="bg-primary-tint text-primary-text" data-trigger="">
+      {children}
+    </Pill>
+  );
+}
 
-/** The question status pill: "Draft" or "Approved", always an icon and a label. 20px, fully
- * rounded, neutral outline, like the other status pills; only the icon is tinted. */
+/** An inspector section: padded 16 with a bottom border. */
+function Section({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`flex flex-col gap-2 border-b border-border p-4 ${className}`}>{children}</div>
+  );
+}
+
+/** An inspector section's heading: an uppercase meta label. */
+function SectionHeading({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <h4 className={`text-eyebrow text-text-secondary uppercase ${className}`}>{children}</h4>;
+}
+
+/** The question status pill, always an icon and a label, tinted by status: Draft neutral,
+ * Approved and Answered resolved, Sent primary, No answer gap amber. */
 export function QuestionPill({ status }: { status: QuestionStatus }) {
   const known = questionStatus(status);
   const Icon = known.icon;
+  // Pill has no primary tone: Sent takes the primary tint through its classes.
+  const primary = known.tone === "text-primary";
   return (
     <Pill
       data-question-status={status}
       tone={pillToneFor(known.tone)}
+      {...(primary ? { "data-tone": "primary" } : {})}
       icon={<Icon />}
-      className="shrink-0"
+      className={primary ? "shrink-0 bg-primary-tint text-primary-text" : "shrink-0"}
     >
       {known.label}
     </Pill>
@@ -89,25 +115,29 @@ export type QuestionEditing = {
   onApprove: () => void;
 };
 
-/** The selected Gap in the right pane: its status, title and category, why it matters, its
- * trigger, its impact and the basis for it, the related Requirements as chips with their
- * excerpts, its Clarification Question with its topic, status pill and the date of its last
- * status change, and its history (Story 4.4). With `edit` (and the Gap open), the topic and
- * text are click-to-edit (Enter or blur saves, Esc reverts), a drafted question has
- * **Approve**; an approved one says who approved it and when. With `gapEdit`, an open Gap has
- * an impact select with a required reason and a **Dismiss** form ("Not relevant" / "Other"
- * with a note); a dismissed one says why, by whom and when, and has **Reopen** with a reason.
- * Story 4.2: a mandatory Gap shows the "Mandatory" label (and "Checklist no longer applies"
- * once it doesn't), its question "from Checklist", no Related Requirements, and no **Dismiss**
- * while its Checklist still applies. Convert is not offered here (Epic 8 does it from the
- * Estimate). With `send` (Story 4.6), an
- * approved question of an open Gap has **Mark sent** (a date, today by default) and a sent one
- * **No answer**; a sent question says "Sent {date} by {name}" and can't be edited or approved.
- * Story 4.7: with `send`, a sent or "No answer" question of an open Gap has **Record answer**
- * (the answer, a date, and whether it settles the Gap), and each suggested answer has **Confirm**
- * and **Not an answer**; an answered Gap shows "Answered by customer, {date}" with the answer
- * passage as Evidence and links to the Requirements the answer changed, and (with `gapEdit`)
- * **Reopen**. Without them, read-only. */
+/** The selected Gap in the right pane, in sections (Gaps tab redesign): a header ("{Impact}
+ * impact · {category}", the status pill and the title); Why it matters with the trigger pill;
+ * the related Requirements as id chips with their excerpts; the Clarification Question (its
+ * pill, topic and text in a bordered box, and the date of its last status change); Actions (the
+ * status's primary action with a line saying where the question is in its flow); suggested
+ * answers and the answer; the impact with the basis for it; Dismiss; and the history (Story
+ * 4.4).
+ *
+ * With `edit` (and the Gap open), the topic and text are click-to-edit (Enter or blur saves, Esc
+ * reverts) and a drafted question has **Approve question**; an approved one says who approved
+ * it and when. With `gapEdit`, an open Gap has an impact select with a required reason and a
+ * **Dismiss** form ("Not relevant" / "Other" with a note); a dismissed one says why, by whom and
+ * when, and has **Reopen** with a reason. Story 4.2: a mandatory Gap shows the "Mandatory" label
+ * by its trigger (and "Checklist no longer applies" once it doesn't), its question "from
+ * Checklist", no Related Requirements, and no **Dismiss** while its Checklist still applies.
+ * Convert is not offered here (Epic 8 does it from the Estimate). With `send` (Story 4.6), an
+ * approved question of an open Gap has **Mark as sent** (a date, today by default) and a sent one
+ * **Record answer** and **No answer**; a sent question says "Sent {date} by {name}" and can't be
+ * edited or approved. Story 4.7: with `send`, a sent or "No answer" question of an open Gap has
+ * **Record answer** (the answer, a date, and whether it settles the Gap), and each suggested answer
+ * has **Confirm** and **Not an answer**; an answered Gap shows "Answered by customer, {date}" with
+ * the answer passage as Evidence and links to the Requirements the answer changed, and (with
+ * `gapEdit`) **Reopen**. Without them, read-only. */
 export function GapInspector({
   gap,
   opportunityId,
@@ -135,96 +165,81 @@ export function GapInspector({
   const sendable = send !== undefined && gap.status === "open" && question !== null;
   const [markingSent, setMarkingSent] = useState(false);
   const [answering, setAnswering] = useState(false);
+  const flow =
+    gap.status === "dismissed"
+      ? questionFlow("dismissed")
+      : gap.status === "answered"
+        ? questionFlow("answered")
+        : gap.status === "open" && question
+          ? questionFlow(question.status)
+          : null;
+  const reopenable = gapEdit !== undefined && (gap.status === "dismissed" || gap.status === "answered");
 
   useEffect(() => {
     if (focusRequest > 0) headingRef.current?.focus();
   }, [focusRequest]);
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-4 p-gutter">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-meta text-muted-foreground">{categoryLabel(gap.category)}</p>
+    <section aria-labelledby={headingId} className="flex flex-col">
+      <Section className="gap-1.5">
+        <div className="flex items-center gap-2 text-label">
+          <span className={impactTone(gap.impact)}>{impactLabel(gap.impact)} impact</span>
+          <span className="min-w-0 flex-1 text-text-secondary">· {categoryLabel(gap.category)}</span>
           <GapStatusPill status={gap.status} />
         </div>
         <h3
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
-          className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="text-section [overflow-wrap:anywhere] outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           {gap.title}
         </h3>
-      </div>
+      </Section>
 
-      <div className="flex flex-col gap-1">
-        <h4 className="text-label text-muted-foreground">Why it matters</h4>
+      <Section>
+        <SectionHeading>Why it matters</SectionHeading>
         <p className="whitespace-pre-wrap break-words text-body">{gap.why_it_matters}</p>
-      </div>
-
-      {gap.dismissal ? (
-        <div className="flex flex-col gap-1">
-          <p className="text-meta text-muted-foreground">{dismissedLabel(gap.dismissal)}</p>
-          {gap.dismissal.note ? (
-            <p className="whitespace-pre-wrap break-words text-body">{gap.dismissal.note}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <TriggerPill>{triggerLabel(gap)}</TriggerPill>
+          {isMandatory(gap) ? <MandatoryLabel /> : null}
+          {gap.status === "open" && checklistNoLongerApplies(gap) ? (
+            <span className="text-meta text-text-secondary">{NO_LONGER_APPLIES}</span>
           ) : null}
         </div>
-      ) : null}
-
-      <div className="flex flex-col gap-1">
-        <h4 className="text-label text-muted-foreground">Trigger</h4>
-        <p className="text-body">{triggerLabel(gap)}</p>
-        {isMandatory(gap) ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <MandatoryLabel />
-            {gap.status === "open" && checklistNoLongerApplies(gap) ? (
-              <span className="text-meta text-muted-foreground">{NO_LONGER_APPLIES}</span>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <h4 className="text-label text-muted-foreground">Impact</h4>
-        <ImpactBar impact={gap.impact} />
-        <p className="whitespace-pre-wrap break-words text-body">{gap.impact_basis}</p>
-        {gapEdit && gap.status === "open" ? (
-          <ImpactForm key={`${gap.id}-${gap.row_version}`} gap={gap} edit={gapEdit} />
-        ) : null}
-      </div>
+      </Section>
 
       {gap.requirements.length > 0 ? (
-        <div className="flex flex-col gap-1.5">
-          <h4 className="text-label text-muted-foreground">Related Requirements</h4>
-          <ul className="flex flex-col gap-1.5">
+        <Section>
+          <SectionHeading>Related Requirements</SectionHeading>
+          <ul className="flex flex-col gap-2">
             {gap.requirements.map((requirement) => (
-              <li key={requirement.id} className="flex items-baseline gap-2">
+              <li key={requirement.id} className="flex items-baseline gap-2.5">
                 <Chip className="shrink-0">{requirement.label}</Chip>
                 <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </Section>
       ) : null}
 
       {question ? (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <h4 className="text-label text-muted-foreground">
+        <Section>
+          <div className="flex items-center gap-2">
+            <SectionHeading className="flex-1">
               Clarification Question
               {question.from_checklist ? (
                 <span className="ml-2 font-normal">{FROM_CHECKLIST}</span>
               ) : null}
-            </h4>
+            </SectionHeading>
             <QuestionPill status={question.status} />
           </div>
-          <p className="text-meta text-muted-foreground">{statusSince(question)}</p>
           {editable ? (
             <div
               role="group"
               aria-label="Clarification Question"
               aria-busy={edit.busy || undefined}
-              className="flex flex-col gap-1 rounded-md border border-border p-2"
+              className="flex flex-col gap-1 rounded-lg border border-border-strong bg-background px-3 py-2.5"
             >
               <InlineField
                 label="Edit topic"
@@ -236,9 +251,9 @@ export function GapInspector({
                 locked={edit.locked || edit.busy}
                 onCommit={(next) => edit.onCommit("topic", next)}
                 className="flex flex-col gap-0.5"
-                inputClassName="h-6 w-full rounded-md border border-input bg-transparent px-1.5 text-meta outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                inputClassName="h-7 w-full rounded-md border border-input bg-surface px-2 text-meta outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
-                <p className="text-meta text-muted-foreground">{question.topic}</p>
+                <p className="text-meta text-text-secondary">{question.topic}</p>
               </InlineField>
               <InlineField
                 label="Edit question"
@@ -251,7 +266,7 @@ export function GapInspector({
                 editRequest={edit.editRequest}
                 onCommit={(next) => edit.onCommit("text", next)}
                 className="flex flex-col gap-0.5"
-                inputClassName="min-h-16 w-full resize-y rounded-md border border-input bg-transparent px-1.5 py-1 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                inputClassName="min-h-20 w-full resize-y rounded-md border border-input bg-surface px-2 py-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <p className="whitespace-pre-wrap break-words text-body">{question.text}</p>
               </InlineField>
@@ -260,96 +275,118 @@ export function GapInspector({
             <div
               role="group"
               aria-label="Clarification Question (read-only)"
-              className="flex flex-col gap-1 rounded-md border border-border p-2"
+              className="flex flex-col gap-1 rounded-lg border border-border-strong bg-background px-3 py-2.5"
             >
-              <p className="text-meta text-muted-foreground">{question.topic}</p>
+              <p className="text-meta text-text-secondary">{question.topic}</p>
               <p className="whitespace-pre-wrap break-words text-body">{question.text}</p>
             </div>
           )}
+          <p className="text-meta text-text-secondary">
+            {statusSince(question)}
+            {editable ? ". Press e to edit." : ""}
+          </p>
           {question.status === "approved" || isSent(question.status) ? (
-            <p className="text-meta text-muted-foreground">{approvedLabel(question)}</p>
-          ) : editable ? (
-            <div>
-              <button
-                type="button"
-                disabled={edit.locked || edit.busy}
-                onClick={edit.onApprove}
-                className={actionClass}
-              >
-                Approve
-              </button>
-            </div>
+            <p className="text-meta text-text-secondary">{approvedLabel(question)}</p>
           ) : null}
           {isSent(question.status) ? (
-            <p className="text-meta text-muted-foreground">{sentLabel(question)}</p>
+            <p className="text-meta text-text-secondary">{sentLabel(question)}</p>
           ) : null}
-          {sendable && question.status === "approved" ? (
-            markingSent ? (
-              <MarkSentForm
-                label="Mark this question sent"
-                confirm="Mark sent"
-                disabled={send.busy || send.locked}
-                onSubmit={async (sentOn) => {
-                  const outcome = await send.onMarkSent(sentOn);
-                  if (outcome === "ok" || outcome === "failed") setMarkingSent(false);
-                  return outcome;
-                }}
-                onCancel={() => setMarkingSent(false)}
-              />
-            ) : (
-              <div>
-                <button
-                  type="button"
+        </Section>
+      ) : null}
+
+      {flow ? (
+        <Section className="gap-3">
+          <SectionHeading>Actions</SectionHeading>
+          {gap.status === "open" && question ? (
+            <>
+              {question.status === "drafted" && editable ? (
+                <div>
+                  <Button
+                    type="button"
+                    disabled={edit.locked || edit.busy}
+                    onClick={edit.onApprove}
+                  >
+                    Approve question
+                  </Button>
+                </div>
+              ) : null}
+              {sendable && question.status === "approved" ? (
+                markingSent ? (
+                  <MarkSentForm
+                    label="Mark this question sent"
+                    confirm="Mark sent"
+                    disabled={send.busy || send.locked}
+                    onSubmit={async (sentOn) => {
+                      const outcome = await send.onMarkSent(sentOn);
+                      if (outcome === "ok" || outcome === "failed") setMarkingSent(false);
+                      return outcome;
+                    }}
+                    onCancel={() => setMarkingSent(false)}
+                  />
+                ) : (
+                  <div>
+                    <Button
+                      type="button"
+                      disabled={send.busy || send.locked}
+                      onClick={() => setMarkingSent(true)}
+                    >
+                      Mark as sent
+                    </Button>
+                  </div>
+                )
+              ) : null}
+              {sendable && isAnswerable(question.status) && !answering ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    disabled={send.busy || send.locked}
+                    onClick={() => setAnswering(true)}
+                  >
+                    Record answer
+                  </Button>
+                  {question.status === "sent" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={send.busy || send.locked}
+                      onClick={send.onNoAnswer}
+                    >
+                      No answer
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {sendable && isAnswerable(question.status) && answering ? (
+                <RecordAnswerForm
+                  gapTitle={gap.title}
                   disabled={send.busy || send.locked}
-                  onClick={() => setMarkingSent(true)}
-                  className={actionClass}
-                >
-                  Mark sent
-                </button>
-              </div>
-            )
+                  onSubmit={async (text, answeredOn, settlesGap) => {
+                    const outcome = await send.onRecordAnswer(text, answeredOn, settlesGap);
+                    // Only a recorded answer closes the form: a failure keeps the typed text.
+                    if (outcome === "ok") setAnswering(false);
+                    return outcome;
+                  }}
+                  onCancel={() => setAnswering(false)}
+                />
+              ) : null}
+            </>
           ) : null}
-          {sendable && isAnswerable(question.status) && !answering ? (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={send.busy || send.locked}
-                onClick={() => setAnswering(true)}
-                className={actionClass}
-              >
-                Record answer
-              </button>
-              {question.status === "sent" ? (
-                <button
-                  type="button"
-                  disabled={send.busy || send.locked}
-                  onClick={send.onNoAnswer}
-                  className={actionClass}
-                >
-                  No answer
-                </button>
+          <p className="text-meta text-text-secondary">{flow}</p>
+          {gap.dismissal ? (
+            <div className="flex flex-col gap-1">
+              <p className="text-meta text-text-secondary">{dismissedLabel(gap.dismissal)}</p>
+              {gap.dismissal.note ? (
+                <p className="whitespace-pre-wrap break-words text-body">{gap.dismissal.note}</p>
               ) : null}
             </div>
           ) : null}
-          {sendable && isAnswerable(question.status) && answering ? (
-            <RecordAnswerForm
-              gapTitle={gap.title}
-              disabled={send.busy || send.locked}
-              onSubmit={async (text, answeredOn, settlesGap) => {
-                const outcome = await send.onRecordAnswer(text, answeredOn, settlesGap);
-                // Only a recorded answer closes the form: a failure keeps the typed text.
-                if (outcome === "ok") setAnswering(false);
-                return outcome;
-              }}
-              onCancel={() => setAnswering(false)}
-            />
-          ) : null}
-        </div>
+          {reopenable ? <ReopenForm edit={gapEdit} /> : null}
+        </Section>
       ) : null}
 
       {gap.answer_suggestions.length > 0 ? (
-        <div className="flex flex-col gap-1.5">
-          <h4 className="text-label text-muted-foreground">Suggested answers</h4>
+        <Section>
+          <SectionHeading>Suggested answers</SectionHeading>
           <ul className="flex flex-col gap-2">
             {gap.answer_suggestions.map((suggestion) => (
               <li key={suggestion.id}>
@@ -360,22 +397,27 @@ export function GapInspector({
               </li>
             ))}
           </ul>
-        </div>
+        </Section>
       ) : null}
 
       {gap.answer ? <AnswerSection answer={gap.answer} opportunityId={opportunityId} /> : null}
 
+      <Section>
+        <SectionHeading>Impact</SectionHeading>
+        <ImpactBar impact={gap.impact} coloured />
+        <p className="whitespace-pre-wrap break-words text-body">{gap.impact_basis}</p>
+        {gapEdit && gap.status === "open" ? (
+          <ImpactForm key={`${gap.id}-${gap.row_version}`} gap={gap} edit={gapEdit} />
+        ) : null}
+      </Section>
+
       {gapEdit && gap.status === "open" && canDismiss(gap) ? (
-        <div className="flex flex-col gap-1.5">
-          <h4 className="text-label text-muted-foreground">Dismiss</h4>
-          <DismissForm edit={gapEdit} />
-        </div>
-      ) : null}
-      {gapEdit && (gap.status === "dismissed" || gap.status === "answered") ? (
-        <div className="flex flex-col gap-1.5">
-          <h4 className="text-label text-muted-foreground">Reopen</h4>
-          <ReopenForm edit={gapEdit} />
-        </div>
+        <Section>
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <h4 className="text-body-strong">Dismiss</h4>
+            <DismissForm edit={gapEdit} />
+          </div>
+        </Section>
       ) : null}
 
       <GapHistory history={gap.history} />
@@ -423,7 +465,7 @@ export type QuestionSending = {
 /** A cited passage as an Evidence chip: its `S<n> · <file name>` label and its excerpt. */
 function PassageChip({ passage }: { passage: AnswerPassage }) {
   return (
-    <figure className="flex flex-col gap-1 rounded-md border border-border p-2">
+    <figure className="flex flex-col gap-1.5 rounded-lg border border-border bg-background p-3">
       <figcaption>
         <Chip>{passage.label}</Chip>
       </figcaption>
@@ -439,20 +481,20 @@ function PassageChip({ passage }: { passage: AnswerPassage }) {
  * on the Requirements tab. */
 function AnswerSection({ answer, opportunityId }: { answer: GapAnswer; opportunityId: string }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <h4 className="text-label text-muted-foreground">Answer</h4>
+    <Section>
+      <SectionHeading>Answer</SectionHeading>
       <p className="text-body">{answeredLabel(answer.answered_on)}</p>
-      <p className="text-meta text-muted-foreground">{answerRecordedBy(answer)}</p>
+      <p className="text-meta text-text-secondary">{answerRecordedBy(answer)}</p>
       {answer.passage ? <PassageChip passage={answer.passage} /> : null}
       {answer.requirement_changes.length > 0 ? (
         <div className="flex flex-col gap-1">
-          <p className="text-meta text-muted-foreground">Requirement changes</p>
+          <p className="text-meta text-text-secondary">Requirement changes</p>
           <ul aria-label="Requirement changes" className="flex flex-wrap gap-1.5">
             {answer.requirement_changes.map((change) => (
               <li key={change.requirement_id}>
                 <Link
                   href={requirementHref(opportunityId, change.requirement_id)}
-                  className="inline-flex h-6 items-center rounded-md border border-border px-2 text-label underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+                  className="inline-flex h-6 items-center rounded-md bg-primary-tint px-2 text-label text-primary-text underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   {requirementChangeLabel(change)}
                 </Link>
@@ -461,7 +503,7 @@ function AnswerSection({ answer, opportunityId }: { answer: GapAnswer; opportuni
           </ul>
         </div>
       ) : null}
-    </div>
+    </Section>
   );
 }
 
@@ -478,33 +520,35 @@ function SuggestionCard({
   return (
     <article
       aria-label={possibleAnswerLabel(suggestion)}
-      className="flex flex-col gap-1.5 rounded-md border border-border p-2"
+      className="flex flex-col gap-2 rounded-lg border border-border p-3"
     >
-      <p className="text-meta text-muted-foreground">{possibleAnswerLabel(suggestion)}</p>
+      <p className="text-meta text-text-secondary">{possibleAnswerLabel(suggestion)}</p>
       {suggestion.injection_suspected ? (
-        <p className="inline-flex w-fit items-center rounded-sm border border-gap px-1.5 text-label text-gap">
+        <Pill tone="gap" className="w-fit">
           {INJECTION_SUSPECTED}
-        </p>
+        </Pill>
       ) : null}
       <PassageChip passage={suggestion.passage} />
       {decide ? (
         <div className="flex gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={decide.busy || decide.locked}
             onClick={() => decide.onConfirmSuggestion(suggestion)}
-            className={actionClass}
           >
             Confirm
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={decide.busy || decide.locked}
             onClick={() => decide.onRejectSuggestion(suggestion)}
-            className={actionClass}
           >
             Not an answer
-          </button>
+          </Button>
         </div>
       ) : null}
     </article>
@@ -629,12 +673,12 @@ export function RecordAnswerForm({
         </span>
       </label>
       <div className="flex gap-2">
-        <button type="submit" disabled={disabled} className={actionClass}>
+        <Button type="submit" disabled={disabled} variant="outline" size="sm">
           Record answer
-        </button>
-        <button type="button" onClick={onCancel} className={actionClass}>
+        </Button>
+        <Button type="button" onClick={onCancel} variant="outline" size="sm">
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -714,13 +758,13 @@ export function MarkSentForm({
           onChange={(event) => setSentOn(event.target.value)}
           className={`${fieldClass} h-6 w-auto`}
         />
-        <button type="submit" disabled={disabled} className={actionClass}>
+        <Button type="submit" disabled={disabled} variant="outline" size="sm">
           {confirm}
-        </button>
+        </Button>
         {onCancel ? (
-          <button type="button" onClick={onCancel} className={actionClass}>
+          <Button type="button" onClick={onCancel} variant="outline" size="sm">
             Cancel
-          </button>
+          </Button>
         ) : null}
       </div>
       {error ? (
@@ -814,9 +858,9 @@ function ImpactForm({ gap, edit }: { gap: Gap; edit: GapEditing }) {
         inputRef={reasonRef}
       />
       <div>
-        <button type="submit" disabled={disabled} className={actionClass}>
+        <Button type="submit" disabled={disabled} variant="outline" size="sm">
           Save
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -876,9 +920,15 @@ function DismissForm({ edit }: { edit: GapEditing }) {
         inputRef={noteRef}
       />
       <div>
-        <button type="submit" disabled={disabled} className={actionClass}>
+        <Button
+          type="submit"
+          disabled={disabled}
+          variant="outline"
+          size="sm"
+          className="text-blocker"
+        >
           Dismiss
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -918,9 +968,9 @@ function ReopenForm({ edit }: { edit: GapEditing }) {
         inputRef={reasonRef}
       />
       <div>
-        <button type="submit" disabled={disabled} className={actionClass}>
+        <Button type="submit" disabled={disabled} variant="outline" size="sm">
           Reopen
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -930,13 +980,16 @@ function ReopenForm({ edit }: { edit: GapEditing }) {
  * for sales representatives by the API). */
 function GapHistory({ history }: { history: readonly GapHistoryEntry[] }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <h4 className="text-label text-muted-foreground">History</h4>
-      <ol aria-label="Gap history" className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2 p-4">
+      <SectionHeading>History</SectionHeading>
+      <ol aria-label="Gap history" className="flex flex-col gap-2.5">
         {history.map((entry, index) => (
-          <li key={`${entry.kind}-${entry.at}-${index}`} className="flex flex-col">
+          <li
+            key={`${entry.kind}-${entry.at}-${index}`}
+            className="flex flex-col border-l-2 border-border pl-3"
+          >
             <span className="text-body">{historyAction(entry)}</span>
-            <span className="text-meta text-muted-foreground">{historyByline(entry)}</span>
+            <span className="text-meta text-text-secondary">{historyByline(entry)}</span>
             {entry.reason ? (
               <span className="whitespace-pre-wrap break-words text-meta">{entry.reason}</span>
             ) : null}

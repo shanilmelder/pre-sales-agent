@@ -14,8 +14,8 @@
 Downgrade deletes the mandatory Gaps (the older code can't read their trigger), with their
 questions, history and Requirement links (cascade), then drops the columns and the index.
 
-Revision ID: 0037_mandatory_gaps
-Revises: 0036_knowledge_checklists
+Revision ID: 0038_mandatory_gaps
+Revises: 0037_requirement_tags
 Create Date: 2026-10-23
 """
 
@@ -24,8 +24,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0037_mandatory_gaps"
-down_revision: str | None = "0036_knowledge_checklists"
+revision: str = "0038_mandatory_gaps"
+down_revision: str | None = "0037_requirement_tags"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -9,6 +9,7 @@ import {
 
 import type { components } from "@/lib/api/client";
 import { agentLabel, type AssessmentAgent } from "@/lib/assessments";
+import { severityInfo } from "@/lib/red-team";
 
 export type ConflictsView = components["schemas"]["ConflictsView"];
 export type Conflict = components["schemas"]["ConflictView"];
@@ -24,8 +25,8 @@ export const OPEN_ASSESSMENTS = "Open Assessments";
 /** Shown when the Conflicts could not be read. */
 export const CONFLICTS_NOT_LOADED = "The Conflicts could not be loaded. Try again in a moment.";
 
-export const OPEN_SECTION = "Open";
 export const RESOLVED_SECTION = "Resolved";
+export const NO_OPEN_CONFLICTS = "No open Conflicts.";
 
 /** The Conflict types with their labels. */
 export const TYPES: readonly { value: ConflictType; label: string }[] = [
@@ -98,17 +99,6 @@ export function positionRole(position: ConflictPosition): string {
   return agentLabel(position.agent as AssessmentAgent).replace(/ Agent$/, "");
 }
 
-/** Where a position comes from: "Engineering Assessment v2", "Estimate v3". */
-export function positionSource(position: ConflictPosition): string {
-  if (position.source === "estimate") return positionRole(position);
-  const version = position.assessment_version === null ? "" : ` v${position.assessment_version}`;
-  return `${positionRole(position)} Assessment${version}`;
-}
-
-function lowerFirst(text: string): string {
-  return /^[A-Z][a-z]/.test(text) ? text[0]!.toLowerCase() + text.slice(1) : text;
-}
-
 /** Story 6.2: the tag on a Conflict the Conflict Agent found in the Findings' text. */
 export const DETECTED_FROM_TEXT = "Detected from text";
 
@@ -117,9 +107,67 @@ export function isFromText(conflict: Pick<Conflict, "detected_by">): boolean {
   return conflict.detected_by === "semantic";
 }
 
-/** The row's positions summary: "Engineering: 24 h · PM: not sized". */
-export function positionsSummary(positions: readonly ConflictPosition[]): string {
-  return positions.map((p) => `${positionRole(p)}: ${lowerFirst(p.summary)}`).join(" · ");
+/** The tab heading's counts: "2 open · 5 resolved". */
+export function headerCounts(conflicts: readonly Conflict[]): string {
+  const { open, resolved } = sections(conflicts);
+  return `${open.length} open · ${resolved.length} resolved`;
+}
+
+/** A row's sub-line: "Effort · R1", the type alone without a Requirement, and "· Detected from
+ * text" for one the Conflict Agent found (6.2). */
+export function rowSubline(
+  conflict: Pick<Conflict, "type" | "requirement" | "detected_by">,
+): string {
+  const parts = [typeLabel(conflict.type)];
+  if (conflict.requirement) parts.push(conflict.requirement.label);
+  if (isFromText(conflict)) parts.push(DETECTED_FROM_TEXT);
+  return parts.join(" · ");
+}
+
+/** The decision card's note: "Effort Conflict · Medium severity", plus "Detected from text". */
+export function conflictNote(
+  conflict: Pick<Conflict, "type" | "severity" | "detected_by">,
+): string {
+  const parts = [
+    `${typeLabel(conflict.type)} Conflict`,
+    `${severityInfo(conflict.severity).label} severity`,
+  ];
+  if (isFromText(conflict)) parts.push(DETECTED_FROM_TEXT);
+  return parts.join(" · ");
+}
+
+/** A resolved row's tag: "Resolved by Alex", or "No longer present" when the system closed it. */
+export function resolvedTag(conflict: Pick<Conflict, "resolved_by_name">): string {
+  return conflict.resolved_by_name
+    ? `Resolved by ${conflict.resolved_by_name}`
+    : "No longer present";
+}
+
+/** A resolved row's muted line: a person's decision without who made it (the tag names them):
+ * "Engineering's position, 96 h" or the entered text; else the system's reason ("No longer
+ * present in PM Assessment v2"); null when there is neither. */
+export function resolvedLine(conflict: Conflict): string | null {
+  if (conflict.resolved_by_name) {
+    if (conflict.entered_position) return conflict.entered_position;
+    const chosen = conflict.positions.find((p) => p.position === conflict.chosen_position);
+    if (chosen) return `${positionName(chosen)}, ${chosen.summary}`;
+  }
+  return conflict.resolution_reason ?? null;
+}
+
+/** A position card's pill: the agent in full ("Engineering Agent"), or the Estimate with its
+ * version ("Estimate v3"). */
+export function agentPillLabel(position: ConflictPosition): string {
+  if (position.source === "estimate") return positionRole(position);
+  if (!position.agent) return "Agent";
+  return agentLabel(position.agent as AssessmentAgent);
+}
+
+/** A position card's version line: "Assessment v2"; null for the Estimate (its pill names the
+ * version) or an Assessment without one. */
+export function positionVersion(position: ConflictPosition): string | null {
+  if (position.source === "estimate" || position.assessment_version === null) return null;
+  return `Assessment v${position.assessment_version}`;
 }
 
 /** The tab label's count: "3 open" for screen readers. */

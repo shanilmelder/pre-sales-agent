@@ -178,6 +178,17 @@ async def list_sources(
     return [_record(r) for r in rows]
 
 
+async def ready_sources(uow: UnitOfWork) -> list[tuple[UUID, str]]:
+    """`(source_id, product)` of every active Source whose latest version is embedded
+    (`ready`): the Sources that count as documentation for coverage (Story 4.1)."""
+    rows = await uow.session.execute(
+        select(S.id, S.product)
+        .join(E, (E.source_id == S.id) & (E.version == _latest()))
+        .where(S.status == "active", E.status == "ready")
+    )
+    return [(source_id, product) for source_id, product in rows]
+
+
 async def get_source(
     uow: UnitOfWork, source_id: UUID, *, version: int | None = None
 ) -> SourceRecord | None:

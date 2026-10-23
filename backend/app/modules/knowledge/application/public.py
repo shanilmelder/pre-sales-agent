@@ -4,7 +4,10 @@ Story 3.3: `search` (citable top-k chunks) and `resolve_evidence` (the `knowledg
 Evidence resolver, also registered with `app.platform.evidence` on import).
 
 Story 3.4: the Checklist commands and views, and `find_applicable_checklists` (the latest
-published version of every active Checklist whose scope matches, for Gap detection)."""
+published version of every active Checklist whose scope matches, for Gap detection).
+
+Story 4.1: `get_coverage` (whether active, embedded Sources document the products and
+Integration Types in scope)."""
 
 from app.modules.knowledge.application.catalogue import (
     create_entry,
@@ -46,6 +49,7 @@ from app.modules.knowledge.application.checklists import (
     retire_checklist,
     save_draft,
 )
+from app.modules.knowledge.application.coverage import get_coverage
 from app.modules.knowledge.application.evidence import check_chunk_refs, resolve_evidence
 from app.modules.knowledge.application.models import (
     CatalogueEntry,
@@ -58,7 +62,9 @@ from app.modules.knowledge.application.models import (
 )
 from app.modules.knowledge.application.search import search
 from app.modules.knowledge.application.source_models import (
+    Coverage,
     DownloadLink,
+    IntegrationTypeCoverage,
     IntegrationTypeTag,
     KnowledgeEvidence,
     KnowledgeSearchHit,
@@ -71,6 +77,7 @@ from app.modules.knowledge.application.source_models import (
     KnowledgeSourceVersionList,
     KnowledgeSpan,
     KnowledgeUserRef,
+    ProductCoverage,
     RetireSource,
     SourceChanges,
     SourceText,
@@ -126,12 +133,14 @@ __all__ = [
     "ChecklistVersion",
     "ChecklistVersionList",
     "ChecklistVersionSummary",
+    "Coverage",
     "DownloadLink",
     "DraftInput",
     "DraftItemInput",
     "EmbedErrorCode",
     "EmbedStatus",
     "EntryChanges",
+    "IntegrationTypeCoverage",
     "IntegrationTypeTag",
     "Kind",
     "KnowledgeEvidence",
@@ -147,6 +156,7 @@ __all__ = [
     "KnowledgeUserRef",
     "NewChecklist",
     "NewEntry",
+    "ProductCoverage",
     "RetireChecklist",
     "RetireRequest",
     "RetireSource",
@@ -162,6 +172,7 @@ __all__ = [
     "edit_source",
     "find_applicable_checklists",
     "get_catalogue_entry",
+    "get_coverage",
     "list_catalogue",
     "list_checklists",
     "list_entries",

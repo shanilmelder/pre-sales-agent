@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 
 import { AccessGate, hasAccess } from "@/components/access-gate";
+import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { CatalogueAdmin } from "@/components/admin/catalogue-admin";
 import { AppShell } from "@/components/shell/app-shell";
-import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
+import { PageContent, PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
 import type { CatalogueEntry } from "@/lib/catalogue";
 import { isAdmin } from "@/lib/navigation";
@@ -62,7 +63,7 @@ export default async function AdminCataloguePage() {
   const list = await listEntries();
   return (
     <AppShell me={result.me}>
-      <PageHeader title="Catalogue" subtitle={PAGE_SUBTITLES.admin} />
+      <AdminHeader />
       <PageContent>
         <AdminNav current="/admin/catalogue" />
         {list.kind === "forbidden" ? <NoAccess /> : null}

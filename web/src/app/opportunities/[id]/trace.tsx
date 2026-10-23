@@ -44,7 +44,6 @@ export async function TraceTab({
 
   return (
     <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
-      <h2 className="sr-only">Trace</h2>
       {listed.kind === "ok" ? (
         <TraceSection
           key={traceHref(opportunity.id, filters, page)}
@@ -53,7 +52,10 @@ export async function TraceTab({
           filters={filters}
         />
       ) : (
-        <p>{TRACE_LOAD_FAILED}</p>
+        <>
+          <h2 className="text-section">Trace</h2>
+          <p>{TRACE_LOAD_FAILED}</p>
+        </>
       )}
     </div>
   );

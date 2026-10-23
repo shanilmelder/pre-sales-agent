@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   acceptAllLabel,
   acceptedLabel,
+  assumptionKindLabel,
   carriedLabel,
   COLUMNS,
   convertedLabel,
@@ -10,15 +11,24 @@ import {
   registerSummary,
   staleMessage,
   draftFailure,
+  footerRoleLabel,
+  fromRunLabel,
   hours,
   isDrafting,
+  lifecycleSteps,
+  lineHeading,
+  registerStatus,
   requirementCount,
   roleMixLabel,
+  roleShares,
   ROLES,
   sectionLabel,
   SECTIONS,
-  uncoveredLabel,
+  sourceLabel,
+  uncoveredBanner,
   versionLabel,
+  versionNote,
+  versionTag,
   type SectionName,
 } from "./estimates";
 
@@ -37,14 +47,7 @@ describe("estimate helpers", () => {
       "project_manager",
       "qa",
     ]);
-    expect(COLUMNS).toEqual([
-      "Line",
-      "Covers",
-      "Role mix (%)",
-      "Effort (h)",
-      "Contingency (h)",
-      "Total (h)",
-    ]);
+    expect(COLUMNS).toEqual(["Line", "Covers", "Role mix", "Effort h", "Cont. h", "Total h"]);
     expect(sectionLabel("non_functional")).toBe("Non-functional");
     expect(sectionLabel("future" as SectionName)).toBe("future");
   });
@@ -61,8 +64,54 @@ describe("estimate helpers", () => {
       "Superseded v1",
     );
     expect(requirementCount(1)).toBe("1 Requirement");
-    expect(uncoveredLabel(1)).toBe("1 Requirement not covered");
-    expect(uncoveredLabel(3)).toBe("3 Requirements not covered");
+    expect(uncoveredBanner(1)).toBe("1 Requirement not covered by an Estimate line.");
+    expect(uncoveredBanner(2)).toBe("2 Requirements not covered by an Estimate line.");
+  });
+
+  it("names the version, its source and its lifecycle", () => {
+    const draft = { status: "draft", version: 3, source: "assessments", source_run: 2 } as const;
+    expect(versionTag(draft)).toBe("v3 · Draft");
+    expect(versionTag({ status: "superseded", version: 1 })).toBe("v1 · Superseded");
+    expect(fromRunLabel(draft)).toBe("From Assessments (run 2)");
+    expect(fromRunLabel({ source_run: null })).toBeNull();
+    expect(sourceLabel(draft)).toBe("Assessments (run 2)");
+    expect(sourceLabel({ source: "assessments", source_run: null })).toBe("Assessments");
+    expect(sourceLabel({ source: "model", source_run: null })).toBe("a model draft");
+    expect(versionNote(draft)).toBe(
+      "v3 is a draft built from Assessments (run 2). Each edit needs a reason and is traced.",
+    );
+    expect(versionNote({ ...draft, status: "superseded" })).toBe(
+      "v3 is superseded and read only.",
+    );
+    expect(lifecycleSteps("draft")).toEqual([
+      { label: "Draft", state: "current" },
+      { label: "Baseline", state: "upcoming" },
+      { label: "Superseded", state: "upcoming" },
+    ]);
+    expect(lifecycleSteps("superseded").map((s) => s.state)).toEqual([
+      "passed",
+      "upcoming",
+      "current",
+    ]);
+  });
+
+  it("splits a role mix into bar shares and labels the role totals", () => {
+    expect(
+      roleShares({ engineer: 60, project_manager: 20, qa: 20 }).map((r) => [r.short, r.percent]),
+    ).toEqual([
+      ["E", 60],
+      ["PM", 20],
+      ["QA", 20],
+    ]);
+    expect(
+      roleShares({ engineer: 0, project_manager: 0, qa: 0 }).map((r) => r.percent),
+    ).toEqual([0, 0, 0]);
+    const totals = { role_hours: { engineer: 24.5, project_manager: 8.2, qa: 8.3 } };
+    expect(footerRoleLabel(totals)).toBe("Engineer 24.5 h · PM 8.2 h · QA 8.3 h");
+    expect(
+      footerRoleLabel({ role_hours: { engineer: 10, project_manager: 2, qa: 0 } }),
+    ).toBe("Engineer 10.0 h · PM 2.0 h");
+    expect(lineHeading({ section: "integration", position: 2 })).toBe("Integration · line 2");
   });
 
   it("says why a draft failed", () => {
@@ -91,6 +140,16 @@ describe("Assumptions Register helpers", () => {
       "7 · 6 accepted · 1 not accepted",
     );
     expect(acceptAllLabel(3)).toBe("Accept all (3)");
+    expect(registerStatus({ not_accepted: 2 })).toEqual({
+      tone: "blocker",
+      label: "2 not accepted block submit",
+    });
+    expect(registerStatus({ not_accepted: 0 })).toEqual({
+      tone: "resolved",
+      label: "All accepted",
+    });
+    expect(assumptionKindLabel("condition")).toBe("Condition");
+    expect(assumptionKindLabel("contingency")).toBe("Contingency");
   });
 
   it("says who accepted and when, in UTC", () => {
@@ -99,7 +158,7 @@ describe("Assumptions Register helpers", () => {
         accepted_by: { id: "u", name: "[NAME]" },
         accepted_at: "2026-10-05T23:30:00Z",
       }),
-    ).toBe("Accepted by [NAME], 5 Oct 2026");
+    ).toBe("Accepted by [NAME] · 5 Oct 2026");
     expect(acceptedLabel({ accepted_by: null, accepted_at: null })).toBe(
       "Accepted by someone",
     );

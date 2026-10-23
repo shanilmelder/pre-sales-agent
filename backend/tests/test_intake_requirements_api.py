@@ -54,12 +54,14 @@ def test_before_any_extraction_the_list_is_empty(client: TestClient, sync_engine
         "extraction": None,
         "can_start_extraction": True,
         "can_edit_requirements": True,
+        "untagged_integration_count": 0,
     }
     assert theirs.json() == {
         "items": [],
         "extraction": None,
         "can_start_extraction": False,
         "can_edit_requirements": False,
+        "untagged_integration_count": 0,
     }
 
 

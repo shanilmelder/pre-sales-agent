@@ -3,7 +3,8 @@
 Clarification Questions under `…/clarification-questions`; Story 4.4: changing a Gap's impact,
 dismissing and reopening it under `…/gaps/{gap_id}`, and approving selected questions; Story
 4.6: exporting the approved questions, marking them sent and "No answer"; Story 4.7:
-recording answers, and confirming or rejecting suggested ones under `…/answer-matches`."""
+recording answers, and confirming or rejecting suggested ones under `…/answer-matches`; Story
+4.1: the Gaps tab context, `GET …/gaps/context`."""
 
 from typing import Annotated, Any
 from uuid import UUID
@@ -21,6 +22,7 @@ from app.modules.gaps.application.public import (
     GapDismissalRequest,
     GapList,
     GapReopening,
+    GapsContext,
     ImpactChange,
     MarkSentRequest,
     MarkSentResult,
@@ -71,6 +73,16 @@ async def list_gaps(
     no reason or note text. Answered Gaps (Story 4.7) follow the open ones."""
     settings: Settings = request.app.state.settings
     return await gaps.list_gaps(uow, actor, opportunity_id, store=BlobStore(settings.storage_dir))
+
+
+@router.get("/gaps/context", operation_id="get_gaps_context", responses=_responses(404, 422))
+async def get_gaps_context(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) -> GapsContext:
+    """What the Gaps tab shows above the list (Story 4.1): the Checklists that apply (by
+    the Opportunity's products, its industry and the Integration Types on its active
+    Requirements), how many integration Requirements have no Integration Type, and the
+    products and Integration Types in scope that no active, embedded Knowledge Source
+    documents. Anyone who can read the Opportunity, sales representatives included."""
+    return await gaps.gaps_context(uow, actor, opportunity_id)
 
 
 @router.post(

@@ -40,6 +40,10 @@ const controlClass =
   "h-8 rounded-md border border-input bg-background px-2 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-primary aria-invalid:border-destructive";
 const labelClass = "flex flex-col gap-1 text-meta text-muted-foreground";
 
+/** The quiet "Clear filters" link that follows the chips. */
+export const clearFiltersClass =
+  "inline-flex items-center rounded-md px-2.5 py-[5px] text-text-secondary outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary text-[13px] leading-[1.4]";
+
 type DateKey = "from" | "to";
 type Drafts = Record<DateKey, string>;
 
@@ -236,7 +240,7 @@ export function FilterBar({
         <Link
           href={basePath}
           onClick={clear}
-          className="inline-flex items-center rounded-md px-2.5 py-[5px] text-text-secondary outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary text-[13px] leading-[1.4]"
+          className={clearFiltersClass}
         >
           Clear filters
         </Link>
@@ -261,7 +265,7 @@ function dateRangeLabel(from?: string, to?: string): string | undefined {
 
 /** A dashed chip that opens its control(s) in a popover. With a value applied it reads
  * "Label: value" in the solid primary tint. */
-function FilterChip({
+export function FilterChip({
   label,
   value,
   closeOnChange = false,

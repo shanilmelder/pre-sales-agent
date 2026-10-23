@@ -1,5 +1,6 @@
 // Decision Trace display helpers (Story 9.8, demo slice). Safe on server and client.
 import type { components } from "@/lib/api/client";
+import { hours, roleMixLabel, ROLES, type RoleMix } from "@/lib/estimates";
 import { tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
 
 export type TracePage = components["schemas"]["TracePage"];
@@ -15,6 +16,9 @@ export const NO_EVENTS_BODY = "Decisions and Evidence are recorded here as work 
 export const OPEN_OVERVIEW = "Open Overview";
 export const NO_MATCHES = "No events match these filters.";
 export const CLEAR_FILTERS = "Clear filters";
+export const TRACE_APPEND_ONLY = "Trace rows are append-only and cannot be edited.";
+export const TRACE_REASONING_NOTE =
+  "Trace rows are append-only. Model reasoning is not stored, only decisions and Evidence.";
 export const TRACE_LOAD_FAILED =
   "The Decision Trace could not be loaded. Try again in a moment.";
 
@@ -37,6 +41,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "intake.requirement.deleted": "Requirement deleted",
   "intake.requirement.split": "Requirement split",
   "intake.requirement.merged": "Requirements merged",
+  "intake.requirement.integration_types_tagged": "Integration Types tagged",
   "intake.requirement_change.proposed": "Requirement change proposed",
   "intake.requirement_change.accepted": "Requirement change accepted",
   "intake.requirement_change.rejected": "Requirement change rejected",
@@ -186,6 +191,46 @@ export function fieldValue(value: unknown): string {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+// --- A line edit's change ------------------------------------------------------------------
+
+export const LINE_EDITED = "estimates.estimate_line.edited";
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+/** A role mix as the Estimate tab shows it ("E 70 · PM 20 · QA 10"), or null when the value
+ * isn't an object with a number for every role in `ROLES`. */
+export function roleMixText(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!ROLES.every((role) => isNumber(record[role.value]))) return null;
+  return roleMixLabel(record as RoleMix);
+}
+
+/** "12.0 h · E 70 · PM 20 · QA 10", or null when the values are missing or odd. */
+function lineValues(hoursValue: unknown, mix: unknown): string | null {
+  const mixText = roleMixText(mix);
+  return isNumber(hoursValue) && mixText ? `${hours(hoursValue)} h · ${mixText}` : null;
+}
+
+/** A payload value as text: a `*_role_mix` field as a role mix when it is a valid one, else
+ * `fieldValue`. */
+export function payloadValue(name: string, value: unknown): string {
+  return (name.endsWith("_role_mix") && roleMixText(value)) || fieldValue(value);
+}
+
+/** An Estimate line edit's before and after values in words, for the inspector's Change
+ * section. Null for any other event, or when the payload lacks the hours or a role mix. */
+export function lineEditChange(
+  event: Pick<TraceEvent, "event_type" | "payload">,
+): { before: string; after: string } | null {
+  if (event.event_type !== LINE_EDITED) return null;
+  const payload = event.payload ?? {};
+  const before = lineValues(payload.before_hours, payload.before_role_mix);
+  const after = lineValues(payload.after_hours, payload.after_role_mix);
+  return before && after ? { before, after } : null;
 }
 
 const ABSOLUTE_FORMAT = new Intl.DateTimeFormat("en-GB", {

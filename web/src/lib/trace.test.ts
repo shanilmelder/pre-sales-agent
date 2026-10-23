@@ -7,6 +7,8 @@ import {
   EVENT_LABELS,
   fieldLabel,
   fieldValue,
+  lineEditChange,
+  payloadValue,
   pageCount,
   parseTraceFilters,
   relativeTime,
@@ -188,5 +190,56 @@ describe("URL state", () => {
   it("counts pages", () => {
     expect(pageCount({ total: 0, page_size: 50 })).toBe(1);
     expect(pageCount({ total: 120, page_size: 50 })).toBe(3);
+  });
+});
+
+describe("lineEditChange", () => {
+  const EDITED = {
+    event_type: "estimates.estimate_line.edited",
+    payload: {
+      version: 3,
+      before_hours: 12,
+      after_hours: 16.5,
+      before_role_mix: { engineer: 70, project_manager: 20, qa: 10 },
+      after_role_mix: { engineer: 60, project_manager: 20, qa: 20 },
+      reason: "[REASON]",
+    },
+  };
+
+  it("gives the before and after hours and role mix in words", () => {
+    expect(lineEditChange(EDITED)).toEqual({
+      before: "12.0 h · E 70 · PM 20 · QA 10",
+      after: "16.5 h · E 60 · PM 20 · QA 20",
+    });
+  });
+
+  it("is null for any other event", () => {
+    expect(
+      lineEditChange({ ...EDITED, event_type: "estimates.assumption.accepted" }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["no payload fields", {}],
+    ["missing after hours", { ...EDITED.payload, after_hours: undefined }],
+    ["hours as text", { ...EDITED.payload, before_hours: "12" }],
+    ["a role mix that is a list", { ...EDITED.payload, after_role_mix: [60, 20, 20] }],
+    [
+      "a role mix missing QA",
+      { ...EDITED.payload, before_role_mix: { engineer: 80, project_manager: 20 } },
+    ],
+    ["a null role mix", { ...EDITED.payload, before_role_mix: null }],
+  ])("is null for %s", (_, payload) => {
+    expect(lineEditChange({ ...EDITED, payload })).toBeNull();
+  });
+});
+
+describe("payloadValue", () => {
+  it("formats a valid role mix field like the Estimate tab; anything else as fieldValue", () => {
+    const mix = { engineer: 70, project_manager: 20, qa: 10 };
+    expect(payloadValue("before_role_mix", mix)).toBe("E 70 · PM 20 · QA 10");
+    expect(payloadValue("after_role_mix", { engineer: 70 })).toBe('{"engineer":70}');
+    expect(payloadValue("after_role_mix", null)).toBe("None");
+    expect(payloadValue("kind", mix)).toBe(fieldValue(mix));
   });
 });

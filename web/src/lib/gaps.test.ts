@@ -1,14 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  checklistChipLabel,
+  coverageBanner,
+  coverageHref,
+  untaggedBanner,
+  untaggedHref,
+  areaFilterOptions,
   approveAllLabel,
   approvedCount,
   approvedLabel,
   categoryLabel,
   copiedCount,
   detectionFailure,
+  filterGaps,
   gapCount,
+  gapsSummary,
   GAP_CATEGORIES,
+  hasGapFilters,
+  impactTone,
+  NO_GAP_FILTERS,
+  QUESTION_FILTER_OPTIONS,
+  questionFlow,
   impactLabel,
   impactLevel,
   isDetecting,
@@ -122,8 +135,8 @@ describe("question helpers (Story 4.5)", () => {
 });
 
 describe("sending helpers (Story 4.6)", () => {
-  it("labels Sent (neutral) and No answer (gap amber); both count as sent", () => {
-    expect(questionStatus("sent")).toMatchObject({ label: "Sent", tone: "text-muted-foreground" });
+  it("labels Sent (primary) and No answer (gap amber); both count as sent", () => {
+    expect(questionStatus("sent")).toMatchObject({ label: "Sent", tone: "text-primary" });
     expect(questionStatus("unanswered")).toMatchObject({ label: "No answer", tone: "text-gap" });
     expect([isSent("sent"), isSent("unanswered"), isSent("approved")]).toEqual([
       true,
@@ -170,5 +183,106 @@ describe("sending helpers (Story 4.6)", () => {
     expect(questionsExportUrl("o 1", "eml")).toBe("/api/opportunities/o%201/questions-export?format=eml");
     expect(questionsExportFailureReason(409)).toBe("there are no approved questions to export");
     expect(questionsExportFailureReason(null)).toBe("the export service couldn't be reached");
+  });
+});
+
+describe("Gaps tab redesign helpers", () => {
+  const items = [
+    { status: "open", impact: "high", category: "data_volumes", question: { status: "drafted" } },
+    { status: "open", impact: "medium", category: "commercial", question: { status: "approved" } },
+    { status: "open", impact: "low", category: "data_volumes", question: { status: "sent" } },
+    { status: "dismissed", impact: "high", category: "other", question: { status: "drafted" } },
+    { status: "answered", impact: "low", category: "commercial", question: null },
+  ] as unknown as Gap[];
+
+  it("summarises the list, appending how many show while filtering", () => {
+    expect(gapsSummary(items)).toBe("5 total · 3 open · ranked by impact");
+    expect(gapsSummary(items, 1)).toBe("5 total · 3 open · ranked by impact · showing 1");
+  });
+
+  it("tones impacts: High blocker, Medium gap, Low neutral", () => {
+    expect(["high", "medium", "low"].map((i) => impactTone(i as Impact))).toEqual([
+      "text-blocker",
+      "text-gap",
+      "text-neutral",
+    ]);
+  });
+
+  it("says where the question is in its flow", () => {
+    expect(questionFlow("drafted")).toBe("Draft, then Approved, Sent and Answered.");
+    expect(questionFlow("approved")).toBe(
+      "Approved. Export it, send it to the customer, then mark it sent.",
+    );
+    expect(questionFlow("sent")).toBe("Sent. Record the customer answer to close this Gap.");
+    expect(questionFlow("unanswered")).toBe(questionFlow("sent"));
+    expect(questionFlow("answered")).toBe("Answered. Related Requirements have proposed updates.");
+    expect(questionFlow("dismissed")).toBe("Dismissed with a reason.");
+    expect(questionFlow("superseded" as never)).toBeNull();
+  });
+
+  it("filters with AND, keeping the order; no filter keeps every Gap", () => {
+    expect(hasGapFilters(NO_GAP_FILTERS)).toBe(false);
+    expect(filterGaps(items, NO_GAP_FILTERS)).toEqual(items);
+    expect(filterGaps(items, { ...NO_GAP_FILTERS, impact: "high" })).toEqual([items[0], items[3]]);
+    const both = { impact: "high", category: "data_volumes", question: null } as const;
+    expect(hasGapFilters(both)).toBe(true);
+    expect(filterGaps(items, both)).toEqual([items[0]]);
+    expect(filterGaps(items, { ...NO_GAP_FILTERS, question: "sent" })).toEqual([items[2]]);
+    // A Gap whose question the viewer can't see matches no question status.
+    expect(filterGaps(items, { ...NO_GAP_FILTERS, question: "answered" })).toEqual([]);
+  });
+
+  it("offers the areas present, in the categories' order, and the question statuses", () => {
+    expect(areaFilterOptions(items).map((o) => o.label)).toEqual([
+      "Data volumes",
+      "Commercial",
+      "Other",
+    ]);
+    expect(
+      areaFilterOptions([{ category: "brand_new" as GapCategory }]).map((o) => o.label),
+    ).toEqual(["brand_new"]);
+    expect(QUESTION_FILTER_OPTIONS.map((o) => o.label)).toEqual([
+      "Draft",
+      "Approved",
+      "Sent",
+      "No answer",
+      "Answered",
+    ]);
+  });
+});
+
+describe("the Gaps tab context copy (Story 4.1)", () => {
+  it("labels a Checklist chip with its version", () => {
+    expect(checklistChipLabel({ name: "Security baseline", version: 3 })).toBe(
+      "Security baseline · v3",
+    );
+  });
+
+  it("uses has for one untagged Requirement and have for more", () => {
+    expect(untaggedBanner(1)).toBe(
+      "1 integration Requirement has no Integration Type — Checklists may not apply",
+    );
+    expect(untaggedBanner(3)).toBe(
+      "3 integration Requirements have no Integration Type — Checklists may not apply",
+    );
+    expect(untaggedHref("o 1")).toBe("/opportunities/o%201/requirements?untagged=integration");
+  });
+
+  it("joins the uncovered parts, leaving out zero ones, or is null with none", () => {
+    const type = { id: "t1", name: "EDI" };
+    expect(coverageBanner({ products: [], integration_types: [] })).toBeNull();
+    expect(coverageBanner({ products: ["A"], integration_types: [type, type] })).toBe(
+      "No documentation for 2 integration types and 1 product in scope — Gap detection may be " +
+        "incomplete",
+    );
+    expect(coverageBanner({ products: ["A", "B"], integration_types: [] })).toBe(
+      "No documentation for 2 products in scope — Gap detection may be incomplete",
+    );
+    expect(coverageHref({ products: ["A&B"], integration_types: [type] })).toBe(
+      "/knowledge?integration_type=t1",
+    );
+    expect(coverageHref({ products: ["A&B"], integration_types: [] })).toBe(
+      "/knowledge?product=A%26B",
+    );
   });
 });

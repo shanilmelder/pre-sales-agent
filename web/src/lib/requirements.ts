@@ -29,16 +29,15 @@ export function classificationLabel(value: Classification): string {
   return CLASSIFICATIONS.find((c) => c.value === value)?.label ?? value;
 }
 
-/** A Requirement's origin as the list and inspector show it: a person's edit is "Edited",
- * and one a person added (`human` with no Evidence, Story 2.6) is "Manual". */
-export function originLabel(origin: RequirementOrigin, evidenceCount?: number): string {
-  if (origin === "extracted") return "Extracted";
-  return evidenceCount === 0 ? MANUAL : "Edited";
-}
-
-/** The origin label of a Requirement as it stands. */
-export function requirementOrigin(item: Pick<Requirement, "origin" | "evidence">): string {
-  return originLabel(item.origin, item.evidence.length);
+/** Where a Requirement came from, as its row and the inspector say it: "Extracted", "Edited
+ * by Ann Lee" once a person changed it ("Edited" when the API doesn't name them), or "Added by
+ * a person" for one a person created (`human` with no Evidence, Story 2.6). */
+export function originLine(
+  item: Pick<Requirement, "origin" | "evidence" | "last_changed_by">,
+): string {
+  if (item.origin === "extracted") return "Extracted";
+  if (item.evidence.length === 0) return ADDED_BY_A_PERSON;
+  return item.last_changed_by ? `Edited by ${item.last_changed_by.name}` : "Edited";
 }
 
 /** A Requirement's stable label: "R4". */
@@ -77,10 +76,14 @@ export function requirementTextProblem(raw: string): string | null {
 
 // --- shaping the list (Story 2.6) ------------------------------------------------------------
 
-export const MANUAL = "Manual";
+export const ADDED_BY_A_PERSON = "Added by a person";
 export const NO_EVIDENCE = "No Evidence.";
-export const ADD_REQUIREMENT = "Add Requirement";
+export const ADD_REQUIREMENT = "Add requirement";
 export const SPLIT_REQUIREMENT = "Split";
+export const EDIT = "Edit";
+export const MERGE = "Merge";
+export const SELECTED_FOR_MERGE = "Selected for merge";
+export const CONFIRM_REQUIREMENT = "Confirm requirement";
 export const DELETE_REQUIREMENT = "Delete";
 export const DELETE_REASON_LABEL = "Why delete this Requirement?";
 export const VIEW_DIFF = "View diff";
@@ -133,6 +136,89 @@ export function outdatedNotice(items: readonly OutdatedAssessment[]): string {
   return `These Assessments used Requirements that have changed since: ${items
     .map(outdatedLabel)
     .join(", ")}.`;
+}
+
+// --- state, counts and filters (the Requirements tab redesign) ---------------------------------
+
+/** A Requirement's state as its pill shows it: a pending change outranks confirmation. */
+export type RequirementState = "confirmed" | "unconfirmed" | "pending";
+
+export const REQUIREMENT_STATES: readonly { value: RequirementState; label: string }[] = [
+  { value: "confirmed", label: CONFIRMED },
+  { value: "unconfirmed", label: "Unconfirmed" },
+  { value: "pending", label: PENDING_CHANGE },
+];
+
+export function requirementState(
+  item: Pick<Requirement, "confirmed_at" | "pending_change">,
+): RequirementState {
+  if (item.pending_change) return "pending";
+  return item.confirmed_at ? "confirmed" : "unconfirmed";
+}
+
+export function stateLabel(state: RequirementState): string {
+  return REQUIREMENT_STATES.find((s) => s.value === state)?.label ?? state;
+}
+
+/** How many Requirements there are, how many are confirmed (as their pills say: one with a
+ * pending change is not) and how many are left to review (the rest). */
+export function requirementCounts(items: readonly Requirement[]): {
+  total: number;
+  confirmed: number;
+  toReview: number;
+} {
+  const confirmed = items.filter((item) => requirementState(item) === "confirmed").length;
+  return { total: items.length, confirmed, toReview: items.length - confirmed };
+}
+
+/** The tab heading's counts: "5 total · 3 confirmed · 2 to review". */
+export function countsLine(items: readonly Requirement[]): string {
+  const { total, confirmed, toReview } = requirementCounts(items);
+  return `${total} total · ${confirmed} confirmed · ${toReview} to review`;
+}
+
+/** A group heading's counts: "4 · 3 confirmed". */
+export function groupSummary(items: readonly Requirement[]): string {
+  return `${items.length} · ${requirementCounts(items).confirmed} confirmed`;
+}
+
+/** The banner over the list: "1 pending change from incremental intake". */
+export function pendingChangesTitle(n: number): string {
+  return `${n} pending ${n === 1 ? "change" : "changes"} from incremental intake`;
+}
+
+/** The tab's client-side filters; null shows every value. */
+export type RequirementFilters = {
+  category: Classification | null;
+  state: RequirementState | null;
+};
+
+export const NO_FILTERS: RequirementFilters = { category: null, state: null };
+export const NO_MATCH = "No Requirements match these filters.";
+export const CLEAR_FILTERS = "Clear filters";
+/** The banner's link that opens a changed Requirement in the inspector. */
+export const REVIEW = "Review";
+
+/** The Requirements the filters let through, in their order. */
+export function filterRequirements(
+  items: readonly Requirement[],
+  filters: RequirementFilters,
+): Requirement[] {
+  return items.filter(
+    (item) =>
+      (filters.category === null || item.classification === filters.category) &&
+      (filters.state === null || requirementState(item) === filters.state),
+  );
+}
+
+/** The Category filter's choices: the classifications present, in grouping order. */
+export function categoriesPresent(
+  items: readonly Requirement[],
+): { value: Classification; label: string }[] {
+  return groupRequirements(items).map(({ classification, label }) => ({
+    value: classification,
+    label,
+  }));
 }
 
 /** The Evidence inspector's passage states (Story 2.5 Part B). */
@@ -219,3 +305,27 @@ export const EXTRACTION_POLL_MS = 2000;
 
 /** Polling stops after this long of continuous extracting (a reload resumes it). */
 export const EXTRACTION_POLL_LIMIT_MS = 15 * 60 * 1000;
+
+// --- Integration Type tags (Story 4.1) --------------------------------------------------------
+
+export type RequirementIntegrationType = components["schemas"]["RequirementIntegrationType"];
+
+export const INTEGRATION_TYPES = "Integration Types";
+export const NO_INTEGRATION_TYPES = "None";
+export const TAG_SAVED = "Integration Types saved";
+/** The `?untagged=` value that lists only integration Requirements with no Integration Type. */
+export const UNTAGGED_INTEGRATION = "integration";
+export const SHOW_ALL = "Show all";
+
+/** An active Requirement classified `integration` with no Integration Type. */
+export function isUntaggedIntegration(
+  item: Pick<Requirement, "classification" | "integration_types">,
+): boolean {
+  return item.classification === "integration" && item.integration_types.length === 0;
+}
+
+/** The `?untagged=integration` status bar. */
+export function untaggedFilterStatus(n: number): string {
+  const noun = n === 1 ? "Requirement" : "Requirements";
+  return `Showing ${n} integration ${noun} with no Integration Type`;
+}

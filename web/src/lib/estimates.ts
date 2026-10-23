@@ -42,14 +42,7 @@ export const ROLES: readonly {
 ];
 
 /** The grid's columns (template `demo-1`). */
-export const COLUMNS = [
-  "Line",
-  "Covers",
-  "Role mix (%)",
-  "Effort (h)",
-  "Contingency (h)",
-  "Total (h)",
-] as const;
+export const COLUMNS = ["Line", "Covers", "Role mix", "Effort h", "Cont. h", "Total h"] as const;
 
 /** Hours as the grid shows them: one decimal place. */
 export function hours(value: number): string {
@@ -83,14 +76,83 @@ export function versionPillLabel(
   return `Estimate v${version.version} · from Assessments${run}`;
 }
 
+/** The toolbar's version pill: "v3 · Draft". */
+export function versionTag(version: Pick<EstimateVersion, "status" | "version">): string {
+  return `v${version.version} · ${versionStatusLabel(version.status)}`;
+}
+
+/** "From Assessments (run 2)", or null when the version names no run. */
+export function fromRunLabel(version: Pick<EstimateVersion, "source_run">): string | null {
+  return version.source_run == null ? null : `From Assessments (run ${version.source_run})`;
+}
+
+/** What a version was built from, in a sentence: "Assessments (run 2)", "Assessments" or
+ * "a model draft". */
+export function sourceLabel(version: Pick<EstimateVersion, "source" | "source_run">): string {
+  if (version.source !== "assessments") return "a model draft";
+  return version.source_run == null ? "Assessments" : `Assessments (run ${version.source_run})`;
+}
+
+export type LifecycleState = "passed" | "current" | "upcoming";
+
+/** The Version lifecycle stepper: Draft → Baseline → Superseded, the version's status current,
+ * Draft passed once superseded. The API has no Baseline status, so Baseline is never current
+ * or passed. */
+export function lifecycleSteps(
+  status: EstimateVersion["status"],
+): { label: string; state: LifecycleState }[] {
+  const labels = ["Draft", "Baseline", "Superseded"];
+  const at = status === "draft" ? 0 : 2;
+  return labels.map((label, i) => ({
+    label,
+    state: i === at ? "current" : i === 0 && i < at ? "passed" : "upcoming",
+  }));
+}
+
+/** The note under the stepper. */
+export function versionNote(
+  version: Pick<EstimateVersion, "status" | "version" | "source" | "source_run">,
+): string {
+  return version.status === "draft"
+    ? `v${version.version} is a draft built from ${sourceLabel(version)}. Each edit needs a reason and is traced.`
+    : `v${version.version} is superseded and read only.`;
+}
+
+/** "1 Requirement not covered by an Estimate line." */
+export function uncoveredBanner(n: number): string {
+  return `${requirementCount(n)} not covered by an Estimate line.`;
+}
+
+/** A role mix as bar segments: each role's share in percent of the whole (0 when empty). */
+export function roleShares(
+  mix: RoleMix,
+): { value: RoleName; label: string; short: string; share: number; percent: number }[] {
+  const sum = mixSum(mix);
+  return ROLES.map((role) => ({
+    ...role,
+    share: mix[role.value],
+    percent: sum > 0 ? (mix[role.value] / sum) * 100 : 0,
+  }));
+}
+
+/** The grid footer's role hours: "Engineer 24.5 h · PM 8.2 h · QA 8.3 h" (QA only above 0). */
+export function footerRoleLabel(totals: Pick<Totals, "role_hours">): string {
+  return ROLES.filter((role) => role.value !== "qa" || totals.role_hours.qa > 0)
+    .map((role) => {
+      const name = role.value === "engineer" ? role.label : role.short;
+      return `${name} ${hours(totals.role_hours[role.value])} h`;
+    })
+    .join(" · ");
+}
+
+/** The inspector's line heading: "Integration · line 2". */
+export function lineHeading(line: Pick<EstimateLine, "section" | "position">): string {
+  return `${sectionLabel(line.section)} · line ${line.position}`;
+}
+
 /** "1 Requirement", "3 Requirements". */
 export function requirementCount(n: number): string {
   return `${n} ${n === 1 ? "Requirement" : "Requirements"}`;
-}
-
-/** "1 Requirement not covered", "2 Requirements not covered". */
-export function uncoveredLabel(n: number): string {
-  return `${requirementCount(n)} not covered`;
 }
 
 /** The header while a draft is queued or running. */
@@ -304,6 +366,21 @@ export function registerSummary(counts: AssumptionCounts): string {
   return `${counts.total} · ${counts.accepted} accepted · ${counts.not_accepted} not accepted`;
 }
 
+/** The Register's summary pill: red "{n} not accepted block submit", else green "All accepted". */
+export function registerStatus(counts: Pick<AssumptionCounts, "not_accepted">): {
+  tone: "blocker" | "resolved";
+  label: string;
+} {
+  return counts.not_accepted > 0
+    ? { tone: "blocker", label: `${counts.not_accepted} not accepted block submit` }
+    : { tone: "resolved", label: "All accepted" };
+}
+
+/** "Condition" or "Contingency". */
+export function assumptionKindLabel(kind: AssumptionKind): string {
+  return kind === "contingency" ? "Contingency" : "Condition";
+}
+
 /** "Accept all (3)". */
 export function acceptAllLabel(n: number): string {
   return `Accept all (${n})`;
@@ -319,13 +396,13 @@ export function registerDate(iso: string): string {
   }).format(new Date(iso));
 }
 
-/** "Accepted by Jane Doe, 5 Oct 2026". */
+/** "Accepted by Jane Doe · 5 Oct 2026". */
 export function acceptedLabel(
   assumption: Pick<Assumption, "accepted_by" | "accepted_at">,
 ): string {
   const name = assumption.accepted_by?.name ?? "someone";
   return assumption.accepted_at
-    ? `Accepted by ${name}, ${registerDate(assumption.accepted_at)}`
+    ? `Accepted by ${name} · ${registerDate(assumption.accepted_at)}`
     : `Accepted by ${name}`;
 }
 

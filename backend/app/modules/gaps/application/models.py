@@ -22,6 +22,7 @@ from app.modules.gaps.domain.gaps import (
     QuestionStatus,
 )
 from app.modules.intake.application.public import RequirementChangeRef
+from app.modules.knowledge.application.public import ChecklistDomain
 from app.modules.opportunities.application.public import UserRef
 
 
@@ -364,3 +365,42 @@ class GapList(BaseModel):
     can_edit_questions: bool
     can_edit_gaps: bool
     can_send_questions: bool
+
+
+# --- the Gaps tab context (Story 4.1) -------------------------------------------------------
+
+
+class GapsContextChecklist(BaseModel):
+    """A Checklist that applies to the Opportunity, at its latest published version."""
+
+    checklist_id: str
+    version: int = Field(ge=1)
+    name: str
+    domain: ChecklistDomain
+
+
+class UncoveredIntegrationType(BaseModel):
+    """An Integration Type in scope that no active, embedded Knowledge Source documents."""
+
+    id: str
+    name: str
+
+
+class UncoveredScope(BaseModel):
+    """What is in scope but undocumented in the Knowledge Base: the Opportunity's products
+    and its Requirements' Integration Types with no active, embedded Source."""
+
+    products: list[str]
+    integration_types: list[UncoveredIntegrationType]
+
+
+class GapsContext(BaseModel):
+    """What the Gaps tab shows above the list (Story 4.1). `applicable_checklists`: the
+    Checklists whose scope matches the Opportunity's products, its industry or the
+    Integration Types on its active Requirements, by name. `untagged_integration_count`: how
+    many active Requirements classified `integration` have no Integration Type.
+    `uncovered`: the scope the Knowledge Base doesn't document yet."""
+
+    applicable_checklists: list[GapsContextChecklist]
+    untagged_integration_count: int = Field(ge=0)
+    uncovered: UncoveredScope

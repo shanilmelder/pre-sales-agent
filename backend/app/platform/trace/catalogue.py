@@ -272,6 +272,18 @@ class IntakeRequirementMerged(TracePayload):
 
 
 @register
+class IntakeRequirementIntegrationTypesTagged(TracePayload):
+    """A person changed a Requirement's Integration Type tags (Story 4.1). Subject: the
+    Requirement (`intake.requirement`), at its current version (tags are not versioned).
+    `added` and `removed`: catalogue entry ids."""
+
+    event_type: ClassVar[str] = "intake.requirement.integration_types_tagged"
+
+    added: list[str]
+    removed: list[str]
+
+
+@register
 class IntakeRequirementConfirmed(TracePayload):
     """A person confirmed a Requirement (Story 2.6), on its own or with **Confirm all**,
     locking it against re-extraction. Subject: the Requirement (`intake.requirement`)."""

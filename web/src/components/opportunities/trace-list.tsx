@@ -13,6 +13,9 @@ import {
   type MouseEvent,
 } from "react";
 
+import { ActorTile } from "@/components/opportunities/actor-tile";
+import { clearFiltersClass, FilterChip } from "@/components/opportunities/filter-bar";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import {
@@ -27,18 +30,21 @@ import {
   CLEAR_FILTERS,
   eventLabel,
   fieldLabel,
-  fieldValue,
   hasTraceFilters,
+  lineEditChange,
   NO_EVENTS_BODY,
   NO_EVENTS_TITLE,
   NO_MATCHES,
   OPEN_OVERVIEW,
   pageCount,
+  payloadValue,
   relativeTime,
   subjectHref,
   subjectLabel,
   subjectLinkText,
   subjectText,
+  TRACE_APPEND_ONLY,
+  TRACE_REASONING_NOTE,
   traceHref,
   withTraceFilter,
   type TraceEvent,
@@ -51,16 +57,18 @@ import { tabHref } from "@/lib/workspace";
 const controlClass =
   "h-8 rounded-md border border-input bg-background px-2 text-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-primary";
 const labelClass = "flex flex-col gap-1 text-meta text-muted-foreground";
-const linkButtonClass =
-  "inline-flex h-8 items-center rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary";
+const outlineLink = `${buttonVariants({ variant: "outline", size: "sm" })} text-control`;
+const eyebrowClass = "text-eyebrow text-text-secondary uppercase";
 
-/** The trace events as dense 32px rows, newest first: the time (relative; absolute on
- * hover), the actor, the event in plain words and the subject as a link to its tab.
+/** The trace events in one card, newest first. Each row is a 4-column grid: the time
+ * (relative; absolute on hover), the actor (initials tile and name), the event in plain words
+ * and the subject as a link to its tab. Below `md` the columns stack: time and actor above the
+ * event, the subject on its own line.
  *
  * The list is one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows, and
  * Enter, Space or a click opens the row in the inspector. The selected row is
- * `aria-selected`. */
+ * `aria-selected` and tinted. */
 export function TraceList({
   opportunityId,
   items,
@@ -121,11 +129,12 @@ export function TraceList({
             key={item.id}
             role="row"
             aria-selected={selected}
-            className={`flex items-center gap-2 border-b border-border ${
-              selected ? "bg-muted" : "hover:bg-muted/60"
+            data-actor-type={item.actor.type}
+            className={`grid grid-cols-1 gap-x-4 border-b px-5 border-border text-[13px] leading-5 last:border-b-0 md:grid-cols-[130px_190px_minmax(0,1fr)_190px] md:items-center ${
+              selected ? "bg-primary-tint" : "hover:bg-muted/60"
             }`}
           >
-            <div role="gridcell" className="min-w-0 flex-1">
+            <div role="gridcell" className="min-w-0 md:col-span-3 md:grid md:grid-cols-subgrid">
               <button
                 type="button"
                 data-trace-row=""
@@ -134,27 +143,28 @@ export function TraceList({
                 onFocus={() => setFocusedId(item.id)}
                 // A keyboard-activated click has no pointer clicks (detail 0).
                 onClick={(event) => onOpen?.(item, event.detail === 0)}
-                className="flex min-h-row w-full items-center gap-3 rounded-sm px-1 text-left outline-none focus-visible:ring-inset focus-visible:ring-2 focus-visible:ring-primary"
+                className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pt-[calc((var(--row-height)_-_32px)/2_+_2px)] pb-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset md:col-span-3 md:grid md:grid-cols-subgrid md:gap-x-4 md:gap-y-0 md:pb-[calc((var(--row-height)_-_32px)/2_+_2px)]"
               >
                 <time
                   dateTime={item.occurred_at}
                   title={absoluteTime(item.occurred_at)}
                   suppressHydrationWarning
-                  className="w-24 shrink-0 truncate text-meta text-muted-foreground text-numeric"
+                  className="truncate text-text-secondary text-numeric"
                 >
                   {relativeTime(item.occurred_at, now)}
                 </time>
-                <span className="w-40 shrink-0 truncate text-meta text-muted-foreground">
-                  {item.actor.name}
+                <span className="flex min-w-0 items-center gap-2">
+                  <ActorTile actor={item.actor} size={22} />
+                  <span className="truncate">{item.actor.name}</span>
                 </span>
-                <span className="min-w-0 flex-1 truncate text-body">
+                <span className="min-w-0 basis-full truncate font-medium md:basis-auto">
                   {eventLabel(item.event_type)}
                 </span>
               </button>
             </div>
             <div
               role="gridcell"
-              className="w-48 shrink-0 truncate pr-1 text-right text-meta"
+              className="min-w-0 truncate pb-[calc((var(--row-height)_-_32px)/2_+_2px)] text-label md:pb-0 md:text-right"
             >
               {href ? (
                 <Link
@@ -165,9 +175,7 @@ export function TraceList({
                   {subjectText(item.subject)}
                 </Link>
               ) : (
-                <span className="text-muted-foreground">
-                  {subjectText(item.subject)}
-                </span>
+                <span className="text-text-secondary">{subjectText(item.subject)}</span>
               )}
             </div>
           </div>
@@ -177,9 +185,10 @@ export function TraceList({
   );
 }
 
-/** The selected event in the right pane, read-only: its label, the absolute time (UTC), the
- * actor (with an agent's version), the subject's type, id and version, then each payload
- * field as a label/value row in catalogue order. */
+/** The selected event in the right pane, read-only, in bordered sections: a header (the
+ * absolute time, the event as the focusable heading, the actor with its type, and a link to
+ * the subject's tab), the Payload (event, actor, subject and each payload field in catalogue
+ * order), the before/after Change of an Estimate line edit, and an append-only note. */
 export function TraceInspector({
   opportunityId,
   event,
@@ -197,74 +206,93 @@ export function TraceInspector({
   }, [focusRequest]);
 
   const rows: [string, string][] = [
-    ["When", absoluteTime(event.occurred_at)],
+    ["Event", event.event_type],
     ["Actor", actorText(event.actor)],
-    ["Subject type", subjectLabel(event.subject.type)],
+    ["Subject", subjectText(event.subject)],
     ["Subject id", event.subject.id],
-    ["Subject version", fieldValue(event.subject.version)],
+    ...Object.entries(event.payload ?? {}).map(
+      ([name, value]): [string, string] => [fieldLabel(name), payloadValue(name, value)],
+    ),
   ];
-  const payload = Object.entries(event.payload ?? {});
+  const change = lineEditChange(event);
   // The row's subject link is outside the Tab order (the grid is one stop), so the
   // inspector carries a reachable one.
   const href = subjectHref(opportunityId, event.subject.type);
   const linkText = subjectLinkText(event.subject.type);
 
   return (
-    <section
-      aria-labelledby={headingId}
-      className="flex flex-col gap-4 p-gutter"
-    >
-      <div className="flex flex-col gap-1">
-        <p className="text-meta text-muted-foreground">
-          {event.event_type}
+    <section aria-labelledby={headingId} className="flex flex-col">
+      <div className="flex flex-col items-start border-b border-border p-5">
+        <p className="mb-1.5 text-label text-text-secondary text-numeric">
+          Trace event · {absoluteTime(event.occurred_at)}
         </p>
         <h3
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
-          className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="text-section [overflow-wrap:anywhere] outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           {eventLabel(event.event_type)}
         </h3>
+        <p className="mt-2 flex min-w-0 items-center gap-2 text-[13px] leading-5">
+          <ActorTile actor={event.actor} size={22} />
+          <span className="[overflow-wrap:anywhere]">{actorText(event.actor)}</span>
+          <span className="shrink-0 text-text-secondary">
+            · {actorTypeLabel(event.actor.type)}
+          </span>
+        </p>
+        {href && linkText ? (
+          <Link href={href} className={`${outlineLink} mt-3`}>
+            {linkText}
+          </Link>
+        ) : null}
       </div>
-      {href && linkText ? (
-        <Link href={href} className={`${linkButtonClass} self-start`}>
-          {linkText}
-        </Link>
-      ) : null}
-      <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-        {rows.map(([label, value]) => (
-          <div key={label} className="contents">
-            <dt className="text-label text-muted-foreground">{label}</dt>
-            <dd className="break-words text-body text-numeric">{value}</dd>
-          </div>
-        ))}
-      </dl>
-      {payload.length > 0 ? (
-        <div className="flex flex-col gap-1.5">
-          <h4 className="text-label text-muted-foreground">Details</h4>
-          <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-            {payload.map(([name, value]) => (
-              <div key={name} className="contents">
-                <dt className="text-label text-muted-foreground">
-                  {fieldLabel(name)}
-                </dt>
-                <dd className="break-words text-body text-numeric">
-                  {fieldValue(value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
+
+      <div className="border-b border-border p-5">
+        <h4 className={`${eyebrowClass} mb-2`}>Payload</h4>
+        <dl className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px] leading-5">
+          {rows.map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-text-secondary">{label}</dt>
+              <dd className="[overflow-wrap:anywhere] text-numeric">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      {change ? (
+        <div className="border-b border-border p-5">
+          <h4 className={`${eyebrowClass} mb-2`}>Change</h4>
+          <ul className="flex flex-col gap-1 text-[13px] leading-5">
+            <li className="flex gap-2.5 rounded-lg bg-blocker-tint px-2.5 py-1.5">
+              <b aria-hidden="true" className="w-3 shrink-0 text-blocker">
+                −
+              </b>
+              <span className="sr-only">Before: </span>
+              <span className="min-w-0 text-numeric">{change.before}</span>
+            </li>
+            <li className="flex gap-2.5 rounded-lg bg-resolved-tint px-2.5 py-1.5">
+              <b aria-hidden="true" className="w-3 shrink-0 text-resolved">
+                +
+              </b>
+              <span className="sr-only">After: </span>
+              <span className="min-w-0 text-numeric">{change.after}</span>
+            </li>
+          </ul>
         </div>
       ) : null}
+
+      <p className="p-5 text-meta text-text-secondary">{TRACE_REASONING_NOTE}</p>
     </section>
   );
 }
 
-/** The Subject, Actor and Event filters. Values come from the URL (`filters`) and every
- * change replaces the URL, on page 1, so a filtered view survives reload and sharing. The
- * choices are the values present on this Opportunity's trace; a value from a shared URL
- * that isn't among them is still shown so the control never lies about what is applied. */
+/** The Subject, Actor and Event filters as dashed chips, each opening its select in a
+ * popover; an applied one reads "Label: value" in the primary tint, and Clear filters follows.
+ * Values come from the URL (`filters`) and every change replaces the URL, on page 1, so a
+ * filtered view survives reload and sharing. The choices are the values present on this
+ * Opportunity's trace; a value from a shared URL that isn't among them is still shown so the
+ * control never lies about what is applied. */
 export function TraceFilterBar({
   opportunityId,
   filters,
@@ -310,58 +338,51 @@ export function TraceFilterBar({
       ? [...present, current]
       : [...present];
 
-  const select = (
+  const chip = (
     key: TraceFilterKey,
     label: string,
     any: string,
     present: readonly string[],
     text: (value: string) => string,
-  ) => (
-    <label className={labelClass} htmlFor={`${id}-${key}`}>
-      {label}
-      <select
-        id={`${id}-${key}`}
-        className={controlClass}
-        value={values[key] ?? ""}
-        onChange={change(key)}
-      >
-        <option value="">{any}</option>
-        {withCurrent(present, values[key]).map((value) => (
-          <option key={value} value={value}>
-            {text(value)}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  ) => {
+    const current = values[key];
+    return (
+      <FilterChip label={label} closeOnChange value={current ? text(current) : undefined}>
+        <label className={labelClass} htmlFor={`${id}-${key}`}>
+          {label}
+          <select
+            id={`${id}-${key}`}
+            className={controlClass}
+            value={current ?? ""}
+            onChange={change(key)}
+          >
+            <option value="">{any}</option>
+            {withCurrent(present, current).map((value) => (
+              <option key={value} value={value}>
+                {text(value)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </FilterChip>
+    );
+  };
 
   return (
     <div
       role="group"
       aria-label="Filters"
       aria-busy={pending || undefined}
-      className="flex flex-wrap items-end gap-3"
+      className="flex flex-wrap items-center gap-2"
     >
-      {select(
-        "subject",
-        "Subject",
-        "Any subject",
-        options.subject_types,
-        subjectLabel,
-      )}
-      {select(
-        "actor",
-        "Actor",
-        "Any actor",
-        options.actor_types,
-        actorTypeLabel,
-      )}
-      {select("event", "Event", "Any event", options.event_types, eventLabel)}
+      {chip("subject", "Subject", "Any subject", options.subject_types, subjectLabel)}
+      {chip("actor", "Actor", "Any actor", options.actor_types, actorTypeLabel)}
+      {chip("event", "Event", "Any event", options.event_types, eventLabel)}
       {hasTraceFilters(values) ? (
         <Link
           href={traceHref(opportunityId, {})}
           onClick={clear}
-          className={linkButtonClass}
+          className={clearFiltersClass}
         >
           {CLEAR_FILTERS}
         </Link>
@@ -393,7 +414,7 @@ export function TracePagination({
       <div className="flex gap-2">
         {page.page > 1 ? (
           <Link
-            className={linkButtonClass}
+            className={outlineLink}
             href={traceHref(
               opportunityId,
               filters,
@@ -405,7 +426,7 @@ export function TracePagination({
         ) : null}
         {page.page < pages ? (
           <Link
-            className={linkButtonClass}
+            className={outlineLink}
             href={traceHref(opportunityId, filters, page.page + 1)}
           >
             Next
@@ -416,9 +437,9 @@ export function TracePagination({
   );
 }
 
-/** The Trace tab's content: the filters, the page of events in the main pane, pagination,
- * and the selected event's inspector in the right pane (opened if closed). Read-only for
- * everyone. */
+/** The Trace tab's content: the title row with the filter chips, the card of events with its
+ * append-only footnote, pagination, and the selected event's inspector in the right pane
+ * (opened if closed). Read-only for everyone. */
 export function TraceSection({
   opportunityId,
   page,
@@ -471,25 +492,31 @@ export function TraceSection({
   const filtered = hasTraceFilters(filters);
   return (
     <div className="flex flex-col gap-4">
-      {page.total > 0 || filtered ? (
-        <TraceFilterBar
-          opportunityId={opportunityId}
-          filters={filters}
-          options={page.options}
-        />
-      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="flex-1 text-section">Trace</h2>
+        {page.total > 0 || filtered ? (
+          <TraceFilterBar
+            opportunityId={opportunityId}
+            filters={filters}
+            options={page.options}
+          />
+        ) : null}
+      </div>
       {page.items.length > 0 ? (
-        <TraceList
-          opportunityId={opportunityId}
-          items={page.items}
-          selectedId={selected?.id ?? null}
-          onOpen={open}
-          now={now}
-        />
+        <>
+          <TraceList
+            opportunityId={opportunityId}
+            items={page.items}
+            selectedId={selected?.id ?? null}
+            onOpen={open}
+            now={now}
+          />
+          <p className="text-meta text-text-secondary">{TRACE_APPEND_ONLY}</p>
+        </>
       ) : filtered ? (
         <div className="flex flex-col items-start gap-2">
           <p className="text-muted-foreground">{NO_MATCHES}</p>
-          <Link href={traceHref(opportunityId, {})} className={linkButtonClass}>
+          <Link href={traceHref(opportunityId, {})} className={outlineLink}>
             {CLEAR_FILTERS}
           </Link>
         </div>

@@ -49,6 +49,7 @@ function requirement(n: number, classification: Classification, ...files: string
     confirmed_by: null,
     last_changed_by: null,
     pending_change: null,
+    integration_types: [],
     evidence: files.map((file, i) => ({
       passage_id: passageId(n, i),
       source_id: `00000000-0000-7000-8000-0000000000b${i}`,
@@ -86,6 +87,7 @@ function list(items: Requirement[], status: "succeeded" | "running" = "succeeded
     extraction: { status, error_code: null, source_count: 2 },
     can_start_extraction: true,
     can_edit_requirements: false,
+    untagged_integration_count: 0,
   };
 }
 
@@ -129,6 +131,8 @@ describe("Requirements list and Evidence inspector", () => {
     render(ui(list([R1, R2])));
     expect(pane()).toBeNull();
     await user.tab(); // Toggle
+    await user.tab(); // the Category filter
+    await user.tab(); // the State filter
     await user.tab(); // the list's one tab stop: the first row
     expect(document.activeElement).toBe(row(1));
 
@@ -162,8 +166,10 @@ describe("Requirements list and Evidence inspector", () => {
   it("j/k and the arrow keys move between rows across groups; Space opens", async () => {
     const user = userEvent.setup();
     render(ui(list([R1, R2])));
-    await user.tab();
-    await user.tab();
+    await user.tab(); // Toggle
+    await user.tab(); // the Category filter
+    await user.tab(); // the State filter
+    await user.tab(); // the first row
     await user.keyboard("j");
     expect(document.activeElement).toBe(row(2));
     await user.keyboard("j"); // stays on the last row
@@ -245,8 +251,10 @@ describe("Requirements list and Evidence inspector", () => {
   it("reopening the pane with the toggle after a keyboard open doesn't take focus", async () => {
     const user = userEvent.setup();
     render(ui(list([R1, R2])));
-    await user.tab();
-    await user.tab();
+    await user.tab(); // Toggle
+    await user.tab(); // the Category filter
+    await user.tab(); // the State filter
+    await user.tab(); // the first row
     await user.keyboard("{Enter}");
     await waitFor(() => expect(document.activeElement).toBe(chip("S1 · call.vtt")));
     await user.click(within(pane()!).getByRole("button", { name: "Close right pane" }));
@@ -322,8 +330,10 @@ describe("Requirements list and Evidence inspector", () => {
   ])("%s after a keyboard open returns focus to the row", async (_, close) => {
     const user = userEvent.setup();
     render(ui(list([R1, R2])));
-    await user.tab();
-    await user.tab();
+    await user.tab(); // Toggle
+    await user.tab(); // the Category filter
+    await user.tab(); // the State filter
+    await user.tab(); // the first row
     await user.keyboard("j{Enter}");
     await waitFor(() => expect(document.activeElement).toBe(chip("S1 · notes.txt")));
 
