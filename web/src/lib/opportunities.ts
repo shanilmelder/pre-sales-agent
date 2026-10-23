@@ -84,6 +84,25 @@ export function utcToday(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
+/** Whole calendar days from `today` to `date` (both `YYYY-MM-DD`, UTC): negative once past.
+ * `NaN` for anything that is not a date. */
+export function daysUntil(date: string, today: string): number {
+  const parse = (value: string) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : Number.NaN;
+  };
+  return Math.round((parse(date) - parse(today)) / 86_400_000);
+}
+
+/** The countdown text: "11 days left", "Due tomorrow", "Due today", "3 days overdue". */
+export function countdownLabel(days: number): string {
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  if (days > 1) return `${days} days left`;
+  const late = -days;
+  return `${late} ${late === 1 ? "day" : "days"} overdue`;
+}
+
 /** Length in Unicode code points, as the API (Python) counts it; `.length` counts UTF-16
  * units, so one emoji would count as two. */
 export function codePointLength(value: string): number {

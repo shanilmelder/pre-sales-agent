@@ -1,43 +1,45 @@
-import { CalendarIcon, UsersIcon } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 
+import { Breadcrumb, DueCountdown, PersonChip } from "@/components/opportunities/header-parts";
 import { EditableWorkspaceHeader } from "@/components/opportunities/inline-field";
 import { StatusPill } from "@/components/opportunities/status-pill";
 import { formatDate, type Opportunity } from "@/lib/opportunities";
 
-/** The workspace header (mockups/opportunity-overview.html): the title, then one meta row
- * with the derived status, owner, collaborators and target proposal date. When the API says
- * the caller may edit (`can_edit`, the owner), the title and date are click-to-edit;
- * everyone else sees plain text. */
-export function WorkspaceHeader({ opportunity }: { opportunity: Opportunity }) {
-  const collaborators = opportunity.collaborators.map((c) => c.name).join(", ");
+/** The workspace header: breadcrumb, the title with its status pill, then the owner and
+ * collaborator chips and the proposal date with its day countdown. When the API says the
+ * caller may edit (`can_edit`, the owner), the title and date are click-to-edit; everyone
+ * else sees plain text. `today` (UTC, from the server layout) keeps the countdown the same
+ * on server and client. */
+export function WorkspaceHeader({
+  opportunity,
+  today,
+}: {
+  opportunity: Opportunity;
+  today: string;
+}) {
+  const badge = <StatusPill status={opportunity.status} />;
   const meta = (
     <>
-      <StatusPill status={opportunity.status} />
-      <span>
-        <span className="text-foreground">{opportunity.owner.name}</span> · owner
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <UsersIcon className="size-3 shrink-0" aria-hidden="true" />
-        {collaborators ? (
-          <span>
-            <span className="sr-only">Collaborators: </span>
-            <span className="text-foreground">{collaborators}</span>
-          </span>
-        ) : (
-          "No collaborators"
-        )}
-      </span>
+      <PersonChip name={opportunity.owner.name} role="Owner" />
+      {opportunity.collaborators.map((c) => (
+        <PersonChip key={c.id} name={c.name} role="Collaborator" />
+      ))}
+      {opportunity.collaborators.length === 0 ? <span>No collaborators</span> : null}
     </>
   );
 
   if (opportunity.can_edit) {
-    return <EditableWorkspaceHeader opportunity={opportunity} meta={meta} />;
+    return <EditableWorkspaceHeader opportunity={opportunity} meta={meta} badge={badge} today={today} />;
   }
 
   return (
     <header className="flex shrink-0 flex-col gap-1.5 px-gutter pt-gutter pb-3">
-      <h1 className="text-title">{opportunity.title}</h1>
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-label text-muted-foreground">
+      <Breadcrumb title={opportunity.title} />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h1 className="min-w-0 text-title">{opportunity.title}</h1>
+        {badge}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-label text-muted-foreground">
         {meta}
         <span className="inline-flex items-center gap-1.5">
           <CalendarIcon className="size-3 shrink-0" aria-hidden="true" />
@@ -45,6 +47,7 @@ export function WorkspaceHeader({ opportunity }: { opportunity: Opportunity }) {
           <span className="text-numeric text-foreground">
             {formatDate(opportunity.target_proposal_date)}
           </span>
+          <DueCountdown date={opportunity.target_proposal_date} today={today} />
         </span>
       </div>
     </header>

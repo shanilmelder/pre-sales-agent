@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Opportunity } from "@/lib/opportunities";
@@ -35,33 +35,63 @@ const OPPORTUNITY: Opportunity = {
   can_add_sources: false,
 };
 
+const TODAY = "2026-10-21";
+
+function renderHeader(overrides: Partial<Opportunity> = {}, today = TODAY) {
+  return render(<WorkspaceHeader opportunity={{ ...OPPORTUNITY, ...overrides }} today={today} />);
+}
+
 describe("WorkspaceHeader", () => {
-  it("shows the title, then status, owner, collaborators and target proposal date", async () => {
-    const { container } = render(<WorkspaceHeader opportunity={OPPORTUNITY} />);
+  it("shows breadcrumb, title with pill, chips and the date with a countdown", async () => {
+    const { container } = renderHeader();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    const all = within(crumbs).getByRole("link", { name: "All Opportunities" });
+    expect(all.getAttribute("href")).toBe("/opportunities");
+    const current = crumbs.querySelector('[aria-current="page"]');
+    expect(current?.textContent).toBe("[TITLE]");
+    expect(current?.querySelector("a")).toBeNull();
+
     const title = screen.getByRole("heading", { level: 1, name: "[TITLE]" });
     expect(title.className).toContain("text-title");
-    expect(screen.getByText("Gaps open")).toBeTruthy();
+    expect(title.parentElement?.textContent).toContain("Gaps open");
+
+    expect(screen.getByText("Owner:")).toBeTruthy();
     expect(screen.getByText("[OWNER]")).toBeTruthy();
-    expect(screen.getByText("[MEMBER 1], [MEMBER 2]")).toBeTruthy();
+    expect(screen.getByText("[MEMBER 1]")).toBeTruthy();
+    expect(screen.getByText("[MEMBER 2]")).toBeTruthy();
+    expect(screen.getAllByText("Collaborator:")).toHaveLength(2);
     expect(screen.getByText("1 Nov 2026")).toBeTruthy();
+    expect(screen.getByText("11 days left")).toBeTruthy();
+    expect(container.querySelector(".lucide-clock")?.getAttribute("aria-hidden")).toBe("true");
     expect(container.querySelector(".lucide-calendar")?.getAttribute("aria-hidden")).toBe("true");
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("says so when there are no collaborators", () => {
-    render(<WorkspaceHeader opportunity={{ ...OPPORTUNITY, collaborators: [] }} />);
-    expect(screen.getByText("No collaborators")).toBeTruthy();
+  it.each([
+    ["2026-10-22", "Due tomorrow", ".lucide-clock"],
+    ["2026-10-21", "Due today", ".lucide-clock"],
+    ["2026-10-18", "3 days overdue", ".lucide-triangle-alert"],
+  ])("countdown for %s reads %s with an icon", (date, text, icon) => {
+    renderHeader({ target_proposal_date: date });
+    const label = screen.getByText(text);
+    expect(label.querySelector(icon)).toBeTruthy();
+    expect(label.className.includes("text-blocker")).toBe(text.endsWith("overdue"));
   });
 
-  it("non-owners (can_edit false) get plain text and no buttons", () => {
-    render(<WorkspaceHeader opportunity={OPPORTUNITY} />);
+  it("says so when there are no collaborators", () => {
+    renderHeader({ collaborators: [] });
+    expect(screen.getByText("No collaborators")).toBeTruthy();
+    expect(screen.getByText("[OWNER]")).toBeTruthy();
+  });
+
+  it("non-owners (can_edit false) get no buttons", () => {
+    renderHeader();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("the owner (can_edit) edits the title and date inline; the meta row stays", async () => {
-    const { container } = render(
-      <WorkspaceHeader opportunity={{ ...OPPORTUNITY, can_edit: true }} />,
-    );
+  it("the owner (can_edit) edits the title and date inline; breadcrumb, chips and countdown stay", async () => {
+    const { container } = renderHeader({ can_edit: true });
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
     expect(screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
       "Edit title",
@@ -69,8 +99,9 @@ describe("WorkspaceHeader", () => {
     ]);
     expect(screen.getByText("Gaps open")).toBeTruthy();
     expect(screen.getByText("[OWNER]")).toBeTruthy();
-    expect(screen.getByText("[MEMBER 1], [MEMBER 2]")).toBeTruthy();
+    expect(screen.getByText("[MEMBER 1]")).toBeTruthy();
     expect(screen.getByText("1 Nov 2026")).toBeTruthy();
+    expect(screen.getByText("11 days left")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 });
