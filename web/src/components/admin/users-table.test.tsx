@@ -46,8 +46,11 @@ describe("UsersTable", () => {
     renderTable();
     expect(screen.getAllByRole("row")).toHaveLength(4); // header + 3
     expect(screen.getByText("user1@example.invalid")).toBeTruthy();
-    expect(screen.getByText("PM reviewer, Commercial")).toBeTruthy();
-    expect(screen.getByText("No roles")).toBeTruthy();
+    const first = row("[USER 1]").closest('[role="row"]') as HTMLElement;
+    expect(
+      Array.from(first.querySelectorAll('[data-slot="chip"]')).map((chip) => chip.textContent),
+    ).toEqual(["PM reviewer", "Commercial"]);
+    expect(screen.getByText("No roles yet")).toBeTruthy();
     expect(screen.getByText("Platform administrator")).toBeTruthy();
   });
 

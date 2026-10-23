@@ -3,16 +3,18 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AccessGate, hasAccess } from "@/components/access-gate";
+import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminNav } from "@/components/admin/admin-nav";
+import { FOOTNOTE } from "@/components/admin/card-table";
 import { UsersAdmin } from "@/components/admin/users-admin";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageContent, PageHeader } from "@/components/shell/page-header";
-import { auth0UsersUrl, ROLES_AS_OF_NOTE } from "@/lib/admin";
+import { auth0UsersUrl, ROLES_SHOWN_NOTE, USERS_FOOTNOTE } from "@/lib/admin";
 import type { components } from "@/lib/api/client";
 import { createServerApiClient, getMe } from "@/lib/api/server";
 import { isAdmin } from "@/lib/navigation";
 
-export const metadata: Metadata = { title: "Users & roles · Pre Sales Agent Framework" };
+export const metadata: Metadata = { title: "Users and roles · Pre Sales Agent Framework" };
 
 type AdminUserPage = components["schemas"]["AdminUserPage"];
 
@@ -111,23 +113,7 @@ export default async function AdminUsersPage({
   }
   return (
     <AppShell me={result.me}>
-      <PageHeader
-        title="Users & roles"
-        subtitle={
-          <>
-            {ROLES_AS_OF_NOTE}{" "}
-            <a
-              href={manageRolesUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-sm underline outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              Manage roles in Auth0
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          </>
-        }
-      />
+      <AdminHeader />
       <PageContent>
         <AdminNav current="/admin/users" />
         {list.kind === "forbidden" ? <NoAccess /> : null}
@@ -142,6 +128,18 @@ export default async function AdminUsersPage({
               manageRolesUrl={manageRolesUrl}
             />
             <Pagination page={list.page} />
+            <p className={FOOTNOTE}>
+              {USERS_FOOTNOTE} {ROLES_SHOWN_NOTE}{" "}
+              <a
+                href={manageRolesUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-sm text-primary-text underline outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Manage roles in Auth0
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </p>
           </>
         ) : null}
       </PageContent>

@@ -75,15 +75,54 @@ describe("/admin/users", () => {
     listed([TARGET]);
     const { container } = renderPage(await AdminUsersPage({ searchParams: searchParams() }));
 
-    expect(screen.getByRole("heading", { level: 1, name: "Users & roles" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Admin" })).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Admin" }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("button", { name: "[TARGET]" })).toBeTruthy();
+    const sections = screen.getByRole("navigation", { name: "Admin sections" });
+    expect(within(sections).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Users and roles",
+      "Agents",
+      "Catalogue",
+      "Evals",
+    ]);
+    expect(
+      within(sections).getByRole("link", { name: "Users and roles" }).getAttribute("aria-current"),
+    ).toBe("page");
+    const table = screen.getByRole("table", { name: "Users and their roles" });
+    expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
+      "User",
+      "Role",
+    ]);
+    expect(within(table).getByRole("button", { name: "[TARGET]" })).toBeTruthy();
+    expect(within(table).getByText("Commercial")).toBeTruthy();
+    expect(screen.getByText(/^First sign-in creates a user with no roles\./)).toBeTruthy();
     expect(screen.getByText("1–1 of 1")).toBeTruthy();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/admin/users", {
       params: { query: { page: 1, page_size: 50 } },
     });
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the header's Invite user opens the Auth0 user list in a new tab", async () => {
+    signedIn(["platform_administrator"]);
+    listed([TARGET]);
+    vi.stubEnv("AUTH0_DOMAIN", "psa-test.eu.auth0.com");
+    renderPage(await AdminUsersPage({ searchParams: searchParams() }));
+    vi.unstubAllEnvs();
+
+    const header = screen.getByTestId("page-header");
+    const invite = within(header).getByRole("link", { name: /Invite user.*opens Auth0/ });
+    expect(invite.getAttribute("href")).toBe("https://manage.auth0.com/dashboard/eu/psa-test/users");
+    expect(invite.getAttribute("target")).toBe("_blank");
+    expect(invite.getAttribute("rel")).toBe("noreferrer");
+  });
+
+  it("a user without roles shows No roles yet", async () => {
+    signedIn(["platform_administrator"]);
+    listed([{ ...TARGET, roles: [] }]);
+    renderPage(await AdminUsersPage({ searchParams: searchParams() }));
+    const row = screen.getByRole("button", { name: "[TARGET]" }).closest('[role="row"]');
+    expect(within(row as HTMLElement).getByText("No roles yet")).toBeTruthy();
   });
 
   it("asks the API for the requested page and links to its neighbours", async () => {
@@ -167,7 +206,7 @@ describe("/admin/users", () => {
     signedIn(["presales_engineer"]);
     const { container } = renderPage(await AdminUsersPage({ searchParams: searchParams() }));
     expect(screen.getByText("You don't have access to this page")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Users & roles" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Admin" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Admin" })).toBeNull();
     expect(apiGet).not.toHaveBeenCalled();
     expect(await axeViolations(container)).toEqual([]);

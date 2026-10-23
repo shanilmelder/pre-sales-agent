@@ -11,7 +11,10 @@ import {
   RightPaneContent,
   useShell,
 } from "@/components/shell/shell-context";
+import { buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { upsert, type CatalogueEntry } from "@/lib/catalogue";
+import { cn } from "@/lib/utils";
 
 /** Admin → Catalogue: the list in the main pane; the selected entry's inspector, or the
  * create form (`c`), in the right pane. Saved changes update the list row in place; new
@@ -98,20 +101,25 @@ export function CatalogueAdmin({ initialEntries }: { initialEntries: readonly Ca
 
   return (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-meta text-muted-foreground">
-          Every Checklist, Assessment line, Estimate line and Actual is classified by these entries.
-        </p>
-        <button
-          type="button"
-          onClick={startCreate}
-          aria-keyshortcuts="c"
-          className="h-7 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
-        >
-          New entry
-        </button>
-      </div>
-      <CatalogueTable entries={entries} selectedId={selectedId} onOpen={open} />
+      <Card className="overflow-hidden">
+        <div className="flex items-center gap-4 px-5 py-[18px]">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-section">Integration Type and Work Package catalogue</h2>
+            <p className="text-meta text-text-secondary">
+              Used by Checklists, Assessment lines, Estimate lines and Actuals
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={startCreate}
+            aria-keyshortcuts="c"
+            className={`${cn(buttonVariants({ variant: "outline" }))} text-control`}
+          >
+            New entry
+          </button>
+        </div>
+        <CatalogueTable entries={entries} selectedId={selectedId} onOpen={open} />
+      </Card>
       {creating ? (
         <RightPaneContent>
           <CatalogueCreateForm onCreated={created} onCancel={cancelCreate} />

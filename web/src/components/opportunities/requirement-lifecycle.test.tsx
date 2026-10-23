@@ -121,6 +121,15 @@ function renderSection(initial: RequirementList, singleKeyShortcuts = true) {
 const row = (n: number) => screen.getByRole("button", { name: `[REQUIREMENT ${n}]` });
 const rowOf = (n: number) => row(n).closest('[role="row"]') as HTMLElement;
 const pane = () => screen.getByRole("complementary", { name: "Details" });
+const isChecked = (n: number) => rowOf(n).hasAttribute("data-checked");
+
+/** Toggle these rows in the merge selection with `x` (there is no checkbox column). */
+async function mark(user: ReturnType<typeof userEvent.setup>, ...numbers: number[]) {
+  for (const n of numbers) {
+    row(n).focus();
+    await user.keyboard("x");
+  }
+}
 
 beforeEach(() => {
   for (const mock of [
@@ -148,7 +157,7 @@ describe("stable numbers", () => {
 });
 
 describe("adding a Requirement", () => {
-  it("c opens the form; Enter adds it as a Manual Requirement", async () => {
+  it("c opens the form; Enter adds it as a Requirement added by a person", async () => {
     const user = userEvent.setup();
     renderSection(list([requirement(1)]));
     const added = requirement(2, "security", {
@@ -176,19 +185,20 @@ describe("adding a Requirement", () => {
     const saved = await screen.findByRole("button", { name: "Support returns." });
     const savedRow = saved.closest('[role="row"]') as HTMLElement;
     expect(within(savedRow).getByText("R2")).toBeTruthy();
-    expect(within(savedRow).getByText("Manual")).toBeTruthy();
+    expect(within(savedRow).getByText("· Added by a person")).toBeTruthy();
+    expect(savedRow.querySelector("[data-passage-id]")).toBeNull();
     expect(screen.queryByRole("form", { name: "New Requirement" })).toBeNull();
 
     await user.click(saved);
-    expect(within(pane()).getByText("Manual")).toBeTruthy();
+    expect(within(pane()).getByText("Added by a person")).toBeTruthy();
     expect(within(pane()).getByText("No Evidence.")).toBeTruthy();
   });
 
-  it("Add Requirement opens the form; Esc closes it; a blank text is not sent", async () => {
+  it("Add requirement opens the form; Esc closes it; a blank text is not sent", async () => {
     const user = userEvent.setup();
     renderSection(list([requirement(1)]));
 
-    await user.click(screen.getByRole("button", { name: "Add Requirement" }));
+    await user.click(screen.getByRole("button", { name: "Add requirement" }));
     await user.type(screen.getByRole("textbox", { name: "New Requirement text" }), "   {Enter}");
     expect(createRequirement).not.toHaveBeenCalled();
     expect(screen.getByText("The Requirement text can't be blank.")).toBeTruthy();
@@ -202,7 +212,7 @@ describe("adding a Requirement", () => {
     renderSection(list([requirement(1)]));
     createRequirement.mockResolvedValue({ kind: "invalid", detail: "[REASON FROM THE API]" });
 
-    await user.click(screen.getByRole("button", { name: "Add Requirement" }));
+    await user.click(screen.getByRole("button", { name: "Add requirement" }));
     await user.type(screen.getByRole("textbox", { name: "New Requirement text" }), "X.{Enter}");
 
     expect(await screen.findByText("[REASON FROM THE API]")).toBeTruthy();
@@ -222,9 +232,10 @@ describe("selecting and merging", () => {
 
     row(1).focus();
     await user.keyboard("x");
-    expect((within(rowOf(1)).getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+    expect(isChecked(1)).toBe(true);
+    expect(within(rowOf(1)).getByText("Selected for merge")).toBeTruthy();
     expect(screen.queryByRole("toolbar", { name: "Selected Requirements" })).toBeNull();
-    await user.click(within(rowOf(2)).getByRole("checkbox"));
+    await mark(user, 2);
 
     const bar = screen.getByRole("toolbar", { name: "Selected Requirements" });
     await user.click(within(bar).getByRole("button", { name: "Merge (2)" }));
@@ -264,9 +275,7 @@ describe("selecting and merging", () => {
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("toolbar", { name: "Selected Requirements" })).toBeNull();
-    expect(screen.getAllByRole("checkbox").every((c) => !(c as HTMLInputElement).checked)).toBe(
-      true,
-    );
+    expect([1, 2].some(isChecked)).toBe(false);
   });
 
   it("Esc with the inspector open closes it and keeps the selection", async () => {
@@ -282,29 +291,25 @@ describe("selecting and merging", () => {
         <RightPane />
       </ShellProviders>,
     );
-    for (const checkbox of screen.getAllByRole("checkbox")) await user.click(checkbox);
+    await mark(user, 1, 2);
     await user.click(row(1));
     expect(pane()).toBeTruthy();
 
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
-    expect(
-      screen.getAllByRole("checkbox").every((c) => (c as HTMLInputElement).checked),
-    ).toBe(true);
+    expect([1, 2].every(isChecked)).toBe(true);
     expect(screen.getByRole("toolbar", { name: "Selected Requirements" })).toBeTruthy();
   });
 
   it("the Merge form closes when the selection changes", async () => {
     const user = userEvent.setup();
     renderSection(list([requirement(1), requirement(2), requirement(3)]));
-    const [one, two, three] = screen.getAllByRole("checkbox");
-    await user.click(one!);
-    await user.click(two!);
+    await mark(user, 1, 2);
     await user.click(screen.getByRole("button", { name: "Merge (2)" }));
     expect(screen.getByRole("form", { name: "Merged Requirement" })).toBeTruthy();
 
-    await user.click(three!);
+    await mark(user, 3);
     expect(screen.queryByRole("form", { name: "Merged Requirement" })).toBeNull();
     expect(screen.getByRole("button", { name: "Merge (3)" })).toBeTruthy();
   });
@@ -314,11 +319,11 @@ describe("selecting and merging", () => {
     renderSection(list([requirement(1), requirement(2), requirement(3)]));
     mergeRequirements.mockResolvedValue({ kind: "not-found" });
     loadRequirements.mockResolvedValue({ kind: "ok", list: list([requirement(1), requirement(3)]) });
-    const [one, two, three] = screen.getAllByRole("checkbox");
-    for (const checkbox of [one!, two!, three!]) await user.click(checkbox);
+    await mark(user, 1, 2, 3);
     await user.click(screen.getByRole("button", { name: "Merge (3)" }));
 
-    await user.click(screen.getByRole("button", { name: "Merge" }));
+    const form = screen.getByRole("form", { name: "Merged Requirement" });
+    await user.click(within(form).getByRole("button", { name: "Merge" }));
 
     await waitFor(() => expect(screen.queryByRole("button", { name: "[REQUIREMENT 2]" })).toBeNull());
     expect(screen.queryByRole("form", { name: "Merged Requirement" })).toBeNull();
@@ -329,10 +334,11 @@ describe("selecting and merging", () => {
     const user = userEvent.setup();
     renderSection(list([requirement(1), requirement(2)]));
     mergeRequirements.mockResolvedValue({ kind: "stale", changedBy: null, current: null });
-    for (const checkbox of screen.getAllByRole("checkbox")) await user.click(checkbox);
+    await mark(user, 1, 2);
 
     await user.click(screen.getByRole("button", { name: "Merge (2)" }));
-    await user.click(screen.getByRole("button", { name: "Merge" }));
+    const form = screen.getByRole("form", { name: "Merged Requirement" });
+    await user.click(within(form).getByRole("button", { name: "Merge" }));
 
     expect(await screen.findByText("Changed by someone else since you opened it.")).toBeTruthy();
     expect(screen.getByRole("form", { name: "Merged Requirement" })).toBeTruthy();
@@ -475,10 +481,10 @@ describe("sales representatives", () => {
     const user = userEvent.setup();
     renderSection(list([requirement(1), requirement(2)], false));
 
-    expect(screen.queryByRole("button", { name: "Add Requirement" })).toBeNull();
-    expect(screen.queryAllByRole("checkbox")).toEqual([]);
+    expect(screen.queryByRole("button", { name: "Add requirement" })).toBeNull();
     row(1).focus();
     await user.keyboard("x");
+    expect(isChecked(1)).toBe(false);
     await user.keyboard("c");
     expect(screen.queryByRole("form", { name: "New Requirement" })).toBeNull();
     expect(screen.queryByRole("toolbar", { name: "Selected Requirements" })).toBeNull();
@@ -486,6 +492,8 @@ describe("sales representatives", () => {
     await user.click(row(1));
     expect(within(pane()).queryByRole("button", { name: "Split" })).toBeNull();
     expect(within(pane()).queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
 });
 
@@ -494,11 +502,11 @@ describe("accessibility", () => {
     const user = userEvent.setup();
     const { container } = renderSection(list([requirement(1), requirement(2)]));
 
-    await user.click(screen.getByRole("button", { name: "Add Requirement" }));
+    await user.click(screen.getByRole("button", { name: "Add requirement" }));
     expect(await axeViolations(container)).toEqual([]);
     await user.keyboard("{Escape}");
 
-    for (const checkbox of screen.getAllByRole("checkbox")) await user.click(checkbox);
+    await mark(user, 1, 2);
     await user.click(screen.getByRole("button", { name: "Merge (2)" }));
     expect(await axeViolations(container)).toEqual([]);
     await user.click(screen.getByRole("button", { name: "Cancel" }));

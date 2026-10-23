@@ -7,6 +7,7 @@ import {
   formatCost,
   meets,
   percent,
+  runSummary,
   signedPoints,
   statusLabel,
   thresholdLabel,
@@ -14,6 +15,17 @@ import {
 import { evalResult } from "@/test/eval-fixtures";
 
 describe("eval helpers", () => {
+  it("summarises a run, singular counts included", () => {
+    const result = evalResult(1, {}, {
+      reference_set_version: "6fe2d288d456aa11",
+      opportunity_count: 1,
+      pending_count: 1,
+    });
+    expect(runSummary(result)).toBe(
+      "Run 2026-10-11 09:00 UTC · reference set 6fe2d288d456 · 1 Opportunity · 1 evidence pair pending review",
+    );
+  });
+
   it("labels statuses and formats values", () => {
     expect(["pass", "fail", "not_measured"].map((s) => statusLabel(s as never))).toEqual([
       "Pass",

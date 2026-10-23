@@ -23,3 +23,35 @@ export function auth0UsersUrl(domain: string | undefined): string {
 
 export const ROLES_AS_OF_NOTE =
   "Roles are managed in Auth0 and shown as of each person's last sign-in.";
+
+export const ROLES_SHOWN_NOTE = "Roles are shown as of each person's last sign-in.";
+
+export const NO_ROLES_YET = "No roles yet";
+
+export const USERS_FOOTNOTE =
+  "First sign-in creates a user with no roles. Roles are managed in Auth0, and Opportunity access is set on each Opportunity.";
+
+// --- Agents (read-only registry) ---------------------------------------------------------------
+
+export type RegistryAgent = components["schemas"]["RegistryAgent"];
+export type AgentStatus = components["schemas"]["AgentStatus"];
+
+export const NO_AGENTS = "No agents registered yet.";
+
+export const AGENTS_FOOTNOTE =
+  "No agent can send customer communication or approve. Disabled agents receive no tasks.";
+
+const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
+  active: "Enabled",
+  disabled: "Disabled",
+  eval_only: "Eval only",
+};
+
+export function agentStatusLabel(status: AgentStatus): string {
+  return AGENT_STATUS_LABELS[status];
+}
+
+/** The Agent's tool permissions as one line, "None" when it has none. */
+export function toolPermissionsLabel(permissions: readonly string[]): string {
+  return permissions.length > 0 ? permissions.join(", ") : "None";
+}

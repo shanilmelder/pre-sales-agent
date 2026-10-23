@@ -1,40 +1,62 @@
 "use client";
 
-import { CheckIcon, GitCompareArrowsIcon, QuoteIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from "react";
+import {
+  CheckIcon,
+  ClockIcon,
+  GitCompareArrowsIcon,
+  QuoteIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
 
 import { getPassage, type PassageResult } from "@/app/opportunities/actions";
 import { RetiredLabel } from "@/components/knowledge/sources-table";
 import { InlineField } from "@/components/opportunities/inline-field";
 import { ReasonInput } from "@/components/opportunities/reason-input";
 import { RequirementDiff } from "@/components/opportunities/requirement-diff";
+import { Button } from "@/components/ui/button";
 import { chipLayoutClassName } from "@/components/ui/chip";
+import { Pill, type PillTone } from "@/components/ui/pill";
 import { reasonProblem } from "@/lib/gaps";
 import {
   ACCEPT_CHANGE,
   CLASSIFICATIONS,
   classificationLabel,
-  CONFIRMED,
+  CONFIRM_REQUIREMENT,
   DELETE_REASON_LABEL,
   DELETE_REQUIREMENT,
+  EDIT,
   INTEGRATION_TYPES,
   LOADING_PASSAGE,
+  MERGE,
   NO_EVIDENCE,
   NO_INTEGRATION_TYPES,
+  originLine,
   PASSAGE_FAILED,
   PASSAGE_GONE,
   PENDING_CHANGE,
   REJECT_CHANGE,
   REJECT_REASON_LABEL,
   requirementLabel,
-  requirementOrigin,
+  requirementState,
   requirementTextProblem,
+  SELECTED_FOR_MERGE,
   SPLIT_REQUIREMENT,
+  stateLabel,
   type Classification,
   type Passage,
   type PendingChange,
   type Requirement,
   type RequirementEvidence,
+  type RequirementState,
 } from "@/lib/requirements";
 
 const actionClass =
@@ -100,15 +122,30 @@ export function PassageView({ passage }: { passage: Passage }) {
 
 type Loaded = { key: string; result: PassageResult };
 
-/** The amber "Pending change" marker (an icon and the words, never colour alone). */
-export function PendingChangeMarker() {
+/** A Requirement's state pill: Confirmed (green, check), Unconfirmed (grey, clock) or
+ * Pending change (amber, triangle). An icon and the words, never colour alone. */
+export function RequirementStatePill({
+  requirement,
+}: {
+  requirement: Pick<Requirement, "confirmed_at" | "pending_change">;
+}) {
+  const state = requirementState(requirement);
+  const { tone, icon } = STATE_PILLS[state];
   return (
-    <span className="inline-flex items-center gap-1 text-meta text-gap">
-      <GitCompareArrowsIcon aria-hidden="true" className="size-3 shrink-0" />
-      {PENDING_CHANGE}
-    </span>
+    <Pill tone={tone} icon={icon} data-state={state}>
+      {stateLabel(state)}
+    </Pill>
   );
 }
+
+const STATE_PILLS: Record<RequirementState, { tone: PillTone; icon: ReactNode }> = {
+  confirmed: { tone: "resolved", icon: <CheckIcon /> },
+  unconfirmed: { tone: "neutral", icon: <ClockIcon /> },
+  pending: { tone: "gap", icon: <TriangleAlertIcon /> },
+};
+
+/** The uppercase muted label over an inspector block ("EVIDENCE", "ACTIONS"). */
+const BLOCK_LABEL = "text-eyebrow uppercase text-text-secondary";
 
 /** How a pending-change write ended, as the reject form needs it: `ok` closes it, `invalid`
  * shows the reason under it; `failed` was handled elsewhere (a notice or the stale view). */
@@ -443,9 +480,13 @@ export type InspectorEditing = {
   locked: boolean;
   /** Why the last text save from here failed, and the user's text it kept. */
   failure?: { text: string; error: string } | null;
+  /** Whether the Requirement is in the list's merge selection. */
+  selectedForMerge: boolean;
   onCommitText: (text: string) => void;
   onClassify: (classification: Classification) => void;
   onConfirm: () => void;
+  /** Toggle the Requirement in the list's merge selection (as `x` on its row). */
+  onToggleMerge: () => void;
   /** Accept the pending change (Story 2.7). */
   onAccept: () => void;
   /** Reject the pending change with this (trimmed) reason. */
@@ -531,20 +572,21 @@ function IntegrationTypesSection({
   );
 }
 
-/** The selected Requirement in the right pane: its text, classification and origin, its
- * pending change (Story 2.7), its Evidence chips in citation order, and the shown chip's
- * passage (one of its own or of the pending change) highlighted in its surrounding text.
- * With `edit`, the text is click-to-edit, the classification a select, an unconfirmed
- * Requirement has **Confirm**, a pending change **Accept** and **Reject**, and every
- * Requirement **Split** and **Delete** (Story 2.6); without it, read-only. The header shows
- * its stable `R<n>` and its origin ("Manual" for one a person added). After the Evidence come
- * its Integration Types (Story 4.1). */
+/** The selected Requirement in the right pane: a meta line ("Functional · R4 · Extracted"),
+ * its text as the title, its state pill, its pending change (Story 2.7), then **Evidence**:
+ * the chips in citation order and the shown chip's passage (one of its own or of the pending
+ * change) highlighted in its surrounding text. With `edit`, the title is click-to-edit and an
+ * **Actions** block offers **Confirm requirement** (while unconfirmed), **Edit**, **Split**,
+ * **Merge** (toggles the Requirement in the list's merge selection), the classification and
+ * **Delete** (Story 2.6); the pending change gets **Accept** and **Reject**. Without it,
+ * read-only. Last come its Integration Types (Story 4.1). */
 export function RequirementInspector({
   opportunityId,
   requirement,
   passageId,
   onSelectPassage,
   focusRequest = 0,
+  splitRequest = 0,
   edit,
 }: {
   opportunityId: string;
@@ -554,18 +596,30 @@ export function RequirementInspector({
   onSelectPassage: (passageId: string) => void;
   /** Bump to move keyboard focus to the shown chip (0: leave focus alone). */
   focusRequest?: number;
+  /** Bump to open the Split form (the list row's **Split**); an inspector mounted with a
+   * value above 0 opens with it. 0 does nothing. */
+  splitRequest?: number;
   /** Left out for those who may not edit. */
   edit?: InspectorEditing;
 }) {
   const headingId = useId();
   const classificationId = useId();
   const evidenceId = useId();
+  const actionsId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const pressedRef = useRef<HTMLButtonElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   /** The Split or Delete form, while open (Story 2.6). */
   const [shaping, setShaping] = useState<"split" | "delete" | null>(null);
+  /** Bumped by **Edit**: starts the title's inline edit. */
+  const [editRequest, setEditRequest] = useState(0);
+  // Starts at 0, so an inspector mounted with a pending request opens the Split form too.
+  const [handledSplit, setHandledSplit] = useState(0);
+  if (handledSplit !== splitRequest) {
+    setHandledSplit(splitRequest);
+    if (splitRequest > 0 && edit) setShaping("split");
+  }
   const pending = requirement.pending_change;
   const shown =
     [...requirement.evidence, ...(pending?.evidence ?? [])].find(
@@ -574,6 +628,7 @@ export function RequirementInspector({
   const shownId = shown?.passage_id ?? null;
   const key = `${shownId}:${attempt}`;
   const result = loaded?.key === key ? loaded.result : null;
+  const disabled = !edit || edit.locked || edit.busy;
 
   useEffect(() => {
     if (focusRequest <= 0) return;
@@ -594,27 +649,26 @@ export function RequirementInspector({
     };
   }, [opportunityId, shownId, attempt]);
 
-  return (
-    <section
-      aria-labelledby={headingId}
-      className="flex flex-col gap-4 p-gutter"
+  const title = (
+    <h3
+      id={headingId}
+      ref={headingRef}
+      tabIndex={-1}
+      className="text-section break-words outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <div className="flex flex-col gap-1">
-        <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
-          <span>{requirementLabel(requirement)}</span>
-          <span aria-hidden="true">·</span>
+      {requirement.text}
+    </h3>
+  );
+
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col divide-y divide-border">
+      <div className="flex flex-col gap-1.5 p-gutter">
+        <p className="flex flex-wrap items-center gap-1.5 text-label text-text-secondary">
           <span>{classificationLabel(requirement.classification)}</span>
           <span aria-hidden="true">·</span>
-          <span>{requirementOrigin(requirement)}</span>
-          {requirement.confirmed_at ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="inline-flex items-center gap-1 text-foreground">
-                <CheckIcon aria-hidden="true" className="size-3 shrink-0 text-resolved" />
-                {CONFIRMED}
-              </span>
-            </>
-          ) : null}
+          <span>{requirementLabel(requirement)}</span>
+          <span aria-hidden="true">·</span>
+          <span>{originLine(requirement)}</span>
         </p>
         {edit ? (
           <InlineField
@@ -625,106 +679,38 @@ export function RequirementInspector({
             draft={edit.failure?.text}
             error={edit.failure?.error}
             locked={edit.locked || edit.busy}
+            editRequest={editRequest}
             onCommit={edit.onCommitText}
             className="flex flex-col gap-0.5"
-            inputClassName="h-8 w-full rounded-md border border-input bg-transparent px-1.5 text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            inputClassName="h-9 w-full rounded-md border border-input bg-transparent px-1.5 text-section outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            <h3
-              id={headingId}
-              ref={headingRef}
-              tabIndex={-1}
-              className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              {requirement.text}
-            </h3>
+            {title}
           </InlineField>
         ) : (
-          <h3
-            id={headingId}
-            ref={headingRef}
-            tabIndex={-1}
-            className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            {requirement.text}
-          </h3>
+          title
         )}
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          <RequirementStatePill requirement={requirement} />
+        </div>
       </div>
-      {edit ? (
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-0.5">
-            <label htmlFor={classificationId} className="text-label text-muted-foreground">
-              Classification
-            </label>
-            <select
-              id={classificationId}
-              value={requirement.classification}
-              disabled={edit.locked || edit.busy}
-              onChange={(event) => edit.onClassify(event.target.value as Classification)}
-              className="h-7 rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
-            >
-              {CLASSIFICATIONS.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {requirement.confirmed_at ? null : (
-            <button
-              type="button"
-              disabled={edit.locked || edit.busy}
-              onClick={edit.onConfirm}
-              className={`${actionClass} disabled:opacity-60`}
-            >
-              Confirm
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={edit.locked || edit.busy}
-            aria-expanded={shaping === "split"}
-            onClick={() => setShaping((current) => (current === "split" ? null : "split"))}
-            className={`${actionClass} disabled:opacity-60`}
-          >
-            {SPLIT_REQUIREMENT}
-          </button>
-          <button
-            type="button"
-            disabled={edit.locked || edit.busy}
-            aria-expanded={shaping === "delete"}
-            onClick={() => setShaping((current) => (current === "delete" ? null : "delete"))}
-            className={`${actionClass} disabled:opacity-60`}
-          >
-            {DELETE_REQUIREMENT}
-          </button>
+      {pending ? (
+        <div className="p-gutter">
+          <PendingChangeView
+            key={pending.id}
+            requirement={requirement}
+            pending={pending}
+            shownId={shownId}
+            onSelectPassage={onSelectPassage}
+            edit={edit}
+          />
         </div>
       ) : null}
-      {edit && shaping === "split" ? (
-        <SplitForm requirement={requirement} edit={edit} onClose={() => setShaping(null)} />
-      ) : null}
-      {edit && shaping === "delete" ? (
-        <DeleteForm edit={edit} onClose={() => setShaping(null)} />
-      ) : null}
-      {pending ? (
-        <PendingChangeView
-          key={pending.id}
-          requirement={requirement}
-          pending={pending}
-          shownId={shownId}
-          onSelectPassage={onSelectPassage}
-          edit={edit}
-        />
-      ) : null}
-      <div className="flex flex-col gap-1.5">
-        <h4 id={evidenceId} className="text-label text-muted-foreground">
+      <div className="flex flex-col gap-2 p-gutter">
+        <h4 id={evidenceId} className={BLOCK_LABEL}>
           Evidence
         </h4>
         {requirement.evidence.length > 0 ? (
-          <div
-            role="group"
-            aria-labelledby={evidenceId}
-            className="flex flex-wrap gap-1.5"
-          >
+          <div role="group" aria-labelledby={evidenceId} className="flex flex-wrap gap-1.5">
             {requirement.evidence.map((evidence) => {
               const pressed = evidence.passage_id === shownId;
               return (
@@ -741,33 +727,115 @@ export function RequirementInspector({
         ) : (
           <p className="text-muted-foreground">{NO_EVIDENCE}</p>
         )}
-      </div>
-      {shownId !== null ? (
-        <div aria-busy={result === null} className="flex flex-col gap-1.5">
-          {result === null ? (
-            <p role="status" className="text-muted-foreground">
-              {LOADING_PASSAGE}
-            </p>
-          ) : result.kind === "ok" ? (
-            <PassageView passage={result.passage} />
-          ) : result.kind === "not-found" ? (
-            <p role="status" className="text-muted-foreground">
-              {PASSAGE_GONE}
-            </p>
-          ) : (
-            <div className="flex flex-col items-start gap-1">
-              <p role="status" className="text-destructive">
-                {PASSAGE_FAILED}
+        {shownId !== null ? (
+          <div
+            aria-busy={result === null}
+            className="flex flex-col gap-1.5 rounded-lg border border-border bg-canvas p-3.5"
+          >
+            {result === null ? (
+              <p role="status" className="text-muted-foreground">
+                {LOADING_PASSAGE}
               </p>
-              <button
-                type="button"
-                onClick={() => setAttempt((n) => n + 1)}
-                className={actionClass}
-              >
-                Retry
-              </button>
-            </div>
+            ) : result.kind === "ok" ? (
+              <PassageView passage={result.passage} />
+            ) : result.kind === "not-found" ? (
+              <p role="status" className="text-muted-foreground">
+                {PASSAGE_GONE}
+              </p>
+            ) : (
+              <div className="flex flex-col items-start gap-1">
+                <p role="status" className="text-destructive">
+                  {PASSAGE_FAILED}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAttempt((n) => n + 1)}
+                  className={actionClass}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+      {edit ? (
+        <div
+          role="group"
+          aria-labelledby={actionsId}
+          className="flex flex-col gap-2 p-gutter"
+        >
+          <h4 id={actionsId} className={BLOCK_LABEL}>
+            Actions
+          </h4>
+          {requirement.confirmed_at ? null : (
+            <Button disabled={disabled} onClick={edit.onConfirm} className="w-full">
+              {CONFIRM_REQUIREMENT}
+            </Button>
           )}
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              variant="outline"
+              disabled={disabled}
+              onClick={() => {
+                setShaping(null);
+                setEditRequest((n) => n + 1);
+              }}
+            >
+              {EDIT}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={disabled}
+              aria-expanded={shaping === "split"}
+              onClick={() => setShaping((current) => (current === "split" ? null : "split"))}
+            >
+              {SPLIT_REQUIREMENT}
+            </Button>
+            <Button
+              variant="outline"
+              aria-pressed={edit.selectedForMerge}
+              onClick={edit.onToggleMerge}
+            >
+              {edit.selectedForMerge ? SELECTED_FOR_MERGE : MERGE}
+            </Button>
+          </div>
+          {shaping === "split" ? (
+            <SplitForm requirement={requirement} edit={edit} onClose={() => setShaping(null)} />
+          ) : null}
+          <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <label htmlFor={classificationId} className="text-label text-muted-foreground">
+                Classification
+              </label>
+              <select
+                id={classificationId}
+                value={requirement.classification}
+                disabled={disabled}
+                onChange={(event) => edit.onClassify(event.target.value as Classification)}
+                className="h-7 rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
+              >
+                {CLASSIFICATIONS.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              aria-expanded={shaping === "delete"}
+              onClick={() => setShaping((current) => (current === "delete" ? null : "delete"))}
+              className="text-destructive hover:text-destructive aria-expanded:text-destructive"
+            >
+              {DELETE_REQUIREMENT}
+            </Button>
+          </div>
+          {shaping === "delete" ? (
+            <DeleteForm edit={edit} onClose={() => setShaping(null)} />
+          ) : null}
         </div>
       ) : null}
       <IntegrationTypesSection requirement={requirement} edit={edit} />
