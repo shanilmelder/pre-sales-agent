@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StartRedTeamReviewResult } from "@/app/opportunities/actions";
 import type { RedTeamResult } from "@/app/opportunities/data";
+import type { AssessmentsView } from "@/lib/assessments";
 import type {
   RedTeamFinding,
   RedTeamReview,
@@ -17,15 +18,29 @@ const startRedTeamReview = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<StartRedTeamReviewResult>>(),
 );
 const loadRedTeam = vi.hoisted(() => vi.fn<(opportunityId: string) => Promise<RedTeamResult>>());
-vi.mock("@/app/opportunities/actions", () => ({ startRedTeamReview, loadRedTeam }));
+const loadAssessments = vi.hoisted(() => vi.fn());
+vi.mock("@/app/opportunities/actions", () => ({
+  startRedTeamReview,
+  loadRedTeam,
+  loadAssessments,
+  startAssessmentRun: vi.fn(),
+  retryAssessmentTask: vi.fn(),
+  cancelAssessmentRun: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    refresh: vi.fn(),
+  }),
   usePathname: () => "/opportunities/x/assessments",
 }));
 
 import { RightPane } from "../shell/right-pane";
 import { ShellProviders } from "../shell/shell-context";
-import { RedTeamHeader, RedTeamList, RedTeamSection } from "./red-team-list";
+import { SpecialistAssessmentsSection } from "./specialist-assessments";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
 
@@ -87,10 +102,27 @@ function view(r: RedTeamReview | null, run: RedTeamRun | null, canStart = true):
   return { review: r, run, can_start: canStart };
 }
 
-function renderSection(initial: RedTeamView, singleKeyShortcuts = true) {
+/** No Assessment run and no Assessments: the tab shows only the Red Team. */
+const NO_ASSESSMENTS: AssessmentsView = {
+  run: null,
+  assessments: [
+    { agent: "engineering_agent", assessment: null },
+    { agent: "pm_agent", assessment: null },
+    { agent: "security_agent", assessment: null },
+  ],
+  can_start: false,
+};
+
+/** The Assessments tab body with the given Red Team view (the `useRedTeam` hook's behaviour
+ * is tested through it). */
+function renderSection(initial: RedTeamView | null, singleKeyShortcuts = true) {
   return render(
     <ShellProviders singleKeyShortcuts={singleKeyShortcuts}>
-      <RedTeamSection opportunityId={OPP_ID} initial={initial} />
+      <SpecialistAssessmentsSection
+        opportunityId={OPP_ID}
+        initial={NO_ASSESSMENTS}
+        redTeam={initial}
+      />
       <RightPane />
     </ShellProviders>,
   );
@@ -98,29 +130,34 @@ function renderSection(initial: RedTeamView, singleKeyShortcuts = true) {
 
 const row = (n: number) => screen.getByRole("button", { name: new RegExp(`\\[FINDING ${n}\\]`) });
 const pane = () => screen.getByRole("complementary", { name: "Details" });
+/** The Red Team's task card. */
+const redCard = () =>
+  within(screen.getByRole("list", { name: "Agent progress" }))
+    .getByText("Red Team")
+    .closest("li") as HTMLElement;
+const redStatus = () => redCard().querySelector("[data-task-pill]")?.textContent;
+const retryButton = () => screen.queryByRole("button", { name: "Retry Red Team" });
+const resultCard = () => screen.getByRole("article", { name: "Red Team" });
 
 beforeEach(() => {
   startRedTeamReview.mockReset();
   loadRedTeam.mockReset();
+  loadAssessments.mockReset();
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("RedTeamList", () => {
-  it("shows dense rows in the given order with severity pill, category, title and chips", async () => {
-    const { container } = render(
-      <ShellProviders singleKeyShortcuts>
-        <RedTeamList items={FINDINGS} />
-      </ShellProviders>,
-    );
-    const grid = screen.getByRole("grid", { name: "Red Team Findings" });
+describe("the Red Team Findings in the Findings table", () => {
+  it("shows dense rows ranked by severity with pill, category, title, Raised by and chips", async () => {
+    const { container } = renderSection(view(review(), succeeded));
+    const grid = screen.getByRole("grid", { name: "Findings" });
     const rows = within(grid).getAllByRole("row");
     expect(rows.map((r) => r.textContent)).toEqual([
-      "CriticalRequirement incomplete[FINDING 3]1 Requirement2 Estimate lines",
-      "HighIntegration harder[FINDING 1]1 Requirement1 Estimate line",
-      "LowHidden dependency[FINDING 2]1 Requirement0 Estimate lines",
+      "CriticalRequirement incomplete[FINDING 3]Red Team1 Requirement2 Estimate lines",
+      "HighIntegration harder[FINDING 1]Red Team1 Requirement1 Estimate line",
+      "LowHidden dependency[FINDING 2]Red Team1 Requirement0 Estimate lines",
     ]);
     const pills = Array.from(grid.querySelectorAll("[data-severity]"));
     expect(pills.map((p) => p.getAttribute("data-severity"))).toEqual(["critical", "high", "low"]);
@@ -130,20 +167,26 @@ describe("RedTeamList", () => {
       expect(pill.getAttribute("data-slot")).toBe("pill");
       expect(pill.querySelector("svg")).toBeTruthy();
     }
-    expect(grid.querySelectorAll('[data-tone="blocker"]')).toHaveLength(1);
+    // Critical rows are tinted red.
+    expect(rows[0].className).toContain("bg-blocker-tint");
+    expect(rows[1].className).not.toContain("bg-blocker-tint");
     expect(row(3).className).toContain("min-h-row");
-    const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
+    const tabStops = within(grid)
+      .getAllByRole("button")
+      .filter((b) => b.tabIndex === 0);
     expect(tabStops).toEqual([row(3)]);
+    const heading = screen.getByRole("heading", { level: 3, name: "Findings" });
+    expect(
+      within(heading.parentElement as HTMLElement).getByText(
+        "1 Critical · 1 High · 0 Medium · 1 Low",
+      ),
+    ).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 
   it("j/k and the arrows move between rows; j/k off with shortcuts off", async () => {
     const user = userEvent.setup();
-    const { unmount } = render(
-      <ShellProviders singleKeyShortcuts>
-        <RedTeamList items={FINDINGS} />
-      </ShellProviders>,
-    );
+    const { unmount } = renderSection(view(review(), succeeded));
     await user.tab();
     expect(document.activeElement).toBe(row(3));
     await user.keyboard("j");
@@ -157,11 +200,7 @@ describe("RedTeamList", () => {
     expect(document.activeElement).toBe(row(3));
     unmount();
 
-    render(
-      <ShellProviders singleKeyShortcuts={false}>
-        <RedTeamList items={FINDINGS} />
-      </ShellProviders>,
-    );
+    renderSection(view(review(), succeeded), false);
     await user.tab();
     await user.keyboard("j");
     expect(document.activeElement).toBe(row(3));
@@ -208,52 +247,72 @@ describe("the inspector", () => {
   });
 });
 
-describe("RedTeamHeader", () => {
-  it("shows Red Team v2 and the severity counts", () => {
-    render(<RedTeamHeader review={review(2)} run={succeeded} canStart />);
-    expect(screen.getByText("Red Team v2")).toBeTruthy();
-    expect(screen.getByText("1 critical · 1 high · 0 medium · 1 low")).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+describe("the Red Team task and result cards", () => {
+  it("shows the review's result card with its version, severity counts and evidence", () => {
+    renderSection(view(review(2), succeeded));
+    const card = resultCard();
+    expect(within(card).getByText("v2")).toBeTruthy();
+    expect(within(card).getByText("1 Critical · 1 High · 0 Medium · 1 Low")).toBeTruthy();
+    expect(within(card).getByText("3 Findings against Estimate v2")).toBeTruthy();
+    expect(within(card).getByText("R2")).toBeTruthy();
+    expect(within(card).queryByRole("button")).toBeNull(); // no Show effort
+    expect(redStatus()).toBe("Done");
+    expect(
+      within(redCard()).getByText("Argues integrations are harder and Requirements incomplete"),
+    ).toBeTruthy();
+    // No elapsed time: the Red Team run has no timestamps.
+    expect(within(redCard()).queryByTestId("elapsed")).toBeNull();
+    expect(retryButton()).toBeNull();
   });
 
-  it.each([queued, running])("shows Red Team reviewing with a running dot while $status", (r) => {
-    render(<RedTeamHeader review={null} run={r} canStart />);
-    expect(screen.getByText("Red Team reviewing")).toBeTruthy();
+  it("a queued review waits for the worker; a running one has a static running dot", () => {
+    const { unmount } = renderSection(view(null, queued));
+    expect(redStatus()).toBe("Queued");
+    expect(within(redCard()).getByText("Waiting for the worker")).toBeTruthy();
+    expect(screen.queryByTestId("running-dot")).toBeNull();
+    unmount();
+
+    renderSection(view(null, running));
+    expect(redStatus()).toBe("Running");
     const runningDot = screen.getByTestId("running-dot");
     expect(runningDot.tagName.toLowerCase()).toBe("svg");
     expect(runningDot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
     expect(runningDot.getAttribute("class") ?? "").toContain("text-agent");
     expect(runningDot.getAttribute("class") ?? "").not.toContain("animate");
+    expect(
+      redCard().querySelector("[data-testid='state-bar']")?.getAttribute("data-state"),
+    ).toBe("running");
   });
 
   it("shows the failure reason and Retry for those who may start a review", () => {
-    render(<RedTeamHeader review={null} run={failed} canStart />);
-    expect(
-      screen.getByText("Red Team review failed: the model service couldn't be reached"),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    renderSection(view(null, failed));
+    expect(redStatus()).toBe("Failed");
+    expect(within(redCard()).getByText("the model service couldn't be reached")).toBeTruthy();
+    expect(retryButton()).toBeTruthy();
+    expect(redCard().querySelector("[data-slot='card']")?.className).toContain("border-blocker");
   });
 
   it("hides Retry from those who may not start one", () => {
-    render(<RedTeamHeader review={null} run={failed} canStart={false} />);
+    renderSection(view(null, failed, false));
     expect(screen.queryByRole("button")).toBeNull();
-  });
-
-  it("says to reload instead of the running dot once polling has stopped", () => {
-    render(<RedTeamHeader review={null} run={running} stalled />);
-    expect(screen.getByText("Still reviewing — reload to check.")).toBeTruthy();
-    expect(screen.queryByTestId("running-dot")).toBeNull();
   });
 });
 
-describe("RedTeamSection", () => {
+describe("useRedTeam through the Assessments tab", () => {
   it("shows the empty sentence before any review", async () => {
     const { container } = renderSection(view(null, null));
-    expect(screen.getByRole("heading", { level: 3, name: "Red Team" })).toBeTruthy();
     expect(
       screen.getByText("The Red Team reviews the Opportunity after the Estimate is drafted."),
     ).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Agent progress" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("says so when the Red Team could not be loaded", () => {
+    renderSection(null);
+    expect(
+      screen.getByText("The Red Team Review could not be loaded. Try again in a moment."),
+    ).toBeTruthy();
   });
 
   it("polls every 2 s while reviewing, then shows the new review", async () => {
@@ -262,7 +321,7 @@ describe("RedTeamSection", () => {
       .mockResolvedValueOnce({ kind: "ok", redTeam: view(null, running) })
       .mockResolvedValue({ kind: "ok", redTeam: view(review(1), succeeded) });
     renderSection(view(null, queued));
-    expect(screen.getByText("Red Team reviewing")).toBeTruthy();
+    expect(redStatus()).toBe("Queued");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1999);
@@ -272,12 +331,13 @@ describe("RedTeamSection", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(loadRedTeam).toHaveBeenCalledWith(OPP_ID);
+    expect(redStatus()).toBe("Running");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(screen.getByText("[FINDING 3]")).toBeTruthy();
-    expect(screen.getByText("Red Team v1")).toBeTruthy();
-    expect(screen.queryByText("Red Team reviewing")).toBeNull();
+    expect(within(resultCard()).getByText("v1")).toBeTruthy();
+    expect(redStatus()).toBe("Done");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
@@ -290,8 +350,8 @@ describe("RedTeamSection", () => {
 
   it("keeps showing the current review while a re-review runs", () => {
     renderSection(view(review(1), running));
-    expect(screen.getByText("Red Team v1")).toBeTruthy();
-    expect(screen.getByText("Red Team reviewing")).toBeTruthy();
+    expect(within(resultCard()).getByText("v1")).toBeTruthy();
+    expect(redStatus()).toBe("Running");
     expect(screen.getByText("[FINDING 1]")).toBeTruthy();
   });
 
@@ -351,6 +411,34 @@ describe("RedTeamSection", () => {
     expect(screen.queryByTestId("running-dot")).toBeNull();
   });
 
+  it.each([queued, running])(
+    "a review stalled while $status says to reload, with no running dot or activity icon",
+    async (r) => {
+      vi.useFakeTimers();
+      loadRedTeam.mockResolvedValue({ kind: "ok", redTeam: view(null, r) });
+      let hidden = true;
+      const spy = vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+      try {
+        renderSection(view(null, r));
+        vi.setSystemTime(Date.now() + 16 * 60 * 1000);
+        hidden = false;
+        act(() => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+        });
+        expect(within(redCard()).getByText("Still reviewing — reload to check.")).toBeTruthy();
+        expect(within(redCard()).queryByText("Waiting for the worker")).toBeNull();
+        expect(screen.queryByTestId("running-dot")).toBeNull();
+        expect(screen.getByText(`1 ${r.status}`)).toBeTruthy();
+        expect(screen.queryByTestId("activity-icon")).toBeNull();
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
   it("says to reload when shown again after being hidden past the 15-minute limit", async () => {
     vi.useFakeTimers();
     loadRedTeam.mockResolvedValue({ kind: "ok", redTeam: view(null, running) });
@@ -378,16 +466,14 @@ describe("RedTeamSection", () => {
     startRedTeamReview.mockResolvedValue({ kind: "ok", run: queued });
     loadRedTeam.mockResolvedValue({ kind: "ok", redTeam: view(review(1), succeeded) });
     const { container } = renderSection(view(null, failed));
-    expect(
-      screen.getByText("Red Team review failed: the model service couldn't be reached"),
-    ).toBeTruthy();
+    expect(within(redCard()).getByText("the model service couldn't be reached")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
 
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await user.click(retryButton()!);
 
     expect(startRedTeamReview).toHaveBeenCalledWith(OPP_ID);
-    expect(screen.getByText("Red Team reviewing")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(redStatus()).toBe("Queued");
+    expect(retryButton()).toBeNull();
     await waitFor(() => expect(screen.getByText("[FINDING 3]")).toBeTruthy(), { timeout: 4000 });
   });
 
@@ -397,9 +483,9 @@ describe("RedTeamSection", () => {
     loadRedTeam.mockResolvedValue({ kind: "ok", redTeam: view(null, running) });
     renderSection(view(null, failed));
 
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await user.click(retryButton()!);
 
-    await waitFor(() => expect(screen.getByText("Red Team reviewing")).toBeTruthy());
+    await waitFor(() => expect(redStatus()).toBe("Running"));
   });
 
   it.each([
@@ -414,16 +500,16 @@ describe("RedTeamSection", () => {
     startRedTeamReview.mockResolvedValue(result);
     renderSection(view(null, failed));
 
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await user.click(retryButton()!);
 
     expect(await screen.findByText(sentence)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(retryButton()).toBeTruthy();
   });
 
   it("a sales representative sees the same Findings, read-only, and no Retry", async () => {
     const user = userEvent.setup();
     renderSection(view(review(), failed, false));
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(retryButton()).toBeNull();
 
     await user.click(row(1));
 
@@ -449,9 +535,11 @@ describe("RedTeamSection", () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
 
-    expect(screen.getByText("Red Team v3")).toBeTruthy();
+    expect(within(resultCard()).getByText("v3")).toBeTruthy();
     expect(within(pane()).queryByText("[ARGUMENT 1]")).toBeNull();
-    expect(within(pane()).getByText("Select a gap or estimate line to see its details.")).toBeTruthy();
+    expect(
+      within(pane()).getByText("Select a gap or estimate line to see its details."),
+    ).toBeTruthy();
   });
 
   it("says so when a finished run had nothing to review", () => {

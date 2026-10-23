@@ -1397,7 +1397,7 @@ describe("/opportunities/[id] workspace", () => {
     );
   }
 
-  it("tab URL /assessments: the Red Team section with its severity-ranked Findings", async () => {
+  it("tab URL /assessments: the Red Team folded into the tab, its Findings in the table", async () => {
     signedIn(["sales_representative"]);
     foundWithRedTeam({
       review: {
@@ -1436,12 +1436,17 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["5Assessments"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Assessments" })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "Agent tasks" })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "Findings" })).toBeTruthy();
+    // No separate Red Team section: a task card, a result card and Findings table rows.
+    expect(within(panel).queryByRole("heading", { level: 3, name: "Red Team" })).toBeNull();
+    const result = within(panel).getByRole("article", { name: "Red Team" });
+    expect(within(result).getByText("v2")).toBeTruthy();
     expect(
-      within(panel).getByRole("heading", { level: 3, name: "Specialist Assessments" }),
+      within(within(panel).getByRole("list", { name: "Agent progress" })).getByText("Red Team"),
     ).toBeTruthy();
-    expect(within(panel).getByRole("heading", { level: 3, name: "Red Team" })).toBeTruthy();
-    expect(within(panel).getByText("Red Team v2")).toBeTruthy();
-    expect(within(panel).getByRole("button", { name: /\[FINDING\]/ })).toBeTruthy();
+    const finding = within(panel).getByRole("button", { name: /\[FINDING\]/ });
+    expect(finding.textContent).toBe("CriticalIntegration harder[FINDING]Red Team1 Requirement0 Estimate lines");
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/red-team", {
       params: { path: { opportunity_id: OPP_ID } },
@@ -1485,6 +1490,85 @@ describe("/opportunities/[id] workspace", () => {
     expect(
       within(panel).getByText("The Effort comparison could not be loaded. Try again in a moment."),
     ).toBeTruthy();
+  });
+
+  const RED_TEAM_WITH_FINDING = {
+    review: {
+      id: "00000000-0000-7000-8000-0000000000c1",
+      version: 2,
+      status: "current",
+      estimate_version_id: null,
+      estimate_version: null,
+      dropped_count: 0,
+      created_at: "2026-10-05T09:00:00Z",
+      counts: { critical: 0, high: 1, medium: 0, low: 0 },
+      findings: [
+        {
+          id: "00000000-0000-7000-8000-0000000000c2",
+          position: 1,
+          category: "integration_harder",
+          severity: "high",
+          title: "[RED FINDING]",
+          argument: "[ARGUMENT]",
+          requirements: [],
+          lines: [],
+        },
+      ],
+    },
+    run: { status: "failed", error_code: "model_timeout" },
+    can_start: false,
+  };
+
+  it("tab URL /assessments: a failed Red Team read says so beside the specialist content", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithRedTeam(null, { ...NO_ASSESSMENTS, can_start: true });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("assessments");
+    const panel = screen.getByRole("tabpanel");
+    expect(
+      within(panel).getByText("The Red Team Review could not be loaded. Try again in a moment."),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.",
+      ),
+    ).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Run assessment" })).toBeTruthy();
+    expect(
+      within(panel).queryByText(
+        "The Specialist Assessments could not be loaded. Try again in a moment.",
+      ),
+    ).toBeNull();
+  });
+
+  it("tab URL /assessments: a failed Assessments read still shows the Red Team", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithRedTeam(RED_TEAM_WITH_FINDING, null);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("assessments");
+    const panel = screen.getByRole("tabpanel");
+    expect(
+      within(panel).getByText(
+        "The Specialist Assessments could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(panel).queryByText(
+        "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.",
+      ),
+    ).toBeNull();
+    const tasks = within(panel).getByRole("list", { name: "Agent progress" });
+    expect(within(tasks).getByText("Red Team")).toBeTruthy();
+    expect(within(tasks).getByText("the model took too long to answer")).toBeTruthy();
+    expect(within(panel).getByRole("article", { name: "Red Team" })).toBeTruthy();
+    expect(
+      within(within(panel).getByRole("grid", { name: "Findings" })).getByRole("button", {
+        name: /\[RED FINDING\]/,
+      }),
+    ).toBeTruthy();
+    expect(
+      within(panel).queryByText("The Red Team Review could not be loaded. Try again in a moment."),
+    ).toBeNull();
   });
 
   describe("tab URL /assessments: Effort comparison", () => {
@@ -1550,7 +1634,7 @@ describe("/opportunities/[id] workspace", () => {
     };
     const RED_TEAM = { review: null, run: null, can_start: false };
 
-    it("sits between Specialist Assessments and the Red Team, for any reader", async () => {
+    it("comes last, after Results so far and Findings, for any reader", async () => {
       signedIn(["sales_representative"]);
       foundWithRedTeam(RED_TEAM, ASSESSMENTS, ESTIMATE, REQUIREMENTS);
       const { container } = await renderWorkspace("assessments");
@@ -1559,9 +1643,8 @@ describe("/opportunities/[id] workspace", () => {
         .getAllByRole("heading", { level: 3 })
         .map((h) => h.textContent);
       const at = (name: string) => headings.indexOf(name);
-      expect(at("Specialist Assessments")).toBeGreaterThanOrEqual(0);
-      expect(at("Effort comparison")).toBe(at("Specialist Assessments") + 1);
-      expect(at("Red Team")).toBe(at("Effort comparison") + 1);
+      expect(headings).toEqual(["Results so far", "Findings", "Effort comparison"]);
+      expect(at("Effort comparison")).toBe(headings.length - 1);
 
       const table = within(panel).getByRole("table", {
         name: "Effort comparison by Requirement, in hours",

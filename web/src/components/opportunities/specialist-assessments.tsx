@@ -1,17 +1,31 @@
 "use client";
 
 import {
+  CalendarRangeIcon,
+  ChevronDownIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDotIcon,
   CircleMinusIcon,
   ClockIcon,
-  ListChecksIcon,
+  LayoutPanelLeftIcon,
   LoaderCircleIcon,
+  QuoteIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+  SwordsIcon,
+  TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import {
   cancelAssessmentRun,
@@ -26,6 +40,8 @@ import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
 import { AssessmentFindingInspector } from "@/components/opportunities/assessment-finding-inspector";
 import { useFindingSelection } from "@/components/opportunities/finding-selection";
+import { CountChip, useRedTeam } from "@/components/opportunities/red-team-list";
+import { RedTeamInspector } from "@/components/opportunities/red-team-inspector";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
@@ -45,6 +61,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  activitySummary,
   agentLabel,
   agentRole,
   CANCEL_RUN,
@@ -53,41 +70,53 @@ import {
   CANCEL_RUN_KEEP,
   CANCEL_RUN_TITLE,
   confidenceLabel,
+  evidenceLabels,
   failureReason,
-  skipNote,
+  findingKey,
   isAssessing,
-  kindLabel,
-  NO_AGENT_ASSESSMENT,
+  mergeFindings,
   NO_ASSESSMENT,
   NOTHING_TO_ASSESS,
+  RED_TEAM_LABEL,
+  RED_TEAM_ROLE,
   recommendationInfo,
   RUN_ASSESSMENT,
+  runAlert,
   runStatusLabel,
   runStatusTone,
+  severitySummary,
+  severityTotals,
+  skipNote,
   START_NEW_RUN,
   STILL_ASSESSING,
   taskCounters,
   taskElapsed,
   taskStatusLabel,
   WAITING_FOR_WORKER,
-  type AgentAssessment,
   type Assessment,
   type AssessmentAgent,
-  type AssessmentFinding,
   type AssessmentRun,
   type AssessmentsView,
-  type AssessmentTask,
+  type FindingRow,
   type Recommendation,
+  type TaskStatus,
 } from "@/lib/assessments";
 import { hours } from "@/lib/estimates";
 import { formatDateTime } from "@/lib/sources";
 import { useOpportunityEvents } from "@/lib/opportunity-events";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import {
-  countsLabel,
+  findingCount,
+  isReviewing,
+  NO_REVIEW,
+  NOTHING_TO_REVIEW,
   REVIEW_POLL_LIMIT_MS,
   REVIEW_POLL_MS,
   SEVERITIES,
+  STILL_REVIEWING,
+  type RedTeamReview,
+  type RedTeamRun,
+  type RedTeamView,
   type SeverityCounts,
 } from "@/lib/red-team";
 import { cn } from "@/lib/utils";
@@ -97,6 +126,20 @@ const START_FAILED = "The assessment could not be started. Try again.";
 const CANCEL_FAILED = "The run could not be cancelled. Try again.";
 const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can run an assessment.";
+const ASSESSMENTS_NOT_LOADED =
+  "The Specialist Assessments could not be loaded. Try again in a moment.";
+const RED_TEAM_NOT_LOADED =
+  "The Red Team Review could not be loaded. Try again in a moment.";
+export const NO_FINDINGS = "No Findings.";
+export const SHOW_EFFORT = "Show effort";
+export const HIDE_EFFORT = "Hide effort";
+
+/** Each agent's icon on its task card. */
+const AGENT_ICONS: Record<AssessmentAgent, LucideIcon> = {
+  engineering_agent: LayoutPanelLeftIcon,
+  pm_agent: CalendarRangeIcon,
+  security_agent: ShieldCheckIcon,
+};
 
 /** A recommendation: always an icon and a label, never colour alone. */
 export function RecommendationPill({
@@ -122,7 +165,7 @@ export function RecommendationPill({
 function SeverityCountsLine({ counts }: { counts: SeverityCounts }) {
   return (
     <p className="flex flex-wrap items-center gap-3 text-label">
-      <span className="sr-only">{countsLabel(counts)}</span>
+      <span className="sr-only">{severitySummary(counts)}</span>
       {SEVERITIES.map((s) => {
         const Icon = s.icon;
         return (
@@ -143,29 +186,32 @@ function SeverityCountsLine({ counts }: { counts: SeverityCounts }) {
   );
 }
 
-/** An agent's Findings as dense 32px rows, in the order given (the API ranks them critical to
- * low, then by position): severity pill, kind, the specific title and the Requirement count.
- * One Tab stop (roving tabindex); j/k (with single-key shortcuts on) or the arrows move
- * between rows; Enter, Space or a click opens the row, which is then `aria-selected`. */
-export function AssessmentFindingList({
-  agent,
-  items,
-  selectedId = null,
+/** The columns of the Findings table, shared by its header and its rows (from `md`). */
+const FINDING_COLUMNS =
+  "md:grid-cols-[5.5rem_9rem_minmax(0,1fr)_9rem_6.5rem]";
+
+/** Every agent's and the Red Team's Findings in one table, in the order given (ranked
+ * critical to low): severity, type, the specific title, who raised it and the evidence counts.
+ * Critical rows are tinted red. One Tab stop (roving tabindex); j/k (with single-key shortcuts
+ * on) or the arrows move between rows; Enter, Space or a click opens the row, which is then
+ * `aria-selected`. */
+export function FindingsTable({
+  rows,
+  selectedKey = null,
   onOpen,
 }: {
-  agent: AssessmentAgent;
-  items: readonly AssessmentFinding[];
-  selectedId?: string | null;
+  rows: readonly FindingRow[];
+  selectedKey?: string | null;
   /** `viaKeyboard` is true when opened with Enter or Space, not a pointer. */
-  onOpen?: (item: AssessmentFinding, viaKeyboard: boolean) => void;
+  onOpen?: (row: FindingRow, viaKeyboard: boolean) => void;
 }) {
   const { singleKeyShortcuts } = useShell();
   const container = useRef<HTMLDivElement>(null);
-  const [focusedId, setFocusedId] = useState<string | null>(null);
-  const tabStopId =
-    [focusedId, selectedId].find(
-      (id) => id !== null && items.some((i) => i.id === id),
-    ) ?? items[0]?.id;
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const keys = rows.map(findingKey);
+  const tabStopKey =
+    [focusedKey, selectedKey].find((k) => k !== null && keys.includes(k)) ??
+    keys[0];
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -189,59 +235,77 @@ export function AssessmentFindingList({
   }
 
   return (
-    <div
-      ref={container}
-      role="grid"
-      aria-label={`${agentLabel(agent)} Findings`}
-      onKeyDown={onKeyDown}
-      className="flex flex-col"
-    >
-      {items.map((item) => {
-        const selected = item.id === selectedId;
-        const count = item.requirements.length;
-        return (
-          <div
-            key={item.id}
-            role="row"
-            aria-selected={selected}
-            className={`border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
-          >
-            <div role="gridcell">
-              <button
-                type="button"
-                data-finding-row=""
-                data-finding-id={item.id}
-                tabIndex={item.id === tabStopId ? 0 : -1}
-                onFocus={() => setFocusedId(item.id)}
-                // A keyboard-activated click has no pointer clicks (detail 0).
-                onClick={(event) => onOpen?.(item, event.detail === 0)}
-                className="flex min-h-row w-full items-center gap-3 rounded-sm px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <SeverityPill severity={item.severity} />
-                <span className="w-24 shrink-0 truncate text-meta text-muted-foreground">
-                  {kindLabel(item.kind)}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-body">
-                  {item.title}
-                </span>
-                <Chip className="shrink-0">
-                  <ListChecksIcon
-                    aria-hidden="true"
-                    className="size-3 shrink-0"
-                  />
-                  <span className="[font-variant-numeric:tabular-nums]">
-                    {count}
+    <Card className="gap-0 overflow-hidden p-0">
+      <div
+        aria-hidden="true"
+        className={cn(
+          "hidden gap-4 bg-surface-alt px-5 py-2.5 text-label text-muted-foreground md:grid",
+          FINDING_COLUMNS,
+        )}
+      >
+        <span>Severity</span>
+        <span>Type</span>
+        <span>Finding</span>
+        <span>Raised by</span>
+        <span className="text-right">Evidence</span>
+      </div>
+      <div
+        ref={container}
+        role="grid"
+        aria-label="Findings"
+        onKeyDown={onKeyDown}
+        className="flex flex-col"
+      >
+        {rows.map((row) => {
+          const key = findingKey(row);
+          const selected = key === selectedKey;
+          return (
+            <div
+              key={key}
+              role="row"
+              aria-selected={selected}
+              data-severity-row={row.severity}
+              className={cn(
+                "border-t border-border first:border-t-0 md:first:border-t",
+                row.severity === "critical" && "bg-blocker-tint",
+                selected ? "bg-muted" : "hover:brightness-[.97]",
+              )}
+            >
+              <div role="gridcell">
+                <button
+                  type="button"
+                  data-finding-row=""
+                  data-finding-id={key}
+                  tabIndex={key === tabStopKey ? 0 : -1}
+                  onFocus={() => setFocusedKey(key)}
+                  // A keyboard-activated click has no pointer clicks (detail 0).
+                  onClick={(event) => onOpen?.(row, event.detail === 0)}
+                  className={cn(
+                    "grid min-h-row w-full grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-4 gap-y-1 px-5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset",
+                    FINDING_COLUMNS,
+                  )}
+                >
+                  <SeverityPill severity={row.severity} />
+                  <span className="truncate text-meta text-muted-foreground">
+                    {row.type}
                   </span>
-                  <span className="sr-only">
-                    {count === 1 ? " Requirement" : " Requirements"}
+                  <span className="col-span-2 min-w-0 text-body-strong md:col-span-1">
+                    {row.finding.title}
                   </span>
-                </Chip>
-              </button>
+                  <span className="truncate text-body">{row.raisedBy}</span>
+                  <span className="flex items-center gap-1 md:justify-end">
+                    <CountChip count={row.requirements} kind="requirement" />
+                    {row.lines !== null ? (
+                      <CountChip count={row.lines} kind="line" />
+                    ) : null}
+                  </span>
+                </button>
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
@@ -299,80 +363,141 @@ function EffortTable({ assessment }: { assessment: Assessment }) {
   );
 }
 
-/** One agent's card: its name, version, recommendation, confidence with its basis, severity
- * counts, Findings and effort table ("No Assessment yet." before its first). */
-export function AssessmentCard({
-  slot,
-  selectedId = null,
-  onOpen,
+/** The Requirement evidence chips of a result card. */
+function EvidenceChips({
+  items,
 }: {
-  slot: AgentAssessment;
-  selectedId?: string | null;
-  onOpen?: (
-    item: AssessmentFinding,
-    agent: AssessmentAgent,
-    viaKeyboard: boolean,
-  ) => void;
+  items: readonly { id: string; label: string }[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <ul aria-label="Evidence" className="flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <li key={item.label}>
+          <Chip>
+            <QuoteIcon aria-hidden="true" className="size-3 shrink-0" />
+            {item.label}
+          </Chip>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The frame of a result card: the name as its heading, then the rest. */
+function ResultCard({
+  name,
+  badges,
+  children,
+}: {
+  name: string;
+  badges: ReactNode;
+  children: ReactNode;
 }) {
   const headingId = useId();
-  const assessment = slot.assessment;
   return (
-    <Card role="article" aria-labelledby={headingId} className="gap-3 p-4">
+    <Card role="article" aria-labelledby={headingId} className="gap-2.5 p-5">
       <div className="flex flex-wrap items-center gap-2">
         <h4 id={headingId} className="text-body-strong">
-          {agentLabel(slot.agent)}
+          {name}
         </h4>
-        {assessment ? (
-          <>
-            <Pill tone="neutral" className="shrink-0">
-              v{assessment.version}
-            </Pill>
-            <RecommendationPill recommendation={assessment.recommendation} />
-          </>
-        ) : null}
+        {badges}
       </div>
-      {assessment ? (
-        <>
-          <p className="text-body">
-            <span className="text-label">
-              {confidenceLabel(assessment.confidence)}
-            </span>
-            <span className="text-muted-foreground">
-              : {assessment.confidence_basis}
-            </span>
-          </p>
-          <SeverityCountsLine counts={assessment.counts} />
-          <AssessmentFindingList
-            agent={slot.agent}
-            items={assessment.findings}
-            selectedId={selectedId}
-            onOpen={(item, viaKeyboard) =>
-              onOpen?.(item, slot.agent, viaKeyboard)
-            }
-          />
-          <EffortTable assessment={assessment} />
-        </>
-      ) : (
-        <p className="text-muted-foreground">{NO_AGENT_ASSESSMENT}</p>
-      )}
+      {children}
     </Card>
   );
 }
 
-const TASK_PILL_ICONS: Record<
-  AssessmentTask["status"],
-  { icon: LucideIcon; tone: string }
-> = {
-  queued: { icon: ClockIcon, tone: "text-muted-foreground" },
-  running: { icon: CircleDotIcon, tone: "text-agent" },
-  succeeded: { icon: CircleCheckIcon, tone: "text-resolved" },
-  failed: { icon: CircleAlertIcon, tone: "text-blocker" },
-  skipped: { icon: CircleMinusIcon, tone: "text-muted-foreground" },
-};
+/** One agent's result card: its name, version, recommendation, confidence, the confidence
+ * basis as its summary, up to three Requirement evidence chips and **Show effort**, which
+ * reveals the per-Requirement effort table. */
+export function AssessmentCard({ assessment }: { assessment: Assessment }) {
+  const effortId = useId();
+  const [showEffort, setShowEffort] = useState(false);
+  return (
+    <ResultCard
+      name={agentLabel(assessment.agent)}
+      badges={
+        <>
+          <span className="text-meta text-muted-foreground">
+            v{assessment.version}
+          </span>
+          <RecommendationPill recommendation={assessment.recommendation} />
+          <span className="text-meta text-muted-foreground">
+            {confidenceLabel(assessment.confidence)}
+          </span>
+        </>
+      }
+    >
+      <p className="text-body">{assessment.confidence_basis}</p>
+      <EvidenceChips
+        items={evidenceLabels(assessment.findings, assessment.effort)}
+      />
+      <div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          aria-expanded={showEffort}
+          aria-controls={effortId}
+          aria-label={`${showEffort ? HIDE_EFFORT : SHOW_EFFORT}: ${agentLabel(assessment.agent)}`}
+          onClick={() => setShowEffort((open) => !open)}
+        >
+          <ChevronDownIcon
+            aria-hidden="true"
+            className={cn(
+              "transition-transform motion-reduce:transition-none",
+              showEffort && "rotate-180",
+            )}
+          />
+          {showEffort ? HIDE_EFFORT : SHOW_EFFORT}
+        </Button>
+      </div>
+      <div id={effortId} hidden={!showEffort}>
+        {showEffort ? <EffortTable assessment={assessment} /> : null}
+      </div>
+    </ResultCard>
+  );
+}
+
+/** The Red Team's result card: its version, severity counts, Finding count and up to three
+ * Requirement evidence chips. */
+export function RedTeamResultCard({ review }: { review: RedTeamReview }) {
+  return (
+    <ResultCard
+      name={RED_TEAM_LABEL}
+      badges={
+        <>
+          <span className="text-meta text-muted-foreground">
+            v{review.version}
+          </span>
+          <SeverityCountsLine counts={review.counts} />
+        </>
+      }
+    >
+      <p className="text-body">
+        {findingCount(review.findings.length)}
+        {review.estimate_version
+          ? ` against Estimate v${review.estimate_version}`
+          : ""}
+      </p>
+      <EvidenceChips items={evidenceLabels(review.findings)} />
+    </ResultCard>
+  );
+}
+
+const TASK_PILL_ICONS: Record<TaskStatus, { icon: LucideIcon; tone: string }> =
+  {
+    queued: { icon: ClockIcon, tone: "text-muted-foreground" },
+    running: { icon: CircleDotIcon, tone: "text-agent" },
+    succeeded: { icon: CircleCheckIcon, tone: "text-resolved" },
+    failed: { icon: CircleAlertIcon, tone: "text-blocker" },
+    skipped: { icon: CircleMinusIcon, tone: "text-muted-foreground" },
+  };
 
 /** A task's status: always an icon and a label, never colour alone (Queued neutral, Running
  * agent colour, Done green, Failed red, Skipped neutral). */
-function TaskStatusPill({ status }: { status: AssessmentTask["status"] }) {
+function TaskStatusPill({ status }: { status: TaskStatus }) {
   const known = TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued;
   const Icon = known.icon;
   return (
@@ -403,22 +528,164 @@ function useNow(ticking: boolean): number {
   return now;
 }
 
-/** The agent run panel: one 28px row per task of the latest run (in any status) with the
- * agent's role, a status pill, the elapsed time in tabular figures (`m:ss`, ticking each
- * second while it runs, its final duration once done or failed, blank before it starts) and a
- * running dot (static under reduced motion). Queued rows say "Waiting for the worker"; failed
- * rows give the reason and **Retry** for those who may start one (never in a cancelled run;
- * skipped rows keep a duration if they had started; a task skipped because its Agent is
- * disabled says "Agent disabled — assess manually"). Elapsed time comes from the
- * task's timestamps and the browser's clock, so it ticks without a fetch. */
+/** A task's state bar, decorative (the pill carries the meaning) and never a percentage:
+ * full green once done, an indeterminate indigo sweep while running (a still, pale full bar
+ * under reduced motion or once polling has stalled), empty while queued or skipped, full red
+ * once failed. */
+function StateBar({ status, still }: { status: TaskStatus; still: boolean }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="state-bar"
+      data-state={status}
+      className="relative h-1.5 w-full overflow-hidden rounded-full bg-surface-alt"
+    >
+      {status === "succeeded" ? (
+        <div className="h-full w-full rounded-full bg-resolved" />
+      ) : status === "failed" ? (
+        <div className="h-full w-full rounded-full bg-blocker" />
+      ) : status === "running" ? (
+        still ? (
+          <div className="h-full w-full rounded-full bg-primary opacity-40" />
+        ) : (
+          <div className="h-full w-full animate-in duration-[1.6s] ease-in-out slide-in-from-left-full repeat-infinite motion-reduce:animate-none">
+            <div className="ml-[60%] h-full w-2/5 rounded-full bg-primary motion-reduce:ml-0 motion-reduce:w-full motion-reduce:opacity-40" />
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+/** The card border (and tint) for a task's status. */
+function taskCardTone(status: TaskStatus): string {
+  switch (status) {
+    case "succeeded":
+      return "border-resolved";
+    case "running":
+      return "border-primary";
+    case "failed":
+      return "border-blocker bg-blocker-tint";
+    default:
+      return "";
+  }
+}
+
+/** One task card of the Agent tasks grid. */
+function TaskCard({
+  status,
+  icon: Icon,
+  name,
+  role,
+  stalled,
+  elapsed,
+  note,
+  action,
+}: {
+  status: TaskStatus;
+  icon: LucideIcon;
+  name: string;
+  role: string;
+  stalled: boolean;
+  /** Undefined when the task has no timestamps (the Red Team's). */
+  elapsed?: string;
+  note: string | null;
+  action: ReactNode;
+}) {
+  const failed = status === "failed";
+  const runningDot = status === "running" && !stalled;
+  const StatusIcon = (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).icon;
+  return (
+    <Card className={cn("h-full gap-3 p-4", taskCardTone(status))}>
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden="true"
+          className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-tint text-primary-text"
+        >
+          <Icon className="size-5" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span data-part="name" className="truncate text-body-strong">
+            {name}
+          </span>
+          <span className="text-meta text-muted-foreground">{role}</span>
+        </div>
+        <span aria-hidden="true" className="flex shrink-0">
+          {runningDot ? (
+            <LoaderCircleIcon
+              data-testid="running-dot"
+              className="size-5 text-agent"
+            />
+          ) : (
+            <StatusIcon
+              className={cn(
+                "size-5",
+                (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).tone,
+              )}
+            />
+          )}
+        </span>
+      </div>
+      <StateBar status={status} still={stalled} />
+      <div className="flex items-center justify-between gap-2 text-label">
+        <TaskStatusPill status={status} />
+        {elapsed !== undefined ? (
+          <span
+            data-testid="elapsed"
+            suppressHydrationWarning
+            className="text-numeric text-muted-foreground"
+          >
+            {elapsed}
+          </span>
+        ) : null}
+      </div>
+      {note ? (
+        <p
+          data-part="note"
+          className={cn(
+            "text-label",
+            failed ? "text-blocker" : "text-muted-foreground",
+          )}
+        >
+          {note}
+        </p>
+      ) : null}
+      {action ? <div className="flex gap-2">{action}</div> : null}
+    </Card>
+  );
+}
+
+/** The Red Team run as a task of the Agent tasks grid. */
+export type RedTeamTask = {
+  run: RedTeamRun;
+  /** The caller may start a review (Retry). */
+  canRetry?: boolean;
+  /** A Retry is in flight. */
+  busy?: boolean;
+  /** Polling has stopped while still reviewing. */
+  stalled?: boolean;
+  onRetry?: () => void;
+};
+
+/** The Agent tasks grid: one card per task of the latest run (in any status), then the Red
+ * Team's run. Each card has the agent's icon, name and role, a status icon, a state bar, the
+ * status pill, the elapsed time in tabular figures (`m:ss`, ticking each second while it
+ * runs, its final duration once done or failed, blank before it starts; none for the Red
+ * Team, whose run has no timestamps), a note and **Retry**. Queued tasks say "Waiting for the
+ * worker"; failed tasks give the reason and **Retry** for those who may start one (never in
+ * a cancelled run); a task skipped because its Agent is disabled says "Agent disabled —
+ * assess manually". Elapsed time comes from the task's timestamps and the browser's clock, so
+ * it ticks without a fetch. */
 export function AgentRunPanel({
   run,
+  redTeam = null,
   canStart = false,
   busy = false,
   stalled = false,
   onRetry,
 }: {
-  run: AssessmentRun;
+  run: AssessmentRun | null;
+  redTeam?: RedTeamTask | null;
   canStart?: boolean;
   busy?: boolean;
   stalled?: boolean;
@@ -426,11 +693,15 @@ export function AgentRunPanel({
 }) {
   const assessing = isAssessing(run);
   const now = useNow(assessing && !stalled);
+  const redStatus = redTeam?.run.status;
+  const redStalled = !!redTeam?.stalled && isReviewing(redTeam.run);
   return (
-    <ul aria-label="Agent progress" className="flex w-full flex-col gap-2">
-      {run.tasks.map((task) => {
+    <ul
+      aria-label="Agent progress"
+      className="grid w-full grid-cols-1 gap-4 md:grid-cols-3"
+    >
+      {(run?.tasks ?? []).map((task) => {
         const failed = task.status === "failed";
-        const runningDot = task.status === "running" && !stalled;
         const note =
           task.status === "queued"
             ? WAITING_FOR_WORKER
@@ -439,60 +710,69 @@ export function AgentRunPanel({
               : skipNote(task);
         return (
           <li key={task.agent} data-task-status={task.status}>
-            <Card className="flex-row flex-wrap items-center gap-x-3 gap-y-1 p-3 text-label">
-              <span className="flex w-64 max-w-full min-w-0 shrink-0 flex-col">
-                <span className="truncate text-body-strong">
-                  {agentLabel(task.agent)}
-                </span>
-                <span className="text-meta text-muted-foreground">
-                  {agentRole(task.agent)}
-                </span>
-              </span>
-              <TaskStatusPill status={task.status} />
-              <span
-                data-testid="elapsed"
-                suppressHydrationWarning
-                className="w-12 shrink-0 text-right text-numeric"
-              >
-                {taskElapsed(task, now)}
-              </span>
-              <span className="flex size-3 shrink-0" aria-hidden="true">
-                {runningDot ? (
-                  <LoaderCircleIcon
-                    data-testid="running-dot"
-                    className="size-3 text-agent"
-                  />
-                ) : null}
-              </span>
-              {note ? (
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate",
-                    failed ? "text-blocker" : "text-muted-foreground",
-                  )}
-                >
-                  {note}
-                </span>
-              ) : null}
-              {failed &&
-              canStart &&
-              !assessing &&
-              run.status !== "cancelled" ? (
+            <TaskCard
+              status={task.status}
+              icon={AGENT_ICONS[task.agent] ?? SparklesIcon}
+              name={agentLabel(task.agent)}
+              role={agentRole(task.agent)}
+              stalled={stalled}
+              elapsed={taskElapsed(task, now)}
+              note={note}
+              action={
+                failed &&
+                canStart &&
+                !assessing &&
+                run?.status !== "cancelled" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    disabled={busy}
+                    aria-label={`${RETRY} ${agentLabel(task.agent)}`}
+                    onClick={() => onRetry?.(task.agent)}
+                  >
+                    {RETRY}
+                  </Button>
+                ) : null
+              }
+            />
+          </li>
+        );
+      })}
+      {redTeam && redStatus ? (
+        <li key="red_team" data-task-status={redStatus}>
+          <TaskCard
+            status={redStatus}
+            icon={SwordsIcon}
+            name={RED_TEAM_LABEL}
+            role={RED_TEAM_ROLE}
+            stalled={redStalled}
+            note={
+              redStalled
+                ? STILL_REVIEWING
+                : redStatus === "queued"
+                  ? WAITING_FOR_WORKER
+                  : redStatus === "failed"
+                    ? failureReason(redTeam.run.error_code)
+                    : null
+            }
+            action={
+              redStatus === "failed" && redTeam.canRetry ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="xs"
-                  disabled={busy}
-                  aria-label={`${RETRY} ${agentLabel(task.agent)}`}
-                  onClick={() => onRetry?.(task.agent)}
+                  disabled={redTeam.busy}
+                  aria-label={`${RETRY} ${RED_TEAM_LABEL}`}
+                  onClick={() => redTeam.onRetry?.()}
                 >
                   {RETRY}
                 </Button>
-              ) : null}
-            </Card>
-          </li>
-        );
-      })}
+              ) : null
+            }
+          />
+        </li>
+      ) : null}
     </ul>
   );
 }
@@ -512,7 +792,7 @@ function CancelRunButton({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         disabled={busy}
-        render={<Button type="button" variant="outline" size="xs" />}
+        render={<Button type="button" variant="outline" />}
       >
         {CANCEL_RUN}
       </DialogTrigger>
@@ -541,21 +821,32 @@ function CancelRunButton({
   );
 }
 
-/** The section header: **Run assessment** and, while the run is queued or running, **Cancel
- * run** (both only for those who may start one), the latest run's status and the agent run
- * panel for that run ("Still assessing — reload to check." once polling has stopped). */
+/** The tone of a counter's number. */
+const COUNTER_TONES: Record<string, string> = {
+  complete: "text-primary-text",
+  failed: "text-blocker",
+  running: "text-agent",
+};
+
+/** The run header: a card with the run's status, when it started, its counters (over the
+ * run's tasks plus `extraStatuses`, e.g. the Red Team's) and, for those who may start one,
+ * **Cancel run** (while queued or running) over **Start new run**; then an alert when the run
+ * stopped early. Before any run, only **Run assessment** (for those who may start one).
+ * "Still assessing — reload to check." once polling has stopped. */
 export function SpecialistAssessmentsHeader({
   run,
+  extraStatuses = [],
   canStart = false,
   busy = false,
   message = null,
   stalled = false,
   focusStartRequest = 0,
   onStart,
-  onRetry,
   onCancel,
 }: {
   run: AssessmentRun | null;
+  /** Statuses of other tasks the counters cover (the Red Team run's). */
+  extraStatuses?: readonly TaskStatus[];
   canStart?: boolean;
   /** A start or retry is in flight. */
   busy?: boolean;
@@ -566,7 +857,6 @@ export function SpecialistAssessmentsHeader({
   /** Bumped to move focus to **Run assessment** (after a cancel removed **Cancel run**). */
   focusStartRequest?: number;
   onStart?: () => void;
-  onRetry?: (agent: AssessmentAgent) => void;
   onCancel?: () => void;
 }) {
   const assessing = isAssessing(run);
@@ -574,62 +864,101 @@ export function SpecialistAssessmentsHeader({
   useEffect(() => {
     if (focusStartRequest > 0) startRef.current?.focus();
   }, [focusStartRequest]);
+  const start = canStart ? (
+    <Button
+      ref={startRef}
+      type="button"
+      disabled={busy || assessing}
+      onClick={() => onStart?.()}
+    >
+      {run ? START_NEW_RUN : RUN_ASSESSMENT}
+    </Button>
+  ) : null;
+  const statuses = [...(run?.tasks.map((t) => t.status) ?? []), ...extraStatuses];
+  const alert = run ? runAlert(run) : null;
   return (
-    <div className="flex flex-col items-start gap-3">
+    <div className="flex flex-col items-stretch gap-3">
       {run ? (
-        <Card className="w-full gap-2 p-4" data-testid="run-header">
-          <div className="flex flex-wrap items-center gap-3">
-            <h4 className="text-section">Assessments</h4>
-            <Pill
-              data-status={run.status}
-              tone={pillToneFor(runStatusTone(run.status))}
-            >
-              {runStatusLabel(run)}
-            </Pill>
-            <span className="text-meta text-muted-foreground">
-              Started {formatDateTime(run.queued_at || run.created_at)}
-            </span>
-          </div>
-          {run.tasks.length > 0 ? (
-          <ul
-            aria-label="Task counters"
-            className="flex flex-wrap items-center gap-x-4 gap-y-1 text-label"
+        <Card
+          className="flex-row flex-wrap items-center gap-x-6 gap-y-4 p-6"
+          data-testid="run-header"
+        >
+          <span
+            aria-hidden="true"
+            className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"
           >
-            {taskCounters(run).map((counter) => (
-              <li key={counter.key} data-counter={counter.key}>
-                {counter.label}
-              </li>
-            ))}
-          </ul>
+            <SparklesIcon className="size-6" />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <p className="text-section">Assessments</p>
+              <Pill
+                data-status={run.status}
+                tone={pillToneFor(runStatusTone(run.status))}
+              >
+                {runStatusLabel(run)}
+              </Pill>
+            </div>
+            <p className="text-meta text-muted-foreground">
+              Started {formatDateTime(run.queued_at || run.created_at)}
+            </p>
+          </div>
+          {statuses.length > 0 ? (
+            <ul
+              aria-label="Task counters"
+              className="flex flex-wrap gap-7 text-center"
+            >
+              {taskCounters(statuses).map((counter) => (
+                <li
+                  key={counter.key}
+                  data-counter={counter.key}
+                  className="flex flex-col"
+                >
+                  <span
+                    className={cn(
+                      "text-title [font-variant-numeric:tabular-nums]",
+                      COUNTER_TONES[counter.key],
+                    )}
+                  >
+                    {counter.value}
+                  </span>
+                  <span className="text-meta text-muted-foreground">
+                    {" "}
+                    {counter.label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {canStart ? (
+            <div className="flex flex-col gap-2">
+              {assessing ? (
+                <CancelRunButton busy={busy} onConfirm={onCancel} />
+              ) : null}
+              {start}
+            </div>
           ) : null}
         </Card>
+      ) : start ? (
+        <div className="flex">{start}</div>
       ) : null}
-      {canStart ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            ref={startRef}
-            type="button"
-            disabled={busy || assessing}
-            onClick={() => onStart?.()}
-          >
-            {run ? START_NEW_RUN : RUN_ASSESSMENT}
-          </Button>
-          {assessing ? (
-            <CancelRunButton busy={busy} onConfirm={onCancel} />
-          ) : null}
+      {alert ? (
+        <div
+          data-testid="run-alert"
+          className="flex items-start gap-3 rounded-lg bg-gap-tint px-4 py-3 text-gap"
+        >
+          <TriangleAlertIcon
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0"
+          />
+          <div className="flex flex-col">
+            <p className="text-body-strong">{alert.title}</p>
+            <p className="text-body text-foreground">{alert.detail}</p>
+          </div>
         </div>
       ) : null}
       {assessing && stalled ? (
         <p className="text-label text-muted-foreground">{STILL_ASSESSING}</p>
-      ) : null}
-      {run ? (
-        <AgentRunPanel
-          run={run}
-          canStart={canStart}
-          busy={busy}
-          stalled={assessing && stalled}
-          onRetry={onRetry}
-        />
       ) : null}
       {message ? (
         <span className="text-meta text-destructive">{message}</span>
@@ -652,20 +981,54 @@ function failureMessage(
   }
 }
 
-/** The Assessments tab's Specialist Assessments section: the header, then one card per
- * agent; the selected Finding's inspector goes in the right pane (opened if closed). It
- * follows the Opportunity's event stream (Story 5.2) and is re-read as each task starts and
- * ends, a run is queued or ends, and whenever the stream (re)connects. While the stream is
- * not connected and a run is queued or running, it falls back to re-reading every 2 s:
- * paused while the tab is hidden, and stopped after 15 minutes. Inside a `FindingSelectionProvider` its selection is
- * shared with the tab's other sections. Read-only for sales representatives (no Run
- * assessment, Retry or Cancel run). */
+/** A subsection with its heading and, on the right, a summary. */
+function Subsection({
+  title,
+  summary,
+  children,
+}: {
+  title: string;
+  summary?: ReactNode;
+  children: ReactNode;
+}) {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 id={headingId} className="flex-1 text-section">
+          {title}
+        </h3>
+        {summary}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** The Assessments tab body: the run header and alert, the Agent tasks (each specialist task
+ * of the latest run, then the Red Team's run), Results so far (one card per agent with an
+ * Assessment, then the Red Team review) and one Findings table across all of them; the
+ * selected Finding's inspector goes in the right pane (opened if closed). It follows the
+ * Opportunity's event stream (Story 5.2) and is re-read as each task starts and ends, a run
+ * is queued or ends, and whenever the stream (re)connects. While the stream is not connected
+ * and a run is queued or running, it falls back to re-reading every 2 s: paused while the tab
+ * is hidden, and stopped after 15 minutes. The Red Team is re-read the same way while it
+ * reviews (`useRedTeam`). Inside a `FindingSelectionProvider` its selection is shared with
+ * the tab's other sections. Read-only for sales representatives (no Run assessment, Retry or
+ * Cancel run). `redTeam` null says the Red Team could not be loaded; left out, the Red Team
+ * is not shown. */
 export function SpecialistAssessmentsSection({
   opportunityId,
   initial,
+  redTeam: redTeamInitial,
+  assessmentsFailed = false,
 }: {
   opportunityId: string;
   initial: AssessmentsView;
+  redTeam?: RedTeamView | null;
+  /** The Assessments read failed (`initial` is an empty view): say so instead of the
+   * no-Assessment text. */
+  assessmentsFailed?: boolean;
 }) {
   const announce = useAnnounce();
   const router = useRouter();
@@ -674,10 +1037,10 @@ export function SpecialistAssessmentsSection({
   useEffect(() => {
     routerRef.current = router;
   });
-  const headingId = useId();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<AssessmentsView>(initial);
-  const [selectedId, setSelectedId] = useFindingSelection("specialist");
+  const redTeam = useRedTeam(opportunityId, redTeamInitial ?? null);
+  const [selectedKey, setSelectedKey] = useFindingSelection("assessments");
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
@@ -746,12 +1109,12 @@ export function SpecialistAssessmentsSection({
     setStalled(false);
   }
 
-  let selected: { finding: AssessmentFinding; agent: AssessmentAgent } | null =
-    null;
-  for (const slot of view.assessments) {
-    const found = slot.assessment?.findings.find((f) => f.id === selectedId);
-    if (found) selected = { finding: found, agent: slot.agent };
-  }
+  const review = redTeam.view?.review ?? null;
+  const rows = mergeFindings(view.assessments, review);
+  const selected =
+    selectedKey === null
+      ? null
+      : (rows.find((row) => findingKey(row) === selectedKey) ?? null);
 
   // The pane's content unmounts on close: reopening it must not take focus again.
   const [paneWasOpen, setPaneWasOpen] = useState(rightPaneOpen);
@@ -763,20 +1126,23 @@ export function SpecialistAssessmentsSection({
   // When the pane closes after a keyboard open, focus goes back to the row, not the toggle.
   useEffect(() => {
     if (rightPaneOpen) return;
-    const id = returnFocusTo.current;
+    const key = returnFocusTo.current;
     returnFocusTo.current = null;
     const active = document.activeElement;
     if (
-      id &&
+      key &&
       (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)
     ) {
-      document.querySelector<HTMLElement>(`[data-finding-id="${id}"]`)?.focus();
+      document
+        .querySelector<HTMLElement>(`[data-finding-id="${key}"]`)
+        ?.focus();
     }
   }, [rightPaneOpen]);
 
-  function open(item: AssessmentFinding, viaKeyboard: boolean) {
-    setSelectedId(item.id);
-    returnFocusTo.current = viaKeyboard ? item.id : null;
+  function open(row: FindingRow, viaKeyboard: boolean) {
+    const key = findingKey(row);
+    setSelectedKey(key);
+    returnFocusTo.current = viaKeyboard ? key : null;
     setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
@@ -828,7 +1194,7 @@ export function SpecialistAssessmentsSection({
     };
   }, [assessing, visible, live, pollTick]);
 
-  const sectionRef = useRef<HTMLElement>(null);
+  const sectionRef = useRef<HTMLDivElement>(null);
 
   /** After a cancel removed Cancel run: focus Run assessment, unless the user has moved
    * focus out of this section. */
@@ -891,29 +1257,41 @@ export function SpecialistAssessmentsSection({
   }
 
   const runId = view.run?.id;
-  const anyAssessment = view.assessments.some(
-    (slot) => slot.assessment !== null,
+  const redRun = redTeam.view?.run ?? null;
+  const results = view.assessments.flatMap((slot) =>
+    slot.assessment ? [slot.assessment] : [],
   );
+  const anyResult = results.length > 0 || review !== null;
+  const taskStatuses: TaskStatus[] = [
+    ...(view.run?.tasks.map((t) => t.status) ?? []),
+    ...(redRun ? [redRun.status] : []),
+  ];
+  const activity = activitySummary(taskStatuses);
+  const emptyNotes = [
+    results.length === 0 && view.run?.status === "succeeded"
+      ? NOTHING_TO_ASSESS
+      : null,
+    assessmentsFailed
+      ? ASSESSMENTS_NOT_LOADED
+      : results.length === 0 && !view.run
+        ? NO_ASSESSMENT
+        : null,
+    redTeam.view && !review && redRun?.status === "succeeded"
+      ? NOTHING_TO_REVIEW
+      : null,
+    redTeam.view && !review && !redRun ? NO_REVIEW : null,
+  ].filter((note): note is string => note !== null);
   return (
-    <section
-      ref={sectionRef}
-      aria-labelledby={headingId}
-      className="flex flex-col gap-4"
-    >
-      <h3 id={headingId} className="text-body-strong">
-        Specialist Assessments
-      </h3>
+    <div ref={sectionRef} className="flex flex-col gap-6">
       <SpecialistAssessmentsHeader
         run={view.run}
+        extraStatuses={redRun ? [redRun.status] : []}
         canStart={view.can_start}
         busy={busy}
         message={message}
         stalled={stalled}
         onStart={() => void act(() => startAssessmentRun(opportunityId))}
         focusStartRequest={focusStartRequest}
-        onRetry={(agent) =>
-          void act(() => retryAssessmentTask(opportunityId, runId, agent))
-        }
         onCancel={() =>
           void act(
             () => cancelAssessmentRun(opportunityId, runId),
@@ -922,32 +1300,108 @@ export function SpecialistAssessmentsSection({
           )
         }
       />
-      {anyAssessment ? (
-        <div className="flex flex-col gap-3">
-          {view.assessments.map((slot) => (
-            <AssessmentCard
-              key={slot.agent}
-              slot={slot}
-              selectedId={selected?.finding.id ?? null}
-              onOpen={(item, _agent, viaKeyboard) => open(item, viaKeyboard)}
+      {view.run || redRun ? (
+        <Subsection
+          title="Agent tasks"
+          summary={
+            activity ? (
+              <span className="inline-flex items-center gap-1.5 text-meta text-muted-foreground">
+                {(assessing && stalled) ||
+                (redTeam.stalled && isReviewing(redRun)) ? null : (
+                  <LoaderCircleIcon
+                    aria-hidden="true"
+                    data-testid="activity-icon"
+                    className="size-3.5"
+                  />
+                )}
+                {activity}
+              </span>
+            ) : null
+          }
+        >
+          <AgentRunPanel
+            run={view.run}
+            canStart={view.can_start}
+            busy={busy}
+            stalled={assessing && stalled}
+            onRetry={(agent) =>
+              void act(() => retryAssessmentTask(opportunityId, runId, agent))
+            }
+            redTeam={
+              redRun
+                ? {
+                    run: redRun,
+                    canRetry: redTeam.view?.can_start ?? false,
+                    busy: redTeam.busy,
+                    stalled: redTeam.stalled,
+                    onRetry: redTeam.retry,
+                  }
+                : null
+            }
+          />
+          {redTeam.message ? (
+            <span className="text-meta text-destructive">
+              {redTeam.message}
+            </span>
+          ) : null}
+        </Subsection>
+      ) : null}
+      {emptyNotes.map((note) => (
+        <p key={note} className="text-muted-foreground">
+          {note}
+        </p>
+      ))}
+      {redTeamInitial === null ? <p>{RED_TEAM_NOT_LOADED}</p> : null}
+      {anyResult ? (
+        <Subsection title="Results so far">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {results.map((assessment) => (
+              <AssessmentCard key={assessment.agent} assessment={assessment} />
+            ))}
+            {review ? <RedTeamResultCard review={review} /> : null}
+          </div>
+        </Subsection>
+      ) : null}
+      {anyResult ? (
+        <Subsection
+          title="Findings"
+          summary={
+            rows.length > 0 ? (
+              <span className="text-meta text-muted-foreground">
+                {severitySummary(severityTotals(rows))}
+              </span>
+            ) : null
+          }
+        >
+          {rows.length > 0 ? (
+            <FindingsTable
+              rows={rows}
+              selectedKey={selected ? findingKey(selected) : null}
+              onOpen={open}
             />
-          ))}
-        </div>
-      ) : view.run?.status === "succeeded" ? (
-        <p className="text-muted-foreground">{NOTHING_TO_ASSESS}</p>
-      ) : !view.run ? (
-        <p className="text-muted-foreground">{NO_ASSESSMENT}</p>
+          ) : (
+            <p className="text-muted-foreground">{NO_FINDINGS}</p>
+          )}
+        </Subsection>
       ) : null}
       {selected ? (
         <RightPaneContent>
-          <AssessmentFindingInspector
-            key={selected.finding.id}
-            finding={selected.finding}
-            agent={selected.agent}
-            focusRequest={focusRequest}
-          />
+          {selected.source === "specialist" ? (
+            <AssessmentFindingInspector
+              key={findingKey(selected)}
+              finding={selected.finding}
+              agent={selected.agent}
+              focusRequest={focusRequest}
+            />
+          ) : (
+            <RedTeamInspector
+              key={findingKey(selected)}
+              finding={selected.finding}
+              focusRequest={focusRequest}
+            />
+          )}
         </RightPaneContent>
       ) : null}
-    </section>
+    </div>
   );
 }
