@@ -76,17 +76,21 @@ export const SENT = "Sent";
 export const NO_ANSWER = "No answer";
 export const ANSWERED = "Answered";
 
-type PillStatus = "drafted" | "approved" | "sent" | "unanswered" | "answered";
+export type PillStatus = "drafted" | "approved" | "sent" | "unanswered" | "answered";
 
-/** The question statuses the pill shows, with their label, icon and icon tone (the pill always
- * shows icon and label): Sent is a neutral send icon, No answer is gap amber. */
+/** A question pill's tone: a status tone, or the primary tint (Sent). */
+export type QuestionTone = StatusTone | "text-primary";
+
+/** The question statuses the pill shows, with their label, icon and tone (the pill always
+ * shows icon and label): Draft neutral, Approved and Answered resolved, Sent primary, No answer
+ * gap amber. */
 export const QUESTION_STATUSES: Record<
   PillStatus,
-  { label: string; icon: LucideIcon; tone: StatusTone }
+  { label: string; icon: LucideIcon; tone: QuestionTone }
 > = {
   drafted: { label: DRAFT, icon: PencilLineIcon, tone: "text-muted-foreground" },
   approved: { label: APPROVED, icon: CheckIcon, tone: "text-resolved" },
-  sent: { label: SENT, icon: SendIcon, tone: "text-muted-foreground" },
+  sent: { label: SENT, icon: SendIcon, tone: "text-primary" },
   unanswered: { label: NO_ANSWER, icon: CircleSlashIcon, tone: "text-gap" },
   answered: { label: ANSWERED, icon: CheckIcon, tone: "text-resolved" },
 };
@@ -95,7 +99,7 @@ export const QUESTION_STATUSES: Record<
 export function questionStatus(status: QuestionStatus): {
   label: string;
   icon: LucideIcon;
-  tone: StatusTone;
+  tone: QuestionTone;
 } {
   return status in QUESTION_STATUSES
     ? QUESTION_STATUSES[status as PillStatus]
@@ -309,16 +313,100 @@ export function gapStatus(status: GapStatus): {
     : GAP_STATUSES.open;
 }
 
+/** The agent that raises Gaps: the trigger pill's text. */
+export const CLARIFICATION_AGENT = "Clarification Agent";
+
 /** "Clarification Agent · Data volumes": what raised the Gap. */
 export function triggerLabel(gap: Pick<Gap, "category">): string {
-  return `Clarification Agent · ${categoryLabel(gap.category)}`;
+  return `${CLARIFICATION_AGENT} · ${categoryLabel(gap.category)}`;
 }
 
-/** "9 Gaps · 7 open · ranked by impact". */
-export function gapsSummary(items: readonly Pick<Gap, "status">[]): string {
+/** "9 total · 7 open · ranked by impact", plus " · showing 2" while a filter hides some
+ * (`showing` is the number of rows shown; left out when no filter is on). */
+export function gapsSummary(items: readonly Pick<Gap, "status">[], showing?: number): string {
   const open = items.filter((g) => g.status === "open").length;
-  return `${gapCount(items.length)} · ${open} open · ranked by impact`;
+  const shown = showing === undefined ? "" : ` · showing ${showing}`;
+  return `${items.length} total · ${open} open · ranked by impact${shown}`;
 }
+
+/** The text tone of an impact: High blocker red, Medium gap amber, Low neutral. */
+export function impactTone(impact: Impact): "text-blocker" | "text-gap" | "text-neutral" {
+  return impact === "high" ? "text-blocker" : impact === "medium" ? "text-gap" : "text-neutral";
+}
+
+/** The muted line under the inspector's primary action: where the question is in its flow. */
+export function questionFlow(status: QuestionStatus | "dismissed"): string | null {
+  switch (status) {
+    case "drafted":
+      return "Draft, then Approved, Sent and Answered.";
+    case "approved":
+      return "Approved. Export it, send it to the customer, then mark it sent.";
+    case "sent":
+    case "unanswered":
+      return "Sent. Record the customer answer to close this Gap.";
+    case "answered":
+      return "Answered. Related Requirements have proposed updates.";
+    case "dismissed":
+      return "Dismissed with a reason.";
+    default:
+      return null;
+  }
+}
+
+// --- filters (client-side, not persisted) ---------------------------------------------------
+
+/** The Gaps tab's filters: null is "Any". They combine with AND. */
+export type GapFilters = {
+  impact: Impact | null;
+  category: GapCategory | null;
+  question: PillStatus | null;
+};
+
+export const NO_GAP_FILTERS: GapFilters = { impact: null, category: null, question: null };
+
+/** The Impact filter's options (after Any). */
+export const IMPACT_FILTER_OPTIONS: readonly { value: Impact; label: string }[] = IMPACTS.map(
+  ({ value, label }) => ({ value, label }),
+);
+
+/** The Question status filter's options (after Any). */
+export const QUESTION_FILTER_OPTIONS: readonly { value: PillStatus; label: string }[] = (
+  ["drafted", "approved", "sent", "unanswered", "answered"] as const
+).map((value) => ({ value, label: QUESTION_STATUSES[value].label }));
+
+/** The Area filter's options (after Any): the categories present in `items`, in the
+ * categories' order (one this build doesn't know last, by its own name). */
+export function areaFilterOptions(
+  items: readonly Pick<Gap, "category">[],
+): { value: GapCategory; label: string }[] {
+  const present = new Set(items.map((g) => g.category));
+  const known = GAP_CATEGORIES.filter((c) => present.has(c.value));
+  const unknown = [...present]
+    .filter((value) => !GAP_CATEGORIES.some((c) => c.value === value))
+    .map((value) => ({ value, label: categoryLabel(value) }));
+  return [...known, ...unknown];
+}
+
+/** Whether any filter is on. */
+export function hasGapFilters(filters: GapFilters): boolean {
+  return filters.impact !== null || filters.category !== null || filters.question !== null;
+}
+
+/** The Gaps that pass every filter, in their order. */
+export function filterGaps<T extends Pick<Gap, "impact" | "category" | "question">>(
+  items: readonly T[],
+  filters: GapFilters,
+): T[] {
+  return items.filter(
+    (g) =>
+      (filters.impact === null || g.impact === filters.impact) &&
+      (filters.category === null || g.category === filters.category) &&
+      (filters.question === null || g.question?.status === filters.question),
+  );
+}
+
+export const NO_FILTER_MATCH = "No Gaps match these filters.";
+export const CLEAR_FILTERS = "Clear filters";
 
 /** "Approve 2 selected". */
 export function approveSelectedLabel(n: number): string {

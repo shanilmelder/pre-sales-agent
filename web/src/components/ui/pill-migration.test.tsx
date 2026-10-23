@@ -42,7 +42,7 @@ describe("migrated status pills carry the right Pill tone", () => {
   it.each([
     ["drafted", "neutral"],
     ["approved", "resolved"],
-    ["sent", "neutral"],
+    ["sent", "primary"],
     ["unanswered", "gap"],
     ["answered", "resolved"],
   ] as const)("question %s -> %s", (status, tone) => {

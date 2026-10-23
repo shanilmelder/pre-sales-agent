@@ -1537,9 +1537,11 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Gaps1, 1 open"]);
     expect(screen.getByTestId("tab-count-gaps").textContent).toBe("1, 1 open");
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
+    // One "Gaps" heading: the section's header row.
+    expect(within(panel).getAllByRole("heading", { level: 2, name: "Gaps" })).toHaveLength(1);
+    expect(within(panel).getByText("1 total · 1 open · ranked by impact")).toBeTruthy();
     expect(within(panel).getByRole("row").textContent).toBe(
-      "Open[GAP]HighIntegration detailsClarification Agent · Integration detailsApproved",
+      "HighOpen [GAP]Integration details·Clarification AgentApproved",
     );
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps", {
@@ -1562,6 +1564,9 @@ describe("/opportunities/[id] workspace", () => {
         "Gaps appear after Requirements are checked against Checklists.",
       ),
     ).toBeTruthy();
+    expect(
+      within(screen.getByRole("tabpanel")).getAllByRole("heading", { level: 2, name: "Gaps" }),
+    ).toHaveLength(1);
   });
 
   it("tab URL /gaps: a failed read says so", async () => {
@@ -1574,6 +1579,9 @@ describe("/opportunities/[id] workspace", () => {
         "The Gaps could not be loaded. Try again in a moment.",
       ),
     ).toBeTruthy();
+    expect(
+      within(screen.getByRole("tabpanel")).getAllByRole("heading", { level: 2, name: "Gaps" }),
+    ).toHaveLength(1);
   });
 
   const NO_ASSESSMENTS = {

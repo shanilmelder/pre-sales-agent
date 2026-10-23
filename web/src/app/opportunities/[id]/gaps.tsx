@@ -17,11 +17,14 @@ export async function GapsTab({ id }: { id: string }) {
 
   return (
     <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
-      <h2 className="sr-only">Gaps</h2>
+      {/* The section renders its own "Gaps" heading. */}
       {listed.kind === "ok" ? (
         <GapsSection key={opportunity.id} opportunityId={opportunity.id} initial={listed.list} />
       ) : (
-        <p>The Gaps could not be loaded. Try again in a moment.</p>
+        <>
+          <h2 className="sr-only">Gaps</h2>
+          <p>The Gaps could not be loaded. Try again in a moment.</p>
+        </>
       )}
     </div>
   );
