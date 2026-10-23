@@ -9,6 +9,7 @@ import { RequirementsTab } from "@/app/opportunities/[id]/requirements";
 import { SourcesTab } from "@/app/opportunities/[id]/sources";
 import { TraceTab } from "@/app/opportunities/[id]/trace";
 import { isWorkspaceTab, TAB_NOT_AVAILABLE, WORKSPACE_TABS } from "@/lib/workspace";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** `/opportunities/{id}/{tab}`: Overview, Sources, Requirements, Gaps, Assessments,
  * Conflicts, Estimate, Trace, or "Not available yet." for a tab later epics build. An unknown slug is the
@@ -32,7 +33,7 @@ export default async function WorkspaceTabPage({
   if (tab === "estimate") return await EstimateTab({ id });
   if (tab === "trace") return await TraceTab({ id, searchParams: (await searchParams) ?? {} });
   return (
-    <div className="p-gutter">
+    <div className={PAGE_PADDING}>
       <h2 className="sr-only">{WORKSPACE_TABS.find((t) => t.slug === tab)?.label}</h2>
       <p className="text-muted-foreground">{TAB_NOT_AVAILABLE}</p>
     </div>

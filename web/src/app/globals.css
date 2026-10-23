@@ -51,6 +51,8 @@
   --spacing-inspector: 420px;
   --spacing-rail: 300px;
   --spacing-gutter: 20px;
+  /* The page inset: header bands and the content area sit 32px from the sides. */
+  --spacing-page: 32px;
   --spacing-graph-detail: 372px;
   --spacing-graph: 660px;
   --spacing-dialog-width: 520px;
@@ -150,7 +152,7 @@
   --surface: #FFFFFF;
   --surface-alt: #F1F2F7;
   --border: #E3E5EE;
-  --border-strong: #80869D;
+  --border-strong: #CDD1E0;
   --text: #171A26;
   --text-secondary: #555B72;
   --primary: #4F5BD5;
@@ -247,7 +249,7 @@
   --surface: #1B1E27;
   --surface-alt: #232734;
   --border: #2B3040;
-  --border-strong: #737A94;
+  --border-strong: #3A4054;
   --text: #E9EBF3;
   --text-secondary: #A3AAC0;
   --primary: #4F5BD5;
@@ -285,6 +287,23 @@
   }
   html {
     @apply font-sans;
+  }
+  /* Thin scrollbars in the strong border colour. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  /* A 120ms colour change on hover and selection, off under reduced motion. */
+  a,
+  button {
+    transition-property: color, background-color, border-color, filter;
+    transition-duration: 120ms;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    a,
+    button {
+      transition: none;
+    }
   }
 }
 

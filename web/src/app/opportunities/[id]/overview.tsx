@@ -16,6 +16,7 @@ import { OverviewSummary, type OverviewData } from "@/components/opportunities/o
 import { StatusPill } from "@/components/opportunities/status-pill";
 import { getMe } from "@/lib/api/server";
 import { formatDate } from "@/lib/opportunities";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 function Detail({ term, children }: { term: string; children: React.ReactNode }) {
   return (
@@ -64,7 +65,7 @@ export async function OverviewTab({ id }: { id: string }) {
   const summary = await loadSummary(opportunity.id);
 
   return (
-    <div className="flex flex-col gap-6 p-gutter">
+    <div className={`flex flex-col gap-6 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Overview</h2>
       <GapsLiveRefresh opportunityId={opportunity.id} />
       <OverviewSummary opportunityId={opportunity.id} data={summary} />

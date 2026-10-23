@@ -16,8 +16,8 @@ colors:
   surface-alt-dark: '#232734'
   border: '#E3E5EE'
   border-dark: '#2B3040'
-  border-strong: '#80869D'
-  border-strong-dark: '#737A94'
+  border-strong: '#CDD1E0'
+  border-strong-dark: '#3A4054'
   text: '#171A26'
   text-dark: '#E9EBF3'
   text-secondary: '#555B72'
@@ -262,7 +262,7 @@ Every colour has a light and a dark value (`-dark` suffix). Tokens are semantic 
 - **Text.** `{colors.text}` for content, `{colors.text-secondary}` for meta and helper text.
 - **Primary Indigo (`{colors.primary}`)** is the fill for the primary button and count badges, and is the same in both themes with white text. Use it for one primary action per view. `{colors.primary-tint}` fills selected rows, active navigation and agent content. `{colors.primary-text}` is the indigo for text and icons.
 - **Link (`{colors.link}`)** equals `{colors.primary-text}` in each theme. Links never use the primary fill colour as text, because it fails on dark surfaces.
-- **Control border (`{colors.border-strong}`)** outlines inputs, textareas, secondary buttons, segmented tracks, evidence chips, unticked checkboxes, the switch's off track, and pending Version lifecycle rings and connectors. Redesign v2 draws these with its `border2` value, which is replaced here. `{colors.border}` is for decorative card and row dividers only.
+- **Control border (`{colors.border-strong}`)** outlines inputs, textareas, secondary buttons, segmented tracks, evidence chips, unticked checkboxes, the switch's off track, and pending Version lifecycle rings and connectors. It takes the mockup's `border2` value (`#CDD1E0` light, `#3A4054` dark). These values were accepted below the 3:1 non-text minimum, so input boundaries are lighter than WCAG asks. `{colors.border}` is for decorative card and row dividers only.
 - **Focus ring (`{colors.ring}`)** is a 2px outline with a 2px offset. In dark it is `{colors.ring-dark}`, a light indigo.
 - **Blocker Red (`{colors.blocker}` on `{colors.blocker-tint}`)** marks items that block submission or Baseline (open Conflicts, High-impact open Gaps, uncovered Requirements, unaccepted Assumptions, critical Findings without an override), plus failures (Parse failed, Failed task, Embedding failed), mandatory Checklist items and variance above +10%.
 - **Gap Amber (`{colors.gap}` on `{colors.gap-tint}`)** marks what the platform does not know yet or needs a human for: Medium Gaps, Low confidence, Waiting for you, Stale, Partial, In review, Needs review, and increases in a diff.
@@ -291,8 +291,7 @@ Colour never carries meaning alone. Every semantic colour is paired with an icon
 | Neutral on tint: `#555B72` on `#EEF0F6` / `#A3AAC0` on `#262A38` | 5.90 / 6.17 |
 | **Fix 1, link on dark:** `{colors.link-dark}` `#B3BAFF` on surface / background / surface-alt (was `#4F5BD5` at 3.00 on surface) | 9.02 / 9.80 / 8.07 |
 | Link `#3B45B8` on surface / background (light) | 7.69 / 7.20 |
-| **Fix 2, control border light:** `{colors.border-strong}` `#80869D` on surface / surface-alt / background (was `#CDD1E0` at 1.52 on white) | 3.61 / 3.23 / 3.38 |
-| **Fix 2, control border dark:** `#737A94` on surface / surface-alt / background (was `#3A4054` at 1.62) | 3.92 / 3.50 / 4.25 |
+| **Fix 2, control border (withdrawn):** `{colors.border-strong}` is back to the mockup's `#CDD1E0` light and `#3A4054` dark. These were accepted below 3:1 in the theme and shell redesign. The `#80869D` and `#737A94` values and their ratios no longer apply. | below 3:1 (accepted) |
 | **Fix 3, QA bar light:** `{colors.role-qa}` `#6E7490` on surface / surface-alt (was `#9AA0B4` at 2.61 on white) | 4.60 / 4.12 |
 | QA bar dark `#8A91AB` on surface / surface-alt; PM bar `#1F8A7E` on surface / surface-alt (light); PM `#5FCBBE` on surface (dark) | 5.33 / 4.76; 4.20 / 3.76; 8.54 |
 | **Fix 4, focus ring dark:** `{colors.ring-dark}` `#B3BAFF` on surface / background / surface-alt (was `#4F5BD5` at 3.00 on surface) | 9.02 / 9.80 / 8.07 |
@@ -302,12 +301,9 @@ Colour never carries meaning alone. Every semantic colour is paired with an icon
 | **v2 ink on tints (Trace and 412 body copy, offline banner, selected Trace row):** `#171A26` on neutral / blocker / resolved / primary tint (light) | 15.20 / 15.15 / 15.24 / 15.02 |
 | Ink `#E9EBF3` on neutral / blocker / resolved / primary tint (dark) | 12.00 / 12.42 / 12.07 / 11.38 |
 | **Fix 5, lifecycle check on dark green:** `{colors.resolved-foreground-dark}` `#14161D` on `#78D6A0` (was white at 1.76); light white on `#17753F` | 10.26; 5.75 |
-| **Fix 6, switch off track and pending ring or connector, light:** `{colors.border-strong}` `#80869D` on surface (was `#CDD1E0` at 1.52) | 3.61 |
-| Same, dark: `#737A94` on surface-dark (was `#3A4054` at 1.62) | 3.92 |
-| White switch knob on `border-strong` light / dark | 3.61 / 4.25 |
+| **Fix 6, switch off track and pending ring or connector (withdrawn):** these follow `{colors.border-strong}`, so with the mockup's values they, and the white knob on the off track, sit below 3:1. This was accepted in the theme and shell redesign; the switch keeps its "On"/"Off" label. | below 3:1 (accepted) |
 | Switch on track `#4F5BD5` on surface-dark; white knob on it | 3.00; 5.54 |
 | **Fix 7, selected Challenge card border, dark:** `{colors.ring-dark}` `#B3BAFF` on primary-tint-dark `#262B52` (was `#4F5BD5` at 2.45) | 7.35 |
-| `{colors.border-strong}` on neutral-tint (offline banner rule) light / dark | 3.17 / 3.36 |
 | White on primary (skip link, Save and Rerun buttons) | 5.54 |
 | Graph node and badge colours on `#12192D` (`#9AA3FF`, `#5FD0C2`, `#7CC8F5`, `#F3BA5C`, `#6FD39A`, `#FF8A80`) | 7.53, 9.39, 9.51, 9.97, 9.53, 7.65 |
 | Graph edge `#6D7AA8` on `#12192D`; chip border `#4F5BD5` on `#12192D` | 4.16; 3.15 |

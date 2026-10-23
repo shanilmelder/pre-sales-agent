@@ -122,7 +122,7 @@ export function ChecklistsTab({
   return (
     <>
       {mayAuthor ? (
-        <div className="flex items-center gap-2 px-gutter pb-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={startCreate}

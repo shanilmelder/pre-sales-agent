@@ -22,6 +22,8 @@ import { FilterBar } from "@/components/opportunities/filter-bar";
 import { OpportunityViews } from "@/components/opportunities/opportunity-views";
 import { OpportunitiesTable } from "@/components/opportunities/opportunities-table";
 import { AppShell } from "@/components/shell/app-shell";
+import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
+import { buttonVariants } from "@/components/ui/button";
 import { getMe } from "@/lib/api/server";
 import { utcToday, type OpportunityPage } from "@/lib/opportunities";
 import { canCreateOpportunity, NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
@@ -44,7 +46,7 @@ function Pagination({
   const hasNext = last < page.total;
   if (!hasPrevious && !hasNext && page.items.length === 0) return null;
   return (
-    <nav aria-label="Pagination" className="flex items-center justify-between gap-2 p-gutter">
+    <nav aria-label="Pagination" className="flex items-center justify-between gap-2">
       <p className="text-meta text-muted-foreground text-numeric">
         {page.items.length > 0 ? `${first}–${last} of ${page.total}` : null}
       </p>
@@ -102,20 +104,23 @@ export async function OpportunityListPage({
 
   return (
     <AppShell me={result.me}>
-      <div className="flex flex-col">
-        <div className="flex items-center justify-between gap-2 p-gutter">
-          <h1 className="text-title">{title}</h1>
-          {canCreate ? (
+      <PageHeader
+        title={title}
+        subtitle={PAGE_SUBTITLES.opportunities}
+        action={
+          canCreate ? (
             <Link
               href={NEW_OPPORTUNITY_HREF}
               title="New Opportunity (C)"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-label text-primary-foreground outline-none hover:bg-primary/80 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              className={`${buttonVariants({ variant: "default" })} text-body-strong`}
             >
               <PlusIcon className="size-4" aria-hidden="true" />
               New Opportunity
             </Link>
-          ) : null}
-        </div>
+          ) : undefined
+        }
+      />
+      <PageContent>
         <OpportunityViews
           current={view}
           dueHref={filtersHref("/opportunities", dueSoonFilters(today))}
@@ -128,7 +133,7 @@ export async function OpportunityListPage({
           />
         ) : null}
         {list.kind === "error" ? (
-          <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>
+          <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : (
           <>
             <OpportunitiesTable
@@ -140,7 +145,7 @@ export async function OpportunityListPage({
             <Pagination page={list.page} basePath={basePath} filters={filters} />
           </>
         )}
-      </div>
+      </PageContent>
     </AppShell>
   );
 }

@@ -7,6 +7,7 @@ import { AccessGate, hasAccess } from "@/components/access-gate";
 import { WorkspaceHeader } from "@/components/opportunities/workspace-header";
 import { WorkspaceTabs } from "@/components/opportunities/workspace-tabs";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageContent, PageHeader } from "@/components/shell/page-header";
 import { getMe } from "@/lib/api/server";
 import { openGapCount } from "@/lib/gaps";
 import { NO_ACCESS_TO_OPPORTUNITY, utcToday } from "@/lib/opportunities";
@@ -45,11 +46,20 @@ export default async function OpportunityLayout({
   return (
     <AppShell me={result.me}>
       {loaded.kind === "not-found" ? (
-        <div className="p-gutter">
-          <p>{NO_ACCESS_TO_OPPORTUNITY}</p>
-        </div>
+        <>
+          {/* A generic "Opportunity" title: this one may not exist or not be visible to this user. */}
+          <PageHeader title="Opportunity" />
+          <PageContent>
+            <p>{NO_ACCESS_TO_OPPORTUNITY}</p>
+          </PageContent>
+        </>
       ) : loaded.kind === "error" ? (
-        <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>
+        <>
+          <PageHeader title="Opportunity" />
+          <PageContent>
+            <p>The platform is not reachable right now. Try again in a moment.</p>
+          </PageContent>
+        </>
       ) : (
         <>
           <WorkspaceHeader opportunity={loaded.opportunity} today={utcToday()} />

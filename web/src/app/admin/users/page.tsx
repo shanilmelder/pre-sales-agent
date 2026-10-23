@@ -6,6 +6,7 @@ import { AccessGate, hasAccess } from "@/components/access-gate";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { UsersAdmin } from "@/components/admin/users-admin";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageContent, PageHeader } from "@/components/shell/page-header";
 import { auth0UsersUrl, ROLES_AS_OF_NOTE } from "@/lib/admin";
 import type { components } from "@/lib/api/client";
 import { createServerApiClient, getMe } from "@/lib/api/server";
@@ -43,10 +44,18 @@ async function listUsers(page: number): Promise<ListResult> {
 }
 
 function NoAccess() {
+  return <p>You don&apos;t have access to this page</p>;
+}
+
+/** Non-admins: a header band titled "No access" (not the section name) and the access message. */
+function NoAccessPage() {
   return (
-    <div className="p-gutter">
-      <p>You don&apos;t have access to this page</p>
-    </div>
+    <>
+      <PageHeader title="No access" />
+      <PageContent>
+        <NoAccess />
+      </PageContent>
+    </>
   );
 }
 
@@ -58,7 +67,7 @@ function Pagination({ page }: { page: AdminUserPage }) {
   const linkClass =
     "rounded-md border border-border px-2 py-1 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary";
   return (
-    <nav aria-label="Pagination" className="flex items-center justify-between gap-2 p-gutter">
+    <nav aria-label="Pagination" className="flex items-center justify-between gap-2">
       <p className="text-meta text-muted-foreground text-numeric">
         {page.items.length > 0 ? `${first}–${last} of ${page.total}` : null}
       </p>
@@ -88,7 +97,7 @@ export default async function AdminUsersPage({
   if (!isAdmin(result.me.permissions)) {
     return (
       <AppShell me={result.me}>
-        <NoAccess />
+        <NoAccessPage />
       </AppShell>
     );
   }
@@ -102,10 +111,10 @@ export default async function AdminUsersPage({
   }
   return (
     <AppShell me={result.me}>
-      <div className="flex flex-col">
-        <div className="flex flex-col gap-1 p-gutter">
-          <h1 className="text-title">Users &amp; roles</h1>
-          <p className="text-meta text-muted-foreground">
+      <PageHeader
+        title="Users & roles"
+        subtitle={
+          <>
             {ROLES_AS_OF_NOTE}{" "}
             <a
               href={manageRolesUrl}
@@ -116,12 +125,14 @@ export default async function AdminUsersPage({
               Manage roles in Auth0
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
-          </p>
-        </div>
+          </>
+        }
+      />
+      <PageContent>
         <AdminNav current="/admin/users" />
         {list.kind === "forbidden" ? <NoAccess /> : null}
         {list.kind === "error" ? (
-          <p className="p-gutter">The platform is not reachable right now. Try again in a moment.</p>
+          <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : null}
         {list.kind === "ok" ? (
           <>
@@ -133,7 +144,7 @@ export default async function AdminUsersPage({
             <Pagination page={list.page} />
           </>
         ) : null}
-      </div>
+      </PageContent>
     </AppShell>
   );
 }

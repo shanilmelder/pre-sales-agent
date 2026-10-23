@@ -18,7 +18,7 @@ export function OpportunityViews({
     { id: "due", label: "Due in 14 days", href: dueHref },
   ];
   return (
-    <nav aria-label="Views" className="flex items-center gap-1 border-b border-border px-gutter">
+    <nav aria-label="Views" className="flex items-center gap-1 border-b border-border">
       {views.map((view) => (
         <Link
           key={view.id}

@@ -105,7 +105,7 @@ export function SourcesTable({
 
   if (sources.length === 0) {
     return (
-      <p className="p-gutter text-muted-foreground">{total === 0 ? EMPTY_STATE : NO_MATCHES}</p>
+      <p className="text-muted-foreground">{total === 0 ? EMPTY_STATE : NO_MATCHES}</p>
     );
   }
 
@@ -130,7 +130,7 @@ export function SourcesTable({
         <caption className="sr-only">Knowledge Sources, longest-unreviewed first</caption>
         <thead className="text-label text-muted-foreground">
           <tr className="h-row border-b border-border">
-            <th scope="col" className="px-gutter font-medium">
+            <th scope="col" className="px-3 font-medium">
               Title
             </th>
             <th scope="col" className="w-32 px-2 font-medium">
@@ -163,7 +163,7 @@ export function SourcesTable({
                 key={source.id}
                 className={`h-row border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
               >
-                <td className="truncate px-gutter">
+                <td className="truncate px-3">
                   <button
                     type="button"
                     data-source-row=""

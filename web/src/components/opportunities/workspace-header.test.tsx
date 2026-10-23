@@ -12,6 +12,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadOpportunity: vi.fn(),
 }));
 
+import { ShellProviders } from "../shell/shell-context";
 import { WorkspaceHeader } from "./workspace-header";
 
 const OPPORTUNITY: Opportunity = {
@@ -38,7 +39,11 @@ const OPPORTUNITY: Opportunity = {
 const TODAY = "2026-10-21";
 
 function renderHeader(overrides: Partial<Opportunity> = {}, today = TODAY) {
-  return render(<WorkspaceHeader opportunity={{ ...OPPORTUNITY, ...overrides }} today={today} />);
+  return render(
+    <ShellProviders singleKeyShortcuts>
+      <WorkspaceHeader opportunity={{ ...OPPORTUNITY, ...overrides }} today={today} />
+    </ShellProviders>,
+  );
 }
 
 describe("WorkspaceHeader", () => {
@@ -84,9 +89,23 @@ describe("WorkspaceHeader", () => {
     expect(screen.getByText("[OWNER]")).toBeTruthy();
   });
 
-  it("non-owners (can_edit false) get no buttons", () => {
+  it("non-owners (can_edit false) get no edit buttons, only the right-pane toggle", () => {
     renderHeader();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Right pane",
+    ]);
+  });
+
+  it("puts the 28px right-pane toggle on the breadcrumb row inside the surface band", () => {
+    renderHeader();
+    const toggle = screen.getByRole("button", { name: "Right pane" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.className).toContain("size-7");
+    const row = toggle.parentElement!;
+    expect(within(row).getByRole("navigation", { name: "Breadcrumb" })).toBeTruthy();
+    const band = row.closest("header")!;
+    expect(band.className).toContain("bg-surface");
+    expect(band.className).toContain("px-page");
   });
 
   it("the owner (can_edit) edits the title and date inline; breadcrumb, chips and countdown stay", async () => {
@@ -94,6 +113,7 @@ describe("WorkspaceHeader", () => {
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
     expect(screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Right pane",
       "Edit title",
       "Edit target proposal date",
     ]);

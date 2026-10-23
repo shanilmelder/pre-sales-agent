@@ -210,6 +210,24 @@ describe.each(LISTS)("%s", (_path, Page, title, scope) => {
     expect(screen.getByRole("link", { name: "New Opportunity" }).getAttribute("href")).toBe(
       "/opportunities/new",
     );
+    // The page frame owns the 32px inset: the strips inside it add no outer gutter, and the
+    // table's first column pads like any other cell.
+    const views = screen.getByRole("navigation", { name: "Views" });
+    expect(views.closest('[data-testid="page-content"]')).toBeTruthy();
+    expect(views.className).not.toContain("gutter");
+    const firstHeader = screen.getAllByRole("columnheader")[0]!;
+    expect(firstHeader.className).toContain("px-3");
+    expect(firstHeader.className).not.toContain("gutter");
+    // The header band: subtitle, then New Opportunity, then the pane toggle.
+    const header = screen.getByTestId("page-header");
+    expect(
+      within(header).getByText(
+        "Opportunities with their derived status, open items and current Estimate.",
+      ),
+    ).toBeTruthy();
+    const action = within(header).getByRole("link", { name: "New Opportunity" });
+    const toggle = within(header).getByRole("button", { name: "Right pane" });
+    expect(action.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(await screen.findByRole("link", { name: "[TITLE]" })).toBeTruthy();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities", {
       params: { query: { scope, page: 1, page_size: 50 } },
@@ -394,6 +412,13 @@ describe("/opportunities/new", () => {
     const { container } = renderPage(await NewOpportunityPage());
     expect(screen.getByRole("heading", { level: 1, name: "New Opportunity" })).toBeTruthy();
     expect(screen.getByLabelText("Customer name")).toBeTruthy();
+    // The header's Create Opportunity submits the form below it.
+    const create = within(screen.getByTestId("page-header")).getByRole("button", {
+      name: "Create Opportunity",
+    });
+    expect(create.getAttribute("type")).toBe("submit");
+    const form = document.getElementById(create.getAttribute("form")!);
+    expect(form?.tagName).toBe("FORM");
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -402,6 +427,7 @@ describe("/opportunities/new", () => {
     renderPage(await NewOpportunityPage());
     expect(screen.getByText("You don't have access to create Opportunities.")).toBeTruthy();
     expect(screen.queryByLabelText("Customer name")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Create Opportunity" })).toBeNull();
   });
 });
 
@@ -497,7 +523,7 @@ describe("/opportunities/[id] workspace", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
     expect(screen.getAllByRole("tab")).toHaveLength(9);
-    expect(selectedTabs()).toEqual(["1Overview"]);
+    expect(selectedTabs()).toEqual(["Overview"]);
     const panel = screen.getByRole("tabpanel", { name: "Overview" });
     // Overview: status, owner, collaborators, created date, customer, products, industry.
     expect(within(panel).getByText("Intake")).toBeTruthy();
@@ -507,6 +533,10 @@ describe("/opportunities/[id] workspace", () => {
     expect(within(panel).getByText("[CUSTOMER]")).toBeTruthy();
     expect(within(panel).getByText("Pick station")).toBeTruthy();
     expect(within(panel).getByText("Retail")).toBeTruthy();
+    // The tab's page frame lines up with the 32px header band: 28/32/40.
+    const frame = panel.querySelector("fieldset > div")!;
+    for (const cls of ["px-page", "pt-7", "pb-10"]) expect(frame.className).toContain(cls);
+    expect(frame.className).not.toContain("p-gutter");
     // Header: the target proposal date.
     expect(screen.getByText("1 Nov 2026")).toBeTruthy();
     // Not the owner: no collaborator or edit controls.
@@ -520,7 +550,7 @@ describe("/opportunities/[id] workspace", () => {
     signedIn(["head_of_delivery"]);
     found();
     await renderWorkspace("overview");
-    expect(selectedTabs()).toEqual(["1Overview"]);
+    expect(selectedTabs()).toEqual(["Overview"]);
     expect(within(screen.getByRole("tabpanel")).getByText("Retail")).toBeTruthy();
   });
 
@@ -1037,7 +1067,7 @@ describe("/opportunities/[id] workspace", () => {
     signedIn(["head_of_delivery"]);
     foundWithSources();
     const { container } = await renderWorkspace("sources");
-    expect(selectedTabs()).toEqual(["2Sources"]);
+    expect(selectedTabs()).toEqual(["Sources"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Sources" })).toBeTruthy();
     expect(within(panel).getByText("call.vtt")).toBeTruthy();
@@ -1110,7 +1140,7 @@ describe("/opportunities/[id] workspace", () => {
       can_start_extraction: false,
     });
     const { container } = await renderWorkspace("requirements");
-    expect(selectedTabs()).toEqual(["3Requirements"]);
+    expect(selectedTabs()).toEqual(["Requirements"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Requirements" })).toBeTruthy();
     expect(within(panel).getByRole("heading", { level: 3, name: "Integration 1" })).toBeTruthy();
@@ -1220,7 +1250,7 @@ describe("/opportunities/[id] workspace", () => {
       assessment_running: false,
     });
     const { container } = await renderWorkspace("estimate");
-    expect(selectedTabs()).toEqual(["7Estimate"]);
+    expect(selectedTabs()).toEqual(["Estimate"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Estimate" })).toBeTruthy();
     expect(within(panel).getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
@@ -1320,7 +1350,7 @@ describe("/opportunities/[id] workspace", () => {
     });
     const { container } = await renderWorkspace("gaps");
     // Story 4.7: the Gaps tab badge counts the open Gaps.
-    expect(selectedTabs()).toEqual(["4Gaps1, 1 open"]);
+    expect(selectedTabs()).toEqual(["Gaps1, 1 open"]);
     expect(screen.getByTestId("tab-count-gaps").textContent).toBe("1, 1 open");
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
@@ -1433,7 +1463,7 @@ describe("/opportunities/[id] workspace", () => {
       can_start: false,
     });
     const { container } = await renderWorkspace("assessments");
-    expect(selectedTabs()).toEqual(["5Assessments"]);
+    expect(selectedTabs()).toEqual(["Assessments"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Assessments" })).toBeTruthy();
     expect(within(panel).getByRole("heading", { level: 3, name: "Agent tasks" })).toBeTruthy();
@@ -1764,7 +1794,7 @@ describe("/opportunities/[id] workspace", () => {
     signedIn(["sales_representative"]);
     foundWithTrace(TRACE_PAGE);
     const { container } = await renderWorkspace("trace");
-    expect(selectedTabs()).toEqual(["8Trace"]);
+    expect(selectedTabs()).toEqual(["Trace"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Trace" })).toBeTruthy();
     const rows = within(panel).getAllByRole("row");
@@ -1838,7 +1868,7 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
-  it.each([["actuals", "9Actuals"]])(
+  it.each([["actuals", "Actuals"]])(
     "tab URL /%s: header, that tab selected, 'Not available yet.'",
     async (tab, label) => {
       signedIn(["head_of_delivery"]);
@@ -1848,7 +1878,7 @@ describe("/opportunities/[id] workspace", () => {
       expect(selectedTabs()).toEqual([label]);
       const panel = screen.getByRole("tabpanel");
       expect(within(panel).getByText(NOT_AVAILABLE)).toBeTruthy();
-      expect(within(panel).getByRole("heading", { level: 2, name: label.slice(1) })).toBeTruthy();
+      expect(within(panel).getByRole("heading", { level: 2, name: label })).toBeTruthy();
       expect(screen.queryByText("[CUSTOMER]")).toBeNull();
       expect(await axeViolations(container)).toEqual([]);
     },
@@ -1858,7 +1888,7 @@ describe("/opportunities/[id] workspace", () => {
     signedIn(["sales_representative"]);
     found();
     const { container } = await renderWorkspace("conflicts");
-    expect(selectedTabs()).toEqual(["6Conflicts"]);
+    expect(selectedTabs()).toEqual(["Conflicts"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Conflicts" })).toBeTruthy();
     expect(within(panel).getByText("No Conflicts detected")).toBeTruthy();
@@ -1877,7 +1907,7 @@ describe("/opportunities/[id] workspace", () => {
     await renderWorkspace("conflicts");
     expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
     expect(screen.getAllByRole("tab")).toHaveLength(9);
-    expect(selectedTabs()).toEqual(["6Conflicts"]);
+    expect(selectedTabs()).toEqual(["Conflicts"]);
     expect(screen.getByRole("tab", { name: "Conflicts" })).toBeTruthy();
     expect(screen.queryByTestId("tab-count-conflicts")).toBeNull();
     expect(
@@ -2020,6 +2050,10 @@ describe("/opportunities/[id] workspace", () => {
       await renderWorkspace(tab);
       expect(screen.getByText(NO_ACCESS_TO_OPP)).toBeTruthy();
       expect(screen.queryByRole("tablist")).toBeNull();
+      // The header band still carries the right-pane toggle.
+      expect(
+        within(screen.getByTestId("page-header")).getByRole("button", { name: "Right pane" }),
+      ).toBeTruthy();
       expect(screen.queryByText(NOT_AVAILABLE)).toBeNull();
       expect(screen.queryByText("[CUSTOMER]")).toBeNull();
     },

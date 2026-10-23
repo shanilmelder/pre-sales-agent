@@ -40,7 +40,7 @@ import {
   type ImportField,
   withDefaultDate,
 } from "@/lib/opportunity-import";
-import { codePointLength as len, utcToday } from "@/lib/opportunities";
+import { codePointLength as len, CREATE_FORM_ID, utcToday } from "@/lib/opportunities";
 import { exceedsTransportLimit, TOO_LARGE } from "@/lib/sources";
 
 /** Field limits, mirroring the API's (which decides). */
@@ -431,10 +431,11 @@ export function CreateOpportunityForm() {
 
   return (
     <form
+      id={CREATE_FORM_ID}
       noValidate
       onSubmit={onSubmit}
       aria-busy={pending}
-      className="flex max-w-xl flex-col gap-4 p-gutter"
+      className="flex max-w-xl flex-col gap-4"
     >
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">

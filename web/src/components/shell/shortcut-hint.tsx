@@ -39,7 +39,7 @@ export function ShortcutHint() {
     <section
       aria-label="Keyboard shortcuts"
       data-testid="shortcut-hint"
-      className="flex flex-wrap items-center gap-3 border-b border-border bg-primary-tint px-gutter py-2.5"
+      className="flex flex-wrap items-center gap-3 border-b border-border bg-primary-tint px-page py-2.5"
     >
       <KeyboardIcon className="size-4 shrink-0 text-primary-text" aria-hidden="true" />
       <p className="min-w-0 flex-1 text-body">

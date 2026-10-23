@@ -12,7 +12,7 @@ import {
 } from "react";
 
 import { loadOpportunity, updateOpportunity } from "@/app/opportunities/actions";
-import { Breadcrumb, DueCountdown } from "@/components/opportunities/header-parts";
+import { BreadcrumbRow, DueCountdown, WORKSPACE_BAND } from "@/components/opportunities/header-parts";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
   codePointLength,
@@ -411,10 +411,10 @@ export function EditableWorkspaceHeader({
 
   return (
     <header
-      className="flex shrink-0 flex-col gap-1.5 px-gutter pt-gutter pb-3"
+      className={WORKSPACE_BAND}
       aria-busy={saving !== null || reloading}
     >
-      <Breadcrumb title={title} />
+      <BreadcrumbRow title={title} />
       <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
         <InlineField
           label="Edit title"
@@ -431,7 +431,7 @@ export function EditableWorkspaceHeader({
         </InlineField>
         <span className="inline-flex h-8 items-center">{badge}</span>
       </div>
-      <div className="flex flex-wrap items-start gap-x-3.5 gap-y-1.5 text-label text-muted-foreground">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-1.5 text-[13px] leading-5 text-text-secondary">
         {meta}
         <span className="inline-flex items-start gap-1.5">
           <span className="inline-flex h-5 items-center gap-1.5">

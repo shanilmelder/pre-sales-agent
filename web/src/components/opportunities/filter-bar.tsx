@@ -135,7 +135,7 @@ export function FilterBar({
   );
 
   return (
-    <div className="px-gutter pb-2">
+    <div>
       <div
         role="group"
         aria-label="Filters"

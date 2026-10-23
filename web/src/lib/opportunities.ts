@@ -115,3 +115,6 @@ export function sliceCodePoints(value: string, max: number): string {
 }
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The New Opportunity form's id, so the page header's Create Opportunity button submits it. */
+export const CREATE_FORM_ID = "create-opportunity-form";

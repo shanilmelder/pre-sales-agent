@@ -9,7 +9,7 @@ const SECTIONS = [
 /** Admin's sub-navigation: the sections side by side, the current one marked. */
 export function AdminNav({ current }: { current: (typeof SECTIONS)[number]["href"] }) {
   return (
-    <nav aria-label="Admin sections" className="flex gap-4 border-b border-border px-gutter">
+    <nav aria-label="Admin sections" className="flex gap-4 border-b border-border">
       {SECTIONS.map((section) => (
         <Link
           key={section.href}

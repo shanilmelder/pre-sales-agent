@@ -27,7 +27,7 @@ export function UsersTable({
     users[0]?.id;
 
   if (users.length === 0) {
-    return <p className="p-gutter text-muted-foreground">No users yet.</p>;
+    return <p className="text-muted-foreground">No users yet.</p>;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTableSectionElement>) {
@@ -49,7 +49,7 @@ export function UsersTable({
       <caption className="sr-only">Users and their roles</caption>
       <thead className="text-label text-muted-foreground">
         <tr className="h-row border-b border-border">
-          <th scope="col" className="w-1/4 px-gutter font-medium">
+          <th scope="col" className="w-1/4 px-3 font-medium">
             Name
           </th>
           <th scope="col" className="w-1/4 px-2 font-medium">
@@ -68,7 +68,7 @@ export function UsersTable({
               key={user.id}
               className={`h-row border-b border-border ${selected ? "bg-muted" : "hover:bg-muted/60"}`}
             >
-              <td className="truncate px-gutter">
+              <td className="truncate px-3">
                 <button
                   type="button"
                   data-user-row=""

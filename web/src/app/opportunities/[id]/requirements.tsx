@@ -6,6 +6,7 @@ import {
 import { hasAccess } from "@/components/access-gate";
 import { RequirementsSection } from "@/components/opportunities/requirements-list";
 import { getMe } from "@/lib/api/server";
+import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** Tab 3: the Opportunity's Requirements, grouped by classification, with the state of its
  * latest extraction, and a notice of the Assessments that used Requirement versions that
@@ -32,7 +33,7 @@ export async function RequirementsTab({
   ]);
 
   return (
-    <div className="flex flex-col gap-4 p-gutter">
+    <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Requirements</h2>
       {listed.kind === "ok" ? (
         <RequirementsSection

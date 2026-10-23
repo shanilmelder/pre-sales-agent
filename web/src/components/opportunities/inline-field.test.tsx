@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/app/opportunities/actions", () => ({ updateOpportunity, loadOpportunity }));
 
-import { LiveRegionProvider } from "../shell/live-region";
+import { ShellProviders } from "../shell/shell-context";
 import { EditableWorkspaceHeader, InlineField } from "./inline-field";
 
 function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
@@ -39,9 +39,9 @@ function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
 
 function header(initial: Opportunity = opportunity()) {
   return (
-    <LiveRegionProvider>
+    <ShellProviders singleKeyShortcuts>
       <EditableWorkspaceHeader opportunity={initial} meta={<span>[META]</span>} badge={<span>[BADGE]</span>} today="2026-10-21" />
-    </LiveRegionProvider>
+    </ShellProviders>
   );
 }
 

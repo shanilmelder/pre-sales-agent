@@ -77,10 +77,14 @@ beforeEach(() => {
 });
 
 describe("WorkspaceTabs", () => {
-  it("lists the nine tabs in order, each a link with its number and slug URL", () => {
+  it("lists the nine tabs in order, each a link with its slug URL and no digit in its label", () => {
     render(tree());
     const all = tabs();
-    expect(all.map((t) => t.textContent)).toEqual(LABELS.map((label, i) => `${i + 1}${label}`));
+    expect(all.map((t) => t.textContent)).toEqual([...LABELS]);
+    // The digit shortcuts stay, announced through aria-keyshortcuts.
+    expect(all.map((t) => t.getAttribute("aria-keyshortcuts"))).toEqual(
+      LABELS.map((_, i) => String(i + 1)),
+    );
     expect(all.map((t) => t.getAttribute("href"))).toEqual(
       SLUGS.map((slug) => `/opportunities/${ID}/${slug}`),
     );
@@ -102,7 +106,7 @@ describe("WorkspaceTabs", () => {
   it("a tab URL selects that tab", () => {
     segment.current = "gaps";
     render(tree());
-    expect(selected().map((t) => t.textContent)).toEqual(["4Gaps"]);
+    expect(selected().map((t) => t.textContent)).toEqual(["Gaps"]);
   });
 
   it("the Conflicts tab shows its open count after the label, none at 0", async () => {
@@ -113,6 +117,22 @@ describe("WorkspaceTabs", () => {
     rerender(tree(undefined, true, { conflicts: 0 }));
     expect(screen.getByRole("tab", { name: "Conflicts" })).toBeTruthy();
     expect(screen.queryByTestId("tab-count-conflicts")).toBeNull();
+  });
+
+  it("styles the tabs as the mockup: 14px, the selected one primary-text and semibold; Gaps and Conflicts counts in the blocker tint", () => {
+    render(tree(undefined, true, { gaps: 2, conflicts: 1 }));
+    const overview = screen.getByRole("tab", { name: "Overview" });
+    expect(overview.className).toContain("text-[14px]");
+    expect(overview.className).toContain("text-primary-text");
+    expect(overview.className).toContain("font-semibold");
+    const sources = screen.getByRole("tab", { name: "Sources" });
+    expect(sources.className).toContain("text-text-secondary");
+    expect(sources.className).toContain("font-medium");
+    for (const slug of ["gaps", "conflicts"]) {
+      const pill = screen.getByTestId(`tab-count-${slug}`);
+      expect(pill.className).toContain("bg-blocker-tint");
+      expect(pill.className).toContain("text-blocker");
+    }
   });
 
   it("no tab is hidden or disabled", () => {

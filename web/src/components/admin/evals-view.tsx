@@ -296,7 +296,7 @@ function History({
 export function EvalsView({ results }: { results: readonly EvalResult[] }) {
   const [selectedId, setSelectedId] = useState(results[0]?.id ?? "");
   if (results.length === 0) {
-    return <p className="p-gutter text-muted-foreground">{EMPTY_STATE}</p>;
+    return <p className="text-muted-foreground">{EMPTY_STATE}</p>;
   }
   const index = Math.max(
     0,
@@ -305,7 +305,7 @@ export function EvalsView({ results }: { results: readonly EvalResult[] }) {
   const current = results[index];
   const previous = results[index + 1] ?? null;
   return (
-    <div className="flex flex-col gap-6 p-gutter">
+    <div className="flex flex-col gap-6">
       <Section id="evals-result" title={index === 0 ? "Latest result" : "Selected result"}>
         <Summary result={current} />
       </Section>
