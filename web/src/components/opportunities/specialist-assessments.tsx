@@ -497,7 +497,7 @@ const TASK_PILL_ICONS: Record<TaskStatus, { icon: LucideIcon; tone: string }> =
 
 /** A task's status: always an icon and a label, never colour alone (Queued neutral, Running
  * agent colour, Done green, Failed red, Skipped neutral). */
-function TaskStatusPill({ status }: { status: TaskStatus }) {
+export function TaskStatusPill({ status }: { status: TaskStatus }) {
   const known = TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued;
   const Icon = known.icon;
   return (
