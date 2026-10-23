@@ -5,7 +5,8 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { copyClarificationQuestions } from "@/app/opportunities/actions";
 import { useAnnounce } from "@/components/shell/live-region";
-import { EXPORT, EXPORTING, exportFailure, exportFileName } from "@/lib/estimates";
+import { Button } from "@/components/ui/button";
+import { EXPORTING, exportFailure, exportFileName } from "@/lib/estimates";
 import {
   copiedCount,
   QUESTION_EXPORT_FORMATS,
@@ -14,8 +15,8 @@ import {
   type QuestionExportFormat,
 } from "@/lib/gaps";
 
-const buttonClass =
-  "inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
+/** The trigger's label. */
+export const EXPORT_QUESTIONS = "Export questions";
 const optionClass =
   "w-full rounded-sm px-2 py-1 text-left text-label outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-primary";
 
@@ -99,7 +100,7 @@ async function copy(opportunityId: string): Promise<number> {
   return result.count;
 }
 
-/** The **Export** menu in the Gaps tab header (Story 4.6): "Copy", "Word (.docx)" and "Email
+/** The **Export questions** menu in the Gaps tab header (Story 4.6): "Copy", "Word (.docx)" and "Email
  * draft (.eml)" of the approved questions of open Gaps, grouped by topic, in customer wording
  * only. Copy puts the text on the clipboard and announces "N questions copied"; the files
  * download through a web route. Keyboard as the Estimate's Export: Enter/Space opens it, the
@@ -179,9 +180,11 @@ export function QuestionsExport({ opportunityId }: { opportunityId: string }) {
 
   return (
     <div ref={root} className="relative flex flex-wrap items-center gap-2" data-questions-export="">
-      <button
+      <Button
         ref={trigger}
         type="button"
+        variant="outline"
+        size="sm"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         disabled={busy}
@@ -192,12 +195,11 @@ export function QuestionsExport({ opportunityId }: { opportunityId: string }) {
             setOpen(true);
           }
         }}
-        className={buttonClass}
       >
-        <DownloadIcon aria-hidden="true" className="size-3" />
-        {busy ? EXPORTING : EXPORT}
-        <ChevronDownIcon aria-hidden="true" className="size-3" />
-      </button>
+        <DownloadIcon aria-hidden="true" />
+        {busy ? EXPORTING : EXPORT_QUESTIONS}
+        <ChevronDownIcon aria-hidden="true" />
+      </Button>
       {open ? (
         <div
           ref={list}
@@ -227,15 +229,16 @@ export function QuestionsExport({ opportunityId }: { opportunityId: string }) {
             {failure}
           </p>
           {last ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               disabled={busy}
               aria-label="Retry export"
               onClick={() => void run(last)}
-              className={buttonClass}
             >
               Retry
-            </button>
+            </Button>
           ) : null}
         </>
       ) : null}

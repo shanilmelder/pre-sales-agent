@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -230,15 +230,14 @@ describe("GapsList", () => {
     const rows = screen.getAllByRole("row");
     expect(rows).toHaveLength(3);
     expect(rows[0].textContent).toBe(
-      "Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsDraft",
+      "HighOpen [GAP 1]Integration details·Clarification AgentDraft",
     );
     expect(rows[1].textContent).toBe(
-      "Open[GAP 2]MediumData volumesClarification Agent · Data volumesDraft",
+      "MediumOpen [GAP 2]Data volumes·Clarification AgentDraft",
     );
     expect(rows[2].textContent).toBe(
-      "Open[GAP 3]LowCommercialClarification Agent · CommercialDraft",
+      "LowOpen [GAP 3]Commercial·Clarification AgentDraft",
     );
-    expect(within(rows[0]).getByRole("button").className).toContain("min-h-row");
     const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
     expect(tabStops).toEqual([row(1)]);
     expect(await axeViolations(container)).toEqual([]);
@@ -258,14 +257,14 @@ describe("GapsList", () => {
     );
     const rows = screen.getAllByRole("row");
     expect(rows[0].textContent).toBe(
-      "Open[GAP 1]MediumIntegration detailsClarification Agent · Integration detailsDraft",
+      "MediumOpen [GAP 1]Integration details·Clarification AgentDraft",
     );
     expect(rows[0].hasAttribute("data-converted")).toBe(false);
     expect(rows[1].textContent).toBe(
-      "Converted[GAP 2]HighIntegration detailsClarification Agent · Integration detailsConverted to Condition",
+      "HighConverted [GAP 2]Integration details·Clarification AgentConverted to Condition",
     );
     expect(rows[2].textContent).toBe(
-      "Converted[GAP 3]LowCommercialClarification Agent · CommercialConverted to Contingency",
+      "LowConverted [GAP 3]Commercial·Clarification AgentConverted to Contingency",
     );
     expect(rows[1].hasAttribute("data-converted")).toBe(true);
     expect(rows[1].className).toContain("text-muted-foreground");
@@ -307,7 +306,7 @@ describe("the inspector", () => {
     const user = userEvent.setup();
     const { container } = renderSection(list([gap(1, "high"), gap(2, "low")], succeeded));
 
-    await user.tab();
+    act(() => row(1).focus());
     await user.keyboard("j");
     await user.keyboard("{Enter}");
 
@@ -315,8 +314,14 @@ describe("the inspector", () => {
     const heading = within(inspector).getByRole("heading", { level: 3, name: "[GAP 2]" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(row(2).closest('[role="row"]')?.getAttribute("aria-current")).toBe("true");
-    expect(within(inspector).getByText("Integration details")).toBeTruthy();
+    expect(within(inspector).getByText("Low impact").className).toContain("text-neutral");
+    expect(within(inspector).getByText("· Integration details")).toBeTruthy();
     expect(within(inspector).getByText("[WHY 2]")).toBeTruthy();
+    expect(
+      within(inspector).getByText("Clarification Agent · Integration details"),
+    ).toBeTruthy();
+    // Read-only: the flow line, but no primary action.
+    expect(within(inspector).getByText("Draft, then Approved, Sent and Answered.")).toBeTruthy();
     expect(within(inspector).getByText("Low")).toBeTruthy();
     expect(within(inspector).getByText("[BASIS 2]")).toBeTruthy();
     expect(within(inspector).getByText("R2")).toBeTruthy();
@@ -614,15 +619,15 @@ describe("question pills", () => {
     const user = userEvent.setup();
     const { container } = renderSection(list([approvedGap(1, "high"), gap(2, "low")], succeeded));
     const rows = screen.getAllByRole("row");
-    expect(rows[0].textContent).toBe("Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsApproved");
-    expect(rows[1].textContent).toBe("Open[GAP 2]LowIntegration detailsClarification Agent · Integration detailsDraft");
+    expect(rows[0].textContent).toBe("HighOpen [GAP 1]Integration details·Clarification AgentApproved");
+    expect(rows[1].textContent).toBe("LowOpen [GAP 2]Integration details·Clarification AgentDraft");
     expect(rows[0].querySelector("[data-question-status] svg")).toBeTruthy(); // icon plus label
 
     const inspector = await openRow(user, 1);
 
     expect(within(inspector).getByText("Approved since 5 Oct 2026")).toBeTruthy();
     expect(within(inspector).getByText("Approved by Owner Person, 5 Oct 2026")).toBeTruthy();
-    expect(within(inspector).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: "Approve question" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 });
@@ -739,7 +744,7 @@ describe("editing questions", () => {
     renderSection(list([gap(1, "high")], succeeded, true, true));
     const inspector = await openRow(user, 1);
 
-    await user.click(within(inspector).getByRole("button", { name: "Approve" }));
+    await user.click(within(inspector).getByRole("button", { name: "Approve question" }));
 
     expect(
       await screen.findByText(
@@ -804,7 +809,7 @@ describe("approving questions", () => {
     const { container } = renderSection(list([gap(1, "high")], succeeded, true, true));
     const inspector = await openRow(user, 1);
 
-    await user.click(within(inspector).getByRole("button", { name: "Approve" }));
+    await user.click(within(inspector).getByRole("button", { name: "Approve question" }));
 
     expect(approveClarificationQuestion).toHaveBeenCalledWith({
       opportunityId: OPP_ID,
@@ -815,7 +820,7 @@ describe("approving questions", () => {
       await within(inspector).findByText("Approved by Owner Person, 5 Oct 2026"),
     ).toBeTruthy();
     expect(screen.getAllByRole("row")[0].textContent).toBe(
-      "Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsApproved",
+      "HighOpen [GAP 1]Integration details·Clarification AgentApproved",
     );
     expect(await axeViolations(container)).toEqual([]);
   });
@@ -855,7 +860,7 @@ describe("approving questions", () => {
       expect(screen.getByRole("status").textContent).toBe("2 questions approved"),
     );
     expect(screen.getAllByRole("row")[1].textContent).toBe(
-      "Open[GAP 2]MediumIntegration detailsClarification Agent · Integration detailsApproved",
+      "MediumOpen [GAP 2]Integration details·Clarification AgentApproved",
     );
   });
 
@@ -869,7 +874,7 @@ describe("approving questions", () => {
     const reload = await screen.findByRole("button", { name: "Reload" });
     expect(screen.getByText("Changed by Colleague since you opened it.", { selector: "p" })).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(reload));
-    expect(screen.getAllByRole("row")[0].textContent).toBe("Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsDraft");
+    expect(screen.getAllByRole("row")[0].textContent).toBe("HighOpen [GAP 1]Integration details·Clarification AgentDraft");
   });
 
   it("if the re-read after Approve all fails, offers Reload straight away", async () => {
@@ -901,8 +906,8 @@ describe("a sales representative", () => {
       list([approvedGap(1, "high"), hidden], succeeded, false, false),
     );
     const rows = screen.getAllByRole("row");
-    expect(rows[0].textContent).toBe("Open[GAP 1]HighIntegration detailsClarification Agent · Integration detailsApproved");
-    expect(rows[1].textContent).toBe("Open[GAP 2]LowIntegration detailsClarification Agent · Integration details");
+    expect(rows[0].textContent).toBe("HighOpen [GAP 1]Integration details·Clarification AgentApproved");
+    expect(rows[1].textContent).toBe("LowOpen [GAP 2]Integration details·Clarification Agent");
 
     const inspector = await openRow(user, 1);
     expect(
@@ -966,14 +971,14 @@ describe("Gap status, groups and the header (Story 4.4)", () => {
       list([gap(1, "low"), converted, dismissedGap(3, "high")], succeeded),
     );
 
-    expect(screen.getByText("3 Gaps · 1 open · ranked by impact")).toBeTruthy();
+    expect(screen.getByText("3 total · 1 open · ranked by impact")).toBeTruthy();
     const rows = screen.getAllByRole("row");
     expect(rows[2].textContent).toBe(
-      "Dismissed[GAP 3]HighIntegration detailsClarification Agent · Integration detailsDismissed · Not relevant",
+      "HighDismissed [GAP 3]Integration details·Clarification AgentDismissed · Not relevant",
     );
     expect(rows[2].hasAttribute("data-dismissed")).toBe(true);
     expect(rows[2].className).toContain("text-muted-foreground");
-    await user.tab();
+    act(() => row(1).focus());
     await user.keyboard("jj");
     expect(document.activeElement).toBe(row(3));
     await user.keyboard("{Enter}");
@@ -990,11 +995,11 @@ describe("Gap status, groups and the header (Story 4.4)", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("shows the key hints under the list", () => {
+  it("shows the key hints under the card as one line", () => {
     renderSection(list([gap(1, "high")], succeeded, true, true));
-    for (const hint of ["move", "select", "open", "edit question"]) {
-      expect(screen.getByText(hint)).toBeTruthy();
-    }
+    expect(
+      screen.getByText("j / k move · x select · Enter open · e edit question · ] inspector"),
+    ).toBeTruthy();
   });
 });
 
@@ -1140,9 +1145,9 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
       reason: "Lower risk",
     });
     await waitFor(() =>
-      expect(screen.getAllByRole("row").map((r) => r.textContent?.slice(0, 11))).toEqual([
-        "Open[GAP 2]",
-        "Open[GAP 1]",
+      expect(screen.getAllByRole("row").map((r) => r.textContent?.slice(0, 18))).toEqual([
+        "MediumOpen [GAP 2]",
+        "LowOpen [GAP 1]Int",
       ]),
     );
     const history = within(pane()).getByRole("list", { name: "Gap history" });
@@ -1177,7 +1182,7 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
     await waitFor(() =>
       expect(screen.getAllByRole("row")[1].hasAttribute("data-dismissed")).toBe(true),
     );
-    expect(screen.getByText("2 Gaps · 1 open · ranked by impact")).toBeTruthy();
+    expect(screen.getByText("2 total · 1 open · ranked by impact")).toBeTruthy();
     const updated = pane();
     expect(
       within(updated).getByText("Dismissed · Other · Owner Person, 14 Oct 2026"),
@@ -1232,8 +1237,9 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
       reason: "Customer asked again",
     });
     await waitFor(() =>
-      expect(screen.getAllByRole("row")[0].textContent?.slice(0, 11)).toBe("Open[GAP 1]"),
+      expect(screen.getAllByRole("row")[0].textContent?.slice(0, 16)).toBe("HighOpen [GAP 1]"),
     );
+    expect(screen.getAllByRole("row")[0].hasAttribute("data-dismissed")).toBe(false);
     const history = within(pane()).getByRole("list", { name: "Gap history" });
     expect(within(history).getByText("Reopened")).toBeTruthy();
   });
@@ -1330,7 +1336,7 @@ describe("exporting and sending questions (Story 4.6)", () => {
     expect(within(inspector).getByText("Sent 14 Oct 2026 by Rep Person")).toBeTruthy();
     expect(within(inspector).getByText("Approved by Owner Person, 5 Oct 2026")).toBeTruthy();
     expect(within(inspector).getByRole("button", { name: "No answer" })).toBeTruthy();
-    expect(within(inspector).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: "Approve question" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -1345,7 +1351,7 @@ describe("exporting and sending questions (Story 4.6)", () => {
     expect(within(inspector).getByRole("group", { name: "Clarification Question (read-only)" }))
       .toBeTruthy();
     expect(within(inspector).queryByRole("button", { name: "Edit question" })).toBeNull();
-    expect(within(inspector).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(within(inspector).queryByRole("button", { name: "Approve question" })).toBeNull();
   });
 
   it("Mark all sent (N) opens a date form (today by default) and marks the shown questions", async () => {
@@ -1441,7 +1447,12 @@ describe("exporting and sending questions (Story 4.6)", () => {
     renderSection(repList([approvedGap(1, "high"), approvedGap(2, "low")]));
     const inspector = await openRow(user, 1);
 
-    await user.click(within(inspector).getByRole("button", { name: "Mark sent" }));
+    expect(
+      within(inspector).getByText(
+        "Approved. Export it, send it to the customer, then mark it sent.",
+      ),
+    ).toBeTruthy();
+    await user.click(within(inspector).getByRole("button", { name: "Mark as sent" }));
     const form = within(inspector).getByRole("form", { name: "Mark this question sent" });
     await user.click(within(form).getByRole("button", { name: "Mark sent" }));
 
@@ -1469,7 +1480,7 @@ describe("exporting and sending questions (Story 4.6)", () => {
       rowVersion: 3,
     });
     await waitFor(() => expect(screen.getAllByRole("row")[0].textContent).toContain("No answer"));
-    expect(screen.getAllByRole("row")[0].textContent).toContain("Open");
+    expect(within(pane()).getByText("Open")).toBeTruthy();
     expect(within(pane()).queryByRole("button", { name: "No answer" })).toBeNull();
   });
 
@@ -1493,7 +1504,7 @@ describe("exporting and sending questions (Story 4.6)", () => {
     copyClarificationQuestions.mockResolvedValue({ kind: "ok", text: "[EXPORT TEXT]", count: 2 });
     const { container } = renderSection(repList([approvedGap(1, "high"), approvedGap(2, "low")]));
 
-    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "Export questions" }));
     const menu = screen.getByRole("group", { name: "Export questions as" });
     expect(within(menu).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Copy",
@@ -1525,7 +1536,7 @@ describe("exporting and sending questions (Story 4.6)", () => {
     URL.revokeObjectURL = vi.fn();
     try {
       renderSection(repList([approvedGap(1, "high")]));
-      await user.click(screen.getByRole("button", { name: "Export" }));
+      await user.click(screen.getByRole("button", { name: "Export questions" }));
       await user.click(screen.getByRole("button", { name: "Email draft (.eml)" }));
 
       await waitFor(() =>
@@ -1542,11 +1553,11 @@ describe("exporting and sending questions (Story 4.6)", () => {
 
   it("no Export or Mark sent without approved questions, or for those who may not send", () => {
     const { unmount } = renderSection(repList([gap(1, "high")]));
-    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Export questions" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Mark all sent/ })).toBeNull();
     unmount();
     renderSection(list([approvedGap(1, "high")], succeeded, false, false, false, false));
-    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Export questions" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Mark all sent/ })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
@@ -1822,7 +1833,7 @@ describe("live Gaps over the event stream (Story 4.7)", () => {
     await waitFor(() =>
       expect(screen.getAllByRole("row")[0].textContent).toContain("Answered by customer, 12 Oct"),
     );
-    expect(screen.getByText("2 Gaps · 1 open · ranked by impact")).toBeTruthy();
+    expect(screen.getByText("2 total · 1 open · ranked by impact")).toBeTruthy();
     expect(loadGaps).toHaveBeenCalledWith(OPP_ID);
   });
 
@@ -1855,5 +1866,191 @@ describe("the polling fallback while the stream is not connected (Story 4.7)", (
     view.unmount();
     await act(async () => vi.advanceTimersByTime(3 * GAPS_FALLBACK_POLL_MS));
     expect(loadGaps).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- Gaps tab redesign: the I/O matrix ----------------------------------------------------------
+
+/** 5 Gaps, 3 open (one High), one converted and one dismissed. */
+function mixed(): Gap[] {
+  return [
+    gap(1, "high"),
+    gap(2, "medium", "data_volumes"),
+    gap(3, "low", "commercial"),
+    { ...gap(4, "low"), status: "converted", converted_to: "condition" },
+    dismissedGap(5, "medium"),
+  ];
+}
+
+const filterTrigger = (label: string) =>
+  screen.getByRole("button", { name: new RegExp(`^${label}(: .*)?$`) });
+
+/** Pick `option` in the `label` filter's popover. */
+async function pickFilter(label: string, option: string) {
+  fireEvent.click(filterTrigger(label));
+  const popover = await screen.findByRole("dialog", { name: `${label} filter` });
+  fireEvent.click(within(popover).getByRole("radio", { name: option }));
+  fireEvent.keyDown(popover, { key: "Escape" });
+}
+
+describe("the Gaps tab redesign (matrix)", () => {
+  it("mixed list: the summary, and the open High row has the red tint and left bar", async () => {
+    const { container } = renderSection(list(mixed(), succeeded, true, true));
+    expect(screen.getByRole("heading", { level: 2, name: "Gaps" })).toBeTruthy();
+    expect(screen.getByText("5 total · 3 open · ranked by impact")).toBeTruthy();
+    const rows = screen.getAllByRole("row");
+    expect(rows.map((r) => r.hasAttribute("data-urgent"))).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(rows[0].className).toContain("bg-blocker-tint");
+    expect(rows[0].className).toContain("shadow-[inset_3px_0_0_var(--color-blocker)]");
+    // The impact bar takes the impact's tone.
+    const bar = within(rows[0]).getByTestId("impact-bar");
+    expect(bar.querySelectorAll(".bg-blocker")).toHaveLength(3);
+    expect(within(rows[1]).getByTestId("impact-bar").querySelectorAll(".bg-gap")).toHaveLength(2);
+    expect(
+      within(rows[1]).getByTestId("impact-bar").querySelectorAll(".bg-border-strong"),
+    ).toHaveLength(1);
+    expect(within(rows[0]).getByText("Clarification Agent")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("selected High row: the primary tint wins over the red tint", async () => {
+    const user = userEvent.setup();
+    renderSection(list(mixed(), succeeded, true, true));
+    await user.click(row(1));
+    const opened = row(1).closest('[role="row"]')!;
+    expect(opened.className).toContain("bg-primary-tint");
+    expect(opened.className).not.toContain("bg-blocker-tint");
+    expect(opened.hasAttribute("data-urgent")).toBe(false);
+  });
+
+  it("the whole row opens the Gap through the stretched open button", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high")], succeeded));
+    expect(row(1).className).toContain("after:inset-0");
+    await user.click(row(1));
+    expect(within(pane()).getByRole("heading", { level: 3, name: "[GAP 1]" })).toBeTruthy();
+  });
+
+  it("sales rep: no Approve; Mark sent and Export shown; the hints leave out e", () => {
+    renderSection(repList([approvedGap(1, "high"), gap(2, "low")]));
+    expect(screen.queryByRole("button", { name: /^Approve/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Mark all sent (1)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export questions" })).toBeTruthy();
+    expect(screen.getByText("j / k move · x select · Enter open · ] inspector")).toBeTruthy();
+  });
+
+  it("viewer: no checkbox column, no actions, and the short hints", async () => {
+    const { container } = renderSection(list(mixed(), succeeded, false, false, false, false));
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getAllByRole("row")[0].className).toContain(
+      "md:grid-cols-[112px_minmax(0,1fr)_120px]",
+    );
+    expect(screen.queryByRole("button", { name: /Approve|Mark|Export/ })).toBeNull();
+    expect(screen.getByText("j / k move · Enter open · ] inspector")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("draft question, editable: the inspector's primary action is Approve question", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+    const approve = within(inspector).getByRole("button", { name: "Approve question" });
+    expect(approve.className).toContain("bg-primary");
+    expect(within(inspector).getByText("Draft, then Approved, Sent and Answered.")).toBeTruthy();
+    expect(within(inspector).getByText("Draft since 5 Oct 2026. Press e to edit.")).toBeTruthy();
+  });
+
+  it("dismissed Gap: a greyed row with its pill; the flow line and Reopen in the inspector", async () => {
+    const user = userEvent.setup();
+    renderSection(list([gap(1, "low"), dismissedGap(2, "high")], succeeded, true, true));
+    const dismissed = screen.getAllByRole("row")[1];
+    expect(dismissed.className).toContain("text-muted-foreground");
+    expect(dismissed.textContent).toContain("Dismissed · Not relevant");
+    const inspector = await openRow(user, 2);
+    expect(within(inspector).getByText("Dismissed with a reason.")).toBeTruthy();
+    expect(within(inspector).getByRole("form", { name: "Reopen the Gap" })).toBeTruthy();
+    expect(within(inspector).queryByRole("form", { name: "Dismiss the Gap" })).toBeNull();
+  });
+
+  it("Impact: High narrows the rows, says how many show, and offers Clear filters", async () => {
+    renderSection(list(mixed(), succeeded, true, true));
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+    await pickFilter("Impact", "High");
+    expect(screen.getAllByRole("row")).toHaveLength(1);
+    expect(screen.getByText("5 total · 3 open · ranked by impact · showing 1")).toBeTruthy();
+    expect(filterTrigger("Impact").textContent).toBe("Impact: High");
+    // Approve all still covers every Gap.
+    expect(screen.getByRole("button", { name: "Approve all (3)" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getAllByRole("row")).toHaveLength(5);
+    expect(screen.getByText("5 total · 3 open · ranked by impact")).toBeTruthy();
+  });
+
+  it("Question status and Area combine with AND", async () => {
+    renderSection(list(mixed(), succeeded, true, true));
+    await pickFilter("Question status", "Draft");
+    expect(screen.getAllByRole("row")).toHaveLength(5);
+    await pickFilter("Area", "Commercial");
+    expect(screen.getAllByRole("row").map((r) => r.querySelector("[data-gap-row]")?.textContent))
+      .toEqual(["Open [GAP 3]"]);
+    expect(filterTrigger("Area").textContent).toBe("Area: Commercial");
+  });
+
+  it("a filter that hides a checked row unchecks it; Approve N selected recounts", async () => {
+    const user = userEvent.setup();
+    renderSection(list(mixed(), succeeded, true, true));
+    await user.click(screen.getByRole("checkbox", { name: "Select [GAP 1]" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select [GAP 2]" }));
+    expect(screen.getByRole("button", { name: "Approve 2 selected" })).toBeTruthy();
+    await pickFilter("Impact", "High");
+    expect(screen.getByRole("button", { name: "Approve 1 selected" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(
+      (screen.getByRole("checkbox", { name: "Select [GAP 2]" }) as HTMLInputElement).checked,
+    ).toBe(false);
+    expect(
+      (screen.getByRole("checkbox", { name: "Select [GAP 1]" }) as HTMLInputElement).checked,
+    ).toBe(true);
+  });
+
+  it("a checked row hidden by a list change stops counting as selected", async () => {
+    const user = userEvent.setup();
+    approveClarificationQuestion.mockResolvedValue({
+      kind: "ok",
+      question: approvedQuestion(gap(1, "high").question!),
+    });
+    renderSection(list(mixed(), succeeded, true, true));
+    await pickFilter("Question status", "Draft");
+    await user.click(screen.getByRole("checkbox", { name: "Select [GAP 1]" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select [GAP 2]" }));
+    expect(screen.getByRole("button", { name: "Approve 2 selected" })).toBeTruthy();
+    const inspector = await openRow(user, 1);
+    await user.click(within(inspector).getByRole("button", { name: "Approve question" }));
+    // [GAP 1] is now Approved: the Draft filter hides it, and it no longer counts.
+    expect(await screen.findByRole("button", { name: "Approve 1 selected" })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "Select [GAP 1]" })).toBeNull();
+  });
+
+  it("no match: the card says so, and Clear filters restores every row", async () => {
+    const user = userEvent.setup();
+    renderSection(list(mixed(), succeeded, true, true));
+    await openRow(user, 3);
+    await pickFilter("Area", "Data volumes");
+    await pickFilter("Impact", "Low");
+    expect(screen.queryAllByRole("row")).toHaveLength(0);
+    expect(screen.getByText("No Gaps match these filters.")).toBeTruthy();
+    // The opened Gap stays in the inspector while filtered out.
+    expect(within(pane()).getByRole("heading", { level: 3, name: "[GAP 3]" })).toBeTruthy();
+    const clears = screen.getAllByRole("button", { name: "Clear filters" });
+    expect(clears).toHaveLength(2);
+    fireEvent.click(clears[1]);
+    expect(screen.getAllByRole("row")).toHaveLength(5);
+    expect(screen.queryByText("No Gaps match these filters.")).toBeNull();
   });
 });
