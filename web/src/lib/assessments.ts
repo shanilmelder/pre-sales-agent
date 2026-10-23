@@ -8,7 +8,16 @@ import {
 } from "lucide-react";
 
 import type { components } from "@/lib/api/client";
-import { REVIEW_FAILURE_REASONS, type RunErrorCode } from "@/lib/red-team";
+import {
+  categoryLabel,
+  REVIEW_FAILURE_REASONS,
+  SEVERITIES,
+  type RedTeamFinding,
+  type RedTeamReview,
+  type RunErrorCode,
+  type Severity,
+  type SeverityCounts,
+} from "@/lib/red-team";
 
 export type AssessmentsView = components["schemas"]["AssessmentsView"];
 export type AgentAssessment = components["schemas"]["AgentAssessment"];
@@ -209,29 +218,187 @@ export const RUN_ASSESSMENT = "Run assessment";
 /** The start button's label once a run exists. */
 export const START_NEW_RUN = "Start new run";
 
-/** The task counters of a run: "{done}/{total} Complete" always, then Running, Queued, Failed
- * and Skipped only when above zero. */
+/** The Red Team's name and role on its task and result cards. */
+export const RED_TEAM_LABEL = "Red Team";
+export const RED_TEAM_ROLE =
+  "Argues integrations are harder and Requirements incomplete";
+
+/** A task status (a Red Team run's status is one of these too). */
+export type TaskStatus = AssessmentTask["status"];
+
+/** The run header's counters over the given task statuses: "{done}/{total}" Complete always,
+ * then Failed, Running, Queued and Skipped, each only when above zero. */
 export function taskCounters(
-  run: Pick<AssessmentRun, "tasks">,
-): { key: string; label: string }[] {
-  const count = (status: AssessmentTask["status"]) =>
-    run.tasks.filter((t) => t.status === status).length;
+  statuses: readonly TaskStatus[],
+): { key: string; value: string; label: string }[] {
+  const count = (status: TaskStatus) =>
+    statuses.filter((s) => s === status).length;
   const counters = [
     {
       key: "complete",
-      label: `${count("succeeded")}/${run.tasks.length} Complete`,
+      value: `${count("succeeded")}/${statuses.length}`,
+      label: "Complete",
     },
   ];
   for (const [status, word] of [
+    ["failed", "Failed"],
     ["running", "Running"],
     ["queued", "Queued"],
-    ["failed", "Failed"],
     ["skipped", "Skipped"],
   ] as const) {
     const n = count(status);
-    if (n > 0) counters.push({ key: status, label: `${n} ${word}` });
+    if (n > 0) counters.push({ key: status, value: String(n), label: word });
   }
   return counters;
+}
+
+/** The Agent tasks heading's summary: "1 running · 2 queued" ("" when nothing is active). */
+export function activitySummary(statuses: readonly TaskStatus[]): string {
+  const running = statuses.filter((s) => s === "running").length;
+  const queued = statuses.filter((s) => s === "queued").length;
+  return [
+    running > 0 ? `${running} running` : "",
+    queued > 0 ? `${queued} queued` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** The alert under the run header for a run that stopped early: why, and that completed
+ * results are kept (null for a run that is in progress or succeeded). */
+export function runAlert(
+  run: Pick<AssessmentRun, "status" | "tasks">,
+): { title: string; detail: string } | null {
+  const kept = "Completed results are kept.";
+  if (run.status === "cancelled") {
+    return { title: "The run was cancelled", detail: kept };
+  }
+  if (run.status !== "failed" && run.status !== "partially_failed") return null;
+  const reasons = run.tasks
+    .filter((t) => t.status === "failed")
+    .map((t) => `${agentLabel(t.agent)}: ${failureReason(t.error_code)}.`);
+  return {
+    title:
+      run.status === "failed" ? "The run failed" : "The run partly failed",
+    detail: [...reasons, kept].join(" "),
+  };
+}
+
+/** One row of the Assessments tab's Findings table: a specialist agent's or the Red Team's
+ * Finding. */
+export type FindingRow =
+  | {
+      source: "specialist";
+      agent: AssessmentAgent;
+      finding: AssessmentFinding;
+      id: string;
+      severity: Severity;
+      type: string;
+      raisedBy: string;
+      requirements: number;
+      lines: null;
+    }
+  | {
+      source: "red-team";
+      finding: RedTeamFinding;
+      id: string;
+      severity: Severity;
+      type: string;
+      raisedBy: string;
+      requirements: number;
+      lines: number;
+    };
+
+/** A Finding row's selection key, unique across both sources ("red-team:<id>",
+ * "<agent>:<id>"). */
+export function findingKey(row: FindingRow): string {
+  return `${row.source === "red-team" ? "red-team" : row.agent}:${row.id}`;
+}
+
+function severityRank(value: Severity): number {
+  const index = SEVERITIES.findIndex((s) => s.value === value);
+  return index === -1 ? SEVERITIES.length : index;
+}
+
+/** Every agent's Findings and the Red Team's in one list, ranked critical to low (a stable
+ * sort: the agents in tab order, then the Red Team, each in the API's order). */
+export function mergeFindings(
+  assessments: readonly AgentAssessment[],
+  review: Pick<RedTeamReview, "findings"> | null | undefined,
+): FindingRow[] {
+  const rows: FindingRow[] = [];
+  for (const slot of assessments) {
+    for (const finding of slot.assessment?.findings ?? []) {
+      rows.push({
+        source: "specialist",
+        agent: slot.agent,
+        finding,
+        id: finding.id,
+        severity: finding.severity,
+        type: kindLabel(finding.kind),
+        raisedBy: agentLabel(slot.agent),
+        requirements: finding.requirements.length,
+        lines: null,
+      });
+    }
+  }
+  for (const finding of review?.findings ?? []) {
+    rows.push({
+      source: "red-team",
+      finding,
+      id: finding.id,
+      severity: finding.severity,
+      type: categoryLabel(finding.category),
+      raisedBy: RED_TEAM_LABEL,
+      requirements: finding.requirements.length,
+      lines: finding.lines.length,
+    });
+  }
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort(
+      (a, b) =>
+        severityRank(a.row.severity) - severityRank(b.row.severity) ||
+        a.index - b.index,
+    )
+    .map(({ row }) => row);
+}
+
+/** The rows' severity counts. */
+export function severityTotals(rows: readonly FindingRow[]): SeverityCounts {
+  const counts: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const row of rows) {
+    if (row.severity in counts) counts[row.severity] += 1;
+  }
+  return counts;
+}
+
+/** "1 Critical · 3 High · 2 Medium · 0 Low". */
+export function severitySummary(counts: SeverityCounts): string {
+  return SEVERITIES.map((s) => `${counts[s.value]} ${s.label}`).join(" · ");
+}
+
+/** Up to `max` distinct Requirement labels (one chip per label) an agent's result cites, its Findings' first,
+ * then its effort rows'. */
+export function evidenceLabels(
+  findings: readonly { requirements: readonly { id: string; label: string }[] }[],
+  effort: readonly { requirement: { id: string; label: string } }[] = [],
+  max = 3,
+): { id: string; label: string }[] {
+  const seen = new Map<string, { id: string; label: string }>();
+  const all = [
+    ...findings.flatMap((f) => f.requirements),
+    ...effort.map((e) => e.requirement),
+  ];
+  for (const requirement of all) {
+    if (seen.size >= max) break;
+    if (!seen.has(requirement.label))
+      seen.set(requirement.label, {
+        id: requirement.id,
+        label: requirement.label,
+      });
+  }
+  return Array.from(seen.values());
 }
 
 /** The run status pill's tone class (the label carries the meaning too). */

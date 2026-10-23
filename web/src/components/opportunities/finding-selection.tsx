@@ -13,9 +13,9 @@ type Selection = { key: string | null; setKey: (key: string | null) => void };
 
 const FindingSelectionContext = createContext<Selection | null>(null);
 
-/** One selected Finding across every section inside it (the Assessments tab's Specialist
- * Assessments and Red Team), since they share the one right-pane slot: selecting a Finding
- * in one section clears the selection in the others. */
+/** One selected Finding across everything inside it (the Assessments tab, whose Findings
+ * table mixes the specialist agents' and the Red Team's Findings), since they share the one
+ * right-pane slot: selecting a Finding clears any other selection. */
 export function FindingSelectionProvider({
   children,
 }: {

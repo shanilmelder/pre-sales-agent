@@ -6,6 +6,14 @@ import {
   START_NEW_RUN,
   runStatusTone,
   taskCounters,
+  activitySummary,
+  evidenceLabels,
+  findingKey,
+  mergeFindings,
+  RED_TEAM_ROLE,
+  runAlert,
+  severitySummary,
+  severityTotals,
   assessmentLabel,
   confidenceLabel,
   formatElapsed,
@@ -187,19 +195,33 @@ describe("run header helpers (Story 17.3c)", () => {
   });
 
   it("counts tasks, showing only non-zero states after Complete", () => {
-    const t = (status: string) => ({ status }) as never;
-    expect(
-      taskCounters({ tasks: [t("succeeded"), t("running"), t("queued")] }),
-    ).toEqual([
-      { key: "complete", label: "1/3 Complete" },
-      { key: "running", label: "1 Running" },
-      { key: "queued", label: "1 Queued" },
+    expect(taskCounters(["succeeded", "running", "queued", "queued"])).toEqual([
+      { key: "complete", value: "1/4", label: "Complete" },
+      { key: "running", value: "1", label: "Running" },
+      { key: "queued", value: "2", label: "Queued" },
     ]);
     expect(
-      taskCounters({ tasks: [t("failed"), t("skipped"), t("skipped")] }).map(
-        (c) => c.label,
+      taskCounters(["failed", "skipped", "skipped", "running"]).map(
+        (c) => `${c.value} ${c.label}`,
       ),
-    ).toEqual(["0/3 Complete", "1 Failed", "2 Skipped"]);
+    ).toEqual(["0/4 Complete", "1 Failed", "1 Running", "2 Skipped"]);
+    expect(taskCounters([])).toEqual([
+      { key: "complete", value: "0/0", label: "Complete" },
+    ]);
+  });
+
+  it("summarises the active tasks", () => {
+    expect(activitySummary(["running", "queued", "queued", "succeeded"])).toBe(
+      "1 running · 2 queued",
+    );
+    expect(activitySummary(["queued"])).toBe("1 queued");
+    expect(activitySummary(["succeeded", "failed"])).toBe("");
+  });
+
+  it("describes the Red Team's role", () => {
+    expect(RED_TEAM_ROLE).toBe(
+      "Argues integrations are harder and Requirements incomplete",
+    );
   });
 
   it("labels the restart button", () => {
@@ -215,5 +237,111 @@ describe("runStatusTone", () => {
     expect(runStatusTone("failed")).toBe("text-blocker");
     expect(runStatusTone("queued")).toBe("text-muted-foreground");
     expect(runStatusTone("cancelled")).toBe("text-muted-foreground");
+  });
+});
+
+describe("runAlert", () => {
+  const task = (agent: string, status: string, error_code: string | null = null) =>
+    ({ agent, status, error_code }) as never;
+
+  it("says why a failed or partly failed run stopped and that results are kept", () => {
+    expect(
+      runAlert({
+        status: "partially_failed",
+        tasks: [
+          task("engineering_agent", "succeeded"),
+          task("security_agent", "failed", "model_timeout"),
+        ],
+      }),
+    ).toEqual({
+      title: "The run partly failed",
+      detail:
+        "Security Agent: the model took too long to answer. Completed results are kept.",
+    });
+    expect(
+      runAlert({ status: "failed", tasks: [task("pm_agent", "failed")] })
+        ?.title,
+    ).toBe("The run failed");
+  });
+
+  it("says a cancelled run was cancelled", () => {
+    expect(runAlert({ status: "cancelled", tasks: [] })).toEqual({
+      title: "The run was cancelled",
+      detail: "Completed results are kept.",
+    });
+  });
+
+  it("has nothing to say for a run in progress or done", () => {
+    for (const status of ["queued", "running", "succeeded"] as const) {
+      expect(runAlert({ status, tasks: [] })).toBeNull();
+    }
+  });
+});
+
+describe("merged Findings", () => {
+  const req = (id: string, label: string) => ({ id, version: 1, label, excerpt: "" });
+  const specialist = (id: string, severity: string, requirements = [req("r1", "R1")]) =>
+    ({ id, position: 1, kind: "risk", severity, title: id, detail: "", requirements }) as never;
+  const red = (id: string, severity: string) =>
+    ({
+      id,
+      position: 1,
+      category: "integration_harder",
+      severity,
+      title: id,
+      argument: "",
+      requirements: [req("r2", "R2"), req("r3", "R3")],
+      lines: [{ id: "l1" }],
+    }) as never;
+  const slot = (agent: string, findings: unknown[] | null) =>
+    ({
+      agent,
+      assessment: findings === null ? null : { findings },
+    }) as never;
+
+  it("ranks every source's Findings critical to low, stable within a severity", () => {
+    const rows = mergeFindings(
+      [
+        slot("engineering_agent", [specialist("e1", "high"), specialist("e2", "low")]),
+        slot("pm_agent", null),
+        slot("security_agent", [specialist("s1", "critical")]),
+      ],
+      { findings: [red("t1", "high"), red("t2", "medium")] },
+    );
+    expect(rows.map((r) => r.id)).toEqual(["s1", "e1", "t1", "t2", "e2"]);
+    const redRow = rows.find((r) => r.id === "t1")!;
+    expect(redRow).toMatchObject({
+      source: "red-team",
+      type: "Integration harder",
+      raisedBy: "Red Team",
+      requirements: 2,
+      lines: 1,
+    });
+    expect(rows[0]).toMatchObject({
+      source: "specialist",
+      agent: "security_agent",
+      type: "Risk",
+      raisedBy: "Security Agent",
+      requirements: 1,
+      lines: null,
+    });
+    expect(findingKey(redRow)).toBe("red-team:t1");
+    expect(findingKey(rows[0])).toBe("security_agent:s1");
+    expect(severitySummary(severityTotals(rows))).toBe(
+      "1 Critical · 2 High · 1 Medium · 1 Low",
+    );
+  });
+
+  it("works without a Red Team review", () => {
+    expect(mergeFindings([slot("pm_agent", [])], null)).toEqual([]);
+  });
+
+  it("lists up to three distinct Requirement labels, Findings first", () => {
+    expect(
+      evidenceLabels(
+        [{ requirements: [req("a", "R1"), req("a", "R1")] }, { requirements: [req("b", "R2")] }],
+        [{ requirement: req("c", "R3") }, { requirement: req("d", "R4") }],
+      ).map((r) => r.label),
+    ).toEqual(["R1", "R2", "R3"]);
   });
 });

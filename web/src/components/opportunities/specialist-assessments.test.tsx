@@ -70,8 +70,8 @@ vi.mock("next/navigation", () => ({
 import { RightPane } from "../shell/right-pane";
 import { ShellProviders } from "../shell/shell-context";
 import { FindingSelectionProvider } from "./finding-selection";
-import { RedTeamSection } from "./red-team-list";
 import {
+  AgentRunPanel,
   SpecialistAssessmentsHeader,
   SpecialistAssessmentsSection,
 } from "./specialist-assessments";
@@ -207,22 +207,45 @@ function run(
   };
 }
 
-/** Each panel row's non-empty parts (role, pill, elapsed time, note, Retry). */
+/** Each task card's non-empty parts (name, pill, elapsed time, note, Retry). */
 function panelRows() {
   const progress = screen.getByRole("list", { name: "Agent progress" });
   return within(progress)
     .getAllByRole("listitem")
     .map((li) =>
-      Array.from(li.querySelector("[data-slot='card']")?.children ?? [])
-        .map((c, i) =>
-          // The first part holds the agent name, then its role description.
-          i === 0
-            ? (c.firstElementChild?.textContent ?? "")
-            : (c.textContent ?? ""),
-        )
-        .filter((t) => t !== ""),
+      [
+        li.querySelector("[data-part='name']")?.textContent,
+        li.querySelector("[data-task-pill]")?.textContent,
+        li.querySelector("[data-testid='elapsed']")?.textContent,
+        li.querySelector("[data-part='note']")?.textContent,
+        li.querySelector("button")?.textContent,
+      ].filter((t): t is string => !!t),
     );
 }
+
+/** The run header with the Agent tasks grid under it, as the section lays them out. */
+function HeaderAndTasks(
+  props: Parameters<typeof SpecialistAssessmentsHeader>[0],
+) {
+  return (
+    <>
+      <SpecialistAssessmentsHeader {...props} />
+      {props.run ? (
+        <AgentRunPanel
+          run={props.run}
+          canStart={props.canStart}
+          stalled={props.stalled}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** The Findings table's rows. */
+const findingRows = () =>
+  within(screen.getByRole("grid", { name: "Findings" }))
+    .getAllByRole("row")
+    .map((r) => r.textContent);
 
 const queued = run(
   "queued",
@@ -289,9 +312,7 @@ afterEach(() => {
 describe("SpecialistAssessmentsSection", () => {
   it("shows the empty sentence and Run assessment before any run", async () => {
     const { container } = renderSection(view(null));
-    expect(
-      screen.getByRole("heading", { level: 3, name: "Specialist Assessments" }),
-    ).toBeTruthy();
+    expect(screen.queryByTestId("run-header")).toBeNull();
     expect(
       screen.getByText(
         "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.",
@@ -301,7 +322,8 @@ describe("SpecialistAssessmentsSection", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("shows one card per agent with recommendation, confidence, counts, Findings and effort", async () => {
+  it("shows a result card per agent with an Assessment, and one Findings table", async () => {
+    const user = userEvent.setup();
     const { container } = renderSection(view(succeeded, FULL));
 
     const engineering = screen.getByRole("article", {
@@ -314,22 +336,29 @@ describe("SpecialistAssessmentsSection", () => {
     expect(pill?.getAttribute("data-tone")).toBe("gap");
     expect(pill?.querySelector("svg")).toBeTruthy();
     expect(within(engineering).getByText("Medium confidence")).toBeTruthy();
-    expect(within(engineering).getByText(": [BASIS]")).toBeTruthy();
+    expect(within(engineering).getByText("[BASIS]")).toBeTruthy();
+    // Up to three Requirement evidence chips, one per label.
     expect(
-      within(engineering).getByText("1 critical · 1 high · 0 medium · 0 low"),
-    ).toBeTruthy();
-    const grid = within(engineering).getByRole("grid", {
-      name: "Engineering Agent Findings",
+      within(within(engineering).getByRole("list", { name: "Evidence" }))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["R2", "R1", "R3"]);
+    // The effort table is behind Show effort.
+    expect(
+      within(engineering).queryByRole("table", {
+        name: "Engineering Agent effort",
+      }),
+    ).toBeNull();
+    const showEffort = within(engineering).getByRole("button", {
+      name: "Show effort: Engineering Agent",
     });
-    expect(
-      within(grid)
-        .getAllByRole("row")
-        .map((r) => r.textContent),
-    ).toEqual([
-      "CriticalRisk[FINDING 3]1 Requirement",
-      "HighConstraint[FINDING 1]1 Requirement",
-    ]);
-    expect(row(3).className).toContain("min-h-row");
+    expect(showEffort.getAttribute("aria-expanded")).toBe("false");
+    await user.click(showEffort);
+    expect(showEffort.getAttribute("aria-expanded")).toBe("true");
+    expect(showEffort.textContent).toBe("Hide effort");
+    expect(showEffort.getAttribute("aria-label")).toBe(
+      "Hide effort: Engineering Agent",
+    );
     const table = within(engineering).getByRole("table", {
       name: "Engineering Agent effort",
     });
@@ -349,11 +378,29 @@ describe("SpecialistAssessmentsSection", () => {
       "Proceed",
     );
     expect(within(pm).getByText("High confidence")).toBeTruthy();
+    await user.click(
+      within(pm).getByRole("button", { name: "Show effort: PM Agent" }),
+    );
     expect(within(pm).getByText("No effort sized.")).toBeTruthy();
-    const security = screen.getByRole("article", { name: "Security Agent" });
-    expect(within(security).getByText("No Assessment yet.")).toBeTruthy();
+    // No card for an agent without an Assessment.
+    expect(screen.queryByRole("article", { name: "Security Agent" })).toBeNull();
+
+    expect(findingRows()).toEqual([
+      "CriticalRisk[FINDING 3]Engineering Agent1 Requirement",
+      "HighConstraint[FINDING 1]Engineering Agent1 Requirement",
+      "LowDependency[FINDING 4]PM Agent1 Requirement",
+    ]);
+    expect(
+      screen.getByText("1 Critical · 1 High · 0 Medium · 1 Low"),
+    ).toBeTruthy();
+    expect(row(3).className).toContain("min-h-row");
     expect(screen.getByText("Assessment complete")).toBeTruthy();
     expect(panelRows().map((r) => r[1])).toEqual(["Done", "Done", "Done"]);
+    expect(
+      screen
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual(["Agent tasks", "Results so far", "Findings"]);
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -361,8 +408,10 @@ describe("SpecialistAssessmentsSection", () => {
     const user = userEvent.setup();
     const { container } = renderSection(view(succeeded, FULL));
 
-    await user.tab(); // Run assessment
-    await user.tab(); // the first row of the first card
+    await user.tab(); // Start new run
+    await user.tab(); // Show effort (Engineering Agent)
+    await user.tab(); // Show effort (PM Agent)
+    await user.tab(); // the first row of the Findings table
     expect(document.activeElement).toBe(row(3));
     await user.keyboard("j");
     expect(document.activeElement).toBe(row(1));
@@ -906,7 +955,7 @@ describe("SpecialistAssessmentsHeader", () => {
 
   it("keeps the agent lines once a run has failed, without Retry for readers", () => {
     render(
-      <SpecialistAssessmentsHeader
+      <HeaderAndTasks
         run={run(
           "failed",
           AGENTS.map((a) => task(a, "failed", "model_timeout")),
@@ -973,7 +1022,7 @@ describe("AgentRunPanel timings", () => {
         finished_at: at(135),
       }),
     ]);
-    render(<SpecialistAssessmentsHeader run={failed} canStart />);
+    render(<HeaderAndTasks run={failed} canStart />);
     expect(panelRows()[2]).toEqual([
       "Security Agent",
       "Failed",
@@ -997,7 +1046,7 @@ describe("AgentRunPanel timings", () => {
       ]),
       finished_at: null, // a lost run is not recorded as finished yet
     };
-    render(<SpecialistAssessmentsHeader run={lost} />);
+    render(<HeaderAndTasks run={lost} />);
     expect(screen.getAllByTestId("elapsed").map((e) => e.textContent)).toEqual([
       "",
       "",
@@ -1010,10 +1059,10 @@ describe("AgentRunPanel timings", () => {
     try {
       vi.setSystemTime(NOW);
       const { rerender } = render(
-        <SpecialistAssessmentsHeader run={running} />,
+        <HeaderAndTasks run={running} />,
       );
       expect(panelRows()[0]).toEqual(["Engineering Agent", "Running", "1:05"]);
-      rerender(<SpecialistAssessmentsHeader run={running} stalled />);
+      rerender(<HeaderAndTasks run={running} stalled />);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
@@ -1028,7 +1077,7 @@ describe("AgentRunPanel timings", () => {
   });
 
   it("the running dot is a static icon with no animation", () => {
-    render(<SpecialistAssessmentsHeader run={running} />);
+    render(<HeaderAndTasks run={running} />);
     const dot = screen.getByTestId("running-dot");
     expect(dot.tagName.toLowerCase()).toBe("svg");
     expect(dot.getAttribute("class") ?? "").toContain("lucide-loader-circle");
@@ -1073,8 +1122,8 @@ describe("one Finding selected across the tab", () => {
           <SpecialistAssessmentsSection
             opportunityId={OPP_ID}
             initial={view(succeeded, FULL)}
+            redTeam={redTeam}
           />
-          <RedTeamSection opportunityId={OPP_ID} initial={redTeam} />
         </FindingSelectionProvider>
         <RightPane />
       </ShellProviders>,
@@ -1275,7 +1324,7 @@ describe("cancelling a run (Story 5.5)", () => {
 
   it("a cancelled run offers no Retry, even for a task that failed before the cancel", () => {
     render(
-      <SpecialistAssessmentsHeader
+      <HeaderAndTasks
         canStart
         run={run("cancelled", [
           task("engineering_agent", "skipped", null, { started_at: null }),
@@ -1306,7 +1355,7 @@ describe("Assessments run header and agent cards (Story 17.3c)", () => {
 
   it("shows the title, status pill, start time, counters and one role-described card per agent", async () => {
     const { container } = render(
-      <SpecialistAssessmentsHeader run={running} canStart />,
+      <HeaderAndTasks run={running} canStart />,
     );
     const header = screen.getByTestId("run-header");
     expect(within(header).getByText("Assessments")).toBeTruthy();
@@ -1345,7 +1394,7 @@ describe("Assessments run header and agent cards (Story 17.3c)", () => {
   });
 
   it("counts Failed and offers Retry and Start new run for a partly failed run", () => {
-    render(<SpecialistAssessmentsHeader run={partial} canStart />);
+    render(<HeaderAndTasks run={partial} canStart />);
     expect(
       within(screen.getByTestId("run-header"))
         .getAllByRole("listitem")
@@ -1363,7 +1412,7 @@ describe("Assessments run header and agent cards (Story 17.3c)", () => {
       task("pm_agent", "failed", "model_timeout"),
       task("security_agent", "skipped"),
     ]);
-    render(<SpecialistAssessmentsHeader run={cancelled} canStart />);
+    render(<HeaderAndTasks run={cancelled} canStart />);
     expect(
       screen
         .getByTestId("run-header")
@@ -1374,9 +1423,340 @@ describe("Assessments run header and agent cards (Story 17.3c)", () => {
   });
 
   it("shows header and counters but no buttons to a viewer who cannot start", () => {
-    render(<SpecialistAssessmentsHeader run={partial} />);
+    render(<HeaderAndTasks run={partial} />);
     expect(screen.getByTestId("run-header")).toBeTruthy();
-    expect(screen.getByText("1 Failed")).toBeTruthy();
+    expect(
+      screen.getByTestId("run-header").querySelector("[data-counter='failed']")
+        ?.textContent,
+    ).toBe("1 Failed");
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("Assessments tab redesign: the I/O matrix", () => {
+  const redFinding = {
+    id: "00000000-0000-7000-8000-0000000000d2",
+    position: 1,
+    category: "hidden_dependency" as const,
+    severity: "high" as const,
+    title: "[RED FINDING]",
+    argument: "[RED ARGUMENT]",
+    requirements: [
+      {
+        id: "00000000-0000-7000-8000-0000000000d3",
+        version: 1,
+        label: "R5",
+        excerpt: "",
+      },
+    ],
+    lines: [],
+  };
+  function red(
+    status: "queued" | "running" | "succeeded" | "failed" | null,
+    canStart = true,
+    withReview = false,
+  ): RedTeamView {
+    return {
+      review: withReview
+        ? {
+            id: "00000000-0000-7000-8000-0000000000d1",
+            version: 1,
+            status: "current",
+            estimate_version_id: null,
+            estimate_version: null,
+            dropped_count: 0,
+            created_at: "2026-10-05T09:00:00Z",
+            counts: { critical: 0, high: 1, medium: 0, low: 0 },
+            findings: [redFinding],
+          }
+        : null,
+      run: status
+        ? {
+            status,
+            error_code: status === "failed" ? "model_timeout" : null,
+          }
+        : null,
+      can_start: canStart,
+    };
+  }
+  function renderTab(initial: AssessmentsView, redTeam: RedTeamView) {
+    return render(
+      <ShellProviders singleKeyShortcuts>
+        <FindingSelectionProvider>
+          <SpecialistAssessmentsSection
+            opportunityId={OPP_ID}
+            initial={initial}
+            redTeam={redTeam}
+          />
+        </FindingSelectionProvider>
+        <RightPane />
+      </ShellProviders>,
+    );
+  }
+  const counters = () =>
+    within(screen.getByRole("list", { name: "Task counters" }))
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+  const card = (name: string) =>
+    within(screen.getByRole("list", { name: "Agent progress" }))
+      .getByText(name)
+      .closest("li")
+      ?.querySelector("[data-slot='card']") as HTMLElement;
+
+  it("No run: no header card, Run assessment and the no-Assessment text", () => {
+    renderTab(view(null), red(null));
+    expect(screen.queryByTestId("run-header")).toBeNull();
+    expect(screen.queryByTestId("run-alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Run assessment" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The Engineering, PM and Security Agents assess the Opportunity after its Gaps are detected.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Agent progress" })).toBeNull();
+  });
+
+  it("Running: counters cover the Red Team; green, indigo and neutral cards", async () => {
+    const { container } = renderTab(
+      view(
+        run("running", [
+          task("engineering_agent", "succeeded"),
+          task("pm_agent", "running"),
+          task("security_agent", "queued"),
+        ]),
+      ),
+      red("queued"),
+    );
+    expect(counters()).toEqual(["1/4 Complete", "1 Running", "2 Queued"]);
+    expect(screen.getByText("1 running · 2 queued")).toBeTruthy();
+    expect(screen.queryByTestId("run-alert")).toBeNull();
+    expect(panelRows().map((r) => r[0])).toEqual([
+      "Engineering Agent",
+      "PM Agent",
+      "Security Agent",
+      "Red Team",
+    ]);
+    expect(card("Engineering Agent").className).toContain("border-resolved");
+    expect(card("PM Agent").className).toContain("border-primary");
+    expect(card("Security Agent").className).not.toMatch(
+      /border-(resolved|primary|blocker)/,
+    );
+    expect(card("Red Team").className).not.toMatch(
+      /border-(resolved|primary|blocker)/,
+    );
+    const bars = Array.from(
+      screen.getAllByTestId("state-bar"),
+      (b) => `${b.getAttribute("data-state")}:${b.getAttribute("aria-hidden")}`,
+    );
+    expect(bars).toEqual([
+      "succeeded:true",
+      "running:true",
+      "queued:true",
+      "queued:true",
+    ]);
+    // The state bar shows no percentage.
+    expect(container.textContent).not.toMatch(/\d+%/);
+    expect(
+      (screen.getByRole("button", { name: "Start new run" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(screen.getByRole("button", { name: "Cancel run" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Failed: an amber alert, a red card with Retry and a Failed counter", async () => {
+    const user = userEvent.setup();
+    retryAssessmentTask.mockResolvedValue({ kind: "error" });
+    const { container } = renderTab(
+      view(
+        run("failed", [
+          task("engineering_agent", "failed", "model_unavailable"),
+          task("pm_agent", "skipped", null, { started_at: null }),
+          task("security_agent", "skipped", null, { started_at: null }),
+        ]),
+      ),
+      red(null),
+    );
+    const alert = screen.getByTestId("run-alert");
+    expect(alert.textContent).toBe(
+      "The run failedEngineering Agent: the model service couldn't be reached. Completed results are kept.",
+    );
+    expect(counters()).toEqual(["0/3 Complete", "1 Failed", "2 Skipped"]);
+    const failedCard = card("Engineering Agent");
+    expect(failedCard.className).toContain("border-blocker");
+    expect(failedCard.className).toContain("bg-blocker-tint");
+    await user.click(
+      screen.getByRole("button", { name: "Retry Engineering Agent" }),
+    );
+    expect(retryAssessmentTask).toHaveBeenCalledWith(
+      OPP_ID,
+      RUN_ID,
+      "engineering_agent",
+    );
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Failed Red Team: Retry fires the Red Team retry request", async () => {
+    const user = userEvent.setup();
+    startRedTeamReview.mockResolvedValue({
+      kind: "ok",
+      run: { status: "queued", error_code: null },
+    });
+    renderTab(view(succeeded, FULL), red("failed"));
+    expect(counters()).toEqual(["3/4 Complete", "1 Failed"]);
+    expect(card("Red Team").className).toContain("border-blocker");
+    expect(
+      within(card("Red Team")).getByText("the model took too long to answer"),
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Retry Red Team" }));
+
+    expect(startRedTeamReview).toHaveBeenCalledWith(OPP_ID);
+    expect(retryAssessmentTask).not.toHaveBeenCalled();
+  });
+
+  it("Cancelled: the alert says so; no Retry", () => {
+    renderTab(
+      view(
+        run("cancelled", [
+          task("engineering_agent", "succeeded"),
+          task("pm_agent", "failed", "model_timeout"),
+          task("security_agent", "skipped", null, { started_at: null }),
+        ]),
+      ),
+      red(null),
+    );
+    expect(screen.getByTestId("run-alert").textContent).toBe(
+      "The run was cancelledCompleted results are kept.",
+    );
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+  });
+
+  it("Mixed Findings: one table sorted by severity; a click opens the matching inspector", async () => {
+    const user = userEvent.setup();
+    renderTab(
+      view(succeeded, {
+        engineering_agent: assessment("engineering_agent", 1, [
+          finding(5, "low"),
+        ]),
+        security_agent: assessment("security_agent", 1, [
+          finding(6, "critical"),
+        ]),
+      }),
+      red("succeeded", false, true),
+    );
+    expect(findingRows()).toEqual([
+      "CriticalRisk[FINDING 6]Security Agent1 Requirement",
+      "HighHidden dependency[RED FINDING]Red Team1 Requirement0 Estimate lines",
+      "LowRisk[FINDING 5]Engineering Agent1 Requirement",
+    ]);
+    expect(
+      screen.getByRole("article", { name: "Red Team" }).textContent,
+    ).toContain("1 Finding");
+
+    await user.click(screen.getByRole("button", { name: /\[RED FINDING\]/ }));
+    expect(within(pane()).getByText("[RED ARGUMENT]")).toBeTruthy();
+
+    await user.click(row(6));
+    expect(within(pane()).getByText("[DETAIL 6]")).toBeTruthy();
+    expect(within(pane()).queryByText("[RED ARGUMENT]")).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: /\[RED FINDING\]/ })
+        .closest("[role=row]")
+        ?.getAttribute("aria-selected"),
+    ).toBe("false");
+  });
+
+  it.each([
+    ["a specialist row", /\[FINDING 6\]/, "[FINDING 6]", /\[FINDING 5\]/],
+    ["a Red Team row", /\[RED FINDING\]/, "[RED FINDING]", /\[FINDING 5\]/],
+  ])(
+    "closing the pane after a keyboard open returns focus to the row; not after a click (%s)",
+    async (_name, keyboardRow, heading, clickRow) => {
+      const user = userEvent.setup();
+      renderTab(
+        view(
+          succeeded,
+          {
+            engineering_agent: assessment("engineering_agent", 1, [
+              finding(5, "low"),
+            ]),
+            security_agent: assessment("security_agent", 1, [
+              finding(6, "critical"),
+            ]),
+          },
+          false,
+        ),
+        red("succeeded", false, true),
+      );
+      const button = () => screen.getByRole("button", { name: keyboardRow });
+
+      act(() => button().focus());
+      await user.keyboard("{Enter}");
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          within(pane()).getByRole("heading", { level: 3, name: heading }),
+        ),
+      );
+      await user.click(
+        within(pane()).getByRole("button", { name: "Close right pane" }),
+      );
+      await waitFor(() => expect(document.activeElement).toBe(button()));
+
+      // A mouse open: closing leaves focus where the click put it, not on the row.
+      await user.click(screen.getByRole("button", { name: clickRow }));
+      await waitFor(() => expect(pane()).toBeTruthy());
+      await user.click(
+        within(pane()).getByRole("button", { name: "Close right pane" }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("heading", { level: 3, name: "[FINDING 5]" }),
+        ).toBeNull(),
+      );
+      expect(document.activeElement).not.toBe(
+        screen.getByRole("button", { name: clickRow }),
+      );
+      expect(document.activeElement).not.toBe(button());
+    },
+  );
+
+  it("No Findings: says so under the heading", () => {
+    renderTab(
+      view(succeeded, {
+        pm_agent: assessment("pm_agent", 1, [], {
+          counts: { critical: 0, high: 0, medium: 0, low: 0 },
+        }),
+      }),
+      red(null),
+    );
+    const heading = screen.getByRole("heading", { level: 3, name: "Findings" });
+    expect(
+      within(heading.closest("section") as HTMLElement).getByText(
+        "No Findings.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("grid", { name: "Findings" })).toBeNull();
+  });
+
+  it("Viewer: no start, cancel or Retry", () => {
+    const { unmount } = renderTab(view(null, {}, false), red(null, false));
+    expect(screen.queryByRole("button")).toBeNull();
+    unmount();
+    renderTab(
+      view(
+        run("partially_failed", [
+          task("engineering_agent", "succeeded"),
+          task("pm_agent", "running"),
+          task("security_agent", "failed", "model_timeout"),
+        ]),
+        {},
+        false,
+      ),
+      red("failed", false),
+    );
+    expect(screen.getByTestId("run-header")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
 });

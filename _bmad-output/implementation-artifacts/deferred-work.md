@@ -213,3 +213,15 @@
 - source_spec: none
   summary: Story 17.4b: Opportunity header refit (breadcrumb "All Opportunities / title", owner and collaborator chips, proposal date with a day countdown); Submit and "Resolve N blockers" wait for the blocker data from Story 8.6.
   evidence: Story 17.4 has two independently shippable goals (list and header); split at the user's choice. Backend ticket: the API has no blockers count, submit state or estimate summary.
+
+- source_spec: none
+  summary: Redesign the shell and All Opportunities list to match the new mockups (new-mockups/Presales Agent Design Spec).
+  evidence: The user said the built UI does not match the new mockups; scope split, Assessments tab chosen first.
+
+- source_spec: none
+  summary: Redesign the remaining built workspace tabs (Overview, Sources, Requirements, Gaps, Conflicts, Estimate, Trace) and the Knowledge and Admin pages to match the new mockups.
+  evidence: Same mockup-alignment request; split from the Assessments tab redesign. Screens with no backend (Inbox, Reports, Actuals, cost per agent) are skipped at the user's choice.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-assessments-tab.md`
+  summary: Findings tables (Assessments, and the pattern in Conflicts and Trace) put a whole row in one gridcell button, so screen readers read Severity, Type, Finding and Raised by as one run-on string with no column headers.
+  evidence: Review of the Assessments redesign; the structure is inherited from `AssessmentFindingList` and `RedTeamList`.
