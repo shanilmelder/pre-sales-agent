@@ -1,6 +1,12 @@
 "use client";
 
-import { CircleAlertIcon, ClipboardCheckIcon, ShieldPlusIcon, LoaderCircleIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  CircleCheckIcon,
+  ClipboardCheckIcon,
+  LoaderCircleIcon,
+  ShieldPlusIcon,
+} from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -11,13 +17,15 @@ import {
   type AssumptionAcceptResult,
 } from "@/app/opportunities/actions";
 import { Card } from "@/components/ui/card";
-import { chipLayoutClassName } from "@/components/ui/chip";
+import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
+import { Pill } from "@/components/ui/pill";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
   acceptAllLabel,
   acceptedLabel,
+  assumptionKindLabel,
   carriedLabel,
   CONDITIONS,
   CONTINGENCIES,
@@ -27,7 +35,7 @@ import {
   PROPOSALS_FAILED,
   PROPOSALS_MISSING,
   PROPOSING,
-  registerSummary,
+  registerStatus,
   staleMessage,
   UNCONVERTED_GAPS,
   type Assumption,
@@ -47,9 +55,6 @@ const GAP_NOT_OPEN =
   "Its Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection. Reload to see the latest.";
 const GONE = "This Assumption is no longer in the current draft. Reload to see the latest.";
 
-const actionClass =
-  "h-6 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
-
 function failure(result: AssumptionAcceptResult | AcceptAllAssumptionsResult): string {
   switch (result.kind) {
     case "gap-not-open":
@@ -63,9 +68,11 @@ function failure(result: AssumptionAcceptResult | AcceptAllAssumptionsResult): s
   }
 }
 
-/** One Assumption as a Register row. An unaccepted row is a blocker row: blocker tint, a 2px
- * blocker bar and a "Not accepted" label (never colour alone), with **Accept** for those who
- * may accept. An accepted row reads "Accepted by {name}, {date}". */
+/** One Assumption as a Register row: its wording, "{kind} · from Gap: {title}" (the Gap opens
+ * in the inspector), its hours and line, and its status. An unaccepted row is a blocker row:
+ * blocker tint, a 2px blocker bar and a red "Not accepted" with an alert icon (never colour
+ * alone), with **Accept** for those who may accept. An accepted row reads, in green with a
+ * check, "Accepted by {name} · {date}". */
 function AssumptionRow({
   assumption,
   canAccept,
@@ -88,65 +95,65 @@ function AssumptionRow({
       data-assumption-id={assumption.id}
       data-blocker={accepted ? undefined : ""}
       className={cn(
-        "flex flex-col gap-1 border-b border-border px-3 py-2",
+        "flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-border px-5 py-3",
         accepted ? "" : "bg-blocker-tint shadow-[inset_2px_0_0_var(--blocker)]",
       )}
     >
-      <div className="flex items-start gap-3">
-        <p className="min-w-0 flex-1 break-words text-body">{assumption.wording}</p>
-        {assumption.amount_hours !== null ? (
-          <span className="shrink-0 text-numeric whitespace-nowrap">
-            {`${hours(assumption.amount_hours)} h`}
+      <div className="flex min-w-0 flex-1 basis-72 flex-col gap-1">
+        <p className="break-words text-body">{assumption.wording}</p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="text-meta">{`${assumptionKindLabel(assumption.kind)} ·`}</span>
+            <button
+              type="button"
+              data-gap-chip=""
+              aria-pressed={selected}
+              onClick={(event) => onOpenGap(assumption, event.detail === 0)}
+              className={cn(
+                "max-w-72 truncate rounded-sm text-left underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary",
+                selected ? "text-foreground underline" : "text-primary-text",
+              )}
+            >
+              <span className="text-meta">{`from Gap: ${assumption.origin.title}`}</span>
+            </button>
           </span>
-        ) : null}
+          {assumption.amount_hours !== null ? (
+            <span className="text-numeric whitespace-nowrap text-foreground">
+              {`${hours(assumption.amount_hours)} h`}
+            </span>
+          ) : null}
+          {assumption.line ? (
+            <span className="min-w-0 truncate text-meta">{`Line: ${assumption.line.title}`}</span>
+          ) : null}
+          {carried ? <span className="text-meta">{carried}</span> : null}
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <button
-          type="button"
-          data-gap-chip=""
-          aria-pressed={selected}
-          aria-label={`Gap: ${assumption.origin.title}`}
-          onClick={(event) => onOpenGap(assumption, event.detail === 0)}
-          className={`${cn(
-            chipLayoutClassName,
-            "max-w-64 bg-surface outline-none hover:brightness-[.97] focus-visible:ring-2 focus-visible:ring-primary",
-            selected ? "border-primary text-foreground" : "border-border-strong text-primary-text",
-          )} text-label`}
-        >
-          <span className="font-medium">Gap</span>
-          <span className="truncate">{assumption.origin.title}</span>
-        </button>
-        {assumption.line ? (
-          <span className="min-w-0 truncate text-meta text-muted-foreground">
-            {`Line: ${assumption.line.title}`}
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        {accepted ? (
+          <span className="flex items-center gap-1 text-resolved">
+            <CircleCheckIcon aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="text-label">{acceptedLabel(assumption)}</span>
           </span>
-        ) : null}
-        <span className="ml-auto flex items-center gap-2">
-          {accepted ? (
-            <>
-              {carried ? <span className="text-meta text-muted-foreground">{carried}</span> : null}
-              <span className="text-meta text-muted-foreground">{acceptedLabel(assumption)}</span>
-            </>
-          ) : (
-            <>
-              <span className="flex items-center gap-1 text-label text-blocker">
-                <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
-                {NOT_ACCEPTED}
-              </span>
-              {canAccept ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => onAccept(assumption)}
-                  aria-label={`${ACCEPT}: ${assumption.wording}`}
-                  className={cn(actionClass, "bg-background")}
-                >
-                  {ACCEPT}
-                </button>
-              ) : null}
-            </>
-          )}
-        </span>
+        ) : (
+          <>
+            <span className="flex items-center gap-1 text-blocker">
+              <CircleAlertIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="text-label">{NOT_ACCEPTED}</span>
+            </span>
+            {canAccept ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => onAccept(assumption)}
+                aria-label={`${ACCEPT}: ${assumption.wording}`}
+              >
+                {ACCEPT}
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
     </li>
   );
@@ -175,10 +182,10 @@ function Group({
     <section aria-labelledby={headingId} className="flex flex-col">
       <h4
         id={headingId}
-        className="flex h-7 items-center gap-1.5 border-b border-border bg-muted px-3 text-label text-muted-foreground"
+        className="flex h-8 items-center gap-1.5 border-b border-border bg-background px-5 text-muted-foreground uppercase"
       >
         {icon}
-        <span>{title}</span>
+        <span className="text-eyebrow">{title}</span>
         <span className="[font-variant-numeric:tabular-nums]">{`(${items.length})`}</span>
         {total ? <span className="ml-auto text-numeric text-foreground">{total}</span> : null}
       </h4>
@@ -199,10 +206,11 @@ function Group({
   );
 }
 
-/** The Assumptions Register below the grid (Story 8.4 + 8.5, minimal): the version's
- * Conditions and Contingencies (with their total), each with its wording, hours, a "Gap"
- * origin chip that opens the Gap in the inspector, its linked line and who accepted it; the
- * header "7 · 6 accepted · 1 not accepted" with **Accept all (N)**; and an "Unconverted Gaps"
+/** The Assumptions Register card below the grid (Story 8.4 + 8.5, minimal): the version's
+ * Conditions and Contingencies (with their total), each with its wording, hours, a "from Gap"
+ * link that opens the Gap in the inspector, its linked line and who accepted it; the header
+ * with a red "{n} not accepted block submit" pill (or green "All accepted") and **Accept all
+ * (N)**; and an "Unconverted Gaps"
  * note for open Gaps with no proposal. After every accept the Estimate is read again, so the
  * grid's Contingency column and totals come from the server. Read-only without
  * `canAccept`. Proposals that failed or are missing are said so, with no re-draft Retry
@@ -305,58 +313,77 @@ export function AssumptionsRegister({
     onAccept: (a: Assumption) => void accept(a),
     onOpenGap,
   };
+  const status = registerStatus(counts);
+  const failedProposals =
+    version.proposal_status === "failed" || version.proposal_status === null;
   return (
-    <section
+    <Card
+      role="region"
       aria-labelledby={headingId}
       data-testid="assumptions-register"
-      className="flex flex-col gap-2"
+      className="overflow-hidden"
     >
-      <div className="flex flex-wrap items-center gap-3">
-        <h3 id={headingId} className="text-body-strong">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
+        <h3 id={headingId} className="text-section">
           Assumptions Register
         </h3>
-        <p className="text-label text-muted-foreground [font-variant-numeric:tabular-nums]">
-          {registerSummary(counts)}
-        </p>
+        {counts.total > 0 ? (
+          <Pill
+            tone={status.tone}
+            data-register-status=""
+            icon={status.tone === "blocker" ? <CircleAlertIcon /> : <CircleCheckIcon />}
+          >
+            {status.label}
+          </Pill>
+        ) : null}
         {canAccept && counts.not_accepted > 0 ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={busyId !== null}
             onClick={() => void acceptAll()}
-            className={cn(actionClass, "ml-auto")}
+            className="ml-auto"
           >
             {acceptAllLabel(counts.not_accepted)}
-          </button>
+          </Button>
         ) : null}
       </div>
 
-      {proposing ? (
-        <p className="flex items-center gap-2 text-label" data-status={version.proposal_status}>
-          <LoaderCircleIcon aria-hidden="true" data-testid="proposing-dot" className="size-3 shrink-0 text-agent" />
-          {PROPOSING}
-        </p>
-      ) : version.proposal_status === "failed" || version.proposal_status === null ? (
-        <div className="flex flex-wrap items-center gap-2" data-testid="proposals-failed">
-          <p className="flex items-center gap-1.5 text-label text-blocker">
-            <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
-            {version.proposal_status === "failed" ? PROPOSALS_FAILED : PROPOSALS_MISSING}
-          </p>
+      {proposing || failedProposals || stale || message ? (
+        <div className="flex flex-col gap-2 border-b border-border px-5 py-3">
+          {proposing ? (
+            <p className="flex items-center gap-2 text-label" data-status={version.proposal_status}>
+              <LoaderCircleIcon
+                aria-hidden="true"
+                data-testid="proposing-dot"
+                className="size-3 shrink-0 text-agent"
+              />
+              {PROPOSING}
+            </p>
+          ) : failedProposals ? (
+            <div className="flex flex-wrap items-center gap-2" data-testid="proposals-failed">
+              <p className="flex items-center gap-1.5 text-label text-blocker">
+                <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+                {version.proposal_status === "failed" ? PROPOSALS_FAILED : PROPOSALS_MISSING}
+              </p>
+            </div>
+          ) : null}
+          {stale ? (
+            <InlineAlert
+              lead={staleMessage(stale.changedBy)}
+              onReload={() => {
+                setStale(null);
+                void reload();
+              }}
+            />
+          ) : null}
+          {message ? <p className="text-meta text-destructive">{message}</p> : null}
         </div>
       ) : null}
 
-      {stale ? (
-        <InlineAlert
-          lead={staleMessage(stale.changedBy)}
-          onReload={() => {
-            setStale(null);
-            void reload();
-          }}
-        />
-      ) : null}
-      {message ? <p className="text-meta text-destructive">{message}</p> : null}
-
       {counts.total > 0 ? (
-        <Card className="overflow-hidden">
+        <div className="flex flex-col">
           <Group
             title={CONDITIONS}
             icon={<ClipboardCheckIcon aria-hidden="true" className="size-3.5 shrink-0" />}
@@ -370,16 +397,16 @@ export function AssumptionsRegister({
             total={`${hours(contingency_hours)} h`}
             {...rowProps}
           />
-        </Card>
+        </div>
       ) : version.proposal_status === "succeeded" ? (
-        <p className="text-muted-foreground">No Assumptions for this version.</p>
+        <p className="px-5 py-4 text-muted-foreground">No Assumptions for this version.</p>
       ) : null}
 
       {unconverted.length > 0 ? (
-        <Card
+        <div
           role="note"
           aria-labelledby={`${headingId}-unconverted`}
-          className="gap-1.5 p-3"
+          className="flex flex-col gap-1.5 px-5 py-3"
         >
           <h4 id={`${headingId}-unconverted`} className="flex items-center gap-1.5 text-label">
             <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
@@ -399,9 +426,9 @@ export function AssumptionsRegister({
               </li>
             ))}
           </ul>
-        </Card>
+        </div>
       ) : null}
-    </section>
+    </Card>
   );
 }
 

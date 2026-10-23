@@ -33,7 +33,7 @@ vi.mock("next/navigation", () => ({
 
 import { RightPane } from "../shell/right-pane";
 import { ShellProviders } from "../shell/shell-context";
-import { EstimateGrid, EstimateHeader, EstimateSection } from "./estimate-grid";
+import { EstimateGrid, EstimateHeader, EstimateSection, UncoveredBanner } from "./estimate-grid";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
 
@@ -196,17 +196,10 @@ describe("EstimateGrid", () => {
     const headers = within(table)
       .getAllByRole("columnheader")
       .map((h) => h.textContent);
-    expect(headers).toEqual([
-      "Line",
-      "Covers",
-      "Role mix (%)",
-      "Effort (h)",
-      "Contingency (h)",
-      "Total (h)",
-    ]);
+    expect(headers).toEqual(["Line", "Covers", "Role mix", "Effort h", "Cont. h", "Total h"]);
     expect(table.querySelector("thead")?.className).toContain("sticky");
     expect(table.querySelector("tfoot")?.className).toContain("sticky");
-    const contingencyHeader = within(table).getByRole("columnheader", { name: "Contingency (h)" });
+    const contingencyHeader = within(table).getByRole("columnheader", { name: "Cont. h" });
     expect(contingencyHeader.className).toContain("border-l");
     expect(contingencyHeader.className).toContain("text-right");
 
@@ -218,20 +211,25 @@ describe("EstimateGrid", () => {
     const integration = within(groups[1] as HTMLElement).getAllByRole("row");
     expect(integration.map((r) => r.textContent)).toEqual([
       "Integration",
-      "[LINE 2]2 RequirementsE 33 · PM 33 · QA 3410.00.010.0",
-      "[LINE 3]2 RequirementsE 100 · PM 0 · QA 06.50.06.5",
+      "[LINE 2]R2R3E 33 · PM 33 · QA 3410.00.010.0",
+      "[LINE 3]R2R3E 100 · PM 0 · QA 06.50.06.5",
       "Integration subtotal16.50.016.5",
     ]);
     const effortCell = within(integration[1]).getAllByRole("cell")[2];
     expect(effortCell.className).toContain("text-right");
     expect(effortCell.className).toContain("text-numeric");
     expect(within(integration[1]).getByRole("rowheader").textContent).toBe("[LINE 2]");
+    expect(integration[0].querySelector("th")?.className).toContain("uppercase");
+    expect(integration[3].className).toContain("bg-background");
+    expect(integration[1].querySelector("[data-role-bar]")?.getAttribute("aria-hidden")).toBe("true");
 
     const footer = table.querySelector("tfoot") as HTMLElement;
     expect(within(footer).getAllByRole("row").map((r) => r.textContent)).toEqual([
-      "Total41.00.041.0",
-      "Effort by roleEngineer 24.5 h · Project manager 8.2 h · QA 8.3 h",
+      "Total · v2 · Engineer 24.5 h · PM 8.2 h · QA 8.3 h41.00.041.0",
     ]);
+    expect(footer.querySelector("[data-role-totals]")).toBeTruthy();
+    const footerCells = within(footer).getAllByRole("cell");
+    expect(footerCells[2].className).toContain("text-primary-text");
     const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
     expect(tabStops).toEqual([lineButton(1)]);
     expect(await axeViolations(container)).toEqual([]);
@@ -283,7 +281,10 @@ describe("the inspector", () => {
     const heading = within(inspector).getByRole("heading", { level: 3, name: "[LINE 2]" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(lineButton(2).closest("tr")?.getAttribute("aria-selected")).toBe("true");
-    expect(within(inspector).getByText("Integration")).toBeTruthy();
+    expect(within(inspector).getByText("Integration · line 2")).toBeTruthy();
+    expect(within(inspector).getByRole("heading", { level: 4, name: "Basis" }).className).toContain(
+      "uppercase",
+    );
     expect(within(inspector).getByText("[BASIS 2]")).toBeTruthy();
     const mix = within(inspector).getByRole("table", { name: "Role mix in hours" });
     expect(
@@ -312,16 +313,17 @@ describe("the inspector", () => {
 });
 
 describe("EstimateHeader", () => {
-  it("shows the version pill and the uncovered Requirements, with no Retry", () => {
+  it("shows the version pill, with no Retry", () => {
     render(<EstimateHeader version={version(2, 1)} />);
-    expect(screen.getByText("Draft v2")).toBeTruthy();
-    expect(screen.getByText("1 Requirement not covered")).toBeTruthy();
+    expect(screen.getByText("v2 · Draft")).toBeTruthy();
+    expect(screen.queryByText(/From Assessments/)).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("names the assessment run a version from the Assessments was built for", () => {
     render(<EstimateHeader version={fromAssessments(4, 3)} />);
-    expect(screen.getByText("Estimate v4 · from Assessments (run 3)")).toBeTruthy();
+    expect(screen.getByText("v4 · Draft")).toBeTruthy();
+    expect(screen.getByText("From Assessments (run 3)")).toBeTruthy();
     expect(screen.queryByTestId("running-dot")).toBeNull();
   });
 
@@ -335,9 +337,11 @@ describe("EstimateHeader", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("leaves out the uncovered count when every Requirement is covered", () => {
-    render(<EstimateHeader version={version(1, 0)} />);
-    expect(screen.queryByText(/not covered/)).toBeNull();
+  it("the uncovered banner shows only when a Requirement is not covered", () => {
+    const { container, rerender } = render(<UncoveredBanner count={2} />);
+    expect(screen.getByText("2 Requirements not covered by an Estimate line.")).toBeTruthy();
+    rerender(<UncoveredBanner count={0} />);
+    expect(container.textContent).toBe("");
   });
 
   it("says the Estimate is built when the agents finish, with a running dot", () => {
@@ -393,7 +397,7 @@ describe("Open Conflict markers (Story 8.3)", () => {
     return v;
   }
 
-  it("marks the line next to Edited, linking to the Conflicts tab", async () => {
+  it("marks the line before Edited, linking to the Conflicts tab", async () => {
     const { container } = renderSection(view(withConflict(), null));
 
     const row = lineButton(2).closest("tr") as HTMLElement;
@@ -401,8 +405,9 @@ describe("Open Conflict markers (Story 8.3)", () => {
     expect(marker.textContent).toBe("Open Conflict");
     expect(marker.getAttribute("href")).toBe(`/opportunities/${OPP_ID}/conflicts`);
     expect(marker.className).toContain("text-blocker");
+    expect(marker.className).toContain("bg-blocker-tint");
     expect(marker.querySelector("svg")).toBeTruthy(); // an icon plus the label
-    expect(marker.previousElementSibling?.textContent).toBe("Edited");
+    expect(marker.nextElementSibling?.textContent).toBe("Edited");
     const other = lineButton(3).closest("tr") as HTMLElement;
     expect(within(other).queryByText("Open Conflict")).toBeNull();
     // The marker is not a Tab stop: the lines stay one.
@@ -444,7 +449,7 @@ describe("EstimateSection", () => {
 
   it("hides Export from a caller who may not export the version", () => {
     renderSection(view(version(2), succeeded));
-    expect(screen.getByText("Draft v2")).toBeTruthy();
+    expect(screen.getByText("v2 · Draft")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Export/ })).toBeNull();
   });
 
@@ -500,7 +505,8 @@ describe("EstimateSection", () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(screen.getByText("[LINE 1]")).toBeTruthy();
-    expect(screen.getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
+    expect(screen.getByText("v1 · Draft")).toBeTruthy();
+    expect(screen.getByText("From Assessments (run 1)")).toBeTruthy();
     expect(screen.queryByTestId("running-dot")).toBeNull();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
@@ -570,7 +576,7 @@ describe("EstimateSection", () => {
 
   it("keeps showing the current version while a new run is in progress", async () => {
     const { container } = renderSection(building(fromAssessments(1, 1)));
-    expect(screen.getByText("Estimate v1 · from Assessments (run 1)")).toBeTruthy();
+    expect(screen.getByText("v1 · Draft")).toBeTruthy();
     expect(screen.getByText("[LINE 1]")).toBeTruthy();
     expect(screen.getByText("Rebuilding from the Assessments when the run finishes.")).toBeTruthy();
     expect(screen.getByTestId("running-dot")).toBeTruthy();
@@ -691,20 +697,23 @@ describe("EstimateSection", () => {
   });
 });
 
-describe("editing a line (Story 8.2)", () => {
+describe("editing a line in the inspector (Story 8.2)", () => {
   const editable = (v = version()) => ({
     ...view(v, succeeded),
     can_edit_lines: true,
   });
-  const effortButton = (n: number) =>
-    screen.getByRole("button", {
-      name: (name) => name.startsWith(`Edit effort of [LINE ${n}]`),
-    });
-  const mixButton = (n: number) =>
-    screen.getByRole("button", {
-      name: (name) => name.startsWith(`Edit role mix of [LINE ${n}]`),
-    });
-  const reasonBox = () => screen.getByRole("textbox", { name: "Reason for the change" });
+  const editForm = () => within(pane()).getByRole("region", { name: "Edit line" });
+  const effortBox = () =>
+    within(editForm()).getByRole("textbox", { name: "Effort (h)" }) as HTMLInputElement;
+  const reasonBox = () =>
+    within(editForm()).getByRole("textbox", {
+      name: "Reason for the change",
+    }) as HTMLTextAreaElement;
+  const saveButton = () =>
+    within(editForm()).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+  /** The grid's Effort cell of line `n`. */
+  const effortCell = (n: number) =>
+    within(lineButton(n).closest("tr") as HTMLElement).getAllByRole("cell")[2];
 
   /** The Estimate after line 2's effort became `effort` with `reason`. */
   function afterEdit(effort: number, reason: string) {
@@ -725,16 +734,20 @@ describe("editing a line (Story 8.2)", () => {
     return editable(next);
   }
 
-  async function editEffortTo(user: ReturnType<typeof userEvent.setup>, n: number, text: string) {
-    await user.click(effortButton(n));
-    const input = screen.getByRole("textbox", {
-      name: `Effort (h) of [LINE ${n}]`,
-    });
-    await user.clear(input);
-    await user.type(input, `${text}{Enter}`);
+  async function changeEffort(user: ReturnType<typeof userEvent.setup>, n: number, text: string) {
+    await user.click(lineButton(n));
+    await user.clear(effortBox());
+    await user.type(effortBox(), text);
   }
 
-  it("Effort: Enter, a reason, Save; the grid re-renders from the server", async () => {
+  it("the grid is read-only: no inline fields or role-mix editor", () => {
+    renderSection(editable());
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit effort/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit role mix/ })).toBeNull();
+  });
+
+  it("Effort: a change, a reason, Save; the grid and totals update and the line stays selected", async () => {
     const user = userEvent.setup();
     editEstimateLine.mockResolvedValue({
       kind: "ok",
@@ -742,20 +755,16 @@ describe("editing a line (Story 8.2)", () => {
     });
     const { container } = renderSection(editable());
 
-    await user.click(effortButton(2));
-    const input = screen.getByRole("textbox", {
-      name: "Effort (h) of [LINE 2]",
-    });
-    expect((input as HTMLInputElement).value).toBe("10.0");
-    await user.clear(input);
-    await user.type(input, "8{Enter}");
-    const prompt = screen.getByRole("form", { name: "Reason for the change" });
-    expect(within(prompt).getByText("Effort 10.0 h → 8.0 h")).toBeTruthy();
-    const save = within(prompt).getByRole("button", { name: "Save" });
-    expect((save as HTMLButtonElement).disabled).toBe(true); // no reason yet
+    await user.click(lineButton(2));
+    expect(effortBox().value).toBe("10.0");
+    expect(within(editForm()).getByText("Each edit needs a reason and is traced.")).toBeTruthy();
+    expect(saveButton().disabled).toBe(true); // nothing changed yet
+    await user.clear(effortBox());
+    await user.type(effortBox(), "8");
+    expect(saveButton().disabled).toBe(true); // no reason yet
     expect(await axeViolations(container)).toEqual([]);
     await user.type(reasonBox(), "Reuse connector");
-    await user.click(save);
+    await user.click(saveButton());
 
     expect(editEstimateLine).toHaveBeenCalledWith({
       opportunityId: OPP_ID,
@@ -764,102 +773,81 @@ describe("editing a line (Story 8.2)", () => {
       effortHours: 8,
       reason: "Reuse connector",
     });
-    await waitFor(() => expect(effortButton(2).textContent).toBe("8.0"));
-    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
-    const row = lineButton(2).closest("tr") as HTMLElement;
-    expect(within(row).getByText("Edited")).toBeTruthy();
+    await waitFor(() => expect(effortCell(2).textContent).toBe("8.0"));
     const totals = container.querySelector("tr[data-totals]") as HTMLElement;
     expect(totals.textContent).toContain("39.0");
-    await waitFor(() => expect(document.activeElement).toBe(effortButton(2)));
+    expect(lineButton(2).closest("tr")?.getAttribute("aria-selected")).toBe("true");
+    expect(within(pane()).getByRole("heading", { level: 3, name: "[LINE 2]" })).toBeTruthy();
+    const row = lineButton(2).closest("tr") as HTMLElement;
+    expect(within(row).getByText("Edited")).toBeTruthy();
+    await waitFor(() => expect(effortBox().value).toBe("8.0"));
+    expect(saveButton().disabled).toBe(true);
 
     // The inspector shows who, when and why.
-    await user.click(lineButton(2));
     const history = pane().querySelector("[data-edit-history]") as HTMLElement;
     expect(history.textContent).toBe("Edited[OWNER], 5 Oct 2026: [REASON]");
 
-    // The next reason prompt in this version starts from the last reason.
-    await editEffortTo(user, 3, "2");
-    expect((reasonBox() as HTMLInputElement).value).toBe("Reuse connector");
+    // The next line's form in this version starts from the last reason.
+    await user.click(lineButton(3));
+    expect(reasonBox().value).toBe("Reuse connector");
   });
 
-  it("e on a focused line starts editing its effort; Esc cancels back to the cell", async () => {
+  it("e on a focused line opens it with focus in the Effort field", async () => {
     const user = userEvent.setup();
     renderSection(editable());
 
     await user.tab();
     await user.keyboard("j");
     await user.keyboard("e");
-    expect(document.activeElement).toBe(
-      screen.getByRole("textbox", { name: "Effort (h) of [LINE 2]" }),
-    );
-    await user.keyboard("{Escape}");
 
-    expect(screen.queryByRole("textbox")).toBeNull();
-    await waitFor(() => expect(document.activeElement).toBe(effortButton(2)));
+    expect(within(pane()).getByRole("heading", { level: 3, name: "[LINE 2]" })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(effortBox()));
     expect(editEstimateLine).not.toHaveBeenCalled();
   });
 
-  it("Esc in the reason prompt drops the change", async () => {
+  it("a non-number says why and keeps Save disabled", async () => {
     const user = userEvent.setup();
     renderSection(editable());
 
-    await editEffortTo(user, 2, "8");
-    await user.keyboard("{Escape}");
-
-    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
-    expect(effortButton(2).textContent).toBe("10.0");
+    await user.click(lineButton(2));
+    await user.type(reasonBox(), "x");
+    expect(saveButton().disabled).toBe(true); // a reason alone changes nothing
+    await user.clear(effortBox());
+    await user.type(effortBox(), "lots");
+    expect(
+      within(editForm()).getByText("Effort must be a number of hours from 0 to 2,000."),
+    ).toBeTruthy();
+    expect(effortBox().getAttribute("aria-invalid")).toBe("true");
+    expect(saveButton().disabled).toBe(true);
     expect(editEstimateLine).not.toHaveBeenCalled();
   });
 
-  it("an unchanged effort asks for nothing; a non-number says why without calling", async () => {
-    const user = userEvent.setup();
-    renderSection(editable());
-
-    await user.click(effortButton(2));
-    await user.keyboard("{Enter}");
-    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
-
-    await editEffortTo(user, 2, "lots");
-    expect(screen.getByText("Effort must be a number of hours from 0 to 2,000.")).toBeTruthy();
-    expect(editEstimateLine).not.toHaveBeenCalled();
-  });
-
-  it("Role mix: Save stays disabled until the shares add up to 100", async () => {
+  it("Role mix: Save stays disabled until the shares are whole and add up to 100", async () => {
     const user = userEvent.setup();
     editEstimateLine.mockResolvedValue({ kind: "ok", estimate: editable() });
     const { container } = renderSection(editable());
 
-    await user.click(mixButton(2));
-    const editor = screen.getByRole("form", { name: "Role mix of [LINE 2]" });
-    const engineer = within(editor).getByRole("textbox", {
-      name: "Engineer (%)",
-    });
-    expect(document.activeElement).toBe(engineer);
-    expect(within(editor).getByText("= 100%")).toBeTruthy();
+    await user.click(lineButton(2));
+    await user.type(reasonBox(), "Less PM");
+    const engineer = within(editForm()).getByRole("textbox", { name: "Engineer (%)" });
+    expect(within(editForm()).getByText("= 100%")).toBeTruthy();
     await user.clear(engineer);
     await user.type(engineer, "20");
-    expect(within(editor).getByText("= 87%")).toBeTruthy();
-    const save = within(editor).getByRole("button", { name: "Save" });
-    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(within(editForm()).getByText("= 87%")).toBeTruthy();
+    expect(saveButton().disabled).toBe(true);
     expect(await axeViolations(container)).toEqual([]);
     await user.clear(engineer);
     await user.type(engineer, "33.5");
-    expect((save as HTMLButtonElement).disabled).toBe(true); // a fraction
+    expect(engineer.getAttribute("aria-invalid")).toBe("true");
+    expect(within(editForm()).getByText("Whole numbers 0–100")).toBeTruthy();
+    expect(saveButton().disabled).toBe(true); // a fraction
     await user.clear(engineer);
     await user.type(engineer, "34");
-    const pm = within(editor).getByRole("textbox", {
-      name: "Project manager (%)",
-    });
+    const pm = within(editForm()).getByRole("textbox", { name: "Project manager (%)" });
     await user.clear(pm);
     await user.type(pm, "32");
-    expect(within(editor).getByText("= 100%")).toBeTruthy();
-    await user.click(save);
-
-    const prompt = screen.getByRole("form", { name: "Reason for the change" });
-    expect(
-      within(prompt).getByText("Role mix E 33 · PM 33 · QA 34 → E 34 · PM 32 · QA 34"),
-    ).toBeTruthy();
-    await user.type(reasonBox(), "Less PM{Enter}");
+    expect(within(editForm()).getByText("= 100%")).toBeTruthy();
+    await user.click(saveButton());
 
     expect(editEstimateLine).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -870,7 +858,7 @@ describe("editing a line (Story 8.2)", () => {
     expect(editEstimateLine.mock.calls[0][0]).not.toHaveProperty("effortHours");
   });
 
-  it("a refused change rolls back and shows the server's sentence under the line", async () => {
+  it("a refused change keeps the stored value and shows the server's sentence", async () => {
     const user = userEvent.setup();
     editEstimateLine.mockResolvedValue({
       kind: "invalid",
@@ -878,17 +866,17 @@ describe("editing a line (Story 8.2)", () => {
     });
     renderSection(editable());
 
-    await editEffortTo(user, 2, "8");
-    await user.type(reasonBox(), "x{Enter}");
+    await changeEffort(user, 2, "8");
+    await user.type(reasonBox(), "x");
+    await user.click(saveButton());
 
-    expect(
-      await screen.findByText("Role mix must name every role and add up to 100%."),
-    ).toBeTruthy();
-    expect(effortButton(2).textContent).toBe("10.0");
-    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+    const alert = await within(pane()).findByRole("alert");
+    expect(alert.textContent).toBe("Role mix must name every role and add up to 100%.");
+    expect(effortCell(2).textContent).toBe("10.0");
+    expect(within(pane()).queryByRole("button", { name: "Reload" })).toBeNull();
   });
 
-  it("a stale save names who changed it and offers Reload", async () => {
+  it("a stale save names who changed it and offers Reload; nothing changes until then", async () => {
     const user = userEvent.setup();
     editEstimateLine.mockResolvedValue({
       kind: "stale",
@@ -900,16 +888,18 @@ describe("editing a line (Story 8.2)", () => {
     });
     renderSection(editable());
 
-    await editEffortTo(user, 2, "8");
-    await user.type(reasonBox(), "x{Enter}");
+    await changeEffort(user, 2, "8");
+    await user.type(reasonBox(), "x");
+    await user.click(saveButton());
 
-    expect(await screen.findByText("Changed by [OTHER] since you opened it.")).toBeTruthy();
-    expect(screen.getByRole("alert").getAttribute("data-slot")).toBe("inline-alert");
-    expect(screen.queryByRole("button", { name: "View diff" })).toBeNull();
-    expect(effortButton(2).textContent).toBe("10.0");
-    await user.click(screen.getByRole("button", { name: "Reload" }));
-    await waitFor(() => expect(effortButton(2).textContent).toBe("4.0"));
-    expect(screen.queryByText(/Changed by/, { selector: "p" })).toBeNull();
+    expect(await within(pane()).findByText("Changed by [OTHER] since you opened it.")).toBeTruthy();
+    expect(within(pane()).getByRole("alert").getAttribute("data-slot")).toBe("inline-alert");
+    expect(within(pane()).queryByRole("button", { name: "View diff" })).toBeNull();
+    expect(effortCell(2).textContent).toBe("10.0");
+    await user.click(within(pane()).getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(effortCell(2).textContent).toBe("4.0"));
+    await waitFor(() => expect(effortBox().value).toBe("4.0"));
+    expect(within(pane()).queryByText(/Changed by/)).toBeNull();
   });
 
   it("a replaced version says so and offers Reload", async () => {
@@ -917,15 +907,32 @@ describe("editing a line (Story 8.2)", () => {
     editEstimateLine.mockResolvedValue({ kind: "not-draft" });
     renderSection(editable());
 
-    await editEffortTo(user, 2, "8");
-    await user.type(reasonBox(), "x{Enter}");
+    await changeEffort(user, 2, "8");
+    await user.type(reasonBox(), "x");
+    await user.click(saveButton());
 
     expect(
-      await screen.findByText(
+      await within(pane()).findByText(
         "This Estimate Version was replaced by a newer draft. Reload to see it.",
       ),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(within(pane()).getByRole("button", { name: "Reload" })).toBeTruthy();
+  });
+
+  it("a forbidden save says who may edit", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({ kind: "forbidden" });
+    renderSection(editable());
+
+    await changeEffort(user, 2, "8");
+    await user.type(reasonBox(), "x");
+    await user.click(saveButton());
+
+    expect(
+      await within(pane()).findByText(
+        "Only the owner and collaborators, except sales representatives, can edit the Estimate.",
+      ),
+    ).toBeTruthy();
   });
 
   it("saves with the row version seen when editing started, even after a refresh", async () => {
@@ -935,30 +942,29 @@ describe("editing a line (Story 8.2)", () => {
       message: "Changed by [OTHER] since you opened it.",
     });
     const { rerender } = renderSection(editable());
-    await editEffortTo(user, 2, "8");
+    await changeEffort(user, 2, "8");
 
-    // A refresh brings the colleague's save (row version 2) while the prompt is open.
-    const refreshed = afterEdit(4, "[THEIRS]");
+    // A refresh brings the colleague's save (row version 2) while the change is open.
     rerender(
       <ShellProviders singleKeyShortcuts>
-        <EstimateSection opportunityId={OPP_ID} initial={refreshed} />
+        <EstimateSection opportunityId={OPP_ID} initial={afterEdit(4, "[THEIRS]")} />
         <RightPane />
       </ShellProviders>,
     );
-    const prompt = screen.getByRole("form", { name: "Reason for the change" });
-    expect(within(prompt).getByText("Effort 10.0 h → 8.0 h")).toBeTruthy();
-    await user.type(reasonBox(), "x{Enter}");
+    expect(effortBox().value).toBe("8");
+    await user.type(reasonBox(), "x");
+    await user.click(saveButton());
 
     expect(editEstimateLine).toHaveBeenCalledWith(
       expect.objectContaining({ rowVersion: 1, effortHours: 8 }),
     );
-    expect(await screen.findByText("Changed by [OTHER] since you opened it.")).toBeTruthy();
+    expect(await within(pane()).findByText("Changed by [OTHER] since you opened it.")).toBeTruthy();
   });
 
-  it("a new Estimate version drops an open edit and says so", async () => {
+  it("a new Estimate version drops an unsaved change and says so", async () => {
     const user = userEvent.setup();
     const { rerender } = renderSection(editable());
-    await editEffortTo(user, 2, "8");
+    await changeEffort(user, 2, "8");
 
     rerender(
       <ShellProviders singleKeyShortcuts>
@@ -967,27 +973,61 @@ describe("editing a line (Story 8.2)", () => {
       </ShellProviders>,
     );
 
-    expect(screen.queryByRole("form", { name: "Reason for the change" })).toBeNull();
     expect(
       screen.getByText("A new Estimate version arrived; your change was not saved."),
     ).toBeTruthy();
+    expect(effortBox().value).toBe("10.0");
     expect(editEstimateLine).not.toHaveBeenCalled();
-    await user.click(effortButton(1));
+    await user.click(lineButton(1));
     expect(
       screen.queryByText("A new Estimate version arrived; your change was not saved."),
     ).toBeNull();
   });
 
-  it("shows the effort as the server will round it (half up)", async () => {
+  it("a new Estimate version with no unsaved change says nothing", async () => {
     const user = userEvent.setup();
-    renderSection(editable());
+    const { rerender } = renderSection(editable());
+    await user.click(lineButton(2));
 
-    await editEffortTo(user, 2, "0.35");
+    rerender(
+      <ShellProviders singleKeyShortcuts>
+        <EstimateSection opportunityId={OPP_ID} initial={editable(version(3))} />
+        <RightPane />
+      </ShellProviders>,
+    );
 
-    expect(screen.getByText("Effort 10.0 h → 0.4 h")).toBeTruthy();
+    expect(
+      screen.queryByText("A new Estimate version arrived; your change was not saved."),
+    ).toBeNull();
+    expect(effortBox().value).toBe("10.0");
   });
 
-  it("while a save is in flight the cells are disabled and show the pending value", async () => {
+  it("Effort and Role mix saved together send both", async () => {
+    const user = userEvent.setup();
+    editEstimateLine.mockResolvedValue({ kind: "ok", estimate: editable() });
+    renderSection(editable());
+
+    await changeEffort(user, 2, "12");
+    const engineer = within(editForm()).getByRole("textbox", { name: "Engineer (%)" });
+    const pm = within(editForm()).getByRole("textbox", { name: "Project manager (%)" });
+    await user.clear(engineer);
+    await user.type(engineer, "43");
+    await user.clear(pm);
+    await user.type(pm, "23");
+    await user.type(reasonBox(), "Both");
+    await user.click(saveButton());
+
+    expect(editEstimateLine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effortHours: 12,
+        roleMix: { engineer: 43, project_manager: 23, qa: 34 },
+        reason: "Both",
+        rowVersion: 1,
+      }),
+    );
+  });
+
+  it("while a save is in flight the form is disabled", async () => {
     const user = userEvent.setup();
     let finish: (result: EstimateLineEditResult) => void = () => {};
     editEstimateLine.mockReturnValue(
@@ -997,66 +1037,51 @@ describe("editing a line (Story 8.2)", () => {
     );
     renderSection(editable());
 
-    await editEffortTo(user, 2, "8.25");
-    await user.type(reasonBox(), "x{Enter}");
+    await changeEffort(user, 2, "8.25");
+    await user.type(reasonBox(), "x");
+    await user.click(saveButton());
 
-    expect(effortButton(2).textContent).toBe("8.3");
-    for (const cell of [effortButton(2), effortButton(3), mixButton(2), mixButton(3)]) {
-      expect((cell as HTMLButtonElement).disabled).toBe(true);
-    }
-    await user.click(mixButton(3));
-    expect(screen.queryByRole("form", { name: "Role mix of [LINE 3]" })).toBeNull();
+    expect(editEstimateLine).toHaveBeenCalledWith(expect.objectContaining({ effortHours: 8.25 }));
+    expect(effortBox().disabled).toBe(true);
+    expect(reasonBox().disabled).toBe(true);
+    expect(saveButton().disabled).toBe(true);
 
     await act(async () => {
       finish({ kind: "ok", estimate: afterEdit(8.3, "x") });
     });
 
-    await waitFor(() => expect((effortButton(2) as HTMLButtonElement).disabled).toBe(false));
-    expect(effortButton(2).textContent).toBe("8.3");
-    expect((mixButton(3) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(effortBox().disabled).toBe(false));
+    expect(effortCell(2).textContent).toBe("8.3");
+    expect(effortBox().value).toBe("8.3");
   });
 
-  it("explains a disabled Save: the reason counter and invalid role shares", async () => {
+  it("explains a disabled Save: the reason counter", async () => {
     const user = userEvent.setup();
     renderSection(editable());
 
-    await editEffortTo(user, 2, "8");
-    expect(screen.getByText("0/300")).toBeTruthy();
+    await changeEffort(user, 2, "8");
+    expect(within(editForm()).getByText("0/300")).toBeTruthy();
     await user.click(reasonBox());
     await user.paste("y".repeat(301));
-    expect(screen.getByText("301/300: shorten the reason to save")).toBeTruthy();
-    const prompt = screen.getByRole("form", { name: "Reason for the change" });
-    expect(
-      (
-        within(prompt).getByRole("button", {
-          name: "Save",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
-    await user.keyboard("{Escape}");
-
-    await user.click(mixButton(2));
-    const editor = screen.getByRole("form", { name: "Role mix of [LINE 2]" });
-    const qa = within(editor).getByRole("textbox", { name: "QA (%)" });
-    expect(qa.getAttribute("aria-invalid")).toBeNull();
-    await user.clear(qa);
-    await user.type(qa, "3.5");
-    expect(qa.getAttribute("aria-invalid")).toBe("true");
-    expect(within(editor).getByText("Whole numbers 0–100")).toBeTruthy();
+    expect(within(editForm()).getByText("301/300: shorten the reason to save")).toBeTruthy();
+    expect(saveButton().disabled).toBe(true);
   });
 
-  it("without the right to edit the cells are plain text, and e does nothing", async () => {
+  it("without the right to edit there is no form, and e does nothing", async () => {
     const user = userEvent.setup();
     renderSection(view(version(), succeeded, false));
 
-    expect(screen.queryByRole("button", { name: /^Edit effort/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Edit role mix/ })).toBeNull();
     await user.tab();
     await user.keyboard("e");
     expect(screen.queryByRole("textbox")).toBeNull();
+    expect(lineButton(1).closest("tr")?.getAttribute("aria-selected")).toBe("false");
+    expect(screen.queryByRole("heading", { level: 3, name: "[LINE 1]" })).toBeNull();
+    await user.click(lineButton(1));
+    expect(within(pane()).queryByRole("region", { name: "Edit line" })).toBeNull();
+    expect(within(pane()).queryByRole("textbox")).toBeNull();
   });
 
-  it("shows a carried edit's marker and the note for edits a re-draft couldn't carry", async () => {
+  it("shows a carried edit's pill and, under the lifecycle, the note for edits a re-draft couldn't carry", async () => {
     const v = version(3);
     v.uncarried_edit_count = 1;
     v.uncarried_edits_from_version = 2;
@@ -1070,10 +1095,89 @@ describe("editing a line (Story 8.2)", () => {
     };
     const { container } = renderSection(editable(v));
 
-    expect(
-      screen.getByText("1 edited line from v2 had no matching line; it stays in v2 and the Trace."),
-    ).toBeTruthy();
-    expect(screen.getByText("Edited, carried from v2")).toBeTruthy();
+    const note = screen.getByText(
+      "1 edited line from v2 had no matching line; it stays in v2 and the Trace.",
+    );
+    expect(note.closest("[data-lifecycle]")).toBeTruthy();
+    const pill = screen.getByText("Edited, carried from v2");
+    expect(pill.closest('[data-slot="pill"]')?.getAttribute("data-tone")).toBe("neutral");
+    expect(pill.closest('[data-slot="pill"]')?.querySelector("svg")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("the Estimate tab states", () => {
+  it("draft from run 2: Draft pill, the run, the uncovered banner and the conflicted line", async () => {
+    const v = fromAssessments(3, 2);
+    v.uncovered_count = 1;
+    v.sections[0].lines[0] = {
+      ...v.sections[0].lines[0],
+      conflicts: [{ id: "00000000-0000-7000-8000-0000000000c1", type: "effort" }],
+    };
+    const { container } = renderSection(view(v, null));
+
+    const pill = screen.getByText("v3 · Draft");
+    expect(pill.getAttribute("data-tone")).toBe("agent");
+    expect(screen.getByText("From Assessments (run 2)").className).toContain(
+      "text-muted-foreground",
+    );
+    const lifecycle = container.querySelector("[data-lifecycle]") as HTMLElement;
+    expect(
+      within(lifecycle)
+        .getAllByRole("listitem")
+        .map((li) => li.getAttribute("data-step-state")),
+    ).toEqual(["current", "upcoming", "upcoming"]);
+    expect(within(lifecycle).getByText("Draft").closest("li")?.getAttribute("aria-current")).toBe(
+      "step",
+    );
+    expect(
+      within(lifecycle).getByText(
+        "v3 is a draft built from Assessments (run 2). Each edit needs a reason and is traced.",
+      ),
+    ).toBeTruthy();
+    const banner = screen.getByText("1 Requirement not covered by an Estimate line.");
+    expect(banner.closest("[data-uncovered]")?.className).toContain("bg-gap-tint");
+    expect(banner.closest("[data-uncovered]")?.querySelector("svg")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Add line/ })).toBeNull();
+    const row = lineButton(1).closest("tr") as HTMLElement;
+    expect(row.className).toContain("bg-blocker-tint");
+    expect(within(row).getByRole("rowheader").className).toContain(
+      "shadow-[inset_3px_0_0_var(--blocker)]",
+    );
+    expect(within(row).getByRole("link", { name: /^Open Conflict/ })).toBeTruthy();
+    expect(within(row).getAllByText(/^R[23]$/).map((c) => c.textContent)).toEqual(["R2", "R3"]);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a selected line is tinted primary, even with an open Conflict", async () => {
+    const user = userEvent.setup();
+    const v = fromAssessments(3, 2);
+    v.sections[0].lines[0] = {
+      ...v.sections[0].lines[0],
+      conflicts: [{ id: "00000000-0000-7000-8000-0000000000c1", type: "effort" }],
+    };
+    renderSection(view(v, null));
+
+    await user.click(lineButton(1));
+    const row = lineButton(1).closest("tr") as HTMLElement;
+    expect(row.className).toContain("bg-primary-tint");
+    expect(row.className).not.toContain("bg-blocker-tint");
+  });
+
+  it("superseded: a neutral pill, the lifecycle on Superseded, read only, no edit form", async () => {
+    const user = userEvent.setup();
+    const v = { ...fromAssessments(2, 1), status: "superseded" as const };
+    const { container } = renderSection({ ...view(v, null), can_edit_lines: true });
+
+    expect(screen.getByText("v2 · Superseded").getAttribute("data-tone")).toBe("neutral");
+    const lifecycle = container.querySelector("[data-lifecycle]") as HTMLElement;
+    expect(
+      within(lifecycle)
+        .getAllByRole("listitem")
+        .map((li) => li.getAttribute("data-step-state")),
+    ).toEqual(["passed", "upcoming", "current"]);
+    expect(within(lifecycle).getByText("v2 is superseded and read only.")).toBeTruthy();
+    await user.click(lineButton(1));
+    expect(within(pane()).queryByRole("region", { name: "Edit line" })).toBeNull();
   });
 });

@@ -1,6 +1,12 @@
 "use client";
 
-import { CircleAlertIcon, ListChecksIcon, PencilIcon, LoaderCircleIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleAlertIcon,
+  LoaderCircleIcon,
+  PencilIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
@@ -16,12 +22,10 @@ import {
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
-import { InlineAlert } from "@/components/ui/inline-alert";
-import { Pill } from "@/components/ui/pill";
+import { Pill, pillVariants } from "@/components/ui/pill";
 import { EstimateExport } from "@/components/opportunities/estimate-export";
-import { EstimateInspector } from "@/components/opportunities/estimate-inspector";
-import { ReasonPrompt, RoleMixEditor } from "@/components/opportunities/estimate-line-edit";
-import { InlineInput } from "@/components/opportunities/inline-field";
+import { EstimateInspector, RoleMixBar } from "@/components/opportunities/estimate-inspector";
+import type { EditOutcome, LineChange } from "@/components/opportunities/estimate-line-edit";
 import { useAnnounce } from "@/components/shell/live-region";
 import { RIGHT_PANE_TOGGLE_ID, RightPaneContent, useShell } from "@/components/shell/shell-context";
 import {
@@ -32,129 +36,110 @@ import {
   DRAFT_POLL_MS,
   EDIT_NOT_ALLOWED,
   EDIT_SAVE_FAILED,
-  EFFORT_RULE,
   editedLabel,
+  footerRoleLabel,
+  fromRunLabel,
   hours,
   isDrafting,
   isProposing,
+  lifecycleSteps,
   NO_ESTIMATE,
   NO_ESTIMATE_BODY,
   NO_ESTIMATE_TITLE,
   RUN_ASSESSMENT,
-  keepReason,
   NEW_VERSION_ARRIVED,
   OPEN_CONFLICT,
-  parseEffort,
-  readKeptReason,
   roleMixLabel,
-  roundedHours,
-  roundHours,
-  ROLES,
   sectionLabel,
   STILL_BUILDING,
   UNALLOCATED_CONTINGENCY,
   uncarriedEditsNote,
-  uncoveredLabel,
+  uncoveredBanner,
   registerSummary,
   VERSION_REPLACED,
   versionLabel,
+  versionNote,
   versionPillLabel,
+  versionTag,
   type Assumption,
   type EstimateLine,
   type EstimateVersion,
   type EstimateView,
-  type RoleMix,
   type Totals,
 } from "@/lib/estimates";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import { cn } from "@/lib/utils";
 import { tabHref } from "@/lib/workspace";
 
+export type { EditOutcome, LineChange } from "@/components/opportunities/estimate-line-edit";
+
 const num = "px-2.5 text-right text-numeric whitespace-nowrap";
 /** The left rule that sets the Contingency column apart. */
 const cont = "border-l border-border";
-const headCell = "h-[30px] bg-background px-2.5 text-label text-muted-foreground whitespace-nowrap";
+const headCell = "h-[34px] bg-background px-2.5 text-label text-muted-foreground whitespace-nowrap";
 
-/** The version pill: "Estimate v4 · from Assessments (run 3)", or "Draft v2" for a model
- * draft. 20px, fully rounded, neutral outline. */
+/** The version pill: "v3 · Draft" (primary tint) or "v2 · Superseded" (neutral). */
 export function VersionPill({
   version,
 }: {
-  version: Pick<EstimateVersion, "status" | "version" | "source" | "source_run">;
+  version: Pick<EstimateVersion, "status" | "version">;
 }) {
   return (
-    <Pill tone="neutral" className="shrink-0">
-      {versionPillLabel(version)}
+    <Pill
+      tone={version.status === "draft" ? "agent" : "neutral"}
+      data-version-pill=""
+      className="shrink-0"
+    >
+      {versionTag(version)}
     </Pill>
   );
 }
 
-/** The Covers cell: how many Requirements the line covers, as a chip. */
-export function CoversChip({ count }: { count: number }) {
+/** The Covers cell: one chip per Requirement the line covers. */
+export function CoversChips({ line }: { line: Pick<EstimateLine, "requirements"> }) {
+  if (line.requirements.length === 0) {
+    return (
+      <>
+        <span aria-hidden="true">–</span>
+        <span className="sr-only">None</span>
+      </>
+    );
+  }
   return (
-    <Chip>
-      <ListChecksIcon aria-hidden="true" className="size-3 shrink-0" />
-      <span className="[font-variant-numeric:tabular-nums]">{count}</span>
-      <span className="sr-only">{count === 1 ? " Requirement" : " Requirements"}</span>
-    </Chip>
-  );
-}
-
-function TotalsCells({ totals }: { totals: Totals }) {
-  return (
-    <>
-      <td className={num}>{hours(totals.effort_hours)}</td>
-      <td className={cn(num, cont)}>{hours(totals.contingency_hours)}</td>
-      <td className={num}>{hours(totals.total_hours)}</td>
-    </>
-  );
-}
-
-/** "Engineer 31.7 h · Project manager 10.6 h · QA 10.7 h". */
-function roleTotalsLabel(totals: Totals): string {
-  return ROLES.map((role) => `${role.label} ${hours(totals.role_hours[role.value])} h`).join(" · ");
-}
-
-/** A change to a line, before its reason is given. */
-export type LineChange = { effortHours?: number; roleMix?: RoleMix };
-
-/** What saving a change came to: on failure, the sentence to show under the line, and
- * whether a Reload is offered (stale or replaced version). */
-export type EditOutcome = { ok: true } | { ok: false; message: string; reload?: boolean };
-
-/** The line as it was when editing started: its `row_version` goes in `If-Match`, so a
- * colleague's save in between is a 412, never silently overwritten. */
-type Snapshot = {
-  lineId: string;
-  rowVersion: number;
-  effort: number;
-  mix: RoleMix;
-};
-type Editing = Snapshot & { kind: "effort" | "mix" };
-type Pending = Snapshot & {
-  change: LineChange;
-  summary: string;
-  initialReason: string;
-};
-type Notice = { lineId: string; message: string; reload: boolean };
-
-/** The "Edited" marker: an icon plus its label, never the icon alone. */
-export function EditedMarker({ line }: { line: EstimateLine }) {
-  const label = editedLabel(line);
-  if (!label) return null;
-  return (
-    <span
-      data-edited=""
-      className="inline-flex shrink-0 items-center gap-1 text-meta whitespace-nowrap text-muted-foreground"
-    >
-      <PencilIcon aria-hidden="true" className="size-3 shrink-0" />
-      {label}
+    <span className="flex flex-wrap gap-1" data-covers="">
+      {line.requirements.map((requirement) => (
+        <Chip key={requirement.id} className="px-1.5 py-0">
+          {requirement.label}
+        </Chip>
+      ))}
     </span>
   );
 }
 
-/** The "Open Conflict" marker (Story 8.3): an icon plus its label in blocker colour, never
- * the icon alone; it links to the Conflicts tab. */
+function TotalsCells({ totals, className }: { totals: Totals; className?: string }) {
+  return (
+    <>
+      <td className={cn(num, className)}>{hours(totals.effort_hours)}</td>
+      <td className={cn(num, cont, className)}>{hours(totals.contingency_hours)}</td>
+      <td className={cn(num, "font-semibold", className)}>{hours(totals.total_hours)}</td>
+    </>
+  );
+}
+
+/** The "Edited" pill: a pencil plus its label ("Edited, carried from v2"), never the icon
+ * alone. */
+export function EditedMarker({ line }: { line: EstimateLine }) {
+  const label = editedLabel(line);
+  if (!label) return null;
+  return (
+    <Pill tone="neutral" data-edited="" icon={<PencilIcon />} className="shrink-0">
+      {label}
+    </Pill>
+  );
+}
+
+/** The "Open Conflict" pill (Story 8.3): an alert icon plus its label in blocker colours,
+ * never the icon alone; it links to the Conflicts tab. */
 export function ConflictMarker({
   line,
   opportunityId,
@@ -165,22 +150,18 @@ export function ConflictMarker({
   if (line.conflicts.length === 0) return null;
   const content = (
     <>
-      <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+      <CircleAlertIcon aria-hidden="true" />
       {OPEN_CONFLICT}
     </>
   );
-  const className =
-    "inline-flex shrink-0 items-center gap-1 rounded-sm text-meta whitespace-nowrap text-blocker";
+  const className = `${cn(pillVariants({ tone: "blocker" }), "shrink-0")} text-label`;
   return opportunityId ? (
     <Link
       href={tabHref(opportunityId, "conflicts")}
       data-conflict-marker=""
       tabIndex={-1}
       aria-label={`${OPEN_CONFLICT} on ${line.title}: open the Conflicts tab`}
-      className={cn(
-        className,
-        "outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary",
-      )}
+      className={`${className} outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary`}
     >
       {content}
     </Link>
@@ -191,163 +172,43 @@ export function ConflictMarker({
   );
 }
 
-const cellButton =
-  "rounded-sm px-1 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
-
-/** The Estimate Version as a dense grid: lines grouped by section in template order, each
- * section closed by its subtotal row; a sticky header and sticky totals (the overall totals
- * and, under them, the per-role totals). Numbers are right-aligned tabular figures from the
- * server; the Contingency column has a left rule. Edited lines carry an "Edited" marker.
+/** The Estimate Version as a dense grid in a card: lines grouped by section in template
+ * order, each section closed by its subtotal row; a sticky header and a sticky totals row
+ * ("Total · v3 · Engineer 24.5 h · PM 8.2 h · QA 8.3 h"). Each line shows its title with an
+ * "Open Conflict" and an "Edited" pill, one chip per covered Requirement, its role mix as a
+ * bar over "E 60 · PM 20 · QA 20", and its hours. A line with an open Conflict is tinted red
+ * with a red left edge; the selected line is tinted primary (selection wins). Numbers are
+ * right-aligned tabular figures from the server; the Contingency column has a left rule. The
+ * grid is read-only: lines are edited in the inspector.
  *
  * The lines are one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first line); j/k (with single-key shortcuts on) or the arrow keys move between lines, and
- * Enter, Space or a click opens the line.
- *
- * With `canEdit` (on a draft) the Effort cell is an inline field (Enter or blur to save, Esc
- * to cancel; `e` on a focused line starts it) and the Role mix cell opens a compact editor;
- * either then asks for a reason before `onSave` runs. While saving the cell is disabled; a
- * failure leaves the stored value and shows `onSave`'s sentence under the line (with Reload
- * when offered). */
+ * Enter, Space or a click opens the line. With `canEdit`, `e` on a focused line opens it with
+ * focus in the inspector's "Edit line" form. */
 export function EstimateGrid({
   version,
   selectedId = null,
   onOpen,
   canEdit = false,
-  onSave,
-  onReload,
   opportunityId,
 }: {
   version: EstimateVersion;
   selectedId?: string | null;
-  /** `viaKeyboard` is true when opened with Enter or Space, not a pointer. */
-  onOpen?: (line: EstimateLine, viaKeyboard: boolean) => void;
+  /** `viaKeyboard` is true when opened with Enter, Space or `e`, not a pointer; `edit` when
+   * opened with `e`. */
+  onOpen?: (line: EstimateLine, viaKeyboard: boolean, edit?: boolean) => void;
   canEdit?: boolean;
-  /** `rowVersion` is the line's `row_version` when editing started (for `If-Match`). */
-  onSave?: (
-    line: EstimateLine,
-    change: LineChange,
-    reason: string,
-    rowVersion: number,
-  ) => Promise<EditOutcome>;
-  onReload?: () => void;
-  /** Where the last reason is kept in the browser (one key per Opportunity). */
+  /** For the Conflicts tab links. */
   opportunityId?: string;
 }) {
   const { singleKeyShortcuts } = useShell();
   const container = useRef<HTMLDivElement>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Editing | null>(null);
-  const [pending, setPending] = useState<Pending | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
-  /** A selector to focus after the next render (e.g. back to a cell after Esc). */
-  const [focusTarget, setFocusTarget] = useState<string | null>(null);
-  /** A new version replaced the lines an open editor was changing. */
-  const [replaced, setReplaced] = useState(false);
-  const [seenVersionId, setSeenVersionId] = useState(version.id);
-  if (seenVersionId !== version.id) {
-    setSeenVersionId(version.id);
-    setReplaced(editing !== null || pending !== null);
-    setEditing(null);
-    setPending(null);
-    setNotice(null);
-  }
-  const reasonKey = opportunityId ?? version.id;
   const lines = version.sections.flatMap((section) => section.lines);
-  const editable = canEdit && version.status === "draft" && onSave !== undefined;
+  const editable = canEdit && version.status === "draft";
   const tabStopId =
     [focusedId, selectedId].find((id) => id !== null && lines.some((l) => l.id === id)) ??
     lines[0]?.id;
-
-  useEffect(() => {
-    if (!focusTarget) return;
-    container.current?.querySelector<HTMLElement>(focusTarget)?.focus();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot request
-    setFocusTarget(null);
-  }, [focusTarget]);
-
-  function startEdit(line: EstimateLine, kind: Editing["kind"]) {
-    if (!editable || saving) return;
-    setNotice(null);
-    setReplaced(false);
-    setPending(null);
-    setEditing({
-      lineId: line.id,
-      kind,
-      rowVersion: line.row_version,
-      effort: line.effort_hours,
-      mix: line.role_mix,
-    });
-  }
-
-  function cancel(line: EstimateLine, kind: Editing["kind"], viaKey: boolean) {
-    setEditing(null);
-    setPending(null);
-    if (viaKey) setFocusTarget(`[data-edit-${kind}="${line.id}"]`);
-  }
-
-  function commitEffort(line: EstimateLine, text: string, viaKey: boolean) {
-    const from = editing;
-    setEditing(null);
-    if (!from || from.lineId !== line.id) return;
-    const effort = parseEffort(text);
-    if (effort === null) {
-      setNotice({ lineId: line.id, message: EFFORT_RULE, reload: false });
-      if (viaKey) setFocusTarget(`[data-edit-effort="${line.id}"]`);
-      return;
-    }
-    if (roundHours(effort) === roundHours(from.effort)) {
-      if (viaKey) setFocusTarget(`[data-edit-effort="${line.id}"]`);
-      return; // unchanged: nothing to save
-    }
-    setPending({
-      ...from,
-      change: { effortHours: effort },
-      summary: `Effort ${hours(from.effort)} h → ${roundedHours(effort)} h`,
-      initialReason: readKeptReason(reasonKey, version.id),
-    });
-  }
-
-  function commitMix(line: EstimateLine, mix: RoleMix) {
-    const from = editing;
-    setEditing(null);
-    if (!from || from.lineId !== line.id) return;
-    if (ROLES.every((role) => mix[role.value] === from.mix[role.value])) {
-      setFocusTarget(`[data-edit-mix="${line.id}"]`);
-      return;
-    }
-    setPending({
-      ...from,
-      change: { roleMix: mix },
-      summary: `Role mix ${roleMixLabel(from.mix)} → ${roleMixLabel(mix)}`,
-      initialReason: readKeptReason(reasonKey, version.id),
-    });
-  }
-
-  async function save(line: EstimateLine, edit: Pending, reason: string) {
-    if (!onSave || saving) return;
-    const { change } = edit;
-    setSaving(true);
-    let outcome: EditOutcome;
-    try {
-      outcome = await onSave(line, change, reason, edit.rowVersion);
-    } catch {
-      outcome = { ok: false, message: EDIT_SAVE_FAILED };
-    }
-    setSaving(false);
-    setPending(null);
-    if (outcome.ok) {
-      keepReason(reasonKey, version.id, reason);
-      setNotice(null);
-    } else {
-      setNotice({
-        lineId: line.id,
-        message: outcome.message,
-        reload: outcome.reload ?? false,
-      });
-    }
-    setFocusTarget(`[data-edit-${change.roleMix ? "mix" : "effort"}="${line.id}"]`);
-  }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -361,7 +222,7 @@ export function EstimateGrid({
       const line = lines.find((l) => l.id === target.dataset.lineId);
       if (line) {
         event.preventDefault();
-        startEdit(line, "effort");
+        onOpen?.(line, true, true);
       }
       return;
     }
@@ -378,275 +239,177 @@ export function EstimateGrid({
     buttons[next]?.focus();
   }
 
-  function editorRow(line: EstimateLine) {
-    const showMixEditor = editing?.lineId === line.id && editing.kind === "mix";
-    const prompt = pending?.lineId === line.id ? pending : null;
-    const shownNotice = notice?.lineId === line.id ? notice : null;
-    if (!editable || (!showMixEditor && !prompt && !shownNotice)) return null;
-    return (
-      <tr key={`${line.id}-editor`} data-line-editor={line.id}>
-        <td colSpan={COLUMNS.length} className="border-b border-border bg-muted/40 px-2.5 py-3">
-          {showMixEditor ? (
-            <RoleMixEditor
-              lineTitle={line.title}
-              initial={editing?.mix ?? line.role_mix}
-              onSave={(mix) => commitMix(line, mix)}
-              onCancel={() => cancel(line, "mix", true)}
-            />
-          ) : prompt ? (
-            <ReasonPrompt
-              summary={prompt.summary}
-              initial={prompt.initialReason}
-              busy={saving}
-              onSave={(reason) => void save(line, prompt, reason)}
-              onCancel={() => cancel(line, prompt.change.roleMix ? "mix" : "effort", true)}
-            />
-          ) : shownNotice ? (
-            shownNotice.reload && onReload ? (
-              <InlineAlert
-                lead={shownNotice.message}
-                onReload={() => {
-                  setNotice(null);
-                  onReload();
-                }}
-              />
-            ) : (
-              <p className="flex items-center gap-1.5 text-meta text-destructive">
-                <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
-                {shownNotice.message}
-              </p>
-            )
-          ) : null}
-        </td>
-      </tr>
-    );
-  }
-
+  const cell = "border-b border-border";
   return (
-    <Card
-      ref={container}
-      onKeyDown={onKeyDown}
-      aria-busy={saving || undefined}
-      className="max-h-[70vh] overflow-auto"
-    >
-      {replaced ? (
-        <p className="flex items-center gap-1.5 px-2.5 py-3 text-meta text-destructive">
-          <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
-          {NEW_VERSION_ARRIVED}
-        </p>
-      ) : null}
-      <table className="w-full border-separate border-spacing-0 text-body">
-        <caption className="sr-only">{`Estimate ${versionLabel(version)}`}</caption>
-        <thead className="sticky top-0 z-10 bg-background">
-          <tr>
-            {COLUMNS.map((column, i) => (
-              <th
-                key={column}
-                scope="col"
-                className={cn(
-                  headCell,
-                  "border-b border-border",
-                  i >= 3 ? "text-right" : "text-left",
-                  i === 4 && cont,
-                )}
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        {version.sections.map((section) => (
-          <tbody key={section.section} data-section={section.section}>
+    <Card ref={container} onKeyDown={onKeyDown} className="overflow-hidden" data-estimate-grid="">
+      <div className="max-h-[70vh] overflow-auto">
+        <table className="w-full border-separate border-spacing-0 text-body">
+          <caption className="sr-only">{`Estimate ${versionLabel(version)}`}</caption>
+          <thead className="sticky top-0 z-10 bg-background">
             <tr>
-              <th
-                scope="rowgroup"
-                colSpan={COLUMNS.length}
-                className="h-7 border-b border-border bg-muted px-2.5 text-left text-label text-muted-foreground"
-              >
-                {sectionLabel(section.section)}
-              </th>
-            </tr>
-            {section.lines.flatMap((line) => {
-              const selected = line.id === selectedId;
-              const savingThis = saving && pending?.lineId === line.id;
-              const shownMix = (savingThis && pending?.change.roleMix) || line.role_mix;
-              const shownEffort =
-                savingThis && pending?.change.effortHours !== undefined
-                  ? roundHours(pending.change.effortHours)
-                  : line.effort_hours;
-              const editingEffort = editing?.lineId === line.id && editing.kind === "effort";
-              const editingMix = editing?.lineId === line.id && editing.kind === "mix";
-              const row = (
-                <tr
-                  key={line.id}
-                  aria-selected={selected}
+              {COLUMNS.map((column, i) => (
+                <th
+                  key={column}
+                  scope="col"
                   className={cn(
-                    "h-row border-b border-border",
-                    selected ? "bg-muted" : "hover:bg-muted/60",
+                    headCell,
+                    "border-b border-border",
+                    i >= 3 ? "text-right" : "text-left",
+                    i === 0 && "pl-4",
+                    i === 4 && cont,
                   )}
                 >
-                  <th
-                    scope="row"
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          {version.sections.map((section) => (
+            <tbody key={section.section} data-section={section.section}>
+              <tr>
+                <th
+                  scope="rowgroup"
+                  colSpan={COLUMNS.length}
+                  className="h-8 border-b border-border bg-background px-4 text-left text-muted-foreground uppercase"
+                >
+                  <span className="text-eyebrow">{sectionLabel(section.section)}</span>
+                </th>
+              </tr>
+              {section.lines.map((line) => {
+                const selected = line.id === selectedId;
+                const conflicted = line.conflicts.length > 0;
+                return (
+                  <tr
+                    key={line.id}
+                    aria-selected={selected}
+                    data-conflict-row={conflicted ? "" : undefined}
                     className={cn(
-                      "max-w-0 border-b border-border px-1 text-left font-normal",
-                      selected && "shadow-[inset_2px_0_0_var(--primary)]",
+                      selected
+                        ? "bg-primary-tint"
+                        : conflicted
+                          ? "bg-blocker-tint"
+                          : "hover:bg-muted/60",
                     )}
                   >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        data-line-row=""
-                        data-line-id={line.id}
-                        tabIndex={line.id === tabStopId ? 0 : -1}
-                        onFocus={() => setFocusedId(line.id)}
-                        // A keyboard-activated click has no pointer clicks (detail 0).
-                        onClick={(event) => onOpen?.(line, event.detail === 0)}
-                        className="block min-h-row min-w-0 flex-1 truncate rounded-sm px-1.5 text-left text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      >
-                        {line.title}
-                      </button>
-                      <EditedMarker line={line} />
-                      <ConflictMarker line={line} opportunityId={opportunityId} />
-                    </div>
-                  </th>
-                  <td className="w-24 border-b border-border px-2.5">
-                    <CoversChip count={line.requirements.length} />
-                  </td>
-                  <td className="w-44 border-b border-border px-2.5 text-label whitespace-nowrap text-muted-foreground [font-variant-numeric:tabular-nums]">
-                    {editable ? (
-                      <button
-                        type="button"
-                        data-edit-mix={line.id}
-                        aria-label={`Edit role mix of ${line.title}: ${roleMixLabel(shownMix)}`}
-                        aria-expanded={editingMix}
-                        disabled={saving}
-                        onClick={() => startEdit(line, "mix")}
-                        className={cellButton}
-                      >
-                        {roleMixLabel(shownMix)}
-                      </button>
-                    ) : (
-                      roleMixLabel(line.role_mix)
-                    )}
-                  </td>
-                  <td className={cn(num, "w-24 border-b border-border")}>
-                    {editable && editingEffort ? (
-                      <InlineInput
-                        label={`Effort (h) of ${line.title}`}
-                        initial={hours(line.effort_hours)}
-                        onCommit={(text, viaKey) => commitEffort(line, text, viaKey)}
-                        onCancel={(viaKey) => cancel(line, "effort", viaKey)}
-                        className="h-6 w-20 rounded-md border border-input bg-background px-1.5 text-right text-numeric outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      />
-                    ) : editable ? (
-                      <button
-                        type="button"
-                        data-edit-effort={line.id}
-                        aria-label={`Edit effort of ${line.title}: ${hours(shownEffort)} hours`}
-                        disabled={saving}
-                        onClick={() => startEdit(line, "effort")}
-                        className={cn(cellButton, "text-numeric")}
-                      >
-                        {hours(shownEffort)}
-                      </button>
-                    ) : (
-                      hours(line.effort_hours)
-                    )}
-                  </td>
-                  <td className={cn(num, cont, "w-28 border-b border-border")}>
-                    {hours(line.contingency_hours)}
-                  </td>
-                  <td className={cn(num, "w-24 border-b border-border")}>
-                    {hours(line.total_hours)}
-                  </td>
-                </tr>
-              );
-              const extra = editorRow(line);
-              return extra ? [row, extra] : [row];
-            })}
-            <tr data-subtotal="" className="h-7">
-              <th
-                scope="row"
-                colSpan={3}
-                className="border-b border-border px-2.5 text-left text-label text-muted-foreground"
-              >
-                {`${sectionLabel(section.section)} subtotal`}
+                    <th
+                      scope="row"
+                      className={cn(
+                        cell,
+                        "max-w-0 py-2 pr-2.5 pl-2.5 text-left font-normal",
+                        selected
+                          ? "shadow-[inset_3px_0_0_var(--primary)]"
+                          : conflicted && "shadow-[inset_3px_0_0_var(--blocker)]",
+                      )}
+                    >
+                      <div className="flex min-w-0 flex-col items-start gap-1">
+                        <button
+                          type="button"
+                          data-line-row=""
+                          data-line-id={line.id}
+                          tabIndex={line.id === tabStopId ? 0 : -1}
+                          onFocus={() => setFocusedId(line.id)}
+                          // A keyboard-activated click has no pointer clicks (detail 0).
+                          onClick={(event) => onOpen?.(line, event.detail === 0)}
+                          className="block max-w-full min-w-0 truncate rounded-sm px-1.5 text-left text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        >
+                          {line.title}
+                        </button>
+                        {conflicted || line.edited ? (
+                          <div className="flex flex-wrap items-center gap-1.5 px-1.5">
+                            <ConflictMarker line={line} opportunityId={opportunityId} />
+                            <EditedMarker line={line} />
+                          </div>
+                        ) : null}
+                      </div>
+                    </th>
+                    <td className={cn(cell, "w-36 px-2.5 py-2")}>
+                      <CoversChips line={line} />
+                    </td>
+                    <td className={cn(cell, "w-40 px-2.5 py-2")}>
+                      <div className="flex flex-col gap-1">
+                        <RoleMixBar mix={line.role_mix} />
+                        <span className="text-meta whitespace-nowrap text-muted-foreground [font-variant-numeric:tabular-nums]">
+                          {roleMixLabel(line.role_mix)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={cn(num, cell, "w-24")}>{hours(line.effort_hours)}</td>
+                    <td className={cn(num, cont, cell, "w-24")}>
+                      {hours(line.contingency_hours)}
+                    </td>
+                    <td className={cn(num, cell, "w-24 font-semibold")}>
+                      {hours(line.total_hours)}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr data-subtotal="" className="h-8 bg-background text-muted-foreground">
+                <th scope="row" colSpan={3} className={cn(cell, "px-4 text-left")}>
+                  <span className="text-label">{`${sectionLabel(section.section)} subtotal`}</span>
+                </th>
+                <TotalsCells totals={section.subtotal} className={cell} />
+              </tr>
+            </tbody>
+          ))}
+          {version.unallocated_contingency_hours > 0 ? (
+            <tbody data-unallocated="">
+              <tr className="h-row">
+                <th
+                  scope="row"
+                  colSpan={3}
+                  className={cn(cell, "px-4 text-left text-body font-normal")}
+                >
+                  {UNALLOCATED_CONTINGENCY}
+                </th>
+                <td className={cn(num, cell, "text-muted-foreground")}>
+                  <span aria-hidden="true">–</span>
+                  <span className="sr-only">None</span>
+                </td>
+                <td className={cn(num, cont, cell)}>
+                  {hours(version.unallocated_contingency_hours)}
+                </td>
+                <td className={cn(num, cell, "font-semibold")}>
+                  {hours(version.unallocated_contingency_hours)}
+                </td>
+              </tr>
+            </tbody>
+          ) : null}
+          <tfoot className="sticky bottom-0 z-10 bg-background">
+            <tr data-totals="" className="h-row">
+              <th scope="row" colSpan={3} className="border-t border-border px-4 text-left">
+                <span className="text-body-strong">{`Total · v${version.version}`}</span>
+                <span
+                  data-role-totals=""
+                  className="text-label text-muted-foreground [font-variant-numeric:tabular-nums]"
+                >
+                  {` · ${footerRoleLabel(version.totals)}`}
+                </span>
               </th>
-              <TotalsCells totals={section.subtotal} />
-            </tr>
-          </tbody>
-        ))}
-        {version.unallocated_contingency_hours > 0 ? (
-          <tbody data-unallocated="">
-            <tr className="h-row">
-              <th
-                scope="row"
-                colSpan={3}
-                className="border-b border-border px-2.5 text-left text-body font-normal"
-              >
-                {UNALLOCATED_CONTINGENCY}
-              </th>
-              <td className={cn(num, "border-b border-border text-muted-foreground")}>
-                <span aria-hidden="true">–</span>
-                <span className="sr-only">None</span>
+              <td className={cn(num, "border-t border-border font-semibold")}>
+                {hours(version.totals.effort_hours)}
               </td>
-              <td className={cn(num, cont, "border-b border-border")}>
-                {hours(version.unallocated_contingency_hours)}
+              <td className={cn(num, cont, "border-t border-border font-semibold")}>
+                {hours(version.totals.contingency_hours)}
               </td>
-              <td className={cn(num, "border-b border-border")}>
-                {hours(version.unallocated_contingency_hours)}
+              <td className={cn(num, "border-t border-border font-semibold text-primary-text")}>
+                {hours(version.totals.total_hours)}
               </td>
             </tr>
-          </tbody>
-        ) : null}
-        <tfoot className="sticky bottom-0 z-10 bg-muted">
-          <tr data-totals="" className="h-row">
-            <th
-              scope="row"
-              colSpan={3}
-              className="border-t border-border px-2.5 text-left text-body-strong"
-            >
-              Total
-            </th>
-            <td className={cn(num, "border-t border-border font-semibold")}>
-              {hours(version.totals.effort_hours)}
-            </td>
-            <td className={cn(num, cont, "border-t border-border font-semibold")}>
-              {hours(version.totals.contingency_hours)}
-            </td>
-            <td className={cn(num, "border-t border-border font-semibold")}>
-              {hours(version.totals.total_hours)}
-            </td>
-          </tr>
-          <tr data-role-totals="" className="h-7">
-            <th
-              scope="row"
-              colSpan={3}
-              className="px-2.5 text-left text-label text-muted-foreground"
-            >
-              Effort by role
-            </th>
-            <td
-              colSpan={3}
-              className="px-2.5 text-right text-label whitespace-nowrap [font-variant-numeric:tabular-nums]"
-            >
-              {roleTotalsLabel(version.totals)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+          </tfoot>
+        </table>
+      </div>
     </Card>
   );
 }
 
-/** The header above the grid: the version pill ("Estimate v4 · from Assessments (run 3)")
- * and how many Requirements no line covers, with **Export** (Story 8.8) when the caller may
- * export it. Before the first version, while an assessment run is queued or running (Story
- * 8.3), "The Estimate is built when the Engineering, PM and Security Agents finish." with a
- * running dot ("Still waiting for the agents — reload to check." once polling has stopped);
- * with a version shown, "Rebuilding from the Assessments when the run finishes." in muted
- * text with the running dot. There is no draft Retry: the Estimate is built from the
- * Assessments. */
+/** The toolbar above the Estimate: the version pill ("v3 · Draft"), "From Assessments (run
+ * 2)" when the version names its run, and **Export** (Story 8.8) at the right when the caller
+ * may export it. Under it, before the first version while an assessment run is queued or
+ * running (Story 8.3), "The Estimate is built when the Engineering, PM and Security Agents
+ * finish." with a running dot ("Still waiting for the agents — reload to check." once polling
+ * has stopped); with a version shown, "Rebuilding from the Assessments when the run
+ * finishes." in muted text with the running dot. There is no draft Retry: the Estimate is
+ * built from the Assessments. */
 export function EstimateHeader({
   version,
   assessmentRunning = false,
@@ -666,51 +429,143 @@ export function EstimateHeader({
   const waiting = !version && assessmentRunning;
   const rebuilding = version !== null && assessmentRunning;
   if (!version && !waiting) return null;
+  const fromRun = version ? fromRunLabel(version) : null;
   return (
-    <div className="flex flex-col items-start gap-1">
-      <div className="flex flex-wrap items-center gap-3">
-        {version ? <VersionPill version={version} /> : null}
-        {version && canExport && opportunityId ? (
-          <EstimateExport opportunityId={opportunityId} />
-        ) : null}
-        {version && version.uncovered_count > 0 ? (
-          <p className="flex items-center gap-1.5 text-label text-foreground">
-            <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
-            {uncoveredLabel(version.uncovered_count)}
-          </p>
-        ) : null}
-        {waiting && stalled ? (
-          <p className="text-label text-muted-foreground">{STILL_BUILDING}</p>
-        ) : waiting ? (
-          <p className="flex items-center gap-2 text-label" data-status="waiting">
-            <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
-            {BUILDING}
-          </p>
-        ) : rebuilding && !stalled ? (
-          <p
-            className="flex items-center gap-2 text-label text-muted-foreground"
-            data-status="rebuilding"
-          >
-            <LoaderCircleIcon aria-hidden="true" data-testid="running-dot" className="size-3 shrink-0 text-agent" />
-            {REBUILDING}
-          </p>
-        ) : null}
-      </div>
+    <div className="flex flex-col items-stretch gap-1.5">
+      {version ? (
+        <div className="flex flex-wrap items-center gap-3" data-estimate-toolbar="">
+          <VersionPill version={version} />
+          {fromRun ? <p className="text-meta text-muted-foreground">{fromRun}</p> : null}
+          <span className="flex-1" aria-hidden="true" />
+          {canExport && opportunityId ? <EstimateExport opportunityId={opportunityId} /> : null}
+        </div>
+      ) : null}
+      {waiting && stalled ? (
+        <p className="text-label text-muted-foreground">{STILL_BUILDING}</p>
+      ) : waiting ? (
+        <p className="flex items-center gap-2 text-label" data-status="waiting">
+          <LoaderCircleIcon
+            aria-hidden="true"
+            data-testid="running-dot"
+            className="size-3 shrink-0 text-agent"
+          />
+          {BUILDING}
+        </p>
+      ) : rebuilding && !stalled ? (
+        <p
+          className="flex items-center gap-2 text-label text-muted-foreground"
+          data-status="rebuilding"
+        >
+          <LoaderCircleIcon
+            aria-hidden="true"
+            data-testid="running-dot"
+            className="size-3 shrink-0 text-agent"
+          />
+          {REBUILDING}
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+/** The Version lifecycle card: a Draft → Baseline → Superseded stepper with the version's
+ * status current, a note on what the version is, and the note on edits a new version could
+ * not carry. */
+export function VersionLifecycle({ version }: { version: EstimateVersion }) {
+  const steps = lifecycleSteps(version.status);
+  return (
+    <Card className="gap-3 px-5 py-4" data-lifecycle="">
+      <h3 className="text-muted-foreground uppercase">
+        <span className="text-eyebrow">Version lifecycle</span>
+      </h3>
+      <ol aria-label="Version lifecycle" className="flex items-center">
+        {steps.map((step, i) => {
+          const filled = step.state !== "upcoming";
+          return (
+            <li
+              key={step.label}
+              aria-current={step.state === "current" ? "step" : undefined}
+              data-step-state={step.state}
+              className={cn("flex items-center", i < steps.length - 1 && "flex-1")}
+            >
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "flex size-6 shrink-0 items-center justify-center rounded-full border-2",
+                    filled
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border-strong bg-neutral-tint text-neutral",
+                  )}
+                >
+                  {step.state === "passed" ? (
+                    <CheckIcon className="size-3.5" />
+                  ) : (
+                    <span className="text-label">{i + 1}</span>
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    "whitespace-nowrap",
+                    step.state === "current" ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  <span className={step.state === "current" ? "text-body-strong" : "text-body"}>
+                    {step.label}
+                  </span>
+                  {step.state === "passed" ? <span className="sr-only"> (done)</span> : null}
+                </span>
+              </span>
+              {i < steps.length - 1 ? (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "mx-3 h-0.5 min-w-6 flex-1 rounded-full",
+                    step.state === "passed" ? "bg-primary" : "bg-border",
+                  )}
+                />
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="text-meta text-muted-foreground">{versionNote(version)}</p>
+      {version.uncarried_edit_count > 0 ? (
+        <p className="flex items-center gap-1.5 text-label text-foreground" data-uncarried="">
+          <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
+          {uncarriedEditsNote(version.uncarried_edit_count, version.uncarried_edits_from_version)}
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
+/** The amber banner for Requirements no Estimate line covers; nothing when all are covered. */
+export function UncoveredBanner({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <p
+      data-uncovered=""
+      className="flex items-center gap-2 rounded-lg border border-gap/30 bg-gap-tint px-4 py-2.5 text-gap"
+    >
+      <TriangleAlertIcon aria-hidden="true" className="size-4 shrink-0" />
+      <span className="text-body-strong">{uncoveredBanner(count)}</span>
+    </p>
   );
 }
 
 /** What the right pane shows: a line, or the Gap an Assumption was made from. */
 type Selection = { kind: "line"; id: string } | { kind: "gap"; assumptionId: string };
 
-/** The Estimate tab's content: the header, the grid and the Assumptions Register below it in
- * the main pane, and the selected line's (or Assumption's Gap's) inspector in the right pane
+/** The Estimate tab's content: the toolbar, the Version lifecycle card, the uncovered banner,
+ * the grid and the Assumptions Register below it in the main pane, and the selected line's (or Assumption's Gap's) inspector in the right pane
  * (opened if closed). While an assessment run (which builds the Estimate, Story 8.3), a
  * model draft left over from before Story 8.3, or the Assumption proposals are queued or
  * running the Estimate is re-read every 2 s:
  * paused while the tab is hidden, and stopped after 15 minutes. A selected line that a new
- * version replaced leaves the pane showing the empty Inspector text. Lines of the draft are
- * editable for those who may edit them (Story 8.2), with a note when a new version could not
+ * version replaced leaves the pane showing the empty Inspector text (and, when its "Edit line"
+ * form held unsaved changes, says so above the grid). Lines of the draft are editable in the
+ * inspector for those who may edit them (Story 8.2), with a note when a new version could not
  * carry some edits; Accept for those who may accept Assumptions. No draft Retry. */
 export function EstimateSection({
   opportunityId,
@@ -724,6 +579,12 @@ export function EstimateSection({
   const [view, setView] = useState<EstimateView>(initial);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
+  /** Bumped to move focus into the inspector's "Edit line" form (opened with `e`). */
+  const [editFocusRequest, setEditFocusRequest] = useState(0);
+  /** The inspector's "Edit line" form holds unsaved changes. */
+  const [editDirty, setEditDirty] = useState(false);
+  /** A new version replaced the line whose unsaved change was open. */
+  const [replaced, setReplaced] = useState(false);
   /** The element to focus when the pane closes after a keyboard open. */
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
@@ -752,6 +613,17 @@ export function EstimateSection({
     setStalled(false);
   }
 
+  // A new version drops an open edit (its lines are gone): say so if it held changes.
+  const [seenVersionId, setSeenVersionId] = useState(view.version?.id ?? null);
+  if (seenVersionId !== (view.version?.id ?? null)) {
+    setSeenVersionId(view.version?.id ?? null);
+    if (editDirty) setReplaced(true);
+    setEditDirty(false);
+    // The inspector remounts for the new version: it must not take focus again.
+    setFocusRequest(0);
+    setEditFocusRequest(0);
+  }
+
   const lines = view.version?.sections.flatMap((section) => section.lines) ?? [];
   const register = view.version
     ? [...view.version.assumptions.conditions, ...view.version.assumptions.contingencies]
@@ -767,7 +639,10 @@ export function EstimateSection({
   const [paneWasOpen, setPaneWasOpen] = useState(rightPaneOpen);
   if (paneWasOpen !== rightPaneOpen) {
     setPaneWasOpen(rightPaneOpen);
-    if (!rightPaneOpen) setFocusRequest(0);
+    if (!rightPaneOpen) {
+      setFocusRequest(0);
+      setEditFocusRequest(0);
+    }
   }
 
   // When the pane closes after a keyboard open, focus goes back to the line, not the toggle.
@@ -781,19 +656,24 @@ export function EstimateSection({
     }
   }, [rightPaneOpen]);
 
-  function open(line: EstimateLine, viaKeyboard: boolean) {
+  function open(line: EstimateLine, viaKeyboard: boolean, edit = false) {
     setSelection({ kind: "line", id: line.id });
+    setReplaced(false);
     returnFocusTo.current = viaKeyboard ? `[data-line-id="${line.id}"]` : null;
-    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    // Focus goes to the title, or with `e` to the form's Effort field: never both.
+    setFocusRequest((n) => (viaKeyboard && !edit ? n + 1 : 0));
+    setEditFocusRequest((n) => (edit ? n + 1 : 0));
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
 
   function openGap(assumption: Assumption, viaKeyboard: boolean) {
     setSelection({ kind: "gap", assumptionId: assumption.id });
+    setReplaced(false);
     returnFocusTo.current = viaKeyboard
       ? `[data-assumption-id="${assumption.id}"] [data-gap-chip]`
       : null;
     setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    setEditFocusRequest(0);
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
 
@@ -847,8 +727,8 @@ export function EstimateSection({
     };
   }, [working, visible, opportunityId, pollTick, announce]);
 
-  /** Story 8.2: save a line's change with its reason; the grid re-renders from the server's
-   * Estimate. */
+  /** Story 8.2: save a line's change with its reason (from the inspector's "Edit line" form);
+   * the grid re-renders from the server's Estimate. */
   async function saveLine(
     line: EstimateLine,
     change: LineChange,
@@ -911,6 +791,7 @@ export function EstimateSection({
   }
 
   const { version } = view;
+  const canEditLines = view.can_edit_lines && version?.status === "draft";
   return (
     <div className="flex flex-col gap-4">
       <EstimateHeader
@@ -922,22 +803,19 @@ export function EstimateSection({
       />
       {version ? (
         <>
-          {version.uncarried_edit_count > 0 ? (
-            <p className="flex items-center gap-1.5 text-label text-foreground" data-uncarried="">
-              <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
-              {uncarriedEditsNote(
-                version.uncarried_edit_count,
-                version.uncarried_edits_from_version,
-              )}
+          <VersionLifecycle version={version} />
+          <UncoveredBanner count={version.uncovered_count} />
+          {replaced ? (
+            <p className="flex items-center gap-1.5 text-meta text-destructive" role="alert">
+              <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
+              {NEW_VERSION_ARRIVED}
             </p>
           ) : null}
           <EstimateGrid
             version={version}
             selectedId={selected?.id ?? null}
             onOpen={open}
-            canEdit={view.can_edit_lines}
-            onSave={saveLine}
-            onReload={() => void reloadEstimate()}
+            canEdit={canEditLines}
             opportunityId={opportunityId}
           />
           <AssumptionsRegister
@@ -963,10 +841,23 @@ export function EstimateSection({
       {selected ? (
         <RightPaneContent>
           <EstimateInspector
-            key={selected.id}
+            // A new version remounts it, dropping an unsaved edit of the replaced line.
+            key={`${version?.id}-${selected.id}`}
             line={selected}
             opportunityId={opportunityId}
             focusRequest={focusRequest}
+            editing={
+              canEditLines && version
+                ? {
+                    versionId: version.id,
+                    reasonKey: opportunityId,
+                    onSave: saveLine,
+                    onReload: () => void reloadEstimate(),
+                    onDirtyChange: setEditDirty,
+                    focusRequest: editFocusRequest,
+                  }
+                : undefined
+            }
           />
         </RightPaneContent>
       ) : selectedAssumption ? (

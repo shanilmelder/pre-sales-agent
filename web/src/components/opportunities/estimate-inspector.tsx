@@ -2,36 +2,90 @@
 
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 import { Chip } from "@/components/ui/chip";
+import { EditLineForm, type SaveLine } from "@/components/opportunities/estimate-line-edit";
 import { typeLabel } from "@/lib/conflicts";
 import {
   editedLabel,
   editHistory,
   hours,
+  lineHeading,
   OPEN_CONFLICT,
-  ROLES,
-  sectionLabel,
+  roleShares,
   type EstimateLine,
+  type RoleMix,
+  type RoleName,
 } from "@/lib/estimates";
+import { cn } from "@/lib/utils";
 import { tabHref } from "@/lib/workspace";
 
-/** The selected Estimate line in the right pane, read-only: its section and title, the basis
- * for its effort, its role mix broken down into hours (server-calculated), its effort,
- * Contingency and total, and the Requirements it covers as chips with their excerpts. An
- * edited line (Story 8.2) also shows who edited it, when and why; a line with an open
- * Conflict about a Requirement it covers (Story 8.3) names each Conflict's type and links to
- * the Conflicts tab. */
+/** Each role's colour in the role-mix bar and its legend. */
+export const ROLE_COLOUR: Record<RoleName, string> = {
+  engineer: "bg-primary",
+  project_manager: "bg-role-pm",
+  qa: "bg-role-qa",
+};
+
+/** The role mix as an 8px stacked bar (decorative: the shares are always given as text too). */
+export function RoleMixBar({ mix, className }: { mix: RoleMix; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-role-bar=""
+      className={cn("flex h-2 w-full overflow-hidden rounded-full bg-surface-alt", className)}
+    >
+      {roleShares(mix).map((role) =>
+        role.percent > 0 ? (
+          <span
+            key={role.value}
+            className={cn("h-full", ROLE_COLOUR[role.value])}
+            style={{ width: `${role.percent}%` }}
+          />
+        ) : null,
+      )}
+    </span>
+  );
+}
+
+function Label({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <h4 className={`${cn("text-muted-foreground uppercase", className)} text-eyebrow`}>
+      {children}
+    </h4>
+  );
+}
+
+/** What the inspector needs to offer the "Edit line" form; left out, there is no form. */
+export type LineEditing = {
+  versionId: string;
+  reasonKey: string;
+  onSave: SaveLine;
+  onReload?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Bumped to move focus to the form's Effort field instead of the title. */
+  focusRequest?: number;
+};
+
+/** The selected Estimate line in the right pane: "{section} · line {position}" over its title,
+ * the basis for its effort, its role mix as a bar and broken down into hours
+ * (server-calculated), its effort, Contingency and total, and the Requirements it covers as
+ * chips with their excerpts. A line with an open Conflict about a Requirement it covers (Story
+ * 8.3) names each Conflict's type and links to the Conflicts tab; an edited line (Story 8.2)
+ * shows who edited it, when and why. With `editing` (a draft the user may edit) it ends with
+ * the "Edit line" form. */
 export function EstimateInspector({
   line,
   opportunityId,
   focusRequest = 0,
+  editing,
 }: {
   line: EstimateLine;
   /** Needed for the Conflicts tab link; without it the link is left out. */
   opportunityId?: string;
   focusRequest?: number;
+  editing?: LineEditing;
 }) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -41,17 +95,89 @@ export function EstimateInspector({
   }, [focusRequest]);
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-4 p-gutter">
+    <section aria-labelledby={headingId} className="flex flex-col gap-5 p-gutter">
       <div className="flex flex-col gap-1">
-        <p className="text-meta text-muted-foreground">{sectionLabel(line.section)}</p>
+        <p className="text-meta text-muted-foreground">{lineHeading(line)}</p>
         <h3
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
-          className="text-body-strong outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="text-section outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           {line.title}
         </h3>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Basis</Label>
+        <p className="whitespace-pre-wrap break-words text-body">{line.basis}</p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Role mix</Label>
+        <RoleMixBar mix={line.role_mix} />
+        <table className="w-full text-body">
+          <caption className="sr-only">Role mix in hours</caption>
+          <thead>
+            <tr className="text-label text-muted-foreground">
+              <th scope="col" className="py-0.5 text-left font-medium">
+                Role
+              </th>
+              <th scope="col" className="py-0.5 text-right font-medium">
+                Share (%)
+              </th>
+              <th scope="col" className="py-0.5 text-right font-medium">
+                Effort (h)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {roleShares(line.role_mix).map((role) => (
+              <tr key={role.value} data-role={role.value}>
+                <th scope="row" className="py-0.5 text-left font-normal">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={cn("size-2.5 shrink-0 rounded-sm", ROLE_COLOUR[role.value])}
+                    />
+                    {role.label}
+                  </span>
+                </th>
+                <td className="py-0.5 text-right text-numeric">{role.share}</td>
+                <td className="py-0.5 text-right text-numeric">
+                  {hours(line.role_hours[role.value])}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <dl className="grid grid-cols-3 gap-2">
+        {(
+          [
+            ["Effort (h)", line.effort_hours],
+            ["Contingency (h)", line.contingency_hours],
+            ["Total (h)", line.total_hours],
+          ] as const
+        ).map(([label, value]) => (
+          <div key={label} className="flex flex-col gap-0.5">
+            <dt className="text-label text-muted-foreground">{label}</dt>
+            <dd className="text-numeric">{hours(value)}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="flex flex-col gap-2">
+        <Label>Covered Requirements</Label>
+        <ul className="flex flex-col gap-1.5">
+          {line.requirements.map((requirement) => (
+            <li key={requirement.id} className="flex items-baseline gap-2">
+              <Chip className="shrink-0">{requirement.label}</Chip>
+              <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {line.conflicts.length > 0 ? (
@@ -83,70 +209,17 @@ export function EstimateInspector({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-1">
-        <h4 className="text-label text-muted-foreground">Basis</h4>
-        <p className="whitespace-pre-wrap break-words text-body">{line.basis}</p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <h4 className="text-label text-muted-foreground">Role mix</h4>
-        <table className="w-full text-body">
-          <caption className="sr-only">Role mix in hours</caption>
-          <thead>
-            <tr className="text-label text-muted-foreground">
-              <th scope="col" className="py-0.5 text-left font-medium">
-                Role
-              </th>
-              <th scope="col" className="py-0.5 text-right font-medium">
-                Share (%)
-              </th>
-              <th scope="col" className="py-0.5 text-right font-medium">
-                Effort (h)
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {ROLES.map((role) => (
-              <tr key={role.value} data-role={role.value}>
-                <th scope="row" className="py-0.5 text-left font-normal">
-                  {role.label}
-                </th>
-                <td className="py-0.5 text-right text-numeric">{line.role_mix[role.value]}</td>
-                <td className="py-0.5 text-right text-numeric">
-                  {hours(line.role_hours[role.value])}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <dl className="grid grid-cols-3 gap-2">
-        {(
-          [
-            ["Effort (h)", line.effort_hours],
-            ["Contingency (h)", line.contingency_hours],
-            ["Total (h)", line.total_hours],
-          ] as const
-        ).map(([label, value]) => (
-          <div key={label} className="flex flex-col gap-0.5">
-            <dt className="text-label text-muted-foreground">{label}</dt>
-            <dd className="text-numeric">{hours(value)}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <div className="flex flex-col gap-1.5">
-        <h4 className="text-label text-muted-foreground">Covered Requirements</h4>
-        <ul className="flex flex-col gap-1.5">
-          {line.requirements.map((requirement) => (
-            <li key={requirement.id} className="flex items-baseline gap-2">
-              <Chip className="shrink-0">{requirement.label}</Chip>
-              <span className="min-w-0 break-words text-body">{requirement.excerpt}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {editing ? (
+        <EditLineForm
+          line={line}
+          versionId={editing.versionId}
+          reasonKey={editing.reasonKey}
+          onSave={editing.onSave}
+          onReload={editing.onReload}
+          onDirtyChange={editing.onDirtyChange}
+          focusRequest={editing.focusRequest}
+        />
+      ) : null}
     </section>
   );
 }

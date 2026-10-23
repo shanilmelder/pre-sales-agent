@@ -4,6 +4,7 @@ import { ChevronDownIcon, CircleAlertIcon, DownloadIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { useAnnounce } from "@/components/shell/live-region";
+import { buttonVariants } from "@/components/ui/button";
 import {
   EXPORT,
   EXPORT_FORMATS,
@@ -17,6 +18,8 @@ import {
 
 const buttonClass =
   "inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
+/** The outline trigger in the Estimate toolbar. */
+const triggerClass = `${buttonVariants({ variant: "outline", size: "sm" })} text-control`;
 const optionClass =
   "w-full rounded-sm px-2 py-1 text-left text-label outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-primary";
 
@@ -155,11 +158,11 @@ export function EstimateExport({ opportunityId }: { opportunityId: string }) {
             setOpen(true);
           }
         }}
-        className={buttonClass}
+        className={triggerClass}
       >
-        <DownloadIcon aria-hidden="true" className="size-3" />
+        <DownloadIcon aria-hidden="true" className="size-3.5" />
         {busy ? EXPORTING : EXPORT}
-        <ChevronDownIcon aria-hidden="true" className="size-3" />
+        <ChevronDownIcon aria-hidden="true" className="size-3.5" />
       </button>
       {open ? (
         <div
@@ -168,7 +171,7 @@ export function EstimateExport({ opportunityId }: { opportunityId: string }) {
           role="group"
           aria-label="Export format"
           onKeyDown={onListKey}
-          className="absolute top-7 left-0 z-20 flex min-w-36 flex-col gap-0.5 rounded-md border border-border bg-popover p-1 shadow-md"
+          className="absolute top-8 right-0 z-20 flex min-w-36 flex-col gap-0.5 rounded-md border border-border bg-popover p-1 shadow-md"
         >
           {EXPORT_FORMATS.map((f) => (
             <button

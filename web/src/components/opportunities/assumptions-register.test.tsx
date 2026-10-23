@@ -187,6 +187,14 @@ const register = () => screen.getByTestId("assumptions-register");
 const row = (n: number) =>
   register().querySelector<HTMLElement>(`[data-assumption-id$="a${n}"]`) as HTMLElement;
 
+/** The grid's totals row: effort, contingency and total. */
+function totalCells(grid: HTMLElement): (string | null)[] {
+  const row = grid.querySelector("tr[data-totals]") as HTMLElement;
+  return within(row)
+    .getAllByRole("cell")
+    .map((cell) => cell.textContent);
+}
+
 beforeEach(() => {
   loadEstimate.mockReset();
   acceptAssumption.mockReset();
@@ -198,7 +206,10 @@ describe("the Assumptions Register", () => {
     const { container } = renderSection(view(version(FOUR)));
 
     const reg = register();
-    expect(within(reg).getByText("4 · 1 accepted · 3 not accepted")).toBeTruthy();
+    expect(within(reg).getByRole("heading", { level: 3, name: "Assumptions Register" })).toBeTruthy();
+    const status = within(reg).getByText("3 not accepted block submit");
+    expect(status.getAttribute("data-tone")).toBe("blocker");
+    expect(status.querySelector("svg")).toBeTruthy();
     expect(within(reg).getByRole("button", { name: "Accept all (3)" })).toBeTruthy();
     const conditions = within(reg).getByRole("region", { name: /Conditions/ });
     const contingencies = within(reg).getByRole("region", {
@@ -207,22 +218,28 @@ describe("the Assumptions Register", () => {
     expect(within(conditions).getAllByRole("listitem")).toHaveLength(2);
     expect(within(contingencies).getAllByRole("listitem")).toHaveLength(2);
     expect(within(contingencies).getByRole("heading").textContent).toBe("Contingencies(2)20.0 h");
+    expect(within(row(1)).getByText("Condition ·")).toBeTruthy();
+    expect(within(row(1)).getByText("from Gap: [GAP 1]")).toBeTruthy();
 
     // An accepted row names who accepted it; it is no blocker.
     expect(row(1).hasAttribute("data-blocker")).toBe(false);
-    expect(within(row(1)).getByText("Accepted by [NAME], 5 Oct 2026")).toBeTruthy();
+    const accepted = within(row(1)).getByText("Accepted by [NAME] · 5 Oct 2026");
+    expect(accepted.parentElement?.className).toContain("text-resolved");
+    expect(accepted.parentElement?.querySelector("svg")).toBeTruthy();
     expect(within(row(1)).queryByRole("button", { name: /^Accept/ })).toBeNull();
     // An unaccepted row is a blocker row: tint, bar and a label, with Accept.
     expect(row(2).hasAttribute("data-blocker")).toBe(true);
     expect(row(2).className).toContain("bg-blocker-tint");
     expect(row(2).className).toContain("shadow-[inset_2px_0_0_var(--blocker)]");
-    expect(within(row(2)).getByText("Not accepted")).toBeTruthy();
+    const notAccepted = within(row(2)).getByText("Not accepted");
+    expect(notAccepted.parentElement?.className).toContain("text-blocker");
+    expect(notAccepted.parentElement?.querySelector("svg")).toBeTruthy();
     expect(within(row(2)).getByRole("button", { name: "Accept: [WORDING 2]" })).toBeTruthy();
     expect(within(row(2)).getByText("8.0 h")).toBeTruthy();
     expect(within(row(2)).getByText("Line: [LINE]")).toBeTruthy();
     expect(within(row(4)).queryByText(/^Line:/)).toBeNull();
     expect(within(row(3)).queryByText(/ h$/)).toBeNull();
-    expect(within(row(3)).getByRole("button", { name: "Gap: [GAP 3]" })).toBeTruthy();
+    expect(within(row(3)).getByRole("button", { name: "from Gap: [GAP 3]" })).toBeTruthy();
 
     // The grid prices the Contingencies: the line's and the unallocated row.
     const grid = screen.getByRole("table");
@@ -230,9 +247,7 @@ describe("the Assumptions Register", () => {
       name: "Unallocated contingency",
     });
     expect(unallocated.closest("tr")?.textContent).toContain("12.0");
-    expect(within(grid).getByRole("rowheader", { name: "Total" }).closest("tr")?.textContent).toBe(
-      "Total10.020.030.0",
-    );
+    expect(totalCells(grid)).toEqual(["10.0", "20.0", "30.0"]);
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -250,7 +265,7 @@ describe("the Assumptions Register", () => {
     const { container } = renderSection(view(version(carried, { version: 2 }, 0)));
 
     expect(within(row(1)).getByText("Carried from v1")).toBeTruthy();
-    expect(within(row(1)).getByText("Accepted by [NAME], 5 Oct 2026")).toBeTruthy();
+    expect(within(row(1)).getByText("Accepted by [NAME] · 5 Oct 2026")).toBeTruthy();
     expect(row(1).hasAttribute("data-blocker")).toBe(false);
     expect(within(row(2)).getByText("Carried from v1")).toBeTruthy();
     expect(within(row(2)).getByText("Line: [LINE]")).toBeTruthy();
@@ -283,14 +298,11 @@ describe("the Assumptions Register", () => {
       rowVersion: 1,
     });
     await waitFor(() =>
-      expect(within(register()).getByText("4 · 2 accepted · 2 not accepted")).toBeTruthy(),
+      expect(within(register()).getByText("2 not accepted block submit")).toBeTruthy(),
     );
-    expect(within(row(2)).getByText("Accepted by [NAME], 5 Oct 2026")).toBeTruthy();
+    expect(within(row(2)).getByText("Accepted by [NAME] · 5 Oct 2026")).toBeTruthy();
     expect(within(register()).getByRole("button", { name: "Accept all (2)" })).toBeTruthy();
-    const total = within(screen.getByRole("table")).getByRole("rowheader", {
-      name: "Total",
-    });
-    expect(total.closest("tr")?.textContent).toBe("Total10.028.038.0");
+    expect(totalCells(screen.getByRole("table"))).toEqual(["10.0", "28.0", "38.0"]);
   });
 
   it("Accept all accepts the rest and hides itself once none is left", async () => {
@@ -312,8 +324,9 @@ describe("the Assumptions Register", () => {
     await user.click(within(register()).getByRole("button", { name: "Accept all (3)" }));
 
     expect(acceptAllAssumptions).toHaveBeenCalledWith(OPP_ID);
-    await waitFor(() =>
-      expect(within(register()).getByText("4 · 4 accepted · 0 not accepted")).toBeTruthy(),
+    await waitFor(() => expect(within(register()).getByText("All accepted")).toBeTruthy());
+    expect(within(register()).getByText("All accepted").getAttribute("data-tone")).toBe(
+      "resolved",
     );
     expect(within(register()).queryByRole("button", { name: /Accept all/ })).toBeNull();
     expect(register().querySelectorAll("[data-blocker]")).toHaveLength(0);
@@ -353,7 +366,7 @@ describe("the Assumptions Register", () => {
 
   it("is read-only for those who may not accept (sales representatives)", () => {
     renderSection(view(version(FOUR), false));
-    expect(within(register()).getByText("4 · 1 accepted · 3 not accepted")).toBeTruthy();
+    expect(within(register()).getByText("3 not accepted block submit")).toBeTruthy();
     expect(within(register()).queryByRole("button", { name: /Accept/ })).toBeNull();
     expect(within(row(2)).getByText("Not accepted")).toBeTruthy();
   });
@@ -362,14 +375,14 @@ describe("the Assumptions Register", () => {
     const user = userEvent.setup();
     renderSection(view(version(FOUR)));
 
-    await user.click(within(row(2)).getByRole("button", { name: "Gap: [GAP 2]" }));
+    await user.click(within(row(2)).getByRole("button", { name: "from Gap: [GAP 2]" }));
 
     const pane = screen.getByRole("complementary", { name: "Details" });
     expect(within(pane).getByRole("heading", { name: "[GAP 2]" })).toBeTruthy();
     expect(within(pane).getByText("[WHY 2]")).toBeTruthy();
     expect(within(pane).getByText("Gap · Integration details")).toBeTruthy();
     expect(
-      within(row(2)).getByRole("button", { name: "Gap: [GAP 2]" }).getAttribute("aria-pressed"),
+      within(row(2)).getByRole("button", { name: "from Gap: [GAP 2]" }).getAttribute("aria-pressed"),
     ).toBe("true");
   });
 
@@ -398,7 +411,7 @@ describe("the Assumptions Register", () => {
       view(version([], { proposal_status: "running" }, 0)),
     );
     expect(within(register()).getByText("Proposing Assumptions")).toBeTruthy();
-    expect(within(register()).getByText("0 · 0 accepted · 0 not accepted")).toBeTruthy();
+    expect(within(register()).queryByText(/not accepted block submit|All accepted/)).toBeNull();
     expect(screen.queryByRole("rowheader", { name: "Unallocated contingency" })).toBeNull();
     unmount2();
 
