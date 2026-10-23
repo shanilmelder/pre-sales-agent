@@ -55,7 +55,7 @@ function renderShell({
   singleKeyShortcuts = true,
   firstRun = false,
   density = "comfortable" as "comfortable" | "compact",
-  children = <PlaceholderPage title="Inbox" message="Nothing waiting for you." />,
+  children = <PlaceholderPage title="Inbox" subtitle="Updates." message="Nothing waiting for you." />,
 }: {
   roles?: Role[];
   singleKeyShortcuts?: boolean;
@@ -777,7 +777,7 @@ describe("state lives in the layout providers", () => {
     const { rerender } = render(
       <ShellProviders singleKeyShortcuts>
         <AppShell key="inbox" me={me(["pm_reviewer"])}>
-          <PlaceholderPage title="Inbox" />
+          <PlaceholderPage title="Inbox" subtitle="Updates." />
         </AppShell>
       </ShellProviders>,
     );
@@ -787,7 +787,7 @@ describe("state lives in the layout providers", () => {
     rerender(
       <ShellProviders singleKeyShortcuts>
         <AppShell key="reports" me={me(["pm_reviewer"])}>
-          <PlaceholderPage title="Reports" />
+          <PlaceholderPage title="Reports" subtitle="Reports." />
         </AppShell>
       </ShellProviders>,
     );

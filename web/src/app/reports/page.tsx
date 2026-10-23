@@ -12,7 +12,7 @@ export default async function ReportsPage() {
 
   return (
     <AppShell me={result.me}>
-      <PlaceholderPage title="Reports" />
+      <PlaceholderPage title="Reports" subtitle="Pipeline and assessment reports." />
     </AppShell>
   );
 }

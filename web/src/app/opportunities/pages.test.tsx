@@ -200,6 +200,11 @@ const LISTS = [
   ["/opportunities", OpportunitiesPage, "All Opportunities", "all"],
 ] as const;
 
+const SUBTITLES = {
+  mine: "The Opportunities you own or collaborate on.",
+  all: "Every Opportunity you can see, with status, owner and estimate.",
+} as const;
+
 describe.each(LISTS)("%s", (_path, Page, title, scope) => {
   it("lists Opportunities in the shell; New Opportunity for presales engineers", async () => {
     signedIn(["presales_engineer"]);
@@ -217,11 +222,22 @@ describe.each(LISTS)("%s", (_path, Page, title, scope) => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("hides New Opportunity from other roles", async () => {
+  it("hides New Opportunity from other roles but keeps the subtitle", async () => {
     signedIn(["head_of_delivery"]);
     listed([SUMMARY]);
     renderPage(await Page({ searchParams: params() }));
     expect(screen.queryByRole("link", { name: "New Opportunity" })).toBeNull();
+    expect(screen.getByText(SUBTITLES[scope])).toBeTruthy();
+  });
+
+  it("shows a subtitle and the New Opportunity action with its shortcut title", async () => {
+    signedIn(["presales_engineer"]);
+    listed([SUMMARY]);
+    renderPage(await Page({ searchParams: params() }));
+    expect(screen.getByText(SUBTITLES[scope]).className).toContain("text-muted-foreground");
+    expect(screen.getByRole("link", { name: "New Opportunity" }).getAttribute("title")).toBe(
+      "New Opportunity (C)",
+    );
   });
 
   it("empty: the empty-state card after the skeleton, with views", async () => {
@@ -394,6 +410,8 @@ describe("/opportunities/new", () => {
     const { container } = renderPage(await NewOpportunityPage());
     expect(screen.getByRole("heading", { level: 1, name: "New Opportunity" })).toBeTruthy();
     expect(screen.getByLabelText("Customer name")).toBeTruthy();
+    expect(screen.getByText(/Import a file or enter/)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "New Opportunity" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 

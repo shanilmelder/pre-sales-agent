@@ -1,6 +1,7 @@
 "use client";
 
 import { FileUpIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -21,6 +22,10 @@ import {
   type ImportFileResult,
 } from "@/app/opportunities/actions";
 import { useAnnounce } from "@/components/shell/live-region";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import {
   applySuggestions,
   clearSuggestions,
@@ -108,12 +113,6 @@ export function validate(input: CreateInput, today: string): Errors {
   }
   return errors;
 }
-
-const inputClass =
-  "h-8 w-full rounded-md border border-input bg-transparent px-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary aria-invalid:border-destructive";
-
-const buttonClass =
-  "h-7 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
 
 function Field({
   id,
@@ -430,158 +429,156 @@ export function CreateOpportunityForm() {
     importId !== undefined || uploading || Object.keys(fromFile).length > 0;
 
   return (
-    <form
-      noValidate
-      onSubmit={onSubmit}
-      aria-busy={pending}
-      className="flex max-w-xl flex-col gap-4 p-gutter"
-    >
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
-          <button
-            ref={importButton}
-            type="button"
-            disabled={busy}
-            onClick={() => fileInput.current?.click()}
-            aria-describedby={importStatusId}
-            className={`${buttonClass} inline-flex items-center gap-1`}
+    <form noValidate onSubmit={onSubmit} aria-busy={pending} className="max-w-xl p-gutter pt-0">
+      <Card>
+        <CardContent className="flex flex-col gap-4 pt-5">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <Button
+                ref={importButton}
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => fileInput.current?.click()}
+                aria-describedby={importStatusId}
+              >
+                <FileUpIcon aria-hidden />
+                Import from file
+              </Button>
+              {showClear ? (
+                <Button type="button" variant="outline" size="sm" onClick={clearImport}>
+                  Clear import
+                </Button>
+              ) : null}
+            </div>
+            <input
+              ref={fileInput}
+              type="file"
+              accept={IMPORT_ACCEPTED_FILES}
+              hidden
+              tabIndex={-1}
+              data-testid="import-file-input"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void startImport(file);
+              }}
+            />
+            <p
+              id={importStatusId}
+              className={
+                imported.kind === "rejected" || imported.kind === "failed" || imported.kind === "gone"
+                  ? "text-meta text-destructive"
+                  : "text-meta text-muted-foreground"
+              }
+            >
+              {importStatus(imported)}
+            </p>
+          </div>
+          <Field
+            id={ids.customer_name}
+            label="Customer name"
+            error={errors.customer_name}
+            fromFile={fromFile.customer_name}
           >
-            <FileUpIcon aria-hidden className="size-3.5" />
-            Import from file
-          </button>
-          {showClear ? (
-            <button type="button" onClick={clearImport} className={buttonClass}>
-              Clear import
-            </button>
-          ) : null}
-        </div>
-        <input
-          ref={fileInput}
-          type="file"
-          accept={IMPORT_ACCEPTED_FILES}
-          hidden
-          tabIndex={-1}
-          data-testid="import-file-input"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) void startImport(file);
-          }}
-        />
-        <p
-          id={importStatusId}
-          className={
-            imported.kind === "rejected" || imported.kind === "failed" || imported.kind === "gone"
-              ? "text-meta text-destructive"
-              : "text-meta text-muted-foreground"
-          }
-        >
-          {importStatus(imported)}
-        </p>
-      </div>
-      <Field
-        id={ids.customer_name}
-        label="Customer name"
-        error={errors.customer_name}
-        fromFile={fromFile.customer_name}
-      >
-        <input
-          id={ids.customer_name}
-          name="customer_name"
-          required
-          autoFocus
-          autoComplete="off"
-          value={values.customer_name}
-          onChange={(event) => change("customer_name", event.target.value)}
-          aria-invalid={errors.customer_name ? true : undefined}
-          aria-describedby={describedBy("customer_name")}
-          className={inputClass}
-        />
-      </Field>
-      <Field
-        id={ids.title}
-        label="Title (optional)"
-        hint="Leave empty to use the customer name."
-        error={errors.title}
-        fromFile={fromFile.title}
-      >
-        <input
-          id={ids.title}
-          name="title"
-          autoComplete="off"
-          value={values.title}
-          onChange={(event) => change("title", event.target.value)}
-          aria-invalid={errors.title ? true : undefined}
-          aria-describedby={describedBy("title", true)}
-          className={inputClass}
-        />
-      </Field>
-      <Field
-        id={ids.products}
-        label="Products in scope"
-        hint={`One per line, up to ${LIMITS.products}.`}
-        error={errors.products}
-        fromFile={fromFile.products}
-      >
-        <textarea
-          id={ids.products}
-          name="products"
-          required
-          rows={4}
-          value={values.products}
-          onChange={(event) => change("products", event.target.value)}
-          aria-invalid={errors.products ? true : undefined}
-          aria-describedby={describedBy("products", true)}
-          className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary aria-invalid:border-destructive"
-        />
-      </Field>
-      <Field
-        id={ids.industry}
-        label="Industry"
-        error={errors.industry}
-        fromFile={fromFile.industry}
-      >
-        <input
-          id={ids.industry}
-          name="industry"
-          required
-          autoComplete="off"
-          value={values.industry}
-          onChange={(event) => change("industry", event.target.value)}
-          aria-invalid={errors.industry ? true : undefined}
-          aria-describedby={describedBy("industry")}
-          className={inputClass}
-        />
-      </Field>
-      <Field
-        id={ids.target_proposal_date}
-        label="Target proposal date"
-        error={errors.target_proposal_date}
-        fromFile={fromFile.target_proposal_date}
-      >
-        <input
-          id={ids.target_proposal_date}
-          name="target_proposal_date"
-          type="date"
-          required
-          min={today}
-          value={values.target_proposal_date}
-          onChange={(event) => change("target_proposal_date", event.target.value)}
-          aria-invalid={errors.target_proposal_date ? true : undefined}
-          aria-describedby={describedBy("target_proposal_date")}
-          className={`${inputClass} w-48`}
-        />
-      </Field>
-      {formError ? <p className="text-meta text-destructive">{formError}</p> : null}
-      <div>
-        <button
-          type="submit"
-          aria-disabled={pending || uploading || undefined}
-          className="h-8 rounded-md bg-primary px-3 text-label text-primary-foreground outline-none hover:bg-primary/80 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-        >
-          {pending ? "Creating…" : "Create Opportunity"}
-        </button>
-      </div>
+            <Input
+              id={ids.customer_name}
+              name="customer_name"
+              required
+              autoFocus
+              autoComplete="off"
+              value={values.customer_name}
+              onChange={(event) => change("customer_name", event.target.value)}
+              aria-invalid={errors.customer_name ? true : undefined}
+              aria-describedby={describedBy("customer_name")}
+            />
+          </Field>
+          <Field
+            id={ids.title}
+            label="Title (optional)"
+            hint="Leave empty to use the customer name."
+            error={errors.title}
+            fromFile={fromFile.title}
+          >
+            <Input
+              id={ids.title}
+              name="title"
+              autoComplete="off"
+              value={values.title}
+              onChange={(event) => change("title", event.target.value)}
+              aria-invalid={errors.title ? true : undefined}
+              aria-describedby={describedBy("title", true)}
+            />
+          </Field>
+          <Field
+            id={ids.products}
+            label="Products in scope"
+            hint={`One per line, up to ${LIMITS.products}.`}
+            error={errors.products}
+            fromFile={fromFile.products}
+          >
+            <Textarea
+              id={ids.products}
+              name="products"
+              required
+              rows={4}
+              value={values.products}
+              onChange={(event) => change("products", event.target.value)}
+              aria-describedby={describedBy("products", true)}
+              aria-invalid={errors.products ? true : undefined}
+            />
+          </Field>
+          <Field
+            id={ids.industry}
+            label="Industry"
+            error={errors.industry}
+            fromFile={fromFile.industry}
+          >
+            <Input
+              id={ids.industry}
+              name="industry"
+              required
+              autoComplete="off"
+              value={values.industry}
+              onChange={(event) => change("industry", event.target.value)}
+              aria-invalid={errors.industry ? true : undefined}
+              aria-describedby={describedBy("industry")}
+            />
+          </Field>
+          <Field
+            id={ids.target_proposal_date}
+            label="Target proposal date"
+            error={errors.target_proposal_date}
+            fromFile={fromFile.target_proposal_date}
+          >
+            <Input
+              id={ids.target_proposal_date}
+              name="target_proposal_date"
+              type="date"
+              required
+              min={today}
+              value={values.target_proposal_date}
+              onChange={(event) => change("target_proposal_date", event.target.value)}
+              aria-invalid={errors.target_proposal_date ? true : undefined}
+              aria-describedby={describedBy("target_proposal_date")}
+              className="w-48"
+            />
+          </Field>
+          {formError ? <p className="text-meta text-destructive">{formError}</p> : null}
+        </CardContent>
+        <CardFooter className="gap-2">
+          <Button type="submit" aria-disabled={pending || uploading || undefined}>
+            {pending ? "Creating…" : "Create Opportunity"}
+          </Button>
+          <Link
+            href="/opportunities"
+            className={`${buttonVariants({ variant: "outline" })} text-control`}
+          >
+            Cancel
+          </Link>
+        </CardFooter>
+      </Card>
     </form>
   );
 }

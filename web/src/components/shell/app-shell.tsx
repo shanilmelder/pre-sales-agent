@@ -7,6 +7,7 @@ import { CheatSheet } from "@/components/shell/cheat-sheet";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { KeyboardShortcuts } from "@/components/shell/keyboard-shortcuts";
 import { OfflineStrip } from "@/components/shell/offline-strip";
+import { PageHeader } from "@/components/shell/page-header";
 import { ReadOnlyNotice } from "@/components/shell/read-only-notice";
 import { ShortcutHint } from "@/components/shell/shortcut-hint";
 import { RightPane } from "@/components/shell/right-pane";
@@ -71,15 +72,17 @@ export function AppShell({ me, children }: { me: Me; children: ReactNode }) {
 /** A page that isn't built yet: its title and "Not available yet." (or other text). */
 export function PlaceholderPage({
   title,
+  subtitle,
   message = "Not available yet.",
 }: {
   title: string;
+  subtitle: string;
   message?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1 p-gutter">
-      <h1 className="text-title">{title}</h1>
-      <p className="text-muted-foreground">{message}</p>
+    <div className="flex flex-col">
+      <PageHeader title={title} subtitle={subtitle} />
+      <p className="px-gutter pb-gutter text-muted-foreground">{message}</p>
     </div>
   );
 }

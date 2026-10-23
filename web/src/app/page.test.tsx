@@ -176,3 +176,18 @@ describe("unknown page", () => {
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 });
+
+describe.each([
+  ["Inbox", InboxPage, "Updates and requests that need your attention."],
+  ["Reports", ReportsPage, "Pipeline and assessment reports."],
+  ["Settings", SettingsPage, "Theme, density and keyboard shortcuts."],
+] as const)("%s page header", (title, Page, subtitle) => {
+  it("shows a one-line subtitle and no primary action", async () => {
+    signedIn(["platform_administrator"]);
+    renderPage(await Page());
+    const heading = screen.getByRole("heading", { level: 1, name: title });
+    expect(screen.getByText(subtitle)).toBeTruthy();
+    const header = heading.parentElement!.parentElement!;
+    expect(header.querySelector("a, button")).toBeNull();
+  });
+});

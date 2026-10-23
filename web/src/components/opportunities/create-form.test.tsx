@@ -229,6 +229,22 @@ describe("CreateOpportunityForm", () => {
     ).toBeTruthy();
   });
 
+  it("puts import first inside a card, with Create Opportunity and a Cancel link", () => {
+    renderForm();
+    const card = document.querySelector('[data-slot="card"]')!;
+    const importButton = screen.getByRole("button", { name: "Import from file" });
+    expect(card.contains(importButton)).toBe(true);
+    expect(
+      importButton.compareDocumentPosition(field("Customer name")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(card.contains(submit())).toBe(true);
+    const cancel = screen.getByRole("link", { name: "Cancel" });
+    expect(cancel.getAttribute("href")).toBe("/opportunities");
+    expect(card.contains(cancel)).toBe(true);
+    expect(createOpportunity).not.toHaveBeenCalled();
+  });
+
   it("has no WCAG 2.1 AA violations, empty or with errors", async () => {
     const { user, container } = renderForm();
     expect(await axeViolations(container)).toEqual([]);

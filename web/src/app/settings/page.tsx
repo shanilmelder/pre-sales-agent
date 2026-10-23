@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { SettingsForm } from "@/components/settings-form";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageHeader } from "@/components/shell/page-header";
 import { getMe } from "@/lib/api/server";
 import { getPreferences } from "@/lib/preferences";
 
@@ -15,9 +16,11 @@ export default async function SettingsPage() {
   const preferences = await getPreferences();
   return (
     <AppShell me={result.me}>
-      <div className="flex w-full flex-col gap-4 p-gutter">
-        <h1 className="text-title">Settings</h1>
-        <SettingsForm initial={preferences} />
+      <div className="flex w-full flex-col">
+        <PageHeader title="Settings" subtitle="Theme, density and keyboard shortcuts." />
+        <div className="px-gutter pb-gutter">
+          <SettingsForm initial={preferences} />
+        </div>
       </div>
     </AppShell>
   );

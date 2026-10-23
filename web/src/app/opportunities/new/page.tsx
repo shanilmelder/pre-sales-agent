@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { CreateOpportunityForm } from "@/components/opportunities/create-form";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageHeader } from "@/components/shell/page-header";
 import { getMe } from "@/lib/api/server";
 import { canCreateOpportunity } from "@/lib/shortcuts";
 
@@ -16,9 +17,10 @@ export default async function NewOpportunityPage() {
   return (
     <AppShell me={result.me}>
       <div className="flex flex-col">
-        <div className="p-gutter pb-0">
-          <h1 className="text-title">New Opportunity</h1>
-        </div>
+        <PageHeader
+          title="New Opportunity"
+          subtitle="Import a file or enter the customer details to start."
+        />
         {canCreateOpportunity(result.me.permissions) ? (
           <CreateOpportunityForm />
         ) : (

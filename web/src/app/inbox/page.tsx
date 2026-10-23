@@ -12,7 +12,11 @@ export default async function InboxPage() {
 
   return (
     <AppShell me={result.me}>
-      <PlaceholderPage title="Inbox" message="Nothing waiting for you." />
+      <PlaceholderPage
+        title="Inbox"
+        subtitle="Updates and requests that need your attention."
+        message="Nothing waiting for you."
+      />
     </AppShell>
   );
 }

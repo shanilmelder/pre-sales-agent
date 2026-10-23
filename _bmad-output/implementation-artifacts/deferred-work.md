@@ -213,3 +213,11 @@
 - source_spec: none
   summary: Story 17.4b: Opportunity header refit (breadcrumb "All Opportunities / title", owner and collaborator chips, proposal date with a day countdown); Submit and "Resolve N blockers" wait for the blocker data from Story 8.6.
   evidence: Story 17.4 has two independently shippable goals (list and header); split at the user's choice. Backend ticket: the API has no blockers count, submit state or estimate summary.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-5a-page-header-and-new-opportunity.md`
+  summary: Story 17.5b: Knowledge and Admin page headers (Knowledge **Add source**; Admin no action until Story 1.10), segmented-control sub-tabs, and padded rows, tint-filled pills and card surfaces on Knowledge Sources and Admin Users and roles, Catalogue and Evals.
+  evidence: Story 17.5 spans seven pages plus sub-tab refits; split at the user's choice. **Add source** needs the Sources tab's create state, so Knowledge moves with its sub-tab refit.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-5a-page-header-and-new-opportunity.md`
+  summary: Inbox **Mark all read**, two-pane list and detail, unread dots, kind pills and skeleton rows wait for Story 9.2; Reports **Export** waits for the reports story.
+  evidence: Both pages are placeholders with no data or API; the user chose header only, no action.
