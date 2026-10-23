@@ -105,7 +105,7 @@ forbidden_modules = [
 ignore_imports = ["app.main_api -> app.platform.model_gateway.gateway"]
 
 [[tool.importlinter.contracts]]
-name = "opportunities uses identity, intake, assessments, conflicts and workflows only through their public APIs (AD-2)"
+name = "opportunities uses identity, intake, gaps, estimates, assessments, conflicts and workflows only through their public APIs (AD-2)"
 type = "forbidden"
 source_modules = ["app.modules.opportunities"]
 forbidden_modules = [
@@ -114,6 +114,12 @@ forbidden_modules = [
     "app.modules.intake.domain",
     "app.modules.intake.adapters",
     "app.modules.intake.api",
+    "app.modules.gaps.domain",
+    "app.modules.gaps.adapters",
+    "app.modules.gaps.api",
+    "app.modules.estimates.domain",
+    "app.modules.estimates.adapters",
+    "app.modules.estimates.api",
     "app.modules.assessments.domain",
     "app.modules.assessments.adapters",
     "app.modules.assessments.api",

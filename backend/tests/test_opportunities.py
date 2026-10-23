@@ -615,7 +615,11 @@ def test_list_rows_and_pagination(client: TestClient, sync_engine: Engine) -> No
         "owner",
         "target_proposal_date",
         "created_at",
+        "open_gaps",
+        "open_conflicts",
+        "estimate",
     }
+    assert (row["open_gaps"], row["open_conflicts"], row["estimate"]) == (0, 0, None)
     assert row["status"] == "intake"
     assert row["owner"] == {"id": str(owner_id), "name": "Lister Person"}
     assert client.get(BASE, headers=headers).json()["page_size"] == 50
@@ -628,6 +632,210 @@ def test_list_rows_and_pagination(client: TestClient, sync_engine: Engine) -> No
         {"scope": "everything"},
     ):
         assert client.get(BASE, headers=headers, params=params).status_code == 422, params
+
+
+# --- list row counts and Estimate (Opportunity list redesign) ------------------------------
+
+
+def _gap(engine: Engine, opportunity_id: str, status: str = "open") -> None:
+    dismissed = status == "dismissed"
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO gaps_gaps (id, opportunity_id, title, category, trigger, "
+                "why_it_matters, impact, impact_basis, origin, status, row_version, "
+                "dismiss_reason_kind, dismissed_by, dismissed_at) VALUES (:id, :o, 'A gap', "
+                "'other', CAST('{}' AS jsonb), 'Why', 'low', 'Basis', 'detected', :s, 1, "
+                ":kind, :by, :at)"
+            ),
+            {
+                "id": uuid4(),
+                "o": opportunity_id,
+                "s": status,
+                "kind": "not_relevant" if dismissed else None,
+                "by": uuid4() if dismissed else None,
+                "at": datetime.now(UTC) if dismissed else None,
+            },
+        )
+
+
+def _conflict(engine: Engine, opportunity_id: str, status: str = "open") -> None:
+    escalated = status == "escalated"
+    resolved = status == "resolved"
+    now = datetime.now(UTC)
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO conflicts_conflicts (id, opportunity_id, run_id, type, severity, "
+                "status, detected_by, fingerprint, summary, detection_pass, resolved_at, "
+                "resolution_reason, escalated_to, escalated_by, escalated_at, "
+                "escalation_reason) VALUES (:id, :o, :run, 'effort', 'high', :s, 'rule', "
+                ":fp, 'A conflict', 1, :rat, :reason, :to, :by, :eat, :ereason)"
+            ),
+            {
+                "id": uuid4(),
+                "o": opportunity_id,
+                "run": uuid4(),
+                "s": status,
+                "fp": str(uuid4()),
+                "rat": now if resolved else None,
+                "reason": "Resolved" if resolved else None,
+                "to": uuid4() if escalated else None,
+                "by": uuid4() if escalated else None,
+                "eat": now if escalated else None,
+                "ereason": "Needs a reviewer" if escalated else None,
+            },
+        )
+
+
+def _estimate_version(
+    engine: Engine,
+    opportunity_id: str,
+    version: int,
+    *,
+    status: str = "draft",
+    lines: tuple[float, ...] = (),
+    contingencies: tuple[tuple[float, int | None], ...] = (),
+) -> None:
+    """An Estimate Version with lines of these hours, and Contingencies of these hours
+    linked to the line at that index (or to none)."""
+    version_id = uuid4()
+    line_ids = [uuid4() for _ in lines]
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO estimates_estimate_versions (id, opportunity_id, version, status, "
+                "template_version, uncovered_count, dropped_count, row_version) "
+                "VALUES (:id, :o, :v, :s, 'v1', 0, 0, 1)"
+            ),
+            {"id": version_id, "o": opportunity_id, "v": version, "s": status},
+        )
+        for position, (line_id, hours) in enumerate(zip(line_ids, lines, strict=True), 1):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO estimates_estimate_lines (id, version_id, position, section, "
+                    "title, effort_hours, role_mix, basis) VALUES (:id, :v, :p, 'functional', "
+                    "'A line', :h, CAST(:mix AS jsonb), 'Basis')"
+                ),
+                {
+                    "id": line_id,
+                    "v": version_id,
+                    "p": position,
+                    "h": hours,
+                    "mix": '{"engineer": 70, "project_manager": 10, "qa": 20}',
+                },
+            )
+        for position, (hours, index) in enumerate(contingencies, 1):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO estimates_assumptions (id, version_id, position, kind, "
+                    "wording, amount_hours, line_id, origin_ref, row_version) VALUES (:id, "
+                    ":v, :p, 'contingency', 'A contingency', :h, :line, "
+                    "CAST(:ref AS jsonb), 1)"
+                ),
+                {
+                    "id": uuid4(),
+                    "v": version_id,
+                    "p": position,
+                    "h": hours,
+                    "line": None if index is None else line_ids[index],
+                    "ref": f'{{"kind": "gap", "id": "{uuid4()}", "row_version": 1}}',
+                },
+            )
+
+
+def _row(client: TestClient, headers: dict[str, str], opportunity_id: str) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for scope in ("mine", "all"):
+        items = client.get(BASE, headers=headers, params={"scope": scope}).json()["items"]
+        rows.extend(i for i in items if i["id"] == opportunity_id)
+    mine, everything = rows  # both lists return the row, and the same one
+    assert mine == everything
+    return mine
+
+
+def test_list_row_counts_open_gaps_and_blocking_conflicts(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    headers, _ = _user(client, sync_engine, "Counter Person", PSE)
+    opp = _create(client, headers)
+    other = _create(client, headers)
+    for status in ("open", "open", "open", "dismissed"):
+        _gap(sync_engine, opp["id"], status)
+    for status in ("open", "escalated", "resolved"):
+        _conflict(sync_engine, opp["id"], status)
+    _gap(sync_engine, other["id"])
+
+    row = _row(client, headers, opp["id"])
+
+    assert (row["open_gaps"], row["open_conflicts"]) == (3, 2)
+    assert (_row(client, headers, other["id"])["open_gaps"]) == 1
+
+
+def test_list_row_estimate_is_the_draft_total_with_contingency(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    headers, _ = _user(client, sync_engine, "Estimate Person", PSE)
+    opp = _create(client, headers)
+    _estimate_version(sync_engine, opp["id"], 2, status="superseded", lines=(999.0,))
+    # Lines total 270 h; 5 h of Contingency on a line plus 3 h unallocated.
+    _estimate_version(
+        sync_engine, opp["id"], 3, lines=(200.0, 70.0), contingencies=((5.0, 0), (3.0, None))
+    )
+
+    row = _row(client, headers, opp["id"])
+
+    assert row["estimate"] == {"version": 3, "total_hours": 278.0}
+    estimate = client.get(f"{BASE}/{opp['id']}/estimate", headers=headers)
+    assert estimate.status_code == 200, estimate.text
+    assert estimate.json()["version"]["totals"]["total_hours"] == 278.0
+
+
+def test_list_row_estimate_is_null_without_a_draft(client: TestClient, sync_engine: Engine) -> None:
+    headers, _ = _user(client, sync_engine, "No Draft Person", PSE)
+    opp = _create(client, headers)
+    _estimate_version(sync_engine, opp["id"], 1, status="superseded", lines=(10.0,))
+
+    assert _row(client, headers, opp["id"])["estimate"] is None
+
+
+def _list_queries(client: TestClient, headers: dict[str, str]) -> tuple[int, int]:
+    engine = client.app.state.engine.sync_engine  # type: ignore[attr-defined]
+    statements: list[str] = []
+
+    def count(*args: Any) -> None:
+        statements.append(args[2])
+
+    sa.event.listen(engine, "before_cursor_execute", count)
+    try:
+        body = client.get(BASE, headers=headers, params={"scope": "mine"}).json()
+    finally:
+        sa.event.remove(engine, "before_cursor_execute", count)
+    return len(body["items"]), len(statements)
+
+
+def test_list_rows_read_counts_and_estimates_in_batches(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    def arrange(headers: dict[str, str], n: int) -> None:
+        for _ in range(n):
+            opp = _create(client, headers)
+            _gap(sync_engine, opp["id"])
+            _conflict(sync_engine, opp["id"])
+            _estimate_version(sync_engine, opp["id"], 1, lines=(10.0,), contingencies=((1.0, 0),))
+
+    one, _ = _user(client, sync_engine, "One Row", PSE)
+    many, _ = _user(client, sync_engine, "Many Rows", PSE)
+    arrange(one, 1)
+    arrange(many, 25)
+    _list_queries(client, one)  # warm up (first-request work, if any)
+    _list_queries(client, many)
+
+    rows_one, queries_one = _list_queries(client, one)
+    rows_many, queries_many = _list_queries(client, many)
+
+    assert (rows_one, rows_many) == (1, 25)
+    assert queries_one == queries_many
 
 
 def test_empty_lists(client: TestClient, sync_engine: Engine) -> None:

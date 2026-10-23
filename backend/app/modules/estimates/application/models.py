@@ -222,6 +222,14 @@ class EstimateDraft(BaseModel):
     error_code: DraftErrorCode | None
 
 
+class CurrentEstimate(BaseModel):
+    """An Opportunity's current (draft) Estimate Version number and its total hours,
+    Contingency included, for the Opportunity list."""
+
+    version: int
+    total_hours: float
+
+
 class EstimateView(BaseModel):
     """The Opportunity's current (draft) Estimate Version, null before the first, and its
     latest draft run, null before the first. `can_start_draft`: whether the caller may start

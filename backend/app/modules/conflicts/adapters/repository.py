@@ -296,6 +296,24 @@ async def open_conflicts(
     return [_conflict(row) for row in rows.scalars()]
 
 
+async def counts_in(
+    uow: UnitOfWork, opportunity_ids: Sequence[UUID], statuses: Sequence[str]
+) -> dict[UUID, int]:
+    """How many Conflicts in these statuses each of these Opportunities has, in one query;
+    Opportunities with none are left out."""
+    if not opportunity_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(ConflictRow.opportunity_id, func.count())
+        .where(
+            ConflictRow.opportunity_id.in_(list(opportunity_ids)),
+            ConflictRow.status.in_(list(statuses)),
+        )
+        .group_by(ConflictRow.opportunity_id)
+    )
+    return {opportunity_id: int(count) for opportunity_id, count in rows.all()}
+
+
 async def resolve(uow: UnitOfWork, conflict_id: UUID, *, reason: str) -> bool:
     """The system marks an `open` or `escalated` Conflict `resolved` with the reason; True
     when it changed. An escalation's columns stay as they were."""

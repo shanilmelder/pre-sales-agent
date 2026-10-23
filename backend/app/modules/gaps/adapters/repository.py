@@ -431,6 +431,19 @@ async def open_gaps(uow: UnitOfWork, opportunity_id: UUID) -> list[GapRecord]:
     return await gaps_in(uow, opportunity_id, "open")
 
 
+async def open_counts(uow: UnitOfWork, opportunity_ids: list[UUID]) -> dict[UUID, int]:
+    """How many `open` Gaps each of these Opportunities has, in one query; Opportunities
+    with none are left out."""
+    if not opportunity_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(GapRow.opportunity_id, func.count())
+        .where(GapRow.opportunity_id.in_(opportunity_ids), GapRow.status == "open")
+        .group_by(GapRow.opportunity_id)
+    )
+    return {opportunity_id: int(count) for opportunity_id, count in rows.all()}
+
+
 async def gaps_by_id(
     uow: UnitOfWork, opportunity_id: UUID, gap_ids: list[UUID]
 ) -> dict[UUID, GapRecord]:

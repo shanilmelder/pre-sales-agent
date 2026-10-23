@@ -156,6 +156,9 @@ const SUMMARY: OpportunitySummary = {
   owner: { id: "00000000-0000-7000-8000-0000000000a1", name: "[OWNER]" },
   target_proposal_date: "2026-11-01",
   created_at: "2026-10-04T10:00:00Z",
+  open_gaps: 3,
+  open_conflicts: 2,
+  estimate: { version: 3, total_hours: 278 },
 };
 
 const OPPORTUNITY: Opportunity = {
@@ -215,13 +218,14 @@ describe.each(LISTS)("%s", (_path, view, scope) => {
     expect(screen.getByRole("link", { name: "New Opportunity" }).getAttribute("href")).toBe(
       "/opportunities/new",
     );
-    // The page frame owns the 32px inset: the strips inside it add no outer gutter, and the
-    // table's first column pads like any other cell.
+    // The page frame owns the 32px inset: the strips inside it add no outer gutter; the
+    // list sits in its card, whose first column pads 20px at the edge.
     const views = screen.getByRole("navigation", { name: "Views" });
     expect(views.closest('[data-testid="page-content"]')).toBeTruthy();
     expect(views.className).not.toContain("gutter");
     const firstHeader = screen.getAllByRole("columnheader")[0]!;
-    expect(firstHeader.className).toContain("px-3");
+    expect(firstHeader.closest('[data-testid="opportunities-card"]')).toBeTruthy();
+    expect(firstHeader.className).toContain("pl-5");
     expect(firstHeader.className).not.toContain("gutter");
     // The header band: subtitle, then New Opportunity, then the pane toggle.
     const header = screen.getByTestId("page-header");
@@ -245,6 +249,34 @@ describe.each(LISTS)("%s", (_path, view, scope) => {
     listed([SUMMARY]);
     renderPage(await Page({ searchParams: params() }));
     expect(screen.queryByRole("link", { name: "New Opportunity" })).toBeNull();
+  });
+
+  it("rows show open items and the Estimate; Pagination sits below the card", async () => {
+    signedIn(["presales_engineer"]);
+    listed([SUMMARY], 120);
+    renderPage(await Page({ searchParams: params() }));
+    const link = await screen.findByRole("link", { name: "[TITLE]" });
+    const row = link.closest("tr")!;
+    expect(row.textContent).toContain("3 gaps · 2 conflicts");
+    expect(row.textContent).toContain("278.0 h");
+    expect(row.textContent).toContain("Draft v3");
+    const card = screen.getByTestId("opportunities-card");
+    const pagination = screen.getByRole("navigation", { name: "Pagination" });
+    expect(card.contains(pagination)).toBe(false);
+    const after = card.compareDocumentPosition(pagination);
+    expect(after & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("an unreachable platform says so inside the list card", async () => {
+    signedIn(["presales_engineer"]);
+    apiGet.mockResolvedValue({ data: undefined, response: new Response(null, { status: 503 }) });
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderPage(await Page({ searchParams: params() }));
+    quiet.mockRestore();
+    const text = screen.getByText(
+      "The platform is not reachable right now. Try again in a moment.",
+    );
+    expect(text.closest('[data-testid="opportunities-card"]')).toBeTruthy();
   });
 
   it("empty: the empty-state card after the skeleton, with views", async () => {
@@ -332,8 +364,13 @@ describe("All Opportunities filters", () => {
       },
     });
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/facets");
-    expect((screen.getByLabelText("Owner") as HTMLSelectElement).value).toBe(OWNER_ID);
-    expect((screen.getByLabelText("Product") as HTMLSelectElement).value).toBe("Pick station");
+    const filters = screen.getByRole("group", { name: "Filters" });
+    expect(within(filters).getByRole("button", { name: "Owner: [OWNER]" })).toBeTruthy();
+    expect(within(filters).getByRole("button", { name: "Product: Pick station" })).toBeTruthy();
+    expect(within(filters).getByRole("button", { name: "Proposal date: from 1 Nov" })).toBeTruthy();
+    // One toolbar row: the views, then the filter chips.
+    const views = screen.getByRole("navigation", { name: "Views" });
+    expect(filters.parentElement).toBe(views.parentElement);
     expect(screen.getByRole("link", { name: "Clear filters" }).getAttribute("href")).toBe(
       "/opportunities",
     );
@@ -352,8 +389,8 @@ describe("All Opportunities filters", () => {
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities", {
       params: { query: { scope: "all", page: 1, page_size: 50 } },
     });
-    expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe("");
-    expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Status" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Clear filters" })).toBeNull();
   });
 
   it("no matches: the filtered empty state with Clear filters, not the create one", async () => {

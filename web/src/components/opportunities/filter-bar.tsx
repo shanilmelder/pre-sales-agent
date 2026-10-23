@@ -1,8 +1,16 @@
 "use client";
 
+import { ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition, type ChangeEvent, type MouseEvent } from "react";
+import {
+  useId,
+  useState,
+  useTransition,
+  type ChangeEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import {
   filtersHref,
@@ -12,7 +20,16 @@ import {
   type FilterKey,
   type Filters,
 } from "@/app/opportunities/filters";
-import { STATUSES, type OpportunityFacets, type OpportunityStatus } from "@/lib/opportunities";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  formatDate,
+  formatShortDate,
+  STATUSES,
+  type OpportunityFacets,
+  type OpportunityStatus,
+  utcToday,
+} from "@/lib/opportunities";
+import { cn } from "@/lib/utils";
 
 /** The label for an owner from the URL whose name isn't among the facets (or the facets
  * couldn't be loaded): the id is still applied, but there is no name to show. */
@@ -35,10 +52,12 @@ function isCompleteDate(value: string): boolean {
   return isCalendarDate(value) && Number(value.slice(0, 4)) >= 1000;
 }
 
-/** The Opportunities list filters. Values come from the URL (`filters`) and every change
- * replaces the URL, on page 1, so filters survive reload and sharing without piling up
- * history. Owner and product choices come from the facets; a value from a shared URL that
- * isn't among them is still shown so the control never lies about what is applied. */
+/** The Opportunities list filters: a dashed chip per filter, each opening its labelled
+ * control(s) in a popover, then Clear filters once one is applied. Values come from the URL
+ * (`filters`) and every change replaces the URL, on page 1, so filters survive reload and
+ * sharing without piling up history. Owner and product choices come from the facets; a value
+ * from a shared URL that isn't among them is still shown so the control never lies about
+ * what is applied. */
 export function FilterBar({
   basePath,
   filters,
@@ -134,13 +153,20 @@ export function FilterBar({
     </label>
   );
 
+  const ownerName = values.owner && owners.find((owner) => owner.id === values.owner)?.name;
+  const clearable = hasFilters(values) || drafts.from !== "" || drafts.to !== "";
+
   return (
-    <div>
-      <div
-        role="group"
-        aria-label="Filters"
-        aria-busy={pending || undefined}
-        className="flex flex-wrap items-end gap-3"
+    <div
+      role="group"
+      aria-label="Filters"
+      aria-busy={pending || undefined}
+      className="flex flex-wrap items-center gap-2"
+    >
+      <FilterChip
+        label="Status"
+        closeOnChange
+        value={values.status && STATUSES[values.status]?.label}
       >
         <label className={labelClass} htmlFor={`${id}-status`}>
           Status
@@ -158,6 +184,8 @@ export function FilterBar({
             ))}
           </select>
         </label>
+      </FilterChip>
+      <FilterChip label="Owner" closeOnChange value={ownerName}>
         <label className={labelClass} htmlFor={`${id}-owner`}>
           Owner
           <select
@@ -174,6 +202,8 @@ export function FilterBar({
             ))}
           </select>
         </label>
+      </FilterChip>
+      <FilterChip label="Product" closeOnChange value={product || undefined}>
         <label className={labelClass} htmlFor={`${id}-product`}>
           Product
           <select
@@ -190,31 +220,76 @@ export function FilterBar({
             ))}
           </select>
         </label>
-        {dateInput("from", "Target date from")}
-        {dateInput("to", "Target date to")}
-        {hasFilters(values) || drafts.from || drafts.to ? (
-          <Link
-            href={basePath}
-            onClick={clear}
-            className="inline-flex h-8 items-center rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            Clear filters
-          </Link>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className="inline-flex h-8 items-center rounded-md border border-border px-2 text-label text-muted-foreground opacity-60"
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
-      {rangeError ? (
-        <p id={errorId} role="alert" className="pt-1 text-meta text-destructive">
-          {RANGE_ERROR}
-        </p>
+      </FilterChip>
+      <FilterChip label="Proposal date" value={dateRangeLabel(values.from, values.to)}>
+        <div className="flex gap-3">
+          {dateInput("from", "Target date from")}
+          {dateInput("to", "Target date to")}
+        </div>
+        {rangeError ? (
+          <p id={errorId} role="alert" className="pt-2 text-meta text-destructive">
+            {RANGE_ERROR}
+          </p>
+        ) : null}
+      </FilterChip>
+      {clearable ? (
+        <Link
+          href={basePath}
+          onClick={clear}
+          className="inline-flex items-center rounded-md px-2.5 py-[5px] text-text-secondary outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary text-[13px] leading-[1.4]"
+        >
+          Clear filters
+        </Link>
       ) : null}
     </div>
+  );
+}
+
+/** The chip's value for the applied date range: "1 Nov – 15 Nov", "from 1 Nov", "until
+ * 15 Nov", or nothing. */
+function dateRangeLabel(from?: string, to?: string): string | undefined {
+  // The year shows when the range spans years or leaves the current (UTC) one.
+  const year = utcToday().slice(0, 4);
+  const years = new Set([from, to].filter(Boolean).map((date) => date!.slice(0, 4)));
+  const withYear = years.size > 1 || !years.has(year);
+  const show = (date: string) => (withYear ? formatDate(date) : formatShortDate(date));
+  if (from && to) return `${show(from)} – ${show(to)}`;
+  if (from) return `from ${show(from)}`;
+  if (to) return `until ${show(to)}`;
+  return undefined;
+}
+
+/** A dashed chip that opens its control(s) in a popover. With a value applied it reads
+ * "Label: value" in the solid primary tint. */
+function FilterChip({
+  label,
+  value,
+  closeOnChange = false,
+  children,
+}: {
+  label: string;
+  value?: string;
+  /** Close once a control inside changes (a single pick completes the filter). */
+  closeOnChange?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        className={`${cn(
+          "inline-flex items-center gap-1 rounded-md border px-2.5 py-[5px] outline-none focus-visible:ring-2 focus-visible:ring-primary",
+          value
+            ? "border-solid border-primary-tint bg-primary-tint text-primary-text"
+            : "border-dashed border-border-strong bg-transparent text-text-secondary hover:text-foreground",
+        )} text-[13px] leading-[1.4]`}
+      >
+        {value ? `${label}: ${value}` : label}
+        <ChevronDownIcon className="size-3" strokeWidth={1.75} aria-hidden="true" />
+      </PopoverTrigger>
+      <PopoverContent aria-label={`${label} filter`}>
+        <div onChange={closeOnChange ? () => setOpen(false) : undefined}>{children}</div>
+      </PopoverContent>
+    </Popover>
   );
 }
