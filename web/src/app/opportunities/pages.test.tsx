@@ -2095,6 +2095,9 @@ describe("/opportunities/[id] workspace", () => {
     expect(screen.getByRole("tab", { name: "Conflicts" })).toBeTruthy();
     expect(screen.queryByTestId("tab-count-conflicts")).toBeNull();
     expect(
+      within(screen.getByRole("tabpanel")).getByRole("heading", { level: 2, name: "Conflicts" }),
+    ).toBeTruthy();
+    expect(
       within(screen.getByRole("tabpanel")).getByText(
         "The Conflicts could not be loaded. Try again in a moment.",
       ),
@@ -2161,8 +2164,13 @@ describe("/opportunities/[id] workspace", () => {
     const panel = screen.getByRole("tabpanel");
     const grid = within(panel).getByRole("grid", { name: "Open Conflicts" });
     expect(within(grid).getAllByRole("row").map((r) => r.textContent)).toEqual([
-      "ScopeMediumOpenR4Engineering: 24 h · PM: not sized",
+      "[SUMMARY]Scope · R4Open",
     ]);
+    // The first open Conflict's decision card, inline and read-only for a sales representative.
+    const card = within(panel).getByTestId("conflict-decision-card");
+    expect(within(card).getByRole("heading", { level: 3, name: "[SUMMARY]" })).toBeTruthy();
+    expect(within(card).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(panel).queryByRole("form")).toBeNull();
     expect(within(panel).queryByRole("textbox")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
@@ -2190,10 +2198,18 @@ describe("/opportunities/[id] workspace", () => {
       </ShellProviders>,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Engineering: 60 h/ }));
-    const form = await screen.findByRole("form", { name: "Resolve the Conflict" });
+    // The first open Conflict is selected on load; its decision card sits under the rows.
+    expect(
+      screen.getByRole("button", { name: /\[SUMMARY\]/ }).closest("[role=row]")?.getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
+    const form = await screen.findByRole("form", { name: "Decide the Conflict" });
     await user.click(within(form).getAllByRole("radio")[0]!);
-    await user.type(within(form).getByLabelText("Reason"), "Matches the interface list.");
+    await user.type(
+      within(form).getByLabelText("Reason (required)"),
+      "Matches the interface list.",
+    );
     await user.click(within(form).getByRole("button", { name: "Resolve" }));
     await waitFor(() => expect(resolveConflict).toHaveBeenCalled());
     expect(resolveConflict.mock.calls[0]![0]).toMatchObject({
