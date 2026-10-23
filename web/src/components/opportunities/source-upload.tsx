@@ -1,6 +1,6 @@
 "use client";
 
-import { UploadIcon } from "lucide-react";
+import { CircleAlertIcon, UploadIcon, XIcon } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -14,8 +14,17 @@ import {
 
 import { addSource, addTextSource, type AddSourceResult } from "@/app/opportunities/actions";
 import { useAnnounce } from "@/components/shell/live-region";
+import { Button } from "@/components/ui/button";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
-import { ACCEPTED_FILES, exceedsTransportLimit, TOO_LARGE, type Source } from "@/lib/sources";
+import {
+  ACCEPTED_FILES,
+  CHOOSE_FILES,
+  DROP_HINT,
+  DROP_TITLE,
+  exceedsTransportLimit,
+  TOO_LARGE,
+  type Source,
+} from "@/lib/sources";
 
 type RowState = "uploading" | "added" | "rejected";
 type Row = { key: number; name: string; state: RowState; message: string };
@@ -26,9 +35,8 @@ export const ADDED = "Added";
 export const PASTED_TEXT = "Pasted text";
 const NOT_A_COLLABORATOR = "Only the owner and collaborators can add Sources.";
 const UPLOAD_FAILED = "The upload failed. Try again.";
-
-const buttonClass =
-  "h-7 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent";
+export const UPLOAD_REJECTED = "Upload rejected";
+export const DISMISS = "Dismiss";
 
 function outcome(result: AddSourceResult): { state: RowState; message: string } {
   switch (result.kind) {
@@ -58,9 +66,10 @@ export type SourceUploadHandle = {
 };
 
 /** Drop files, choose them, or paste text to add them as Sources. Files and pastes go up one
- * at a time, in order; each gets a row that shows Uploading, then Added ("Added as version
- * N" when the bytes match an existing Source) or the API's reason ("Rejected: .exe files
- * aren't allowed"). The API decides what is accepted. */
+ * at a time, in order; each gets a row under the drop zone that shows Uploading, then Added
+ * ("Added as version N" when the bytes match an existing Source). A rejected one becomes a
+ * dismissible alert above the drop zone, newest first, with the API's reason ("Rejected:
+ * .exe files aren't allowed"). The API decides what is accepted. */
 export function SourceUpload({
   opportunityId,
   onAdded,
@@ -77,6 +86,7 @@ export function SourceUpload({
   const [pasteText, setPasteText] = useState("");
   const [pasteBusy, setPasteBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chooseButtonRef = useRef<HTMLButtonElement>(null);
   const pasteButtonRef = useRef<HTMLButtonElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pasteAreaRef = useRef<HTMLDivElement>(null);
@@ -116,7 +126,8 @@ export function SourceUpload({
 
   function settle(key: number, name: string, state: RowState, message: string) {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, state, message } : row)));
-    announce(`${name}: ${message}`);
+    // A rejection's alert (role="alert") announces itself.
+    if (state !== "rejected") announce(`${name}: ${message}`);
   }
 
   /** Runs `call`, adds the Source on success and settles the row. */
@@ -212,10 +223,44 @@ export function SourceUpload({
     add(Array.from(event.dataTransfer?.files ?? []));
   }
 
+  /** Removes a rejection alert; focus, if it was on its Dismiss, goes to Choose files. */
+  function dismiss(key: number, hadFocus: boolean) {
+    setRows((current) => current.filter((row) => row.key !== key));
+    if (hadFocus) chooseButtonRef.current?.focus();
+  }
+
   const canSubmitPaste = !pasteBusy && pasteText.trim() !== "";
+  const rejected = rows.filter((row) => row.state === "rejected").reverse();
+  const progress = rows.filter((row) => row.state !== "rejected");
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      {rejected.map((row) => (
+        <div
+          key={row.key}
+          role="alert"
+          data-state="rejected"
+          className="flex items-start gap-3 rounded-lg bg-blocker-tint px-4 py-3 text-blocker"
+        >
+          <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-body-strong [overflow-wrap:anywhere]">
+              {UPLOAD_REJECTED}: {row.name}
+            </p>
+            <p className="text-body text-foreground">{row.message}</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`${DISMISS}: ${row.name}`}
+            className="text-blocker hover:bg-transparent hover:text-blocker"
+            onClick={(event) => dismiss(row.key, event.currentTarget === document.activeElement)}
+          >
+            <XIcon aria-hidden className="size-4" />
+          </Button>
+        </div>
+      ))}
       <div
         onDragOver={(event) => {
           event.preventDefault();
@@ -223,35 +268,39 @@ export function SourceUpload({
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
+        data-testid="source-drop-zone"
         data-dragging={dragging || undefined}
-        className="flex max-w-xl flex-col items-center gap-2 rounded-md border border-dashed border-border p-6 text-center data-[dragging]:border-primary data-[dragging]:bg-muted"
+        className="flex flex-col items-start gap-4 rounded-xl border-2 border-dashed border-border-strong bg-surface p-8 data-[dragging]:border-primary data-[dragging]:bg-muted md:flex-row md:items-center md:gap-6"
       >
-        <UploadIcon aria-hidden className="size-4 text-muted-foreground" />
-        <p id={hintId} className="text-body">
-          Drop emails, notes, transcripts or documents here
-        </p>
-        <p className="text-meta text-muted-foreground">
-          .eml, .msg, .txt, .vtt, .docx or .pdf, up to 50 MB each
-        </p>
-        <div className="flex gap-2">
-          <button
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary-tint text-primary-text">
+          <UploadIcon aria-hidden className="size-[22px]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p id={hintId} className="text-section">
+            {DROP_TITLE}
+          </p>
+          <p className="mt-0.5 text-body text-text-secondary">{DROP_HINT}</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button
+            ref={chooseButtonRef}
             type="button"
             onClick={() => inputRef.current?.click()}
             aria-describedby={hintId}
-            className={buttonClass}
           >
-            Choose files
-          </button>
-          <button
+            {CHOOSE_FILES}
+          </Button>
+          <Button
             ref={pasteButtonRef}
             type="button"
+            variant="outline"
+            className="h-[38px] px-4"
             aria-expanded={pasting}
             aria-controls={pasteAreaId}
             onClick={() => (pasting ? textareaRef.current?.focus() : setPasting(true))}
-            className={buttonClass}
           >
             Paste text
-          </button>
+          </Button>
         </div>
         <input
           ref={inputRef}
@@ -288,43 +337,37 @@ export function SourceUpload({
             Ctrl+Enter or ⌘+Enter adds it, Esc cancels.
           </p>
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               disabled={!canSubmitPaste}
               onClick={submitPaste}
-              className={buttonClass}
             >
               Add
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               disabled={pasteBusy}
               onClick={() => closePaste(true)}
-              className={buttonClass}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
-      {rows.length > 0 ? (
-        <ul aria-label="Uploads" className="flex max-w-xl flex-col">
-          {rows.map((row) => (
+      {progress.length > 0 ? (
+        <ul aria-label="Uploads" className="flex flex-col">
+          {progress.map((row) => (
             <li
               key={row.key}
               data-state={row.state}
               className="flex min-h-row items-center justify-between gap-3 border-b border-border"
             >
               <span className="min-w-0 truncate text-body">{row.name}</span>
-              <span
-                className={
-                  row.state === "rejected"
-                    ? "shrink-0 text-meta text-destructive"
-                    : "shrink-0 text-meta text-muted-foreground"
-                }
-              >
-                {row.message}
-              </span>
+              <span className="shrink-0 text-meta text-muted-foreground">{row.message}</span>
             </li>
           ))}
         </ul>

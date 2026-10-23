@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { loadSourceText } from "@/app/opportunities/actions";
 import { ParseStatusPill } from "@/components/opportunities/sources-list";
+import { buttonVariants } from "@/components/ui/button";
 import { formatSize } from "@/lib/knowledge-sources";
 import {
   formatDateTime,
@@ -71,64 +72,60 @@ export function SourceInspector({
   const shown = text?.key === key ? text : null;
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-4 p-gutter">
-      <div className="flex flex-col gap-1">
+    <section aria-labelledby={headingId} className="flex flex-col">
+      <div className="flex flex-col items-start gap-2 border-b border-border p-gutter">
         <h3
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
-          className="text-section break-all outline-none"
+          className="text-section [overflow-wrap:anywhere] outline-none"
         >
           {source.filename}
         </h3>
-        {source.parse ? (
-          <div className="flex flex-wrap items-center gap-1">
-            <ParseStatusPill parse={source.parse} />
-          </div>
-        ) : null}
+        {source.parse ? <ParseStatusPill parse={source.parse} /> : null}
         {failed ? (
           <p className="text-meta text-blocker">{parseFailureReason(source.parse?.error_code)}</p>
         ) : null}
-      </div>
 
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-body">
-        <dt className="text-label text-muted-foreground">Kind</dt>
-        <dd>{SOURCE_KIND_LABELS[source.kind] ?? source.kind}</dd>
-        <dt className="text-label text-muted-foreground">Version</dt>
-        <dd className="text-numeric">
-          v{source.version} of {source.version_count}
-        </dd>
-        <dt className="text-label text-muted-foreground">Size</dt>
-        <dd className="text-numeric">{formatSize(source.size_bytes)}</dd>
-        <dt className="text-label text-muted-foreground">Added by</dt>
-        <dd>{source.uploaded_by.name}</dd>
-        <dt className="text-label text-muted-foreground">Added</dt>
-        <dd className="text-numeric">{formatDateTime(source.uploaded_at)}</dd>
-      </dl>
+        <dl className="mt-1.5 grid w-full grid-cols-[90px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-body">
+          <dt className="text-text-secondary">Kind</dt>
+          <dd>{SOURCE_KIND_LABELS[source.kind] ?? source.kind}</dd>
+          <dt className="text-text-secondary">Version</dt>
+          <dd className="text-numeric">
+            v{source.version} of {source.version_count}
+          </dd>
+          <dt className="text-text-secondary">Size</dt>
+          <dd className="text-numeric">{formatSize(source.size_bytes)}</dd>
+          <dt className="text-text-secondary">Added by</dt>
+          <dd className="[overflow-wrap:anywhere]">{source.uploaded_by.name}</dd>
+          <dt className="text-text-secondary">Added</dt>
+          <dd className="text-numeric">{formatDateTime(source.uploaded_at)}</dd>
+        </dl>
 
-      <div>
         <a
           href={sourceDownloadHref(opportunityId, source.id, source.version)}
           download
           aria-label={`${DOWNLOAD_ORIGINAL}: ${source.filename}`}
-          className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
+          className={`${buttonVariants({ variant: "outline", size: "sm" })} mt-1.5 text-control`}
         >
-          <DownloadIcon aria-hidden className="size-3" />
+          <DownloadIcon aria-hidden />
           {DOWNLOAD_ORIGINAL}
         </a>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <h4 className="text-label text-muted-foreground">Extracted text</h4>
+      <div className="flex flex-col gap-2 p-gutter">
+        <h4 className="text-eyebrow text-text-secondary uppercase">
+          Extracted text
+        </h4>
         {!parsed ? (
-          <p className="text-meta text-muted-foreground">
+          <p className="text-body text-text-secondary">
             {failed ? NO_TEXT_EXTRACTED : TEXT_PENDING}
           </p>
         ) : shown?.kind === "ok" ? (
           <pre
             tabIndex={0}
             aria-label={`Extracted text of ${source.filename}`}
-            className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md border border-border p-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-background p-3.5 font-sans text-body whitespace-pre-wrap outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             {shown.body}
           </pre>

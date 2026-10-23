@@ -1,5 +1,6 @@
 // Opportunity Source display helpers. Safe on server and client.
 import type { components } from "@/lib/api/client";
+import { formatSize } from "@/lib/knowledge-sources";
 import { UPLOAD_BODY_LIMIT_BYTES } from "@/lib/upload-limits";
 
 export type Source = components["schemas"]["Source"];
@@ -15,6 +16,11 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
 
 /** What the file picker offers. The API decides what is allowed. */
 export const ACCEPTED_FILES = ".eml,.msg,.txt,.vtt,.docx,.pdf";
+
+/** The drop zone's title and hint. The API decides what is allowed. */
+export const DROP_TITLE = "Drop emails, transcripts or documents here";
+export const DROP_HINT =
+  ".eml, .msg, .txt, .docx, .pdf, .vtt or text, up to 50 MB each. Sources are stored unchanged and versioned.";
 
 /** The API's sentence for a file over the limit. */
 export const TOO_LARGE = "Rejected: larger than 50 MB";
@@ -117,4 +123,26 @@ export const TEXT_LOAD_FAILED = "The text could not be loaded.";
 /** The same-origin route that streams a Source version's original file (Story 2.3). */
 export function sourceDownloadHref(opportunityId: string, sourceId: string, version: number): string {
   return `/api/opportunities/${encodeURIComponent(opportunityId)}/sources/${encodeURIComponent(sourceId)}/versions/${version}/download`;
+}
+
+/** A Sources row's meta line: "Document · v2 of 3 · 1.2 MB". */
+export function sourceMeta(source: Source): string {
+  const kind = SOURCE_KIND_LABELS[source.kind] ?? source.kind;
+  return `${kind} · v${source.version} of ${source.version_count} · ${formatSize(source.size_bytes)}`;
+}
+
+/** The order (and words) of the Sources card's parse summary. */
+const SUMMARY_ORDER: readonly ParseStatus[] = ["parsed", "queued", "parsing", "failed"];
+
+/** The Sources card's summary, such as "4 parsed · 1 parsing · 1 failed". Statuses with no
+ * Sources are left out; Sources with no parse state aren't counted. */
+export function parseSummary(sources: readonly Source[]): string {
+  const counts = new Map<ParseStatus, number>();
+  for (const source of sources) {
+    const status = source.parse?.status;
+    if (status) counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
+  return SUMMARY_ORDER.filter((status) => counts.get(status))
+    .map((status) => `${counts.get(status)} ${status}`)
+    .join(" · ");
 }

@@ -56,7 +56,7 @@ function apiAnswers() {
 const file = (name: string, size = 10) => new File([new Uint8Array(size)], name);
 
 function dropZone() {
-  return screen.getByText("Drop emails, notes, transcripts or documents here").parentElement!;
+  return screen.getByTestId("source-drop-zone");
 }
 
 function drop(files: File[]) {
@@ -67,6 +67,18 @@ function rowFor(name: string) {
   return within(screen.getByRole("list", { name: "Uploads" }))
     .getByText(name)
     .closest("li")!;
+}
+
+/** The rejection alert for `name`. */
+function alertFor(name: string) {
+  return screen
+    .getAllByRole("alert")
+    .find((alert) => within(alert).queryByText(`Upload rejected: ${name}`))!;
+}
+
+/** The Sources card's rows. */
+function listedRows() {
+  return within(screen.getByRole("list", { name: /^Sources/ })).getAllByRole("listitem");
 }
 
 beforeEach(() => {
@@ -113,17 +125,20 @@ describe("SourcesSection with uploads", () => {
 
     await waitFor(() => expect(within(rowFor("rfp.pdf")).getByText("Added")).toBeTruthy());
     expect(within(rowFor("call.vtt")).getByText("Added")).toBeTruthy();
+    // The rejected file is an alert above the drop zone, not an upload row.
     expect(
-      within(rowFor("setup.exe")).getByText("Rejected: .exe files aren't allowed"),
+      within(alertFor("setup.exe")).getByText("Rejected: .exe files aren't allowed"),
     ).toBeTruthy();
+    expect(
+      within(screen.getByRole("list", { name: "Uploads" })).queryByText("setup.exe"),
+    ).toBeNull();
 
-    const table = screen.getByRole("table");
-    const rows = within(table).getAllByRole("row").slice(1);
+    const rows = listedRows();
     expect(rows).toHaveLength(2);
     // Newest first.
     expect(within(rows[0]).getByText("rfp.pdf")).toBeTruthy();
     expect(within(rows[1]).getByText("call.vtt")).toBeTruthy();
-    expect(within(rows[1]).getByText("Transcript")).toBeTruthy();
+    expect(within(rows[1]).getByText(/^Transcript · v1 of 1/)).toBeTruthy();
     expect(screen.queryByText("No Sources yet")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
@@ -142,8 +157,8 @@ describe("SourcesSection with uploads", () => {
 
     drop([file("call-again.vtt")]);
 
-    await waitFor(() => expect(screen.getByText("v2")).toBeTruthy());
-    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
+    await waitFor(() => expect(screen.getByText("Transcript · v2 of 2 · 10 B")).toBeTruthy());
+    expect(listedRows()).toHaveLength(1);
     // The row says it became a new version, not a new Source.
     expect(within(rowFor("call-again.vtt")).getByText("Added as version 2")).toBeTruthy();
     expect(within(rowFor("call-again.vtt")).queryByText("Added")).toBeNull();
@@ -156,11 +171,10 @@ describe("SourcesSection with uploads", () => {
       </ShellProviders>,
     );
     expect(screen.queryByRole("button", { name: "Choose files" })).toBeNull();
-    expect(screen.queryByText("Drop emails, notes, transcripts or documents here")).toBeNull();
-    const row = within(screen.getByRole("table")).getAllByRole("row")[1];
-    expect(within(row).getByText("Document")).toBeTruthy();
+    expect(screen.queryByText("Drop emails, transcripts or documents here")).toBeNull();
+    const row = listedRows()[0];
+    expect(within(row).getByText("Document · v1 of 1 · 10 B")).toBeTruthy();
     expect(within(row).getByText("rfp.pdf")).toBeTruthy();
-    expect(within(row).getByText("v1")).toBeTruthy();
     expect(within(row).getByText("[UPLOADER]")).toBeTruthy();
     expect(within(row).getByText("4 Oct 2026, 13:05 UTC")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
@@ -201,7 +215,7 @@ describe("SourceUpload", () => {
 
     pending[1]({ kind: "error" });
     await waitFor(() =>
-      expect(within(rowFor("b.txt")).getByText("The upload failed. Try again.")).toBeTruthy(),
+      expect(within(alertFor("b.txt")).getByText("The upload failed. Try again.")).toBeTruthy(),
     );
     expect(onAdded).toHaveBeenCalledTimes(1);
   });
@@ -216,7 +230,7 @@ describe("SourceUpload", () => {
     drop([file("a.txt"), file("b.txt")]);
 
     await waitFor(() => expect(within(rowFor("b.txt")).getByText("Added")).toBeTruthy());
-    expect(within(rowFor("a.txt")).getByText("The upload failed. Try again.")).toBeTruthy();
+    expect(within(alertFor("a.txt")).getByText("The upload failed. Try again.")).toBeTruthy();
     expect(addSource).toHaveBeenCalledTimes(2);
   });
 
@@ -246,14 +260,21 @@ describe("SourceUpload", () => {
     drop([file("a.txt"), file("b.txt"), file("c.pdf")]);
 
     await waitFor(() =>
-      expect(within(rowFor("c.pdf")).getByText("Rejected: larger than 50 MB")).toBeTruthy(),
+      expect(within(alertFor("c.pdf")).getByText("Rejected: larger than 50 MB")).toBeTruthy(),
     );
     expect(
-      within(rowFor("a.txt")).getByText("Only the owner and collaborators can add Sources."),
+      within(alertFor("a.txt")).getByText("Only the owner and collaborators can add Sources."),
     ).toBeTruthy();
     expect(
-      within(rowFor("b.txt")).getByText("You don't have access to this Opportunity"),
+      within(alertFor("b.txt")).getByText("You don't have access to this Opportunity"),
     ).toBeTruthy();
+    // Newest first.
+    const leads = screen.getAllByRole("alert").map((alert) => alert.querySelector("p")?.textContent);
+    expect(leads).toEqual([
+      "Upload rejected: c.pdf",
+      "Upload rejected: b.txt",
+      "Upload rejected: a.txt",
+    ]);
   });
 
   it("a file the web server can't carry is rejected without sending it", async () => {
@@ -264,9 +285,33 @@ describe("SourceUpload", () => {
     drop([huge]);
 
     await waitFor(() =>
-      expect(within(rowFor("huge.pdf")).getByText("Rejected: larger than 50 MB")).toBeTruthy(),
+      expect(within(alertFor("huge.pdf")).getByText("Rejected: larger than 50 MB")).toBeTruthy(),
     );
     expect(addSource).not.toHaveBeenCalled();
+  });
+
+  it("a rejected upload is a dismissible alert; Dismiss removes it and keeps focus", async () => {
+    addSource.mockResolvedValue({
+      kind: "rejected",
+      reason: ".mp4 is not a supported type.",
+    });
+    const { user } = renderUpload();
+
+    drop([file("x.mp4")]);
+
+    const alert = await waitFor(() => alertFor("x.mp4"));
+    expect(alert.className).toContain("bg-blocker-tint");
+    expect(within(alert).getByText(".mp4 is not a supported type.")).toBeTruthy();
+    // Above the drop zone.
+    expect(
+      alert.compareDocumentPosition(dropZone()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(await axeViolations(document.body)).toEqual([]);
+
+    await user.click(within(alert).getByRole("button", { name: "Dismiss: x.mp4" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Upload rejected: x.mp4")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Choose files" }));
   });
 });
 
@@ -299,10 +344,10 @@ describe("Paste text", () => {
 
     await waitFor(() => expect(within(rowFor("Pasted text")).getByText("Added")).toBeTruthy());
     expect(addTextSource).toHaveBeenCalledWith(OPP_ID, NOTE);
-    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    const rows = listedRows();
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("Pasted text")).toBeTruthy();
-    expect(within(rows[0]).getByText("Note")).toBeTruthy();
+    expect(within(rows[0]).getByText(/^Note · v1 of 1/)).toBeTruthy();
     // The area closes and clears; focus goes back to its button.
     expect(screen.queryByRole("textbox", { name: "Text to add" })).toBeNull();
     expect(document.activeElement).toBe(pasteButton());
@@ -383,12 +428,12 @@ describe("Paste text", () => {
 
     await waitFor(() =>
       expect(
-        within(rowFor("Pasted text")).getByText("Rejected: longer than 1,000,000 characters"),
+        within(alertFor("Pasted text")).getByText("Rejected: longer than 1,000,000 characters"),
       ).toBeTruthy(),
     );
     expect(textarea().value).toBe("too long");
     expect(addButton().disabled).toBe(false);
-    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByRole("list", { name: /^Sources/ })).toBeNull();
   });
 
   it("the same text again says Added as version 2", async () => {
@@ -406,8 +451,8 @@ describe("Paste text", () => {
     await waitFor(() =>
       expect(within(rowFor("Pasted text")).getByText("Added as version 2")).toBeTruthy(),
     );
-    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
-    expect(screen.getByText("v2")).toBeTruthy();
+    expect(listedRows()).toHaveLength(1);
+    expect(screen.getByText(/^Note · v2 of 2/)).toBeTruthy();
   });
 
   it("pastes and files share one ordered queue", async () => {
@@ -447,7 +492,9 @@ describe("Paste text", () => {
     await user.click(addButton());
 
     await waitFor(() =>
-      expect(within(rowFor("Pasted text")).getByText("The upload failed. Try again.")).toBeTruthy(),
+      expect(
+        within(alertFor("Pasted text")).getByText("The upload failed. Try again."),
+      ).toBeTruthy(),
     );
     expect(textarea().value).toBe("note");
     expect(addButton().disabled).toBe(false);

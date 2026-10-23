@@ -17,7 +17,7 @@ export async function SourcesTab({ id }: { id: string }) {
 
   return (
     <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
-      <h2 className="sr-only">Sources</h2>
+      {/* The list renders its own "Sources" heading. */}
       {listed.kind === "ok" ? (
         <SourcesSection
           key={opportunity.id}
@@ -26,7 +26,10 @@ export async function SourcesTab({ id }: { id: string }) {
           initial={listed.sources}
         />
       ) : (
-        <p>The Sources could not be loaded. Try again in a moment.</p>
+        <>
+          <h2 className="sr-only">Sources</h2>
+          <p>The Sources could not be loaded. Try again in a moment.</p>
+        </>
       )}
     </div>
   );
