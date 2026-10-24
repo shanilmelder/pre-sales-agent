@@ -1177,6 +1177,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/critic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Critic
+         * @description The Opportunity's current Critic Review (null before the first): the Critic's Findings
+         *     on the latest assessment run's Assessments, critical first, then high, medium and low,
+         *     each with the Requirements and the specialist Findings (at their Assessment version) it
+         *     cites, and the counts per severity. Anyone who can read the Opportunity; read-only.
+         */
+        get: operations["get_critic"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/red-team-reviews": {
         parameters: {
             query?: never;
@@ -1279,8 +1302,9 @@ export interface paths {
         put?: never;
         /**
          * Retry Assessment Task
-         * @description Re-run one failed task of the Opportunity's latest assessment run; the other tasks
-         *     keep their results. The owner and collaborators, except sales representatives.
+         * @description Re-run one failed task of the Opportunity's latest assessment run (a specialist's or,
+         *     Story 6.4, the Critic's); the other tasks keep their results. The owner and
+         *     collaborators, except sales representatives.
          */
         post: operations["retry_assessment_task"];
         delete?: never;
@@ -2419,7 +2443,8 @@ export interface components {
         AssessmentStatus: "current" | "superseded";
         /**
          * AssessmentTask
-         * @description One agent's task in an assessment run. `error_code` is set only when `failed`;
+         * @description One agent's task in an assessment run: a specialist's, or (Story 6.4) the Critic's,
+         *     which runs once the specialists' have ended. `error_code` is set only when `failed`;
          *     `skip_reason` only when `skipped` because a person continued without its disabled Agent
          *     (`agent_disabled`: the panel says "Agent disabled — assess manually"); a cancel's skipped
          *     tasks have none.
@@ -2427,7 +2452,7 @@ export interface components {
          *     either); the panel derives elapsed time from them.
          */
         AssessmentTask: {
-            agent: components["schemas"]["AssessmentAgent"];
+            agent: components["schemas"]["TaskAgent"];
             status: components["schemas"]["AssessmentTaskStatus"];
             error_code: components["schemas"]["RunErrorCode"] | null;
             skip_reason?: components["schemas"]["TaskSkipReason"] | null;
@@ -2809,6 +2834,25 @@ export interface components {
             mandatory_count: number;
         };
         /**
+         * CitedFinding
+         * @description A specialist Finding a Critic Finding cites, at the Assessment version it was read:
+         *     the agent and its role in words, the Assessment's id and version, and the Finding's
+         *     title.
+         */
+        CitedFinding: {
+            /** Id */
+            id: string;
+            agent: components["schemas"]["AssessmentAgent"];
+            /** Role */
+            role: string;
+            /** Assessment Id */
+            assessment_id: string;
+            /** Assessment Version */
+            assessment_version: number;
+            /** Title */
+            title: string;
+        };
+        /**
          * ClarificationQuestion
          * @description A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5), then
          *     `sent` and `unanswered` ("No answer", Story 4.6), then `answered` (Story 4.7);
@@ -3109,6 +3153,65 @@ export interface components {
          * @enum {string}
          */
         CoverageStatus: "ready" | "partial" | "missing";
+        /**
+         * CriticCategory
+         * @enum {string}
+         */
+        CriticCategory: "coverage" | "unsupported_claim" | "timeline" | "dependency" | "risk_coverage";
+        /**
+         * CriticFinding
+         * @description A Critic Finding: its category, severity, specific title and argument, with the
+         *     Requirements and the specialist Findings it cites.
+         */
+        CriticFinding: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            category: components["schemas"]["CriticCategory"];
+            severity: components["schemas"]["Severity"];
+            /** Title */
+            title: string;
+            /** Argument */
+            argument: string;
+            /** Requirements */
+            requirements: components["schemas"]["FindingRequirement"][];
+            /** Findings */
+            findings: components["schemas"]["CitedFinding"][];
+        };
+        /**
+         * CriticReviewView
+         * @description The Opportunity's current Critic Review. `findings`: critical first, then high, medium
+         *     and low, then in the order they were raised (code-written coverage Findings last).
+         *     `run_id`: the assessment run reviewed. `dropped_count`: proposed Findings that broke a
+         *     rule.
+         */
+        CriticReviewView: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["ReviewStatus"];
+            /** Run Id */
+            run_id: string | null;
+            /** Dropped Count */
+            dropped_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            counts: components["schemas"]["SeverityCounts"];
+            /** Findings */
+            findings: components["schemas"]["CriticFinding"][];
+        };
+        /**
+         * CriticView
+         * @description The Opportunity's current Critic Review, null before the first. Read-only.
+         */
+        CriticView: {
+            review: components["schemas"]["CriticReviewView"] | null;
+        };
         /**
          * DecisionChoice
          * @enum {string}
@@ -4660,7 +4763,7 @@ export interface components {
          *     (`config_version`: that version's number for the Agent).
          */
         PlanVersionTask: {
-            agent: components["schemas"]["AssessmentAgent"];
+            agent: components["schemas"]["TaskAgent"];
             /** Config Version Id */
             config_version_id: string;
             /** Config Version */
@@ -5147,7 +5250,7 @@ export interface components {
             /** Id */
             id: string;
             kind: components["schemas"]["DecisionKind"];
-            agent: components["schemas"]["AssessmentAgent"];
+            agent: components["schemas"]["TaskAgent"];
             /** Agent Name */
             agent_name: string;
             /** Agent Active */
@@ -5302,6 +5405,13 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /**
+         * TaskAgent
+         * @description The Agents a run plans a task for, in the order they are listed: the specialists, then
+         *     the Critic (Story 6.4).
+         * @enum {string}
+         */
+        TaskAgent: "engineering_agent" | "pm_agent" | "security_agent" | "critic_agent";
         /**
          * TaskSkipReason
          * @description Why a task was skipped other than by a cancel (Story 7.1).
@@ -14257,6 +14367,116 @@ export interface operations {
             };
         };
     };
+    get_critic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CriticView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
     start_red_team_review: {
         parameters: {
             query?: never;
@@ -14792,7 +15012,7 @@ export interface operations {
             path: {
                 opportunity_id: string;
                 run_id: string;
-                agent: components["schemas"]["AssessmentAgent"];
+                agent: components["schemas"]["TaskAgent"];
             };
             cookie?: never;
         };

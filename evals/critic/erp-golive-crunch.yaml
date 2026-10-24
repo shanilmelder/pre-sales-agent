@@ -1,0 +1,57 @@
+# Grocery DC: nobody covers the returns flow (R4); Engineering claims the SAP connector is
+# proven with nothing behind it; PM plans go-live in six weeks while Engineering sizes the
+# interfaces at 900 hours.
+requirements:
+  - number: 1
+    classification: integration
+    text: Exchange orders and stock levels with SAP S/4HANA in near real time.
+  - number: 2
+    classification: functional
+    text: Pick 900 order lines per hour at peak across two shifts.
+  - number: 3
+    classification: commercial
+    text: Go live before the peak season starting 1 November.
+  - number: 4
+    classification: functional
+    text: Handle customer returns, including inspection and restocking into storage.
+findings:
+  engineering_agent:
+    - key: eng-connector-proven
+      kind: opportunity
+      severity: low
+      title: Standard SAP connector already proven
+      detail: >-
+        Our standard SAP S/4HANA connector is proven and needs only configuration, so the
+        integration carries little risk.
+      requirements: [1]
+    - key: eng-interface-sizing
+      kind: constraint
+      severity: high
+      title: SAP interface build sized at 900 hours
+      detail: >-
+        Order, stock and confirmation interfaces with custom fields need about 900 hours of
+        build and test before integration testing can start.
+      requirements: [1]
+  pm_agent:
+    - key: pm-golive-six-weeks
+      kind: constraint
+      severity: medium
+      title: Go-live planned six weeks after contract signature
+      detail: >-
+        The plan puts go-live six weeks after signature to make the November peak, with a
+        single integration test cycle.
+      requirements: [3]
+  security_agent:
+    - key: sec-sap-credentials
+      kind: risk
+      severity: medium
+      title: SAP technical user credentials have no named owner
+      detail: The technical user for the SAP interface has no owner for rotation and audit.
+      requirements: [1]
+effort:
+  engineering_agent: {1: 900, 2: 320}
+  pm_agent: {3: 40}
+seeded:
+  uncovered: [4]
+  unsupported_claim: [eng-connector-proven]
+  timeline: [pm-golive-six-weeks, eng-interface-sizing]

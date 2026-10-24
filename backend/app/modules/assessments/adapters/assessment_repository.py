@@ -231,6 +231,34 @@ async def current_assessments(uow: UnitOfWork, opportunity_id: UUID) -> list[Ass
     return [_assessment(row) for row in rows.scalars()]
 
 
+async def run_assessments(
+    uow: UnitOfWork, opportunity_id: UUID, run_id: UUID
+) -> list[AssessmentRecord]:
+    """The Assessments of the Opportunity accepted in the run (Story 6.4), the newest per
+    agent, current or since superseded."""
+    rows = await uow.session.execute(
+        select(AssessmentRow)
+        .where(AssessmentRow.opportunity_id == opportunity_id, AssessmentRow.run_id == run_id)
+        .order_by(AssessmentRow.agent, AssessmentRow.version.desc())
+    )
+    newest: dict[str, AssessmentRecord] = {}
+    for row in rows.scalars():
+        newest.setdefault(row.agent, _assessment(row))
+    return list(newest.values())
+
+
+async def assessments_by_id(
+    uow: UnitOfWork, assessment_ids: Sequence[UUID]
+) -> list[AssessmentRecord]:
+    """These Assessments (current or superseded), in no particular order."""
+    if not assessment_ids:
+        return []
+    rows = await uow.session.execute(
+        select(AssessmentRow).where(AssessmentRow.id.in_(list(assessment_ids)))
+    )
+    return [_assessment(row) for row in rows.scalars()]
+
+
 async def findings_of(uow: UnitOfWork, assessment_ids: Sequence[UUID]) -> list[FindingRecord]:
     if not assessment_ids:
         return []

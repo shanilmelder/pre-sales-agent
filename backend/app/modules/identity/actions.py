@@ -64,3 +64,5 @@ class Action(StrEnum):
     TOOL_CATALOGUE_ENTRY_LIST = "knowledge.catalogue_entry.list"
     TOOL_GAP_LIST = "gaps.gap.list"
     TOOL_RESEARCH_PAGE_FETCH = "knowledge.research_page.fetch"
+    TOOL_RUN_ASSESSMENT_READ = "assessments.run.read"
+    """Story 6.4: the Critic reads its run's accepted Assessments and Findings."""

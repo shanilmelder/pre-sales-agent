@@ -25,7 +25,9 @@ from dataclasses import dataclass, field
 from app.evals.annotations import Annotations, find_spans
 from app.modules.registry.application.public import EVIDENCE_AGENTS, SPECIALIST_AGENTS, Metric
 
-STAGES = ("parse", "extraction", "gap_detection", "specialists", "estimate", "red_team")
+STAGES = ("parse", "extraction", "gap_detection", "specialists", "estimate", "red_team", "critic")
+"""In scoring order. The Critic (Story 6.4) runs in the assessment run, before the Estimate,
+but no metric depends on it, so its failure zeroes nothing: it is listed last."""
 _STAGE_ORDER = {stage: i for i, stage in enumerate(STAGES)}
 EXTRACTION_AGENT = "intake_agent"
 GAP_AGENT = "clarification_agent"
@@ -77,6 +79,22 @@ class StageFailure:
 
 
 @dataclass(frozen=True, slots=True)
+class CriticSummary:
+    """The Opportunity's current Critic Review (Story 6.4): its version and Findings per
+    severity. Reported, no bar."""
+
+    version: int
+    critical: int = 0
+    high: int = 0
+    medium: int = 0
+    low: int = 0
+
+    @property
+    def finding_count(self) -> int:
+        return self.critical + self.high + self.medium + self.low
+
+
+@dataclass(frozen=True, slots=True)
 class OpportunityOutput:
     slug: str
     source_texts: Mapping[str, str]
@@ -87,6 +105,7 @@ class OpportunityOutput:
     gaps: Sequence[DetectedGap]
     findings: Sequence[Finding]
     failures: Sequence[StageFailure] = ()
+    critic: CriticSummary | None = None
 
 
 # --- counts ----------------------------------------------------------------------------------
@@ -134,6 +153,7 @@ class OpportunityScore:
     missed_requirements: list[str] = field(default_factory=list)
     missed_gaps: list[str] = field(default_factory=list)
     failures: list[StageFailure] = field(default_factory=list)
+    critic: CriticSummary | None = None
 
     def metrics(self) -> dict[str, float | None]:
         evidence = Ratio()
@@ -188,7 +208,9 @@ def _failed_from(failures: Sequence[StageFailure]) -> int:
 
 
 def score_opportunity(annotations: Annotations, output: OpportunityOutput) -> OpportunityScore:
-    score = OpportunityScore(slug=annotations.slug, failures=list(output.failures))
+    score = OpportunityScore(
+        slug=annotations.slug, failures=list(output.failures), critic=output.critic
+    )
     matches = match_requirements(annotations, output)
     found = set().union(*matches.values()) if matches else set()
 

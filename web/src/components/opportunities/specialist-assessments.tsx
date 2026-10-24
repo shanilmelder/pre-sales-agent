@@ -11,6 +11,7 @@ import {
   LayoutPanelLeftIcon,
   LoaderCircleIcon,
   QuoteIcon,
+  ScanSearchIcon,
   ShieldCheckIcon,
   SparklesIcon,
   SwordsIcon,
@@ -30,6 +31,7 @@ import {
 import {
   cancelAssessmentRun,
   loadAssessments,
+  loadCritic,
   resolveRunDecision,
   retryAssessmentTask,
   startAssessmentRun,
@@ -41,6 +43,7 @@ import { Chip } from "@/components/ui/chip";
 import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
 import { AssessmentFindingInspector } from "@/components/opportunities/assessment-finding-inspector";
+import { CriticInspector } from "@/components/opportunities/critic-inspector";
 import { useFindingSelection } from "@/components/opportunities/finding-selection";
 import { CountChip, useRedTeam } from "@/components/opportunities/red-team-list";
 import { RedTeamInspector } from "@/components/opportunities/red-team-inspector";
@@ -109,14 +112,21 @@ import {
   injectionSuspected,
   POSSIBLE_INJECTION,
   type Assessment,
-  type AssessmentAgent,
   type AssessmentRun,
   type AssessmentsView,
   type FindingRow,
   type Recommendation,
   type RunDecision,
+  type TaskAgent,
   type TaskStatus,
 } from "@/lib/assessments";
+import {
+  CRITIC_LABEL,
+  CRITIC_REVIEWING,
+  criticReviewLabel,
+  type CriticReview,
+  type CriticView,
+} from "@/lib/critic";
 import { hours } from "@/lib/estimates";
 import { formatDateTime } from "@/lib/sources";
 import { useOpportunityEvents } from "@/lib/opportunity-events";
@@ -146,15 +156,17 @@ const ASSESSMENTS_NOT_LOADED =
   "The Specialist Assessments could not be loaded. Try again in a moment.";
 const RED_TEAM_NOT_LOADED =
   "The Red Team Review could not be loaded. Try again in a moment.";
+const CRITIC_NOT_LOADED = "The Critic Review could not be loaded. Try again in a moment.";
 export const NO_FINDINGS = "No Findings.";
 export const SHOW_EFFORT = "Show effort";
 export const HIDE_EFFORT = "Hide effort";
 
 /** Each agent's icon on its task card. */
-const AGENT_ICONS: Record<AssessmentAgent, LucideIcon> = {
+const AGENT_ICONS: Record<TaskAgent, LucideIcon> = {
   engineering_agent: LayoutPanelLeftIcon,
   pm_agent: CalendarRangeIcon,
   security_agent: ShieldCheckIcon,
+  critic_agent: ScanSearchIcon,
 };
 
 /** A recommendation: always an icon and a label, never colour alone. */
@@ -206,8 +218,9 @@ function SeverityCountsLine({ counts }: { counts: SeverityCounts }) {
 const FINDING_COLUMNS =
   "md:grid-cols-[5.5rem_9rem_minmax(0,1fr)_9rem_6.5rem]";
 
-/** Every agent's and the Red Team's Findings in one table, in the order given (ranked
- * critical to low): severity, type, the specific title, who raised it and the evidence counts.
+/** Every agent's, the Red Team's and the Critic's Findings in one table, in the order given
+ * (ranked critical to low): severity, type, the specific title, who raised it and the evidence
+ * counts (a Critic row also counts the specialist Findings it cites).
  * Critical rows are tinted red. One Tab stop (roving tabindex); j/k (with single-key shortcuts
  * on) or the arrows move between rows; Enter, Space or a click opens the row, which is then
  * `aria-selected`. */
@@ -318,6 +331,9 @@ export function FindingsTable({
                     <CountChip count={row.requirements} kind="requirement" />
                     {row.lines !== null ? (
                       <CountChip count={row.lines} kind="line" />
+                    ) : null}
+                    {row.source === "critic" ? (
+                      <CountChip count={row.cited} kind="finding" />
                     ) : null}
                   </span>
                 </button>
@@ -503,6 +519,47 @@ export function RedTeamResultCard({ review }: { review: RedTeamReview }) {
           : ""}
       </p>
       <EvidenceChips items={evidenceLabels(review.findings)} />
+    </ResultCard>
+  );
+}
+
+/** The Critic's result card (Story 6.4): "Critic v2" with its severity counts and Finding
+ * count, or "Critic reviewing" while the run's Critic task runs (before its first Review, the
+ * card shows only that). */
+export function CriticResultCard({
+  review,
+  reviewing = false,
+}: {
+  review: CriticReview | null;
+  reviewing?: boolean;
+}) {
+  return (
+    <ResultCard
+      name={CRITIC_LABEL}
+      badges={
+        review ? (
+          <>
+            <span className="text-meta text-muted-foreground">v{review.version}</span>
+            <SeverityCountsLine counts={review.counts} />
+          </>
+        ) : null
+      }
+    >
+      {reviewing ? (
+        <p data-testid="critic-reviewing" className="flex items-center gap-1.5 text-body">
+          <LoaderCircleIcon aria-hidden="true" className="size-3.5 shrink-0 text-agent" />
+          {CRITIC_REVIEWING}
+        </p>
+      ) : null}
+      {review ? (
+        <>
+          <p className="text-body">
+            <span className="sr-only">{criticReviewLabel(review)}: </span>
+            {findingCount(review.findings.length)} on the run&apos;s Assessments
+          </p>
+          <EvidenceChips items={evidenceLabels(review.findings)} />
+        </>
+      ) : null}
     </ResultCard>
   );
 }
@@ -781,7 +838,7 @@ export function AgentRunPanel({
   canResolve?: boolean;
   busy?: boolean;
   stalled?: boolean;
-  onRetry?: (agent: AssessmentAgent) => void;
+  onRetry?: (agent: TaskAgent) => void;
   onResolve?: (decision: RunDecision, choice: RunDecisionChoice) => void;
 }) {
   const assessing = isAssessing(run);
@@ -791,7 +848,7 @@ export function AgentRunPanel({
   return (
     <ul
       aria-label="Agent progress"
-      className="grid w-full grid-cols-1 gap-4 md:grid-cols-3"
+      className="grid w-full grid-cols-1 gap-4 md:grid-cols-4"
     >
       {(run?.tasks ?? []).map((task) => {
         const failed = task.status === "failed";
@@ -1131,9 +1188,10 @@ function Subsection({
   );
 }
 
-/** The Assessments tab body: the run header and alert, the Agent tasks (each specialist task
- * of the latest run, then the Red Team's run), Results so far (one card per agent with an
- * Assessment, then the Red Team review) and one Findings table across all of them; the
+/** The Assessments tab body: the run header and alert, the Agent tasks (each task of the
+ * latest run, the Critic's last, then the Red Team's run), Results so far (one card per agent
+ * with an Assessment, the Red Team review, then the Critic Review, Story 6.4, "Critic
+ * reviewing" while its task runs) and one Findings table across all of them; the
  * selected Finding's inspector goes in the right pane (opened if closed). It follows the
  * Opportunity's event stream (Story 5.2) and is re-read as each task starts and ends, a run
  * is queued or ends, and whenever the stream (re)connects. While the stream is not connected
@@ -1144,16 +1202,19 @@ function Subsection({
  * task's card; a decision someone else resolved first says "Already resolved by …" and
  * re-reads. Read-only for sales representatives (no Run assessment, Retry, Cancel run or
  * Resolve). `redTeam` null says the Red Team could not be loaded; left out, the Red Team
- * is not shown. */
+ * is not shown. The Critic Review is re-read with the run; `critic` null says it could not
+ * be loaded; left out, none is shown until a re-read. */
 export function SpecialistAssessmentsSection({
   opportunityId,
   initial,
   redTeam: redTeamInitial,
+  critic: criticInitial,
   assessmentsFailed = false,
 }: {
   opportunityId: string;
   initial: AssessmentsView;
   redTeam?: RedTeamView | null;
+  critic?: CriticView | null;
   /** The Assessments read failed (`initial` is an empty view): say so instead of the
    * no-Assessment text. */
   assessmentsFailed?: boolean;
@@ -1168,6 +1229,10 @@ export function SpecialistAssessmentsSection({
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<AssessmentsView>(initial);
   const redTeam = useRedTeam(opportunityId, redTeamInitial ?? null);
+  const [critic, setCritic] = useState<CriticView | null>(criticInitial ?? null);
+  const [criticSyncedFrom, setCriticSyncedFrom] = useState(criticInitial);
+  /** The Critic Review could not be read (on load, until a re-read succeeds). */
+  const [criticFailed, setCriticFailed] = useState(criticInitial === null);
   const [selectedKey, setSelectedKey] = useFindingSelection("assessments");
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
@@ -1210,6 +1275,16 @@ export function SpecialistAssessmentsSection({
       appliedSeq.current = seq;
       const wasAssessing = assessingRef.current;
       setView(result.assessments);
+      try {
+        // The Critic Review moves with the run (its task is the run's last).
+        const loaded = await loadCritic(opportunityId);
+        if (loaded.kind === "ok" && seq === appliedSeq.current) {
+          setCritic(loaded.critic);
+          setCriticFailed(false);
+        }
+      } catch {
+        // Kept as it is; the next re-read tries again.
+      }
       const { run, assessments } = result.assessments;
       if (wasAssessing && run && !isAssessing(run)) {
         routerRef.current.refresh();
@@ -1236,9 +1311,17 @@ export function SpecialistAssessmentsSection({
     setView(initial);
     setStalled(false);
   }
+  if (criticInitial !== criticSyncedFrom) {
+    setCriticSyncedFrom(criticInitial);
+    setCritic(criticInitial ?? null);
+    setCriticFailed(criticInitial === null);
+  }
 
   const review = redTeam.view?.review ?? null;
-  const rows = mergeFindings(view.assessments, review);
+  const criticReview = critic?.review ?? null;
+  const criticTask = view.run?.tasks.find((t) => t.agent === "critic_agent");
+  const criticReviewing = assessing && criticTask?.status === "running";
+  const rows = mergeFindings(view.assessments, review, criticReview);
   const selected =
     selectedKey === null
       ? null
@@ -1443,7 +1526,8 @@ export function SpecialistAssessmentsSection({
   const results = view.assessments.flatMap((slot) =>
     slot.assessment ? [slot.assessment] : [],
   );
-  const anyResult = results.length > 0 || review !== null;
+  const anyResult =
+    results.length > 0 || review !== null || criticReview !== null || criticReviewing;
   const taskStatuses: TaskStatus[] = [
     ...(view.run?.tasks.map((t) => t.status) ?? []),
     ...(redRun ? [redRun.status] : []),
@@ -1536,6 +1620,7 @@ export function SpecialistAssessmentsSection({
         </p>
       ))}
       {redTeamInitial === null ? <p>{RED_TEAM_NOT_LOADED}</p> : null}
+      {criticFailed ? <p>{CRITIC_NOT_LOADED}</p> : null}
       {anyResult ? (
         <Subsection title="Results so far">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1543,6 +1628,9 @@ export function SpecialistAssessmentsSection({
               <AssessmentCard key={assessment.agent} assessment={assessment} />
             ))}
             {review ? <RedTeamResultCard review={review} /> : null}
+            {criticReview || criticReviewing ? (
+              <CriticResultCard review={criticReview} reviewing={criticReviewing} />
+            ) : null}
           </div>
         </Subsection>
       ) : null}
@@ -1575,6 +1663,12 @@ export function SpecialistAssessmentsSection({
               key={findingKey(selected)}
               finding={selected.finding}
               agent={selected.agent}
+              focusRequest={focusRequest}
+            />
+          ) : selected.source === "critic" ? (
+            <CriticInspector
+              key={findingKey(selected)}
+              finding={selected.finding}
               focusRequest={focusRequest}
             />
           ) : (

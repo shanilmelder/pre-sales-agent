@@ -4,6 +4,7 @@ from here."""
 from uuid import UUID
 
 from app.modules.assessments.application import review
+from app.modules.assessments.application import tools as tools  # registers the ToolGateway handler
 from app.modules.assessments.application.assessment import (
     AssessedGap,
     AssessedRequirement,
@@ -15,16 +16,36 @@ from app.modules.assessments.application.assessment import (
     current_sizings,
     finding_titles,
     load_inputs,
+    run_assessment_snapshots,
+    run_finding_snapshots,
 )
 from app.modules.assessments.application.assessments import (
     agent_assessments,
     outdated_assessments,
 )
+from app.modules.assessments.application.critic import (
+    CriticEffort,
+    CriticFinding,
+    CriticInputs,
+    CriticRequirement,
+    RunAssessment,
+    accept_critic_review,
+    agent_role,
+    critic_inputs,
+    critic_task,
+    evaluate_critic,
+    load_critic_inputs,
+    run_assessment_reads,
+)
+from app.modules.assessments.application.critic_reviews import get_critic
 from app.modules.assessments.application.models import (
     AgentAssessment,
     AssessmentEffort,
     AssessmentFinding,
     AssessmentView,
+    CitedFinding,
+    CriticReviewView,
+    CriticView,
     FindingLine,
     FindingRequirement,
     OutdatedAssessment,
@@ -37,6 +58,7 @@ from app.modules.assessments.application.models import (
 )
 from app.modules.assessments.application.reviews import get_red_team, start_review
 from app.modules.assessments.domain.assessments import AGENTS, AssessmentAgent
+from app.modules.assessments.domain.critic import CRITIC_AGENT
 from app.modules.assessments.domain.reviews import RunErrorCode
 from app.platform.uow import UnitOfWork
 
@@ -50,6 +72,7 @@ async def enqueue_review(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 __all__ = [
     "AGENTS",
+    "CRITIC_AGENT",
     "AgentAssessment",
     "AssessedGap",
     "AssessedRequirement",
@@ -58,6 +81,13 @@ __all__ = [
     "AssessmentFinding",
     "AssessmentInputs",
     "AssessmentView",
+    "CitedFinding",
+    "CriticEffort",
+    "CriticFinding",
+    "CriticInputs",
+    "CriticRequirement",
+    "CriticReviewView",
+    "CriticView",
     "FindingLine",
     "FindingRequirement",
     "OutdatedAssessment",
@@ -66,18 +96,29 @@ __all__ = [
     "RedTeamReviewView",
     "RedTeamRun",
     "RedTeamView",
+    "RunAssessment",
     "RunErrorCode",
     "SeverityCounts",
     "accept_assessment",
+    "accept_critic_review",
     "agent_assessments",
+    "agent_role",
     "build_inputs",
+    "critic_inputs",
+    "critic_task",
     "current_assessment_snapshots",
     "current_finding_snapshots",
     "current_sizings",
     "enqueue_review",
+    "evaluate_critic",
     "finding_titles",
+    "get_critic",
     "get_red_team",
+    "load_critic_inputs",
     "load_inputs",
     "outdated_assessments",
+    "run_assessment_reads",
+    "run_assessment_snapshots",
+    "run_finding_snapshots",
     "start_review",
 ]

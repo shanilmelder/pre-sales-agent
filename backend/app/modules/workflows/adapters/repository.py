@@ -53,6 +53,7 @@ class TaskRecord:
     config_version_id: UUID
     skip_reason: str | None = None
     requires: tuple[UUID, ...] = ()
+    after: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +65,7 @@ class NewTask:
     agent: str
     config_version_id: UUID
     requires: tuple[UUID, ...] = ()
+    after: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,11 +85,13 @@ class DecisionRecord:
 
 @dataclass(frozen=True, slots=True)
 class PlanTask:
-    """One task of a plan version: its id, Agent and pinned config version."""
+    """One task of a plan version: its id, Agent, pinned config version and (Story 6.4) the
+    tasks it runs after."""
 
     task_id: UUID
     agent: str
     config_version_id: UUID
+    after: tuple[UUID, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +171,7 @@ def _task(row: WorkflowTaskRow) -> TaskRecord:
         config_version_id=row.config_version_id,
         skip_reason=row.skip_reason,
         requires=tuple(row.requires or ()),
+        after=tuple(row.after or ()),
     )
 
 
@@ -194,6 +199,7 @@ async def insert_run(
                 "status": "queued",
                 "config_version_id": t.config_version_id,
                 "requires": list(t.requires),
+                "after": list(t.after),
             }
             for t in tasks
         ],
@@ -606,6 +612,7 @@ async def insert_plan_version(
                     "task_id": str(t.task_id),
                     "agent": t.agent,
                     "config_version_id": str(t.config_version_id),
+                    "after": [str(a) for a in t.after],
                 }
                 for t in tasks
             ],
@@ -631,6 +638,7 @@ async def plan_versions_of(uow: UnitOfWork, run_id: UUID) -> list[PlanVersionRec
                     task_id=UUID(t["task_id"]),
                     agent=t["agent"],
                     config_version_id=UUID(t["config_version_id"]),
+                    after=tuple(UUID(a) for a in t.get("after", [])),
                 )
                 for t in row.tasks
             ),
@@ -698,6 +706,18 @@ def _progress(row: WorkflowProgressRow) -> ProgressRecord:
         summary=row.summary,
         occurred_at=row.occurred_at,
     )
+
+
+async def last_run_end(uow: UnitOfWork, run_id: UUID) -> datetime | None:
+    """When the run last ended (its newest `workflows.run.ended` progress row), if ever."""
+    return (
+        await uow.session.execute(
+            select(func.max(WorkflowProgressRow.occurred_at)).where(
+                WorkflowProgressRow.run_id == run_id,
+                WorkflowProgressRow.event_type == "workflows.run.ended",
+            )
+        )
+    ).scalar_one_or_none()
 
 
 async def get_progress(uow: UnitOfWork, progress_id: UUID) -> ProgressRecord | None:

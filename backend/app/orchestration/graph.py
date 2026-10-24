@@ -1,6 +1,7 @@
 """A Workflow Run's graph (AD-5, AD-6; Story 5.2): one node per task, built from the run's
-plan. A task that `requires` none starts from START; one that does waits for all of them
-(a waiting edge), so independent tasks run in the same superstep, concurrently.
+plan. A task that waits for none starts from START; one that does (the tasks it `requires`,
+and, Story 6.4, those it runs `after`: the Critic's waits for every specialist's) waits for
+all of them (a waiting edge), so independent tasks run in the same superstep, concurrently.
 
 The checkpointed state is a cache of control data: the run id and the ids of the tasks a
 node finished. Every node re-reads its task from `workflows` before doing anything:
@@ -8,8 +9,9 @@ node finished. Every node re-reads its task from `workflows` before doing anythi
 1. Its task no longer queued or running, or its run no longer in progress (cancelled,
    failed as lost, or already done, e.g. accepted but not yet checkpointed before a crash):
    the node does nothing.
-2. A task it requires ended without succeeding: the task is skipped. One still in progress
-   (it failed on an earlier attempt and runs again): the node does nothing this time.
+2. A task it requires ended without succeeding: the task is skipped. One it requires or runs
+   after still in progress (it failed on an earlier attempt and runs again): the node does
+   nothing this time.
 3. A queued task whose Agent is not active (Story 5.5): `workflows.escalation` records a
    `plan_escalation` decision (idempotently, committed first), and the node calls
    LangGraph's `interrupt()` with its payload (ids and codes), outside every `try` (a
@@ -192,8 +194,8 @@ def build_graph(
     invocation: Invocation,
     checkpointer: BaseCheckpointSaver[Any] | None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """The run's graph from its plan (each task's id and the ids it requires). A required
-    id that is not a task of the plan is ignored."""
+    """The run's graph from its plan (each task's id and the ids it waits for). An id that
+    is not a task of the plan is ignored."""
     tasks = {task_id for task_id, _ in plan}
     builder: StateGraph[Any, Any, Any, Any] = StateGraph(RunState)
     required: set[UUID] = set()

@@ -758,7 +758,7 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
       }
     >
       {run.tasks.length > 0 ? (
-        <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-3">
+        <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-4">
           {run.tasks.map((task) => {
             const decision = isWaiting(run) ? openDecision(run, task.agent) : null;
             const note = decision ? decisionSentence(decision) : taskNote(task);

@@ -10,7 +10,9 @@ A `TaskExecutor` has three steps, which the node wrapper (`graph.py`) calls in o
 3. `accept(uow, task, prepared, result)`: submit the result to its owner's `accept_*`,
    inside the Unit of Work that locked the task as still `running` and then marks it done.
 
-The specialist Agents' executors are registered here; tests swap in fixture ones.
+The specialist Agents' executors and (Story 6.4) the Critic's are registered here; tests swap
+in fixture ones. The Critic's executor reads its inputs through `assessments`' public query
+(the ToolGateway is not wired into its call yet).
 """
 
 from collections.abc import Callable, MutableMapping, Sequence
@@ -18,12 +20,18 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.agents.contract import AgentConfig, AgentResult
+from app.agents.critic_agent.agent import CriticAgent
 from app.agents.engineering_agent.agent import EngineeringAgent
 from app.agents.pm_agent.agent import PmAgent
 from app.agents.security_agent.agent import SecurityAgent
 from app.agents.specialist.agent import GapBlock, RequirementBlock, SpecialistAgent, SpecialistTask
 from app.modules.assessments.application import public as assessments
-from app.modules.assessments.application.public import AssessmentAgent, AssessmentInputs
+from app.modules.assessments.application.public import (
+    CRITIC_AGENT,
+    AssessmentAgent,
+    AssessmentInputs,
+    CriticInputs,
+)
 from app.modules.registry.application import public as registry
 from app.modules.workflows.application.public import NodeTask
 from app.platform.actor import Actor
@@ -131,6 +139,55 @@ class SpecialistExecutor:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CriticPrepared:
+    task: NodeTask
+    inputs: CriticInputs = field(repr=False)
+    config: AgentConfig
+
+
+@dataclass(frozen=True, slots=True)
+class CriticExecutor:
+    """The Critic's task (Story 6.4): the Assessments the run accepted in, a Critic Review
+    out (`assessments.accept_critic_review`). With no Assessment accepted in the run there
+    is nothing to review: no model call, no Review, and the task succeeds."""
+
+    build: Callable[[ModelGatewayPort, AgentConfig], CriticAgent] = lambda gateway, config: (
+        CriticAgent(gateway, config=config)
+    )
+
+    async def prepare(self, uow: UnitOfWork, task: NodeTask) -> CriticPrepared:
+        """Read the run's Assessments, the active Requirements and the uncovered ones, in the
+        node's Unit of Work, with the task's pinned config version."""
+        versions = await registry.get_config_versions(uow, [task.config_version_id])
+        config = registry.agent_config(versions[task.config_version_id], executor_settings())
+        inputs = await assessments.load_critic_inputs(uow, task.opportunity_id, task.run_id)
+        return CriticPrepared(task=task, inputs=inputs, config=config)
+
+    async def run(self, prepared: CriticPrepared) -> AgentResult | None:
+        inputs = prepared.inputs
+        if not inputs.assessment_count:  # no Assessment accepted in the run: no model call
+            return None
+        critic = self.build(provider.current(), prepared.config)
+        return await critic.run(
+            assessments.critic_task(
+                inputs, opportunity_id=prepared.task.opportunity_id, run_id=prepared.task.run_id
+            )
+        )
+
+    async def accept(
+        self, uow: UnitOfWork, task: NodeTask, prepared: CriticPrepared, result: AgentResult
+    ) -> None:
+        await assessments.accept_critic_review(
+            uow,
+            opportunity_id=task.opportunity_id,
+            run_id=task.run_id,
+            result=result,
+            inputs=prepared.inputs,
+            actor=Actor(type="agent", id=prepared.config.actor_id),
+        )
+
+
 EXECUTORS: MutableMapping[str, TaskExecutor] = {
     AssessmentAgent.ENGINEERING.value: SpecialistExecutor(
         AssessmentAgent.ENGINEERING,
@@ -142,6 +199,7 @@ EXECUTORS: MutableMapping[str, TaskExecutor] = {
     AssessmentAgent.SECURITY.value: SpecialistExecutor(
         AssessmentAgent.SECURITY, lambda gateway, config: SecurityAgent(gateway, config=config)
     ),
+    CRITIC_AGENT: CriticExecutor(),
 }
 """The executor of each Agent id a plan may contain."""
 

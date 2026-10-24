@@ -3,7 +3,8 @@
 
 A node (`app.orchestration`) re-reads its task through `node_task`, starts it with
 `begin_task` (skipped when it is no longer queued or running, its run is no longer in
-progress, or a task it requires has not succeeded yet), calls its Agent outside any Unit of
+progress, a task it requires has not succeeded yet, or, Story 6.4, a task it runs `after`
+has not ended yet), calls its Agent outside any Unit of
 Work, then, in one Unit of Work, locks it with `lock_running_task` (None once a cancel or a
 lost-run failure moved it on: the reply is discarded), submits the result to its owner's
 `accept_*` and marks it done with `complete_task`. On a job's final attempt a failed call
@@ -66,6 +67,7 @@ class NodeTask:
     run_status: AssessmentRunStatus
     readiness: Readiness
     requires: tuple[UUID, ...] = ()
+    after: tuple[UUID, ...] = ()
 
     @property
     def pending(self) -> bool:
@@ -77,10 +79,11 @@ async def _node_task(uow: UnitOfWork, task: TaskRecord) -> NodeTask | None:
     run = await repo.get_run(uow, task.run_id)
     if run is None:
         return None
+    depends = set(task.requires) | set(task.after)
     statuses = {
         t.id: AssessmentTaskStatus(t.status)
         for t in await repo.tasks_of(uow, task.run_id)
-        if t.id in task.requires
+        if t.id in depends
     }
     return NodeTask(
         id=task.id,
@@ -90,8 +93,9 @@ async def _node_task(uow: UnitOfWork, task: TaskRecord) -> NodeTask | None:
         config_version_id=task.config_version_id,
         status=AssessmentTaskStatus(task.status),
         run_status=AssessmentRunStatus(run.status),
-        readiness=readiness(task.requires, statuses),
+        readiness=readiness(task.requires, statuses, task.after),
         requires=task.requires,
+        after=task.after,
     )
 
 
@@ -102,8 +106,9 @@ async def node_task(uow: UnitOfWork, task_id: UUID) -> NodeTask | None:
 
 
 async def begin_task(uow: UnitOfWork, task_id: UUID) -> NodeTask | None:
-    """Mark the task `running` (stamping `started_at`) if it is pending and every task it
-    requires succeeded. None (and no change) otherwise."""
+    """Mark the task `running` (stamping `started_at`) if it is pending, every task it
+    requires succeeded and every task it runs after has ended. None (and no change)
+    otherwise."""
     current = await node_task(uow, task_id)
     if current is None or not current.pending or current.readiness != "ready":
         return None

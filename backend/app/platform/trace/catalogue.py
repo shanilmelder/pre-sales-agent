@@ -686,6 +686,28 @@ class AssessmentsRedTeamReviewCompleted(TracePayload):
     superseded_count: int
 
 
+@register
+class AssessmentsCriticReviewCompleted(TracePayload):
+    """An accepted Critic task created a Critic Review (Story 6.4). Subject: the Review
+    (`assessments.review`). Actor: the agent (`critic_agent@<semver>`). Counts only: Findings
+    stored (and per severity), proposed Findings dropped, coverage Findings written by code
+    for uncovered Requirements the agent did not report, Conflicts raised from its
+    contradictions, and earlier Critic Reviews superseded."""
+
+    event_type: ClassVar[str] = "assessments.critic_review.completed"
+
+    version: int
+    finding_count: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    dropped_count: int
+    backstopped_count: int
+    conflict_count: int
+    superseded_count: int
+
+
 # Epic 5 slice 5A. Payloads hold ids, enums and counts only, never Requirement, Gap or Finding
 # text.
 

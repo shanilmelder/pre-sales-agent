@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from app.modules.assessments.application import public as assessments
-from app.modules.assessments.application.public import AssessmentAgent, RunErrorCode
+from app.modules.assessments.application.public import RunErrorCode
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.opportunities.application import public as opportunities
@@ -72,9 +72,11 @@ from app.modules.workflows.domain.runs import (
     DecisionChoice,
     DecisionKind,
     DecisionStatus,
+    TaskAgent,
     TaskSkipReason,
     chosen_skip,
     run_status,
+    task_agent_rank,
 )
 from app.platform import trace
 from app.platform.concurrency import parse_if_match
@@ -106,10 +108,7 @@ _log = get_logger(__name__)
 
 
 def _agent_order(agent: str) -> int:
-    try:
-        return assessments.AGENTS.index(AssessmentAgent(agent))
-    except ValueError:  # pragma: no cover - the table only holds known agents
-        return len(assessments.AGENTS)
+    return task_agent_rank(agent)
 
 
 def run_view(
@@ -134,7 +133,7 @@ def run_view(
             status, code = AssessmentTaskStatus.FAILED, RunErrorCode.MODEL_TIMEOUT
         views.append(
             AssessmentTask(
-                agent=AssessmentAgent(task.agent),
+                agent=TaskAgent(task.agent),
                 status=status,
                 error_code=code,
                 skip_reason=(
@@ -190,7 +189,7 @@ async def _decision_views(
             RunDecision(
                 id=str(decision.id),
                 kind=DecisionKind(decision.kind),
-                agent=AssessmentAgent(agent),
+                agent=TaskAgent(agent),
                 agent_name=registered[agent].name,
                 agent_active=registered[agent].runs_tasks,
                 status=DecisionStatus(decision.status),
@@ -228,7 +227,7 @@ async def _plan_views(
                 created_at=plan.created_at,
                 tasks=[
                     PlanVersionTask(
-                        agent=AssessmentAgent(t.agent),
+                        agent=TaskAgent(t.agent),
                         config_version_id=str(t.config_version_id),
                         config_version=(
                             versions[t.config_version_id].version
@@ -311,7 +310,7 @@ async def retry_task(
     actor: Principal,
     opportunity_id: UUID,
     run_id: UUID,
-    agent: AssessmentAgent,
+    agent: TaskAgent,
 ) -> AssessmentRun:
     """Re-run one failed task of the Opportunity's latest assessment run."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)

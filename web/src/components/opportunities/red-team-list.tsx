@@ -1,6 +1,6 @@
 "use client";
 
-import { ListChecksIcon, SigmaIcon } from "lucide-react";
+import { Link2Icon, ListChecksIcon, SigmaIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -27,17 +27,23 @@ const RETRY_FAILED = "The retry failed. Try again.";
 const RETRY_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can start a Red Team review.";
 
-/** A count chip: how many Requirements (or Estimate lines) the Finding challenges. */
-export function CountChip({ count, kind }: { count: number; kind: "requirement" | "line" }) {
-  const Icon = kind === "requirement" ? ListChecksIcon : SigmaIcon;
-  const noun =
-    kind === "requirement"
-      ? count === 1
-        ? " Requirement"
-        : " Requirements"
-      : count === 1
-        ? " Estimate line"
-        : " Estimate lines";
+const COUNT_NOUNS = {
+  requirement: [" Requirement", " Requirements"],
+  line: [" Estimate line", " Estimate lines"],
+  finding: [" cited Finding", " cited Findings"],
+} as const;
+
+/** A count chip: how many Requirements, Estimate lines or (Story 6.4, the Critic's) specialist
+ * Findings the Finding cites. */
+export function CountChip({
+  count,
+  kind,
+}: {
+  count: number;
+  kind: "requirement" | "line" | "finding";
+}) {
+  const Icon = kind === "requirement" ? ListChecksIcon : kind === "line" ? SigmaIcon : Link2Icon;
+  const noun = COUNT_NOUNS[kind][count === 1 ? 0 : 1];
   return (
     <Chip className="shrink-0">
       <Icon aria-hidden="true" className="size-3 shrink-0" />

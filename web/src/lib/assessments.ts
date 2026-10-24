@@ -9,6 +9,13 @@ import {
 
 import type { components } from "@/lib/api/client";
 import {
+  CRITIC_LABEL,
+  CRITIC_ROLE,
+  criticCategoryLabel,
+  type CriticFinding,
+  type CriticReview,
+} from "@/lib/critic";
+import {
   categoryLabel,
   REVIEW_FAILURE_REASONS,
   SEVERITIES,
@@ -27,6 +34,8 @@ export type AssessmentEffort = components["schemas"]["AssessmentEffort"];
 export type AssessmentRun = components["schemas"]["AssessmentRun"];
 export type AssessmentTask = components["schemas"]["AssessmentTask"];
 export type AssessmentAgent = components["schemas"]["AssessmentAgent"];
+/** An Agent a run plans a task for: a specialist, or the Critic (Story 6.4). */
+export type TaskAgent = components["schemas"]["TaskAgent"];
 export type Recommendation = components["schemas"]["Recommendation"];
 export type Confidence = components["schemas"]["Confidence"];
 export type FindingKind = components["schemas"]["FindingKind"];
@@ -40,20 +49,23 @@ export const AGENTS: readonly { value: AssessmentAgent; label: string }[] = [
   { value: "security_agent", label: "Security Agent" },
 ];
 
-/** An agent's role in words (its own id for one this build doesn't know). */
-export function agentLabel(value: AssessmentAgent): string {
+/** An agent's role in words ("Critic" for the Critic; its own id for one this build doesn't
+ * know). */
+export function agentLabel(value: TaskAgent): string {
+  if (value === "critic_agent") return CRITIC_LABEL;
   return AGENTS.find((a) => a.value === value)?.label ?? value;
 }
 
-/** One line on what each agent assesses, shown on its run card. */
-export const AGENT_ROLES: Record<AssessmentAgent, string> = {
+/** One line on what each agent assesses (or checks), shown on its run card. */
+export const AGENT_ROLES: Record<TaskAgent, string> = {
   engineering_agent: "Feasibility, architecture and per-integration effort",
   pm_agent: "Delivery approach, phases and customer dependencies",
   security_agent: "Mandatory controls and the effort they need",
+  critic_agent: CRITIC_ROLE,
 };
 
 /** An agent's role description ("" for one this build doesn't know). */
-export function agentRole(value: AssessmentAgent): string {
+export function agentRole(value: TaskAgent): string {
   return AGENT_ROLES[value] ?? "";
 }
 
@@ -307,8 +319,8 @@ export function runAlert(
   };
 }
 
-/** One row of the Assessments tab's Findings table: a specialist agent's or the Red Team's
- * Finding. */
+/** One row of the Assessments tab's Findings table: a specialist agent's, the Red Team's or
+ * (Story 6.4) the Critic's Finding. `cited`: the specialist Findings a Critic Finding cites. */
 export type FindingRow =
   | {
       source: "specialist";
@@ -330,12 +342,23 @@ export type FindingRow =
       raisedBy: string;
       requirements: number;
       lines: number;
+    }
+  | {
+      source: "critic";
+      finding: CriticFinding;
+      id: string;
+      severity: Severity;
+      type: string;
+      raisedBy: string;
+      requirements: number;
+      lines: null;
+      cited: number;
     };
 
-/** A Finding row's selection key, unique across both sources ("red-team:<id>",
+/** A Finding row's selection key, unique across the sources ("red-team:<id>", "critic:<id>",
  * "<agent>:<id>"). */
 export function findingKey(row: FindingRow): string {
-  return `${row.source === "red-team" ? "red-team" : row.agent}:${row.id}`;
+  return `${row.source === "specialist" ? row.agent : row.source}:${row.id}`;
 }
 
 function severityRank(value: Severity): number {
@@ -343,11 +366,13 @@ function severityRank(value: Severity): number {
   return index === -1 ? SEVERITIES.length : index;
 }
 
-/** Every agent's Findings and the Red Team's in one list, ranked critical to low (a stable
- * sort: the agents in tab order, then the Red Team, each in the API's order). */
+/** Every agent's Findings, the Red Team's and the Critic's in one list, ranked critical to low
+ * (a stable sort: the agents in tab order, then the Red Team, then the Critic, each in the
+ * API's order). */
 export function mergeFindings(
   assessments: readonly AgentAssessment[],
   review: Pick<RedTeamReview, "findings"> | null | undefined,
+  critic: Pick<CriticReview, "findings"> | null | undefined = null,
 ): FindingRow[] {
   const rows: FindingRow[] = [];
   for (const slot of assessments) {
@@ -375,6 +400,19 @@ export function mergeFindings(
       raisedBy: RED_TEAM_LABEL,
       requirements: finding.requirements.length,
       lines: finding.lines.length,
+    });
+  }
+  for (const finding of critic?.findings ?? []) {
+    rows.push({
+      source: "critic",
+      finding,
+      id: finding.id,
+      severity: finding.severity,
+      type: criticCategoryLabel(finding.category),
+      raisedBy: CRITIC_LABEL,
+      requirements: finding.requirements.length,
+      lines: null,
+      cited: finding.findings.length,
     });
   }
   return rows
@@ -460,7 +498,7 @@ export const RESOLVE_FAILED = "The decision could not be saved. Try again.";
 /** The run's open decision about an agent's task, if it waits on one. */
 export function openDecision(
   run: Pick<AssessmentRun, "decisions"> | null | undefined,
-  agent: AssessmentAgent,
+  agent: TaskAgent,
 ): RunDecision | null {
   return run?.decisions?.find((d) => d.status === "open" && d.agent === agent) ?? null;
 }

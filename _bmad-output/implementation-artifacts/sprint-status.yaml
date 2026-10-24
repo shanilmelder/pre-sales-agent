@@ -97,7 +97,7 @@ development_status:
   6-1-detect-conflicts-with-deterministic-rules: done
   6-2-llm-assisted-conflict-detection-for-free-text: done
   6-3-resolve-conflicts-with-a-reason: done
-  6-4-critic-review: backlog
+  6-4-critic-review: review
   6-5-red-team-review: done
   6-6-blocking-findings-and-overrides: backlog
   epic-6-retrospective: optional

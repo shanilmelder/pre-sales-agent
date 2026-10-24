@@ -3,6 +3,7 @@
 - Red Team (Story 6.5): `GET /api/v1/opportunities/{opportunity_id}/red-team` and
   `POST /api/v1/opportunities/{opportunity_id}/red-team-reviews`.
 - Outdated Assessments (Story 2.7): `GET …/{opportunity_id}/assessments/outdated`.
+- Critic (Story 6.4): `GET …/{opportunity_id}/critic`.
 
 The specialist Assessments' routes (`GET …/assessments` and the assessment run commands)
 are served by `workflows` since Story 5.2, composed with this module's public API.
@@ -16,6 +17,7 @@ from fastapi import APIRouter
 
 from app.modules.assessments.application import public as assessments
 from app.modules.assessments.application.public import (
+    CriticView,
     OutdatedAssessments,
     RedTeamRun,
     RedTeamView,
@@ -58,6 +60,15 @@ async def get_red_team(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) 
     challenges, and the counts per severity; and its latest Red Team run (null before the
     first). Anyone who can read the Opportunity."""
     return await assessments.get_red_team(uow, actor, opportunity_id)
+
+
+@router.get("/critic", operation_id="get_critic", responses=_responses(404, 422))
+async def get_critic(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) -> CriticView:
+    """The Opportunity's current Critic Review (null before the first): the Critic's Findings
+    on the latest assessment run's Assessments, critical first, then high, medium and low,
+    each with the Requirements and the specialist Findings (at their Assessment version) it
+    cites, and the counts per severity. Anyone who can read the Opportunity; read-only."""
+    return await assessments.get_critic(uow, actor, opportunity_id)
 
 
 @router.post(

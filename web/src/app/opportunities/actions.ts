@@ -3,6 +3,7 @@
 import {
   getAssessments,
   getConflicts,
+  getCritic,
   getEstimate,
   getOpportunity,
   getRedTeam,
@@ -11,6 +12,7 @@ import {
   listRequirements,
   listSources,
   type AssessmentsResult,
+  type CriticResult,
   type EstimateResult,
   type GapsResult,
   type OutdatedAssessmentsResult,
@@ -19,7 +21,7 @@ import {
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
-import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
+import type { AssessmentRun, TaskAgent } from "@/lib/assessments";
 import type { Conflict } from "@/lib/conflicts";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
@@ -781,6 +783,12 @@ export async function startEstimateDraft(
   }
 }
 
+/** The current Critic Review (Story 6.4), re-read by the Assessments tab as its run moves on. */
+export async function loadCritic(opportunityId: unknown): Promise<CriticResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return getCritic(opportunityId);
+}
+
 /** The Opportunity's Red Team Review and latest run as stored now (the Assessments tab polls
  * this while a review runs). */
 export async function loadRedTeam(opportunityId: unknown): Promise<RedTeamResult> {
@@ -829,7 +837,13 @@ export async function loadAssessments(opportunityId: unknown): Promise<Assessmen
   return getAssessments(opportunityId);
 }
 
-const ASSESSMENT_AGENTS: readonly string[] = ["engineering_agent", "pm_agent", "security_agent"];
+/** The Agents whose failed task may be retried: the specialists and (Story 6.4) the Critic. */
+const ASSESSMENT_AGENTS: readonly string[] = [
+  "engineering_agent",
+  "pm_agent",
+  "security_agent",
+  "critic_agent",
+];
 
 function startResult(
   label: string,
@@ -889,7 +903,7 @@ export async function retryAssessmentTask(
           path: {
             opportunity_id: opportunityId,
             run_id: runId,
-            agent: agent as AssessmentAgent,
+            agent: agent as TaskAgent,
           },
         },
       },

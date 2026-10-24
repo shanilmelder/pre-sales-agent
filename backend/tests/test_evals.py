@@ -39,6 +39,7 @@ from app.evals.annotations import (
 )
 from app.evals.report import build_report, render, signed
 from app.evals.scoring import (
+    CriticSummary,
     DetectedGap,
     ExtractedRequirement,
     Finding,
@@ -354,6 +355,49 @@ def test_the_report_names_a_failed_stage() -> None:
     assert not passed
     assert "Eval FAILED" in printed
     assert "t: extraction failed (model_timeout)" in printed
+    assert "Critic: 0/1 Opportunities reviewed, 0 Findings" in printed
+
+
+def test_the_critic_stage_is_reported_and_its_failure_zeroes_nothing() -> None:
+    """Story 6.4: the placeholder became the real stage, with no bar."""
+    reviewed = score_opportunity(
+        annotations(),
+        output(
+            failures=[StageFailure("critic", "output_invalid")],
+            critic=CriticSummary(version=2, critical=1, medium=2),
+        ),
+    )
+    clean = score_opportunity(annotations(), output())
+    assert reviewed.metrics() == clean.metrics()
+    scores = aggregate([reviewed, clean], [])
+    built = build_report(
+        result=None,
+        bars=[],
+        passed=False,
+        scores=scores,
+        meta={
+            "reference_set_version": "0123456789ab",
+            "opportunity_count": 2,
+            "draft_count": 0,
+            "tokens": 0,
+            "gpu_seconds": 0.0,
+            "cost": {"amount_minor": 0, "currency": "EUR"},
+        },
+    )
+    assert built["stages"]["not_available"] == []
+    assert built["critic"] == {
+        "reviewed": 1,
+        "opportunities": 2,
+        "finding_count": 3,
+        "critical": 1,
+        "high": 0,
+        "medium": 2,
+        "low": 0,
+    }
+    assert built["opportunities"][0]["critic"]["version"] == 2
+    printed = render(built)
+    assert "Critic: 1/2 Opportunities reviewed, 3 Findings (1 critical, 0 high, 2 medium" in printed
+    assert "t: critic failed (output_invalid)" in printed
 
 
 # --- the reference set -----------------------------------------------------------------------
@@ -763,7 +807,7 @@ class ChainGateway:
 def _chain_replies() -> dict[str, Any]:
     from tests.test_assessments_red_team import finding as red_finding
     from tests.test_assessments_red_team import findings_out
-    from tests.test_assessments_specialists import ENGINEERING, PM, SECURITY
+    from tests.test_assessments_specialists import ENGINEERING, NO_CRITIC_FINDINGS, PM, SECURITY
     from tests.test_gaps_detection import gap, gaps_out
     from tests.test_intake_extraction import out
 
@@ -784,6 +828,7 @@ def _chain_replies() -> dict[str, Any]:
         "pm_agent": PM,
         "security_agent": SECURITY,
         "red_team_agent": findings_out(red_finding("Host socket protocol is undocumented", ["R3"])),
+        "critic_agent": NO_CRITIC_FINDINGS,
     }
 
 
@@ -833,11 +878,16 @@ def test_the_harness_runs_one_opportunity_through_the_chain_and_stores_the_resul
         "engineering_agent",
         "pm_agent",
         "security_agent",
+        "critic_agent",
         "red_team_agent",
     }
     report = outcome.report
     assert report["stored"] and report["opportunity_count"] == 1 and report["draft_count"] == 1
-    assert report["stages"]["not_available"] == ["critic"]
+    assert report["stages"]["not_available"] == []
+    assert "critic" in report["stages"]["run"]
+    # Story 6.4: the Critic reviewed the run; its Review is reported, with no bar.
+    assert report["critic"]["reviewed"] == 1
+    assert report["opportunities"][0]["critic"]["version"] == 1
     overall = report["scores"]["overall"]
     assert overall["extraction_recall"] == 40.0  # R1-R4 of the 10 annotated
     assert overall["citation_validity"] == 100.0
@@ -860,7 +910,7 @@ def test_the_harness_runs_one_opportunity_through_the_chain_and_stores_the_resul
     # The fake gateway writes no model calls: no digest is reported, none is made up.
     assert all(v == [] for v in outcome.result.model_digests.values())
     printed = render(report)
-    assert "Eval FAILED" in printed and "Critic: not available" in printed
+    assert "Eval FAILED" in printed and "Critic: 1/1 Opportunities reviewed" in printed
     assert "Gap recall" in printed and "Evidence pairs pending review" in printed
 
 
@@ -905,3 +955,63 @@ def test_collect_names_failed_and_dead_stages_once_each(eval_settings: Settings)
         StageFailure("gap_detection", "job_dead"),
     ]
     assert output.requirements == [] and output.findings == []
+
+
+def test_collect_names_only_the_critic_when_its_task_failed(
+    db_url: str, sync_engine: Engine, tmp_path: Path
+) -> None:
+    """Story 6.4: a failed Critic task (its job dead) is the `critic` stage's failure only:
+    the specialists succeeded and the Estimate was built."""
+    from app.modules.registry.domain.registry import seed_config_version_id
+
+    opportunity, run = uuid4(), uuid4()
+    with sync_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO workflows_runs (id, opportunity_id, status) "
+                "VALUES (:r, :o, 'partially_failed')"
+            ),
+            {"r": run, "o": opportunity},
+        )
+        for agent in ("engineering_agent", "pm_agent", "security_agent", "critic_agent"):
+            failed = agent == "critic_agent"
+            conn.execute(
+                sa.text(
+                    "INSERT INTO workflows_tasks (id, run_id, agent, status, error_code, "
+                    "config_version_id) VALUES (:i, :r, :a, :s, :e, :c)"
+                ),
+                {
+                    "i": uuid4(),
+                    "r": run,
+                    "a": agent,
+                    "s": "failed" if failed else "succeeded",
+                    "e": "output_invalid" if failed else None,
+                    "c": seed_config_version_id(agent),
+                },
+            )
+        conn.execute(
+            sa.text(
+                "INSERT INTO platform_jobs (id, job_type, payload, priority, status, attempts, "
+                "run_after, opportunity_id) "
+                "VALUES (:i, 'workflows.execute', '{}', 1, 'dead', 2, now(), :o)"
+            ),
+            {"i": uuid4(), "o": opportunity},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO estimates_estimate_versions (id, opportunity_id, version, status, "
+                "template_version, uncovered_count, dropped_count, row_version, source, "
+                "source_run_id) VALUES (:i, :o, 1, 'draft', 't1', 0, 0, 1, 'assessments', :r)"
+            ),
+            {"i": uuid4(), "o": opportunity, "r": run},
+        )
+
+    async def scenario() -> OpportunityOutput:
+        db = create_engine(Settings(database_url=db_url))
+        try:
+            return await harness.collect(db, "x", opportunity, BlobStore(tmp_path))
+        finally:
+            await db.dispose()
+
+    output = run_async(scenario())
+    assert list(output.failures) == [StageFailure("critic", "output_invalid")]

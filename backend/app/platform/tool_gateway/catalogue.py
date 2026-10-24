@@ -17,6 +17,7 @@ CHUNK_READ = "knowledge.chunk.read"
 CATALOGUE_ENTRY_LIST = "knowledge.catalogue_entry.list"
 GAP_LIST = "gaps.gap.list"
 RESEARCH_PAGE_FETCH = "knowledge.research_page.fetch"
+RUN_ASSESSMENT_READ = "assessments.run.read"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,10 @@ _TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(CHUNK_READ, "Knowledge chunks by id."),
     ToolSpec(CATALOGUE_ENTRY_LIST, "The active Integration Types and Work Packages."),
     ToolSpec(GAP_LIST, "The task Opportunity's open Gaps."),
+    ToolSpec(
+        RUN_ASSESSMENT_READ,
+        "The task run's accepted Assessments and their Findings, with their versions.",
+    ),
     ToolSpec(
         RESEARCH_PAGE_FETCH,
         "Fetch one allowlisted HTTPS page and keep it as a Research Snapshot.",

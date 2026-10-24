@@ -56,10 +56,12 @@ from app.modules.workflows.application.tasks import (
     skip_disabled_task,
 )
 from app.modules.workflows.domain.runs import (
+    TASK_AGENTS,
     AssessmentRunStatus,
     AssessmentTaskStatus,
     DecisionChoice,
     DecisionStatus,
+    TaskAgent,
 )
 from app.platform.uow import UnitOfWork
 
@@ -89,15 +91,20 @@ async def run_number(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> int
 
 
 async def plan_of(uow: UnitOfWork, run_id: UUID) -> list[tuple[UUID, tuple[UUID, ...]]]:
-    """The run's plan for building its graph: each task's id and the ids it requires, in a
-    stable order. No authorization."""
-    return [(t.id, t.requires) for t in await _repo.tasks_of(uow, run_id)]
+    """The run's plan for building its graph: each task's id and the ids it waits for (those
+    it requires, then those it runs after, Story 6.4: the graph's edges are the same; the
+    node tells them apart through `node_task`), in a stable order. No authorization."""
+    return [
+        (t.id, (*t.requires, *(a for a in t.after if a not in t.requires)))
+        for t in await _repo.tasks_of(uow, run_id)
+    ]
 
 
 __all__ = [
     "EXECUTE",
     "PRUNE_PROGRESS",
     "RESUME",
+    "TASK_AGENTS",
     "AssessmentRun",
     "AssessmentRunStatus",
     "AssessmentTask",
@@ -115,6 +122,7 @@ __all__ = [
     "PlanVersionTask",
     "ProgressEventData",
     "RunDecision",
+    "TaskAgent",
     "TraceEventData",
     "begin_task",
     "cancel_run",

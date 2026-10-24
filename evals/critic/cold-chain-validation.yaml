@@ -1,0 +1,55 @@
+# Pharma wholesaler: nobody covers temperature mapping (R3); PM claims the customer's
+# validation team signs off in a week, with nothing behind it; Security's audit lead time
+# can't fit PM's go-live date.
+requirements:
+  - number: 1
+    classification: functional
+    text: Store and pick 12,000 SKUs in a 2-8 °C chilled zone.
+  - number: 2
+    classification: non_functional
+    text: The system must be validated to GDP and GAMP 5 before receiving stock.
+  - number: 3
+    classification: functional
+    text: Map temperatures across the chilled zone before and after installation.
+  - number: 4
+    classification: commercial
+    text: Operational by 1 March to replace the expiring third-party warehouse contract.
+findings:
+  engineering_agent:
+    - key: eng-chilled-shuttle
+      kind: risk
+      severity: medium
+      title: Shuttle performance at 2-8 °C needs derating
+      detail: Battery and lubrication behaviour in the chilled zone reduce throughput by 10-15%.
+      requirements: [1]
+  pm_agent:
+    - key: pm-validation-signoff
+      kind: opportunity
+      severity: low
+      title: Customer validation team signs off within one week
+      detail: >-
+        The customer's validation team will review and sign off the IQ/OQ/PQ documents within
+        a week of handover, so validation is not on the critical path.
+      requirements: [2]
+    - key: pm-march-golive
+      kind: constraint
+      severity: high
+      title: Go-live on 1 March with handover on 15 February
+      detail: The plan hands the system over on 15 February to go live on 1 March.
+      requirements: [4]
+  security_agent:
+    - key: sec-audit-lead-time
+      kind: dependency
+      severity: high
+      title: GDP audit needs eight weeks after installation
+      detail: >-
+        The customer's quality assurance requires an audit of the computerised system eight
+        weeks after installation before any stock is received.
+      requirements: [2]
+effort:
+  engineering_agent: {1: 600}
+  pm_agent: {2: 120, 4: 24}
+seeded:
+  uncovered: [3]
+  unsupported_claim: [pm-validation-signoff]
+  timeline: [pm-march-golive, sec-audit-lead-time]
