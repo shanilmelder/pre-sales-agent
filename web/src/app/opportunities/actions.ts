@@ -21,7 +21,15 @@ import {
 import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
 import type { Conflict } from "@/lib/conflicts";
-import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
+import type {
+  Assumption,
+  AssumptionKind,
+  EstimateDraft,
+  EstimateView,
+  Risk,
+  RiskLevel,
+  RoleMix,
+} from "@/lib/estimates";
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
@@ -2544,6 +2552,250 @@ export async function editEstimateLine(input: unknown): Promise<EstimateLineEdit
     console.error(
       `edit estimate line failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
+    return { kind: "error" };
+  }
+}
+
+// --- editing Assumptions and Risks (Story 8.5) ----------------------------------------------
+
+export type AssumptionEditInput = {
+  opportunityId: string;
+  assumptionId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  kind: AssumptionKind;
+  wording: string;
+  /** Null for a Condition. */
+  amountHours: number | null;
+  /** Null for a Condition, or a Contingency with no line (Unallocated). */
+  lineId: string | null;
+  reason: string;
+};
+
+/** What saving an edit of an Assumption or a Risk came to. */
+export type EstimateItemEditResult =
+  /** The whole Estimate as it is now, every total recalculated by the server. */
+  | { kind: "ok"; estimate: EstimateView }
+  /** 412: someone changed it first; `message` is the API's "Changed by {name} since you opened
+   * it." */
+  | { kind: "stale"; message: string }
+  /** 422: the rule it broke, as a sentence. */
+  | { kind: "invalid"; detail: string }
+  /** 409 `estimate_version_not_draft`: the version is not the draft any more. */
+  | { kind: "not-draft" }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the item is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+const ASSUMPTION_KINDS: readonly string[] = ["condition", "contingency"];
+const RISK_LEVEL_VALUES: readonly string[] = ["low", "medium", "high"];
+
+function isRowVersion(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isAssumptionEditInput(input: unknown): input is AssumptionEditInput {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  return (
+    typeof i.opportunityId === "string" &&
+    UUID_RE.test(i.opportunityId) &&
+    typeof i.assumptionId === "string" &&
+    UUID_RE.test(i.assumptionId) &&
+    isRowVersion(i.rowVersion) &&
+    typeof i.kind === "string" &&
+    ASSUMPTION_KINDS.includes(i.kind) &&
+    typeof i.wording === "string" &&
+    (i.amountHours === null ||
+      (typeof i.amountHours === "number" && Number.isFinite(i.amountHours))) &&
+    (i.lineId === null || (typeof i.lineId === "string" && UUID_RE.test(i.lineId))) &&
+    typeof i.reason === "string"
+  );
+}
+
+/** The result of a failed edit, by status. */
+function itemEditFailure(
+  status: number,
+  error: unknown,
+  what: string,
+): Exclude<EstimateItemEditResult, { kind: "ok" }> {
+  switch (status) {
+    case 412:
+      return {
+        kind: "stale",
+        message: problem(error).detail ?? "Changed by someone else since you opened it.",
+      };
+    case 422: {
+      const { detail } = problem(error);
+      return {
+        kind: "invalid",
+        detail:
+          detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
+      };
+    }
+    case 409:
+      return { kind: "not-draft" };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${what} failed: status=${status} code=${String(problem(error).code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `PATCH /api/v1/opportunities/{id}/assumptions/{aid}` with `If-Match`: an Assumption's kind,
+ * wording, hours and line, with a reason; saving clears its acceptance. Never retries or
+ * overwrites on 412. Logs ids and statuses only (never the wording or the reason). */
+export async function editAssumption(input: unknown): Promise<EstimateItemEditResult> {
+  if (!isAssumptionEditInput(input)) return { kind: "error" };
+  const { opportunityId, assumptionId, rowVersion, kind, wording, amountHours, lineId, reason } =
+    input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, assumption_id: assumptionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { kind, wording, amount_hours: amountHours, line_id: lineId, reason },
+      },
+    );
+    if (data) return { kind: "ok", estimate: data };
+    return itemEditFailure(response.status, error, "edit assumption");
+  } catch (thrown) {
+    console.error(`edit assumption failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type RiskConvertInput = {
+  opportunityId: string;
+  gapId: string;
+  description: string;
+  likelihood: RiskLevel;
+  impact: RiskLevel;
+};
+
+export type RiskConvertResult =
+  | { kind: "ok"; risk: Risk }
+  /** 409 `gap_not_open`: the Gap was converted, dismissed, answered or replaced. */
+  | { kind: "gap-not-open" }
+  /** 409 `no_draft_estimate`: there is no draft Estimate to add the Risk to. */
+  | { kind: "no-draft" }
+  | { kind: "invalid"; detail: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isRiskConvertInput(input: unknown): input is RiskConvertInput {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  return (
+    typeof i.opportunityId === "string" &&
+    UUID_RE.test(i.opportunityId) &&
+    typeof i.gapId === "string" &&
+    UUID_RE.test(i.gapId) &&
+    typeof i.description === "string" &&
+    typeof i.likelihood === "string" &&
+    RISK_LEVEL_VALUES.includes(i.likelihood) &&
+    typeof i.impact === "string" &&
+    RISK_LEVEL_VALUES.includes(i.impact)
+  );
+}
+
+/** `POST /api/v1/opportunities/{id}/risks`: convert an open Gap to a Risk of the draft
+ * Estimate. Logs ids and statuses only (never the description). */
+export async function convertGapToRisk(input: unknown): Promise<RiskConvertResult> {
+  if (!isRiskConvertInput(input)) return { kind: "error" };
+  const { opportunityId, gapId, description, likelihood, impact } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST("/api/v1/opportunities/{opportunity_id}/risks", {
+      params: { path: { opportunity_id: opportunityId } },
+      body: { gap_id: gapId, description, likelihood, impact },
+    });
+    if (data) return { kind: "ok", risk: data };
+    const { code, detail } = problem(error);
+    switch (response.status) {
+      case 409:
+        return code === "no_draft_estimate" ? { kind: "no-draft" } : { kind: "gap-not-open" };
+      case 422:
+        return {
+          kind: "invalid",
+          detail:
+            detail && !detail.startsWith("Invalid fields:") ? detail : "The Risk was not accepted.",
+        };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(`convert gap to risk failed: status=${response.status} code=${String(code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `convert gap to risk failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+export type RiskEditInput = {
+  opportunityId: string;
+  riskId: string;
+  /** The `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  description: string;
+  likelihood: RiskLevel;
+  impact: RiskLevel;
+  reason: string;
+};
+
+function isRiskEditInput(input: unknown): input is RiskEditInput {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  return (
+    typeof i.opportunityId === "string" &&
+    UUID_RE.test(i.opportunityId) &&
+    typeof i.riskId === "string" &&
+    UUID_RE.test(i.riskId) &&
+    isRowVersion(i.rowVersion) &&
+    typeof i.description === "string" &&
+    typeof i.likelihood === "string" &&
+    RISK_LEVEL_VALUES.includes(i.likelihood) &&
+    typeof i.impact === "string" &&
+    RISK_LEVEL_VALUES.includes(i.impact) &&
+    typeof i.reason === "string"
+  );
+}
+
+/** `PATCH /api/v1/opportunities/{id}/risks/{rid}` with `If-Match`: a Risk's description,
+ * likelihood and impact, with a reason. Never retries or overwrites on 412. */
+export async function editRisk(input: unknown): Promise<EstimateItemEditResult> {
+  if (!isRiskEditInput(input)) return { kind: "error" };
+  const { opportunityId, riskId, rowVersion, description, likelihood, impact, reason } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PATCH(
+      "/api/v1/opportunities/{opportunity_id}/risks/{risk_id}",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, risk_id: riskId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { description, likelihood, impact, reason },
+      },
+    );
+    if (data) return { kind: "ok", estimate: data };
+    return itemEditFailure(response.status, error, "edit risk");
+  } catch (thrown) {
+    console.error(`edit risk failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

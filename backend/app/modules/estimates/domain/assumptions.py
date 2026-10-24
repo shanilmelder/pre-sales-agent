@@ -89,6 +89,50 @@ def valid_hours(raw: float | int | Decimal | str) -> Decimal | None:
     return hours
 
 
+WORDING_RULE = f"The wording must be 1 to {WORDING_MAX} characters."
+KIND_RULE = "The kind must be a Condition or a Contingency."
+CONDITION_HOURS_RULE = "A Condition has no hours."
+CONTINGENCY_HOURS_RULE = "A Contingency needs 0.5 to 1,000 hours."
+CONDITION_LINE_RULE = "A Condition is not linked to a line."
+LINE_RULE = "The line must be a line of this Estimate Version."
+
+
+@dataclass(frozen=True, slots=True)
+class AssumptionFields:
+    """An Assumption's kind, wording (trimmed) and hours (0.1 h; None for a Condition), as the
+    rules allow them."""
+
+    kind: AssumptionKind
+    wording: str = field(repr=False)
+    hours: Decimal | None
+
+
+def check_assumption(
+    kind: str, wording: str, hours: float | int | Decimal | None
+) -> AssumptionFields | str:
+    """The Story 8.4 rules shared by a proposal and a person's edit (Story 8.5): a known kind,
+    wording of 1-500 characters (trimmed), no hours on a Condition, and 0.5-1,000 hours
+    (rounded half up to 0.1) on a Contingency. The fields as allowed, or the broken rule's
+    sentence."""
+    try:
+        valid_kind = AssumptionKind(kind)
+    except ValueError:
+        return KIND_RULE
+    trimmed = wording.strip()
+    if not 0 < len(trimmed) <= WORDING_MAX:
+        return WORDING_RULE
+    if valid_kind is AssumptionKind.CONDITION:
+        return (
+            CONDITION_HOURS_RULE
+            if hours is not None
+            else AssumptionFields(valid_kind, trimmed, None)
+        )
+    rounded = None if hours is None else valid_hours(hours)
+    if rounded is None:
+        return CONTINGENCY_HOURS_RULE
+    return AssumptionFields(valid_kind, trimmed, rounded)
+
+
 def validate_proposal[G, L](
     candidate: ProposalCandidate, gaps: Mapping[str, G], lines: Mapping[str, L]
 ) -> ValidProposal[G, L] | None:
@@ -97,30 +141,22 @@ def validate_proposal[G, L](
     gap = gaps.get(candidate.gap.strip())
     if gap is None:
         return None
-    try:
-        kind = AssumptionKind(candidate.kind)
-    except ValueError:
-        return None
-    wording = candidate.wording.strip()
-    if not 0 < len(wording) <= WORDING_MAX:
+    checked = check_assumption(candidate.kind, candidate.wording, candidate.hours)
+    if isinstance(checked, str):
         return None
     line: L | None = None
-    hours: Decimal | None = None
-    if kind is AssumptionKind.CONDITION:
-        # A Condition carries no hours; a line label on one is ignored (it prices nothing).
-        if candidate.hours is not None:
+    # A Condition's line label is ignored (it prices nothing).
+    if (
+        checked.kind is AssumptionKind.CONTINGENCY
+        and candidate.line is not None
+        and candidate.line.strip()
+    ):
+        line = lines.get(candidate.line.strip())
+        if line is None:
             return None
-    else:
-        if candidate.hours is None:
-            return None
-        hours = valid_hours(candidate.hours)
-        if hours is None:
-            return None
-        if candidate.line is not None and candidate.line.strip():
-            line = lines.get(candidate.line.strip())
-            if line is None:
-                return None
-    return ValidProposal(gap=gap, kind=kind, wording=wording, hours=hours, line=line)
+    return ValidProposal(
+        gap=gap, kind=checked.kind, wording=checked.wording, hours=checked.hours, line=line
+    )
 
 
 def validate_proposals[G, L](
@@ -162,3 +198,18 @@ def carried_line[L](section: str, title: str, candidates: Sequence[tuple[L, str,
     key = _line_key(section, title)
     found = [line for line, s, t in candidates if _line_key(s, t) == key]
     return found[0] if len(found) == 1 else None
+
+
+# --- the origin's state (Story 8.5) ---------------------------------------------------------
+
+
+def origin_superseded(status: str, row_version: int, made_at_row_version: object) -> bool:
+    """Whether an Assumption's (or a Risk's) origin Gap has moved on since it was made from
+    it: the Gap is neither `open` nor `converted`, or it is open but at another row version
+    than `origin_ref.row_version`. A converted Gap is the conversion itself (converting bumps
+    its row version and it never changes again but for that), so it is current."""
+    if status == "converted":
+        return False
+    if status != "open":
+        return True
+    return row_version != made_at_row_version

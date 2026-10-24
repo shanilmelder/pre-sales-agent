@@ -1484,6 +1484,7 @@ describe("/opportunities/[id] workspace", () => {
         counts: { total: 0, accepted: 0, not_accepted: 0 },
         unconverted_gaps: [],
         unallocated_contingency_hours: 0,
+        risks: [],
         source: "assessments",
         source_run: 1,
       },
@@ -1646,6 +1647,61 @@ describe("/opportunities/[id] workspace", () => {
       params: { path: { opportunity_id: OPP_ID } },
     });
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it.each([
+    ["a draft version and can_create_risks", { status: "draft" }, true, true],
+    ["no version", null, true, false],
+    ["a superseded version", { status: "superseded" }, true, false],
+    ["can_create_risks false", { status: "draft" }, false, false],
+  ])("tab URL /gaps: Convert to Risk with %s (Story 8.5)", async (_, version, may, shown) => {
+    signedIn(["presales_engineer"]);
+    const gapsBody = {
+      items: [
+        {
+          id: "00000000-0000-7000-8000-0000000000e1",
+          title: "[GAP]",
+          category: "integration_details",
+          trigger: { kind: "agent_category", category: "integration_details" },
+          why_it_matters: "[WHY]",
+          impact: "high",
+          impact_basis: "[BASIS]",
+          origin: "detected",
+          status: "open",
+          converted_to: null,
+          row_version: 1,
+          created_at: "2026-10-05T09:00:00Z",
+          requirements: [],
+          question: null,
+          dismissal: null,
+          history: [],
+          last_changed_by: null,
+          answer: null,
+          answer_suggestions: [],
+        },
+      ],
+      detection: { status: "succeeded", error_code: null },
+      can_start_detection: true,
+      can_edit_questions: true,
+      can_edit_gaps: true,
+      can_send_questions: false,
+    };
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/gaps/context")
+        ? { response: new Response(null, { status: 500 }) }
+        : path.endsWith("/gaps")
+          ? { data: gapsBody, response: new Response(null, { status: 200 }) }
+          : path.endsWith("/estimate")
+            ? {
+                data: { version, draft: null, can_create_risks: may },
+                response: new Response(null, { status: 200 }),
+              }
+            : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+    await renderWorkspace("gaps");
+    await userEvent.setup().click(screen.getByRole("button", { name: /\[GAP\]/ }));
+    const form = screen.queryByRole("form", { name: "Convert to Risk" });
+    expect(form !== null).toBe(shown);
   });
 
   it("tab URL /gaps: the empty state", async () => {

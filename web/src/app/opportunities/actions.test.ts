@@ -39,6 +39,9 @@ import {
   createOpportunity,
   editClarificationQuestion,
   editEstimateLine,
+  editAssumption,
+  convertGapToRisk,
+  editRisk,
   editRequirement,
   mergeRequirements,
   splitRequirement,
@@ -2328,5 +2331,123 @@ describe("createRequirement / deleteRequirement / splitRequirement / mergeRequir
       }),
     ).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("editAssumption, convertGapToRisk and editRisk (Story 8.5)", () => {
+  const AID = "00000000-0000-7000-8000-0000000000a1";
+  const RID = "00000000-0000-7000-8000-0000000000b1";
+  const GID = "00000000-0000-7000-8000-0000000000e1";
+  const LID = "00000000-0000-7000-8000-0000000000d1";
+  const ESTIMATE = { version: { sections: [] }, draft: null };
+  const EDIT = {
+    opportunityId: OPP_ID,
+    assumptionId: AID,
+    rowVersion: 2,
+    kind: "contingency",
+    wording: "[WORDING]",
+    amountHours: 12,
+    lineId: LID,
+    reason: "[REASON]",
+  };
+
+  beforeEach(() => {
+    api.PATCH.mockReset();
+    api.POST.mockReset();
+  });
+
+  it("patches an Assumption with If-Match and every field, and returns the Estimate", async () => {
+    api.PATCH.mockResolvedValue({ data: ESTIMATE, response: new Response(null, { status: 200 }) });
+    expect(await editAssumption(EDIT)).toEqual({ kind: "ok", estimate: ESTIMATE });
+    expect(api.PATCH).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, assumption_id: AID },
+          header: { "If-Match": '"2"' },
+        },
+        body: {
+          kind: "contingency",
+          wording: "[WORDING]",
+          amount_hours: 12,
+          line_id: LID,
+          reason: "[REASON]",
+        },
+      },
+    );
+  });
+
+  it.each([
+    [412, "row_version_mismatch", "Changed by [OTHER] since you opened it.", {
+      kind: "stale",
+      message: "Changed by [OTHER] since you opened it.",
+    }],
+    [422, "validation_error", "A Condition has no hours.", {
+      kind: "invalid",
+      detail: "A Condition has no hours.",
+    }],
+    [409, "estimate_version_not_draft", "", { kind: "not-draft" }],
+    [403, "forbidden", "", { kind: "forbidden" }],
+    [404, "not_found", "", { kind: "not-found" }],
+  ])("maps a %i on an Assumption edit", async (status, code, detail, expected) => {
+    api.PATCH.mockResolvedValue({
+      error: { code, detail },
+      response: new Response(null, { status }),
+    });
+    expect(await editAssumption(EDIT)).toEqual(expected);
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await editAssumption({ ...EDIT, kind: "risk" })).toEqual({ kind: "error" });
+    expect(await editAssumption({ ...EDIT, lineId: "x" })).toEqual({ kind: "error" });
+    expect(api.PATCH).not.toHaveBeenCalled();
+  });
+
+  it("converts a Gap to a Risk and tells the two 409s apart", async () => {
+    const input = {
+      opportunityId: OPP_ID,
+      gapId: GID,
+      description: "[RISK]",
+      likelihood: "medium",
+      impact: "high",
+    };
+    api.POST.mockResolvedValueOnce({
+      data: { id: RID },
+      response: new Response(null, { status: 201 }),
+    });
+    expect(await convertGapToRisk(input)).toEqual({ kind: "ok", risk: { id: RID } });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/risks", {
+      params: { path: { opportunity_id: OPP_ID } },
+      body: { gap_id: GID, description: "[RISK]", likelihood: "medium", impact: "high" },
+    });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "no_draft_estimate" },
+      response: new Response(null, { status: 409 }),
+    });
+    expect(await convertGapToRisk(input)).toEqual({ kind: "no-draft" });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "gap_not_open" },
+      response: new Response(null, { status: 409 }),
+    });
+    expect(await convertGapToRisk(input)).toEqual({ kind: "gap-not-open" });
+    expect(await convertGapToRisk({ ...input, impact: "severe" })).toEqual({ kind: "error" });
+  });
+
+  it("patches a Risk with If-Match", async () => {
+    api.PATCH.mockResolvedValue({ data: ESTIMATE, response: new Response(null, { status: 200 }) });
+    const input = {
+      opportunityId: OPP_ID,
+      riskId: RID,
+      rowVersion: 1,
+      description: "[RISK]",
+      likelihood: "low",
+      impact: "high",
+      reason: "[REASON]",
+    };
+    expect(await editRisk(input)).toEqual({ kind: "ok", estimate: ESTIMATE });
+    expect(api.PATCH).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/risks/{risk_id}", {
+      params: { path: { opportunity_id: OPP_ID, risk_id: RID }, header: { "If-Match": '"1"' } },
+      body: { description: "[RISK]", likelihood: "low", impact: "high", reason: "[REASON]" },
+    });
   });
 });

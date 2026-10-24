@@ -304,6 +304,7 @@ def test_a_draft_stores_version_1_with_lines_links_and_one_event(
         "requirement_count": 5,
         "superseded_count": 0,
         "carried_assumption_count": 0,  # a first draft carries nothing
+        "carried_risk_count": 0,
         "carried_edit_count": 0,
         "uncarried_edit_count": 0,
         "source": "model",

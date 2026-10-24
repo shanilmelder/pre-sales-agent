@@ -743,6 +743,27 @@ async def convert_gap(uow: UnitOfWork, gap_id: UUID, *, converted_to: str) -> Ga
     return None if changed is None else await get_gap(uow, gap_id)
 
 
+async def set_converted_to(uow: UnitOfWork, gap_id: UUID, *, converted_to: str) -> GapRecord | None:
+    """Story 8.5: change a Gap converted to an Assumption to `converted_to` (another
+    Assumption kind); None (and no change) unless it is converted to an Assumption of
+    another kind."""
+    changed = (
+        await uow.session.execute(
+            update(GapRow)
+            .where(
+                GapRow.id == gap_id,
+                GapRow.status == "converted",
+                GapRow.converted_to.in_(("condition", "contingency")),
+                GapRow.converted_to != converted_to,
+            )
+            .values(converted_to=converted_to, row_version=GapRow.row_version + 1)
+            .returning(GapRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_gap(uow, gap_id)
+
+
 async def links_for(uow: UnitOfWork, gap_ids: list[UUID]) -> list[GapLinkRecord]:
     if not gap_ids:
         return []

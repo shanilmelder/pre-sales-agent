@@ -413,13 +413,13 @@ class GapsClarificationQuestionApproved(TracePayload):
 
 @register
 class GapsGapConverted(TracePayload):
-    """An open Gap was converted into an Assumption (Story 8.4): the Assumption was accepted.
-    Subject: the Gap (`gaps.gap`). Actor: the accepting person. `assumption_kind`:
-    `condition` or `contingency`."""
+    """An open Gap was converted into an Assumption (Story 8.4): the Assumption was accepted;
+    or into a Risk (Story 8.5). Subject: the Gap (`gaps.gap`). Actor: the accepting or
+    converting person. `assumption_kind`: `condition`, `contingency` or `risk`."""
 
     event_type: ClassVar[str] = "gaps.gap.converted"
 
-    assumption_kind: Literal["condition", "contingency"]
+    assumption_kind: Literal["condition", "contingency", "risk"]
     row_version: int
 
 
@@ -580,6 +580,8 @@ class EstimatesEstimateVersionCreated(TracePayload):
     requirement_count: int
     superseded_count: int
     carried_assumption_count: int = 0
+    carried_risk_count: int = 0
+    """Story 8.5: Risks carried from the superseded draft."""
     carried_edit_count: int = 0
     """Story 8.2: edited lines of the superseded draft carried onto a matching line."""
     uncarried_edit_count: int = 0
@@ -624,6 +626,67 @@ class EstimatesAssumptionAccepted(TracePayload):
     line_id: str | None
     gap_id: str
     accepted_by: str
+
+
+# Story 8.5. Payloads hold ids, kinds, hours, levels and lengths only, never Assumption
+# wording, Risk descriptions, reasons or Gap text.
+
+
+@register
+class EstimatesAssumptionEdited(TracePayload):
+    """A person edited an Assumption of a draft version, which clears its acceptance.
+    Subject: the Assumption (`estimates.assumption`). Actor: the person. Before and after:
+    the kind, the hours (null for a Condition), the linked line and the wording's length;
+    whether it was accepted before, and the reason's length."""
+
+    event_type: ClassVar[str] = "estimates.assumption.edited"
+
+    version_id: str
+    gap_id: str
+    before_kind: Literal["condition", "contingency"]
+    after_kind: Literal["condition", "contingency"]
+    before_hours: float | None
+    after_hours: float | None
+    before_line_id: str | None
+    after_line_id: str | None
+    before_wording_length: int
+    after_wording_length: int
+    was_accepted: bool
+    reason_length: int
+
+
+@register
+class EstimatesRiskCreated(TracePayload):
+    """A person converted an open Gap to a Risk of the draft version. Subject: the Risk
+    (`estimates.risk`). Actor: the person. The levels, the description's length, and how
+    many unaccepted Assumptions proposed for the Gap were removed."""
+
+    event_type: ClassVar[str] = "estimates.risk.created"
+
+    version_id: str
+    gap_id: str
+    likelihood: Literal["low", "medium", "high"]
+    impact: Literal["low", "medium", "high"]
+    description_length: int
+    removed_assumption_count: int
+
+
+@register
+class EstimatesRiskEdited(TracePayload):
+    """A person edited a Risk of a draft version. Subject: the Risk (`estimates.risk`).
+    Actor: the person. Before and after: the levels and the description's length; the
+    reason's length."""
+
+    event_type: ClassVar[str] = "estimates.risk.edited"
+
+    version_id: str
+    before_likelihood: Literal["low", "medium", "high"]
+    after_likelihood: Literal["low", "medium", "high"]
+    before_impact: Literal["low", "medium", "high"]
+    after_impact: Literal["low", "medium", "high"]
+    before_description_length: int
+    after_description_length: int
+    reason_length: int
 
 
 # Story 8.2. A person's edit of a line: the before and after values and the person's own

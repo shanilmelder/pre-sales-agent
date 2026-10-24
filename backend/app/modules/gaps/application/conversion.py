@@ -1,4 +1,5 @@
-"""Converting a Gap into an Assumption (Story 8.4): `mark_converted`.
+"""Converting a Gap into an Assumption (Story 8.4) or a Risk (Story 8.5): `mark_converted`;
+and `set_converted_to`, when a person changes the kind of the Assumption a Gap became.
 
 Called by `estimates` (through `gaps.application.public`) in the Unit of Work that accepts the
 Assumption, so the Assumption's acceptance and the Gap's conversion commit together or not at
@@ -42,7 +43,8 @@ def _person(actor: Actor) -> UUID | None:
 async def mark_converted(
     uow: UnitOfWork, gap_id: UUID, *, actor: Actor, assumption_kind: str
 ) -> None:
-    """Mark the `open` Gap `converted` to `assumption_kind` (`condition` or `contingency`) and
+    """Mark the `open` Gap `converted` to `assumption_kind` (`condition`, `contingency` or
+    `risk`) and
     trace `gaps.gap.converted`, with a `converted` entry in its history (Story 4.4). Raises
     `GapNotOpenError` unless the Gap is `open`."""
     kind = ConvertedTo(assumption_kind)
@@ -73,3 +75,27 @@ async def mark_converted(
             "assumption_kind": kind.value,
         },
     )
+
+
+async def set_converted_to(uow: UnitOfWork, gap_id: UUID, kind: str) -> bool:
+    """Story 8.5: record that the converted Gap's Assumption is now a `kind` (`condition` or
+    `contingency`), after a person changed the Assumption's kind or accepted it again after
+    an edit. Only a Gap converted to an Assumption changes; nothing happens (False) for any
+    other Gap or when it already reads `kind`. Bumps the Gap's `row_version`. No trace here:
+    the caller traces the Assumption's edit."""
+    to = ConvertedTo(kind)
+    if to is ConvertedTo.RISK:
+        raise ValueError("A Gap converted to a Risk keeps it.")
+    changed = await repo.set_converted_to(uow, gap_id, converted_to=to.value)
+    if changed is None:
+        return False
+    await repo.notify_gaps_changed(uow, changed.opportunity_id)
+    _log.info(
+        "gaps.gap_conversion_changed",
+        extra={
+            "opportunity_id": str(changed.opportunity_id),
+            "gap_id": str(gap_id),
+            "assumption_kind": to.value,
+        },
+    )
+    return True

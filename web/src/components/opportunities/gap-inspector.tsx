@@ -13,6 +13,12 @@ import { ImpactBar } from "@/components/opportunities/impact-bar";
 import { InlineField } from "@/components/opportunities/inline-field";
 import { ReasonInput, reasonFieldClass } from "@/components/opportunities/reason-input";
 import {
+  DESCRIPTION_MAX,
+  DESCRIPTION_RULE,
+  RISK_LEVELS,
+  type RiskLevel,
+} from "@/lib/estimates";
+import {
   answeredLabel,
   answeredOnProblem,
   answerRecordedBy,
@@ -130,7 +136,9 @@ export type QuestionEditing = {
  * when, and has **Reopen** with a reason. Story 4.2: a mandatory Gap shows the "Mandatory" label
  * by its trigger (and "Checklist no longer applies" once it doesn't), its question "from
  * Checklist", no Related Requirements, and no **Dismiss** while its Checklist still applies.
- * Convert is not offered here (Epic 8 does it from the Estimate). With `send` (Story 4.6), an
+ * Story 8.5: with `risk` (a draft Estimate exists and the user may create Risks), an open Gap has
+ * **Convert to Risk** (a description, likelihood and impact); a Gap converted to a Risk reads
+ * "Converted to Risk" in the list. With `send` (Story 4.6), an
  * approved question of an open Gap has **Mark as sent** (a date, today by default) and a sent one
  * **Record answer** and **No answer**; a sent question says "Sent {date} by {name}" and can't be
  * edited or approved. Story 4.7: with `send`, a sent or "No answer" question of an open Gap has
@@ -145,6 +153,7 @@ export function GapInspector({
   edit,
   gapEdit,
   send,
+  risk,
 }: {
   gap: Gap;
   /** For the links to the Requirements an answer changed. */
@@ -156,6 +165,8 @@ export function GapInspector({
   gapEdit?: GapEditing;
   /** Left out for those who may not send questions (Story 4.6). */
   send?: QuestionSending;
+  /** Story 8.5: left out without a draft Estimate or for those who may not create Risks. */
+  risk?: RiskConversion;
 }) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -411,6 +422,15 @@ export function GapInspector({
         ) : null}
       </Section>
 
+      {risk && gap.status === "open" ? (
+        <Section>
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <h4 className="text-body-strong">Convert to Risk</h4>
+            <ConvertToRiskForm key={gap.id} gap={gap} risk={risk} />
+          </div>
+        </Section>
+      ) : null}
+
       {gapEdit && gap.status === "open" && canDismiss(gap) ? (
         <Section>
           <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
@@ -420,7 +440,7 @@ export function GapInspector({
         </Section>
       ) : null}
 
-      <GapHistory history={gap.history} />
+      <GapHistory history={gap.history} convertedTo={gap.converted_to} />
     </section>
   );
 }
@@ -934,6 +954,115 @@ function DismissForm({ edit }: { edit: GapEditing }) {
   );
 }
 
+/** What the inspector needs to offer **Convert to Risk** (Story 8.5). */
+export type RiskConversion = {
+  /** A write of this Gap is in flight. */
+  busy: boolean;
+  locked: boolean;
+  onConvert: (
+    description: string,
+    likelihood: RiskLevel,
+    impact: RiskLevel,
+  ) => Promise<GapFormOutcome>;
+};
+
+/** Convert to Risk (Story 8.5): a description (prefilled with the Gap's title), likelihood and
+ * impact (the Gap's own by default), then **Convert to Risk**. */
+function ConvertToRiskForm({ gap, risk }: { gap: Gap; risk: RiskConversion }) {
+  const [description, setDescription] = useState(gap.title);
+  const [likelihood, setLikelihood] = useState<RiskLevel>("medium");
+  const [impact, setImpact] = useState<RiskLevel>(gap.impact);
+  const [error, setError] = useState<string | null>(null);
+  const descriptionId = useId();
+  const errorId = useId();
+  const likelihoodId = useId();
+  const impactId = useId();
+  const disabled = risk.busy || risk.locked;
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    const trimmed = description.trim();
+    const length = Array.from(trimmed).length;
+    if (length === 0 || length > DESCRIPTION_MAX) {
+      setError(DESCRIPTION_RULE);
+      return;
+    }
+    setError(null);
+    void submitForm(
+      () => risk.onConvert(trimmed, likelihood, impact),
+      () => undefined,
+      setError,
+    );
+  }
+
+  return (
+    <form aria-label="Convert to Risk" onSubmit={onSubmit} className="flex flex-col gap-1.5">
+      <label htmlFor={descriptionId} className="text-meta text-muted-foreground">
+        Description
+      </label>
+      <textarea
+        id={descriptionId}
+        value={description}
+        rows={2}
+        disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(event) => setDescription(event.target.value)}
+        className={`${fieldClass} py-1`}
+      />
+      {error ? (
+        <p id={errorId} className="text-meta text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex items-center gap-2">
+          <label htmlFor={likelihoodId} className="text-meta text-muted-foreground">
+            Likelihood
+          </label>
+          <select
+            id={likelihoodId}
+            value={likelihood}
+            disabled={disabled}
+            onChange={(event) => setLikelihood(event.target.value as RiskLevel)}
+            className={`${fieldClass} h-6 w-auto`}
+          >
+            {RISK_LEVELS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </span>
+        <span className="flex items-center gap-2">
+          <label htmlFor={impactId} className="text-meta text-muted-foreground">
+            Impact
+          </label>
+          <select
+            id={impactId}
+            value={impact}
+            disabled={disabled}
+            onChange={(event) => setImpact(event.target.value as RiskLevel)}
+            className={`${fieldClass} h-6 w-auto`}
+          >
+            {RISK_LEVELS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </span>
+      </div>
+      <div>
+        <Button type="submit" disabled={disabled} variant="outline" size="sm">
+          Convert to Risk
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 /** Reopen: a required reason, then Reopen. */
 function ReopenForm({ edit }: { edit: GapEditing }) {
   const [reason, setReason] = useState("");
@@ -978,7 +1107,13 @@ function ReopenForm({ edit }: { edit: GapEditing }) {
 
 /** The Gap's history, oldest first: what happened, who and when, and the reason (left out
  * for sales representatives by the API). */
-function GapHistory({ history }: { history: readonly GapHistoryEntry[] }) {
+function GapHistory({
+  history,
+  convertedTo,
+}: {
+  history: readonly GapHistoryEntry[];
+  convertedTo: Gap["converted_to"];
+}) {
   return (
     <div className="flex flex-col gap-2 p-4">
       <SectionHeading>History</SectionHeading>
@@ -988,7 +1123,7 @@ function GapHistory({ history }: { history: readonly GapHistoryEntry[] }) {
             key={`${entry.kind}-${entry.at}-${index}`}
             className="flex flex-col border-l-2 border-border pl-3"
           >
-            <span className="text-body">{historyAction(entry)}</span>
+            <span className="text-body">{historyAction(entry, convertedTo)}</span>
             <span className="text-meta text-text-secondary">{historyByline(entry)}</span>
             {entry.reason ? (
               <span className="whitespace-pre-wrap break-words text-meta">{entry.reason}</span>
