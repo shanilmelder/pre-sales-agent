@@ -654,6 +654,25 @@ class BlockingRecord:
     title: str = field(repr=False)
 
 
+async def blocking_counts(uow: UnitOfWork, opportunity_ids: list[UUID]) -> dict[UUID, int]:
+    """How many `open`, `critical` Findings of their current Critic and Red Team Reviews each
+    of these Opportunities has, in one query; ones with none are left out."""
+    if not opportunity_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(ReviewRow.opportunity_id, func.count())
+        .join(FindingRow, FindingRow.review_id == ReviewRow.id)
+        .where(
+            ReviewRow.opportunity_id.in_(opportunity_ids),
+            ReviewRow.status == "current",
+            FindingRow.status == "open",
+            FindingRow.severity == "critical",
+        )
+        .group_by(ReviewRow.opportunity_id)
+    )
+    return {opportunity_id: int(count) for opportunity_id, count in rows.all()}
+
+
 async def blocking_findings(uow: UnitOfWork, opportunity_id: UUID) -> list[BlockingRecord]:
     """The `open`, `critical` Findings of the Opportunity's current Critic and Red Team
     Reviews, by kind and position."""

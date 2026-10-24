@@ -5,15 +5,18 @@ import {
   countBlockingFindings,
   countOpenConflicts,
   countOpenGaps,
+  loadSubmissionBlockers,
 } from "@/app/opportunities/actions";
 import {
   getConflicts,
   getCritic,
   getOpportunity,
   getRedTeam,
+  getSubmissionBlockers,
   listGaps,
 } from "@/app/opportunities/data";
 import { AccessGate, hasAccess } from "@/components/access-gate";
+import { SubmissionProvider } from "@/components/opportunities/submission-context";
 import { WorkspaceHeader } from "@/components/opportunities/workspace-header";
 import { WorkspaceTabs } from "@/components/opportunities/workspace-tabs";
 import { AppShell } from "@/components/shell/app-shell";
@@ -51,6 +54,15 @@ export default async function OpportunityLayout({
     loaded.kind === "ok"
       ? await Promise.all([getRedTeam(loaded.opportunity.id), getCritic(loaded.opportunity.id)])
       : [null, null];
+  // Story 8.6: the submission blockers (the one check) for the header, the Estimate tab badge,
+  // the Overview card and the Estimate tab, kept live over the event stream.
+  const submission =
+    loaded.kind === "ok" ? await getSubmissionBlockers(loaded.opportunity.id) : null;
+  // (`to_submit` is checked: a partial read must not break the whole workspace.)
+  const blockers =
+    submission?.kind === "ok" && Array.isArray(submission.blockers.to_submit)
+      ? submission.blockers
+      : null;
   const blocking = totalBlocking(
     redTeam?.kind === "ok" ? redTeam.redTeam : null,
     critic?.kind === "ok" ? critic.critic : null,
@@ -82,7 +94,11 @@ export default async function OpportunityLayout({
           </PageContent>
         </>
       ) : (
-        <>
+        <SubmissionProvider
+          opportunityId={loaded.opportunity.id}
+          initial={blockers}
+          load={loadSubmissionBlockers}
+        >
           <WorkspaceHeader opportunity={loaded.opportunity} today={utcToday()} />
           <WorkspaceTabs
             id={loaded.opportunity.id}
@@ -93,7 +109,7 @@ export default async function OpportunityLayout({
           >
             {children}
           </WorkspaceTabs>
-        </>
+        </SubmissionProvider>
       )}
     </AppShell>
   );

@@ -9,8 +9,6 @@ import {
   attentionIncomplete,
   attentionItems,
   awaitingLabel,
-  blockerCountLabel,
-  blockers,
   conflictCounts,
   couldNotLoad,
   cutAttention,
@@ -404,8 +402,6 @@ describe("labels", () => {
   it("names counts, failures and the Estimate tile", () => {
     expect(itemCountLabel(1)).toBe("1 item");
     expect(itemCountLabel(5)).toBe("5 items");
-    expect(blockerCountLabel(1)).toBe("1 blocker");
-    expect(blockerCountLabel(8)).toBe("8 blockers");
     expect(couldNotLoad("The Estimate")).toBe(
       "The Estimate could not be loaded. Try again in a moment.",
     );
@@ -579,34 +575,6 @@ describe("pipelineSteps", () => {
     });
     expect(steps[5]).toMatchObject({ state: "complete", sub: "No open Conflicts" });
     expect(steps[6].state).toBe("complete");
-  });
-});
-
-describe("blockers", () => {
-  it("lists open Gaps, Conflicts, uncovered Requirements and unaccepted Assumptions", () => {
-    const result = blockers(midWay());
-    expect(result.items.map((b) => [b.title, b.tab])).toEqual([
-      ["3 open Gaps", "gaps"],
-      ["2 open Conflicts", "conflicts"],
-      ["1 Requirement not covered", "estimate"],
-      ["2 Assumptions not accepted", "estimate"],
-    ]);
-    expect(result.items[0].meta).toContain("2 High, 1 Medium, 0 Low");
-    expect(result.total).toBe(8);
-    expect(result.failed).toEqual([]);
-  });
-
-  it("is empty when nothing blocks, and names the reads that failed", () => {
-    expect(blockers(EMPTY)).toEqual({ items: [], total: 0, failed: [] });
-    expect(blockers({ ...EMPTY, gaps: null }).failed).toEqual([
-      "The Gaps could not be loaded. Try again in a moment.",
-    ]);
-    expect(blockers({ ...EMPTY, conflicts: null }).failed).toEqual([
-      "The Conflicts could not be loaded. Try again in a moment.",
-    ]);
-    expect(blockers({ ...EMPTY, estimate: null }).failed).toEqual([
-      "The Estimate could not be loaded. Try again in a moment.",
-    ]);
   });
 });
 

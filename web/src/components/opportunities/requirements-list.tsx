@@ -1,5 +1,6 @@
 "use client";
 
+import { anchorId } from "@/lib/submission";
 import { CheckIcon, CircleAlertIcon, LoaderCircleIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
@@ -373,6 +374,7 @@ function RequirementRow({
         ) : (
           <button
             type="button"
+            id={anchorId("requirement", item.id)}
             data-requirement-row=""
             data-requirement-id={item.id}
             tabIndex={tabStop ? 0 : -1}

@@ -180,6 +180,16 @@ async def get_blocking_findings(uow: UnitOfWork, opportunity_id: UUID) -> list[B
     ]
 
 
+async def blocking_finding_counts(
+    uow: UnitOfWork, opportunity_ids: Sequence[UUID]
+) -> dict[UUID, int]:
+    """How many Findings `get_blocking_findings` returns for each of these Opportunities, in
+    one query (Story 8.6: the Opportunity list's blocker count); one with none counts 0."""
+    ids = list(opportunity_ids)
+    found = await repo.blocking_counts(uow, ids)
+    return {opportunity_id: found.get(opportunity_id, 0) for opportunity_id in ids}
+
+
 def blocking_count(findings: Sequence[FindingRecord]) -> int:
     """How many of a current Review's Findings block submission."""
     return sum(1 for f in findings if is_blocking(f.status, f.severity))

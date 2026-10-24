@@ -210,6 +210,7 @@ async def _page(
     open_gaps = await gaps.open_gap_counts(uow, ids)
     open_conflicts = await conflicts.open_conflict_counts(uow, ids)
     current = await estimates.current_estimates(uow, ids)
+    blockers = await estimates.submission_blocker_counts(uow, ids)
     return OpportunityPage(
         items=[
             OpportunitySummary(
@@ -222,9 +223,12 @@ async def _page(
                 created_at=r.created_at,
                 open_gaps=open_gaps.get(r.id, 0),
                 open_conflicts=open_conflicts.get(r.id, 0),
+                blocker_count=blockers.get(r.id, 0),
                 estimate=None
                 if (e := current.get(r.id)) is None
-                else EstimateSummary(version=e.version, total_hours=e.total_hours),
+                else EstimateSummary(
+                    version=e.version, status=e.status.value, total_hours=e.total_hours
+                ),
             )
             for r in records
         ],

@@ -5,6 +5,7 @@ import { useSelectedLayoutSegment } from "next/navigation";
 import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 
 import { ConnectionStatus } from "@/components/opportunities/connection-status";
+import { useSubmission } from "@/components/opportunities/submission-context";
 import { usePublishStreamState, useShell, useWorkspaceTabKeys } from "@/components/shell/shell-context";
 import { cn } from "@/lib/utils";
 import { openCountLabel } from "@/lib/conflicts";
@@ -24,10 +25,13 @@ const BLOCKER_COUNT_TABS: ReadonlySet<WorkspaceTabSlug> = new Set([
   "gaps",
   "assessments",
   "conflicts",
+  "estimate",
 ]);
 
-/** A tab count's screen-reader words: "2 blocking" on Assessments (Story 6.6), else "3 open". */
+/** A tab count's screen-reader words: "2 blocking" on Assessments (Story 6.6), "3 to submit"
+ * on Estimate (Story 8.6), else "3 open". */
 function countLabel(slug: WorkspaceTabSlug, n: number): string {
+  if (slug === "estimate") return `${n} to submit`;
   return slug === "assessments" ? blockingCountLabel(n) : openCountLabel(n);
 }
 
@@ -39,7 +43,9 @@ function countLabel(slug: WorkspaceTabSlug, n: number): string {
  * stream (`gaps.changed`) without a reload; Story 6.2: with `loadConflictCount`, so does the
  * Conflicts tab's open count (`conflicts.changed`); Story 6.6: with `loadBlockingCount`, so
  * does the Assessments tab's blocking count (open critical Critic and Red Team Findings, in
- * the blocker tint), on the Finding and Review trace frames. Story 2.3: a slim status bar at the
+ * the blocker tint), on the Finding and Review trace frames; Story 8.6: inside a
+ * `SubmissionProvider`, the Estimate tab shows the submission blockers' `to_submit` count in
+ * the blocker tint. Story 2.3: a slim status bar at the
  * bottom reads "Reconnecting…" while that stream is down; once it has been down 60 s the
  * shell's Offline strip shows (Story 17.2c) and the tab panel sits in a disabled `fieldset`,
  * so its buttons and inputs go inert (links and the tabs still work). Below 1024px the same
@@ -116,8 +122,13 @@ export function WorkspaceTabs({
     },
     loadBlockingCount !== undefined,
   );
+  // Story 8.6: the Estimate tab's badge is the submission blockers' `to_submit` count, live
+  // from the workspace's shared blockers.
+  const submission = useSubmission();
+  const toSubmit = submission?.view ? { estimate: submission.view.to_submit.length } : {};
   // A newer count from the server (a navigation) wins over the live one read before it.
   const counts = {
+    ...toSubmit,
     ...initialCounts,
     ...(liveGaps && liveGaps.from === initialCounts.gaps ? { gaps: liveGaps.count } : {}),
     ...(liveConflicts && liveConflicts.from === initialCounts.conflicts

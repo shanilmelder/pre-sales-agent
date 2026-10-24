@@ -244,6 +244,9 @@ describe("GapsList", () => {
     );
     const tabStops = screen.getAllByRole("button").filter((b) => b.tabIndex === 0);
     expect(tabStops).toEqual([row(1)]);
+    // Story 8.6: each row carries the anchor a submission blocker's href points at.
+    const first = gap(1, "high");
+    expect(rows[0].id).toBe(`gap-${first.id}`);
     expect(await axeViolations(container)).toEqual([]);
   });
 

@@ -54,8 +54,8 @@ async def _lines(uow: UnitOfWork, version_id: UUID) -> list[LineRef]:
 
 
 async def current_version_lines(uow: UnitOfWork, opportunity_id: UUID) -> VersionLines | None:
-    """The Opportunity's current (draft) Estimate Version with its lines; None before the
-    first."""
+    """The Opportunity's current Estimate Version (its draft, else its latest submitted one:
+    Story 8.6) with its lines; None before the first."""
     record = await repo.current_version(uow, opportunity_id)
     if record is None:
         return None

@@ -94,17 +94,20 @@ class UserRef(BaseModel):
 
 
 class EstimateSummary(BaseModel):
-    """A list row's current (draft) Estimate Version: its number and total hours,
-    Contingency included."""
+    """A list row's current Estimate Version (its draft, else its latest submitted one): its
+    number, its status (`draft` or `submitted`) and total hours, Contingency included."""
 
     version: int
+    status: Literal["draft", "submitted"]
     total_hours: float
 
 
 class OpportunitySummary(BaseModel):
     """A list row. `open_gaps`: its `open` Gaps; `open_conflicts`: its open and escalated
-    Conflicts (the Conflicts tab badge); `estimate`: its current draft Estimate Version,
-    null when it has none."""
+    Conflicts (the Conflicts tab badge); `blocker_count` (Story 8.6): how many submission
+    blockers its current Estimate Version has (`len(to_submit)` of
+    `estimates.get_submission_blockers`); `estimate`: its current Estimate Version, null
+    when it has none."""
 
     id: str
     title: str
@@ -115,6 +118,7 @@ class OpportunitySummary(BaseModel):
     created_at: datetime
     open_gaps: int = Field(ge=0)
     open_conflicts: int = Field(ge=0)
+    blocker_count: int = Field(ge=0)
     estimate: EstimateSummary | None
 
 

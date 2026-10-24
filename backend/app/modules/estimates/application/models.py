@@ -213,6 +213,10 @@ class EstimateVersion(BaseModel):
         description="Story 8.3: for a version from the Assessments, the number of the "
         "assessment run it was built for (the Opportunity's runs, oldest first).",
     )
+    submitted_at: datetime | None = Field(
+        default=None,
+        description="Story 8.6: when it was submitted; null for a version never submitted.",
+    )
 
 
 class EstimateDraft(BaseModel):
@@ -223,15 +227,67 @@ class EstimateDraft(BaseModel):
 
 
 class CurrentEstimate(BaseModel):
-    """An Opportunity's current (draft) Estimate Version number and its total hours,
-    Contingency included, for the Opportunity list."""
+    """An Opportunity's current Estimate Version number, its status (draft, or submitted:
+    Story 8.6) and its total hours, Contingency included, for the Opportunity list."""
 
     version: int
+    status: VersionStatus
     total_hours: float
 
 
+BlockerKind = Literal[
+    "gap", "assumption", "conflict", "finding", "uncovered_requirement", "review_request"
+]
+
+
+class Blocker(BaseModel):
+    """One thing that stands between an Estimate Version and its submission (Story 8.6):
+    its `kind`, the id of its subject (a Gap, Assumption, Conflict, Finding or Requirement),
+    a short `title` and `detail` to show, and `href`, the web path that opens it."""
+
+    kind: BlockerKind
+    subject_id: str
+    title: str
+    detail: str
+    href: str
+
+
+class SubmissionBlockers(BaseModel):
+    """`estimates.get_submission_blockers`, the only check of submittability (AD-27).
+    `to_submit`: open Gaps (and Unknowns), unaccepted Assumptions, open and escalated
+    Conflicts, open critical Findings of the current Critic and Red Team Reviews, and active
+    Requirements no line covers, in that order; the version can be submitted when it is
+    empty. `to_baseline`: pending Review Requests, always empty until Epic 9."""
+
+    to_submit: list[Blocker]
+    to_baseline: list[Blocker]
+
+
+class SubmissionVersion(BaseModel):
+    """The current Estimate Version the blockers are for: its id, number, status and
+    `row_version` (the `If-Match` of a submission)."""
+
+    id: str
+    version: int = Field(ge=1)
+    status: VersionStatus
+    row_version: int = Field(ge=1)
+    created_at: datetime
+    submitted_at: datetime | None
+
+
+class SubmissionBlockersView(SubmissionBlockers):
+    """The Opportunity's submission blockers (`GET …/submission-blockers`) for the Overview
+    card and the header: the blockers, the current version (the draft, else the latest
+    submitted; null before the first) and `can_submit`: whether the caller may submit and
+    that version is a draft (the blockers still decide; the API re-checks them)."""
+
+    version: SubmissionVersion | None
+    can_submit: bool
+
+
 class EstimateView(BaseModel):
-    """The Opportunity's current (draft) Estimate Version, null before the first, and its
+    """The Opportunity's current Estimate Version (its draft, else its latest submitted one:
+    Story 8.6), null before the first, and its
     latest draft run, null before the first. `can_start_draft`: whether the caller may start
     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
     `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
@@ -248,6 +304,13 @@ class EstimateView(BaseModel):
     assessment_running: bool = Field(
         description="Story 8.3: whether an assessment run of the Opportunity is queued or "
         "running (the Estimate is built when it finishes).",
+    )
+    blockers: SubmissionBlockers = Field(
+        description="Story 8.6: the current version's submission blockers."
+    )
+    can_submit: bool = Field(
+        description="Story 8.6: whether the caller may submit and the current version is a "
+        "draft. Submit is offered only while `blockers.to_submit` is empty; the API re-checks."
     )
 
 
@@ -267,6 +330,17 @@ class EstimateLineChanges(BaseModel):
         "template's roles (`engineer`, `project_manager`, `qa`), summing to 100.",
     )
     reason: StrictStr = Field(description="Why. Trimmed, it must be 1 to 300 characters.")
+
+
+class SubmittedVersion(BaseModel):
+    """A submitted Estimate Version (Story 8.6): its id, number, `submitted` status and new
+    `row_version`, and how many earlier submitted versions it superseded."""
+
+    id: str
+    version: int = Field(ge=1)
+    status: VersionStatus
+    row_version: int = Field(ge=1)
+    superseded_count: int = Field(ge=0)
 
 
 class AcceptAllResult(BaseModel):

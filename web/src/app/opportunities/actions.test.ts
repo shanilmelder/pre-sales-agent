@@ -70,6 +70,7 @@ import {
   startExtraction,
   startGapDetection,
   startRedTeamReview,
+  submitEstimateVersion,
   updateOpportunity,
 } from "./actions";
 
@@ -2477,5 +2478,55 @@ describe("decideFinding, loadEvidenceOptions and countBlockingFindings (Story 6.
     api.GET.mockImplementation(async () => ({ response: new Response(null, { status: 500 }) }));
     expect(await countBlockingFindings(OPP_ID)).toBeNull();
     expect(await countBlockingFindings("nope")).toBeNull();
+  });
+});
+
+describe("submitEstimateVersion (Story 8.6)", () => {
+  const VID = "00000000-0000-7000-8000-0000000000e3";
+  const INPUT = { opportunityId: OPP_ID, versionId: VID, rowVersion: 2 };
+  const BLOCKERS = {
+    to_submit: [{ kind: "gap", subject_id: "g1", title: "[GAP]", detail: "", href: "#gap-g1" }],
+    to_baseline: [],
+  };
+
+  it("posts with If-Match and returns the submitted version", async () => {
+    const SUBMITTED = { id: VID, version: 3, status: "submitted", row_version: 3 };
+    api.POST.mockResolvedValue({ data: SUBMITTED, response: status(200) });
+    expect(await submitEstimateVersion(INPUT)).toEqual({ kind: "ok", version: SUBMITTED });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/estimate/versions/{version_id}/submit",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, version_id: VID },
+          header: { "If-Match": '"2"' },
+        },
+      },
+    );
+  });
+
+  it.each([
+    [
+      409,
+      { code: "estimate_version_blocked", detail: "Resolve 1 blocker.", blockers: BLOCKERS },
+      { kind: "blocked", blockers: BLOCKERS, detail: "Resolve 1 blocker." },
+    ],
+    [
+      409,
+      { code: "estimate_version_blocked" },
+      { kind: "blocked", blockers: null, detail: null },
+    ],
+    [409, { code: "estimate_version_not_draft" }, { kind: "not-draft" }],
+    [412, { code: "row_version_mismatch" }, { kind: "stale" }],
+    [403, { code: "forbidden" }, { kind: "forbidden" }],
+    [404, { code: "not_found" }, { kind: "not-found" }],
+  ])("maps %i %o", async (code, error, expected) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    expect(await submitEstimateVersion(INPUT)).toEqual(expected);
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await submitEstimateVersion({ ...INPUT, rowVersion: "2" })).toEqual({ kind: "error" });
+    expect(await submitEstimateVersion({ ...INPUT, versionId: "x" })).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
   });
 });

@@ -35,6 +35,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   countOpenGaps: vi.fn(async () => null),
   countOpenConflicts: vi.fn(async () => null),
   countBlockingFindings: vi.fn(async () => null),
+  loadSubmissionBlockers: vi.fn(async () => null),
+  submitEstimateVersion: vi.fn(),
   startGapDetection: vi.fn(),
   loadEstimate: vi.fn(),
   startEstimateDraft: vi.fn(),
@@ -159,7 +161,8 @@ const SUMMARY: OpportunitySummary = {
   created_at: "2026-10-04T10:00:00Z",
   open_gaps: 3,
   open_conflicts: 2,
-  estimate: { version: 3, total_hours: 278 },
+  blocker_count: 0,
+  estimate: { version: 3, status: "draft", total_hours: 278 },
 };
 
 const OPPORTUNITY: Opportunity = {
@@ -502,6 +505,42 @@ describe("/opportunities/[id] workspace", () => {
     );
   }
 
+  /** A Story 8.6 blocker of `kind` whose subject id is its title (so its link is checkable). */
+  function blocker(kind: string, title: string) {
+    const tabs: Record<string, string> = {
+      gap: "gaps",
+      assumption: "estimate",
+      conflict: "conflicts",
+      finding: "assessments",
+      uncovered_requirement: "requirements",
+    };
+    const anchor = kind === "uncovered_requirement" ? "requirement" : kind;
+    return {
+      kind,
+      subject_id: title,
+      title,
+      detail: `${title} detail`,
+      href: `/opportunities/${OPP_ID}/${tabs[kind]}#${anchor}-${title}`,
+    };
+  }
+
+  /** `GET …/submission-blockers` with these blockers, on draft v3 the caller may submit. */
+  function blockersView(toSubmit: unknown[], canSubmit: boolean) {
+    return {
+      to_submit: toSubmit,
+      to_baseline: [],
+      version: {
+        id: "00000000-0000-7000-8000-0000000000e3",
+        version: 3,
+        status: "draft",
+        row_version: 1,
+        created_at: "2026-10-04T10:00:00Z",
+        submitted_at: null,
+      },
+      can_submit: canSubmit,
+    };
+  }
+
   /** What the Overview's summary reads get for a fresh Opportunity (by path suffix). */
   const EMPTY_READS: Record<string, unknown> = {
     "/sources": { items: [] },
@@ -530,6 +569,7 @@ describe("/opportunities/[id] workspace", () => {
     },
     "/red-team": { review: null, run: null, can_start: false },
     "/conflicts": { conflicts: [], open_count: 0 },
+    "/submission-blockers": { to_submit: [], to_baseline: [], version: null, can_submit: false },
     "/trace": {
       items: [],
       page: 1,
@@ -748,6 +788,16 @@ describe("/opportunities/[id] workspace", () => {
     /** The matrix's mid-way Opportunity: 6 Sources parsed, 9 of 12 confirmed, 3 open Gaps (2
      * High), 2 open Conflicts, Estimate v3 draft. */
     const MID: Record<string, unknown> = {
+      // Story 8.6: the API's one check, as the Overview card and the header read it.
+      "/submission-blockers": blockersView(
+        [
+          ...["[GAP HIGH 1]", "[GAP HIGH 2]", "[GAP MEDIUM]"].map((t) => blocker("gap", t)),
+          ...["[ERP MAPPING]", "[CONDITION]"].map((t) => blocker("assumption", t)),
+          ...["[CONFLICT 1]", "[CONFLICT 2]"].map((t) => blocker("conflict", t)),
+          blocker("uncovered_requirement", "R12 not covered"),
+        ],
+        true,
+      ),
       "/sources": { items: Array.from({ length: 6 }, (_, i) => source(1 + i, "parsed")) },
       "/requirements": {
         items: Array.from({ length: 12 }, (_, i) => requirement(10 + i, i < 9)),
@@ -956,24 +1006,39 @@ describe("/opportunities/[id] workspace", () => {
       expect(within(needs).getByText("7 items")).toBeTruthy();
       expect(within(needs).getByText("In your queue").textContent).toBe("In your queue 7");
 
-      // Submission blockers.
+      // Submission blockers: the API's check, one row per kind, each subject a link.
       const blockersCard = card("Submission blockers");
-      expect(within(blockersCard).getByText("8 blockers")).toBeTruthy();
-      const blockerRows = within(blockersCard).getAllByRole("listitem");
+      expect(within(blockersCard).getByText("8 to submit · 0 to Baseline")).toBeTruthy();
+      const blockerRows = Array.from(
+        blockersCard.querySelectorAll<HTMLElement>("[data-blocker]"),
+      );
       expect(blockerRows.map((r) => r.getAttribute("data-blocker"))).toEqual([
-        "gaps",
-        "conflicts",
-        "uncovered",
-        "assumptions",
+        "gap",
+        "assumption",
+        "conflict",
+        "uncovered_requirement",
       ]);
       expect(blockerRows[0].textContent).toContain("3 open Gaps");
-      expect(blockerRows[0].textContent).toContain("2 High, 1 Medium, 0 Low");
-      expect(within(blockerRows[1]).getByRole("link").getAttribute("href")).toBe(
-        href("conflicts"),
+      const gapRow = within(blockerRows[0]!);
+      expect(gapRow.getByRole("link", { name: "Open Gaps" }).getAttribute("href")).toBe(
+        href("gaps"),
       );
-      expect(blockerRows[2].textContent).toContain("1 Requirement not covered");
-      expect(blockerRows[3].textContent).toContain("2 Assumptions not accepted");
+      expect(gapRow.getByRole("link", { name: "[GAP HIGH 1]" }).getAttribute("href")).toBe(
+        `${href("gaps")}#gap-[GAP HIGH 1]`,
+      );
+      expect(blockerRows[1].textContent).toContain("2 Assumptions not accepted");
+      expect(blockerRows[2].textContent).toContain("2 open Conflicts");
+      expect(blockerRows[3].textContent).toContain("1 Requirement not covered");
+      expect(within(blockersCard).getByText("No Review Requests yet")).toBeTruthy();
       expect(within(blockersCard).queryByText(/ready to submit/)).toBeNull();
+      // The header: an aria-disabled Submit with its reason, and Resolve 8 blockers.
+      const submit = screen.getByRole("button", { name: "Submit" });
+      expect(submit.getAttribute("aria-disabled")).toBe("true");
+      expect(screen.getAllByText("Resolve 8 blockers to submit").length).toBeGreaterThan(0);
+      expect(
+        screen.getByRole("link", { name: "Resolve 8 blockers" }).getAttribute("href"),
+      ).toBe(`${href("overview")}#overview-blockers`);
+      expect(screen.getByTestId("tab-count-estimate").textContent).toBe("8, 8 to submit");
 
       // Recent activity: 5 newest, initials tiles, actor and time.
       const activity = card("Recent activity");
@@ -1000,8 +1065,9 @@ describe("/opportunities/[id] workspace", () => {
         within(decision).getByRole("link", { name: "Open Assessments" }).getAttribute("href"),
       ).toBe(href("assessments"));
 
-      // Read-only: no Submit, no Cancel.
-      expect(screen.queryByRole("button", { name: /Submit|Cancel run/ })).toBeNull();
+      // The summary is read-only: no Cancel, and Submit only in the header (Story 8.6).
+      expect(screen.queryByRole("button", { name: /Cancel run/ })).toBeNull();
+      expect(within(blockersCard).queryByRole("button")).toBeNull();
       expect(await axeViolations(container)).toEqual([]);
     });
 
@@ -1057,10 +1123,9 @@ describe("/opportunities/[id] workspace", () => {
       );
       expect(within(card("Submission pipeline")).getByText(message)).toBeTruthy();
       expect(stepStates()[3]).toBe("unknown");
+      // The blockers card reads the API's check, not the Gaps read.
       expect(
-        within(card("Submission blockers")).getByText(
-          "The Gaps could not be loaded. Try again in a moment.",
-        ),
+        within(card("Submission blockers")).getByText("8 to submit · 0 to Baseline"),
       ).toBeTruthy();
       expect(within(card("Needs you")).getByText(/may be incomplete/)).toBeTruthy();
       expect(kpi(/^Requirements confirmed\s*9\s*of 12/)).toBeTruthy();
@@ -1090,6 +1155,7 @@ describe("/opportunities/[id] workspace", () => {
         reviewers: [],
       },
       "/estimate": estimateView(false, 0),
+      "/submission-blockers": blockersView([], true),
     };
 
     it("Ready: nothing blocks once the Estimate is accepted and nothing is open", async () => {
@@ -1098,23 +1164,30 @@ describe("/opportunities/[id] workspace", () => {
       const { container } = await renderWorkspace();
       const blockersCard = card("Submission blockers");
       expect(within(blockersCard).getByText("0 blockers")).toBeTruthy();
-      expect(within(blockersCard).getByText("0 blockers · ready to submit")).toBeTruthy();
+      expect(within(blockersCard).getByText("0 blockers — ready to submit")).toBeTruthy();
       expect(within(blockersCard).queryAllByRole("listitem")).toHaveLength(0);
+      // Submit is the header's primary action; Resolve is hidden.
+      const submit = screen.getByRole("button", { name: "Submit" });
+      expect(submit.getAttribute("aria-disabled")).toBeNull();
+      expect(screen.queryByRole("link", { name: /^Resolve/ })).toBeNull();
       expect(stepStates().slice(5)).toEqual(["complete", "complete"]);
       expect(await axeViolations(container)).toEqual([]);
     });
 
-    it("Ready, but a read failed: no ready state and no count pill", async () => {
+    it("Ready, but the blockers read failed: no ready state and no count pill", async () => {
       signedIn(["presales_engineer"]);
-      found(FUTURE, { ...READY, "/conflicts": null });
+      found(FUTURE, { ...READY, "/submission-blockers": null });
       vi.spyOn(console, "error").mockImplementation(() => {});
       await renderWorkspace();
       const blockersCard = card("Submission blockers");
       expect(within(blockersCard).queryByText(/ready to submit/)).toBeNull();
       expect(within(blockersCard).queryByText("0 blockers")).toBeNull();
       expect(
-        within(blockersCard).getByText("The Conflicts could not be loaded. Try again in a moment."),
+        within(blockersCard).getByText(
+          "The submission blockers could not be loaded. Try again in a moment.",
+        ),
       ).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
     });
 
     it("Partial failure: Requirements says so on its KPI", async () => {

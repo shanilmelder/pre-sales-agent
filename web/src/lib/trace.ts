@@ -67,6 +67,8 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "estimates.assumption.accepted": "Assumption accepted",
   "estimates.estimate_version.exported": "Estimate exported",
   "estimates.estimate_line.edited": "Estimate line edited",
+  "estimates.estimate_version.submitted": "Estimate submitted",
+  "estimates.estimate_version.superseded": "Estimate Version superseded",
   "assessments.red_team_review.completed": "Red Team Review completed",
   "assessments.critic_review.completed": "Critic Review completed",
   "assessments.finding.resolved": "Finding resolved",

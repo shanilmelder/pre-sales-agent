@@ -3,6 +3,10 @@
 from uuid import UUID
 
 from app.modules.estimates.application import draft
+from app.modules.estimates.application.blockers import (
+    get_submission_blockers,
+    submission_blocker_counts,
+)
 from app.modules.estimates.application.estimates import (
     accept_all_assumptions,
     accept_assumption,
@@ -10,6 +14,7 @@ from app.modules.estimates.application.estimates import (
     edit_line,
     get_estimate,
     start_draft,
+    submission_blockers_view,
 )
 from app.modules.estimates.application.export import ExportFile, export_estimate
 from app.modules.estimates.application.export_content import ExportFormat
@@ -27,6 +32,7 @@ from app.modules.estimates.application.models import (
     AssumptionCounts,
     AssumptionGroups,
     AssumptionLine,
+    Blocker,
     CurrentEstimate,
     EstimateDraft,
     EstimateLine,
@@ -39,9 +45,14 @@ from app.modules.estimates.application.models import (
     OriginGap,
     RoleHours,
     RoleMix,
+    SubmissionBlockers,
+    SubmissionBlockersView,
+    SubmissionVersion,
+    SubmittedVersion,
     Totals,
     UnconvertedGap,
 )
+from app.modules.estimates.application.submit import submit_version
 from app.modules.estimates.domain.from_assessments import AgentSizing, SizingRow
 from app.platform.uow import UnitOfWork
 
@@ -61,6 +72,7 @@ __all__ = [
     "AssumptionCounts",
     "AssumptionGroups",
     "AssumptionLine",
+    "Blocker",
     "CurrentEstimate",
     "EstimateDraft",
     "EstimateLine",
@@ -77,6 +89,10 @@ __all__ = [
     "RoleHours",
     "RoleMix",
     "SizingRow",
+    "SubmissionBlockers",
+    "SubmissionBlockersView",
+    "SubmissionVersion",
+    "SubmittedVersion",
     "Totals",
     "UnconvertedGap",
     "VersionLines",
@@ -90,7 +106,11 @@ __all__ = [
     "enqueue_draft",
     "export_estimate",
     "get_estimate",
+    "get_submission_blockers",
     "lock_for_decision",
     "start_draft",
+    "submission_blocker_counts",
+    "submission_blockers_view",
+    "submit_version",
     "version_lines",
 ]

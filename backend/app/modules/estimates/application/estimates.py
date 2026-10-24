@@ -1,6 +1,7 @@
 """The Estimate query and the draft start command (Stories 8.1 and 8.4).
 
-- `get_estimate`: the Opportunity's current `draft` Estimate Version, with its source (a
+- `get_estimate`: the Opportunity's current Estimate Version (its `draft`, else its latest
+  `submitted` one: Story 8.6, with its submission blockers and `can_submit`), with its source (a
   model draft, or the specialist Assessments of run n: Story 8.3), sections, lines, covered
   Requirements, each line's open `effort` and `scope` Conflicts (Story 8.3), its Assumptions
   Register (Conditions and Contingencies with their origin Gaps, linked lines, who accepted
@@ -32,6 +33,7 @@ from app.modules.estimates.adapters.repository import (
     VersionRecord,
 )
 from app.modules.estimates.application import assumptions as assumption_commands
+from app.modules.estimates.application import blockers as submission
 from app.modules.estimates.application import line_edits
 from app.modules.estimates.application.draft import fail_stale, queue_draft, stale_after
 from app.modules.estimates.application.models import (
@@ -52,6 +54,8 @@ from app.modules.estimates.application.models import (
     OriginGap,
     RoleHours,
     RoleMix,
+    SubmissionBlockersView,
+    SubmissionVersion,
     Totals,
     UnconvertedGap,
 )
@@ -71,7 +75,7 @@ from app.modules.estimates.domain.estimates import (
 from app.modules.gaps.application import public as gaps
 from app.modules.gaps.application.public import GapCategory, GapSummary, Impact
 from app.modules.identity.application import public as identity
-from app.modules.identity.application.public import Action, Principal
+from app.modules.identity.application.public import Action, Principal, Resource
 from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import UserRef
@@ -420,6 +424,7 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
         uncarried_edits_from_version=record.version - 1 if record.uncarried_edit_count else None,
         source=VersionSource(record.source),
         source_run=await _run_number(uow, record),
+        submitted_at=record.submitted_at,
     )
 
 
@@ -440,14 +445,24 @@ async def current_estimates(
     for opportunity_id, version in versions.items():
         _, calculated = _calculate(lines.get(version.id, []), assumptions.get(version.id, []))
         found[opportunity_id] = CurrentEstimate(
-            version=version.version, total_hours=_hours(calculated.overall.total)
+            version=version.version,
+            status=VersionStatus(version.status),
+            total_hours=_hours(calculated.overall.total),
         )
     return found
 
 
+def _may_submit(actor: Principal, resource: Resource, record: VersionRecord | None) -> bool:
+    return (
+        record is not None
+        and record.status == VersionStatus.DRAFT
+        and identity.can(actor, Action.ESTIMATE_VERSION_SUBMIT, resource)
+    )
+
+
 async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> EstimateView:
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    record = await repo.current_version(uow, opportunity_id)
+    record, blockers = await submission.current_blockers(uow, opportunity_id)
     return EstimateView(
         version=None if record is None else await version_view(uow, record),
         draft=_draft(await repo.latest_draft(uow, opportunity_id)),
@@ -456,6 +471,32 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         can_export=identity.can(actor, Action.ESTIMATE_EXPORT, resource),
         can_edit_lines=identity.can(actor, Action.ESTIMATE_LINE_EDIT, resource),
         assessment_running=await _assessment_running(uow, opportunity_id),
+        blockers=blockers,
+        can_submit=_may_submit(actor, resource, record),
+    )
+
+
+async def submission_blockers_view(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID
+) -> SubmissionBlockersView:
+    """Story 8.6: the Opportunity's current Estimate Version and its submission blockers,
+    for the Overview card and the header (anyone who can read the Opportunity)."""
+    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
+    record, blockers = await submission.current_blockers(uow, opportunity_id)
+    return SubmissionBlockersView(
+        to_submit=blockers.to_submit,
+        to_baseline=blockers.to_baseline,
+        version=None
+        if record is None
+        else SubmissionVersion(
+            id=str(record.id),
+            version=record.version,
+            status=VersionStatus(record.status),
+            row_version=record.row_version,
+            created_at=record.created_at,
+            submitted_at=record.submitted_at,
+        ),
+        can_submit=_may_submit(actor, resource, record),
     )
 
 

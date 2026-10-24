@@ -64,6 +64,7 @@ from app.modules.intake.application.requirement_edits import (
 from app.modules.intake.application.requirement_refs import (
     RequirementSnapshot,
     RequirementVersionText,
+    active_requirement_ids,
     active_requirement_snapshots,
     requirement_version_texts,
 )
@@ -139,6 +140,7 @@ __all__ = [
     "SplitResult",
     "StoredUpload",
     "accept_requirement_change",
+    "active_requirement_ids",
     "active_requirement_snapshots",
     "add_answer_source",
     "add_file",

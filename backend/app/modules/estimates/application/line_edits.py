@@ -5,8 +5,8 @@ representatives; other readers 403, everyone else the Opportunity's 404): `edit_
 new effort hours (0-2,000, rounded half up to 0.1) and/or a new role mix (whole percentages
 for exactly the template's roles, summing to 100), and a reason (trimmed, 1-300 characters),
 with `If-Match` (428 without; 412 "Changed by {name} since you opened it." when stale). Only a
-line of the Opportunity's current `draft` version: a superseded one is 409
-`estimate_version_not_draft`. It takes the Opportunity's draft lock, so no re-draft can
+line of the Opportunity's current `draft` version: a superseded or submitted (Story 8.6) one
+is 409 `estimate_version_not_draft`. It takes the Opportunity's draft lock, so no re-draft can
 supersede the version mid-edit. Values equal to the stored ones are a no-op (200, nothing
 written, no trace). A change records who, when and why, bumps the line's `row_version` and
 appends `estimates.estimate_line.edited` with the before and after values and the reason.
@@ -67,6 +67,7 @@ from app.platform.uow import UnitOfWork
 MAX_ROW_VERSION = 2**31 - 1
 NOT_FOUND_DETAIL = "No Estimate line with this id."
 NOT_DRAFT_DETAIL = "This Estimate Version was replaced by a newer draft. Reload to see it."
+SUBMITTED_DETAIL = "This Estimate Version was submitted and can't be edited. Reload to see it."
 SOMEONE_ELSE = "someone else"
 _log = get_logger(__name__)
 
@@ -97,6 +98,12 @@ def _validated(changes: EstimateLineChanges) -> _Edit:
     if reason is None:
         raise UnprocessableError(REASON_RULE)
     return _Edit(effort, mix, reason)
+
+
+def not_draft_detail(status: str) -> str:
+    """Why a version that is not the draft can't be changed: submitted (Story 8.6), or
+    replaced by a newer draft."""
+    return SUBMITTED_DETAIL if status == VersionStatus.SUBMITTED else NOT_DRAFT_DETAIL
 
 
 def _stored_mix(raw: dict[str, Any]) -> dict[str, int]:
@@ -151,7 +158,7 @@ async def edit_line(
     await repo.lock_opportunity(uow, opportunity_id)
     line, version = await _load(uow, opportunity_id, line_id)
     if version.status != VersionStatus.DRAFT:
-        raise EstimateVersionNotDraftError(NOT_DRAFT_DETAIL)
+        raise EstimateVersionNotDraftError(not_draft_detail(version.status))
     expected = parse_if_match(if_match)
     if expected >= MAX_ROW_VERSION or line.row_version != expected:
         raise await _stale(uow, line)
@@ -261,8 +268,8 @@ async def apply_decision(
     columns, trace and carrying as `edit_line`; the role mix is unchanged). Only when exactly
     one line covers the Requirement and it covers nothing else; otherwise nothing changes and
     the result says why. No authorization: the caller has authorized the decision and holds
-    the draft lock (`lock_for_decision`)."""
-    version = await repo.current_version(uow, opportunity_id)
+    the draft lock (`lock_for_decision`). A submitted version is never changed (Story 8.6)."""
+    version = await repo.draft_version(uow, opportunity_id)
     if version is None:
         return AppliedDecision(line_id=None, not_applied=NotApplied.NO_LINE)
     lines = await repo.lines_of(uow, version.id)

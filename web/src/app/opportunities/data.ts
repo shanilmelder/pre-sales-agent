@@ -15,6 +15,7 @@ import type { GapList, GapsContext } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
 import type { OutdatedAssessment, RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
+import type { SubmissionBlockersView } from "@/lib/submission";
 import { TRACE_PAGE_SIZE, type TraceFilters, type TracePage } from "@/lib/trace";
 
 export const PAGE_SIZE = 50;
@@ -219,8 +220,9 @@ export async function listActiveIntegrationTypes(): Promise<IntegrationTypeOptio
   }
 }
 
-/** `GET /api/v1/opportunities/{id}/estimate`: the current draft Estimate Version with its
- * server-calculated totals, and the latest draft run (Story 8.1). */
+/** `GET /api/v1/opportunities/{id}/estimate`: the current Estimate Version (the draft, else
+ * the latest submitted one) with its server-calculated totals and submission blockers, and
+ * the latest draft run (Stories 8.1, 8.6). */
 export async function getEstimate(id: string): Promise<EstimateResult> {
   if (!UUID_RE.test(id)) return { kind: "error" };
   try {
@@ -233,6 +235,31 @@ export async function getEstimate(id: string): Promise<EstimateResult> {
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET estimate failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type SubmissionBlockersResult =
+  | { kind: "ok"; blockers: SubmissionBlockersView }
+  | { kind: "error" };
+
+/** `GET /api/v1/opportunities/{id}/submission-blockers`: the current Estimate Version's
+ * submission blockers and whether the caller may submit it (Story 8.6). Logs statuses only. */
+export async function getSubmissionBlockers(id: string): Promise<SubmissionBlockersResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/submission-blockers",
+      { params: { path: { opportunity_id: id } } },
+    );
+    if (data) return { kind: "ok", blockers: data };
+    console.error(`GET submission blockers failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET submission blockers failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }

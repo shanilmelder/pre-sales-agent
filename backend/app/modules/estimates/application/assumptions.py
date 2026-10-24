@@ -65,6 +65,7 @@ from app.modules.estimates.adapters.repository import (
     CarriedAssumption,
     NewAssumption,
 )
+from app.modules.estimates.application import line_edits
 from app.modules.estimates.domain.assumptions import (
     ASSUMPTION_SUBJECT_TYPE,
     ORIGIN_GAP,
@@ -90,7 +91,12 @@ from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
 from app.platform.config import Settings, get_settings
-from app.platform.errors import ForbiddenError, NotFoundError, RowVersionMismatchError
+from app.platform.errors import (
+    EstimateVersionNotDraftError,
+    ForbiddenError,
+    NotFoundError,
+    RowVersionMismatchError,
+)
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
 from app.platform.logging import get_logger
@@ -565,6 +571,8 @@ async def accept_assumption(
     record = await repo.get_assumption(uow, assumption_id)
     if version is None or record is None or record.version_id != version.id:
         raise NotFoundError(NOT_FOUND_DETAIL)
+    if version.status != VersionStatus.DRAFT:  # Story 8.6: a submitted version is immutable
+        raise EstimateVersionNotDraftError(line_edits.not_draft_detail(version.status))
     expected = parse_if_match(if_match)
     if record.accepted_at is not None:
         return record  # idempotent: already accepted, nothing changes
@@ -599,6 +607,8 @@ async def accept_all_assumptions(uow: UnitOfWork, actor: Principal, opportunity_
     version = await repo.current_version(uow, opportunity_id)
     if version is None:
         return 0
+    if version.status != VersionStatus.DRAFT:  # Story 8.6: a submitted version is immutable
+        raise EstimateVersionNotDraftError(line_edits.not_draft_detail(version.status))
     count = 0
     for record in await repo.assumptions_of(uow, version.id, unaccepted_only=True):
         accepted = await repo.accept_assumption(

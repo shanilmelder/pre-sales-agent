@@ -81,8 +81,17 @@ function MessageRow({ children }: { children: ReactNode }) {
   );
 }
 
-/** "3 gaps · 2 conflicts": each count in its tone when above 0. */
-function OpenItems({ gaps, conflicts }: { gaps: number; conflicts: number }) {
+/** "3 gaps · 2 conflicts", then (Story 8.6) "· 6 to submit" in the blocker tone while the
+ * current Estimate Version has submission blockers: each count in its tone when above 0. */
+function OpenItems({
+  gaps,
+  conflicts,
+  toSubmit,
+}: {
+  gaps: number;
+  conflicts: number;
+  toSubmit: number;
+}) {
   return (
     <span className="text-[13px]">
       <span className={`${gaps > 0 ? "text-gap" : "text-text-secondary"} font-medium`}>
@@ -92,6 +101,14 @@ function OpenItems({ gaps, conflicts }: { gaps: number; conflicts: number }) {
       <span className={`${conflicts > 0 ? "text-blocker" : "text-text-secondary"} font-medium`}>
         {countLabel(conflicts, "conflict")}
       </span>
+      {toSubmit > 0 ? (
+        <>
+          <span className="text-text-secondary"> · </span>
+          <span className="font-medium text-blocker" data-to-submit="">
+            {`${toSubmit} to submit`}
+          </span>
+        </>
+      ) : null}
     </span>
   );
 }
@@ -103,7 +120,9 @@ function Estimate({ estimate }: { estimate: OpportunitySummary["estimate"] }) {
         {estimate ? formatHours(estimate.total_hours) : "—"}
       </span>
       <span className="block text-meta text-text-secondary">
-        {estimate ? `Draft v${estimate.version}` : "No estimate"}
+        {estimate
+          ? `${estimate.status === "submitted" ? "Submitted" : "Draft"} v${estimate.version}`
+          : "No estimate"}
       </span>
     </span>
   );
@@ -274,7 +293,11 @@ export function OpportunitiesTable({
                   <span className="text-[13px]">{formatDate(item.target_proposal_date)}</span>
                 </td>
                 <td className={cn("py-[18px]", cellPad(4))}>
-                  <OpenItems gaps={item.open_gaps} conflicts={item.open_conflicts} />
+                  <OpenItems
+                    gaps={item.open_gaps}
+                    conflicts={item.open_conflicts}
+                    toSubmit={item.blocker_count}
+                  />
                 </td>
                 <td className={cn("py-[18px] tabular-nums", cellPad(5))}>
                   <Estimate estimate={item.estimate} />

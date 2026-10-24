@@ -1,5 +1,6 @@
 "use client";
 
+import { anchorId } from "@/lib/submission";
 import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
 import {
   useEffect,
@@ -305,6 +306,7 @@ export function GapsList({
             return (
               <div
                 key={item.id}
+                id={anchorId("gap", item.id)}
                 role="row"
                 aria-selected={selectable ? checked : undefined}
                 aria-current={opened || undefined}

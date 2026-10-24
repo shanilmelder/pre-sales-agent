@@ -57,7 +57,9 @@ class EstimateVersionRow(RowVersioned, Base):
     numbered one past the latest, and marks the earlier `draft` `superseded`. At most one
     `draft` per Opportunity. Story 8.3: a finished assessment run inserts one the same way
     (`source` `assessments`, `source_run_id` the run). `proposal_status` is the state of its
-    Assumption proposals (Story 8.4); null for a version that never had them queued."""
+    Assumption proposals (Story 8.4); null for a version that never had them queued. Story
+    8.6: submitting moves the draft to `submitted` and marks earlier `submitted` versions
+    `superseded`."""
 
     __tablename__ = "estimates_estimate_versions"
     __table_args__ = (
@@ -68,7 +70,10 @@ class EstimateVersionRow(RowVersioned, Base):
             unique=True,
             postgresql_where=text("status = 'draft'"),
         ),
-        CheckConstraint("status IN ('draft', 'superseded')", name="status"),
+        CheckConstraint("status IN ('draft', 'submitted', 'superseded')", name="status"),
+        CheckConstraint(
+            "status <> 'submitted' OR submitted_at IS NOT NULL", name="submitted_has_at"
+        ),
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint("uncovered_count >= 0 AND dropped_count >= 0", name="counts"),
         CheckConstraint("uncarried_edit_count >= 0", name="uncarried_edit_count"),
@@ -100,6 +105,8 @@ class EstimateVersionRow(RowVersioned, Base):
     """Story 8.3: the assessment run (an assessments id) a version from the Assessments was
     built for; null for a model draft."""
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    """Story 8.6: when it was submitted; null for a version never submitted."""
 
 
 class EstimateLineRow(Base):
