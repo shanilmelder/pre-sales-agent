@@ -185,6 +185,7 @@ function view(v: EstimateVersion, may = true): EstimateView {
     assessment_running: false,
     blockers: { to_submit: [], to_baseline: [] },
     can_submit: false,
+    can_request_review: false,
   };
 }
 

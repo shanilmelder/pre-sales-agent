@@ -94,11 +94,12 @@ class UserRef(BaseModel):
 
 
 class EstimateSummary(BaseModel):
-    """A list row's current Estimate Version (its draft, else its latest submitted one): its
-    number, its status (`draft` or `submitted`) and total hours, Contingency included."""
+    """A list row's current Estimate Version (its draft, else its latest submitted or
+    in-review one): its number, its status (`draft`, `submitted` or `in_review`) and total
+    hours, Contingency included."""
 
     version: int
-    status: Literal["draft", "submitted"]
+    status: Literal["draft", "submitted", "in_review"]
     total_hours: float
 
 
@@ -185,6 +186,11 @@ class Opportunity(BaseModel):
     status: OpportunityStatus
     owner: UserRef
     collaborators: list[UserRef]
+    reviewers: list[UserRef] = Field(
+        default_factory=list,
+        description="Story 9.1: users the Opportunity is shared with read only while one of "
+        "their Review Requests is pending, by name. The owner can't remove them.",
+    )
     row_version: int
     created_at: datetime
     last_changed_by: str | None

@@ -14,7 +14,10 @@ Three kinds of grant, any of which allows an action:
   excluded for that action (FR-64: sales representatives on an Opportunity can't edit its
   Requirements, start Gap detection, draft an Estimate, accept an Assumption, start a Red
   Team Review, export the Estimate, edit its lines, resolve or escalate a Conflict,
-  resolve a run's decision, or resolve or override a Finding).
+  resolve a run's decision, resolve or override a Finding, or send or cancel a Review
+  Request).
+  Story 9.1: a reviewer collaborator (`Resource.reviewer_ids`, granted while one of their
+  Review Requests is pending) gets only `REVIEWER_GRANTS`: reading, never a write.
   Roles add up, so someone who also holds a role that isn't excluded keeps the grant.
 - **Any-role grants**: `ANY_ROLE_GRANTS` are allowed to every user holding at least one
   role (e.g. searching the Knowledge Base, Story 3.3), with no permission or relation.
@@ -63,6 +66,8 @@ class Resource:
     id: UUID
     owner_id: UUID | None = None
     member_ids: frozenset[UUID] = frozenset()
+    reviewer_ids: frozenset[UUID] = frozenset()
+    """Story 9.1: users the Opportunity is shared with read only, as reviewers."""
 
 
 OPPORTUNITY_RESOURCE = "opportunities.opportunity"
@@ -91,6 +96,8 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.DECISION_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.FINDING_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.FINDING_OVERRIDE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_CANCEL: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -123,6 +130,8 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.DECISION_RESOLVE,
         Action.FINDING_RESOLVE,
         Action.FINDING_OVERRIDE,
+        Action.REVIEW_REQUEST_CREATE,
+        Action.REVIEW_REQUEST_CANCEL,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -149,8 +158,14 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.CONFLICT_ESCALATE,
         Action.DECISION_RESOLVE,
         Action.FINDING_RESOLVE,
+        Action.REVIEW_REQUEST_CREATE,
+        # Only the request's sender, checked by `reviews` (the owner may cancel any).
+        Action.REVIEW_REQUEST_CANCEL,
     }
 )
+REVIEWER_GRANTS: frozenset[Action] = frozenset({Action.OPPORTUNITY_READ})
+"""Story 9.1: what a reviewer collaborator may do on the Opportunity: read it, nothing more
+(9.3 adds recording their decision)."""
 
 
 KNOWLEDGE_SOURCE_OWNER_GRANTS: frozenset[Action] = frozenset(
@@ -200,7 +215,9 @@ def is_allowed(principal: Principal, action: Action, resource: Resource | None =
         return False
     if action in OWNER_GRANTS and resource.owner_id is not None and user_id == resource.owner_id:
         return True
-    return action in MEMBER_GRANTS and user_id in resource.member_ids
+    if action in MEMBER_GRANTS and user_id in resource.member_ids:
+        return True
+    return action in REVIEWER_GRANTS and user_id in resource.reviewer_ids
 
 
 class OverrideBasis(StrEnum):

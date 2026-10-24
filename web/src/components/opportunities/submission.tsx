@@ -299,14 +299,20 @@ function BlockersBody({
     );
   if (ready && !view.version)
     return <p className="px-5 py-4 text-muted-foreground">{NOTHING_YET}</p>;
-  if (view.version?.status === "submitted")
+  const status = view.version?.status;
+  if (view.version && (status === "submitted" || status === "in_review"))
+    // Story 9.1: a submitted (or in-review) version has passed the submit gate; its open
+    // Review Requests are what stands between it and the Baseline.
     return (
-      <div className="flex flex-col items-center gap-1.5 px-4 py-8 text-center" data-submitted="">
-        <CircleCheckIcon aria-hidden="true" className="size-8 text-resolved" />
-        <p className="text-section text-resolved">
-          {submittedBanner(view.version.version, view.version.submitted_at)}
-        </p>
-        <p className="text-meta text-muted-foreground">{SUBMIT_DESCRIPTION}</p>
+      <div className="flex flex-col pb-3">
+        <div className="flex flex-col items-center gap-1.5 px-4 py-6 text-center" data-submitted="">
+          <CircleCheckIcon aria-hidden="true" className="size-8 text-resolved" />
+          <p className="text-section text-resolved">
+            {submittedBanner(view.version.version, view.version.submitted_at)}
+          </p>
+          <p className="text-meta text-muted-foreground">{SUBMIT_DESCRIPTION}</p>
+        </div>
+        <BaselineGroup blockers={view.to_baseline} />
       </div>
     );
   return (
@@ -351,30 +357,43 @@ function BlockersBody({
           </p>
         )}
       </section>
-      <section aria-label={`Blockers to Baseline · ${view.to_baseline.length}`}>
-        <Eyebrow>{`Blockers to Baseline · ${view.to_baseline.length}`}</Eyebrow>
-        {view.to_baseline.length === 0 ? (
-          <p className="flex items-center gap-2 px-5 py-2 text-meta text-muted-foreground">
-            <ClockIcon aria-hidden="true" className="size-4 shrink-0 text-gap" />
-            {NO_REVIEW_REQUESTS}
-          </p>
-        ) : (
-          <ul className="flex flex-col">
-            {view.to_baseline.map((b) => (
-              <li
-                key={b.subject_id}
-                className="flex items-start gap-3 border-t border-border px-5 py-3"
-              >
-                <ClockIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-gap" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-body-strong">{b.title}</div>
-                  <div className="text-meta text-muted-foreground">{b.detail}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <BaselineGroup blockers={view.to_baseline} />
     </div>
+  );
+}
+
+/** The "Blockers to Baseline · N" group (Story 9.1): one mockup row per open Review Request
+ * (its title, "Engineering review · Ana · Pending", linking to the request's row on the
+ * Estimate tab, and the meta "Sent 24 Oct · message excerpt"), or "No Review Request sent
+ * yet". */
+function BaselineGroup({ blockers }: { blockers: Blocker[] }) {
+  return (
+    <section aria-label={`Blockers to Baseline · ${blockers.length}`}>
+      <Eyebrow>{`Blockers to Baseline · ${blockers.length}`}</Eyebrow>
+      {blockers.length === 0 ? (
+        <p className="flex items-center gap-2 px-5 py-2 text-meta text-muted-foreground">
+          <ClockIcon aria-hidden="true" className="size-4 shrink-0 text-gap" />
+          {NO_REVIEW_REQUESTS}
+        </p>
+      ) : (
+        <ul className="flex flex-col">
+          {blockers.map((b) => (
+            <li
+              key={b.subject_id}
+              data-blocker={b.kind}
+              className="flex items-start gap-3 border-t border-border px-5 py-3"
+            >
+              <ClockIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-gap" />
+              <div className="min-w-0 flex-1">
+                <Link href={b.href} className={cn(linkClass, "text-body-strong")}>
+                  {b.title}
+                </Link>
+                <div className="text-meta text-muted-foreground">{b.detail}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

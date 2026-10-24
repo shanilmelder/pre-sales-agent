@@ -8,9 +8,16 @@ from app.main_api import create_app
 from app.platform.config import Settings
 from app.platform.errors import (
     _HTTP_CODES,
+    AuthorCannotReviewError,
+    EstimateVersionNotSubmittedError,
+    EstimateVersionRejectedError,
+    EstimateVersionSupersededError,
     ForbiddenError,
     IfMatchRequiredError,
     ProblemError,
+    ReviewerNotAuthorizedForTypeError,
+    ReviewRequestDuplicateError,
+    ReviewRequestNotPendingError,
     RowVersionMismatchError,
 )
 from tests.conftest import UNREACHABLE_DB, make_client
@@ -34,6 +41,14 @@ def _app_raising(exc: Exception) -> FastAPI:
         (IfMatchRequiredError(), 428, "if_match_required"),
         (RowVersionMismatchError(), 412, "row_version_mismatch"),
         (StaleDataError("UPDATE matched 0 rows"), 412, "row_version_mismatch"),
+        # Story 9.1
+        (EstimateVersionNotSubmittedError("x"), 409, "estimate_version_not_submitted"),
+        (EstimateVersionSupersededError("x"), 409, "estimate_version_superseded"),
+        (EstimateVersionRejectedError("x"), 409, "estimate_version_rejected"),
+        (ReviewRequestDuplicateError("x"), 409, "review_request_duplicate"),
+        (ReviewRequestNotPendingError("x"), 409, "review_request_not_pending"),
+        (ReviewerNotAuthorizedForTypeError("x"), 422, "reviewer_not_authorized_for_type"),
+        (AuthorCannotReviewError("x"), 422, "author_cannot_review"),
     ],
 )
 def test_errors_map_to_problem_json(exc: Exception, status: int, code: str) -> None:

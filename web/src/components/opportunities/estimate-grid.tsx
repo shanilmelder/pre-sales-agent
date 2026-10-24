@@ -8,7 +8,14 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import {
   acceptAssumption,
@@ -16,6 +23,7 @@ import {
   editEstimateLine,
   editRisk,
   loadEstimate,
+  loadReviewRequests,
   type AssumptionAcceptResult,
   type EstimateItemEditResult,
   type EstimateLineEditResult,
@@ -29,6 +37,8 @@ import {
   AssumptionsRegister,
   OriginGapInspector,
 } from "@/components/opportunities/assumptions-register";
+import { RequestReviewDialog } from "@/components/opportunities/request-review-dialog";
+import { ReviewRequestsCard } from "@/components/opportunities/review-requests-card";
 import { RiskInspector, type RiskFields } from "@/components/opportunities/risk-inspector";
 import { RisksCard } from "@/components/opportunities/risks-card";
 import { Card } from "@/components/ui/card";
@@ -54,6 +64,7 @@ import {
   fromRunLabel,
   hours,
   isDrafting,
+  isSent,
   isProposing,
   lifecycleSteps,
   NO_ESTIMATE,
@@ -86,7 +97,9 @@ import {
   type Risk,
   type Totals,
 } from "@/lib/estimates";
+import { useReviewEvents } from "@/lib/opportunity-events";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
+import type { ReviewRequestsView } from "@/lib/reviews";
 import { cn } from "@/lib/utils";
 import { tabHref } from "@/lib/workspace";
 
@@ -97,7 +110,16 @@ const num = "px-2.5 text-right text-numeric whitespace-nowrap";
 const cont = "border-l border-border";
 const headCell = "h-[34px] bg-background px-2.5 text-label text-muted-foreground whitespace-nowrap";
 
-/** The version pill: "v3 · Draft" (primary tint) or "v2 · Superseded" (neutral). */
+/** Each version status's pill tone (Story 9.1: `submitted` neutral, `in_review` gap). */
+const VERSION_TONES: Record<EstimateVersion["status"], "agent" | "neutral" | "gap"> = {
+  draft: "agent",
+  submitted: "neutral",
+  in_review: "gap",
+  superseded: "neutral",
+};
+
+/** The version pill: "v3 · Draft" (primary tint), "v3 · In review" (gap) or "v2 · Superseded"
+ * (neutral). */
 export function VersionPill({
   version,
 }: {
@@ -105,7 +127,7 @@ export function VersionPill({
 }) {
   return (
     <Pill
-      tone={version.status === "draft" ? "agent" : "neutral"}
+      tone={VERSION_TONES[version.status] ?? "neutral"}
       data-version-pill=""
       className="shrink-0"
     >
@@ -435,6 +457,7 @@ export function EstimateHeader({
   opportunityId,
   canExport = false,
   stalled = false,
+  actions,
 }: {
   version: EstimateVersion | null;
   /** An assessment run is queued or running. */
@@ -444,6 +467,8 @@ export function EstimateHeader({
   canExport?: boolean;
   /** Polling has stopped while still waiting. */
   stalled?: boolean;
+  /** Story 9.1: more toolbar actions after Export (**Request review**). */
+  actions?: ReactNode;
 }) {
   const waiting = !version && assessmentRunning;
   const rebuilding = version !== null && assessmentRunning;
@@ -457,6 +482,7 @@ export function EstimateHeader({
           {fromRun ? <p className="text-meta text-muted-foreground">{fromRun}</p> : null}
           <span className="flex-1" aria-hidden="true" />
           {canExport && opportunityId ? <EstimateExport opportunityId={opportunityId} /> : null}
+          {actions}
         </div>
       ) : null}
       {waiting && stalled ? (
@@ -487,9 +513,10 @@ export function EstimateHeader({
   );
 }
 
-/** The Version lifecycle card: a Draft → Baseline → Superseded stepper with the version's
- * status current, a note on what the version is, and the note on edits a new version could
- * not carry. */
+/** The Version lifecycle card: the mockup's Draft → In review → Approved → Baseline stepper
+ * (done steps green with a check, the current one primary-tinted with a primary ring and a
+ * 600-weight label, the rest grey), a note on what the version is, and the note on edits a
+ * new version could not carry. */
 export function VersionLifecycle({ version }: { version: EstimateVersion }) {
   const steps = lifecycleSteps(version.status);
   return (
@@ -499,7 +526,6 @@ export function VersionLifecycle({ version }: { version: EstimateVersion }) {
       </h3>
       <ol aria-label="Version lifecycle" className="flex items-center">
         {steps.map((step, i) => {
-          const filled = step.state !== "upcoming";
           return (
             <li
               key={step.label}
@@ -512,9 +538,11 @@ export function VersionLifecycle({ version }: { version: EstimateVersion }) {
                   aria-hidden="true"
                   className={cn(
                     "flex size-6 shrink-0 items-center justify-center rounded-full border-2",
-                    filled
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border-strong bg-neutral-tint text-neutral",
+                    step.state === "passed"
+                      ? "border-resolved bg-resolved text-resolved-foreground"
+                      : step.state === "current"
+                        ? "border-primary bg-primary-tint text-primary-text ring-2 ring-primary/30"
+                        : "border-border-strong bg-neutral-tint text-neutral",
                   )}
                 >
                   {step.state === "passed" ? (
@@ -529,7 +557,9 @@ export function VersionLifecycle({ version }: { version: EstimateVersion }) {
                     step.state === "current" ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
-                  <span className={step.state === "current" ? "text-body-strong" : "text-body"}>
+                  <span
+                    className={cn("text-body", step.state === "current" && "font-semibold")}
+                  >
                     {step.label}
                   </span>
                   {step.state === "passed" ? <span className="sr-only"> (done)</span> : null}
@@ -540,7 +570,7 @@ export function VersionLifecycle({ version }: { version: EstimateVersion }) {
                   aria-hidden="true"
                   className={cn(
                     "mx-3 h-0.5 min-w-6 flex-1 rounded-full",
-                    step.state === "passed" ? "bg-primary" : "bg-border",
+                    step.state === "passed" ? "bg-resolved" : "bg-border",
                   )}
                 />
               ) : null}
@@ -595,13 +625,22 @@ type Selection =
 export function EstimateSection({
   opportunityId,
   initial,
+  initialReviews = null,
 }: {
   opportunityId: string;
   initial: EstimateView;
+  /** Story 9.1: the current version's Review Requests (null: not read). */
+  initialReviews?: ReviewRequestsView | null;
 }) {
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<EstimateView>(initial);
+  const [reviews, setReviews] = useState<ReviewRequestsView | null>(initialReviews);
+  const [reviewsFrom, setReviewsFrom] = useState(initialReviews);
+  if (initialReviews !== reviewsFrom) {
+    setReviewsFrom(initialReviews);
+    setReviews(initialReviews);
+  }
   const [selection, setSelection] = useState<Selection | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   /** Bumped to move focus into the inspector's "Edit line" form (opened with `e`). */
@@ -936,6 +975,25 @@ export function EstimateSection({
     setAccepting(false);
   }
 
+  /** Story 9.1: read the Estimate and its Review Requests again (after a send or a cancel,
+   * and on every Review Request frame of the event stream). */
+  const reloadReviews = useCallback(async () => {
+    try {
+      const [estimate, requests] = await Promise.all([
+        loadEstimate(opportunityId),
+        loadReviewRequests(opportunityId),
+      ]);
+      if (estimate.kind === "ok") {
+        mutation.current += 1;
+        setView(estimate.estimate);
+      }
+      if (requests.kind === "ok") setReviews(requests.reviews);
+    } catch {
+      // The tab stays as it is; the next frame reads them again.
+    }
+  }, [opportunityId]);
+  useReviewEvents(opportunityId, () => void reloadReviews(), initialReviews !== null);
+
   async function reloadEstimate() {
     try {
       const loaded = await loadEstimate(opportunityId);
@@ -957,6 +1015,9 @@ export function EstimateSection({
   const canAccept = view.can_accept_assumptions && draft;
   const canEditAssumptions = view.can_edit_assumptions && draft;
   const canEditRisks = view.can_edit_risks && draft;
+  // Story 9.1: the requests shown are the current version's; the API's flags decide who may
+  // send or cancel them.
+  const versionReviews = reviews && version && reviews.version_id === version.id ? reviews : null;
   return (
     <div className="flex flex-col gap-4">
       <EstimateHeader
@@ -965,10 +1026,20 @@ export function EstimateSection({
         opportunityId={opportunityId}
         canExport={view.can_export}
         stalled={stalled}
+        actions={
+          version && view.can_request_review && isSent(version.status) ? (
+            <RequestReviewDialog
+              opportunityId={opportunityId}
+              version={version}
+              assessments={versionReviews?.assessments ?? []}
+              onSent={() => void reloadReviews()}
+            />
+          ) : null
+        }
       />
       {version ? (
         <>
-          {version.status === "submitted" ? (
+          {isSent(version.status) ? (
             <p
               data-submitted-banner=""
               className="flex items-center gap-2 rounded-lg border border-resolved/30 bg-resolved-tint px-4 py-2.5 text-resolved"
@@ -983,6 +1054,13 @@ export function EstimateSection({
             </p>
           ) : null}
           <VersionLifecycle version={version} />
+          {versionReviews && isSent(version.status) ? (
+            <ReviewRequestsCard
+              opportunityId={opportunityId}
+              items={versionReviews.items}
+              onChanged={() => void reloadReviews()}
+            />
+          ) : null}
           <UncoveredBanner count={version.uncovered_count} />
           {replaced ? (
             <p className="flex items-center gap-1.5 text-meta text-destructive" role="alert">

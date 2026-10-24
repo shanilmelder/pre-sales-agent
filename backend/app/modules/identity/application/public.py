@@ -27,7 +27,9 @@ from app.modules.identity.application.user_search import (
     UserSummary,
     search_owner_candidates,
     search_users,
+    search_users_with_role,
     user_names,
+    users_with_role,
 )
 from app.modules.identity.domain.policy import (
     ANY_ROLE_GRANTS,
@@ -36,6 +38,7 @@ from app.modules.identity.domain.policy import (
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
     RELATION_EXCLUDED_ROLES,
+    REVIEWER_GRANTS,
     OverrideBasis,
     Principal,
     Resource,
@@ -53,6 +56,7 @@ __all__ = [
     "OPPORTUNITY_RESOURCE",
     "OWNER_GRANTS",
     "RELATION_EXCLUDED_ROLES",
+    "REVIEWER_GRANTS",
     "SEARCH_DEFAULT_LIMIT",
     "SEARCH_MAX_LIMIT",
     "SEARCH_MAX_QUERY",
@@ -79,5 +83,7 @@ __all__ = [
     "list_users",
     "search_owner_candidates",
     "search_users",
+    "search_users_with_role",
     "user_names",
+    "users_with_role",
 ]

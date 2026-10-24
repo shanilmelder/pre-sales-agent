@@ -2,7 +2,8 @@
 title: 'Story 9.1: Send Review Requests to named reviewers'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '645fa67e63898285e393a47ed6f995b5cc63fac6'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -110,15 +111,15 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `backend/migrations/versions/<after 8.6>_reviews_review_requests.py` -- table + grants, version status `in_review` + `created_by` (with backfill), collaborators `role` -- one migration, reversible downgrade.
-- [ ] `backend/app/modules/reviews/{domain,application,adapters,api}/` -- state machine, create/cancel/list/candidates, public.py (`list_open_requests`, `create_review_request`, `cancel_review_request`) -- the new module.
-- [ ] `backend/app/modules/identity/{actions.py,domain/policy.py,application/public.py,adapters/repository.py}`, `scripts/seed_auth0.py` -- actions, grants, reviewer-collaborator read-only, role search.
-- [ ] `backend/app/modules/opportunities/{adapters/models.py,application/public.py,application/opportunities.py}` -- reviewer role, grant/revoke, collaborators list tag.
-- [ ] `backend/app/modules/estimates/{domain,application/public.py,application/blockers.py,application/draft.py,application/from_assessments.py,api/routes.py}` -- `in_review`, `created_by`, `mark_in_review`/back to submitted, `to_baseline`, `can_request_review`.
-- [ ] `backend/app/platform/{trace/catalogue.py,errors.py}`, `backend/app/main_api.py`, `backend/migrations/env.py`, `backend/pyproject.toml`, `ARCHITECTURE-SPINE.md` -- wiring.
-- [ ] `backend/tests/test_reviews_requests.py` (+ updates to errors, catalogue, authorize tests) -- matrix rows, transition table, grants, reviewer read-only access, blockers `to_baseline`.
-- [ ] `web/src/lib/api/schema.d.ts` -- regenerate from a fresh local uvicorn.
-- [ ] `web/src/components/opportunities/{request-review-dialog.tsx,review-requests-card.tsx}` (+ tests with axe) and edits to `estimate-grid.tsx`, `lib/estimates.ts`, `actions.ts`, `overview-summary.tsx`, `collaborators.tsx`, `status-pill` tones -- UI.
+- [x] `backend/migrations/versions/<after 8.6>_reviews_review_requests.py` -- table + grants, version status `in_review` + `created_by` (with backfill), collaborators `role` -- one migration, reversible downgrade.
+- [x] `backend/app/modules/reviews/{domain,application,adapters,api}/` -- state machine, create/cancel/list/candidates, public.py (`list_open_requests`, `create_review_request`, `cancel_review_request`) -- the new module.
+- [x] `backend/app/modules/identity/{actions.py,domain/policy.py,application/public.py,adapters/repository.py}`, `scripts/seed_auth0.py` -- actions, grants, reviewer-collaborator read-only, role search.
+- [x] `backend/app/modules/opportunities/{adapters/models.py,application/public.py,application/opportunities.py}` -- reviewer role, grant/revoke, collaborators list tag.
+- [x] `backend/app/modules/estimates/{domain,application/public.py,application/blockers.py,application/draft.py,application/from_assessments.py,api/routes.py}` -- `in_review`, `created_by`, `mark_in_review`/back to submitted, `to_baseline`, `can_request_review`.
+- [x] `backend/app/platform/{trace/catalogue.py,errors.py}`, `backend/app/main_api.py`, `backend/migrations/env.py`, `backend/pyproject.toml`, `ARCHITECTURE-SPINE.md` -- wiring.
+- [x] `backend/tests/test_reviews_requests.py` (+ updates to errors, catalogue, authorize tests) -- matrix rows, transition table, grants, reviewer read-only access, blockers `to_baseline`.
+- [x] `web/src/lib/api/schema.d.ts` -- regenerate from a fresh local uvicorn.
+- [x] `web/src/components/opportunities/{request-review-dialog.tsx,review-requests-card.tsx}` (+ tests with axe) and edits to `estimate-grid.tsx`, `lib/estimates.ts`, `actions.ts`, `overview-summary.tsx`, `collaborators.tsx`, `status-pill` tones -- UI.
 
 **Acceptance Criteria:**
 - Given a reviewer collaborator, when they open the Opportunity, then every tab reads and no write control or write endpoint is available to them (403).
@@ -132,6 +133,8 @@ Author check: `created_by` IS NULL means "unknown author", and the check is skip
 Back to `submitted` on the last cancel keeps the lifecycle stepper honest. 9.4 owns supersede, so a version that is `in_review` and superseded is out of scope here.
 
 ## Verification
+
+`{project-root}` is the worktree `D:\Projects\Office\pre-sales-agent-91`. Work, read and run commands only there; the main checkout belongs to other sessions. Do not commit or push. The test DB is `psa_test91`: create it if missing, and take only the two DB URLs from `.env`, with the host swapped to `127.0.0.1`.
 
 **Commands:**
 - `cd backend && uv run pytest tests/test_reviews_requests.py tests/test_architecture.py tests/test_trace_catalogue.py tests/test_errors.py tests/test_authorize.py` against `psa_test91` (both app and owner URLs on 127.0.0.1) -- expected: pass.

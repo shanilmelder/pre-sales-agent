@@ -8,6 +8,8 @@ current Assessment, one per active Requirement an agent sized. The version is st
 `store_version`, exactly as an accepted model draft is (superseding the current draft,
 carrying accepted Assumptions and line edits, trace, Assumption proposals and the Red Team
 Review), with `source` `assessments`, `source_run_id` the run and the system as actor.
+Story 9.1: its `created_by` is the user who started the run (`workflows.run_starter`), or
+null for a run the system queued.
 
 When no agent sized any active Requirement, nothing is stored and the current version stays.
 
@@ -65,6 +67,9 @@ async def build_from_assessments(
             extra={**ids, "requirement_count": len(snapshots), "agent_count": len(sizings)},
         )
         return None
+    # Imported here: workflows imports estimates' public API, which imports this module.
+    from app.modules.workflows.application import public as workflows
+
     stored = await store_version(
         uow,
         opportunity_id,
@@ -76,6 +81,7 @@ async def build_from_assessments(
         uncovered_count=built.uncovered,
         source=VersionSource.ASSESSMENTS,
         source_run_id=run_id,
+        created_by=await workflows.run_starter(uow, run_id),
     )
     _log.info(
         "estimates.assessments_version_created",

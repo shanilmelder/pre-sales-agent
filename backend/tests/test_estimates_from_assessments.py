@@ -201,6 +201,8 @@ def test_a_finished_run_builds_a_version_from_the_assessments(
     )
     assert (version["source"], str(version["source_run_id"])) == ("assessments", body["id"])
     assert (version["uncovered_count"], version["dropped_count"]) == (1, 0)  # R2 not sized
+    # Story 9.1: its author is the person who started the run.
+    assert str(version["created_by"]) == opp["owner"]["id"]
     first, second = line_rows(sync_engine, version["id"])
     assert (first["section"], first["title"], str(first["effort_hours"])) == (
         "functional",

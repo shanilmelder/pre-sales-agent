@@ -18,6 +18,11 @@ export const BLOCKER_TRACE_EVENTS: readonly string[] = [
   "estimates.estimate_version.created",
   "estimates.estimate_version.submitted",
   "estimates.estimate_version.superseded",
+  // Story 9.1: Review Requests are the Baseline group.
+  "estimates.estimate_version.review_started",
+  "estimates.estimate_version.review_ended",
+  "reviews.review_request.created",
+  "reviews.review_request.cancelled",
   "estimates.assumption.proposed",
   "estimates.assumption.accepted",
   "estimates.assumption.edited",
@@ -42,7 +47,7 @@ export const BLOCKERS_CARD_ID = "overview-blockers";
 export const SUBMIT = "Submit";
 export const CANCEL = "Cancel";
 export const SUBMIT_DESCRIPTION = "Submitted versions can't be edited.";
-export const NO_REVIEW_REQUESTS = "No Review Requests yet";
+export const NO_REVIEW_REQUESTS = "No Review Request sent yet";
 export const READY_TITLE = "0 blockers — ready to submit";
 export const READY_BODY = "Both gates are clear. Submit is now the primary action.";
 export const NOTHING_YET = "Nothing blocks yet. Blockers appear as the pipeline runs.";

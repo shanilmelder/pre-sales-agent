@@ -11,7 +11,9 @@ Estimate Version can be submitted.
   (`assessments.get_blocking_findings`; an overridden or resolved one no longer blocks);
 - `uncovered_requirement`: active Requirements (`intake.active_requirement_snapshots`) that
   no line of the version covers, read live (never the stored `uncovered_count`);
-- `review_request` (`to_baseline`): always empty until Epic 9.
+- `review_request` (`to_baseline`, Story 9.1): the version's pending, rejected and challenged
+  Review Requests (`reviews.list_open_requests`), titled "{Type} review · {Reviewer} ·
+  {Status}", each linking to its row on the Estimate tab (`?review={id}`).
 
 `submission_blocker_counts(uow, opportunity_ids)` is the same rule counted for a page of
 Opportunities with one batched query per module, never one per row; it always equals
@@ -21,6 +23,7 @@ No authorization here: callers have checked that the actor may read the Opportun
 """
 
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from app.modules.conflicts.application import public as conflicts
@@ -130,14 +133,42 @@ async def _uncovered_blockers(uow: UnitOfWork, version: VersionRecord) -> list[B
     ]
 
 
+def _sent(when: datetime) -> str:
+    """E.g. "Sent 24 Oct"."""
+    return f"Sent {when.day} {when:%b}"
+
+
+async def _review_blockers(uow: UnitOfWork, version: VersionRecord) -> list[Blocker]:
+    # Imported here: reviews imports estimates' public API, which imports this module.
+    from app.modules.reviews.application import public as reviews
+
+    found: list[Blocker] = []
+    for r in await reviews.list_open_requests(uow, version.id):
+        detail = _sent(r.created_at)
+        if r.message:
+            detail += f" · {_clip(r.message, 100)}"
+        found.append(
+            Blocker(
+                kind="review_request",
+                subject_id=str(r.id),
+                title=f"{reviews.REVIEW_TYPE_LABELS[r.review_type]} review · {r.reviewer_name} "
+                f"· {reviews.STATUS_LABELS[r.status]}",
+                detail=detail,
+                href=f"/opportunities/{version.opportunity_id}/estimate?review={r.id}",
+            )
+        )
+    return found
+
+
 async def blockers_for(
     uow: UnitOfWork, opportunity_id: UUID, version: VersionRecord | None
 ) -> SubmissionBlockers:
     """The blockers of `version` (an Estimate Version of the Opportunity). Before the first
     version only the Opportunity's own (Gaps, Conflicts, Findings) are listed; a version that
-    is no longer a draft (submitted) has passed the gate, so it has none."""
+    is no longer a draft (submitted or in review) has passed the submit gate, so it has none
+    to submit, only its open Review Requests (`to_baseline`)."""
     if version is not None and version.status != VersionStatus.DRAFT:
-        return SubmissionBlockers(to_submit=[], to_baseline=[])
+        return SubmissionBlockers(to_submit=[], to_baseline=await _review_blockers(uow, version))
     to_submit = await _gap_blockers(uow, opportunity_id)
     if version is not None:
         to_submit += await _assumption_blockers(uow, version)
@@ -145,7 +176,8 @@ async def blockers_for(
     to_submit += await _finding_blockers(uow, opportunity_id)
     if version is not None:
         to_submit += await _uncovered_blockers(uow, version)
-    return SubmissionBlockers(to_submit=to_submit, to_baseline=[])
+    to_baseline = [] if version is None else await _review_blockers(uow, version)
+    return SubmissionBlockers(to_submit=to_submit, to_baseline=to_baseline)
 
 
 async def get_submission_blockers(uow: UnitOfWork, version_id: UUID) -> SubmissionBlockers:
@@ -159,8 +191,8 @@ async def get_submission_blockers(uow: UnitOfWork, version_id: UUID) -> Submissi
 async def current_blockers(
     uow: UnitOfWork, opportunity_id: UUID
 ) -> tuple[VersionRecord | None, SubmissionBlockers]:
-    """The Opportunity's current Estimate Version (its draft, else its latest submitted) and
-    that version's submission blockers."""
+    """The Opportunity's current Estimate Version (its draft, else its latest submitted or
+    in-review one) and that version's submission blockers."""
     version = await repo.current_version(uow, opportunity_id)
     return version, await blockers_for(uow, opportunity_id, version)
 
@@ -188,7 +220,7 @@ async def submission_blocker_counts(
     for opportunity_id in ids:
         version = versions.get(opportunity_id)
         if version is not None and version.status != VersionStatus.DRAFT:
-            counts[opportunity_id] = 0  # submitted: past the gate (as `blockers_for`)
+            counts[opportunity_id] = 0  # submitted or in review: past the gate (`blockers_for`)
             continue
         count = (
             open_gaps.get(opportunity_id, 0)

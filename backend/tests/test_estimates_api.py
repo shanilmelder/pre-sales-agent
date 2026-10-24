@@ -57,6 +57,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "assessment_running": False,
         "blockers": {"to_submit": [], "to_baseline": []},
         "can_submit": False,
+        "can_request_review": False,
     }
     assert theirs.json() == {
         "version": None,
@@ -71,6 +72,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "assessment_running": False,
         "blockers": {"to_submit": [], "to_baseline": []},
         "can_submit": False,
+        "can_request_review": False,
     }
 
 
@@ -292,3 +294,59 @@ def test_no_endpoint_accepts_a_total() -> None:
             assert set(fields) == {"effort_hours", "role_mix", "reason"}
             bodies += 1
     assert bodies == 1
+
+
+def test_a_started_draft_records_its_author_who_then_cannot_review_it(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    """Story 9.1: a draft queued by the platform has no author; one a person starts records
+    them as its version's `created_by`, and the review rules then refuse them as reviewer."""
+    headers, opp = detected(client, sync_engine, db_url, gateway)
+    gateway.replies = [lines_out(*SIX)]
+    assert drain(db_url, DRAFT) == ["succeeded"]
+    assert _start(client, headers, opp["id"]).status_code == 201
+    gateway.replies = [lines_out(est_line("Everything", ["R1", "R2", "R3", "R4", "R5"]))]
+    assert drain(db_url, DRAFT) == ["succeeded"]
+
+    with sync_engine.connect() as conn:
+        found = {
+            row.version: row
+            for row in conn.execute(
+                sa.text(
+                    "SELECT id, version, created_by FROM estimates_estimate_versions "
+                    "WHERE opportunity_id = :o"
+                ),
+                {"o": opp["id"]},
+            )
+        }
+        requested = conn.execute(
+            sa.text("SELECT requested_by FROM estimates_drafts WHERE opportunity_id = :o"),
+            {"o": opp["id"]},
+        ).scalars()
+        assert sorted(str(r) for r in requested) == sorted(["None", opp["owner"]["id"]])
+    assert found[1].created_by is None
+    assert str(found[2].created_by) == opp["owner"]["id"]
+
+    with sync_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "UPDATE estimates_estimate_versions SET status = 'submitted', "
+                "submitted_at = now(), row_version = row_version + 1 WHERE id = :i"
+            ),
+            {"i": found[2].id},
+        )
+        row_version = conn.execute(
+            sa.text("SELECT row_version FROM estimates_estimate_versions WHERE id = :i"),
+            {"i": found[2].id},
+        ).scalar_one()
+    resp = client.post(
+        f"{BASE}/{opp['id']}/review-requests",
+        headers={**headers, "If-Match": f'"{row_version}"'},
+        json={
+            "version_id": str(found[2].id),
+            "review_type": "engineering",
+            "reviewer_ids": [opp["owner"]["id"]],
+        },
+    )
+    assert_problem(resp.json(), 422, "author_cannot_review")
+    assert resp.json()["detail"] == "The author of v2 can't review it"

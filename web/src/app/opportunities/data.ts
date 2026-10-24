@@ -13,6 +13,7 @@ import type { CriticView } from "@/lib/critic";
 import type { EstimateView } from "@/lib/estimates";
 import type { GapList, GapsContext } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
+import type { ReviewRequestsView } from "@/lib/reviews";
 import type { OutdatedAssessment, RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 import type { SubmissionBlockersView } from "@/lib/submission";
@@ -33,6 +34,9 @@ export type GapsContextResult = { kind: "ok"; context: GapsContext } | { kind: "
 /** An active catalogue Integration Type, for tagging a Requirement (Story 4.1). */
 export type IntegrationTypeOption = { id: string; name: string };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
+export type ReviewRequestsResult =
+  | { kind: "ok"; reviews: ReviewRequestsView }
+  | { kind: "error" };
 export type TraceResult = { kind: "ok"; page: TracePage } | { kind: "error" };
 export type RedTeamResult = { kind: "ok"; redTeam: RedTeamView } | { kind: "error" };
 export type CriticResult = { kind: "ok"; critic: CriticView } | { kind: "error" };
@@ -235,6 +239,27 @@ export async function getEstimate(id: string): Promise<EstimateResult> {
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET estimate failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/review-requests`: the current Estimate Version's Review
+ * Requests (Story 9.1). Logs statuses only. */
+export async function getReviewRequests(id: string): Promise<ReviewRequestsResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/review-requests",
+      { params: { path: { opportunity_id: id } } },
+    );
+    if (data) return { kind: "ok", reviews: data };
+    console.error(`GET review requests failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET review requests failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }

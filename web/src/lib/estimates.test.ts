@@ -85,14 +85,32 @@ describe("estimate helpers", () => {
     );
     expect(lifecycleSteps("draft")).toEqual([
       { label: "Draft", state: "current" },
+      { label: "In review", state: "upcoming" },
+      { label: "Approved", state: "upcoming" },
       { label: "Baseline", state: "upcoming" },
-      { label: "Superseded", state: "upcoming" },
     ]);
+    // A superseded version: Draft passed, nothing current (the pill says Superseded).
     expect(lifecycleSteps("superseded").map((s) => s.state)).toEqual([
       "passed",
       "upcoming",
-      "current",
+      "upcoming",
+      "upcoming",
     ]);
+    // Story 9.1: In review is current while a Review Request is pending.
+    expect(lifecycleSteps("in_review").map((s) => s.state)).toEqual([
+      "passed",
+      "current",
+      "upcoming",
+      "upcoming",
+    ]);
+    expect(lifecycleSteps("submitted").map((s) => s.state)).toEqual([
+      "passed",
+      "upcoming",
+      "upcoming",
+      "upcoming",
+    ]);
+    expect(versionTag({ status: "in_review", version: 3 })).toBe("v3 · In review");
+    expect(versionNote({ ...draft, status: "in_review" })).toBe("v3 is in review and read only.");
   });
 
   it("splits a role mix into bar shares and labels the role totals", () => {

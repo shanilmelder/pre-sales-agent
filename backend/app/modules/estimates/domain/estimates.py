@@ -82,11 +82,18 @@ def section_rank(section: str) -> int:
 
 class VersionStatus(StrEnum):
     """Story 8.6 adds `submitted`: a draft whose submission blockers were clear when it was
-    submitted. Only a `draft` is editable."""
+    submitted. Story 9.1 adds `in_review`: a submitted version with a pending Review Request
+    (back to `submitted` when its last pending request is cancelled). Only a `draft` is
+    editable."""
 
     DRAFT = "draft"
     SUBMITTED = "submitted"
+    IN_REVIEW = "in_review"
     SUPERSEDED = "superseded"
+
+
+REVIEWABLE = frozenset({VersionStatus.SUBMITTED, VersionStatus.IN_REVIEW})
+"""Story 9.1: the statuses a Review Request may be sent for."""
 
 
 class VersionSource(StrEnum):

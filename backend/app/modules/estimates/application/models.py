@@ -290,7 +290,8 @@ class SubmissionBlockers(BaseModel):
     `to_submit`: open Gaps (and Unknowns), unaccepted Assumptions, open and escalated
     Conflicts, open critical Findings of the current Critic and Red Team Reviews, and active
     Requirements no line covers, in that order; the version can be submitted when it is
-    empty. `to_baseline`: pending Review Requests, always empty until Epic 9."""
+    empty. `to_baseline` (Story 9.1): the version's pending, rejected and challenged Review
+    Requests."""
 
     to_submit: list[Blocker]
     to_baseline: list[Blocker]
@@ -349,6 +350,11 @@ class EstimateView(BaseModel):
     can_submit: bool = Field(
         description="Story 8.6: whether the caller may submit and the current version is a "
         "draft. Submit is offered only while `blockers.to_submit` is empty; the API re-checks."
+    )
+    can_request_review: bool = Field(
+        default=False,
+        description="Story 9.1: whether the caller may send Review Requests and the current "
+        "version is submitted or in review.",
     )
 
 

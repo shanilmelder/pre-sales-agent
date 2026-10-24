@@ -141,12 +141,15 @@ describe("OpportunitiesTable", () => {
       items: [
         { ...item(1), estimate: { version: 2, status: "submitted", total_hours: 6644 } },
         { ...item(2), estimate: null },
+        { ...item(3), estimate: { version: 3, status: "in_review", total_hours: 120 } },
       ],
     });
     await pastSkeleton();
-    const [, first, second] = screen.getAllByRole("row");
+    const [, first, second, third] = screen.getAllByRole("row");
     expect(first.querySelectorAll("td")[5].textContent).toBe("6,644.0 hSubmitted v2");
     expect(second.querySelectorAll("td")[5].textContent).toBe("—No estimate");
+    // Story 9.1.
+    expect(third.querySelectorAll("td")[5].textContent).toBe("120.0 hIn review v3");
   });
 
   it("a row click opens the Opportunity; link and modified clicks don't", async () => {

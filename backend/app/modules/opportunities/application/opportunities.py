@@ -10,7 +10,13 @@ policy with a `Resource` carrying the owner and collaborator ids:
   (403 `forbidden` for other readers).
 
 Adding a collaborator who already is one, removing one who isn't, or an edit that changes
-no field, is a no-op that writes nothing and appends no event. Trace payloads and logs carry
+no field, is a no-op that writes nothing and appends no event.
+
+Story 9.1: `grant_reviewer_access` and `revoke_reviewer_access` (for `reviews`, in the
+caller's Unit of Work, no authorization) share the Opportunity read only with a requested
+reviewer and stop sharing it once they have no pending Review Request left. A reviewer is
+listed under `reviewers`; the owner can't remove them, and adding them as a collaborator
+makes them a full one (whom revoking no longer removes). Trace payloads and logs carry
 ids only, never customer content.
 """
 
@@ -36,6 +42,7 @@ from app.modules.opportunities.application.models import (
 )
 from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE, check_target_date
 from app.platform import trace
+from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
     ForbiddenError,
@@ -62,6 +69,8 @@ NOT_FOUND_DETAIL = "No Opportunity with this id."
 UNKNOWN_USER = "Unknown user"
 PAST_DATE_DETAIL = "The target proposal date can't be in the past."
 _log = get_logger(__name__)
+_SYSTEM_REVIEWS = Actor(type="system", id="reviews.review_request")
+"""The default actor of a reviewer's access change (callers pass the person)."""
 
 
 def _not_found() -> NotFoundError:
@@ -75,9 +84,13 @@ def _stale() -> RowVersionMismatchError:
     )
 
 
-def _resource(record: OpportunityRecord, members: list[UUID]) -> Resource:
+def _resource(record: OpportunityRecord, members: list[UUID], reviewers: list[UUID]) -> Resource:
     return Resource(
-        type=SUBJECT_TYPE, id=record.id, owner_id=record.owner_id, member_ids=frozenset(members)
+        type=SUBJECT_TYPE,
+        id=record.id,
+        owner_id=record.owner_id,
+        member_ids=frozenset(members),
+        reviewer_ids=frozenset(reviewers),
     )
 
 
@@ -88,7 +101,8 @@ async def _load_readable(
     if record is None:
         raise _not_found()
     members = await repository.collaborator_ids(uow, opportunity_id)
-    resource = _resource(record, members)
+    reviewers = await repository.collaborator_ids(uow, opportunity_id, role=repository.REVIEWER)
+    resource = _resource(record, members, reviewers)
     if not identity.can(actor, Action.OPPORTUNITY_READ, resource):
         raise _not_found()
     return record, members, resource
@@ -106,7 +120,8 @@ async def _detail(
     resource: Resource,
 ) -> Opportunity:
     changer = await repository.last_changer_id(uow, record.id)
-    wanted = {record.owner_id, *members, *([changer] if changer else [])}
+    reviewers = sorted(resource.reviewer_ids, key=str)
+    wanted = {record.owner_id, *members, *reviewers, *([changer] if changer else [])}
     names = await identity.user_names(uow, wanted)
     return Opportunity(
         id=str(record.id),
@@ -118,6 +133,10 @@ async def _detail(
         status=record.status,
         owner=_ref(record.owner_id, names),
         collaborators=[_ref(member, names) for member in members],
+        reviewers=sorted(
+            (_ref(reviewer, names) for reviewer in reviewers),
+            key=lambda ref: (ref.name.casefold(), ref.id),
+        ),
         row_version=record.row_version,
         created_at=record.created_at,
         last_changed_by=names.get(changer) if changer else None,
@@ -470,3 +489,64 @@ async def _change_member(
         },
     )
     return await get(uow, actor, opportunity_id)
+
+
+# --- reviewer collaboration (Story 9.1) -----------------------------------------------------
+
+
+async def grant_reviewer_access(
+    uow: UnitOfWork, opportunity_id: UUID, user_id: UUID, *, actor: Actor = _SYSTEM_REVIEWS
+) -> bool:
+    """Share the Opportunity read only with `user_id` as a reviewer, unless they are its
+    owner or already share it. True if this call added them (traced
+    `opportunities.collaborator.added` with role `reviewer`, as `actor`: the person whose
+    command it follows from). No authorization: `reviews` calls it in its own command's Unit
+    of Work."""
+    record = await repository.get(uow, opportunity_id)
+    if record is None:
+        raise _not_found()
+    if user_id == record.owner_id or not await repository.add_reviewer(
+        uow, opportunity_id, user_id
+    ):
+        return False
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=OpportunitiesCollaboratorAdded(user_id=str(user_id), role="reviewer"),
+        subject_type=SUBJECT_TYPE,
+        subject_id=opportunity_id,
+        opportunity_id=opportunity_id,
+        subject_version=record.row_version,
+    )
+    return True
+
+
+async def revoke_reviewer_access(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    user_id: UUID,
+    *,
+    has_pending: bool,
+    actor: Actor = _SYSTEM_REVIEWS,
+) -> bool:
+    """Stop sharing the Opportunity with the reviewer `user_id` when `has_pending` (the
+    caller's answer: whether they still have a pending Review Request on it) is false. Only a
+    `reviewer` row is removed, never a collaborator's. True if this call removed it (traced
+    `opportunities.collaborator.removed` with role `reviewer`). No authorization."""
+    if has_pending:
+        return False
+    record = await repository.get(uow, opportunity_id)
+    if record is None or not await repository.remove_collaborator(
+        uow, opportunity_id, user_id, role=repository.REVIEWER
+    ):
+        return False
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=OpportunitiesCollaboratorRemoved(user_id=str(user_id), role="reviewer"),
+        subject_type=SUBJECT_TYPE,
+        subject_id=opportunity_id,
+        opportunity_id=opportunity_id,
+        subject_version=record.row_version,
+    )
+    return True

@@ -65,6 +65,12 @@ class Action(StrEnum):
     REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
     REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"
     DECISION_RESOLVE = "workflows.decision.resolve"
+    REVIEW_REQUEST_CREATE = "reviews.review_request.create"
+    """Story 9.1: send Review Requests for a submitted Estimate Version, and list the
+    reviewers who could get one (the owner and collaborators, except sales representatives;
+    never a reviewer collaborator)."""
+    REVIEW_REQUEST_CANCEL = "reviews.review_request.cancel"
+    """Story 9.1: cancel a pending Review Request (its sender or the Opportunity's owner)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
     # hold them through their registry `tool_permissions`; no human role is granted them
     # (`KNOWLEDGE_CHUNK_SEARCH` above is also the human Knowledge search, open to all roles).

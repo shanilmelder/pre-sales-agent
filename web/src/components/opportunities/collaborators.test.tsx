@@ -269,3 +269,16 @@ describe("Collaborators", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 });
+
+describe("reviewer collaborators (Story 9.1)", () => {
+  it("lists a reviewer with a Reviewer tag and no Remove", async () => {
+    const REVIEWER = { id: "00000000-0000-7000-8000-0000000000d4", name: "[REVIEWER]" };
+    const { container } = renderPanel(opportunity({ reviewers: [REVIEWER] }));
+    const row = container.querySelector<HTMLElement>(`[data-reviewer="${REVIEWER.id}"]`)!;
+    expect(within(row).getByText("[REVIEWER]")).toBeTruthy();
+    expect(within(row).getByText("Reviewer")).toBeTruthy();
+    expect(within(row).queryByRole("button")).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove [MEMBER]" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});

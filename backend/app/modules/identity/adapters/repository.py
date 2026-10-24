@@ -174,6 +174,43 @@ async def search_users(uow: UnitOfWork, q: str, *, limit: int) -> list[UserRecor
     return [UserRecord(id=row.id, name=row.name, email=row.email) for row in rows]
 
 
+async def search_users_with_role(
+    uow: UnitOfWork, role: str, q: str, *, limit: int, exclude: list[UUID]
+) -> list[UserRecord]:
+    """Story 9.1: users whose cached roles include `role` and whose name or email contains
+    `q` (case-insensitive; every one for a blank `q`), except `exclude`, ordered by name then
+    id."""
+    statement = (
+        select(IdentityUser.id, IdentityUser.name, IdentityUser.email)
+        .join(IdentityUserRole, IdentityUserRole.user_id == IdentityUser.id)
+        .where(IdentityUserRole.role == role)
+    )
+    if q:
+        pattern = f"%{_escape_like(q)}%"
+        statement = statement.where(
+            IdentityUser.name.ilike(pattern, escape="\\")
+            | IdentityUser.email.ilike(pattern, escape="\\")
+        )
+    if exclude:
+        statement = statement.where(IdentityUser.id.not_in(exclude))
+    rows = await uow.session.execute(
+        statement.order_by(func.lower(IdentityUser.name), IdentityUser.id).limit(limit)
+    )
+    return [UserRecord(id=row.id, name=row.name, email=row.email) for row in rows]
+
+
+async def users_with_role(uow: UnitOfWork, user_ids: list[UUID], role: str) -> set[UUID]:
+    """Story 9.1: which of these users' cached roles include `role`."""
+    if not user_ids:
+        return set()
+    rows = await uow.session.execute(
+        select(IdentityUserRole.user_id).where(
+            IdentityUserRole.user_id.in_(user_ids), IdentityUserRole.role == role
+        )
+    )
+    return set(rows.scalars())
+
+
 async def user_names(uow: UnitOfWork, user_ids: list[UUID]) -> dict[UUID, str]:
     """Names of the given users that exist."""
     if not user_ids:

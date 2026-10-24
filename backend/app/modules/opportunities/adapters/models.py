@@ -40,8 +40,15 @@ class OpportunityRow(RowVersioned, Base):
 
 
 class CollaboratorRow(Base):
+    """A user the Opportunity is shared with. Story 9.1: `role` `collaborator` (added by the
+    owner) or `reviewer` (read only, granted by a pending Review Request and removed when the
+    user has none left)."""
+
     __tablename__ = "opportunities_collaborators"
-    __table_args__ = (Index(None, "user_id"),)
+    __table_args__ = (
+        Index(None, "user_id"),
+        CheckConstraint("role IN ('collaborator', 'reviewer')", name="role"),
+    )
 
     opportunity_id: Mapped[UUID] = mapped_column(
         Uuid,
@@ -54,6 +61,7 @@ class CollaboratorRow(Base):
         primary_key=True,
     )
     user_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    role: Mapped[str] = mapped_column(Text, server_default=text("'collaborator'"))
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

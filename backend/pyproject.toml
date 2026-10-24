@@ -129,6 +129,9 @@ forbidden_modules = [
     "app.modules.workflows.domain",
     "app.modules.workflows.adapters",
     "app.modules.workflows.api",
+    "app.modules.reviews.domain",
+    "app.modules.reviews.adapters",
+    "app.modules.reviews.api",
 ]
 allow_indirect_imports = true
 
@@ -156,6 +159,9 @@ forbidden_modules = [
     "app.modules.knowledge.domain",
     "app.modules.knowledge.adapters",
     "app.modules.knowledge.api",
+    "app.modules.reviews.domain",
+    "app.modules.reviews.adapters",
+    "app.modules.reviews.api",
 ]
 allow_indirect_imports = true
 
@@ -188,6 +194,9 @@ forbidden_modules = [
     "app.modules.knowledge.domain",
     "app.modules.knowledge.adapters",
     "app.modules.knowledge.api",
+    "app.modules.reviews.domain",
+    "app.modules.reviews.adapters",
+    "app.modules.reviews.api",
 ]
 allow_indirect_imports = true
 
@@ -217,6 +226,9 @@ forbidden_modules = [
     "app.modules.workflows.domain",
     "app.modules.workflows.adapters",
     "app.modules.workflows.api",
+    "app.modules.reviews.domain",
+    "app.modules.reviews.adapters",
+    "app.modules.reviews.api",
 ]
 allow_indirect_imports = true
 
@@ -246,6 +258,9 @@ forbidden_modules = [
     "app.modules.workflows.domain",
     "app.modules.workflows.adapters",
     "app.modules.workflows.api",
+    "app.modules.reviews.domain",
+    "app.modules.reviews.adapters",
+    "app.modules.reviews.api",
 ]
 allow_indirect_imports = true
 
@@ -267,6 +282,7 @@ forbidden_modules = [
     "app.modules.estimates",
     "app.modules.assessments",
     "app.modules.workflows",
+    "app.modules.reviews",
 ]
 # Story 6.3: only the routes hand estimates' public decision functions to the commands.
 # Story 6.2: `application/findings.py` reads assessments' Findings at call time.
@@ -290,6 +306,7 @@ forbidden_modules = [
     "app.modules.estimates",
     "app.modules.assessments",
     "app.modules.workflows",
+    "app.modules.reviews",
 ]
 # Story 3.5: only the coverage route reads the Opportunities' products, through their public API.
 ignore_imports = [
@@ -313,6 +330,7 @@ forbidden_modules = [
     "app.modules.conflicts",
     "app.modules.knowledge",
     "app.modules.workflows",
+    "app.modules.reviews",
 ]
 allow_indirect_imports = true
 
@@ -329,11 +347,45 @@ source_modules = [
     "app.modules.conflicts",
     "app.modules.knowledge",
     "app.modules.workflows",
+    "app.modules.reviews",
 ]
 forbidden_modules = [
     "app.modules.registry.domain",
     "app.modules.registry.adapters",
     "app.modules.registry.api",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "reviews uses identity, opportunities, estimates and assessments only through their public APIs (AD-2, Story 9.1)"
+type = "forbidden"
+source_modules = ["app.modules.reviews"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.intake.domain",
+    "app.modules.intake.adapters",
+    "app.modules.intake.api",
+    "app.modules.gaps.domain",
+    "app.modules.gaps.adapters",
+    "app.modules.gaps.api",
+    "app.modules.estimates.domain",
+    "app.modules.estimates.adapters",
+    "app.modules.estimates.api",
+    "app.modules.assessments.domain",
+    "app.modules.assessments.adapters",
+    "app.modules.assessments.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
+    "app.modules.workflows.domain",
+    "app.modules.workflows.adapters",
+    "app.modules.workflows.api",
+    "app.modules.knowledge",
 ]
 allow_indirect_imports = true
 
@@ -364,6 +416,9 @@ forbidden_modules = [
     "app.modules.conflicts.adapters",
     "app.modules.conflicts.api",
     "app.modules.knowledge",
+    "app.modules.reviews.domain",
+    "app.modules.reviews.adapters",
+    "app.modules.reviews.api",
 ]
 allow_indirect_imports = true
 

@@ -90,6 +90,19 @@ async def run_number(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> int
     return await _repo.run_number(uow, opportunity_id, run_id)
 
 
+async def run_starter(uow: UnitOfWork, run_id: UUID) -> UUID | None:
+    """Story 9.1: the user who started the run (its plan v1's creator), or None when the
+    system queued it or the run is unknown. No authorization."""
+    for plan in await _repo.plan_versions_of(uow, run_id):
+        if plan.version != 1 or plan.created_by_type != "user":
+            continue
+        try:
+            return UUID(plan.created_by)
+        except ValueError:
+            return None
+    return None
+
+
 async def plan_of(uow: UnitOfWork, run_id: UUID) -> list[tuple[UUID, tuple[UUID, ...]]]:
     """The run's plan for building its graph: each task's id and the ids it waits for (those
     it requires, then those it runs after, Story 6.4: the graph's edges are the same; the
@@ -142,6 +155,7 @@ __all__ = [
     "retry_task",
     "run_in_progress",
     "run_number",
+    "run_starter",
     "skip_blocked_task",
     "skip_disabled_task",
     "start_run",
