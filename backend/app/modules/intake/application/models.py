@@ -295,3 +295,23 @@ class Passage(BaseModel):
     before: str
     text: str
     after: str
+
+
+class EvidenceOption(BaseModel):
+    """Something a person may cite as Evidence when resolving a Finding (Story 6.6): an
+    active Requirement at its current version (`kind` `requirement`, `label` `R<n>`) or a
+    Source at its latest version (`kind` `source_document`, `label` `S<n> · <file name>`).
+    `excerpt`: up to 140 characters of the Requirement's text; empty for a Source."""
+
+    kind: str
+    id: str
+    version: int = Field(ge=1)
+    label: str
+    excerpt: str
+
+
+class EvidenceOptions(BaseModel):
+    """The Opportunity's Evidence picker: its active Requirements by number, then its Sources
+    oldest first."""
+
+    items: list[EvidenceOption]

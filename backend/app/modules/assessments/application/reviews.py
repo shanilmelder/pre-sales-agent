@@ -17,6 +17,7 @@ from uuid import UUID
 
 from app.modules.assessments.adapters import repository as repo
 from app.modules.assessments.adapters.repository import FindingRecord, ReviewRecord, RunRecord
+from app.modules.assessments.application.findings import blocking_count, finding_states
 from app.modules.assessments.application.models import (
     FindingLine,
     FindingRequirement,
@@ -46,7 +47,7 @@ from app.modules.assessments.domain.reviews import (
 )
 from app.modules.estimates.application import public as estimates
 from app.modules.identity.application import public as identity
-from app.modules.identity.application.public import Action, Principal
+from app.modules.identity.application.public import Action, Principal, Resource
 from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
 from app.modules.registry.application import public as registry
@@ -113,9 +114,18 @@ async def requirement_chips(
     }
 
 
-async def review_view(uow: UnitOfWork, record: ReviewRecord) -> RedTeamReviewView:
-    """The Review with its ranked Findings, their chips and the counts per severity."""
-    findings = await repo.findings_of(uow, record.id)
+async def review_view(
+    uow: UnitOfWork,
+    record: ReviewRecord,
+    actor: Principal,
+    resource: Resource,
+    findings: list[FindingRecord] | None = None,
+) -> RedTeamReviewView:
+    """The Review with its ranked Findings, their chips, statuses (Story 6.6) and the counts
+    per severity."""
+    if findings is None:
+        findings = await repo.findings_of(uow, record.id)
+    states = await finding_states(uow, actor, resource, record.opportunity_id, record, findings)
     cited = await requirement_chips(uow, record.opportunity_id, findings)
     estimate = (
         None
@@ -160,7 +170,7 @@ async def review_view(uow: UnitOfWork, record: ReviewRecord) -> RedTeamReviewVie
         ),
         findings=[
             RedTeamFinding(
-                id=str(f.id),
+                **dict(states[f.id]),
                 position=f.position,
                 category=FindingCategory(f.category),
                 severity=Severity(f.severity),
@@ -177,10 +187,14 @@ async def review_view(uow: UnitOfWork, record: ReviewRecord) -> RedTeamReviewVie
 async def get_red_team(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> RedTeamView:
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     record = await repo.current_review(uow, opportunity_id, _KIND)
+    findings = [] if record is None else await repo.findings_of(uow, record.id)
     return RedTeamView(
-        review=None if record is None else await review_view(uow, record),
+        review=None
+        if record is None
+        else await review_view(uow, record, actor, resource, findings),
         run=_run(await repo.latest_run(uow, opportunity_id)),
         can_start=identity.can(actor, Action.RED_TEAM_START, resource),
+        blocking_count=blocking_count(findings),
     )
 
 

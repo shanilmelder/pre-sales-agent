@@ -44,6 +44,7 @@ import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
 import { AssessmentFindingInspector } from "@/components/opportunities/assessment-finding-inspector";
 import { CriticInspector } from "@/components/opportunities/critic-inspector";
+import { FindingStatusPill } from "@/components/opportunities/finding-decisions";
 import { useFindingSelection } from "@/components/opportunities/finding-selection";
 import { CountChip, useRedTeam } from "@/components/opportunities/red-team-list";
 import { RedTeamInspector } from "@/components/opportunities/red-team-inspector";
@@ -128,8 +129,9 @@ import {
   type CriticView,
 } from "@/lib/critic";
 import { hours } from "@/lib/estimates";
+import { BLOCKS_SUBMISSION, blocksSubmission } from "@/lib/findings";
 import { formatDateTime } from "@/lib/sources";
-import { useOpportunityEvents } from "@/lib/opportunity-events";
+import { useFindingsEvents, useOpportunityEvents } from "@/lib/opportunity-events";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
 import {
   findingCount,
@@ -220,7 +222,9 @@ const FINDING_COLUMNS =
 
 /** Every agent's, the Red Team's and the Critic's Findings in one table, in the order given
  * (ranked critical to low): severity, type, the specific title, who raised it and the evidence
- * counts (a Critic row also counts the specialist Findings it cites).
+ * counts (a Critic row also counts the specialist Findings it cites). A Critic or Red Team row
+ * shows its status pill under the title (Story 6.6), and an open critical one "Blocks
+ * submission until resolved".
  * Critical rows are tinted red. One Tab stop (roving tabindex); j/k (with single-key shortcuts
  * on) or the arrows move between rows; Enter, Space or a click opens the row, which is then
  * `aria-selected`. */
@@ -318,12 +322,27 @@ export function FindingsTable({
                   <span className="truncate text-meta text-muted-foreground">
                     {row.type}
                   </span>
-                  <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 text-body-strong md:col-span-1">
-                    <span className="min-w-0">{row.finding.title}</span>
-                    {injectionSuspected(row) ? (
-                      <Pill tone="gap" className="w-fit">
-                        {POSSIBLE_INJECTION}
-                      </Pill>
+                  <span className="col-span-2 flex min-w-0 flex-col gap-1 md:col-span-1">
+                    <span className="flex min-w-0 flex-wrap items-center gap-2 text-body-strong">
+                      <span className="min-w-0">{row.finding.title}</span>
+                      {injectionSuspected(row) ? (
+                        <Pill tone="gap" className="w-fit">
+                          {POSSIBLE_INJECTION}
+                        </Pill>
+                      ) : null}
+                    </span>
+                    {row.source !== "specialist" ? (
+                      <span className="flex flex-wrap items-center gap-2">
+                        <FindingStatusPill
+                          status={row.finding.status}
+                          severity={row.severity}
+                        />
+                        {blocksSubmission(row.finding) ? (
+                          <span className="text-meta text-blocker">
+                            {BLOCKS_SUBMISSION}
+                          </span>
+                        ) : null}
+                      </span>
                     ) : null}
                   </span>
                   <span className="truncate text-body">{row.raisedBy}</span>
@@ -1304,6 +1323,26 @@ export function SpecialistAssessmentsSection({
       // A failed re-read is retried on the next event (or poll).
     });
   });
+  // Story 6.6: someone resolved or overrode a Finding (or a Review landed): the pills, the
+  // inspector's status and actions follow without a reload.
+  const refreshRedTeam = useRef(redTeam.refresh);
+  useEffect(() => {
+    refreshRedTeam.current = redTeam.refresh;
+  });
+  useFindingsEvents(opportunityId, () => {
+    refreshRedTeam.current();
+    void (async () => {
+      try {
+        const loaded = await loadCritic(opportunityId);
+        if (loaded?.kind === "ok") {
+          setCritic(loaded.critic);
+          setCriticFailed(false);
+        }
+      } catch {
+        // Retried on the next event.
+      }
+    })();
+  });
 
   // New data from the server (e.g. a navigation refresh) replaces the local copy.
   if (initial !== syncedFrom) {
@@ -1669,12 +1708,14 @@ export function SpecialistAssessmentsSection({
             <CriticInspector
               key={findingKey(selected)}
               finding={selected.finding}
+              opportunityId={opportunityId}
               focusRequest={focusRequest}
             />
           ) : (
             <RedTeamInspector
               key={findingKey(selected)}
               finding={selected.finding}
+              opportunityId={opportunityId}
               focusRequest={focusRequest}
             />
           )}

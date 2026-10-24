@@ -10,10 +10,19 @@ from app.modules.intake.application.answers import (
     requirement_changes_for_source,
     resolve_passage,
 )
+from app.modules.intake.application.evidence import (
+    REQUIREMENT_KIND,
+    SOURCE_DOCUMENT_KIND,
+    evidence_labels,
+    evidence_options,
+    foreign_evidence,
+)
 from app.modules.intake.application.file_text import FileTextUnreadableError, read_stored_text
 from app.modules.intake.application.models import (
     AddTextSource,
     ConfirmAllResult,
+    EvidenceOption,
+    EvidenceOptions,
     Extraction,
     MergedRequirementRef,
     OpportunitySourceDownloadLink,
@@ -88,11 +97,15 @@ from app.modules.intake.domain.sources import (
 __all__ = [
     "EXTENSION_KINDS",
     "MISSING_FILE_DETAIL",
+    "REQUIREMENT_KIND",
+    "SOURCE_DOCUMENT_KIND",
     "TEXT_BODY_MAX_BYTES",
     "TEXT_TOO_LONG_MESSAGE",
     "AddTextSource",
     "AnswerSource",
     "ConfirmAllResult",
+    "EvidenceOption",
+    "EvidenceOptions",
     "Extraction",
     "FileTextUnreadableError",
     "IncomingFile",
@@ -136,7 +149,10 @@ __all__ = [
     "create_requirement",
     "delete_requirement",
     "edit_requirement",
+    "evidence_labels",
+    "evidence_options",
     "extracted_text",
+    "foreign_evidence",
     "get_passage",
     "input_budget_chars",
     "integration_scope",

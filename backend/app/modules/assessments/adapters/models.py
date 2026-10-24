@@ -6,6 +6,7 @@ by `workflows` since Story 5.2) hold ids owned by other modules without foreign 
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -22,6 +23,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base
@@ -104,8 +106,15 @@ REVIEW_CATEGORIES = (
 
 
 class FindingRow(Base):
-    """A Finding of a Review. Insert-only (no resolving or overriding in Stories 6.4 and
-    6.5)."""
+    """A Finding of a Review. Its text and links are insert-only; since Story 6.6 it has a
+    status (`open`, `resolved` or `overridden`), changed only by a person's resolve or
+    override command (`psa_app` may UPDATE `status`, `resolution` and `row_version` only).
+    `fingerprint`, `security_discipline`, `policy_ref` and `previous_override_id` are set at
+    acceptance by code: the hash that recognises the same Finding in a later Review, whether
+    it cites a Security Agent Finding, the mandatory security Checklist item that makes it
+    not overridable (`{kind: checklist_item, checklist_id, version, item_id}`), and the
+    override of an earlier Finding with the same fingerprint (shown, never applied).
+    `resolution`: `{kind: evidence_supplied | addressed, reason, by, at}` once `resolved`."""
 
     __tablename__ = "assessments_findings"
     __table_args__ = (
@@ -116,6 +125,12 @@ class FindingRow(Base):
         ),
         CheckConstraint("severity IN ('low', 'medium', 'high', 'critical')", name="severity"),
         CheckConstraint("position >= 1", name="position"),
+        CheckConstraint("status IN ('open', 'resolved', 'overridden')", name="status"),
+        CheckConstraint(
+            "(status = 'resolved') = (resolution IS NOT NULL)", name="resolved_has_resolution"
+        ),
+        CheckConstraint("row_version >= 1", name="row_version"),
+        Index("ix_assessments_findings_fingerprint", "fingerprint"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -130,6 +145,73 @@ class FindingRow(Base):
     severity: Mapped[str] = mapped_column(Text)
     title: Mapped[str] = mapped_column(Text)
     argument: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'open'"))
+    fingerprint: Mapped[str] = mapped_column(Text)
+    security_discipline: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    policy_ref: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    previous_override_id: Mapped[UUID | None] = mapped_column(Uuid)
+    """An `assessments_finding_overrides` id, kept without a foreign key (shown only)."""
+    resolution: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    row_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+
+
+class FindingOverrideRow(Base):
+    """A person overrode a Critic or Red Team Finding with a reason (Story 6.6): the Review
+    kind and version it belonged to, who, when, why, and the policy basis that allowed it
+    (`owner`, `head_of_delivery` or `security_reviewer`). At most one per Finding.
+    Insert-only."""
+
+    __tablename__ = "assessments_finding_overrides"
+    __table_args__ = (
+        CheckConstraint("review_kind IN ('red_team', 'critic')", name="review_kind"),
+        CheckConstraint(
+            "policy_basis IN ('owner', 'head_of_delivery', 'security_reviewer')",
+            name="policy_basis",
+        ),
+        Index("uq_assessments_finding_overrides_finding_id", "finding_id", unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    finding_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "assessments_findings.id",
+            ondelete="CASCADE",
+            name="fk_assessments_finding_overrides_finding_id",
+        ),
+    )
+    review_kind: Mapped[str] = mapped_column(Text)
+    review_version: Mapped[int] = mapped_column(Integer)
+    overridden_by: Mapped[UUID] = mapped_column(Uuid)
+    reason: Mapped[str] = mapped_column(Text)
+    policy_basis: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class FindingEvidenceRow(Base):
+    """An Evidence reference a person supplied to resolve a Finding (Story 6.6): `kind`
+    (`requirement` or `source_document`), the id and version, in the order given.
+    Insert-only."""
+
+    __tablename__ = "assessments_finding_evidence"
+    __table_args__ = (
+        CheckConstraint("kind IN ('requirement', 'source_document')", name="kind"),
+        CheckConstraint("position >= 1", name="position"),
+    )
+
+    finding_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "assessments_findings.id",
+            ondelete="CASCADE",
+            name="fk_assessments_finding_evidence_finding_id",
+        ),
+        primary_key=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(Text)
+    ref_id: Mapped[UUID] = mapped_column(Uuid)
+    ref_version: Mapped[int] = mapped_column(Integer)
 
 
 class FindingRequirementRow(Base):

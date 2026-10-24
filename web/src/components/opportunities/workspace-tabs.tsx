@@ -8,17 +8,28 @@ import { ConnectionStatus } from "@/components/opportunities/connection-status";
 import { usePublishStreamState, useShell, useWorkspaceTabKeys } from "@/components/shell/shell-context";
 import { cn } from "@/lib/utils";
 import { openCountLabel } from "@/lib/conflicts";
+import { blockingCountLabel } from "@/lib/findings";
 import { useNarrowViewport } from "@/components/shell/use-narrow-viewport";
 import {
   retryEventStream,
   useConflictsEvents,
   useEventStreamStatus,
+  useFindingsEvents,
   useGapsEvents,
 } from "@/lib/opportunity-events";
 import { activeTab, tabHref, WORKSPACE_TABS, type WorkspaceTabSlug } from "@/lib/workspace";
 
 /** Tabs whose count is open blocking work, shown in the blocker tint. */
-const BLOCKER_COUNT_TABS: ReadonlySet<WorkspaceTabSlug> = new Set(["gaps", "conflicts"]);
+const BLOCKER_COUNT_TABS: ReadonlySet<WorkspaceTabSlug> = new Set([
+  "gaps",
+  "assessments",
+  "conflicts",
+]);
+
+/** A tab count's screen-reader words: "2 blocking" on Assessments (Story 6.6), else "3 open". */
+function countLabel(slug: WorkspaceTabSlug, n: number): string {
+  return slug === "assessments" ? blockingCountLabel(n) : openCountLabel(n);
+}
 
 /** The workspace tab strip and the selected tab's panel. A `tablist` of links (each tab has
  * its own URL), the selected one marked by the route; `1`–`9` reach the tabs through the
@@ -26,7 +37,9 @@ const BLOCKER_COUNT_TABS: ReadonlySet<WorkspaceTabSlug> = new Set(["gaps", "conf
  * count above 0 shows it after its label ("Conflicts 3", read as "Conflicts, 3 open").
  * Story 4.7: with `loadGapCount`, the Gaps tab's open count follows the Opportunity's event
  * stream (`gaps.changed`) without a reload; Story 6.2: with `loadConflictCount`, so does the
- * Conflicts tab's open count (`conflicts.changed`). Story 2.3: a slim status bar at the
+ * Conflicts tab's open count (`conflicts.changed`); Story 6.6: with `loadBlockingCount`, so
+ * does the Assessments tab's blocking count (open critical Critic and Red Team Findings, in
+ * the blocker tint), on the Finding and Review trace frames. Story 2.3: a slim status bar at the
  * bottom reads "Reconnecting…" while that stream is down; once it has been down 60 s the
  * shell's Offline strip shows (Story 17.2c) and the tab panel sits in a disabled `fieldset`,
  * so its buttons and inputs go inert (links and the tabs still work). Below 1024px the same
@@ -36,6 +49,7 @@ export function WorkspaceTabs({
   counts: initialCounts = {},
   loadGapCount,
   loadConflictCount,
+  loadBlockingCount,
   children,
 }: {
   id: string;
@@ -47,6 +61,9 @@ export function WorkspaceTabs({
   /** Reads the open-plus-escalated Conflict count again (a server action); left out, the
    * count stays as given. */
   loadConflictCount?: (opportunityId: string) => Promise<number | null>;
+  /** Reads the Assessments tab's blocking count again (a server action); left out, the count
+   * stays as given. */
+  loadBlockingCount?: (opportunityId: string) => Promise<number | null>;
   children: ReactNode;
 }) {
   const [liveGaps, setLiveGaps] = useState<{ from: number | undefined; count: number } | null>(
@@ -82,12 +99,32 @@ export function WorkspaceTabs({
     },
     loadConflictCount !== undefined,
   );
+  const [liveBlocking, setLiveBlocking] = useState<{
+    from: number | undefined;
+    count: number;
+  } | null>(null);
+  useFindingsEvents(
+    id,
+    () => {
+      const from = initialCounts.assessments;
+      void loadBlockingCount?.(id).then(
+        (count) => {
+          if (count !== null) setLiveBlocking({ from, count });
+        },
+        () => undefined,
+      );
+    },
+    loadBlockingCount !== undefined,
+  );
   // A newer count from the server (a navigation) wins over the live one read before it.
   const counts = {
     ...initialCounts,
     ...(liveGaps && liveGaps.from === initialCounts.gaps ? { gaps: liveGaps.count } : {}),
     ...(liveConflicts && liveConflicts.from === initialCounts.conflicts
       ? { conflicts: liveConflicts.count }
+      : {}),
+    ...(liveBlocking && liveBlocking.from === initialCounts.assessments
+      ? { assessments: liveBlocking.count }
       : {}),
   };
   const stream = useEventStreamStatus(id);
@@ -175,7 +212,7 @@ export function WorkspaceTabs({
                   }`}
                 >
                   <span aria-hidden="true">{counts[tab.slug]}</span>
-                  <span className="sr-only">, {openCountLabel(counts[tab.slug] ?? 0)}</span>
+                  <span className="sr-only">, {countLabel(tab.slug, counts[tab.slug] ?? 0)}</span>
                 </span>
               ) : null}
             </Link>

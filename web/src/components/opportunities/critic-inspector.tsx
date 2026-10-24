@@ -3,18 +3,22 @@
 import { useEffect, useId, useRef } from "react";
 
 import { Chip } from "@/components/ui/chip";
+import { FindingDecisions } from "@/components/opportunities/finding-decisions";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { citedFindingLabel, criticCategoryLabel, type CriticFinding } from "@/lib/critic";
 
-/** The selected Critic Finding in the right pane, read-only (Story 6.4): its severity,
- * category and title, the Critic's argument, the specialist Findings it cites (each with the
- * agent's role, the Assessment version and the Finding's title) and the Requirements it
- * cites as chips with their excerpts. */
+/** The selected Critic Finding in the right pane (Story 6.4): its severity, category and
+ * title, its status and actions (Story 6.6, with `opportunityId`), the Critic's argument,
+ * the specialist Findings it cites (each with the agent's role, the Assessment version and
+ * the Finding's title) and the Requirements it cites as chips with their excerpts. */
 export function CriticInspector({
   finding,
+  opportunityId,
   focusRequest = 0,
 }: {
   finding: CriticFinding;
+  /** Set to show the Finding's status and actions (Story 6.6). */
+  opportunityId?: string;
   focusRequest?: number;
 }) {
   const headingId = useId();
@@ -42,6 +46,10 @@ export function CriticInspector({
           {finding.title}
         </h3>
       </div>
+
+      {opportunityId ? (
+        <FindingDecisions opportunityId={opportunityId} finding={finding} />
+      ) : null}
 
       <div className="flex flex-col gap-1">
         <h4 className="text-label text-muted-foreground">Argument</h4>

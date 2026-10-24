@@ -3,18 +3,23 @@
 import { useEffect, useId, useRef } from "react";
 
 import { Chip } from "@/components/ui/chip";
+import { FindingDecisions } from "@/components/opportunities/finding-decisions";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { hours, sectionLabel, type SectionName } from "@/lib/estimates";
 import { categoryLabel, type RedTeamFinding } from "@/lib/red-team";
 
-/** The selected Red Team Finding in the right pane, read-only: its severity, category and
- * title, the Red Team's argument, the Requirements it challenges as chips with their
- * excerpts, and the Estimate lines it challenges with their section and effort. */
+/** The selected Red Team Finding in the right pane: its severity, category and title, its
+ * status and actions (Story 6.6, with `opportunityId`), the Red Team's argument, the
+ * Requirements it challenges as chips with their excerpts, and the Estimate lines it
+ * challenges with their section and effort. */
 export function RedTeamInspector({
   finding,
+  opportunityId,
   focusRequest = 0,
 }: {
   finding: RedTeamFinding;
+  /** Set to show the Finding's status and actions (Story 6.6). */
+  opportunityId?: string;
   focusRequest?: number;
 }) {
   const headingId = useId();
@@ -40,6 +45,10 @@ export function RedTeamInspector({
           {finding.title}
         </h3>
       </div>
+
+      {opportunityId ? (
+        <FindingDecisions opportunityId={opportunityId} finding={finding} />
+      ) : null}
 
       <div className="flex flex-col gap-1">
         <h4 className="text-label text-muted-foreground">Argument</h4>

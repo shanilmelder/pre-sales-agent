@@ -19,6 +19,7 @@ from sqlalchemy.engine import Engine
 from app.agents.critic_agent.agent import prompt as critic_prompt
 from app.agents.critic_agent.schema import CriticOutput
 from app.modules.assessments.application import public as assessments_public
+from app.modules.assessments.domain.findings import fingerprint
 from app.modules.registry.domain.registry import seed_config_version_id
 from app.platform.config import Settings
 from app.platform.db import create_engine
@@ -353,7 +354,7 @@ def test_get_critic_shows_ranked_findings_with_their_chips_to_any_reader(
     headers, opp = prepared(client, sync_engine, db_url, gateway)
     rep, rep_id = _user(client, sync_engine, "Rep Person", "sales_representative")
     assert _add(client, headers, opp, rep_id).status_code == 200
-    assert get_critic(client, headers, opp["id"]).json() == {"review": None}
+    assert get_critic(client, headers, opp["id"]).json() == {"review": None, "blocking_count": 0}
     install(AgentGateway(replies(critic_agent=[HAPPY])))
     started(client, headers, opp["id"])
     assert drain(db_url, ASSESS) == ["succeeded"]
@@ -380,6 +381,13 @@ def test_get_critic_shows_ranked_findings_with_their_chips_to_any_reader(
         ("pm_agent", "PM Agent", 1, "24/7 go-live needs a hypercare rota"),
     ]
     assert timeline["argument"].startswith("Secret argument")
+    # Story 6.6: the critical one blocks; a sales representative may not act on it.
+    assert response.json()["blocking_count"] == 1
+    assert (timeline["status"], timeline["can_resolve"], timeline["can_override"]) == (
+        "open",
+        False,
+        False,
+    )
     other, _ = _user(client, sync_engine, "Stranger Person", "presales_engineer")
     assert get_critic(client, other, opp["id"]).status_code == 404
 
@@ -815,3 +823,76 @@ def test_critic_findings_and_targets_are_insert_only_for_psa_app(
 def test_the_critic_is_not_an_assessment_agent() -> None:
     assert CRITIC not in {a.value for a in assessments_public.AGENTS}
     assert assessments_public.CRITIC_AGENT == CRITIC
+
+
+# --- blocking Findings and overrides (Story 6.6) ----------------------------------------------
+
+
+def test_a_critic_finding_citing_the_security_agent_is_security_discipline(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = prepared(client, sync_engine, db_url, gateway)
+    install(AgentGateway(replies(critic_agent=[HAPPY])))
+    started(client, headers, opp["id"])
+    assert drain(db_url, ASSESS) == ["succeeded"]
+    reviewer, reviewer_id = _user(client, sync_engine, "Sec Person", "security_reviewer")
+    current_opp = client.get(f"{BASE}/{opp['id']}", headers=headers).json()
+    assert _add(client, headers, current_opp, reviewer_id).status_code == 200
+    (review,) = reviews(sync_engine, opp["id"])
+    stored = {f["category"]: f for f in review_findings(sync_engine, review["id"])}
+    # Discipline and fingerprint are set by code: cites a Security Agent Finding (F9).
+    assert stored["risk_coverage"]["security_discipline"] is True
+    assert stored["timeline"]["security_discipline"] is False
+    timeline_targets = [
+        t["assessment_finding_id"] for t in targets(sync_engine, stored["timeline"]["id"])
+    ]
+    timeline_reqs = [
+        r["requirement_id"] for r in requirement_links(sync_engine, stored["timeline"]["id"])
+    ]
+    assert stored["timeline"]["fingerprint"] == fingerprint(
+        "critic", "timeline", timeline_reqs, [str(t) for t in timeline_targets]
+    )
+    body = get_critic(client, reviewer, opp["id"]).json()
+    shown = {f["category"]: f for f in body["review"]["findings"]}
+    assert body["blocking_count"] == 1
+
+    async def blocking() -> list[assessments_public.BlockingFinding]:
+        engine = create_engine(Settings(database_url=db_url))
+        try:
+            async with unit_of_work(engine) as uow:
+                return await assessments_public.get_blocking_findings(uow, UUID(opp["id"]))
+        finally:
+            await engine.dispose()
+
+    (blocker,) = run_async(blocking())
+    assert (str(blocker.finding_id), blocker.review_kind, blocker.review_version) == (
+        shown["timeline"]["id"],
+        "critic",
+        1,
+    )
+    assert (shown["risk_coverage"]["can_override"], shown["timeline"]["can_override"]) == (
+        True,
+        False,
+    )
+
+    def override(found: dict[str, Any]) -> Any:
+        return client.post(
+            f"{BASE}/{opp['id']}/findings/{found['id']}/override",
+            headers={**reviewer, "If-Match": f'"{found["row_version"]}"'},
+            json={"reason": "Credentials risk accepted by the security lead."},
+        )
+
+    assert override(shown["timeline"]).status_code == 403
+    allowed = override(shown["risk_coverage"])
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["override"]["policy_basis"] == "security_reviewer"
+    owner_view = get_critic(client, headers, opp["id"]).json()
+    assert owner_view["blocking_count"] == 1  # the overridden one was low
+    critical = owner_view["review"]["findings"][0]
+    resolved = client.post(
+        f"{BASE}/{opp['id']}/findings/{critical['id']}/resolution",
+        headers={**headers, "If-Match": f'"{critical["row_version"]}"'},
+        json={"reason": "The go-live plan now includes the redundant controls."},
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert get_critic(client, headers, opp["id"]).json()["blocking_count"] == 0

@@ -51,6 +51,12 @@ class Action(StrEnum):
     ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"
     CONFLICT_RESOLVE = "conflicts.conflict.resolve"
     CONFLICT_ESCALATE = "conflicts.conflict.escalate"
+    FINDING_RESOLVE = "assessments.finding.resolve"
+    """Story 6.6: supply Evidence for, or mark resolved, a Critic or Red Team Finding (the
+    `conflicts.conflict.resolve` rules)."""
+    FINDING_OVERRIDE = "assessments.finding.override"
+    """Story 6.6: override a Critic or Red Team Finding with a reason (R1: the Opportunity's
+    owner, a Head of Delivery, or a security reviewer on a security Finding)."""
     REGISTRY_AGENT_REGISTER = "registry.agent.register"
     REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
     REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"

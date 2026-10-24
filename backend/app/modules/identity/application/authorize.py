@@ -6,7 +6,13 @@ hidden resource's existence does not leak).
 """
 
 from app.modules.identity.actions import Action
-from app.modules.identity.domain.policy import Principal, Resource, is_allowed
+from app.modules.identity.domain.policy import (
+    OverrideBasis,
+    Principal,
+    Resource,
+    is_allowed,
+    override_basis,
+)
 from app.platform.errors import ForbiddenError
 
 
@@ -19,3 +25,10 @@ def authorize(actor: Principal, action: Action, resource: Resource | None = None
     """Return None if allowed; raise `ForbiddenError` (403 `forbidden`) otherwise."""
     if not is_allowed(actor, action, resource):
         raise ForbiddenError("You are not allowed to perform this action.")
+
+
+def finding_override_basis(
+    actor: Principal, resource: Resource, *, security_discipline: bool
+) -> OverrideBasis | None:
+    """Story 6.6 (R1): why the actor may override a Finding of the Opportunity, or None."""
+    return override_basis(actor, resource, security_discipline=security_discipline)

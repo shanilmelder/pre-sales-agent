@@ -1,8 +1,9 @@
 """The Critic query (Story 6.4): `get_critic`, the Opportunity's current Critic Review in the
 Red Team's view shape. Findings are ranked critical to low (then by position), each with its
 Requirement chips (label and excerpt) and its cited-Finding chips (agent role, Assessment
-version and title), with the counts per severity. Superseded Reviews are hidden. Anyone who
-can read the Opportunity; read-only.
+version and title), with the counts per severity, and (Story 6.6) each Finding's status and
+what the caller may do with it, plus the Review's blocking count. Superseded Reviews are
+hidden. Anyone who can read the Opportunity.
 """
 
 from collections import defaultdict
@@ -10,8 +11,9 @@ from uuid import UUID
 
 from app.modules.assessments.adapters import assessment_repository as assessment_repo
 from app.modules.assessments.adapters import repository as repo
-from app.modules.assessments.adapters.repository import ReviewRecord
+from app.modules.assessments.adapters.repository import FindingRecord, ReviewRecord
 from app.modules.assessments.application.critic import agent_role
+from app.modules.assessments.application.findings import blocking_count, finding_states
 from app.modules.assessments.application.models import (
     CitedFinding,
     CriticFinding,
@@ -29,7 +31,7 @@ from app.modules.assessments.domain.reviews import (
     severity_counts,
     severity_rank,
 )
-from app.modules.identity.application.public import Principal
+from app.modules.identity.application.public import Principal, Resource
 from app.modules.opportunities.application import public as opportunities
 from app.platform.uow import UnitOfWork
 
@@ -76,9 +78,16 @@ async def _cited(uow: UnitOfWork, finding_ids: list[UUID]) -> dict[UUID, list[Ci
     }
 
 
-async def critic_review_view(uow: UnitOfWork, record: ReviewRecord) -> CriticReviewView:
-    """The Critic Review with its ranked Findings, their chips and the counts per severity."""
-    findings = await repo.findings_of(uow, record.id)
+async def critic_review_view(
+    uow: UnitOfWork,
+    record: ReviewRecord,
+    actor: Principal,
+    resource: Resource,
+    findings: list[FindingRecord],
+) -> CriticReviewView:
+    """The Critic Review with its ranked Findings, their chips, statuses (Story 6.6) and the
+    counts per severity."""
+    states = await finding_states(uow, actor, resource, record.opportunity_id, record, findings)
     ids = [f.id for f in findings]
     requirements = await requirement_chips(uow, record.opportunity_id, findings)
     cited = await _cited(uow, ids)
@@ -98,7 +107,7 @@ async def critic_review_view(uow: UnitOfWork, record: ReviewRecord) -> CriticRev
         ),
         findings=[
             CriticFinding(
-                id=str(f.id),
+                **dict(states[f.id]),
                 position=f.position,
                 category=CriticCategory(f.category),
                 severity=Severity(f.severity),
@@ -114,6 +123,12 @@ async def critic_review_view(uow: UnitOfWork, record: ReviewRecord) -> CriticRev
 
 async def get_critic(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> CriticView:
     """The Opportunity's current Critic Review (null before the first)."""
-    await opportunities.readable_resource(uow, actor, opportunity_id)
+    resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     record = await repo.current_review(uow, opportunity_id, _KIND)
-    return CriticView(review=None if record is None else await critic_review_view(uow, record))
+    if record is None:
+        return CriticView(review=None, blocking_count=0)
+    findings = await repo.findings_of(uow, record.id)
+    return CriticView(
+        review=await critic_review_view(uow, record, actor, resource, findings),
+        blocking_count=blocking_count(findings),
+    )

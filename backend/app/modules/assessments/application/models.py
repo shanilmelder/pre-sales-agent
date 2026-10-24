@@ -1,9 +1,13 @@
-"""Read models for the Red Team Review (Story 6.5), the Critic Review (Story 6.4) and the
-specialist Assessments (Epic 5 slice 5A)."""
+"""Read models for the Red Team Review (Story 6.5), the Critic Review (Story 6.4), their
+Findings' statuses, resolutions and overrides (Story 6.6), and the specialist Assessments
+(Epic 5 slice 5A)."""
 
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.assessments.domain.assessments import (
     AssessmentAgent,
@@ -13,6 +17,11 @@ from app.modules.assessments.domain.assessments import (
     Recommendation,
 )
 from app.modules.assessments.domain.critic import CriticCategory
+from app.modules.assessments.domain.findings import (
+    EVIDENCE_MAX,
+    FindingStatus,
+    ResolutionKind,
+)
 from app.modules.assessments.domain.reviews import (
     FindingCategory,
     ReviewStatus,
@@ -43,11 +52,139 @@ class FindingLine(BaseModel):
     effort_hours: float
 
 
-class RedTeamFinding(BaseModel):
-    """A Red Team Finding: its category, severity, specific title and argument, with the
-    Requirements and Estimate lines it challenges."""
+# --- Finding status, resolution and override (Story 6.6) -----------------------------------
+
+OverrideBasisName = Literal["owner", "head_of_delivery", "security_reviewer"]
+
+
+class FindingPerson(BaseModel):
+    """A person who resolved or overrode a Finding: their user id and name."""
 
     id: str
+    name: str
+
+
+class FindingEvidence(BaseModel):
+    """An Evidence reference supplied to resolve a Finding: `requirement` (`label` `R<n>`, or
+    `Superseded` once no longer active) or `source_document` (`S<n> · <file name>`)."""
+
+    kind: str
+    id: str
+    version: int | None
+    label: str
+
+
+class FindingResolution(BaseModel):
+    """How a `resolved` Finding was resolved: Evidence supplied (with the person's note as
+    `reason`) or addressed with a reason; by whom and when."""
+
+    kind: ResolutionKind
+    reason: str
+    by: FindingPerson
+    at: datetime
+    evidence: list[FindingEvidence]
+
+
+class FindingOverride(BaseModel):
+    """An override: who, when and why, the Review version of the Finding it overrode, and the
+    grant that allowed it (`owner`, `head_of_delivery` or `security_reviewer`)."""
+
+    id: str
+    reason: str
+    by: FindingPerson
+    at: datetime
+    review_version: int = Field(ge=1)
+    policy_basis: OverrideBasisName
+
+
+class PolicyRef(BaseModel):
+    """The mandatory item of a `security` Checklist version a Finding is tied to (decided by
+    code): such a Finding can't be overridden by any role."""
+
+    kind: Literal["checklist_item"]
+    checklist_id: str
+    version: int
+    item_id: str
+
+
+class FindingState(BaseModel):
+    """A Critic or Red Team Finding's status and what the caller may do with it.
+
+    - `status`: `open`, `resolved` or `overridden`. An open `critical` Finding of a current
+      Review blocks submission.
+    - `resolution` (when resolved), `override` (when overridden).
+    - `previous_override`: the override of an earlier Finding with the same fingerprint
+      (shown, never applied: this Finding starts `open`).
+    - `overridable`: false when `policy_ref` ties it to a mandatory security Checklist item.
+    - `can_resolve`, `can_override`: whether the caller may now supply Evidence or mark it
+      resolved, and override (or re-apply the previous override). The UI only uses them to
+      hide controls; the API decides.
+    - `row_version`: for `If-Match`."""
+
+    id: str
+    status: FindingStatus
+    resolution: FindingResolution | None
+    override: FindingOverride | None
+    previous_override: FindingOverride | None
+    policy_ref: PolicyRef | None
+    overridable: bool
+    can_resolve: bool
+    can_override: bool
+    row_version: int = Field(ge=1)
+
+
+REASON_BACKSTOP = 4000
+"""A request-size backstop on a reason or note; the 1-1,000 rule is checked after (422)."""
+
+
+class EvidenceRefIn(BaseModel):
+    """An Evidence reference to cite: `requirement` or `source_document`, with its id and
+    version (as the Evidence picker lists them)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["requirement", "source_document"]
+    id: UUID
+    version: int = Field(ge=1, le=2**31 - 1)
+
+    @property
+    def span(self) -> None:
+        """No span: a whole Requirement version or Source version is cited."""
+        return None
+
+
+class FindingEvidenceSubmission(BaseModel):
+    """Supply Evidence: 1-20 references and a note (1-1,000 characters)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refs: list[EvidenceRefIn] = Field(min_length=1, max_length=EVIDENCE_MAX)
+    note: str = Field(max_length=REASON_BACKSTOP)
+
+
+class FindingReason(BaseModel):
+    """Mark resolved or override: a reason (1-1,000 characters)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(max_length=REASON_BACKSTOP)
+
+
+@dataclass(frozen=True, slots=True)
+class BlockingFinding:
+    """An `open`, `critical` Finding of a current Critic or Red Team Review: it blocks
+    submission (`assessments.get_blocking_findings`, for Epic 8's submission blockers)."""
+
+    finding_id: UUID
+    review_kind: str
+    review_version: int
+    title: str = field(repr=False)
+
+
+class RedTeamFinding(FindingState):
+    """A Red Team Finding: its category, severity, specific title and argument, with the
+    Requirements and Estimate lines it challenges, and (Story 6.6) its status."""
+
     position: int = Field(ge=1)
     category: FindingCategory
     severity: Severity
@@ -91,11 +228,13 @@ class RedTeamRun(BaseModel):
 class RedTeamView(BaseModel):
     """The Opportunity's current Red Team Review (null before the first) and its latest Red
     Team run (null before the first). `can_start`: whether the caller may start (retry) a
-    review. The UI only uses it to hide controls; the API decides."""
+    review. The UI only uses it to hide controls; the API decides. `blocking_count` (Story
+    6.6): the Review's open critical Findings."""
 
     review: RedTeamReviewView | None
     run: RedTeamRun | None
     can_start: bool
+    blocking_count: int = Field(ge=0)
 
 
 # --- the Critic Review (Story 6.4) ---------------------------------------------------------
@@ -114,11 +253,10 @@ class CitedFinding(BaseModel):
     title: str
 
 
-class CriticFinding(BaseModel):
+class CriticFinding(FindingState):
     """A Critic Finding: its category, severity, specific title and argument, with the
-    Requirements and the specialist Findings it cites."""
+    Requirements and the specialist Findings it cites, and (Story 6.6) its status."""
 
-    id: str
     position: int = Field(ge=1)
     category: CriticCategory
     severity: Severity
@@ -145,9 +283,11 @@ class CriticReviewView(BaseModel):
 
 
 class CriticView(BaseModel):
-    """The Opportunity's current Critic Review, null before the first. Read-only."""
+    """The Opportunity's current Critic Review, null before the first. `blocking_count`
+    (Story 6.6): its open critical Findings."""
 
     review: CriticReviewView | None
+    blocking_count: int = Field(ge=0)
 
 
 # --- specialist Assessments (Epic 5 slice 5A) ----------------------------------------------

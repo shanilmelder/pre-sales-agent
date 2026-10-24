@@ -248,3 +248,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-pause-and-resume.md`
   summary: Add a worker test with `job_types=("workflows.resume",)` asserting the graph runner is installed.
   evidence: Review pass 1 (verification-gap), `backend/app/main_worker.py` `GRAPH_JOB_TYPES`; only split deployments are affected.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-6-blocking-findings-and-overrides.md`
+  summary: Pin that `latest_overrides` shows the newest of several earlier overrides with the same fingerprint (test with overrides on Review v1 and v2, expect v2's on v3).
+  evidence: Story 6.6 review (verification gap): the carry-over test has a single earlier override, so reversing the ordering in `assessments/adapters/repository.py` `latest_overrides` passes every test; it only changes which earlier reason is shown.

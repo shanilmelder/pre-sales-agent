@@ -34,7 +34,10 @@ import {
   createRequirement,
   deleteRequirement,
   copyClarificationQuestions,
+  countBlockingFindings,
   countOpenConflicts,
+  decideFinding,
+  loadEvidenceOptions,
   countOpenGaps,
   createOpportunity,
   editClarificationQuestion,
@@ -2361,5 +2364,118 @@ describe("createRequirement / deleteRequirement / splitRequirement / mergeRequir
       }),
     ).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("decideFinding, loadEvidenceOptions and countBlockingFindings (Story 6.6)", () => {
+  const FID = "00000000-0000-7000-8000-0000000000f1";
+  const PATH = "/api/v1/opportunities/{opportunity_id}/findings/{finding_id}";
+  const BASE = { opportunityId: OPP_ID, findingId: FID, rowVersion: 3, reason: "[REASON]" };
+  const STATE = { id: FID, status: "overridden", row_version: 4 };
+  const params = {
+    path: { opportunity_id: OPP_ID, finding_id: FID },
+    header: { "If-Match": '"3"' },
+  };
+
+  beforeEach(() => {
+    api.POST.mockReset();
+    api.GET.mockReset();
+  });
+
+  function answer(status: number, error?: Record<string, string>) {
+    api.POST.mockResolvedValueOnce({ error, response: new Response(null, { status }) });
+  }
+
+  it("posts each action to its route with If-Match and returns the Finding's state", async () => {
+    api.POST.mockResolvedValue({ data: STATE, response: new Response(null, { status: 200 }) });
+    expect(await decideFinding({ ...BASE, action: "override" })).toEqual({
+      kind: "ok",
+      finding: STATE,
+    });
+    expect(api.POST).toHaveBeenLastCalledWith(`${PATH}/override`, {
+      params,
+      body: { reason: "[REASON]" },
+    });
+    await decideFinding({ ...BASE, action: "resolve" });
+    expect(api.POST).toHaveBeenLastCalledWith(`${PATH}/resolution`, {
+      params,
+      body: { reason: "[REASON]" },
+    });
+    const refs = [{ kind: "requirement", id: OPP_ID, version: 2 }];
+    await decideFinding({ ...BASE, action: "evidence", refs });
+    expect(api.POST).toHaveBeenLastCalledWith(`${PATH}/evidence`, {
+      params,
+      body: { refs, note: "[REASON]" },
+    });
+  });
+
+  it("maps 412, 422, 409, 403 and 404 and rejects bad input without a call", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    answer(412, { code: "row_version_mismatch", detail: "Changed by Sam since you opened it." });
+    expect(await decideFinding({ ...BASE, action: "override" })).toEqual({
+      kind: "stale",
+      message: "Changed by Sam since you opened it.",
+    });
+    answer(422, { code: "finding_not_overridable", detail: "[NOT OVERRIDABLE]" });
+    expect(await decideFinding({ ...BASE, action: "override" })).toEqual({
+      kind: "invalid",
+      detail: "[NOT OVERRIDABLE]",
+    });
+    answer(422, { code: "evidence_unresolvable", detail: "Evidence requirement:x" });
+    expect((await decideFinding({ ...BASE, action: "resolve" })).kind).toBe("invalid");
+    answer(409, { code: "finding_not_open", detail: "This Finding is already resolved." });
+    expect(await decideFinding({ ...BASE, action: "resolve" })).toEqual({
+      kind: "conflict",
+      detail: "This Finding is already resolved.",
+    });
+    answer(403);
+    expect(await decideFinding({ ...BASE, action: "resolve" })).toEqual({ kind: "forbidden" });
+    answer(404);
+    expect(await decideFinding({ ...BASE, action: "resolve" })).toEqual({ kind: "not-found" });
+    api.POST.mockClear();
+    expect(await decideFinding({ ...BASE, action: "delete" })).toEqual({ kind: "error" });
+    expect(await decideFinding({ ...BASE, findingId: "nope", action: "resolve" })).toEqual({
+      kind: "error",
+    });
+    const estimate = { kind: "estimate_line", id: BASE.findingId, version: 1 };
+    expect(
+      await decideFinding({ ...BASE, action: "evidence", refs: [estimate] } as never),
+    ).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it("reads the Evidence picker", async () => {
+    const items = [{ kind: "requirement", id: FID, version: 1, label: "R1", excerpt: "" }];
+    api.GET.mockResolvedValueOnce({ data: { items }, response: new Response(null) });
+    expect(await loadEvidenceOptions(OPP_ID)).toEqual({ kind: "ok", items });
+    expect(api.GET).toHaveBeenLastCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/evidence-options",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
+    expect(await loadEvidenceOptions("nope")).toEqual({ kind: "error" });
+  });
+
+  it("sums the Red Team's and the Critic's blocking counts for the badge", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockImplementation(async (path: string) => ({
+      data: path.endsWith("/red-team")
+        ? { review: null, run: null, can_start: false, blocking_count: 2 }
+        : { review: null, blocking_count: 1 },
+      response: new Response(null),
+    }));
+    expect(await countBlockingFindings(OPP_ID)).toBe(3);
+    // A failed Critic read must not undercount: no number at all.
+    api.GET.mockImplementation(async (path: string) =>
+      path.endsWith("/red-team")
+        ? {
+            data: { review: null, run: null, can_start: false, blocking_count: 2 },
+            response: new Response(null),
+          }
+        : { response: new Response(null, { status: 500 }) },
+    );
+    expect(await countBlockingFindings(OPP_ID)).toBeNull();
+    api.GET.mockImplementation(async () => ({ response: new Response(null, { status: 500 }) }));
+    expect(await countBlockingFindings(OPP_ID)).toBeNull();
+    expect(await countBlockingFindings("nope")).toBeNull();
   });
 });

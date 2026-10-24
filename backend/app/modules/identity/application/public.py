@@ -2,7 +2,7 @@
 
 from app.modules.identity.actions import ACTION_NAME_RE, Action
 from app.modules.identity.application.authentication import TokenIdentity, TokenValidator
-from app.modules.identity.application.authorize import authorize, can
+from app.modules.identity.application.authorize import authorize, can, finding_override_basis
 from app.modules.identity.application.profile import UserProfile
 from app.modules.identity.application.provisioning import (
     CurrentPrincipal,
@@ -36,6 +36,7 @@ from app.modules.identity.domain.policy import (
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
     RELATION_EXCLUDED_ROLES,
+    OverrideBasis,
     Principal,
     Resource,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "CurrentPrincipal",
     "CurrentUser",
     "CurrentUserDep",
+    "OverrideBasis",
     "Principal",
     "Resource",
     "Role",
@@ -72,6 +74,7 @@ __all__ = [
     "UserSummary",
     "authorize",
     "can",
+    "finding_override_basis",
     "get_user",
     "list_users",
     "search_owner_candidates",

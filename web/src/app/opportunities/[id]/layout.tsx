@@ -1,14 +1,25 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { countOpenConflicts, countOpenGaps } from "@/app/opportunities/actions";
-import { getConflicts, getOpportunity, listGaps } from "@/app/opportunities/data";
+import {
+  countBlockingFindings,
+  countOpenConflicts,
+  countOpenGaps,
+} from "@/app/opportunities/actions";
+import {
+  getConflicts,
+  getCritic,
+  getOpportunity,
+  getRedTeam,
+  listGaps,
+} from "@/app/opportunities/data";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { WorkspaceHeader } from "@/components/opportunities/workspace-header";
 import { WorkspaceTabs } from "@/components/opportunities/workspace-tabs";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageContent, PageHeader } from "@/components/shell/page-header";
 import { getMe } from "@/lib/api/server";
+import { totalBlocking } from "@/lib/findings";
 import { openGapCount } from "@/lib/gaps";
 import { NO_ACCESS_TO_OPPORTUNITY, utcToday } from "@/lib/opportunities";
 
@@ -16,9 +27,9 @@ import { NO_ACCESS_TO_OPPORTUNITY, utcToday } from "@/lib/opportunities";
 export const metadata: Metadata = { title: "Opportunity · Pre Sales Agent Framework" };
 
 /** The Opportunity workspace: header and tab strip around every tab. Fetched here once per
- * navigation into the workspace (with the Conflicts and Gaps tabs' counts, which then follow
- * the event stream); switching tabs re-renders only the tab page. Each tab
- * page gates itself too, since a layout can't keep a page out of the payload. */
+ * navigation into the workspace (with the Conflicts, Gaps and Assessments tabs' counts, which
+ * then follow the event stream); switching tabs re-renders only the tab page. Each tab page
+ * gates itself too, since a layout can't keep a page out of the payload. */
 export default async function OpportunityLayout({
   children,
   params,
@@ -35,12 +46,22 @@ export default async function OpportunityLayout({
   const conflicts = loaded.kind === "ok" ? await getConflicts(loaded.opportunity.id) : null;
   // The Gaps tab's badge: open Gaps, kept live over the event stream (Story 4.7).
   const gaps = loaded.kind === "ok" ? await listGaps(loaded.opportunity.id) : null;
+  // The Assessments tab's badge: open critical Critic and Red Team Findings (Story 6.6).
+  const [redTeam, critic] =
+    loaded.kind === "ok"
+      ? await Promise.all([getRedTeam(loaded.opportunity.id), getCritic(loaded.opportunity.id)])
+      : [null, null];
+  const blocking = totalBlocking(
+    redTeam?.kind === "ok" ? redTeam.redTeam : null,
+    critic?.kind === "ok" ? critic.critic : null,
+  );
   const counts = {
     ...(conflicts?.kind === "ok" ? { conflicts: conflicts.conflicts.open_count } : {}),
     // (`items` is checked: a partial read must not break the whole workspace.)
     ...(gaps?.kind === "ok" && Array.isArray(gaps.list.items)
       ? { gaps: openGapCount(gaps.list.items) }
       : {}),
+    ...(blocking !== null ? { assessments: blocking } : {}),
   };
 
   return (
@@ -68,6 +89,7 @@ export default async function OpportunityLayout({
             counts={counts}
             loadGapCount={countOpenGaps}
             loadConflictCount={countOpenConflicts}
+            loadBlockingCount={countBlockingFindings}
           >
             {children}
           </WorkspaceTabs>
