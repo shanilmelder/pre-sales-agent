@@ -222,6 +222,14 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
+class GapMandatoryError(ConflictError):
+    """A dismissal was asked for on a mandatory Gap whose Checklist still applies (Story
+    4.2)."""
+
+    code = "gap_mandatory"
+    title = "Gap mandatory"
+
+
 class GapNotReopenableError(ConflictError):
     """A Gap reopen was asked for on a Gap that is neither `dismissed` (Story 4.4) nor
     `answered` (Story 4.7)."""
@@ -441,6 +449,14 @@ class RegistryConfigNotDeployedError(UnprocessableError):
 
     code = "registry_config_not_deployed"
     title = "Config not deployed"
+
+
+class ToolPermissionNotReadOnlyError(UnprocessableError):
+    """A config version grants a tool permission that is not one of the ToolGateway's READ
+    tools (Story 5.4): Agents can never be granted a write, delete, send or approve."""
+
+    code = "tool_permission_not_read_only"
+    title = "Tool permission not read-only"
 
 
 class RegistryConfigIncompatibleContractError(UnprocessableError):

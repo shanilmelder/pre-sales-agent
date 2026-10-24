@@ -19,9 +19,9 @@ Downgrade: waiting runs become `failed` (their unfinished tasks `failed` /
 `model_timeout`), open `workflows.resume` jobs go dead, the waiting progress rows are
 deleted, and the new tables, values and grants are dropped.
 
-Revision ID: 0038_workflows_decisions
-Revises: 0037_requirement_tags
-Create Date: 2026-10-23
+Revision ID: 0040_workflows_decisions
+Revises: 0039_tool_gateway
+Create Date: 2026-10-24
 """
 
 from collections.abc import Sequence
@@ -30,8 +30,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0038_workflows_decisions"
-down_revision: str | None = "0037_requirement_tags"
+revision: str = "0040_workflows_decisions"
+down_revision: str | None = "0039_tool_gateway"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

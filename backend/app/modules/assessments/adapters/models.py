@@ -8,6 +8,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -204,7 +205,8 @@ class AssessmentRow(Base):
 
 
 class AssessmentFindingRow(Base):
-    """A Finding of an Assessment. Insert-only."""
+    """A Finding of an Assessment. Insert-only. `injection_suspected` (Story 5.4): a
+    Requirement it cites read like an injected instruction when the agent read it."""
 
     __tablename__ = "assessments_assessment_findings"
     __table_args__ = (
@@ -230,6 +232,7 @@ class AssessmentFindingRow(Base):
     severity: Mapped[str] = mapped_column(Text)
     title: Mapped[str] = mapped_column(Text)
     detail: Mapped[str] = mapped_column(Text)
+    injection_suspected: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
 
 class AssessmentFindingRequirementRow(Base):

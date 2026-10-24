@@ -55,3 +55,12 @@ class Action(StrEnum):
     REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
     REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"
     DECISION_RESOLVE = "workflows.decision.resolve"
+    # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
+    # hold them through their registry `tool_permissions`; no human role is granted them
+    # (`KNOWLEDGE_CHUNK_SEARCH` above is also the human Knowledge search, open to all roles).
+    TOOL_REQUIREMENT_LIST = "intake.requirement.list"
+    TOOL_PASSAGE_READ = "intake.passage.read"
+    TOOL_CHUNK_READ = "knowledge.chunk.read"
+    TOOL_CATALOGUE_ENTRY_LIST = "knowledge.catalogue_entry.list"
+    TOOL_GAP_LIST = "gaps.gap.list"
+    TOOL_RESEARCH_PAGE_FETCH = "knowledge.research_page.fetch"

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 10-23-2026 20:35
+last_updated: 10-24-2026 04:15
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -71,8 +71,8 @@ development_status:
   epic-3-retrospective: optional
 
   epic-4: in-progress
-  4-1-integration-types-in-scope-and-applicable-checklists: review
-  4-2-deterministic-gaps-from-mandatory-checklist-items: backlog
+  4-1-integration-types-in-scope-and-applicable-checklists: done
+  4-2-deterministic-gaps-from-mandatory-checklist-items: review
   4-3-detect-gaps-and-draft-clarification-questions-with-the-clari: done
   4-4-gaps-tab-with-ranked-gap-cards: done
   4-5-edit-merge-drop-and-approve-clarification-questions: done
@@ -84,7 +84,7 @@ development_status:
   5-1-start-a-workflow-run-with-pinned-inputs-and-a-versioned-plan: done
   5-2-durable-langgraph-execution-in-the-worker: done
   5-3-assessments-and-the-standard-assessment-contract: done
-  5-4-toolgateway-with-task-scoped-read-only-tools-and-research-sn: backlog
+  5-4-toolgateway-with-task-scoped-read-only-tools-and-research-sn: review
   5-5-pause-for-human-input-resume-and-cancel: done
   5-6-budgets-timeouts-and-failure-handling: backlog
   5-7-agent-run-panel-and-activity-tab: done

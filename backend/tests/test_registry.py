@@ -120,7 +120,7 @@ def _config(**overrides: Any) -> dict[str, Any]:
         "prompt_version": 1,
         "input_schema_version": 1,
         "output_schema_version": 1,
-        "tool_permissions": ["intake.requirement.read"],
+        "tool_permissions": ["intake.requirement.list"],
         "budgets": {"max_tokens_per_run": 20000},
     }
     return {**body, **overrides}
@@ -291,7 +291,10 @@ def test_agent_id_rules() -> None:
             rules.agent_id(bad)
     with pytest.raises(ValueError):
         rules.tool_permissions(["Not An Action"])
-    assert rules.tool_permissions(["a.b.read", "a.b.read"]) == ("a.b.read",)
+    assert rules.tool_permissions(["gaps.gap.list", "gaps.gap.list"]) == ("gaps.gap.list",)
+    for write in ("intake.requirement.edit", "a.b.read", "gaps.clarification_question.send"):
+        with pytest.raises(rules.ToolPermissionNotReadOnly):
+            rules.tool_permissions([write])
 
 
 def test_the_profile_override_applies_only_when_set_explicitly(
@@ -457,7 +460,7 @@ def test_register_inserts_the_agent_and_version_one_with_a_trace_event(
     config = agent["current_config"]
     assert (config["version"], config["semver"], config["model_digest"]) == (1, "0.2.0", "unpinned")
     assert (config["contract_version"], config["created_by_id"]) == ("1", str(admin_id))
-    assert config["tool_permissions"] == ["intake.requirement.read"]
+    assert config["tool_permissions"] == ["intake.requirement.list"]
     assert config["budgets"] == {"max_tokens_per_run": 20000}
     (event,) = _events(sync_engine, agent["id"])
     assert event["event_type"] == "registry.agent.registered"
@@ -589,6 +592,31 @@ def test_invalid_config_fields_are_422(client: TestClient, test_manifest: str) -
         _problem(
             client.post(url, headers={**admin, **_if_match(1)}, json=_config(**overrides)), 422
         )
+
+
+def test_a_non_read_tool_permission_is_422_and_stores_nothing(
+    client: TestClient, sync_engine: Engine, test_manifest: str
+) -> None:
+    """Story 5.4: only the ToolGateway's READ tools can be granted."""
+    admin, _ = _admin(client)
+    _register(client, admin, test_manifest)
+    url = f"{URL}/{test_manifest}/config-versions"
+    for grant in (["intake.requirement.edit"], ["gaps.gap.list", "estimates.estimate.export"]):
+        resp = client.post(
+            url, headers={**admin, **_if_match(1)}, json=_config(tool_permissions=grant)
+        )
+        _problem(resp, 422, "tool_permission_not_read_only")
+    assert len(_version_rows(sync_engine, test_manifest)) == 1
+    resp = client.post(
+        URL,
+        headers=admin,
+        json={
+            "agent_id": f"{test_manifest[:-6]}_two_agent",
+            "name": "Second",
+            "config": _config(tool_permissions=["knowledge.source.retire"]),
+        },
+    )
+    _problem(resp, 422, "tool_permission_not_read_only")
 
 
 def test_disable_eval_only_and_enable_with_if_match_and_trace(

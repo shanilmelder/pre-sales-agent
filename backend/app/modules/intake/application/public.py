@@ -1,5 +1,6 @@
 """intake's public API. Other modules import intake only from here."""
 
+from app.modules.intake.application import tools as tools  # registers the ToolGateway handlers
 from app.modules.intake.application.answers import (
     PassageRef,
     RequirementChangeKind,

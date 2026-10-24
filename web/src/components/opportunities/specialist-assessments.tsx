@@ -106,6 +106,8 @@ import {
   taskStatusLabel,
   WAITING_FOR_WORKER,
   WAITING_FOR_YOU,
+  injectionSuspected,
+  POSSIBLE_INJECTION,
   type Assessment,
   type AssessmentAgent,
   type AssessmentRun,
@@ -303,8 +305,13 @@ export function FindingsTable({
                   <span className="truncate text-meta text-muted-foreground">
                     {row.type}
                   </span>
-                  <span className="col-span-2 min-w-0 text-body-strong md:col-span-1">
-                    {row.finding.title}
+                  <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 text-body-strong md:col-span-1">
+                    <span className="min-w-0">{row.finding.title}</span>
+                    {injectionSuspected(row) ? (
+                      <Pill tone="gap" className="w-fit">
+                        {POSSIBLE_INJECTION}
+                      </Pill>
+                    ) : null}
                   </span>
                   <span className="truncate text-body">{row.raisedBy}</span>
                   <span className="flex items-center gap-1 md:justify-end">

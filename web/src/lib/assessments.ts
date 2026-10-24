@@ -224,6 +224,15 @@ export const NOTHING_TO_ASSESS = "There were no active Requirements to assess.";
 /** An agent without a current Assessment while others have one. */
 export const NO_AGENT_ASSESSMENT = "No Assessment yet.";
 
+/** Story 5.4: the marker on a Finding that cites a Requirement whose text read like an
+ * injected instruction when the agent read it (`injection_suspected`). */
+export const POSSIBLE_INJECTION = "Possible injected instruction";
+
+/** Whether a Findings row is a specialist Finding flagged `injection_suspected`. */
+export function injectionSuspected(row: FindingRow): boolean {
+  return row.source === "specialist" && row.finding.injection_suspected;
+}
+
 /** Shown instead of the running indicator once polling has stopped (15 minutes). */
 export const STILL_ASSESSING = "Still assessing — reload to check.";
 

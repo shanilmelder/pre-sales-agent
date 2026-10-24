@@ -38,6 +38,8 @@ from app.platform.jobs.models import PlatformJob
 from app.platform.jobs.runner import LeaseSettings, run_job
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.gateway import ModelGateway
+from app.platform.tool_gateway import ToolContext, ToolDenied, ToolGateway, ToolResult
+from app.platform.tool_gateway.catalogue import CHUNK_READ, CHUNK_SEARCH
 from app.platform.uow import unit_of_work
 from tests.auth_tokens import auth_app
 from tests.conftest import make_client, run_async
@@ -710,6 +712,76 @@ def test_search_validation_and_authorization(client: TestClient) -> None:
     no_role, _ = _signed_in(client, "Nobody")
     assert_problem(_search(client, no_role, q="port").json(), 403, "forbidden")
     assert_problem(client.get(SEARCH, params={"q": "port"}).json(), 401, "token_missing")
+
+
+def test_the_tool_gateway_searches_and_reads_chunks(
+    client: TestClient, sync_engine: Engine, db_url: str, ollama: OllamaStub
+) -> None:
+    """Story 5.4: `knowledge.chunk.search` and `knowledge.chunk.read` through the ToolGateway,
+    which opens its own Unit of Work (no `uow=`); bad search arguments are a typed denial."""
+    admin, _ = _admin(client, "Knowledge Admin")
+    product = f"Prod-{uuid4().hex[:8]}"
+    install = _ready(client, db_url, ollama, admin, _tag(client, admin)["id"], product=product)
+    chunk_ids = [c["id"] for c in _chunks(sync_engine, install["id"])]
+    ctx = ToolContext(
+        agent_id="engineering_agent",
+        semver="0.1.0",
+        config_version_id=uuid4(),
+        tool_permissions=frozenset({CHUNK_SEARCH, CHUNK_READ}),
+        opportunity_id=uuid4(),
+        task_id=uuid4(),
+    )
+
+    async def scenario() -> list[Any]:
+        engine = create_engine(Settings(database_url=db_url))
+        model = ModelGateway(
+            _gateway_settings(db_url), engine, transport=httpx.MockTransport(ollama.handle)
+        )
+        provider.install(model)
+        try:
+            tools = ToolGateway(Settings(database_url=db_url), engine=engine)
+            query = "Which firewall port does the conveyor need?"
+            return [
+                await tools.call(ctx, CHUNK_SEARCH, {"query": query, "product": product, "k": 1}),
+                await tools.call(ctx, CHUNK_READ, {"chunk_ids": [chunk_ids[0], chunk_ids[0]]}),
+                await tools.call(ctx, CHUNK_SEARCH, {"query": "  "}),
+                await tools.call(ctx, CHUNK_SEARCH, {"query": "port", "k": True}),
+                await tools.call(ctx, CHUNK_SEARCH, {"query": "port", "k": 51}),
+            ]
+        finally:
+            provider.install(None)
+            await model.aclose()
+            await engine.dispose()
+
+    searched, read, blank, flag, too_many = run_async(scenario())
+    assert isinstance(searched, ToolResult) and searched.result_count == 1
+    assert searched.items[0].source_id == install["id"] and "4711" in searched.items[0].text
+    assert isinstance(read, ToolResult) and read.result_count == 1  # duplicates read once
+    (chunk,) = read.items
+    first = _chunks(sync_engine, install["id"])[0]
+    assert (chunk.id, chunk.source_id, chunk.version) == (first["id"], UUID(install["id"]), 1)
+    assert (chunk.start, chunk.end, chunk.text) == (
+        first["start_offset"],
+        first["end_offset"],
+        first["text"],
+    )
+    assert chunk.title == install["title"]
+    assert blank == flag == too_many == ToolDenied("out_of_scope")
+    recorded = _rows(
+        sync_engine,
+        "SELECT tool, outcome, reason, result_count FROM platform_tool_calls WHERE task_id = :t "
+        "ORDER BY created_at, id",
+        t=ctx.task_id,
+    )
+    assert (
+        recorded
+        == [
+            {"tool": CHUNK_SEARCH, "outcome": "ok", "reason": None, "result_count": 1},
+            {"tool": CHUNK_READ, "outcome": "ok", "reason": None, "result_count": 1},
+        ]
+        + [{"tool": CHUNK_SEARCH, "outcome": "denied", "reason": "out_of_scope", "result_count": 0}]
+        * 3
+    )
 
 
 def test_search_is_503_when_the_model_is_down(client: TestClient, ollama: OllamaStub) -> None:

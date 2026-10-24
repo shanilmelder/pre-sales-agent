@@ -2,9 +2,10 @@
 Questions (Story 4.3). Runs inside the caller's Unit of Work."""
 
 import json
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, insert, or_, select, text, tuple_, update
@@ -58,6 +59,8 @@ class GapRecord:
     answered_on: date | None = None
     answered_by: UUID | None = None
     answer_passage_id: UUID | None = None
+    checklist_applies: bool = True
+    why_entry_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +101,7 @@ class QuestionRecord:
     answered_on: date | None = None
     answered_by: UUID | None = None
     answer_passage_id: UUID | None = None
+    from_checklist: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,6 +393,126 @@ async def insert_gap(
     )
 
 
+# --- mandatory Gaps (Story 4.2) -------------------------------------------------------------
+
+MANDATORY = "mandatory_checklist"
+
+
+def _checklist_id() -> ColumnElement[str]:
+    return cast(ColumnElement[str], GapRow.trigger["checklist_id"].astext)
+
+
+def _item_id() -> ColumnElement[str]:
+    return cast(ColumnElement[str], GapRow.trigger["item_id"].astext)
+
+
+async def mandatory_keys(uow: UnitOfWork, opportunity_id: UUID) -> set[tuple[UUID, UUID]]:
+    """(Checklist id, item id) of each of the Opportunity's mandatory Gaps, in any status."""
+    rows = await uow.session.execute(
+        select(_checklist_id(), _item_id()).where(
+            GapRow.opportunity_id == opportunity_id, GapRow.origin == MANDATORY
+        )
+    )
+    return {(UUID(checklist_id), UUID(item_id)) for checklist_id, item_id in rows.all()}
+
+
+async def insert_mandatory_gap(
+    uow: UnitOfWork,
+    *,
+    gap_id: UUID,
+    opportunity_id: UUID,
+    title: str,
+    category: str,
+    trigger: dict[str, Any],
+    why_it_matters: str,
+    why_entry_id: UUID | None,
+    impact: str,
+    impact_basis: str,
+    detection_id: UUID,
+    question_id: UUID,
+    question_text: str,
+    question_topic: str,
+) -> bool:
+    """An `open`, `mandatory_checklist` Gap (no Requirement links) and its `drafted`,
+    `from_checklist` question, unless the Opportunity already has a mandatory Gap for the
+    same Checklist item in any status (`uq_gaps_gaps_mandatory_item`): then nothing is
+    written. Whether it was inserted."""
+    inserted = (
+        await uow.session.execute(
+            pg_insert(GapRow)
+            .values(
+                id=gap_id,
+                opportunity_id=opportunity_id,
+                title=title,
+                category=category,
+                trigger=trigger,
+                why_it_matters=why_it_matters,
+                why_entry_id=why_entry_id,
+                impact=impact,
+                impact_basis=impact_basis,
+                origin=MANDATORY,
+                status="open",
+                detection_id=detection_id,
+                checklist_applies=True,
+                row_version=1,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    GapRow.opportunity_id,
+                    text("(trigger ->> 'checklist_id')"),
+                    text("(trigger ->> 'item_id')"),
+                ],
+                index_where=text("origin = 'mandatory_checklist'"),
+            )
+            .returning(GapRow.id)
+        )
+    ).scalar_one_or_none()
+    if inserted is None:
+        return False
+    await uow.session.execute(
+        insert(QuestionRow).values(
+            id=question_id,
+            gap_id=gap_id,
+            text=question_text,
+            topic=question_topic,
+            status="drafted",
+            from_checklist=True,
+            row_version=1,
+        )
+    )
+    return True
+
+
+async def set_checklist_applies(
+    uow: UnitOfWork, opportunity_id: UUID, applies: AbstractSet[tuple[UUID, UUID]]
+) -> int:
+    """Set `checklist_applies` on each of the Opportunity's mandatory Gaps, whatever their
+    status (a settled one may be reopened later): true iff
+    its (Checklist id, item id) is in `applies`. Only Gaps whose flag changes are written
+    (their `row_version` is left alone: the flag is derived, not edited). How many changed."""
+    rows = await uow.session.execute(
+        select(GapRow.id, _checklist_id(), _item_id(), GapRow.checklist_applies).where(
+            GapRow.opportunity_id == opportunity_id,
+            GapRow.origin == MANDATORY,
+        )
+    )
+    flip_on: list[UUID] = []
+    flip_off: list[UUID] = []
+    for gap_id, checklist_id, item_id, current in rows.all():
+        wanted = (UUID(checklist_id), UUID(item_id)) in applies
+        if wanted != current:
+            (flip_on if wanted else flip_off).append(gap_id)
+    for ids, value in ((flip_on, True), (flip_off, False)):
+        if ids:
+            await uow.session.execute(
+                update(GapRow)
+                .where(GapRow.id.in_(ids))
+                .values(checklist_applies=value)
+                .execution_options(synchronize_session=False)
+            )
+    return len(flip_on) + len(flip_off)
+
+
 def _gap(row: GapRow) -> GapRecord:
     return GapRecord(
         id=row.id,
@@ -413,6 +537,8 @@ def _gap(row: GapRow) -> GapRecord:
         answered_on=row.answered_on,
         answered_by=row.answered_by,
         answer_passage_id=row.answer_passage_id,
+        checklist_applies=row.checklist_applies,
+        why_entry_id=row.why_entry_id,
     )
 
 
@@ -651,6 +777,7 @@ def _question(row: QuestionRow) -> QuestionRecord:
         answered_on=row.answered_on,
         answered_by=row.answered_by,
         answer_passage_id=row.answer_passage_id,
+        from_checklist=row.from_checklist,
     )
 
 

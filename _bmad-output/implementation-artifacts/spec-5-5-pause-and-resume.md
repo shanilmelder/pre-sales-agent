@@ -72,7 +72,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `backend/migrations/versions/20261023_0038_workflows_decisions.py`, `workflows/adapters/*` -- decisions and plan-versions tables (backfill v1 for existing runs from their tasks), CHECKs, grants (psa_app: insert/select; update only on decision status columns)
+- [x] `backend/migrations/versions/20261024_0040_workflows_decisions.py`, `workflows/adapters/*` -- decisions and plan-versions tables (backfill v1 for existing runs from their tasks), CHECKs, grants (psa_app: insert/select; update only on decision status columns)
 - [x] `workflows/domain`, `application/{runs,tasks,assessment_runs,models,public}.py`, `api/routes.py`, identity, errors, trace -- escalation, waiting, resolve, resume job, cancel
 - [x] `app/orchestration/{graph,runner}.py` -- interrupt and `Command(resume)`
 - [x] `backend/tests/test_workflows_decisions.py` + updated tests -- every matrix row, the restart row with a fresh runner
@@ -84,7 +84,7 @@ context:
 
 ## Implementation Notes
 
-- **Migration** is `0038_workflows_decisions` (revises `0037_requirement_tags`, the real revision id of `20261023_0037_intake_requirement_integration_types.py`). Besides the two tables it grants `psa_app` UPDATE on `workflows_tasks.config_version_id` and `workflows_runs.plan_version` (Re-plan needs both); the two tests that asserted those were denied now assert other columns are. Downgrade also fails the waiting runs' unfinished tasks (`model_timeout`), kills open `workflows.resume` jobs and deletes the waiting progress rows.
+- **Migration** is `0040_workflows_decisions` (revises `0039_tool_gateway`; first written as 0038 on `0037_requirement_tags`, renumbered when main with 4.2 and 5.4 was merged in). Besides the two tables it grants `psa_app` UPDATE on `workflows_tasks.config_version_id` and `workflows_runs.plan_version` (Re-plan needs both); the two tests that asserted those were denied now assert other columns are. Downgrade also fails the waiting runs' unfinished tasks (`model_timeout`), kills open `workflows.resume` jobs and deletes the waiting progress rows.
 - **Run status after Continue without**: the run ends `succeeded` when its other tasks succeeded, because a chosen skip (`agent_disabled`) doesn't count against it (user decision, 2026-10-24). `run_status` takes a `chosen_skips` count; tasks skipped by a cancel or a blocked requirement still count, a run with nothing succeeded is still `failed`, and `assessments.assessment_run.completed`'s `failed_count` leaves chosen skips out.
 - **Trace name** `workflows.run.waiting_for_human` is not a past-tense verb: `catalogue.is_valid_event_type` gained a one-entry allow-list of state events. Both new events take the run (`assessments.assessment_run`) as subject.
 - **Node** (`orchestration/graph.py`): `workflows.escalation()` runs for queued tasks only, before `begin_task`; it records the decision with insert-on-conflict-do-nothing and commits before `interrupt()`, which is called outside every `try`. On resume the node re-reads the decision: Continue without → `skip_disabled_task` (traced `assessments.task.skipped` by the system), Re-plan → runs. The runner resumes with `Command(resume={interrupt.id: choice})` for interrupts whose decision (named in the payload) is resolved, else `None`.

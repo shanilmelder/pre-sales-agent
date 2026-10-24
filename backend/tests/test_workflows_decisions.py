@@ -833,7 +833,7 @@ def test_a_downgrade_fails_waiting_runs_and_an_upgrade_backfills_plan_v1(
 ) -> None:
     _, _, opp, body, _ = waiting(client, sync_engine, db_url, gateway)
 
-    _alembic("downgrade", "0037_requirement_tags")
+    _alembic("downgrade", "0039_tool_gateway")
     try:
         (run,) = run_rows(sync_engine, opp["id"])
         assert run["status"] == "failed"
