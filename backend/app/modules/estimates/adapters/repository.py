@@ -46,6 +46,7 @@ class VersionRecord:
     uncarried_edit_count: int = 0
     source: str = "model"
     source_run_id: UUID | None = None
+    submitted_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +223,7 @@ def _version(row: EstimateVersionRow) -> VersionRecord:
         uncarried_edit_count=row.uncarried_edit_count,
         source=row.source,
         source_run_id=row.source_run_id,
+        submitted_at=row.submitted_at,
     )
 
 
@@ -324,37 +326,137 @@ async def has_version_from(uow: UnitOfWork, opportunity_id: UUID, source: str) -
     return found.first() is not None
 
 
+_CURRENT_STATUSES = ("draft", "submitted")
+
+
+def _current_first(rows: list[EstimateVersionRow]) -> EstimateVersionRow | None:
+    """The draft among these versions of one Opportunity, else the latest `submitted`."""
+    drafts = [r for r in rows if r.status == "draft"]
+    pool = drafts or [r for r in rows if r.status == "submitted"]
+    return max(pool, key=lambda r: r.version, default=None)
+
+
 async def current_version(uow: UnitOfWork, opportunity_id: UUID) -> VersionRecord | None:
-    """The Opportunity's `draft` version, if any (the default view hides superseded ones)."""
-    row = (
-        await uow.session.execute(
-            select(EstimateVersionRow)
-            .where(
-                EstimateVersionRow.opportunity_id == opportunity_id,
-                EstimateVersionRow.status == "draft",
-            )
-            .order_by(EstimateVersionRow.version.desc())
-            .limit(1)
+    """The Opportunity's current Estimate Version: its `draft` if it has one, otherwise its
+    latest `submitted` version (Story 8.6); superseded versions never are."""
+    rows = await uow.session.execute(
+        select(EstimateVersionRow)
+        .where(
+            EstimateVersionRow.opportunity_id == opportunity_id,
+            EstimateVersionRow.status.in_(_CURRENT_STATUSES),
         )
-    ).scalar_one_or_none()
-    return None if row is None else _version(row)
+        .execution_options(populate_existing=True)
+    )
+    found = _current_first(list(rows.scalars()))
+    return None if found is None else _version(found)
+
+
+async def draft_version(uow: UnitOfWork, opportunity_id: UUID) -> VersionRecord | None:
+    """The Opportunity's `draft` version, if any (never a submitted one)."""
+    found = await current_version(uow, opportunity_id)
+    return found if found is not None and found.status == "draft" else None
 
 
 async def current_versions(
     uow: UnitOfWork, opportunity_ids: list[UUID]
 ) -> dict[UUID, VersionRecord]:
-    """Each of these Opportunities' `draft` version (as `current_version`), in one query;
+    """Each of these Opportunities' current version (as `current_version`), in one query;
     ones with none are left out."""
     if not opportunity_ids:
         return {}
     rows = await uow.session.execute(
         select(EstimateVersionRow).where(
             EstimateVersionRow.opportunity_id.in_(opportunity_ids),
-            EstimateVersionRow.status == "draft",
+            EstimateVersionRow.status.in_(_CURRENT_STATUSES),
         )
     )
-    # At most one `draft` per Opportunity (a unique partial index).
-    return {row.opportunity_id: _version(row) for row in rows.scalars()}
+    by_opportunity: dict[UUID, list[EstimateVersionRow]] = {}
+    for row in rows.scalars():
+        by_opportunity.setdefault(row.opportunity_id, []).append(row)
+    found: dict[UUID, VersionRecord] = {}
+    for opportunity_id, candidates in by_opportunity.items():
+        current = _current_first(candidates)
+        if current is not None:
+            found[opportunity_id] = _version(current)
+    return found
+
+
+async def submit_version(
+    uow: UnitOfWork, version_id: UUID, *, expected_row_version: int
+) -> VersionRecord | None:
+    """Move the `draft` version at `expected_row_version` to `submitted`, bumping its
+    `row_version`. None (and no change) when it is not a draft at that row version."""
+    changed = (
+        await uow.session.execute(
+            update(EstimateVersionRow)
+            .where(
+                EstimateVersionRow.id == version_id,
+                EstimateVersionRow.status == "draft",
+                EstimateVersionRow.row_version == expected_row_version,
+            )
+            .values(
+                status="submitted",
+                submitted_at=func.now(),
+                row_version=EstimateVersionRow.row_version + 1,
+            )
+            .returning(EstimateVersionRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_version(uow, version_id)
+
+
+async def supersede_submitted(
+    uow: UnitOfWork, opportunity_id: UUID, *, keep: UUID
+) -> list[VersionRecord]:
+    """Mark the Opportunity's `submitted` versions other than `keep` `superseded` (bumping
+    their `row_version`); the versions as they are now, oldest first."""
+    result = await uow.session.execute(
+        update(EstimateVersionRow)
+        .where(
+            EstimateVersionRow.opportunity_id == opportunity_id,
+            EstimateVersionRow.status == "submitted",
+            EstimateVersionRow.id != keep,
+        )
+        .values(status="superseded", row_version=EstimateVersionRow.row_version + 1)
+        .returning(EstimateVersionRow.id)
+        .execution_options(synchronize_session=False)
+    )
+    ids = [row.id for row in result.all()]
+    found = [v for i in ids if (v := await get_version(uow, i)) is not None]
+    return sorted(found, key=lambda v: v.version)
+
+
+async def covered_requirement_ids(
+    uow: UnitOfWork, version_ids: list[UUID]
+) -> dict[UUID, set[UUID]]:
+    """The Requirements some line of each version covers, by version, in one query."""
+    found: dict[UUID, set[UUID]] = {v: set() for v in version_ids}
+    if not version_ids:
+        return found
+    rows = await uow.session.execute(
+        select(EstimateLineRow.version_id, LineRequirementRow.requirement_id)
+        .join(LineRequirementRow, LineRequirementRow.line_id == EstimateLineRow.id)
+        .where(EstimateLineRow.version_id.in_(version_ids))
+    )
+    for version_id, requirement_id in rows.all():
+        found[version_id].add(requirement_id)
+    return found
+
+
+async def unaccepted_counts(uow: UnitOfWork, version_ids: list[UUID]) -> dict[UUID, int]:
+    """How many unaccepted Assumptions each version has, in one query; none counts 0."""
+    found: dict[UUID, int] = {v: 0 for v in version_ids}
+    if not version_ids:
+        return found
+    rows = await uow.session.execute(
+        select(AssumptionRow.version_id, func.count())
+        .where(AssumptionRow.version_id.in_(version_ids), AssumptionRow.accepted_at.is_(None))
+        .group_by(AssumptionRow.version_id)
+    )
+    for version_id, count in rows.all():
+        found[version_id] = int(count)
+    return found
 
 
 def _line(row: EstimateLineRow) -> LineRecord:

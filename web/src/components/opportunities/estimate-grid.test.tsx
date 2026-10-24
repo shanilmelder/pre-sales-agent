@@ -159,6 +159,8 @@ function view(
     can_create_risks: false,
     can_edit_risks: false,
     assessment_running: assessmentRunning,
+    blockers: { to_submit: [], to_baseline: [] },
+    can_submit: false,
   } satisfies EstimateView;
 }
 
@@ -1186,5 +1188,34 @@ describe("the Estimate tab states", () => {
     expect(within(lifecycle).getByText("v2 is superseded and read only.")).toBeTruthy();
     await user.click(lineButton(1));
     expect(within(pane()).queryByRole("region", { name: "Edit line" })).toBeNull();
+  });
+});
+
+describe("Submit and the submitted banner (Story 8.6)", () => {
+  it("the toolbar has no Submit: the workspace header offers it", () => {
+    renderSection({ ...view(version(3), succeeded), can_submit: true });
+    const toolbar = document.querySelector<HTMLElement>("[data-estimate-toolbar]")!;
+    expect(within(toolbar).queryByRole("button", { name: "Submit" })).toBeNull();
+  });
+
+  it("a submitted version shows the banner and offers no Submit, edit or Accept", async () => {
+    const submitted: EstimateVersion = {
+      ...version(3),
+      status: "submitted",
+      submitted_at: "2026-10-14T09:00:00Z",
+    };
+    const { container } = renderSection({
+      ...view(submitted, succeeded),
+      can_edit_lines: true,
+      can_accept_assumptions: true,
+      can_submit: false,
+    });
+    expect(document.querySelector("[data-submitted-banner]")?.textContent).toContain(
+      "Submitted v3, 14 Oct",
+    );
+    expect(screen.getByText("v3 · Submitted")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
   });
 });

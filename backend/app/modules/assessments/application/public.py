@@ -39,6 +39,7 @@ from app.modules.assessments.application.critic import (
 )
 from app.modules.assessments.application.critic_reviews import get_critic
 from app.modules.assessments.application.findings import (
+    blocking_finding_counts,
     get_blocking_findings,
     mark_resolved,
     override_finding,
@@ -129,6 +130,7 @@ __all__ = [
     "accept_critic_review",
     "agent_assessments",
     "agent_role",
+    "blocking_finding_counts",
     "build_inputs",
     "critic_inputs",
     "critic_task",

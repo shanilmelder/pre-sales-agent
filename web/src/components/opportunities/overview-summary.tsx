@@ -21,6 +21,7 @@ import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { Pill, type PillTone } from "@/components/ui/pill";
 import { ActorTile } from "@/components/opportunities/actor-tile";
+import { SubmissionBlockersCard } from "@/components/opportunities/submission";
 import {
   RecommendationPill,
   TaskStatusPill,
@@ -47,8 +48,6 @@ import {
   attentionIncomplete,
   attentionItems,
   awaitingLabel,
-  blockerCountLabel,
-  blockers,
   conflictCounts,
   couldNotLoad,
   cutAttention,
@@ -64,7 +63,6 @@ import {
   NOTHING_NEEDS_ATTENTION,
   pipelineProgress,
   pipelineSteps,
-  READY_TO_SUBMIT,
   requirementCounts,
   roleHoursLabel,
   sourceRunLabel,
@@ -526,76 +524,6 @@ function NeedsYou({ id, data }: { id: string; data: OverviewData }) {
   );
 }
 
-// --- Submission blockers ---------------------------------------------------------------------
-
-/** What stands between the Opportunity and a submission, derived from the reads. No Baseline
- * group; read-only, it blocks nothing. */
-function SubmissionBlockers({ id, data }: { id: string; data: OverviewData }) {
-  const { items, total, failed } = blockers(data);
-  const ready = items.length === 0 && failed.length === 0;
-  const hasEstimate = !!data.estimate?.version;
-  return (
-    <SummaryCard
-      id="overview-blockers"
-      title="Submission blockers"
-      extra={
-        total === 0 && failed.length > 0 ? null : (
-          <Pill
-            tone={total > 0 ? "blocker" : ready && hasEstimate ? "resolved" : "neutral"}
-            icon={
-              total > 0 ? <CircleAlertIcon /> : ready && hasEstimate ? <CircleCheckIcon /> : null
-            }
-          >
-            {blockerCountLabel(total)}
-          </Pill>
-        )
-      }
-    >
-      {items.length > 0 ? (
-        <ul className="flex flex-col">
-          {items.map((b) => (
-            <li
-              key={b.key}
-              data-blocker={b.key}
-              className="flex items-start gap-3 border-t border-border bg-blocker-tint px-5 py-3 first:border-t-0"
-            >
-              <CircleAlertIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blocker" />
-              <div className="min-w-0 flex-1">
-                <div className="text-body-strong">{b.title}</div>
-                <div className="text-meta text-muted-foreground">{b.meta}</div>
-              </div>
-              <Link href={tabHref(id, b.tab)} className={linkClass}>
-                {b.action}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {failed.length > 0 ? (
-        <div className="flex flex-col gap-1 border-t border-border px-5 py-3 first:border-t-0">
-          {failed.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
-      ) : null}
-      {ready ? (
-        hasEstimate ? (
-          <div className="px-4 py-8 text-center">
-            <p className="inline-flex items-center gap-2 text-section text-resolved">
-              <CircleCheckIcon aria-hidden="true" className="size-5" />
-              {READY_TO_SUBMIT}
-            </p>
-          </div>
-        ) : (
-          <div className="px-5 py-4">
-            <Muted>Nothing blocks yet. Blockers appear as the pipeline runs.</Muted>
-          </div>
-        )
-      ) : null}
-    </SummaryCard>
-  );
-}
-
 // --- Recent activity -------------------------------------------------------------------------
 
 /** The five newest trace events: who (an initials tile), what in plain words, and when. */
@@ -834,7 +762,7 @@ export function OverviewSummary({
         <NeedsYou id={opportunityId} data={data} />
       </div>
       <div className={ROW}>
-        <SubmissionBlockers id={opportunityId} data={data} />
+        <SubmissionBlockersCard opportunityId={opportunityId} initial={data.blockers ?? null} />
         <RecentActivity id={opportunityId} trace={data.trace} />
       </div>
       <LatestDecision id={opportunityId} assessments={data.assessments} />

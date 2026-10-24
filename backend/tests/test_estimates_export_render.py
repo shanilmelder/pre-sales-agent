@@ -18,6 +18,7 @@ from app.modules.estimates.application.export_content import (
     slug,
 )
 from app.modules.estimates.application.models import EstimateVersion
+from app.modules.estimates.domain.estimates import VersionStatus
 from app.modules.gaps.application.public import Gap
 
 AT = datetime(2026, 10, 5, 14, 32, 59, tzinfo=UTC)
@@ -474,3 +475,14 @@ def test_the_column_row_repeats_on_every_page() -> None:
     for table in doc.tables:
         assert 'w:tblHeader w:val="true"' in table.rows[0]._tr.xml
         assert "w:tblHeader" not in table.rows[1]._tr.xml
+
+
+def test_a_submitted_version_is_labelled_submitted() -> None:
+    """Story 8.6: the export of a submitted current version says so in its header."""
+    submitted = version().model_copy(update={"status": VersionStatus.SUBMITTED})
+
+    document = build_export(
+        opportunity_title="Acme Ltd — Pick & Pack", version=submitted, gaps=GAPS, exported_at=AT
+    )
+
+    assert document.header[1] == "Estimate v2 · Submitted"

@@ -268,12 +268,15 @@ export function EditableWorkspaceHeader({
   opportunity,
   meta,
   badge,
+  actions,
   today,
 }: {
   opportunity: Opportunity;
   meta: ReactNode;
   /** The status pill, shown right of the title. */
   badge: ReactNode;
+  /** Story 8.6: the header actions (Submit, Resolve N blockers), at the end of the title row. */
+  actions?: ReactNode;
   /** Today in UTC (`YYYY-MM-DD`), from the server, for the countdown. */
   today: string;
 }) {
@@ -430,6 +433,7 @@ export function EditableWorkspaceHeader({
           <h1 className="text-title">{title}</h1>
         </InlineField>
         <span className="inline-flex h-8 items-center">{badge}</span>
+        {actions}
       </div>
       <div className="flex flex-wrap items-start gap-x-4 gap-y-1.5 text-[13px] leading-5 text-text-secondary">
         {meta}

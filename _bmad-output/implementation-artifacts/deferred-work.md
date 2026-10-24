@@ -252,6 +252,20 @@
   summary: Pin that `latest_overrides` shows the newest of several earlier overrides with the same fingerprint (test with overrides on Review v1 and v2, expect v2's on v3).
   evidence: Story 6.6 review (verification gap): the carry-over test has a single earlier override, so reversing the ordering in `assessments/adapters/repository.py` `latest_overrides` passes every test; it only changes which earlier reason is shown.
 
+- source_spec: none
+  summary: Story 8.9 Overview recomposition (KPI tiles, 8-step Submission pipeline, Needs you, Recent activity, Agent run) following the new mockups.
+  evidence: Split from "Epic 8 remainder" on 2026-10-24; 8.9 depends on Story 8.6 and ships as its own PR after 8.6.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-6-submission-blockers.md`
+  summary: Make submit serialise with every blocker writer (a shared AD-26 per-Opportunity lock taken by Gap, Conflict, Finding and Requirement writers too), with a race test for a Gap raised during submit.
+  evidence: Story 8.6 review (blind + edge): submit takes only estimates' `lock_opportunity` + `lock_assumptions`; `gaps.detection:`, `conflicts.detect:` and `assessments.*` use their own keys, so a blocker committed between the re-check and the submit commit can slip through.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-6-submission-blockers.md`
+  summary: Make the submit If-Match catch line edits and Assumption accepts made after the page loaded (bump the version's row_version on child writes, or If-Match on a content hash), and show total hours in the confirm dialog.
+  evidence: Story 8.6 review (blind): line edits and accepts bump only their own row_version, so a submitter can submit totals they never saw; the blocker re-check still guards safety.
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-6-submission-blockers.md`
+  summary: Add a migration test for 0043 that downgrades with a `submitted` row present (expect `superseded`, `submitted_at` dropped) and upgrades again.
+  evidence: Story 8.6 review (verification gap): no test references 0043; `test_assessments_findings_migration.py` is the pattern.
+
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-5-assumptions-register-and-risks.md`
   summary: A Risk can't be deleted or unconverted; a mistaken Convert to Risk stays on the Gap and is carried by every re-draft.
   evidence: No delete endpoint; `estimates_risks` has no DELETE grant (migration 0043); `carry_risks` copies every Risk.

@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/app/opportunities/actions", () => ({
   updateOpportunity: vi.fn(),
   loadOpportunity: vi.fn(),
+  submitEstimateVersion: vi.fn(),
 }));
 
 import { ShellProviders } from "../shell/shell-context";

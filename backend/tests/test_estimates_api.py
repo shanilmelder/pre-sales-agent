@@ -55,6 +55,8 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_create_risks": True,
         "can_edit_risks": True,
         "assessment_running": False,
+        "blockers": {"to_submit": [], "to_baseline": []},
+        "can_submit": False,
     }
     assert theirs.json() == {
         "version": None,
@@ -67,6 +69,8 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_create_risks": False,
         "can_edit_risks": False,
         "assessment_running": False,
+        "blockers": {"to_submit": [], "to_baseline": []},
+        "can_submit": False,
     }
 
 

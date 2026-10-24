@@ -183,6 +183,8 @@ function view(v: EstimateVersion, may = true): EstimateView {
     can_create_risks: may,
     can_edit_risks: may,
     assessment_running: false,
+    blockers: { to_submit: [], to_baseline: [] },
+    can_submit: false,
   };
 }
 

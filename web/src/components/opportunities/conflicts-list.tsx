@@ -1,5 +1,6 @@
 "use client";
 
+import { anchorId } from "@/lib/submission";
 import { ArrowUpIcon, CircleAlertIcon, CircleCheckIcon } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 
@@ -127,6 +128,7 @@ export function ConflictsList({
         return (
           <div
             key={item.id}
+            id={anchorId("conflict", item.id)}
             role="row"
             aria-selected={selected}
             className={`border-t border-border first:border-t-0 ${variant === "open" ? "shadow-[inset_3px_0_0_var(--blocker)]" : ""} ${selected ? "bg-primary-tint" : "hover:bg-surface-alt"}`}

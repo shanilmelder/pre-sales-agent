@@ -617,9 +617,11 @@ def test_list_rows_and_pagination(client: TestClient, sync_engine: Engine) -> No
         "created_at",
         "open_gaps",
         "open_conflicts",
+        "blocker_count",
         "estimate",
     }
     assert (row["open_gaps"], row["open_conflicts"], row["estimate"]) == (0, 0, None)
+    assert row["blocker_count"] == 0
     assert row["status"] == "intake"
     assert row["owner"] == {"id": str(owner_id), "name": "Lister Person"}
     assert client.get(BASE, headers=headers).json()["page_size"] == 50
@@ -705,10 +707,16 @@ def _estimate_version(
         conn.execute(
             sa.text(
                 "INSERT INTO estimates_estimate_versions (id, opportunity_id, version, status, "
-                "template_version, uncovered_count, dropped_count, row_version) "
-                "VALUES (:id, :o, :v, :s, 'v1', 0, 0, 1)"
+                "template_version, uncovered_count, dropped_count, row_version, submitted_at) "
+                "VALUES (:id, :o, :v, :s, 'v1', 0, 0, 1, :at)"
             ),
-            {"id": version_id, "o": opportunity_id, "v": version, "s": status},
+            {
+                "id": version_id,
+                "o": opportunity_id,
+                "v": version,
+                "s": status,
+                "at": datetime.now(UTC) if status == "submitted" else None,
+            },
         )
         for position, (line_id, hours) in enumerate(zip(line_ids, lines, strict=True), 1):
             conn.execute(
@@ -785,7 +793,7 @@ def test_list_row_estimate_is_the_draft_total_with_contingency(
 
     row = _row(client, headers, opp["id"])
 
-    assert row["estimate"] == {"version": 3, "total_hours": 278.0}
+    assert row["estimate"] == {"version": 3, "status": "draft", "total_hours": 278.0}
     estimate = client.get(f"{BASE}/{opp['id']}/estimate", headers=headers)
     assert estimate.status_code == 200, estimate.text
     assert estimate.json()["version"]["totals"]["total_hours"] == 278.0

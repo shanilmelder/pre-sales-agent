@@ -1,11 +1,14 @@
 """RFC 9457 problem+json errors, mapped in one place (AD-16).
 
 Body: `{type, title, status, code, detail, instance}`. `code` is stable and machine-readable.
+An error may add extension members (RFC 9457 §3.2), e.g. `blockers` on
+`estimate_version_blocked` (Story 8.6).
 """
 
 from collections.abc import Mapping
 from http import HTTPStatus
 from types import MappingProxyType
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -55,6 +58,9 @@ class ProblemError(Exception):
     code: str = "internal_error"
     title: str | None = None
     headers: Mapping[str, str] | None = None
+    extensions: Mapping[str, Any] | None = None
+    """Extension members added to the body (JSON-ready values); they never replace the
+    standard members."""
 
     def __init__(self, detail: str | None = None) -> None:
         super().__init__(detail or self.code)
@@ -213,6 +219,18 @@ class EstimateVersionNotDraftError(ConflictError):
 
     code = "estimate_version_not_draft"
     title = "Estimate Version not draft"
+
+
+class EstimateVersionBlockedError(ConflictError):
+    """A submission was asked for while the version still has submission blockers (Story
+    8.6). The body's `blockers` extension member lists them; nothing changed."""
+
+    code = "estimate_version_blocked"
+    title = "Estimate Version blocked"
+
+    def __init__(self, detail: str | None = None, *, blockers: Mapping[str, Any]) -> None:
+        super().__init__(detail)
+        self.extensions = {"blockers": blockers}
 
 
 class NoDraftEstimateError(ConflictError):
@@ -516,6 +534,7 @@ def problem_response(
     title: str | None = None,
     detail: str | None = None,
     headers: Mapping[str, str] | None = None,
+    extensions: Mapping[str, Any] | None = None,
 ) -> JSONResponse:
     body = Problem(
         type=f"https://errors.pre-sales-agent/{code}",
@@ -524,16 +543,22 @@ def problem_response(
         code=code,
         detail=detail,
         instance=request.url.path,
-    )
-    return JSONResponse(
-        body.model_dump(), status_code=status, media_type=PROBLEM_JSON, headers=headers
-    )
+    ).model_dump()
+    for name, value in (extensions or {}).items():
+        body.setdefault(name, value)
+    return JSONResponse(body, status_code=status, media_type=PROBLEM_JSON, headers=headers)
 
 
 async def _problem_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ProblemError)
     return problem_response(
-        request, exc.status, exc.code, title=exc.title, detail=exc.detail, headers=exc.headers
+        request,
+        exc.status,
+        exc.code,
+        title=exc.title,
+        detail=exc.detail,
+        headers=exc.headers,
+        extensions=exc.extensions,
     )
 
 
