@@ -183,20 +183,20 @@ class AssessmentNotInProgressError(ConflictError):
     title = "Assessment not in progress"
 
 
-class DecisionNotOpenError(ConflictError):
-    """A decision a run waited on was resolved after it was no longer open: already resolved
-    or cancelled with its run (Story 5.5)."""
-
-    code = "decision_not_open"
-    title = "Decision not open"
-
-
 class AssessmentTaskNotFailedError(ConflictError):
     """A task retry was asked for a task that is not `failed`, or not of the Opportunity's
     latest run (Epic 5 slice 5A)."""
 
     code = "assessment_task_not_failed"
     title = "Assessment task not failed"
+
+
+class DecisionNotOpenError(ConflictError):
+    """A run's decision was resolved that is no longer open, or whose run is cancelled or not
+    waiting for a person (Story 5.5)."""
+
+    code = "decision_not_open"
+    title = "Decision not open"
 
 
 class EstimateNotFoundError(ConflictError):

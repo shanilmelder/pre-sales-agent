@@ -21,7 +21,7 @@ deleted, and the new tables, values and grants are dropped.
 
 Revision ID: 0040_workflows_decisions
 Revises: 0039_tool_gateway
-Create Date: 2026-10-23
+Create Date: 2026-10-24
 """
 
 from collections.abc import Sequence

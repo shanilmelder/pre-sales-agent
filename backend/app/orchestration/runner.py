@@ -5,11 +5,11 @@ For a run, it builds the graph from the run's plan and invokes it on the thread
 `thread_id = run_id`, checkpointed after every superstep (`durability="sync"`):
 
 - the thread has pending `next` nodes (the previous attempt was interrupted mid-run, e.g.
-  the worker was killed and the job reclaimed, or a node interrupted to wait for a person)
-  and every unfinished task is among them (or waits on one): it resumes, so nodes whose
-  writes were saved are not run again. With pending interrupts whose decisions a person
-  resolved (Story 5.5) it resumes with `Command(resume={interrupt_id: choice})`, otherwise
-  with `None` input (a node still waiting interrupts again);
+  the worker was killed and the job reclaimed, or a node interrupted for a person's
+  decision, Story 5.5) and every unfinished task is among them (or waits on one): it
+  resumes, so nodes whose writes were saved are not run again. Interrupts whose decision
+  (named in their payload) is resolved get `Command(resume={interrupt_id: choice})`; with
+  none, it resumes with `None` input (an open decision's node interrupts again);
 - otherwise (a new run, a finished attempt whose tasks failed, a manual task retry): it
   starts a fresh invocation on the same thread; nodes whose tasks already finished re-read
   them and do nothing.
@@ -69,16 +69,24 @@ def _unaccounted(
     ]
 
 
-def resume_values(interrupts: Sequence[Interrupt], choices: dict[str, str]) -> dict[str, str]:
-    """`{interrupt_id: choice}` for the pending interrupts whose decision (named in the
-    interrupt's payload) was resolved; `choices` maps decision ids to choices."""
-    values: dict[str, str] = {}
-    for pending in interrupts:
-        payload = pending.value if isinstance(pending.value, dict) else {}
-        choice = choices.get(str(payload.get("decision_id", "")))
-        if choice is not None:
-            values[pending.id] = choice
-    return values
+def _decision_id(found: Interrupt) -> UUID | None:
+    value = found.value
+    if not isinstance(value, dict):
+        return None
+    try:
+        return UUID(str(value.get("decision_id")))
+    except ValueError:
+        return None
+
+
+async def resume_choices(run: GraphRun, interrupts: Sequence[Interrupt]) -> dict[str, str]:
+    """`{interrupt_id: choice}` for the pending interrupts whose decision is resolved."""
+    named = {i.id: d for i in interrupts if (d := _decision_id(i)) is not None}
+    if not named:
+        return {}
+    async with unit_of_work(run.engine) as uow:
+        choices = await workflows.decision_choices(uow, sorted(set(named.values())))
+    return {iid: choices[d] for iid, d in named.items() if d in choices}
 
 
 class LangGraphRunner:
@@ -100,7 +108,6 @@ class LangGraphRunner:
     async def __call__(self, run: GraphRun) -> Sequence[BaseException]:
         async with unit_of_work(run.engine) as uow:
             plan = await workflows.plan_of(uow, run.run_id)
-            choices = await workflows.resolved_choices(uow, run.run_id)
         if not plan:
             return []
         invocation = Invocation(run=run)
@@ -111,7 +118,7 @@ class LangGraphRunner:
             graph = build_graph(plan, invocation, saver)
             snapshot = await graph.aget_state(config)
             if snapshot.next and not _unaccounted(plan, snapshot.values, snapshot.next):
-                resume = resume_values(snapshot.interrupts, choices)
+                resume = await resume_choices(run, snapshot.interrupts)
                 _log.info(
                     "orchestration.run_resumed",
                     extra={**ids, "pending": len(snapshot.next), "resumed_count": len(resume)},

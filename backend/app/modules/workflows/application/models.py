@@ -5,7 +5,7 @@ part of the API schema and unchanged."""
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.modules.assessments.application.public import (
     AgentAssessment,
@@ -25,8 +25,9 @@ from app.modules.workflows.domain.runs import (
 class AssessmentTask(BaseModel):
     """One agent's task in an assessment run: a specialist's, or (Story 6.4) the Critic's,
     which runs once the specialists' have ended. `error_code` is set only when `failed`;
-    `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
-    panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
+    `skip_reason` only when `skipped` because a person continued without its disabled Agent
+    (`agent_disabled`: the panel says "Agent disabled — assess manually"); a cancel's skipped
+    tasks have none.
     `started_at` / `finished_at`: when the task last started and finished (null before
     either); the panel derives elapsed time from them."""
 
@@ -39,11 +40,10 @@ class AssessmentTask(BaseModel):
 
 
 class RunDecision(BaseModel):
-    """A decision the run waits on, or waited on (Story 5.5). `plan_escalation`: the
-    Agent's task was not planned because the Agent is `disabled` or `eval_only`; a person
-    chooses `continue_without` (the task is skipped) or `replan` (allowed once
-    `agent_active`: the task is re-pinned to the Agent's current config and runs).
-    `row_version` is its ETag for `If-Match`. `resolved_by`: the resolver's name."""
+    """A decision the run waits on, or waited on (Story 5.5). `plan_escalation`: the task of
+    `agent` was not planned because its Agent is disabled; **Continue without** skips it,
+    **Re-plan** runs it once the Agent is active again (`agent_active`). `row_version`: for
+    `If-Match` on the resolve. `resolved_by`: the resolver's name."""
 
     id: str
     kind: DecisionKind
@@ -59,20 +59,20 @@ class RunDecision(BaseModel):
 
 
 class PlanVersionTask(BaseModel):
-    """One task of a plan version: its Agent and the config version it was pinned to."""
+    """One task of a plan version: its Agent and the config version it was pinned to
+    (`config_version`: that version's number for the Agent)."""
 
     agent: TaskAgent
     config_version_id: str
     config_version: int | None
-    semver: str | None
 
 
 class PlanVersion(BaseModel):
-    """One version of the run's plan (FR-15): v1 when the run was queued, v2+ on each
-    Re-plan. `created_by`: the person's name, or null for the system (an automatic run)."""
+    """One version of the run's plan (FR-15): v1 when the run was queued, one more per
+    Re-plan. `created_by`: who made it (a person's name, or "System" for an automatic run)."""
 
     version: int
-    created_by: str | None
+    created_by: str
     created_at: datetime
     tasks: list[PlanVersionTask]
 
@@ -80,9 +80,9 @@ class PlanVersion(BaseModel):
 class AssessmentRun(BaseModel):
     """An assessment run: its status and one task per agent, in agent order. `queued_at`:
     when it was last queued (a retry or a resolved decision re-queues it); `finished_at`:
-    null while in progress, or for a lost run not yet recorded. `waiting_for_human`: a
-    task waits on one of `decisions` (Story 5.5). `plan_version`: the run's current plan
-    version; `plan_versions` lists them all, oldest first."""
+    null while in progress, or for a lost run not yet recorded. `waiting_for_human`: paused
+    on an open decision in `decisions` (Story 5.5). `plan_version`: its current plan;
+    `plan_versions`: every version, oldest first."""
 
     id: str
     status: AssessmentRunStatus
@@ -96,7 +96,9 @@ class AssessmentRun(BaseModel):
 
 
 class DecisionResolution(BaseModel):
-    """A person's choice on a decision the run waits on (Story 5.5)."""
+    """How a person resolves a run's decision."""
+
+    model_config = ConfigDict(extra="forbid")
 
     choice: DecisionChoice
 

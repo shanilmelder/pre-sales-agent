@@ -226,6 +226,9 @@
   summary: Findings tables (Assessments, and the pattern in Conflicts and Trace) put a whole row in one gridcell button, so screen readers read Severity, Type, Finding and Raised by as one run-on string with no column headers.
   evidence: Review of the Assessments redesign; the structure is inherited from `AssessmentFindingList` and `RedTeamList`.
 
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5-knowledge-coverage-view.md`
+  summary: sprint-status.yaml still lists 3-4-author-and-version-checklists as backlog although Story 3.4 is merged and its spec is done.
+  evidence: origin/story/3-4-author-version-checklists is an ancestor of origin/main, and spec-3-4 frontmatter has status done; found during Story 3.5 review.
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-2-deterministic-mandatory-gaps.md`
   summary: clarification_agent can propose a Gap that duplicates an open mandatory Checklist Gap; dedupe agent candidates against open mandatory Gaps (or pass them to the agent) when the Story 4.3 Checklist-aware remainder lands.
   evidence: maybe-false — `_without_settled` only dedupes against dismissed/answered Gaps; settle by running detection on an Opportunity with a mandatory "SSO" item and Requirements mentioning SSO and checking for a near-duplicate detected Gap.
@@ -238,3 +241,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
   summary: Reconcile Story 4.1's `knowledge.get_coverage` with the Story 3.5 branch, which adds its own `get_coverage` in the same `coverage.py`.
   evidence: The `story/3-5-knowledge-coverage-view` worktree adds `knowledge/application/coverage.py` and `tests/test_knowledge_coverage.py` with a different `get_coverage` shape. The second branch to merge adopts the other's API and points the banner link at `/knowledge/coverage`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-pause-and-resume.md`
+  summary: Evals with a disabled specialist now end with a `waiting_for_human` run and no Estimate (the harness never resolves decisions and doesn't claim `workflows.resume`); add a `_failures` test for the waiting branch and decide whether evals should auto-continue without.
+  evidence: Review pass 1 (verification-gap), `backend/app/evals/harness.py:386-392`; the DB-backed harness test is skipped unless `PSA_EVAL_DATABASE_URL` is set.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-pause-and-resume.md`
+  summary: Add a worker test with `job_types=("workflows.resume",)` asserting the graph runner is installed.
+  evidence: Review pass 1 (verification-gap), `backend/app/main_worker.py` `GRAPH_JOB_TYPES`; only split deployments are affected.

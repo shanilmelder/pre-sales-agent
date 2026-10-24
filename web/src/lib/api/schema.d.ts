@@ -1347,10 +1347,10 @@ export interface paths {
         put?: never;
         /**
          * Resolve Run Decision
-         * @description Resolve a decision the Opportunity's run waits on: `continue_without` skips the
-         *     Agent's task, `replan` (once the Agent is active again) re-pins it to the Agent's current
-         *     config version as a new plan version and runs it. The run resumes where it stopped. The
-         *     owner and collaborators, except sales representatives.
+         * @description Resolve the open decision a run waits on: **Continue without** skips the disabled
+         *     Agent's task, **Re-plan** (only once the Agent is active again) re-pins the task to the
+         *     Agent's current config version as a new plan version and runs it. The run then resumes
+         *     where it stopped. The owner and collaborators, except sales representatives.
          */
         post: operations["resolve_run_decision"];
         delete?: never;
@@ -1888,6 +1888,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Coverage
+         * @description Products (from Sources, Checklists and the Opportunities the caller can read, sorted
+         *     ignoring case) by active Integration Types: per cell the Ready Sources, how many of them
+         *     are stale, the published Checklists and the status (`ready`, `partial`, `missing`).
+         *     Checklists scoped only by industry are listed under `industries`. Any user with a role.
+         */
+        get: operations["get_knowledge_coverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/downloads/{token}": {
         parameters: {
             query?: never;
@@ -2370,9 +2393,9 @@ export interface components {
          * AssessmentRun
          * @description An assessment run: its status and one task per agent, in agent order. `queued_at`:
          *     when it was last queued (a retry or a resolved decision re-queues it); `finished_at`:
-         *     null while in progress, or for a lost run not yet recorded. `waiting_for_human`: a
-         *     task waits on one of `decisions` (Story 5.5). `plan_version`: the run's current plan
-         *     version; `plan_versions` lists them all, oldest first.
+         *     null while in progress, or for a lost run not yet recorded. `waiting_for_human`: paused
+         *     on an open decision in `decisions` (Story 5.5). `plan_version`: its current plan;
+         *     `plan_versions`: every version, oldest first.
          */
         AssessmentRun: {
             /** Id */
@@ -2422,8 +2445,9 @@ export interface components {
          * AssessmentTask
          * @description One agent's task in an assessment run: a specialist's, or (Story 6.4) the Critic's,
          *     which runs once the specialists' have ended. `error_code` is set only when `failed`;
-         *     `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
-         *     panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
+         *     `skip_reason` only when `skipped` because a person continued without its disabled Agent
+         *     (`agent_disabled`: the panel says "Agent disabled — assess manually"); a cancel's skipped
+         *     tasks have none.
          *     `started_at` / `finished_at`: when the task last started and finished (null before
          *     either); the panel derives elapsed time from them.
          */
@@ -3075,6 +3099,60 @@ export interface components {
          * @enum {string}
          */
         ConvertedTo: "condition" | "contingency";
+        /** CoverageCell */
+        CoverageCell: {
+            /** Sources */
+            sources: number;
+            /** Stale */
+            stale: number;
+            /** Checklists */
+            checklists: number;
+            status: components["schemas"]["CoverageStatus"];
+            /** Integration Type Id */
+            integration_type_id: string;
+        };
+        /**
+         * CoverageIndustry
+         * @description Checklists scoped only by this industry (no products, no Integration Types).
+         */
+        CoverageIndustry: {
+            /** Industry */
+            industry: string;
+            /** Checklists */
+            checklists: number;
+            /**
+             * Names
+             * @description The Checklists' names, by name.
+             */
+            names: string[];
+        };
+        /**
+         * CoverageIntegrationType
+         * @description A column: an active Integration Type.
+         */
+        CoverageIntegrationType: {
+            /** Id */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * CoverageRow
+         * @description One product, with a cell per column, in column order.
+         */
+        CoverageRow: {
+            /** Product */
+            product: string;
+            /** Cells */
+            cells: components["schemas"]["CoverageCell"][];
+        };
+        /**
+         * CoverageStatus
+         * @enum {string}
+         */
+        CoverageStatus: "ready" | "partial" | "missing";
         /**
          * CriticCategory
          * @enum {string}
@@ -3136,19 +3214,18 @@ export interface components {
         };
         /**
          * DecisionChoice
-         * @description What a person chose for a `plan_escalation`.
          * @enum {string}
          */
         DecisionChoice: "continue_without" | "replan";
         /**
          * DecisionKind
-         * @description `workflows_decisions.kind`: what a person is asked to decide (Story 5.5).
+         * @description What a run waits on a person for.
          * @enum {string}
          */
         DecisionKind: "plan_escalation";
         /**
          * DecisionResolution
-         * @description A person's choice on a decision the run waits on (Story 5.5).
+         * @description How a person resolves a run's decision.
          */
         DecisionResolution: {
             choice: components["schemas"]["DecisionChoice"];
@@ -4002,6 +4079,22 @@ export interface components {
          */
         Kind: "integration_type" | "work_package";
         /**
+         * KnowledgeCoverage
+         * @description The coverage matrix: products (rows, sorted ignoring case) by active Integration Types
+         *     (columns), and the industry-only Checklists. `stale_months` is the review age after which
+         *     a Source is stale.
+         */
+        KnowledgeCoverage: {
+            /** Integration Types */
+            integration_types: components["schemas"]["CoverageIntegrationType"][];
+            /** Rows */
+            rows: components["schemas"]["CoverageRow"][];
+            /** Industries */
+            industries: components["schemas"]["CoverageIndustry"][];
+            /** Stale Months */
+            stale_months: number;
+        };
+        /**
          * KnowledgeEvidence
          * @description A citable Evidence reference to a chunk (AD-13): `id` is the chunk, `version` the
          *     Source version and `span` the chunk's offsets in that version's extracted text.
@@ -4648,14 +4741,14 @@ export interface components {
         };
         /**
          * PlanVersion
-         * @description One version of the run's plan (FR-15): v1 when the run was queued, v2+ on each
-         *     Re-plan. `created_by`: the person's name, or null for the system (an automatic run).
+         * @description One version of the run's plan (FR-15): v1 when the run was queued, one more per
+         *     Re-plan. `created_by`: who made it (a person's name, or "System" for an automatic run).
          */
         PlanVersion: {
             /** Version */
             version: number;
             /** Created By */
-            created_by: string | null;
+            created_by: string;
             /**
              * Created At
              * Format: date-time
@@ -4666,7 +4759,8 @@ export interface components {
         };
         /**
          * PlanVersionTask
-         * @description One task of a plan version: its Agent and the config version it was pinned to.
+         * @description One task of a plan version: its Agent and the config version it was pinned to
+         *     (`config_version`: that version's number for the Agent).
          */
         PlanVersionTask: {
             agent: components["schemas"]["TaskAgent"];
@@ -4674,8 +4768,6 @@ export interface components {
             config_version_id: string;
             /** Config Version */
             config_version: number | null;
-            /** Semver */
-            semver: string | null;
         };
         /**
          * PositionSource
@@ -5149,11 +5241,10 @@ export interface components {
         };
         /**
          * RunDecision
-         * @description A decision the run waits on, or waited on (Story 5.5). `plan_escalation`: the
-         *     Agent's task was not planned because the Agent is `disabled` or `eval_only`; a person
-         *     chooses `continue_without` (the task is skipped) or `replan` (allowed once
-         *     `agent_active`: the task is re-pinned to the Agent's current config and runs).
-         *     `row_version` is its ETag for `If-Match`. `resolved_by`: the resolver's name.
+         * @description A decision the run waits on, or waited on (Story 5.5). `plan_escalation`: the task of
+         *     `agent` was not planned because its Agent is disabled; **Continue without** skips it,
+         *     **Re-plan** runs it once the Agent is active again (`agent_active`). `row_version`: for
+         *     `If-Match` on the resolve. `resolved_by`: the resolver's name.
          */
         RunDecision: {
             /** Id */
@@ -15002,7 +15093,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An assessment run is already queued, running or waiting (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`), or its agent is disabled in the Agent Registry (`registry_agent_disabled`) */
+            /** @description An assessment run is already queued, running or waiting for a person (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`), or its agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15245,10 +15336,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The run, `queued` again to resume, with the decision `resolved` */
+            /** @description The run, `queued` again to resume, with the decision resolved */
             200: {
                 headers: {
-                    /** @description The decision's row version. */
+                    /** @description The decision's row version, for `If-Match`. */
                     ETag?: string;
                     [name: string]: unknown;
                 };
@@ -15322,7 +15413,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The decision is not open: already resolved, or cancelled with its run, or the run isn't waiting for it (`decision_not_open`); or Re-plan while the Agent is still disabled in the Agent Registry (`registry_agent_disabled`) */
+            /** @description The decision is not open, or its run was cancelled or is not waiting for a person (`decision_not_open`), or Re-plan was chosen while the Agent is still disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15344,7 +15435,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The decision changed since the caller read it (`row_version_mismatch`); the `detail` says who resolved it: "Already resolved by {name}." */
+            /** @description The decision changed since the caller read it (`row_version_mismatch`); the `detail` says who resolved it */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -20273,6 +20364,92 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_knowledge_coverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeCoverage"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role (`forbidden`) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

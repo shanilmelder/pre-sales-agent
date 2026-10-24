@@ -71,7 +71,7 @@ def test_before_any_run_there_is_none(client: TestClient, sync_engine: Engine) -
         "run": None,
         "assessments": empty,
         "can_start": True,
-        "can_resolve": True,
+        "can_resolve": True,  # Story 5.5
     }
     assert _get(client, reader, opp["id"]).json() == {
         "run": None,

@@ -40,7 +40,6 @@ export type Recommendation = components["schemas"]["Recommendation"];
 export type Confidence = components["schemas"]["Confidence"];
 export type FindingKind = components["schemas"]["FindingKind"];
 export type RunDecision = components["schemas"]["RunDecision"];
-export type DecisionChoice = components["schemas"]["DecisionChoice"];
 export type PlanVersion = components["schemas"]["PlanVersion"];
 
 /** The specialist agents by role, in the order the tab lists them. */
@@ -141,46 +140,15 @@ export function isAssessing(run: AssessmentRun | null | undefined): boolean {
   return run?.status === "queued" || run?.status === "running";
 }
 
-/** True while the run waits for a person to resolve a decision (Story 5.5). */
+/** True while the run waits for a person's decision (Story 5.5). */
 export function isWaiting(run: AssessmentRun | null | undefined): boolean {
   return run?.status === "waiting_for_human";
 }
 
-/** The run's open decision on the agent's task, while the run waits (null otherwise). */
-export function openDecision(
-  run: AssessmentRun | null | undefined,
-  agent: TaskAgent,
-): RunDecision | null {
-  if (!isWaiting(run)) return null;
-  return run?.decisions?.find((d) => d.agent === agent && d.status === "open") ?? null;
-}
-
-/** The waiting task's pill (Story 5.5). */
-export const WAITING_FOR_YOU = "Waiting for you";
-export const CONTINUE_WITHOUT = "Continue without";
-export const REPLAN = "Re-plan";
-/** Why Re-plan is disabled: the Agent is still disabled in the Agent Registry. */
-export const ENABLE_AGENT_FIRST = "Enable the agent first";
-
-/** "Security assessment not planned: Security Agent is disabled". */
-export function decisionSentence(decision: Pick<RunDecision, "agent" | "agent_name">): string {
-  const name = decision.agent_name || agentLabel(decision.agent);
-  const short = name.replace(/ Agent$/, "");
-  return `${short} assessment not planned: ${name} is disabled`;
-}
-
-/** "Plan v2". */
-export function planLabel(version: number): string {
-  return `Plan v${version}`;
-}
-
-/** One plan version's Agents and pins: "Engineering Agent 0.1.0 (config v1)". */
-export function planTaskLabel(task: PlanVersion["tasks"][number]): string {
-  const pin =
-    task.semver === null
-      ? ""
-      : ` ${task.semver}${task.config_version === null ? "" : ` (config v${task.config_version})`}`;
-  return `${agentLabel(task.agent)}${pin}`;
+/** True while the run is not over: queued, running or waiting for a person (it can be
+ * cancelled, and no new run can start). */
+export function isRunActive(run: AssessmentRun | null | undefined): boolean {
+  return isAssessing(run) || isWaiting(run);
 }
 
 /** The latest run's status in words. */
@@ -191,7 +159,7 @@ export const RUN_STATUS_LABELS: Record<AssessmentRun["status"], string> = {
   partially_failed: "Assessment partly failed",
   failed: "Assessment failed",
   cancelled: "Cancelled — completed results kept",
-  waiting_for_human: WAITING_FOR_YOU,
+  waiting_for_human: "Waiting for you",
 };
 
 export function runStatusLabel(run: AssessmentRun): string {
@@ -517,3 +485,50 @@ export const CANCEL_RUN_TITLE = "Cancel this run?";
 export const CANCEL_RUN_DESCRIPTION = "Completed results are kept.";
 export const CANCEL_RUN_CONFIRM = "Confirm";
 export const CANCEL_RUN_KEEP = "Keep running";
+
+// --- Waiting for a person (Story 5.5) ----------------------------------------------------------
+
+export const WAITING_FOR_YOU = "Waiting for you";
+export const CONTINUE_WITHOUT = "Continue without";
+export const REPLAN = "Re-plan";
+export const ENABLE_AGENT_FIRST = "Enable the agent first";
+export const RESOLVE = "Resolve";
+export const RESOLVE_FAILED = "The decision could not be saved. Try again.";
+
+/** The run's open decision about an agent's task, if it waits on one. */
+export function openDecision(
+  run: Pick<AssessmentRun, "decisions"> | null | undefined,
+  agent: TaskAgent,
+): RunDecision | null {
+  return run?.decisions?.find((d) => d.status === "open" && d.agent === agent) ?? null;
+}
+
+/** The run's open decisions. */
+export function openDecisions(
+  run: Pick<AssessmentRun, "decisions"> | null | undefined,
+): RunDecision[] {
+  return (run?.decisions ?? []).filter((d) => d.status === "open");
+}
+
+/** "Security assessment not planned: Security Agent is disabled". */
+export function decisionSentence(decision: Pick<RunDecision, "agent" | "agent_name">): string {
+  const name = decision.agent_name || agentLabel(decision.agent);
+  const area = name.replace(/ Agent$/, "");
+  return `${area} assessment not planned: ${name} is disabled`;
+}
+
+/** "Plan v2". */
+export function planVersionLabel(version: number): string {
+  return `Plan v${version}`;
+}
+
+/** One plan version's Agents and their config versions: "Engineering Agent v1 · PM Agent v1". */
+export function planVersionAgents(plan: Pick<PlanVersion, "tasks">): string {
+  return plan.tasks
+    .map((t) =>
+      t.config_version === null
+        ? agentLabel(t.agent)
+        : `${agentLabel(t.agent)} v${t.config_version}`,
+    )
+    .join(" · ");
+}
