@@ -11,6 +11,7 @@ other claimer takes them, and `drain` runs only the current test's Opportunities
 
 import asyncio
 import logging
+import os
 import time
 from collections import defaultdict
 from collections.abc import Callable, Mapping
@@ -1604,10 +1605,15 @@ def test_a_config_without_the_grants_reads_nothing_and_asks_nothing(
 ) -> None:
     """A run pinned to a config version that grants no tools: every read is denied and
     audited, so there is nothing to assess and no model call."""
+    owner_url = os.environ.get("PSA_MIGRATIONS_DATABASE_URL")
+    if not owner_url:
+        pytest.skip("PSA_MIGRATIONS_DATABASE_URL not set (re-pinning a task needs the owner)")
     headers, opp = prepared(client, sync_engine, db_url, gateway, count=2)
     fake = install(AgentGateway(replies()))
     body = started(client, headers, opp["id"])
-    with sync_engine.begin() as conn:  # pin the seeded version 1 (no tool permissions)
+    owner_engine = sa.create_engine(owner_url)
+    # Pin the seeded version 1 (no tool permissions); psa_app can't re-pin a task.
+    with owner_engine.begin() as conn:
         for agent in AGENTS:
             conn.execute(
                 sa.text(
@@ -1616,6 +1622,7 @@ def test_a_config_without_the_grants_reads_nothing_and_asks_nothing(
                 ),
                 {"v": uuid5(SEED_NAMESPACE, f"{agent}/config/1"), "r": body["id"], "a": agent},
             )
+    owner_engine.dispose()
     assert drain(db_url, ASSESS) == ["succeeded"]
 
     assert fake.requests == []

@@ -273,6 +273,11 @@ def test_a_slow_or_timing_out_server_is_a_timeout(tmp_path: Path) -> None:
         raise httpx.ConnectError("refused", request=request)
 
     assert do_fetch(tmp_path, Network(refused), "https://example.com/") == ToolFailed("http_error")
+
+    def invalid(request: httpx.Request) -> httpx.Response:
+        raise httpx.InvalidURL("bad host")  # not an HTTPError: still a typed failure
+
+    assert do_fetch(tmp_path, Network(invalid), "https://example.com/") == ToolFailed("http_error")
     assert stored_blobs(tmp_path) == []
 
 

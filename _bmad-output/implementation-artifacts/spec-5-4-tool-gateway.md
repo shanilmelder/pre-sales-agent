@@ -2,7 +2,7 @@
 title: 'Story 5.4 (demo slice): ToolGateway — task-scoped, permission-checked read-only tools and Research Snapshots'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 baseline_commit: '6a38bd5e8360caffdf029249f1bc521a0197b6d4'
 review_loop_iteration: 0
@@ -85,7 +85,7 @@ context:
 - [x] `backend/app/platform/parsing/formats/html.py`, `parsers.py` -- `.html` format
 - [x] `backend/app/modules/{intake,knowledge,gaps}/application/tools.py` -- scoped handlers; knowledge adds `capture_research_snapshot`, snapshot ORM/repo, `research_snapshot` resolver
 - [x] `backend/app/modules/identity/actions.py`, `registry/domain/registry.py`, `registry/application/registry.py` -- READ names; reject non-READ grants
-- [x] `backend/migrations/versions/20261023_0038_tool_gateway.py` -- `platform_tool_calls`, `knowledge_research_snapshots` (INSERT-only), finding `injection_suspected`, specialist config versions
+- [x] `backend/migrations/versions/20261024_0039_tool_gateway.py` -- `platform_tool_calls`, `knowledge_research_snapshots` (INSERT-only), finding `injection_suspected`, specialist config versions
 - [x] `ops/research-allowlist.yaml`, `.env.example`, `compose.yaml` -- allowlist (example topics) mounted into api/worker; new `PSA_` settings
 - [x] `backend/app/orchestration/executors.py`, `agents/specialist/agent.py`, assessments accept + views -- specialists use the gateway; carry flags to Findings
 - [x] `web/src/lib/api/schema.d.ts` (gen:api), `specialist-assessments.tsx` + test -- marker
@@ -102,7 +102,8 @@ context:
 - **Gateway shape:** `ToolGateway(settings, engine=?, transport=?, allowlist=?).call(ctx, tool, args, uow=?)`. Read tools run in the caller's Unit of Work when one is given (the specialist node's `prepare`), so the read, its `platform_tool_calls` row and any denial trace commit together; otherwise the gateway opens one. The research fetch refuses `uow=` (RuntimeError) and records in its own UoW after the network work.
 - **Denied reads in the executor:** a denied `intake.requirement.list` reads nothing, so the task has nothing to assess (no model call, task succeeds, as with no active Requirements); a denied `gaps.gap.list` gives a prompt without Gaps. Both are audited.
 - **Invalid arguments:** malformed or foreign ids (passages, chunks, catalogue kind) are `out_of_scope`. `knowledge.chunk.search` embedding failures propagate (no fail reason fits; no seeded Agent holds it). Its embed call precedes the first statement only when the gateway opened the UoW.
-- **Migration chain:** `0038_tool_gateway` revises `0038_workflows_decisions` (Story 5.5, written in the same working tree at the same time); on a branch without 5.5 it must revise `0037_requirement_tags`.
+- **Migration chain:** `0039_tool_gateway` revises 4.2's `0038_mandatory_gaps`. It was first written in a working tree shared with Stories 5.5 and 6.4, then re-chained to main's head in its own worktree, and again onto `0038_mandatory_gaps` when Story 4.2 (PR #77) merged first. Story 5.5 must re-chain onto `0039_tool_gateway`.
+- **Worktree split:** Stories 5.5 and 6.4 were implemented in the same working tree at the same time. 5.4's changes were moved by hunk into `../pre-sales-agent-54` (branch `task/story-5-4-tool-gateway`). 6.4's `assessments.run.read` tool was left out of the catalogue.
 - **Config versions:** N+1 copies the current version (semver kept, so trace actors stay `<agent>@0.1.0`) with `tool_permissions = [intake.requirement.list, gaps.gap.list]`, id `uuid5(SEED_NAMESPACE, "<agent>/config/tool-gateway")`, and bumps `registry_agents.row_version`.
 - **`knowledge.chunk.search`** was already an action open to every human role (Story 3.3 search); that grant is unchanged. The six new actions have no human grants.
 - **Neutralising:** runs of 3+ `<`/`>` become U+2039/U+203A character for character; labels and attribute values are reduced to `[A-Za-z0-9_.:/@-]`.
@@ -111,6 +112,31 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1 (blind, edge-case, verification-gap layers):
+
+| # | Finding | Verdict | Evidence / route |
+|---|---------|---------|------------------|
+| 1 | `knowledge.chunk.search` with a blank/too-long query or bad `k` (incl. `True`) raises 422 through `call()`: no row, task fails | medium | `search_chunks` raises `UnprocessableError`; spec says outcomes are values. Patched: handler returns `ToolDenied(out_of_scope)`; test added |
+| 2 | `httpx.InvalidURL` escapes the fetcher (not an `HTTPError`) | low | Verified via MRO (`InvalidURL -> Exception`). Patched (direct correction) + test |
+| 3 | `.html` parser drops the whole body when `</head>` is omitted | medium | `_in_head` reset only on `</head>`. Patched: `<body>` ends the head; test added. Dead `_VOID` check in the dropped branch removed |
+| 4 | `knowledge.catalogue_entry.list` with a non-string `kind` silently lists everything | low | `_text` maps non-strings to None. Patched (direct guard) + test |
+| 5 | `chunk.read` / `chunk.search` success paths and the gateway-owned UoW branch untested | medium (gap) | Verified: only an unknown-id denial was tested. Patched: `test_the_tool_gateway_searches_and_reads_chunks` (no `uow=`) |
+| 6 | `research_snapshot` resolver does not check the citing Opportunity | low | Real, but unreachable in this story: no accept path resolves Evidence yet (`platform/evidence.py` docstring), and the resolver protocol carries no Opportunity. Rejected; note for the Story 5.9 Research Agent, the first caller |
+| 7 | Redirect hosts not checked by resolved IP (private ranges) | low | Needs a compromised DNS record of an allowlisted public host; fix (IP pinning) adds a resolver layer. Rejected |
+| 8 | Raw blob orphaned on `parse_failed`; snapshot and call row in two UoWs | low | Disk-only, unreferenced content-addressed blob; no user-visible effect. Rejected |
+| 9 | Allowlist load / missing engine / sink DB error raise instead of a typed outcome | false | Operator misconfiguration and programming errors fail loudly by design (spec covers fetch outcomes only) |
+| 10 | `chunk.read` can return retired Sources' chunks | low | No seeded Agent holds the tool; ids normally come from search, which excludes retired Sources. Rejected |
+| 11 | Denied `intake.requirement.list` or a pre-0038 pinned task reads nothing and succeeds silently | low | Audited in `platform_tool_calls` + denied trace; only runs queued across the migration are affected. Rejected |
+| 12 | Migration replaces `tool_permissions`, downgrade leaks file refs / eval-result ids, downgrade re-pin untested | low | Every seeded version had `[]` before; downgrade is a dev-only path. Rejected |
+| 13 | HTML charset sniffing, unclosed dropped tags, hidden-element text kept | low | Degraded text only for unusual pages; each fix adds parser state. Rejected |
+| 14 | Injection flag from `fence()` discarded; Gap and snapshot flags not propagated | false | Spec requires the flag only on Findings citing a flagged Requirement, which `build_inputs` provides |
+| 15 | `topic` argument restricts nothing | false | Topics group hosts; the allowlist (all topics) is the limit by design |
+| 16 | Denial test skips without `PSA_MIGRATIONS_DATABASE_URL` | false | CI sets it (`.github/workflows/ci.yml:37`) |
+| 17 | Duplicate id-list parsing in intake/knowledge tools | low | Cosmetic. Rejected |
+| 18 | Spec status vs sprint status; stale Code Map entries | false | Statuses move in steps 3/5 by design; Code Map lists reference files, not edits |
+| 19 | Unknown tool names (caller text) stored in rows/trace | low | Names come from agent code, not customer content. Rejected |
+| 20 | Catalogue-list test passes on an empty list | low | Covered now by the kind assertions plus a non-empty seeded catalogue elsewhere. Rejected |
 
 ## Design Notes
 

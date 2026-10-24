@@ -40,6 +40,11 @@ def test_bom_and_non_utf8_pages_decode() -> None:
     assert html.parse(b"<p>caf\xe9</p>") == "café"  # Windows-1252
 
 
+def test_a_body_ends_the_head_when_the_closing_tag_is_omitted() -> None:
+    page = b"<html><head><title>Rates</title><meta charset=utf-8><body><p>Ten a day.</p>"
+    assert html.parse(page) == "Rates\n\nTen a day."
+
+
 def test_a_page_with_no_visible_text_is_no_text() -> None:
     with pytest.raises(ParseError) as caught:
         parsers.parse(b"<script>only()</script><style>x{}</style>", ".html")

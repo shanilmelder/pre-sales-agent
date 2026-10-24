@@ -323,6 +323,7 @@ def test_knowledge_reads_unknown_chunks_are_out_of_scope_and_the_catalogue_lists
     assert isinstance(listed, ToolResult)
     assert all(entry.kind == "integration_type" for entry in listed.items)
     assert call(db_url, ctx, CATALOGUE_ENTRY_LIST, {"kind": "nope"}) == ToolDenied("out_of_scope")
+    assert call(db_url, ctx, CATALOGUE_ENTRY_LIST, {"kind": 5}) == ToolDenied("out_of_scope")
 
 
 def test_the_application_role_cannot_change_or_delete_tool_call_rows(sync_engine: Engine) -> None:

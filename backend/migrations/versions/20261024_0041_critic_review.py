@@ -19,8 +19,8 @@ Downgrade deletes the Critic's tasks (their decisions cascade), Critic Reviews (
 Findings and links cascade), the Agent and its config versions, then drops the table and
 columns and restores the checks.
 
-Revision ID: 0039_critic_review
-Revises: 0038_tool_gateway
+Revision ID: 0041_critic_review
+Revises: 0040_workflows_decisions
 Create Date: 2026-10-23
 """
 
@@ -32,8 +32,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0039_critic_review"
-down_revision: str | None = "0038_tool_gateway"
+revision: str = "0041_critic_review"
+down_revision: str | None = "0040_workflows_decisions"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -94,7 +94,7 @@ SEEDED_0026 = (
 SEEDED_0033 = (("conflict_agent", "Conflict Agent"),)
 """Story 6.2 seeds the Conflict Agent the same way."""
 SEEDED = SEEDED_0026 + SEEDED_0033
-MIGRATION_0039 = BACKEND / "migrations" / "versions" / "20261023_0039_critic_review.py"
+MIGRATION_0039 = BACKEND / "migrations" / "versions" / "20261024_0041_critic_review.py"
 SEEDED_0039 = (("critic_agent", "Critic Agent"),)
 """Story 6.4 seeds the Critic Agent the same way, granting the `assessments.run.read` tool."""
 EVERY_SEEDED = SEEDED + SEEDED_0039

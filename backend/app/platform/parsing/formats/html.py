@@ -35,11 +35,12 @@ class _TextParser(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in _DROPPED:
-            if tag not in _VOID:
-                self._dropped += 1
+            self._dropped += 1
             return
         if tag == "head":
             self._in_head = True
+        if tag == "body":  # `</head>` may be omitted (HTML5): the body still ends the head
+            self._in_head = False
         if tag == "title":
             self._in_title = True
         if tag in _BLOCKS or tag == "br":

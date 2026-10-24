@@ -115,6 +115,6 @@ async def _fetch(
                     )
             except httpx.TimeoutException:
                 return ToolFailed("timeout")
-            except httpx.HTTPError:
+            except (httpx.HTTPError, httpx.InvalidURL):  # InvalidURL is not an HTTPError
                 return ToolFailed("http_error")
     return ToolFailed("too_many_redirects")  # pragma: no cover - the loop always returns

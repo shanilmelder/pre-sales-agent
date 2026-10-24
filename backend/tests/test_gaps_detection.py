@@ -314,6 +314,7 @@ def test_detection_stores_ranked_gaps_with_drafted_questions(
         "category": "integration_details",
         "impact": "high",
         "requirement_ids": [str(reqs[0]["id"])],
+        "origin": "detected",
     }
 
     # One model call: instructions as the system message, Requirements only as data blocks.

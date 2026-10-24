@@ -42,16 +42,23 @@ def _text(args: Mapping[str, Any], key: str) -> str | None:
 async def search(
     uow: UnitOfWork, ctx: ToolContext, args: Mapping[str, Any]
 ) -> ToolResult | ToolDenied:
-    settings = get_settings()
+    query = _text(args, "query")
     k = args.get("k", rules.SEARCH_K_DEFAULT)
+    if isinstance(k, bool) or not isinstance(k, int) or not 1 <= k <= rules.SEARCH_K_MAX:
+        return ToolDenied("out_of_scope")
+    try:
+        rules.search_query(query or "")
+    except ValueError:  # blank or too long: a typed denial, not a 422 that fails the task
+        return ToolDenied("out_of_scope")
+    settings = get_settings()
     result = await search_chunks(
         uow,
-        _text(args, "query") or "",
+        query or "",
         actor_id=ctx.actor_id,
         gateway=provider.current(),
         embed_profile=settings.model_profile_embed,
         stale_months=settings.knowledge_stale_months,
-        k=k if isinstance(k, int) else rules.SEARCH_K_DEFAULT,
+        k=k,
         product=_text(args, "product"),
         product_version=_text(args, "product_version"),
         priority="background",
@@ -78,6 +85,8 @@ async def read_chunks(
 async def list_entries(
     uow: UnitOfWork, ctx: ToolContext, args: Mapping[str, Any]
 ) -> ToolResult | ToolDenied:
+    if "kind" in args and not isinstance(args["kind"], str | None):
+        return ToolDenied("out_of_scope")
     raw = _text(args, "kind")
     try:
         kind = None if raw is None else Kind(raw)

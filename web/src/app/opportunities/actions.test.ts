@@ -1618,6 +1618,7 @@ describe("changeGapImpact / dismissGap / reopenGap / approveSelected (Story 4.4)
   it.each([
     [409, "gap_not_reopenable", { kind: "gap-not-reopenable" }],
     [409, "gap_not_open", { kind: "gap-not-open" }],
+    [409, "gap_mandatory", { kind: "gap-mandatory" }],
     [422, "validation_error", { kind: "invalid", detail: "The reason must be 1 to 500." }],
     [403, "forbidden", { kind: "forbidden" }],
     [404, "not_found", { kind: "not-found" }],
