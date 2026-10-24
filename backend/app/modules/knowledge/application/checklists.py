@@ -670,3 +670,22 @@ async def find_applicable_checklists(
         )
         for r, (checklist_id, version) in zip(matching, pairs, strict=True)
     ]
+
+
+async def mandatory_items_in_domain(
+    uow: UnitOfWork, keys: Iterable[tuple[UUID, int, UUID]], domain: Domain
+) -> set[tuple[UUID, int, UUID]]:
+    """Which of these `(checklist_id, version, item_id)` are mandatory items of that published
+    Checklist version in `domain` (Story 6.6: a Finding tied to a mandatory security item
+    can't be overridden). Deterministic; unknown keys are left out."""
+    wanted = set(keys)
+    pairs = sorted({(checklist_id, version) for checklist_id, version, _ in wanted})
+    versions = {pair: await repo.get_version(uow, *pair) for pair in pairs}
+    in_domain = [pair for pair, record in versions.items() if record and record.domain == domain]
+    items = await repo.items_of(uow, in_domain)
+    return {
+        (checklist_id, version, item.item_id)
+        for (checklist_id, version), found in items.items()
+        for item in found
+        if item.mandatory and (checklist_id, version, item.item_id) in wanted
+    }

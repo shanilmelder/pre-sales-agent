@@ -17,7 +17,9 @@ EVENT_TYPE_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 # Past tense check on the verb's last word: regular verbs end in "ed"; list irregular
 # past participles here when an event needs one. This is a heuristic, not a guarantee:
 # non-past words that end in "ed" (need, seed) also pass, so reviewers still check names.
-_IRREGULAR_PAST_TENSE = frozenset({"built", "done", "lost", "made", "run", "sent", "split", "won"})
+_IRREGULAR_PAST_TENSE = frozenset(
+    {"built", "done", "lost", "made", "overridden", "run", "sent", "split", "won"}
+)
 # State events: names that report a state entered rather than a past-tense verb. Kept to the
 # few the architecture names verbatim (Story 5.5: AD-7's `workflows.run.waiting_for_human`).
 _STATE_EVENTS = frozenset({"workflows.run.waiting_for_human"})
@@ -769,6 +771,58 @@ class AssessmentsCriticReviewCompleted(TracePayload):
     backstopped_count: int
     conflict_count: int
     superseded_count: int
+
+
+# Story 6.6. A person's resolution or override of a Critic or Red Team Finding: the Review kind
+# and version, the person's reason (their own words, as a Conflict's, FR-29), never the
+# Finding's text.
+
+
+class FindingEvidenceSummary(BaseModel):
+    """An Evidence reference supplied to resolve a Finding: kind, id and version only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: str
+    id: str
+    version: int | None
+
+
+@register
+class AssessmentsFindingResolved(TracePayload):
+    """A person resolved an open Critic or Red Team Finding (Story 6.6). Subject: the Finding
+    (`assessments.finding`). Actor: that person. `kind`: `evidence_supplied` (with the
+    `evidence` references and the person's note as `reason`) or `addressed` (with the
+    reason). `severity`: the Finding's."""
+
+    event_type: ClassVar[str] = "assessments.finding.resolved"
+
+    review_kind: Literal["red_team", "critic"]
+    review_version: int
+    severity: Literal["low", "medium", "high", "critical"]
+    kind: Literal["evidence_supplied", "addressed"]
+    reason: str
+    evidence: list[FindingEvidenceSummary] = Field(default_factory=list)
+
+
+@register
+class AssessmentsFindingOverridden(TracePayload):
+    """A person overrode an open Critic or Red Team Finding with a reason (Story 6.6).
+    Subject: the Finding. Actor: that person (`person_id`). `policy_basis`: the grant that
+    allowed it (`owner`, `head_of_delivery` or `security_reviewer`); `override_id`: the
+    override row; `previous_override_id`: the earlier Finding's override it re-applies, if
+    any."""
+
+    event_type: ClassVar[str] = "assessments.finding.overridden"
+
+    review_kind: Literal["red_team", "critic"]
+    review_version: int
+    severity: Literal["low", "medium", "high", "critical"]
+    override_id: str
+    person_id: str
+    reason: str
+    policy_basis: Literal["owner", "head_of_delivery", "security_reviewer"]
+    previous_override_id: str | None = None
 
 
 # Epic 5 slice 5A. Payloads hold ids, enums and counts only, never Requirement, Gap or Finding

@@ -34,6 +34,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadGaps: vi.fn(),
   countOpenGaps: vi.fn(async () => null),
   countOpenConflicts: vi.fn(async () => null),
+  countBlockingFindings: vi.fn(async () => null),
   startGapDetection: vi.fn(),
   loadEstimate: vi.fn(),
   startEstimateDraft: vi.fn(),
@@ -1822,7 +1823,7 @@ describe("/opportunities/[id] workspace", () => {
       within(within(panel).getByRole("list", { name: "Agent progress" })).getByText("Red Team"),
     ).toBeTruthy();
     const finding = within(panel).getByRole("button", { name: /\[FINDING\]/ });
-    expect(finding.textContent).toBe("CriticalIntegration harder[FINDING]Red Team1 Requirement0 Estimate lines");
+    expect(finding.textContent).toBe("CriticalIntegration harder[FINDING]OpenRed Team1 Requirement0 Estimate lines");
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
     expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/red-team", {
       params: { path: { opportunity_id: OPP_ID } },

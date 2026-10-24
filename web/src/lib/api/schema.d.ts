@@ -407,6 +407,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/evidence-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Evidence Options
+         * @description What a person may cite as Evidence when resolving a Finding (Story 6.6): the
+         *     Opportunity's active Requirements at their current versions (`requirement`, `R<n>`), then
+         *     its Sources at their latest versions (`source_document`, `S<n> · <file name>`). Anyone
+         *     who can read the Opportunity.
+         */
+        get: operations["list_evidence_options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/extractions": {
         parameters: {
             query?: never;
@@ -1310,6 +1333,70 @@ export interface paths {
         get: operations["list_outdated_assessments"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/findings/{finding_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Supply Finding Evidence
+         * @description Resolve an open Critic or Red Team Finding by citing Evidence (the Opportunity's
+         *     Requirements or Sources, at a version) with a note. The Finding becomes `resolved`
+         *     (`evidence_supplied`) and no longer blocks submission.
+         */
+        post: operations["supply_finding_evidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/findings/{finding_id}/resolution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Finding
+         * @description Mark an open Critic or Red Team Finding resolved (addressed) with a reason.
+         */
+        post: operations["resolve_finding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/findings/{finding_id}/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Override Finding
+         * @description Override an open Critic or Red Team Finding with a reason: it becomes `overridden` and
+         *     no longer blocks submission. Re-applying an earlier Finding's override is this command on
+         *     the newer Finding (its `previous_override` holds the reason to reuse).
+         */
+        post: operations["override_finding"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3275,11 +3362,24 @@ export interface components {
         /**
          * CriticFinding
          * @description A Critic Finding: its category, severity, specific title and argument, with the
-         *     Requirements and the specialist Findings it cites.
+         *     Requirements and the specialist Findings it cites, and (Story 6.6) its status.
          */
         CriticFinding: {
             /** Id */
             id: string;
+            status: components["schemas"]["FindingStatus"];
+            resolution: components["schemas"]["FindingResolution"] | null;
+            override: components["schemas"]["FindingOverride"] | null;
+            previous_override: components["schemas"]["FindingOverride"] | null;
+            policy_ref: components["schemas"]["PolicyRef"] | null;
+            /** Overridable */
+            overridable: boolean;
+            /** Can Resolve */
+            can_resolve: boolean;
+            /** Can Override */
+            can_override: boolean;
+            /** Row Version */
+            row_version: number;
             /** Position */
             position: number;
             category: components["schemas"]["CriticCategory"];
@@ -3321,10 +3421,13 @@ export interface components {
         };
         /**
          * CriticView
-         * @description The Opportunity's current Critic Review, null before the first. Read-only.
+         * @description The Opportunity's current Critic Review, null before the first. `blocking_count`
+         *     (Story 6.6): its open critical Findings.
          */
         CriticView: {
             review: components["schemas"]["CriticReviewView"] | null;
+            /** Blocking Count */
+            blocking_count: number;
         };
         /**
          * DecisionChoice
@@ -3824,6 +3927,53 @@ export interface components {
             };
         };
         /**
+         * EvidenceOption
+         * @description Something a person may cite as Evidence when resolving a Finding (Story 6.6): an
+         *     active Requirement at its current version (`kind` `requirement`, `label` `R<n>`) or a
+         *     Source at its latest version (`kind` `source_document`, `label` `S<n> · <file name>`).
+         *     `excerpt`: up to 140 characters of the Requirement's text; empty for a Source.
+         */
+        EvidenceOption: {
+            /** Kind */
+            kind: string;
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /**
+         * EvidenceOptions
+         * @description The Opportunity's Evidence picker: its active Requirements by number, then its Sources
+         *     oldest first.
+         */
+        EvidenceOptions: {
+            /** Items */
+            items: components["schemas"]["EvidenceOption"][];
+        };
+        /**
+         * EvidenceRefIn
+         * @description An Evidence reference to cite: `requirement` or `source_document`, with its id and
+         *     version (as the Evidence picker lists them).
+         */
+        EvidenceRefIn: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "requirement" | "source_document";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+        };
+        /**
          * ExportFormat
          * @enum {string}
          */
@@ -3855,6 +4005,31 @@ export interface components {
          */
         FindingCategory: "integration_harder" | "requirement_incomplete" | "capability_overstated" | "hidden_dependency";
         /**
+         * FindingEvidence
+         * @description An Evidence reference supplied to resolve a Finding: `requirement` (`label` `R<n>`, or
+         *     `Superseded` once no longer active) or `source_document` (`S<n> · <file name>`).
+         */
+        FindingEvidence: {
+            /** Kind */
+            kind: string;
+            /** Id */
+            id: string;
+            /** Version */
+            version: number | null;
+            /** Label */
+            label: string;
+        };
+        /**
+         * FindingEvidenceSubmission
+         * @description Supply Evidence: 1-20 references and a note (1-1,000 characters).
+         */
+        FindingEvidenceSubmission: {
+            /** Refs */
+            refs: components["schemas"]["EvidenceRefIn"][];
+            /** Note */
+            note: string;
+        };
+        /**
          * FindingKind
          * @enum {string}
          */
@@ -3874,6 +4049,48 @@ export interface components {
             effort_hours: number;
         };
         /**
+         * FindingOverride
+         * @description An override: who, when and why, the Review version of the Finding it overrode, and the
+         *     grant that allowed it (`owner`, `head_of_delivery` or `security_reviewer`).
+         */
+        FindingOverride: {
+            /** Id */
+            id: string;
+            /** Reason */
+            reason: string;
+            by: components["schemas"]["FindingPerson"];
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Review Version */
+            review_version: number;
+            /**
+             * Policy Basis
+             * @enum {string}
+             */
+            policy_basis: "owner" | "head_of_delivery" | "security_reviewer";
+        };
+        /**
+         * FindingPerson
+         * @description A person who resolved or overrode a Finding: their user id and name.
+         */
+        FindingPerson: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * FindingReason
+         * @description Mark resolved or override: a reason (1-1,000 characters).
+         */
+        FindingReason: {
+            /** Reason */
+            reason: string;
+        };
+        /**
          * FindingRequirement
          * @description A Requirement a Finding (or an effort row) cites, at the version the agent read. `label` is
          *     `R<n>`, the Requirement's stable number within the Opportunity, or `Superseded` once it
@@ -3890,6 +4107,61 @@ export interface components {
             /** Excerpt */
             excerpt: string;
         };
+        /**
+         * FindingResolution
+         * @description How a `resolved` Finding was resolved: Evidence supplied (with the person's note as
+         *     `reason`) or addressed with a reason; by whom and when.
+         */
+        FindingResolution: {
+            kind: components["schemas"]["ResolutionKind"];
+            /** Reason */
+            reason: string;
+            by: components["schemas"]["FindingPerson"];
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Evidence */
+            evidence: components["schemas"]["FindingEvidence"][];
+        };
+        /**
+         * FindingState
+         * @description A Critic or Red Team Finding's status and what the caller may do with it.
+         *
+         *     - `status`: `open`, `resolved` or `overridden`. An open `critical` Finding of a current
+         *       Review blocks submission.
+         *     - `resolution` (when resolved), `override` (when overridden).
+         *     - `previous_override`: the override of an earlier Finding with the same fingerprint
+         *       (shown, never applied: this Finding starts `open`).
+         *     - `overridable`: false when `policy_ref` ties it to a mandatory security Checklist item.
+         *     - `can_resolve`, `can_override`: whether the caller may now supply Evidence or mark it
+         *       resolved, and override (or re-apply the previous override). The UI only uses them to
+         *       hide controls; the API decides.
+         *     - `row_version`: for `If-Match`.
+         */
+        FindingState: {
+            /** Id */
+            id: string;
+            status: components["schemas"]["FindingStatus"];
+            resolution: components["schemas"]["FindingResolution"] | null;
+            override: components["schemas"]["FindingOverride"] | null;
+            previous_override: components["schemas"]["FindingOverride"] | null;
+            policy_ref: components["schemas"]["PolicyRef"] | null;
+            /** Overridable */
+            overridable: boolean;
+            /** Can Resolve */
+            can_resolve: boolean;
+            /** Can Override */
+            can_override: boolean;
+            /** Row Version */
+            row_version: number;
+        };
+        /**
+         * FindingStatus
+         * @enum {string}
+         */
+        FindingStatus: "open" | "resolved" | "overridden";
         /**
          * Gap
          * @description A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
@@ -4897,6 +5169,24 @@ export interface components {
             config_version: number | null;
         };
         /**
+         * PolicyRef
+         * @description The mandatory item of a `security` Checklist version a Finding is tied to (decided by
+         *     code): such a Finding can't be overridden by any role.
+         */
+        PolicyRef: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "checklist_item";
+            /** Checklist Id */
+            checklist_id: string;
+            /** Version */
+            version: number;
+            /** Item Id */
+            item_id: string;
+        };
+        /**
          * PositionSource
          * @enum {string}
          */
@@ -4999,11 +5289,24 @@ export interface components {
         /**
          * RedTeamFinding
          * @description A Red Team Finding: its category, severity, specific title and argument, with the
-         *     Requirements and Estimate lines it challenges.
+         *     Requirements and Estimate lines it challenges, and (Story 6.6) its status.
          */
         RedTeamFinding: {
             /** Id */
             id: string;
+            status: components["schemas"]["FindingStatus"];
+            resolution: components["schemas"]["FindingResolution"] | null;
+            override: components["schemas"]["FindingOverride"] | null;
+            previous_override: components["schemas"]["FindingOverride"] | null;
+            policy_ref: components["schemas"]["PolicyRef"] | null;
+            /** Overridable */
+            overridable: boolean;
+            /** Can Resolve */
+            can_resolve: boolean;
+            /** Can Override */
+            can_override: boolean;
+            /** Row Version */
+            row_version: number;
             /** Position */
             position: number;
             category: components["schemas"]["FindingCategory"];
@@ -5057,13 +5360,16 @@ export interface components {
          * RedTeamView
          * @description The Opportunity's current Red Team Review (null before the first) and its latest Red
          *     Team run (null before the first). `can_start`: whether the caller may start (retry) a
-         *     review. The UI only uses it to hide controls; the API decides.
+         *     review. The UI only uses it to hide controls; the API decides. `blocking_count` (Story
+         *     6.6): the Review's open critical Findings.
          */
         RedTeamView: {
             review: components["schemas"]["RedTeamReviewView"] | null;
             run: components["schemas"]["RedTeamRun"] | null;
             /** Can Start */
             can_start: boolean;
+            /** Blocking Count */
+            blocking_count: number;
         };
         /**
          * RegistryAgent
@@ -5308,6 +5614,11 @@ export interface components {
          * @enum {string}
          */
         RequirementStatus: "active" | "superseded" | "deleted";
+        /**
+         * ResolutionKind
+         * @enum {string}
+         */
+        ResolutionKind: "evidence_supplied" | "addressed";
         /**
          * RetireChecklist
          * @description Why the Checklist is retired (1-500 characters, trimmed).
@@ -8691,6 +9002,116 @@ export interface operations {
                 };
             };
             /** @description `validation_error`: a text is blank or longer than 2,000 characters once trimmed (the `detail` is the sentence to show), an unknown classification or field. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_evidence_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceOptions"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15467,6 +15888,630 @@ export interface operations {
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    supply_finding_evidence: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Finding as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindingEvidenceSubmission"];
+            };
+        };
+        responses: {
+            /** @description The Finding's state as it is now */
+            200: {
+                headers: {
+                    /** @description The Finding's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FindingState"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may read the Opportunity but not resolve its Findings: only the owner and collaborators, except sales representatives (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Critic or Red Team Finding with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Finding is no longer open (already resolved or overridden), or belongs to a superseded Review (`finding_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Finding changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason (the note), or 1 to 20 references needed; `evidence_unresolvable`: a reference that is not a Requirement or Source version of this Opportunity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    resolve_finding: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Finding as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindingReason"];
+            };
+        };
+        responses: {
+            /** @description The Finding's state as it is now */
+            200: {
+                headers: {
+                    /** @description The Finding's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FindingState"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may read the Opportunity but not resolve its Findings: only the owner and collaborators, except sales representatives (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Critic or Red Team Finding with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Finding is no longer open (already resolved or overridden), or belongs to a superseded Review (`finding_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Finding changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    override_finding: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Finding as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                finding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindingReason"];
+            };
+        };
+        responses: {
+            /** @description The Finding's state as it is now */
+            200: {
+                headers: {
+                    /** @description The Finding's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FindingState"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may read the Opportunity but not override this Finding: only the Opportunity's owner, a Head of Delivery, or a security reviewer on a security Finding (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Critic or Red Team Finding with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Finding is no longer open (already resolved or overridden), or belongs to a superseded Review (`finding_not_open`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Finding changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason; `finding_not_overridable`: the Finding is tied to a mandatory security Checklist item (no role may override it, checked first) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

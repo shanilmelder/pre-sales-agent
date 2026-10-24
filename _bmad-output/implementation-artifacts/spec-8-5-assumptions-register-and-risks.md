@@ -98,7 +98,7 @@ Backend (`backend/app/modules/estimates/`):
 - `modules/gaps/public.py` -- add `set_converted_to(uow, gap_id, kind)`. `gaps/domain/gaps.py:48-60` -- the Unknown prefix (expose `is_unknown`).
 - `identity/actions.py:31`, `identity/domain/policy.py:104-130,78-83` -- `ASSUMPTION_EDIT`, `RISK_CREATE`, `RISK_EDIT` (granted like `ASSUMPTION_ACCEPT`; seed as Auth0 permissions wherever the others are seeded).
 - `platform/trace/catalogue.py:615` -- payload models for `estimates.assumption.edited`, `estimates.risk.created` and `estimates.risk.edited` (ids, kinds, levels and lengths only, never text).
-- `migrations/versions/` -- new `0042_estimates_risks` (down `0040_workflows_decisions`): the table and the widened `gaps_gaps.converted_to` check (`gaps/adapters/models.py:116`).
+- `migrations/versions/` -- new `0043_estimates_risks` (down `0040_workflows_decisions`): the table and the widened `gaps_gaps.converted_to` check (`gaps/adapters/models.py:116`).
 - `gaps/adapters/repository.py:727` `convert_gap` -- already takes `converted_to`; reuse via `mark_converted(kind="risk")`.
 
 Web (`web/src/`):

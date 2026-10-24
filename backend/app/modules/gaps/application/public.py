@@ -46,6 +46,7 @@ from app.modules.gaps.application.models import (
     UncoveredIntegrationType,
     UncoveredScope,
 )
+from app.modules.gaps.application.policy import ChecklistItemPolicy, security_policies
 from app.modules.gaps.application.question_export import ExportStorage, export_questions
 from app.modules.gaps.application.questions import (
     answer_question,
@@ -84,6 +85,7 @@ __all__ = [
     "AnswerSuggestion",
     "ApproveAllResult",
     "ApproveSelectedResult",
+    "ChecklistItemPolicy",
     "ClarificationQuestion",
     "Detection",
     "ExportStorage",
@@ -136,6 +138,7 @@ __all__ = [
     "open_gap_summaries",
     "reject_match",
     "reopen_gap",
+    "security_policies",
     "set_converted_to",
     "start_detection",
 ]

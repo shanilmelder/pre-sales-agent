@@ -336,6 +336,14 @@ class ConflictNotOpenError(ConflictError):
     title = "Conflict not open"
 
 
+class FindingNotOpenError(ConflictError):
+    """A Critic or Red Team Finding was resolved or overridden that is no longer `open`, or
+    belongs to a superseded Review (Story 6.6)."""
+
+    code = "finding_not_open"
+    title = "Finding not open"
+
+
 class ImportConsumedError(ConflictError):
     """An Opportunity import was already used to create an Opportunity (Story 1.7 import)."""
 
@@ -441,6 +449,14 @@ class EvidenceUnresolvableError(UnprocessableError):
 
     code = "evidence_unresolvable"
     title = "Evidence does not resolve"
+
+
+class FindingNotOverridableError(UnprocessableError):
+    """A Finding tied to a mandatory security Checklist item can't be overridden, by any role
+    (Story 6.6)."""
+
+    code = "finding_not_overridable"
+    title = "Finding not overridable"
 
 
 class ModelUnavailableProblem(ProblemError):

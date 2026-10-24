@@ -41,6 +41,7 @@ vi.mock("next/navigation", () => ({
 import { RightPane } from "../shell/right-pane";
 import { ShellProviders } from "../shell/shell-context";
 import { SpecialistAssessmentsSection } from "./specialist-assessments";
+import { OPEN_STATE } from "@/test/finding-fixtures";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
 
@@ -50,6 +51,7 @@ function finding(
   opts: { lines?: number; category?: RedTeamFinding["category"] } = {},
 ): RedTeamFinding {
   return {
+    ...OPEN_STATE,
     id: `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`,
     position: n,
     category: opts.category ?? "integration_harder",
@@ -99,7 +101,7 @@ const succeeded: RedTeamRun = { status: "succeeded", error_code: null };
 const failed: RedTeamRun = { status: "failed", error_code: "model_unavailable" };
 
 function view(r: RedTeamReview | null, run: RedTeamRun | null, canStart = true): RedTeamView {
-  return { review: r, run, can_start: canStart };
+  return { review: r, run, can_start: canStart, blocking_count: 0 };
 }
 
 /** No Assessment run and no Assessments: the tab shows only the Red Team. */
@@ -156,9 +158,9 @@ describe("the Red Team Findings in the Findings table", () => {
     const grid = screen.getByRole("grid", { name: "Findings" });
     const rows = within(grid).getAllByRole("row");
     expect(rows.map((r) => r.textContent)).toEqual([
-      "CriticalRequirement incomplete[FINDING 3]Red Team1 Requirement2 Estimate lines",
-      "HighIntegration harder[FINDING 1]Red Team1 Requirement1 Estimate line",
-      "LowHidden dependency[FINDING 2]Red Team1 Requirement0 Estimate lines",
+      "CriticalRequirement incomplete[FINDING 3]OpenBlocks submission until resolvedRed Team1 Requirement2 Estimate lines",
+      "HighIntegration harder[FINDING 1]OpenRed Team1 Requirement1 Estimate line",
+      "LowHidden dependency[FINDING 2]OpenRed Team1 Requirement0 Estimate lines",
     ]);
     const pills = Array.from(grid.querySelectorAll("[data-severity]"));
     expect(pills.map((p) => p.getAttribute("data-severity"))).toEqual(["critical", "high", "low"]);

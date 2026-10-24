@@ -31,6 +31,7 @@ from app.modules.intake.application import public as intake
 from app.modules.intake.application.public import (
     AddTextSource,
     ConfirmAllResult,
+    EvidenceOptions,
     Extraction,
     OpportunitySourceDownloadLink,
     OpportunitySourceText,
@@ -340,6 +341,19 @@ async def list_requirements(
     cites, and its latest extraction (null before the first). Anyone who can read the
     Opportunity."""
     return await intake.list_requirements(uow, actor, opportunity_id)
+
+
+@requirements_router.get(
+    "/evidence-options", operation_id="list_evidence_options", responses=_LIST_RESPONSES
+)
+async def list_evidence_options(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> EvidenceOptions:
+    """What a person may cite as Evidence when resolving a Finding (Story 6.6): the
+    Opportunity's active Requirements at their current versions (`requirement`, `R<n>`), then
+    its Sources at their latest versions (`source_document`, `S<n> · <file name>`). Anyone
+    who can read the Opportunity."""
+    return await intake.evidence_options(uow, actor, opportunity_id)
 
 
 _START_RESPONSES = _responses(403, 404)

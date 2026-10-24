@@ -416,6 +416,38 @@ async def mandatory_keys(uow: UnitOfWork, opportunity_id: UUID) -> set[tuple[UUI
     return {(UUID(checklist_id), UUID(item_id)) for checklist_id, item_id in rows.all()}
 
 
+async def mandatory_triggers_for(
+    uow: UnitOfWork, opportunity_id: UUID, requirement_ids: list[UUID]
+) -> list[tuple[UUID, UUID, int, UUID]]:
+    """`(requirement_id, checklist_id, version, item_id)` for each of the Opportunity's
+    mandatory Gaps (any status) linked to one of these Requirements, from its
+    `checklist_item` trigger (Story 6.6)."""
+    if not requirement_ids:
+        return []
+    rows = await uow.session.execute(
+        select(
+            GapRequirementRow.requirement_id,
+            _checklist_id(),
+            cast(ColumnElement[str], GapRow.trigger["version"].astext),
+            _item_id(),
+        )
+        .join(GapRow, GapRow.id == GapRequirementRow.gap_id)
+        .where(
+            GapRow.opportunity_id == opportunity_id,
+            GapRow.origin == MANDATORY,
+            GapRow.trigger["kind"].astext == "checklist_item",
+            GapRequirementRow.requirement_id.in_(requirement_ids),
+        )
+    )
+    found: list[tuple[UUID, UUID, int, UUID]] = []
+    for requirement_id, checklist_id, version, item_id in rows.all():
+        try:
+            found.append((requirement_id, UUID(checklist_id), int(version), UUID(item_id)))
+        except (TypeError, ValueError):  # pragma: no cover - triggers are written by code
+            continue
+    return found
+
+
 async def insert_mandatory_gap(
     uow: UnitOfWork,
     *,

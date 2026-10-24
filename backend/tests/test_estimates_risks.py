@@ -403,7 +403,7 @@ def test_the_downgrade_reopens_risk_gaps_and_drops_the_risks(
     gap_id = _gap_id(sync_engine, opp["id"], "SSO provider")
     assert _convert(client, headers, opp["id"], gap_id).status_code == 201
 
-    _alembic("downgrade", "0041_critic_review")
+    _alembic("downgrade", "0042_blocking_findings")
     try:
         (row,) = rows(
             sync_engine, "SELECT status, converted_to FROM gaps_gaps WHERE id = :g", g=gap_id

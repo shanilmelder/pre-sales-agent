@@ -16,11 +16,13 @@ from app.modules.identity.application.public import (
     OWNER_GRANTS,
     RELATION_EXCLUDED_ROLES,
     Action,
+    OverrideBasis,
     Principal,
     Resource,
     Role,
     authorize,
     can,
+    finding_override_basis,
 )
 from app.platform.actor import Actor
 from app.platform.errors import ForbiddenError
@@ -184,6 +186,8 @@ def test_resource_scoped_grants() -> None:
         Action.CONFLICT_RESOLVE,
         Action.CONFLICT_ESCALATE,
         Action.DECISION_RESOLVE,
+        Action.FINDING_RESOLVE,
+        Action.FINDING_OVERRIDE,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -206,6 +210,7 @@ def test_resource_scoped_grants() -> None:
         Action.CONFLICT_RESOLVE,
         Action.CONFLICT_ESCALATE,
         Action.DECISION_RESOLVE,
+        Action.FINDING_RESOLVE,
     }
     assert RELATION_EXCLUDED_ROLES == {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -224,6 +229,8 @@ def test_resource_scoped_grants() -> None:
         Action.CONFLICT_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CONFLICT_ESCALATE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.DECISION_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.FINDING_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.FINDING_OVERRIDE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -469,3 +476,47 @@ def test_owner_and_collaborators_start_extraction_and_no_role_does_alone(role: R
     reader, _ = _user({role})
     with pytest.raises(ForbiddenError):
         authorize(reader, Action.EXTRACTION_START, resource)
+
+
+# --- Story 6.6: overriding a Critic or Red Team Finding (R1) --------------------------------
+
+
+def test_finding_actions_are_catalogued() -> None:
+    assert Action.FINDING_RESOLVE.value == "assessments.finding.resolve"
+    assert Action.FINDING_OVERRIDE.value == "assessments.finding.override"
+
+
+@pytest.mark.parametrize("security", [False, True])
+def test_override_basis_follows_r1(security: bool) -> None:
+    owner, owner_id = _user({Role.PRESALES_ENGINEER})
+    colleague, colleague_id = _user({Role.PRESALES_ENGINEER})
+    rep, rep_id = _user({Role.SALES_REPRESENTATIVE})
+    sec, sec_id = _user({Role.SECURITY_REVIEWER})
+    head, _ = _user({Role.HEAD_OF_DELIVERY})
+    admin, _ = _user({Role.PLATFORM_ADMINISTRATOR})
+    opportunity = _opportunity(owner_id, colleague_id, rep_id, sec_id)
+
+    def basis(principal: Principal) -> OverrideBasis | None:
+        return finding_override_basis(principal, opportunity, security_discipline=security)
+
+    assert basis(owner) == OverrideBasis.OWNER
+    assert basis(head) == OverrideBasis.HEAD_OF_DELIVERY
+    assert basis(sec) == (OverrideBasis.SECURITY_REVIEWER if security else None)
+    for denied in (colleague, rep, admin):
+        assert basis(denied) is None
+    rep_owner, rep_owner_id = _user({Role.SALES_REPRESENTATIVE})
+    assert (
+        finding_override_basis(rep_owner, _opportunity(rep_owner_id), security_discipline=security)
+        is None
+    )
+
+
+def test_collaborators_except_sales_reps_resolve_findings() -> None:
+    owner, owner_id = _user({Role.PRESALES_ENGINEER})
+    colleague, colleague_id = _user({Role.PRESALES_ENGINEER})
+    rep, rep_id = _user({Role.SALES_REPRESENTATIVE})
+    opportunity = _opportunity(owner_id, colleague_id, rep_id)
+    assert can(owner, Action.FINDING_RESOLVE, opportunity)
+    assert can(colleague, Action.FINDING_RESOLVE, opportunity)
+    assert not can(rep, Action.FINDING_RESOLVE, opportunity)
+    assert not can(colleague, Action.FINDING_OVERRIDE, opportunity)

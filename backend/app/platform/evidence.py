@@ -4,8 +4,9 @@ An Evidence reference is `{kind, id, version?, span?}` (`app.agents.contract.Evi
 The module that owns a kind registers a resolver at import (knowledge registers
 `knowledge_chunk`); an `accept_*` command calls `resolve_all(uow, refs)` before writing, and
 any reference that doesn't resolve (an unknown kind included) rejects the whole call with a
-422 `evidence_unresolvable` naming the first bad reference. Nothing calls `resolve_all` yet:
-no `accept_*` command emits a registered kind so far.
+422 `evidence_unresolvable` naming the first bad reference. Story 6.6: intake registers
+`requirement` and `source_document`, and a person's Supply Evidence on a Critic or Red Team
+Finding (`assessments.supply_evidence`) checks its references through `resolve_all`.
 
 This module is platform code, so it sees references only through the `Ref` Protocol and never
 imports `app.agents` or a business module.

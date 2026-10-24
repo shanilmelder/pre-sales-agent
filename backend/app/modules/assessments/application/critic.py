@@ -48,6 +48,7 @@ from app.modules.assessments.application.assessment import (
     run_assessment_snapshots,
     run_finding_snapshots,
 )
+from app.modules.assessments.application.findings import Draft, stamp
 from app.modules.assessments.domain.assessments import AGENT_LABELS, AGENTS, AssessmentAgent
 from app.modules.assessments.domain.critic import (
     CRITIC_AGENT,
@@ -376,6 +377,33 @@ async def accept_critic_review(
     superseded = await repo.supersede_reviews(uow, opportunity_id, _KIND)
     number = await repo.latest_review_number(uow, opportunity_id, _KIND) + 1
     review_id = new_id()
+    findings = await stamp(
+        uow,
+        opportunity_id=opportunity_id,
+        kind=ReviewKind.CRITIC,
+        version=number,
+        drafts=[
+            Draft(
+                finding=repo.NewFinding(
+                    finding_id=new_id(),
+                    position=position,
+                    category=f.category.value,
+                    severity=f.severity.value,
+                    title=f.title,
+                    argument=f.argument,
+                    requirements=list(f.requirements),
+                    lines=[],
+                    targets=[
+                        (t.finding_id, t.assessment_id, t.assessment_version) for t in f.findings
+                    ],
+                ),
+                keys=tuple(str(t.finding_id) for t in f.findings),
+                # Discipline is decided by code: it cites a Security Agent Finding.
+                security=any(t.agent == AssessmentAgent.SECURITY for t in f.findings),
+            )
+            for position, f in enumerate(validation.findings, start=1)
+        ],
+    )
     await repo.insert_review(
         uow,
         review_id=review_id,
@@ -385,20 +413,7 @@ async def accept_critic_review(
         estimate_version_id=None,
         run_id=run_id,
         dropped_count=validation.dropped,
-        findings=[
-            repo.NewFinding(
-                finding_id=new_id(),
-                position=position,
-                category=f.category.value,
-                severity=f.severity.value,
-                title=f.title,
-                argument=f.argument,
-                requirements=list(f.requirements),
-                lines=[],
-                targets=[(t.finding_id, t.assessment_id, t.assessment_version) for t in f.findings],
-            )
-            for position, f in enumerate(validation.findings, start=1)
-        ],
+        findings=findings,
     )
     counts = severity_counts(f.severity for f in validation.findings)
     completed = AssessmentsCriticReviewCompleted(

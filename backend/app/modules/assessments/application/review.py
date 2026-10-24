@@ -49,6 +49,8 @@ from app.agents.red_team_agent.agent import (
 )
 from app.agents.red_team_agent.schema import RedTeamOutput
 from app.modules.assessments.adapters import repository as repo
+from app.modules.assessments.application.findings import Draft, stamp
+from app.modules.assessments.domain.findings import line_key
 from app.modules.assessments.domain.reviews import (
     IN_PROGRESS,
     REVIEW_SUBJECT_TYPE,
@@ -256,6 +258,29 @@ async def accept_red_team_review(
     superseded = await repo.supersede_reviews(uow, record.opportunity_id, _KIND)
     number = await repo.latest_review_number(uow, record.opportunity_id, _KIND) + 1
     review_id = new_id()
+    line_keys = {line.line_id: line_key(line.section, line.title) for line in inputs.lines}
+    findings = await stamp(
+        uow,
+        opportunity_id=record.opportunity_id,
+        kind=ReviewKind.RED_TEAM,
+        version=number,
+        drafts=[
+            Draft(
+                finding=repo.NewFinding(
+                    finding_id=new_id(),
+                    position=position,
+                    category=f.category.value,
+                    severity=f.severity.value,
+                    title=f.title,
+                    argument=f.argument,
+                    requirements=list(f.requirements),
+                    lines=list(f.lines),
+                ),
+                keys=tuple(line_keys[line] for line in f.lines if line in line_keys),
+            )
+            for position, f in enumerate(validation.findings, start=1)
+        ],
+    )
     await repo.insert_review(
         uow,
         review_id=review_id,
@@ -264,19 +289,7 @@ async def accept_red_team_review(
         version=number,
         estimate_version_id=inputs.estimate_version_id,
         dropped_count=validation.dropped,
-        findings=[
-            repo.NewFinding(
-                finding_id=new_id(),
-                position=position,
-                category=f.category.value,
-                severity=f.severity.value,
-                title=f.title,
-                argument=f.argument,
-                requirements=list(f.requirements),
-                lines=list(f.lines),
-            )
-            for position, f in enumerate(validation.findings, start=1)
-        ],
+        findings=findings,
     )
     counts = severity_counts(f.severity for f in validation.findings)
     completed = AssessmentsRedTeamReviewCompleted(

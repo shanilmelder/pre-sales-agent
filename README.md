@@ -265,7 +265,8 @@ session and the Auth0 session.
    `knowledge.source.retire`, `knowledge.source.retry_parse`, `knowledge.source.retry_embed`,
    `knowledge.checklist.create`, `knowledge.checklist.edit`, `knowledge.checklist.publish`,
    `knowledge.checklist.retire`, `registry.agent.register`,
-   `registry.agent_config.create`, `registry.agent.set_status`.
+   `registry.agent_config.create`, `registry.agent.set_status`,
+   `assessments.finding.override`.
 6. **User Management > Roles.** Create the nine roles with these exact names (the API
    ignores any other name): `presales_engineer`, `sales_representative`,
    `engineering_reviewer`, `pm_reviewer`, `security_reviewer`, `commercial`,
@@ -277,8 +278,9 @@ session and the Auth0 session.
    | --- | --- |
    | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and three `registry.*` permissions |
    | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
-   | `head_of_delivery` | `opportunities.opportunity.read` |
-   | `engineering_reviewer`, `pm_reviewer`, `security_reviewer` | the four `knowledge.checklist.*` permissions (author Checklists) |
+   | `head_of_delivery` | `opportunities.opportunity.read`, `assessments.finding.override` |
+   | `engineering_reviewer`, `pm_reviewer` | the four `knowledge.checklist.*` permissions (author Checklists) |
+   | `security_reviewer` | the four `knowledge.checklist.*` permissions, `assessments.finding.override` (security Findings only; with no read permission, only on Opportunities where they are a collaborator) |
 
    Assign roles to users under **User Management > Users > (user) > Roles**. Give yourself
    `platform_administrator` (and `presales_engineer` to create Opportunities).

@@ -44,11 +44,12 @@ def test_before_any_review_there_is_none(client: TestClient, sync_engine: Engine
     mine = _get(client, headers, opp["id"])
 
     assert mine.status_code == 200, mine.text
-    assert mine.json() == {"review": None, "run": None, "can_start": True}
+    assert mine.json() == {"review": None, "run": None, "can_start": True, "blocking_count": 0}
     assert _get(client, reader, opp["id"]).json() == {
         "review": None,
         "run": None,
         "can_start": False,
+        "blocking_count": 0,
     }
 
 
