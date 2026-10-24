@@ -182,6 +182,26 @@ class Manifest:
     def has_profile(self, name: str) -> bool:
         return name in self.data.get("profiles", {})
 
+    def prompt_versions(self, agent: str) -> list[int]:
+        """The agent's deployed prompt versions (each passing `has_prompt`), ascending."""
+        listed = self.data.get("prompts", {}).get(agent, {})
+        found = [int(key) for key in listed if str(key).isdigit()]
+        return sorted(v for v in found if self.has_prompt(agent, v))
+
+    def schemas(self, agent: str, kind: SchemaKind) -> dict[int, Mapping[str, str]]:
+        """The agent's deployed schema versions of this kind, by version, ascending."""
+        listed = self.data.get("schemas", {}).get(agent, {}).get(kind, {})
+        found = {
+            int(key): entry
+            for key, entry in listed.items()
+            if str(key).isdigit() and isinstance(entry, Mapping)
+        }
+        return dict(sorted(found.items()))
+
+    def profiles(self) -> list[str]:
+        """Every deployed model profile name, sorted."""
+        return sorted(self.data.get("profiles", {}))
+
 
 @cache
 def load() -> Manifest:

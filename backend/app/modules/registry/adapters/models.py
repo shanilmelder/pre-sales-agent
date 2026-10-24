@@ -1,4 +1,4 @@
-"""The registry module's tables (Stories 7.1 and 7.6). An Agent's `created_by` holds
+"""The registry module's tables (Stories 7.1, 7.3 and 7.6). An Agent's `created_by` holds
 identity's user ids without foreign keys (AD-2)."""
 
 from datetime import datetime
@@ -59,6 +59,12 @@ class ConfigVersionRow(Base):
             "prompt_version >= 1 AND input_schema_version >= 1 AND output_schema_version >= 1",
             name="versions",
         ),
+        CheckConstraint("reason IS NULL OR char_length(reason) BETWEEN 1 AND 500", name="reason"),
+        CheckConstraint(
+            "restored_from_version IS NULL "
+            "OR (restored_from_version >= 1 AND restored_from_version < version)",
+            name="restored_from_version",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -76,6 +82,10 @@ class ConfigVersionRow(Base):
     contract_version: Mapped[str] = mapped_column(Text)
     tool_permissions: Mapped[list[str]] = mapped_column(JSONB)
     budgets: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    reason: Mapped[str | None] = mapped_column(Text)
+    """Why an administrator created it (Story 7.3); null for seeded and earlier rows."""
+    restored_from_version: Mapped[int | None] = mapped_column(Integer)
+    """The earlier version a restore copied (Story 7.3); null unless a restore."""
     created_by: Mapped[UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 

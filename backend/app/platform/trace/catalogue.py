@@ -1296,7 +1296,8 @@ class RegistryAgentRegistered(TracePayload):
 @register
 class RegistryAgentConfigVersionCreated(TracePayload):
     """An administrator created a new config version of an Agent; it is now current. Runs
-    already in progress keep the version they pinned."""
+    already in progress keep the version they pinned. `reason`: the administrator's reason
+    (Story 7.3); `restored_from_version`: the earlier version a restore copied, else null."""
 
     event_type: ClassVar[str] = "registry.agent_config.version_created"
 
@@ -1304,6 +1305,8 @@ class RegistryAgentConfigVersionCreated(TracePayload):
     version: int
     from_config_version_id: str
     to_config_version_id: str
+    reason: str
+    restored_from_version: int | None = None
 
 
 @register

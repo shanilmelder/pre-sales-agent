@@ -10,12 +10,13 @@ from fastapi import APIRouter, Header, Path, Response
 from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.registry.application import public as registry
 from app.modules.registry.application.public import (
+    AgentConfigOptions,
     AgentConfigVersionList,
     AgentStatusChange,
     EvalResult,
     EvalResultList,
     NewAgent,
-    NewAgentConfig,
+    NewAgentConfigVersion,
     RegistryAgent,
     RegistryAgentList,
 )
@@ -117,6 +118,19 @@ async def list_agent_config_versions(
     return await registry.read_versions(uow, actor, agent_id)
 
 
+@router.get(
+    "/{agent_id}/config-options",
+    operation_id="get_agent_config_options",
+    responses=_responses(403, 404, 422),
+)
+async def get_agent_config_options(
+    agent_id: _AGENT_ID, actor: CurrentPrincipal, uow: UoW
+) -> AgentConfigOptions:
+    """What a new config version of the Agent may reference: the deployed model profiles,
+    its prompt and schema versions, and the read-only tools."""
+    return await registry.read_config_options(uow, actor, agent_id)
+
+
 @router.post(
     "/{agent_id}/config-versions",
     operation_id="create_agent_config_version",
@@ -128,14 +142,15 @@ async def list_agent_config_versions(
 )
 async def create_agent_config_version(
     agent_id: _AGENT_ID,
-    body: NewAgentConfig,
+    body: NewAgentConfigVersion,
     actor: CurrentPrincipal,
     uow: UoW,
     response: Response,
     if_match: _IF_MATCH = None,
 ) -> RegistryAgent:
-    """Create the Agent's next config version; it becomes current for new runs. Runs in
-    progress keep the version they pinned."""
+    """Create the Agent's next config version with a required reason; it becomes current for
+    new runs. Runs in progress keep the version they pinned. A restore names the earlier
+    version it copies in `restored_from_version`; that version is left unchanged."""
     changed = await registry.create_config_version(uow, actor, agent_id, body, if_match)
     return _with_etag(response, changed)
 

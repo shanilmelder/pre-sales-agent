@@ -11,7 +11,9 @@ from app.modules.registry.domain.registry import AgentStatus
 
 class AgentConfigVersion(BaseModel):
     """One immutable config version of an Agent. `model_digest` is `unpinned` until digests
-    are pinned (Story 7.2); `created_by_id` is null for the versions the migration seeded."""
+    are pinned (Story 7.2); `created_by_id` and `created_by_name` are null for the versions
+    the migration seeded. `reason` is null for seeded and earlier versions (Story 7.3);
+    `restored_from_version` is the earlier version a restore copied, else null."""
 
     id: str
     agent_id: str
@@ -26,6 +28,9 @@ class AgentConfigVersion(BaseModel):
     tool_permissions: list[str]
     budgets: dict[str, Any]
     created_by_id: str | None
+    created_by_name: str | None
+    reason: str | None
+    restored_from_version: int | None
     created_at: datetime
 
 
@@ -68,6 +73,29 @@ class NewAgentConfig(BaseModel):
     output_schema_version: int = Field(ge=1, le=1_000_000)
     tool_permissions: list[StrictStr] = Field(default_factory=list)
     budgets: dict[str, Any] = Field(default_factory=dict)
+
+
+class NewAgentConfigVersion(NewAgentConfig):
+    """A new config version of an existing Agent (Story 7.3). `reason`: required, trimmed,
+    1-500 characters. `restored_from_version`: set when the version restores an earlier one
+    of the same Agent (422 when the Agent has no such version); its fields are the ones
+    given here, which the client copies from that version."""
+
+    reason: StrictStr
+    restored_from_version: int | None = Field(default=None, ge=1, le=1_000_000)
+
+
+class AgentConfigOptions(BaseModel):
+    """What a new config version of this Agent may reference, from the deployed manifest
+    (Story 7.3): the model profiles, the Agent's deployed prompt versions, its input schema
+    versions and its output schema versions written for the deployed contract version, and
+    the ToolGateway's read-only tools. Each list is sorted."""
+
+    model_profiles: list[str]
+    prompt_versions: list[int]
+    input_schema_versions: list[int]
+    output_schema_versions: list[int]
+    tool_permissions: list[str]
 
 
 class NewAgent(BaseModel):

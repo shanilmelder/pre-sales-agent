@@ -2,6 +2,7 @@
 eval harness (`app.evals`) uses it for config versions and evaluation results (Story 7.6)."""
 
 from app.modules.registry.application.models import (
+    AgentConfigOptions,
     AgentConfigVersion,
     AgentConfigVersionList,
     AgentStatusChange,
@@ -13,6 +14,7 @@ from app.modules.registry.application.models import (
     EvalScores,
     NewAgent,
     NewAgentConfig,
+    NewAgentConfigVersion,
     NewEvalResult,
     RegistryAgent,
     RegistryAgentList,
@@ -33,6 +35,7 @@ from app.modules.registry.application.registry import (
     list_agents,
     read_agent,
     read_agents,
+    read_config_options,
     read_eval,
     read_evals,
     read_versions,
@@ -63,6 +66,7 @@ __all__ = [
     "EVIDENCE_AGENTS",
     "REGRESSION_POINTS",
     "SPECIALIST_AGENTS",
+    "AgentConfigOptions",
     "AgentConfigVersion",
     "AgentConfigVersionList",
     "AgentStatus",
@@ -78,6 +82,7 @@ __all__ = [
     "Metric",
     "NewAgent",
     "NewAgentConfig",
+    "NewAgentConfigVersion",
     "NewEvalResult",
     "RegisteredAgent",
     "RegistryAgent",
@@ -97,6 +102,7 @@ __all__ = [
     "list_agents",
     "read_agent",
     "read_agents",
+    "read_config_options",
     "read_eval",
     "read_evals",
     "read_versions",
