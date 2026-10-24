@@ -47,6 +47,7 @@ from app.platform.actor import Actor
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
 from app.platform.model_gateway.port import ModelOutputInvalidError
+from app.platform.prompt_data import injection_suspected
 from app.platform.trace.catalogue import AssessmentsAssessmentCompleted
 from app.platform.uow import UnitOfWork
 
@@ -71,6 +72,8 @@ class AssessedRequirement:
     version: int
     classification: str
     text: str = field(repr=False)
+    injection_suspected: bool = False
+    """Its text read like an injected instruction (`platform.prompt_data`, Story 5.4)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,11 +96,12 @@ class AssessmentInputs:
     gaps: Sequence[AssessedGap] = field(default=(), repr=False)
 
 
-async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs:
-    """The Opportunity's active Requirements at their current versions, labelled `R<n>`, and
-    its open Gaps, labelled `G<n>` (queries; no authorization)."""
-    snapshots = await intake.active_requirement_snapshots(uow, opportunity_id)
-    open_gaps = await gaps.open_gap_summaries(uow, opportunity_id)
+def build_inputs(
+    requirements: Sequence[intake.RequirementSnapshot], open_gaps: Sequence[gaps.GapSummary]
+) -> AssessmentInputs:
+    """What a task read, labelled: the active Requirements `R<n>` (by their stable number,
+    each flagged when its text reads like an injected instruction) and the open Gaps
+    `G<n>` in the order given."""
     return AssessmentInputs(
         requirements=[
             AssessedRequirement(
@@ -106,8 +110,9 @@ async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs
                 version=s.version,
                 classification=s.classification,
                 text=s.text,
+                injection_suspected=injection_suspected(s.text),
             )
-            for s in snapshots
+            for s in requirements
         ],
         gap_count=len(open_gaps),
         gaps=[
@@ -120,6 +125,16 @@ async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs
             )
             for n, g in enumerate(open_gaps, start=1)
         ],
+    )
+
+
+async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs:
+    """The Opportunity's active Requirements at their current versions, labelled `R<n>`, and
+    its open Gaps, labelled `G<n>` (queries; no authorization). The specialist executors read
+    them through the ToolGateway instead (Story 5.4) and call `build_inputs`."""
+    return build_inputs(
+        await intake.active_requirement_snapshots(uow, opportunity_id),
+        await gaps.open_gap_summaries(uow, opportunity_id),
     )
 
 
@@ -187,6 +202,7 @@ async def accept_assessment(
         for r in inputs.requirements
         if (r.requirement_id, r.version) in current
     }
+    flagged = {(r.requirement_id, r.version) for r in inputs.requirements if r.injection_suspected}
     validation = validate_assessment(proposed, labels)
     if validation is None:
         _log.info("assessments.assessment_reply_invalid", extra={**ids, "agent": agent.value})
@@ -221,6 +237,7 @@ async def accept_assessment(
                 title=f.title,
                 detail=f.detail,
                 requirements=list(f.requirements),
+                injection_suspected=any(ref in flagged for ref in f.requirements),
             )
             for position, f in enumerate(validation.findings, start=1)
         ],

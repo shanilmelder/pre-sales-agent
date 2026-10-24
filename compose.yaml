@@ -60,10 +60,15 @@ services:
       PSA_DOWNLOAD_SIGNING_KEY: ${PSA_DOWNLOAD_SIGNING_KEY:-local-dev-download-signing-key-change-me}
       # Host Ollama (ModelGateway, Story 2.4). The api never calls a model itself.
       PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
+      # ToolGateway research fetch allowlist and limits (Story 5.4).
+      PSA_RESEARCH_ALLOWLIST_PATH: /etc/psa/research-allowlist.yaml
+      PSA_RESEARCH_FETCH_TIMEOUT_S: ${PSA_RESEARCH_FETCH_TIMEOUT_S:-10}
+      PSA_RESEARCH_MAX_BYTES: ${PSA_RESEARCH_MAX_BYTES:-2097152}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - files:/var/lib/psa/files
+      - ./ops/research-allowlist.yaml:/etc/psa/research-allowlist.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,10 +124,15 @@ services:
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
       PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
       PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
+      # ToolGateway research fetch allowlist and limits (Story 5.4).
+      PSA_RESEARCH_ALLOWLIST_PATH: /etc/psa/research-allowlist.yaml
+      PSA_RESEARCH_FETCH_TIMEOUT_S: ${PSA_RESEARCH_FETCH_TIMEOUT_S:-10}
+      PSA_RESEARCH_MAX_BYTES: ${PSA_RESEARCH_MAX_BYTES:-2097152}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - files:/var/lib/psa/files
+      - ./ops/research-allowlist.yaml:/etc/psa/research-allowlist.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy

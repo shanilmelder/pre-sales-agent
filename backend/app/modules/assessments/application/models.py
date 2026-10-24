@@ -102,7 +102,8 @@ class RedTeamView(BaseModel):
 
 class AssessmentFinding(BaseModel):
     """A specialist Finding: its kind, severity, specific title and detail, with the
-    Requirements it cites."""
+    Requirements it cites. `injection_suspected` (Story 5.4): a cited Requirement's text
+    read like an injected instruction when the agent read it (the UI marks the row)."""
 
     id: str
     position: int = Field(ge=1)
@@ -111,6 +112,7 @@ class AssessmentFinding(BaseModel):
     title: str
     detail: str
     requirements: list[FindingRequirement]
+    injection_suspected: bool
 
 
 class AssessmentEffort(BaseModel):

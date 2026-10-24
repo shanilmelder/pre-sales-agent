@@ -45,6 +45,7 @@ class FindingRecord:
     severity: str
     title: str = field(repr=False)
     detail: str = field(repr=False)
+    injection_suspected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,7 @@ class NewFinding:
     title: str = field(repr=False)
     detail: str = field(repr=False)
     requirements: Sequence[tuple[UUID, int]] = ()
+    injection_suspected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +190,7 @@ async def insert_assessment(
                     "severity": f.severity,
                     "title": f.title,
                     "detail": f.detail,
+                    "injection_suspected": f.injection_suspected,
                 }
                 for finding_id, f in zip(finding_ids, findings, strict=True)
             ],
@@ -245,6 +248,7 @@ async def findings_of(uow: UnitOfWork, assessment_ids: Sequence[UUID]) -> list[F
             severity=row.severity,
             title=row.title,
             detail=row.detail,
+            injection_suspected=row.injection_suspected,
         )
         for row in rows.scalars()
     ]
@@ -266,6 +270,7 @@ async def findings_by_id(uow: UnitOfWork, finding_ids: Sequence[UUID]) -> list[F
             severity=row.severity,
             title=row.title,
             detail=row.detail,
+            injection_suspected=row.injection_suspected,
         )
         for row in rows.scalars()
     ]

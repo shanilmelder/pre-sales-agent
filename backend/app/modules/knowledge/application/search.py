@@ -63,6 +63,40 @@ async def search(
     role; 422 for a blank or too-long query or `k` outside 1..`SEARCH_K_MAX`; 503 when the
     embedding model fails."""
     identity.authorize(actor, Action.KNOWLEDGE_CHUNK_SEARCH)
+    return await search_chunks(
+        uow,
+        query,
+        actor_id=actor.actor.id,
+        gateway=gateway,
+        embed_profile=embed_profile,
+        stale_months=stale_months,
+        k=k,
+        product=product,
+        integration_type_id=integration_type_id,
+        product_version=product_version,
+        priority=priority,
+        today=today,
+    )
+
+
+async def search_chunks(
+    uow: UnitOfWork,
+    query: str,
+    *,
+    actor_id: str,
+    gateway: ModelGatewayPort,
+    embed_profile: str,
+    stale_months: int,
+    k: int = rules.SEARCH_K_DEFAULT,
+    product: str | None = None,
+    integration_type_id: UUID | None = None,
+    product_version: str | None = None,
+    priority: Priority = "interactive",
+    today: date | None = None,
+) -> KnowledgeSearchResult:
+    """`search` without the authorization: the ToolGateway's `knowledge.chunk.search`
+    (Story 5.4), whose permission the gateway checked. The embedding call comes before any
+    database statement of this Unit of Work."""
     try:
         text = rules.search_query(query)
     except ValueError as exc:
@@ -98,7 +132,7 @@ async def search(
     _log.info(
         "knowledge.searched",
         extra={
-            "actor_id": actor.actor.id,
+            "actor_id": actor_id,
             "query_chars": len(text),
             "k": k,
             "results": len(hits),

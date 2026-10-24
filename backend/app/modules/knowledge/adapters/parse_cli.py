@@ -2,7 +2,8 @@
 `python -m app.modules.knowledge.adapters.parse_cli <blob path> <ext>`.
 
 Knowledge's own entry to the sandbox: the work, the limits and the stderr protocol are the
-platform's (`app.platform.parsing.cli`), which parses `.txt`, `.md`, `.docx` and `.pdf`."""
+platform's (`app.platform.parsing.cli`), which parses `.txt`, `.md`, `.docx` and `.pdf`, and
+`.html` for Research Snapshots (Story 5.4)."""
 
 import sys
 

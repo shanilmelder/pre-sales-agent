@@ -9,6 +9,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid5
 
+from app.platform.tool_gateway.catalogue import READ_TOOLS, is_read_tool
+
 SUBJECT_TYPE = "registry.agent"
 AGENT_ID_RE = re.compile(r"^[a-z][a-z0-9_]*_agent$")
 AGENT_ID_MAX = 64
@@ -18,7 +20,8 @@ SEMVER_MAX = 32
 TOOL_PERMISSION_RE = re.compile(
     r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
 )
-"""A tool permission is an action name, `<module>.<entity>.<verb>` (enforced in Story 7.4)."""
+"""A tool permission is an action name, `<module>.<entity>.<verb>`, and since Story 5.4 one
+of the ToolGateway's READ tools."""
 TOOL_PERMISSIONS_MAX = 50
 BUDGET_KEYS_MAX = 20
 UNPINNED_DIGEST = "unpinned"
@@ -126,8 +129,14 @@ def semver(value: str) -> str:
     return trimmed
 
 
+class ToolPermissionNotReadOnly(ValueError):
+    """A tool permission that is an action name but not a ToolGateway READ tool."""
+
+
 def tool_permissions(values: Sequence[str]) -> tuple[str, ...]:
-    """Distinct action names, in the order given."""
+    """Distinct ToolGateway READ tool names, in the order given (Story 5.4). Raises
+    `ToolPermissionNotReadOnly` for any other action name, `ValueError` for a malformed
+    one or too many."""
     if len(values) > TOOL_PERMISSIONS_MAX:
         raise ValueError(f"An agent can hold at most {TOOL_PERMISSIONS_MAX} tool permissions.")
     seen: list[str] = []
@@ -136,6 +145,11 @@ def tool_permissions(values: Sequence[str]) -> tuple[str, ...]:
         if not TOOL_PERMISSION_RE.match(name):
             raise ValueError(
                 "Each tool permission must be an action name, `<module>.<entity>.<verb>`."
+            )
+        if not is_read_tool(name):
+            raise ToolPermissionNotReadOnly(
+                f"{name} is not a read-only tool. Agents may only be granted: "
+                f"{', '.join(sorted(READ_TOOLS))}."
             )
         if name not in seen:
             seen.append(name)

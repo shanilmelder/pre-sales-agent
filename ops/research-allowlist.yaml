@@ -1,0 +1,20 @@
+# Research allowlist (Story 5.4): the only hosts the ToolGateway's research fetch
+# (`knowledge.research_page.fetch`) may read. Loaded from PSA_RESEARCH_ALLOWLIST_PATH.
+#
+# - `topics` maps a topic to its hosts. A host matches exactly or as a subdomain
+#   (`docs.example.com` matches `example.com`).
+# - Only HTTPS GETs on the default port; every redirect hop is checked against the same list.
+# - No seeded Agent is granted the fetch tool; an administrator grants it per config version.
+# Example topics only: replace them with the vendors and standards your team researches.
+version: 1
+topics:
+  standards:
+    - owasp.org
+    - nist.gov
+  cloud_platforms:
+    - learn.microsoft.com
+    - docs.aws.amazon.com
+    - cloud.google.com
+  integration:
+    - help.sap.com
+    - www.rfc-editor.org
