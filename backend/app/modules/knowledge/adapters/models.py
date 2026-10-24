@@ -344,3 +344,30 @@ class ChecklistItemRow(Base):
     )
     impact: Mapped[str] = mapped_column(Text)
     mandatory: Mapped[bool] = mapped_column(Boolean)
+
+
+class ResearchSnapshotRow(Base):
+    """An immutable Research Snapshot (Story 5.4): one page the research fetch read for a
+    task, with the SHA-256 of its raw body and of its extracted text (both blobs in
+    `platform.storage`) and the parser. Insert-only. `opportunity_id`, `run_id` and `task_id`
+    are ids owned by other modules (no foreign keys, AD-2)."""
+
+    __tablename__ = "knowledge_research_snapshots"
+    __table_args__ = (
+        Index(None, "opportunity_id", "fetched_at"),
+        CheckConstraint("content_type IN ('text/html', 'text/plain')", name="content_type"),
+        CheckConstraint("http_status BETWEEN 200 AND 299", name="http_status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    opportunity_id: Mapped[UUID] = mapped_column(Uuid)
+    run_id: Mapped[UUID | None] = mapped_column(Uuid)
+    task_id: Mapped[UUID | None] = mapped_column(Uuid)
+    url: Mapped[str] = mapped_column(Text)
+    final_url: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    http_status: Mapped[int] = mapped_column(Integer)
+    content_type: Mapped[str] = mapped_column(Text)
+    content_sha256: Mapped[str] = mapped_column(Text)
+    text_sha256: Mapped[str] = mapped_column(Text)
+    parser: Mapped[str] = mapped_column(Text)

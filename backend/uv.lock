@@ -911,6 +911,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "python-docx" },
     { name = "python-multipart" },
+    { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn" },
 ]
@@ -921,7 +922,6 @@ dev = [
     { name = "import-linter" },
     { name = "mypy" },
     { name = "pytest" },
-    { name = "pyyaml" },
     { name = "ruff" },
     { name = "types-openpyxl" },
     { name = "types-pyyaml" },
@@ -944,6 +944,7 @@ requires-dist = [
     { name = "pypdf", specifier = "==6.19.0" },
     { name = "python-docx", specifier = "==1.2.0" },
     { name = "python-multipart", specifier = "==0.0.32" },
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.1.1" },
     { name = "uvicorn", specifier = "==0.54.0" },
 ]
@@ -954,7 +955,6 @@ dev = [
     { name = "import-linter", specifier = "==2.15" },
     { name = "mypy", specifier = "==2.3.1" },
     { name = "pytest", specifier = "==9.1.1" },
-    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "ruff", specifier = "==0.16.9" },
     { name = "types-openpyxl", specifier = "==3.1.5.20260827" },
     { name = "types-pyyaml", specifier = "==6.0.12.20250915" },

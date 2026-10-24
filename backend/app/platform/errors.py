@@ -183,6 +183,14 @@ class AssessmentNotInProgressError(ConflictError):
     title = "Assessment not in progress"
 
 
+class DecisionNotOpenError(ConflictError):
+    """A decision a run waited on was resolved after it was no longer open: already resolved
+    or cancelled with its run (Story 5.5)."""
+
+    code = "decision_not_open"
+    title = "Decision not open"
+
+
 class AssessmentTaskNotFailedError(ConflictError):
     """A task retry was asked for a task that is not `failed`, or not of the Opportunity's
     latest run (Epic 5 slice 5A)."""
@@ -433,6 +441,14 @@ class RegistryConfigNotDeployedError(UnprocessableError):
 
     code = "registry_config_not_deployed"
     title = "Config not deployed"
+
+
+class ToolPermissionNotReadOnlyError(UnprocessableError):
+    """A config version grants a tool permission that is not one of the ToolGateway's READ
+    tools (Story 5.4): Agents can never be granted a write, delete, send or approve."""
+
+    code = "tool_permission_not_read_only"
+    title = "Tool permission not read-only"
 
 
 class RegistryConfigIncompatibleContractError(UnprocessableError):

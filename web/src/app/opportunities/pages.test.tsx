@@ -1045,6 +1045,60 @@ describe("/opportunities/[id] workspace", () => {
       expect(failed.textContent).toMatch(/^PM AgentFailed.+/);
     });
 
+    it("Run waiting for a person (Story 5.5): the pill on the card and a Needs you row", async () => {
+      signedIn(["presales_engineer"]);
+      const current = MID["/assessments"] as Record<string, unknown>;
+      found(FUTURE, {
+        ...MID,
+        "/assessments": {
+          ...current,
+          run: {
+            ...run("waiting_for_human", [
+              task("engineering_agent", "succeeded"),
+              task("pm_agent", "succeeded"),
+              task("security_agent", "queued"),
+            ]),
+            plan_version: 1,
+            plan_versions: [],
+            decisions: [
+              {
+                id: uid(950),
+                kind: "plan_escalation",
+                agent: "security_agent",
+                agent_name: "Security Agent",
+                agent_active: false,
+                status: "open",
+                choice: null,
+                row_version: 1,
+                created_at: "2026-10-05T09:32:00Z",
+                resolved_by: null,
+                resolved_at: null,
+              },
+            ],
+          },
+        },
+      });
+      const { container } = await renderWorkspace();
+      const runCard = card("Agent run");
+      expect(within(runCard).getAllByText("Waiting for you").length).toBe(2);
+      const waiting = within(runCard).getAllByRole("listitem")[2];
+      expect(waiting.getAttribute("data-task-status")).toBe("waiting_for_human");
+      expect(waiting.textContent).toBe(
+        "Security AgentWaiting for youSecurity assessment not planned: Security Agent is disabled",
+      );
+      const needs = card("Needs you");
+      const row = within(needs)
+        .getAllByRole("listitem")
+        .find((li) => li.getAttribute("data-kind") === "waiting-run");
+      expect(row?.textContent).toContain(
+        "Security assessment not planned: Security Agent is disabled",
+      );
+      expect(row?.textContent).toContain("Waiting for you");
+      const resolve = within(row!).getByRole("link", { name: /^Resolve Security assessment/ });
+      expect(resolve.getAttribute("href")).toBe(href("assessments"));
+      expect(await axeViolations(container)).toEqual([]);
+    });
+
     it("Read fails: the Open Gaps KPI and its step say so; the other cards render", async () => {
       signedIn(["presales_engineer"]);
       found(FUTURE, { ...MID, "/gaps": null });

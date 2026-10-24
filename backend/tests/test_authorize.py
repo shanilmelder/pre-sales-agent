@@ -57,6 +57,7 @@ MODULES = {
     "conflicts",
     "knowledge",
     "registry",
+    "workflows",
 }
 
 
@@ -175,6 +176,7 @@ def test_resource_scoped_grants() -> None:
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
         Action.ASSESSMENT_START,
+        Action.DECISION_RESOLVE,
         Action.ESTIMATE_EXPORT,
         Action.ESTIMATE_LINE_EDIT,
         Action.CONFLICT_RESOLVE,
@@ -193,6 +195,7 @@ def test_resource_scoped_grants() -> None:
         Action.ASSUMPTION_ACCEPT,
         Action.RED_TEAM_START,
         Action.ASSESSMENT_START,
+        Action.DECISION_RESOLVE,
         Action.ESTIMATE_EXPORT,
         Action.ESTIMATE_LINE_EDIT,
         Action.CONFLICT_RESOLVE,
@@ -207,6 +210,7 @@ def test_resource_scoped_grants() -> None:
         Action.ASSUMPTION_ACCEPT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSESSMENT_START: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.DECISION_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_EXPORT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_LINE_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CONFLICT_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -243,6 +247,8 @@ def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) ->
     assert can(member, Action.RED_TEAM_START, opportunity) is allowed
     assert can(owner, Action.ASSESSMENT_START, opportunity) is allowed
     assert can(member, Action.ASSESSMENT_START, opportunity) is allowed
+    assert can(owner, Action.DECISION_RESOLVE, opportunity) is allowed
+    assert can(member, Action.DECISION_RESOLVE, opportunity) is allowed
     assert can(owner, Action.ESTIMATE_EXPORT, opportunity) is allowed
     assert can(member, Action.ESTIMATE_EXPORT, opportunity) is allowed
     assert can(owner, Action.ESTIMATE_LINE_EDIT, opportunity) is allowed

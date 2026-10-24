@@ -32,6 +32,7 @@ export const PROGRESS_EVENTS: readonly ProgressEventType[] = [
   "workflows.task.started",
   "workflows.task.ended",
   "workflows.run.ended",
+  "workflows.run.waiting_for_human",
 ];
 
 /** Story 4.7: the id-less frame the stream sends when the Opportunity's Gaps, Clarification

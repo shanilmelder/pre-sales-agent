@@ -66,6 +66,7 @@ DRAFT = "estimates.draft_estimate"
 PROPOSE = "estimates.propose_assumptions"
 RED_TEAM = "assessments.red_team_review"
 ASSESS = "workflows.execute"
+RESUME = "workflows.resume"
 MATCH = "gaps.match_answers"
 LEASE = LeaseSettings(lease_s=30, heartbeat_s=5)
 HIDDEN = timedelta(days=1)
@@ -177,7 +178,7 @@ def retire_extraction_jobs(opportunity_ids: list[UUID]) -> None:
                     "AND opportunity_id = ANY(:o)"
                 ),
                 {
-                    "t": [EXTRACT, DETECT, DRAFT, PROPOSE, RED_TEAM, ASSESS, MATCH],
+                    "t": [EXTRACT, DETECT, DRAFT, PROPOSE, RED_TEAM, ASSESS, RESUME, MATCH],
                     "o": list(opportunity_ids),
                 },
             )

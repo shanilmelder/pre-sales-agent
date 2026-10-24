@@ -25,6 +25,7 @@ import app.platform.files
 import app.platform.jobs.models
 import app.platform.model_gateway.models
 import app.platform.schedules.models
+import app.platform.tool_gateway.models
 import app.platform.trace.models  # noqa: F401
 from app.platform.config import get_settings
 from app.platform.db import Base

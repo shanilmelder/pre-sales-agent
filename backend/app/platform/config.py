@@ -202,6 +202,25 @@ class Settings(BaseSettings):
         gt=0,
         description="Default timeout for one model request (each attempt), in seconds.",
     )
+    research_allowlist_path: Path | None = Field(
+        default=None,
+        description=(
+            "The research allowlist (`ops/research-allowlist.yaml`: version, topics -> hosts) "
+            "the ToolGateway's research fetch checks every URL and redirect against (Story "
+            "5.4). Unset or missing: every research fetch is denied."
+        ),
+    )
+    research_fetch_timeout_s: float = Field(
+        default=10.0,
+        gt=0,
+        le=120,
+        description="Wall-clock limit of one research fetch, every redirect hop included.",
+    )
+    research_max_bytes: int = Field(
+        default=2 * 1024 * 1024,
+        gt=0,
+        description="Largest research page body in bytes (2 MiB), counted while streaming.",
+    )
     eval_database_url: str | None = Field(
         default=None,
         description=(
