@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, LoaderCircleIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
@@ -17,6 +17,7 @@ import {
   rejectRequirementChange,
   splitRequirement,
   startExtraction,
+  tagRequirementIntegrationTypes,
   type ConfirmAllResult,
   type RequirementChangeResult,
   type RequirementCreateResult,
@@ -26,15 +27,17 @@ import {
   type RequirementWriteResult,
   type StartExtractionResult,
 } from "@/app/opportunities/actions";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { InlineAlert } from "@/components/ui/inline-alert";
+import { Select } from "@/components/ui/select";
 import { InlineInput } from "@/components/opportunities/inline-field";
 import { RequirementDiff, type DiffSide } from "@/components/opportunities/requirement-diff";
 import {
   EvidenceChip,
-  PendingChangeMarker,
   RequirementInspector,
+  RequirementStatePill,
   type ChangeFormOutcome,
   type SplitPart,
 } from "@/components/opportunities/requirement-inspector";
@@ -48,19 +51,37 @@ import {
 import { NO_ACCESS_TO_OPPORTUNITY, staleMessage } from "@/lib/opportunities";
 import {
   ADD_REQUIREMENT,
+  categoriesPresent,
   CHANGE_DECIDED,
+  classificationChange,
+  classificationLabel,
   CLASSIFICATIONS,
+  CLEAR_FILTERS,
   CONFIRMED,
   confirmAllLabel,
+  countsLine,
+  EDIT,
   EXTRACTING,
   EXTRACTION_POLL_LIMIT_MS,
   EXTRACTION_POLL_MS,
   extractionFailure,
+  filterRequirements,
   groupRequirements,
+  groupSummary,
   HIDE_DIFF,
   isExtracting,
+  isUntaggedIntegration,
   mergeDraft,
   mergeLabel,
+  MERGE,
+  NO_FILTERS,
+  NO_MATCH,
+  originLine,
+  pendingChangesTitle,
+  REQUIREMENT_STATES,
+  REVIEW,
+  SELECTED_FOR_MERGE,
+  SPLIT_REQUIREMENT,
   ADD_A_SOURCE,
   NO_REQUIREMENTS,
   NO_REQUIREMENTS_BODY,
@@ -68,17 +89,21 @@ import {
   outdatedNotice,
   requirementCount,
   requirementLabel,
-  requirementOrigin,
   requirementTextProblem,
+  SHOW_ALL,
   STILL_EXTRACTING,
+  TAG_SAVED,
   TOO_MUCH_TEXT,
   unconfirmed,
+  untaggedFilterStatus,
   VIEW_DIFF,
   type Classification,
   type Extraction,
   type OutdatedAssessment,
   type Requirement,
+  type RequirementFilters,
   type RequirementList,
+  type RequirementState,
 } from "@/lib/requirements";
 import { tabHref } from "@/lib/workspace";
 
@@ -124,21 +149,13 @@ export type RequirementEditing = {
   onConfirm: (item: Requirement) => void;
 };
 
-/** "Confirmed" with a check icon. */
-export function ConfirmedLabel() {
-  return (
-    <span className="inline-flex items-center gap-1 text-meta text-foreground">
-      <CheckIcon aria-hidden="true" className="size-3 shrink-0 text-resolved" />
-      {CONFIRMED}
-    </span>
-  );
-}
-
 /** The Requirements grouped by classification (Functional, Integration, Data, Security,
- * Non-functional, Commercial), each group headed by its label and count; empty groups are
- * hidden. Each row shows the text, its Evidence chips, "Edited" once a person changed it,
- * "Confirmed" once confirmed, and the amber "Pending change" marker while extraction has
- * proposed a change to it (Story 2.7).
+ * Non-functional, Commercial): each group a heading with its counts ("4 · 3 confirmed") over
+ * one card of rows; empty groups are hidden. Each row shows its stable `R<n>` tag, the text,
+ * its Evidence chips and where it came from ("· Extracted", "· Edited by Ann Lee", "· Added by
+ * a person"), and its state pill (Confirmed, Unconfirmed, or Pending change with an amber edge
+ * while extraction has proposed a change to it, Story 2.7). Pass only the rows to show (the
+ * tab's filters): j/k move over those.
  *
  * The list is one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first row); j/k (with single-key shortcuts on) or the arrow keys move between rows across
@@ -146,10 +163,10 @@ export function ConfirmedLabel() {
  * chip's passage shown. The selected row is `aria-selected`.
  *
  * With `edit`, `e` (with single-key shortcuts on) or a double-click on the text edits the
- * row inline (blur or Enter saves, Esc reverts), and each unconfirmed row has **Confirm**.
- * With `onToggle` (Story 2.6), each row has a checkbox and `x` toggles the focused row's
- * selection; Esc clears it (unless the inspector is open, which Esc closes first). Each row
- * shows its stable `R<n>`. */
+ * row inline (blur or Enter saves, Esc reverts), each unconfirmed row has **Confirm**, and the
+ * selected row has **Edit**, **Split** (`onSplit`) and **Merge**. With `onToggle` (Story
+ * 2.6), **Merge** or `x` toggles a row in the merge selection (rows in it show a check); Esc
+ * clears it (unless the inspector is open, which Esc closes first). */
 export function RequirementsList({
   items,
   selectedId = null,
@@ -158,6 +175,7 @@ export function RequirementsList({
   checkedIds = NONE_CHECKED,
   inspectorOpen = false,
   onToggle,
+  onSplit,
   onClearSelection,
 }: {
   items: readonly Requirement[];
@@ -165,14 +183,16 @@ export function RequirementsList({
   /** `passageId` is the chip clicked (null: the row itself); `viaKeyboard` is true when
    * opened with Enter or Space, not a pointer. */
   onOpen?: (item: Requirement, passageId: string | null, viaKeyboard: boolean) => void;
-  /** Left out for those who may not edit: no inline edit and no Confirm. */
+  /** Left out for those who may not edit: no inline edit, Confirm or row actions. */
   edit?: RequirementEditing;
-  /** The multi-selected Requirements (with `onToggle`). */
+  /** The Requirements selected for merging (with `onToggle`). */
   checkedIds?: ReadonlySet<string>;
   /** Whether the inspector is open: Esc then closes it instead of clearing the selection. */
   inspectorOpen?: boolean;
-  /** `x` on a row or its checkbox; left out for those who may not edit. */
+  /** `x` on a row or the selected row's **Merge**; left out for those who may not edit. */
   onToggle?: (item: Requirement) => void;
+  /** The selected row's **Split**: opens the inspector's Split form. */
+  onSplit?: (item: Requirement) => void;
   onClearSelection?: () => void;
 }) {
   const { singleKeyShortcuts } = useShell();
@@ -182,7 +202,6 @@ export function RequirementsList({
   const tabStopId =
     [focusedId, selectedId].find((id) => id !== null && items.some((i) => i.id === id)) ??
     groups[0]?.items[0]?.id;
-  const selectable = onToggle !== undefined;
 
   function rowItem(target: EventTarget): Requirement | undefined {
     const rowId =
@@ -226,7 +245,7 @@ export function RequirementsList({
       container.current?.querySelectorAll<HTMLButtonElement>("button[data-requirement-row]") ??
         [],
     );
-    // From a chip, move from its row.
+    // From a chip or a row action, move from its row.
     const current =
       event.target instanceof Element
         ? event.target.closest('[role="row"]')?.querySelector("button[data-requirement-row]")
@@ -242,125 +261,199 @@ export function RequirementsList({
     <div ref={container} onKeyDown={onKeyDown} className="flex flex-col gap-6">
       {groups.map((group) => {
         const headingId = `requirements-${group.classification}`;
+        const summaryId = `${headingId}-summary`;
         return (
-          <section key={group.classification} aria-labelledby={headingId}>
-            <h3 id={headingId} className="mb-1 flex items-baseline gap-2 text-section">
-              {group.label}{" "}
-              <span className="text-meta text-numeric text-muted-foreground">
-                {group.items.length}
+          <section
+            key={group.classification}
+            aria-labelledby={`${headingId} ${summaryId}`}
+            className="flex flex-col gap-2"
+          >
+            <div className="flex items-baseline gap-2 px-1">
+              <h3 id={headingId} className="text-body-strong">
+                {group.label}
+              </h3>
+              <span id={summaryId} className="text-meta text-numeric text-text-secondary">
+                {groupSummary(group.items)}
               </span>
-            </h3>
-            <div role="grid" aria-labelledby={headingId} className="flex flex-col">
-              {group.items.map((item) => {
-                const selected = item.id === selectedId;
-                const editing = edit?.editing?.id === item.id ? edit.editing : null;
-                const busy = edit?.busyIds.has(item.id) ?? false;
-                const checked = checkedIds.has(item.id);
-                return (
-                  <div
-                    key={item.id}
-                    role="row"
-                    data-row-id={item.id}
-                    data-checked={checked ? "" : undefined}
-                    aria-selected={selected}
-                    aria-busy={busy || undefined}
-                    className={`flex border-b border-border ${
-                      selected ? "bg-muted" : checked ? "bg-muted/40" : "hover:bg-muted/60"
-                    }`}
-                  >
-                    {selectable ? (
-                      <div role="gridcell" className="flex w-6 shrink-0 justify-center pt-2">
-                        <input
-                          type="checkbox"
-                          tabIndex={-1}
-                          checked={checked}
-                          onChange={() => onToggle?.(item)}
-                          aria-label={`Select ${requirementLabel(item)}: ${item.text}`}
-                          className="size-3.5 accent-primary"
-                        />
-                      </div>
-                    ) : null}
-                    <div
-                      role="gridcell"
-                      className="flex min-h-row min-w-0 flex-1 flex-col gap-1 px-1 py-1.5"
-                    >
-                      {editing && edit ? (
-                        <InlineInput
-                          // A fresh input (and draft) each time editing reopens.
-                          key={editing.seq}
-                          label="Requirement text"
-                          initial={editing.initial}
-                          autoFocus={editing.autoFocus}
-                          describedBy={edit.describedBy}
-                          onCommit={(text, viaKey) => edit.onCommitText(item, text, viaKey)}
-                          onCancel={(viaKey) => edit.onCancelEdit(item, viaKey)}
-                          className="h-7 w-full rounded-md border border-input bg-transparent px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          data-requirement-row=""
-                          data-requirement-id={item.id}
-                          tabIndex={item.id === tabStopId ? 0 : -1}
-                          onFocus={() => setFocusedId(item.id)}
-                          // A keyboard-activated click has no pointer clicks (detail 0).
-                          onClick={(event) => onOpen?.(item, null, event.detail === 0)}
-                          onDoubleClick={() => {
-                            if (edit && !edit.locked && !busy) edit.onStartEdit(item);
-                          }}
-                          className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                        >
-                          {item.text}
-                        </button>
-                      )}
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-meta text-muted-foreground">
-                          {requirementLabel(item)}
-                        </span>
-                        {item.evidence.length > 0 ? (
-                          <>
-                            <span className="sr-only">Evidence:</span>
-                            {item.evidence.map((evidence) => (
-                              <EvidenceChip
-                                key={evidence.passage_id}
-                                evidence={evidence}
-                                tabIndex={-1}
-                                onSelect={(viaKeyboard) =>
-                                  onOpen?.(item, evidence.passage_id, viaKeyboard)
-                                }
-                              />
-                            ))}
-                          </>
-                        ) : null}
-                        {item.origin === "human" ? (
-                          <span className="text-meta text-muted-foreground">
-                            {requirementOrigin(item)}
-                          </span>
-                        ) : null}
-                        {item.pending_change ? <PendingChangeMarker /> : null}
-                        {item.confirmed_at ? (
-                          <ConfirmedLabel />
-                        ) : edit ? (
-                          <button
-                            type="button"
-                            tabIndex={-1}
-                            disabled={edit.locked || busy}
-                            aria-label={`${CONFIRM}: ${item.text}`}
-                            onClick={() => edit.onConfirm(item)}
-                            className={actionClass}
-                          >
-                            {CONFIRM}
-                          </button>
-                        ) : null}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
+            <Card className="overflow-hidden">
+              <div
+                role="grid"
+                aria-labelledby={`${headingId} ${summaryId}`}
+                className="flex flex-col divide-y divide-border"
+              >
+                {group.items.map((item) => (
+                  <RequirementRow
+                    key={item.id}
+                    item={item}
+                    selected={item.id === selectedId}
+                    tabStop={item.id === tabStopId}
+                    checked={checkedIds.has(item.id)}
+                    edit={edit}
+                    onFocus={() => setFocusedId(item.id)}
+                    onOpen={onOpen}
+                    onToggle={onToggle}
+                    onSplit={onSplit}
+                  />
+                ))}
+              </div>
+            </Card>
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/** One row of `RequirementsList`. */
+function RequirementRow({
+  item,
+  selected,
+  tabStop,
+  checked,
+  edit,
+  onFocus,
+  onOpen,
+  onToggle,
+  onSplit,
+}: {
+  item: Requirement;
+  selected: boolean;
+  tabStop: boolean;
+  checked: boolean;
+  edit?: RequirementEditing;
+  onFocus: () => void;
+  onOpen?: (item: Requirement, passageId: string | null, viaKeyboard: boolean) => void;
+  onToggle?: (item: Requirement) => void;
+  onSplit?: (item: Requirement) => void;
+}) {
+  const editing = edit?.editing?.id === item.id ? edit.editing : null;
+  const busy = edit?.busyIds.has(item.id) ?? false;
+  const disabled = !edit || edit.locked || busy;
+  const pending = item.pending_change !== null;
+  return (
+    <div
+      role="row"
+      data-row-id={item.id}
+      data-checked={checked ? "" : undefined}
+      aria-selected={selected}
+      aria-busy={busy || undefined}
+      className={`flex min-h-row items-start gap-4 px-5 py-3 ${
+        selected ? "bg-agent-tint" : checked ? "bg-muted/40" : "hover:bg-muted/60"
+      } ${pending ? "shadow-[inset_3px_0_0_var(--color-gap)]" : ""}`}
+    >
+      <div role="gridcell" className="flex shrink-0 flex-col items-center gap-1.5 pt-px">
+        <span className="inline-flex h-[22px] items-center rounded-sm border border-border bg-surface-alt px-1.5 text-label text-numeric">
+          {requirementLabel(item)}
+        </span>
+        {checked ? (
+          <span
+            data-testid="merge-check"
+            className="inline-flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground"
+          >
+            <CheckIcon aria-hidden="true" className="size-3" />
+            {/* The selected row's Merge button already says it. */}
+            {selected ? null : <span className="sr-only">{SELECTED_FOR_MERGE}</span>}
+          </span>
+        ) : null}
+      </div>
+      <div role="gridcell" className="flex min-w-0 flex-1 flex-col gap-2">
+        {editing && edit ? (
+          <InlineInput
+            // A fresh input (and draft) each time editing reopens.
+            key={editing.seq}
+            label="Requirement text"
+            initial={editing.initial}
+            autoFocus={editing.autoFocus}
+            describedBy={edit.describedBy}
+            onCommit={(text, viaKey) => edit.onCommitText(item, text, viaKey)}
+            onCancel={(viaKey) => edit.onCancelEdit(item, viaKey)}
+            className="h-8 w-full rounded-md border border-input bg-transparent px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          />
+        ) : (
+          <button
+            type="button"
+            data-requirement-row=""
+            data-requirement-id={item.id}
+            tabIndex={tabStop ? 0 : -1}
+            onFocus={onFocus}
+            // A keyboard-activated click has no pointer clicks (detail 0).
+            onClick={(event) => onOpen?.(item, null, event.detail === 0)}
+            onDoubleClick={() => {
+              if (edit && !edit.locked && !busy) edit.onStartEdit(item);
+            }}
+            className="w-full rounded-sm text-left break-words outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {item.text}
+          </button>
+        )}
+        <span className="flex flex-wrap items-center gap-2">
+          {item.evidence.length > 0 ? (
+            <>
+              <span className="sr-only">Evidence:</span>
+              {item.evidence.map((evidence) => (
+                <EvidenceChip
+                  key={evidence.passage_id}
+                  evidence={evidence}
+                  tabIndex={-1}
+                  onSelect={(viaKeyboard) => onOpen?.(item, evidence.passage_id, viaKeyboard)}
+                />
+              ))}
+            </>
+          ) : null}
+          <span className="text-meta text-text-secondary">{`· ${originLine(item)}`}</span>
+        </span>
+        {selected && edit ? (
+          <span className="flex flex-wrap gap-2 pt-1">
+            {/* Not Tab stops: the grid is one (e, x and the inspector's buttons do the same). */}
+            <Button
+              variant="outline"
+              size="sm"
+              tabIndex={-1}
+              disabled={disabled}
+              onClick={() => edit.onStartEdit(item)}
+            >
+              {EDIT}
+            </Button>
+            {onSplit ? (
+              <Button
+                variant="outline"
+                size="sm"
+                tabIndex={-1}
+                disabled={disabled}
+                onClick={() => onSplit(item)}
+              >
+                {SPLIT_REQUIREMENT}
+              </Button>
+            ) : null}
+            {onToggle ? (
+              <Button
+                variant="outline"
+                size="sm"
+                tabIndex={-1}
+                aria-pressed={checked}
+                onClick={() => onToggle(item)}
+              >
+                {checked ? SELECTED_FOR_MERGE : MERGE}
+              </Button>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+      <div role="gridcell" className="flex shrink-0 flex-col items-end gap-2">
+        <RequirementStatePill requirement={item} />
+        {!item.confirmed_at && edit ? (
+          <Button
+            size="xs"
+            tabIndex={-1}
+            disabled={disabled}
+            aria-label={`${CONFIRM}: ${item.text}`}
+            onClick={() => edit.onConfirm(item)}
+          >
+            {CONFIRM}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -562,19 +655,32 @@ function retryMessage(result: StartExtractionResult): string {
  * selected." Above the list, a notice names the Assessments that used Requirement versions
  * that have changed since (Story 2.7), with a link to the Assessments tab; nothing is rerun.
  *
- * Those who may edit (Story 2.6) also get **Add Requirement** (or `c`) for an inline form at
- * the top of the list, a checkbox per row (`x` toggles the focused row, Esc clears) with a
- * **Merge (N)** bar once two or more are selected, and **Split** and **Delete** in the
- * inspector. After a 412 on an edit, **View diff** shows the saved text as a `−` line and
- * the user's draft as a `+` line. */
+ * Above the list: a read-only banner of the pending changes (each with **Review**, which opens
+ * it in the inspector), then "Requirements" with its counts and the client-side **Category**
+ * and **State** filters ("No Requirements match these filters." with **Clear filters** when
+ * they leave nothing).
+ *
+ * Those who may edit (Story 2.6) also get **Add requirement** (or `c`) for an inline form at
+ * the top of the list, **Merge** on the selected row and in the inspector (or `x` on the
+ * focused row; Esc clears) with a **Merge (N)** bar once two or more are selected, **Edit**
+ * and **Split** on the selected row, and **Split** and **Delete** in the inspector. After a
+ * 412 on an edit, **View diff** shows the saved text as a `−` line and the user's draft as a
+ * `+` line. */
 export function RequirementsSection({
   opportunityId,
   initial,
   initialOutdated = NO_OUTDATED,
   initialSelectedId = null,
+  integrationTypes,
+  untaggedOnly = false,
 }: {
   opportunityId: string;
   initial: RequirementList;
+  /** The active catalogue Integration Types, for tagging (Story 4.1). */
+  integrationTypes?: readonly { id: string; name: string }[];
+  /** `?untagged=integration` (Story 4.1): list only integration Requirements with no
+   * Integration Type. */
+  untaggedOnly?: boolean;
   /** The Assessments that used outdated Requirement versions, as the page loaded. */
   initialOutdated?: readonly OutdatedAssessment[];
   /** A Requirement to open in the inspector as the page loads (`?requirement=<id>`, Story
@@ -649,6 +755,11 @@ export function RequirementsSection({
   const [reloading, setReloading] = useState(false);
   /** A row to move focus back to after Enter or Esc in its inline editor. */
   const [refocus, setRefocus] = useState<{ id: string } | null>(null);
+  /** The Category and State filters over the list (client-side). */
+  const [filters, setFilters] = useState<RequirementFilters>(NO_FILTERS);
+  /** A row's **Split**: the inspector of that Requirement opens its Split form. */
+  const [splitRequest, setSplitRequest] = useState<{ id: string; seq: number } | null>(null);
+  const splitSeq = useRef(0);
   const reloadRef = useRef<HTMLButtonElement>(null);
   const noticeId = useId();
   const locked = stale !== null || confirmingAll || reloading;
@@ -720,7 +831,10 @@ export function RequirementsSection({
   const [paneWasOpen, setPaneWasOpen] = useState(rightPaneOpen);
   if (paneWasOpen !== rightPaneOpen) {
     setPaneWasOpen(rightPaneOpen);
-    if (!rightPaneOpen) setFocusRequest(0);
+    if (!rightPaneOpen) {
+      setFocusRequest(0);
+      setSplitRequest(null);
+    }
   }
 
   // When the pane closes after a keyboard open, focus goes back to the row, not the toggle.
@@ -736,8 +850,19 @@ export function RequirementsSection({
 
   function open(item: Requirement, passageId: string | null, viaKeyboard: boolean) {
     setSelection({ id: item.id, passageId });
+    setSplitRequest(null);
     returnFocusTo.current = viaKeyboard ? item.id : null;
     setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
+
+  /** The selected row's **Split**: the inspector (opened if closed) shows its Split form. */
+  function requestSplit(item: Requirement) {
+    splitSeq.current += 1;
+    setSplitRequest({ id: item.id, seq: splitSeq.current });
+    setSelection((current) =>
+      current?.id === item.id ? current : { id: item.id, passageId: null },
+    );
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
 
@@ -1106,6 +1231,32 @@ export function RequirementsSection({
     }
   }
 
+  /** Save the Requirement's whole Integration Type set (Story 4.1). A 412 shows the stale
+   * notice with Reload. */
+  async function tag(item: Requirement, integrationTypeIds: string[]) {
+    if (locked || busyIds.has(item.id)) return;
+    setNotice(null);
+    markBusy(item.id, true);
+    let result: RequirementWriteResult;
+    try {
+      result = await tagRequirementIntegrationTypes({
+        opportunityId,
+        requirementId: item.id,
+        rowVersion: item.row_version,
+        integrationTypeIds,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(item.id, false);
+    if (result.kind === "ok") {
+      replace(result.requirement);
+      announce(TAG_SAVED);
+      return;
+    }
+    writeFailed(item, result, null, "inspector");
+  }
+
   // --- shaping the list (Story 2.6) ------------------------------------------------------
 
   function toggle(item: Requirement) {
@@ -1119,6 +1270,13 @@ export function RequirementsSection({
   function clearSelection() {
     setCheckedIds(NONE_CHECKED);
     announce("Selection cleared");
+  }
+
+  /** New filters clear the merge selection, so Merge (N) never takes rows the user can't
+   * see. */
+  function changeFilters(next: RequirementFilters) {
+    setFilters(next);
+    if (checkedIds.size > 0) clearSelection();
   }
 
   /** A failed create or merge: the sentence goes under the form, or a notice. */
@@ -1296,42 +1454,31 @@ export function RequirementsSection({
 
   const failed = list.extraction?.status === "failed";
   const succeeded = list.extraction?.status === "succeeded";
+  const filtered = filterRequirements(list.items, filters);
+  const untaggedCount = untaggedOnly ? list.items.filter(isUntaggedIntegration).length : 0;
+  // The open Requirement stays listed after it is tagged, so focus and keys keep their target.
+  const shown = untaggedOnly
+    ? filtered.filter((i) => isUntaggedIntegration(i) || i.id === selected?.id)
+    : filtered;
+  const pendingItems = list.items.filter((item) => item.pending_change);
+  const categories = categoriesPresent(list.items);
+  // A chosen category stays a choice after its last Requirement goes.
+  if (filters.category && !categories.some((c) => c.value === filters.category)) {
+    categories.push({
+      value: filters.category,
+      label: classificationLabel(filters.category),
+    });
+  }
   return (
     <div className="flex flex-col gap-4" aria-busy={confirmingAll || reloading || undefined}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <ExtractionStatus
-          extraction={list.extraction}
-          canStart={list.can_start_extraction}
-          busy={busy}
-          message={message}
-          stalled={stalled}
-          onRetry={() => void retry()}
-        />
-        {canEdit ? (
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={startCreate}
-              disabled={locked}
-              aria-keyshortcuts="c"
-              aria-expanded={creating !== null}
-              className={actionClass}
-            >
-              {ADD_REQUIREMENT}
-            </button>
-            {toConfirm > 0 ? (
-              <button
-                type="button"
-                disabled={locked || busyIds.size > 0}
-                onClick={() => void confirmAll()}
-                className={actionClass}
-              >
-                {confirmAllLabel(toConfirm)}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      <ExtractionStatus
+        extraction={list.extraction}
+        canStart={list.can_start_extraction}
+        busy={busy}
+        message={message}
+        stalled={stalled}
+        onRetry={() => void retry()}
+      />
       {/* Screen readers hear these through the shell's single live region. */}
       {stale ? (
         <InlineAlert
@@ -1377,6 +1524,90 @@ export function RequirementsSection({
           </Card>
         ) : null}
       </div>
+      {untaggedOnly ? (
+        <div
+          role="status"
+          data-testid="untagged-filter"
+          className="flex flex-wrap items-center gap-2.5 rounded-[10px] bg-gap-tint px-3.5 py-2.5 text-control font-medium text-gap"
+        >
+          <span>{untaggedFilterStatus(untaggedCount)}</span>
+          <Link
+            href={tabHref(opportunityId, "requirements")}
+            className="ml-auto font-semibold text-gap underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {SHOW_ALL}
+          </Link>
+        </div>
+      ) : null}
+      {pendingItems.length > 0 ? (
+        <PendingChangesBanner
+          items={pendingItems}
+          onReview={(item, viaKeyboard) => {
+            // A Requirement the filters hide would leave no row selected.
+            if (!shown.some((i) => i.id === item.id)) changeFilters(NO_FILTERS);
+            open(item, null, viaKeyboard);
+          }}
+        />
+      ) : null}
+      {list.items.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+          {/* The tab's sr-only heading already says "Requirements". */}
+          <span aria-hidden="true" className="text-section">
+            Requirements
+          </span>
+          <span className="text-meta text-numeric text-text-secondary">
+            {countsLine(list.items)}
+          </span>
+          <div role="group" aria-label="Filters" className="ml-auto flex flex-wrap gap-2">
+            <FilterChip
+              label="Category"
+              value={filters.category ?? ""}
+              options={categories}
+              onChange={(value) =>
+                changeFilters({
+                  ...filters,
+                  category: value === "" ? null : (value as Classification),
+                })
+              }
+            />
+            <FilterChip
+              label="State"
+              value={filters.state ?? ""}
+              options={REQUIREMENT_STATES}
+              onChange={(value) =>
+                changeFilters({
+                  ...filters,
+                  state: value === "" ? null : (value as RequirementState),
+                })
+              }
+            />
+          </div>
+        </div>
+      ) : null}
+      {canEdit ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={startCreate}
+            disabled={locked}
+            aria-keyshortcuts="c"
+            aria-expanded={creating !== null}
+          >
+            {ADD_REQUIREMENT}
+          </Button>
+          {toConfirm > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={locked || busyIds.size > 0}
+              onClick={() => void confirmAll()}
+            >
+              {confirmAllLabel(toConfirm)}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {canEdit && creating ? (
         <RequirementDraftForm
           key={creating.seq}
@@ -1399,8 +1630,9 @@ export function RequirementsSection({
           className="max-w-2xl flex-row flex-wrap items-center gap-2 p-3"
         >
           <span className="text-meta">{`${checked.length} selected`}</span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             disabled={locked || formBusy}
             aria-expanded={merging !== null}
             onClick={() => {
@@ -1409,13 +1641,12 @@ export function RequirementsSection({
               formSeq.current += 1;
               setMerging({ seq: formSeq.current, initial: mergeDraft(checked), ids: checkedKey });
             }}
-            className={actionClass}
           >
             {mergeLabel(checked.length)}
-          </button>
-          <button type="button" onClick={clearSelection} className={actionClass}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={clearSelection}>
             Clear selection
-          </button>
+          </Button>
         </Card>
       ) : null}
       {merging && checked.length >= 2 ? (
@@ -1434,18 +1665,26 @@ export function RequirementsSection({
           }}
         />
       ) : null}
-      {list.items.length > 0 ? (
+      {list.items.length > 0 && shown.length === 0 && !(untaggedOnly && untaggedCount === 0) ? (
+        <Card className="items-center gap-3 p-6 text-center">
+          <p>{NO_MATCH}</p>
+          <Button variant="outline" size="sm" onClick={() => changeFilters(NO_FILTERS)}>
+            {CLEAR_FILTERS}
+          </Button>
+        </Card>
+      ) : shown.length > 0 ? (
         <RequirementsList
-          items={list.items}
+          items={shown}
           selectedId={selected?.id ?? null}
           onOpen={open}
           edit={edit}
           checkedIds={checkedIds}
           inspectorOpen={rightPaneOpen && selected !== null}
           onToggle={canEdit ? toggle : undefined}
+          onSplit={canEdit ? requestSplit : undefined}
           onClearSelection={clearSelection}
         />
-      ) : succeeded ? (
+      ) : untaggedOnly && list.items.length > 0 ? null : succeeded ? (
         <p className="text-muted-foreground">{noneFound(list.extraction?.source_count)}</p>
       ) : !extracting && !failed ? (
         <EmptyTabCard
@@ -1466,6 +1705,7 @@ export function RequirementsSection({
               setSelection((current) => (current ? { ...current, passageId } : current))
             }
             focusRequest={focusRequest}
+            splitRequest={splitRequest?.id === selected.id ? splitRequest.seq : 0}
             edit={
               canEdit
                 ? {
@@ -1473,13 +1713,17 @@ export function RequirementsSection({
                     locked,
                     failure:
                       inspectorFailure?.id === selected.id ? inspectorFailure : null,
+                    selectedForMerge: checkedIds.has(selected.id),
                     onCommitText: (text) => void save(selected, { text }, "inspector"),
                     onClassify: (classification) => void save(selected, { classification }),
                     onConfirm: () => void confirm(selected),
+                    onToggleMerge: () => toggle(selected),
                     onAccept: () => void decide(selected, null),
                     onReject: (reason) => decide(selected, reason),
                     onSplit: (parts) => split(selected, parts),
                     onDelete: (reason) => deleteOne(selected, reason),
+                    integrationTypes,
+                    onTag: (ids) => void tag(selected, ids),
                   }
                 : undefined
             }
@@ -1487,5 +1731,121 @@ export function RequirementsSection({
         </RightPaneContent>
       ) : null}
     </div>
+  );
+}
+
+/** A dashed filter chip over a native select: its first option ("Category") shows every
+ * value; a chosen value turns the chip solid. */
+function FilterChip({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  const active = value !== "";
+  return (
+    <div className="shrink-0">
+      <Select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={`h-8 bg-transparent pr-8 pl-2.5 ${
+          active
+            ? "border-primary text-foreground"
+            : "border-dashed text-text-secondary hover:text-foreground"
+        }`}
+      >
+        <option value="">{label}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {`${label}: ${option.label}`}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
+
+/** The banner over the list while extraction has proposed changes (Story 2.7): how many,
+ * then per change the current text as a red `−` line and the proposed text as a green `+`
+ * line, each with its `R<n>`, and **Review**, which opens that Requirement in the inspector
+ * (where Accept and Reject are). Read-only: nothing is decided here. */
+function PendingChangesBanner({
+  items,
+  onReview,
+}: {
+  items: readonly Requirement[];
+  onReview: (item: Requirement, viaKeyboard: boolean) => void;
+}) {
+  const titleId = useId();
+  return (
+    <Card
+      role="region"
+      aria-labelledby={titleId}
+      data-testid="pending-changes"
+      className="overflow-hidden border-agent/40"
+    >
+      <div className="flex items-center gap-3 bg-agent-tint px-5 py-3 text-agent">
+        <span
+          aria-hidden="true"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-surface"
+        >
+          <SparklesIcon className="size-4" />
+        </span>
+        <p id={titleId} className="text-body-strong">
+          {pendingChangesTitle(items.length)}
+        </p>
+      </div>
+      <ul className="flex flex-col gap-4 px-5 py-4">
+        {items.map((item) => {
+          const change = item.pending_change;
+          if (!change) return null;
+          const label = requirementLabel(item);
+          const classification = classificationChange(item.classification, change.classification);
+          return (
+            <li key={change.id} className="flex flex-col gap-1.5">
+              <p className="flex gap-2.5 rounded-md bg-blocker-tint px-3 py-2 text-body">
+                <span aria-hidden="true" className="w-3.5 shrink-0 text-body-strong text-blocker">
+                  −
+                </span>
+                <span className="sr-only">Current: </span>
+                <span className="min-w-0 break-words">
+                  <span className="text-body-strong">{label}</span> {item.text}
+                </span>
+              </p>
+              <p className="flex gap-2.5 rounded-md bg-resolved-tint px-3 py-2 text-body">
+                <span aria-hidden="true" className="w-3.5 shrink-0 text-body-strong text-resolved">
+                  +
+                </span>
+                <span className="sr-only">Proposed: </span>
+                <span className="min-w-0 break-words">
+                  <span className="text-body-strong">{label}</span> {change.text}
+                </span>
+              </p>
+              <span className="flex flex-wrap items-center gap-3">
+                {classification ? (
+                  <span className="text-meta text-text-secondary">{classification}</span>
+                ) : null}
+                <Button
+                  variant="link"
+                  size="xs"
+                  aria-label={`${REVIEW} ${label}`}
+                  // A keyboard-activated click has no pointer clicks (detail 0).
+                  onClick={(event) => onReview(item, event.detail === 0)}
+                  className="h-auto px-0"
+                >
+                  {REVIEW}
+                </Button>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }

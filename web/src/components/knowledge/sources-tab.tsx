@@ -15,7 +15,6 @@ import {
   RightPaneContent,
   useShell,
 } from "@/components/shell/shell-context";
-import { withOption } from "@/lib/coverage";
 import type { Role } from "@/lib/navigation";
 import {
   applyFilters,
@@ -43,26 +42,32 @@ const selectClass =
 export function SourcesTab({
   initialSources,
   integrationTypes,
+  initialFilters = NO_FILTERS,
   me,
-  initialFilters,
 }: {
   initialSources: readonly KnowledgeSource[];
   /** The active Integration Types, for tagging. */
   integrationTypes: readonly IntegrationTypeOption[];
+  /** The filters the page opens with (`?integration_type=` and `?product=`, from the Gaps
+   * tab's coverage banner or a Coverage cell). */
+  initialFilters?: Filters;
   me: { id: string; roles: readonly Role[] };
-  /** Filters applied on load (`?product=&type=`, from a Coverage cell). */
-  initialFilters?: Partial<Pick<Filters, "product" | "integrationTypeId">>;
 }) {
   const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();
   const [sources, setSources] = useState<readonly KnowledgeSource[]>(initialSources);
   const [syncedFrom, setSyncedFrom] = useState(initialSources);
-  const [filters, setFilters] = useState<Filters>(() => ({
-    ...NO_FILTERS,
-    product: withOption(productsOf(initialSources), initialFilters?.product ?? "").selected,
-    integrationTypeId: integrationTypes.some((t) => t.id === initialFilters?.integrationTypeId)
-      ? (initialFilters?.integrationTypeId ?? "")
-      : "",
-  }));
+  const [filters, setFilters] = useState<Filters>(() => {
+    // A linked product takes the spelling the Sources use (products compare ignoring case).
+    const wanted = initialFilters.product.toLowerCase();
+    const match = productsOf(initialSources).find((p) => p.toLowerCase() === wanted);
+    // A linked Integration Type the picker can't show (retired or unknown) is dropped.
+    const knownType = integrationTypes.some((t) => t.id === initialFilters.integrationTypeId);
+    return {
+      ...initialFilters,
+      product: match ?? initialFilters.product,
+      integrationTypeId: knownType ? initialFilters.integrationTypeId : "",
+    };
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -169,8 +174,13 @@ export function SourcesTab({
     }
   }
 
-  // A seeded product with no Source yet stays choosable, so the filter shows what it is.
-  const products = withOption(productsOf(sources), filters.product).options;
+  // A product asked for by a link may have no Source yet: it stays choosable (no rows).
+  const known = productsOf(sources);
+  const products =
+    filters.product !== "" &&
+    !known.some((p) => p.toLowerCase() === filters.product.toLowerCase())
+      ? [...known, filters.product]
+      : known;
   const owners = ownersOf(sources);
 
   return (

@@ -56,7 +56,7 @@ export function ChecklistsTab({
   initialChecklists: readonly Checklist[];
   catalogue: readonly CatalogueOption[];
   permissions: readonly Permission[];
-  /** Filters applied on load (`?product=&type=`, from a Coverage cell). */
+  /** Filters applied on load (`?product=&integration_type=`, from a Coverage cell). */
   initialFilters?: Partial<ChecklistFilters>;
 }) {
   const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();

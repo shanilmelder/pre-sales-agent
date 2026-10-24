@@ -229,3 +229,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5-knowledge-coverage-view.md`
   summary: sprint-status.yaml still lists 3-4-author-and-version-checklists as backlog although Story 3.4 is merged and its spec is done.
   evidence: origin/story/3-4-author-version-checklists is an ancestor of origin/main, and spec-3-4 frontmatter has status done; found during Story 3.5 review.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-deterministic-mandatory-gaps.md`
+  summary: clarification_agent can propose a Gap that duplicates an open mandatory Checklist Gap; dedupe agent candidates against open mandatory Gaps (or pass them to the agent) when the Story 4.3 Checklist-aware remainder lands.
+  evidence: maybe-false — `_without_settled` only dedupes against dismissed/answered Gaps; settle by running detection on an Opportunity with a mandatory "SSO" item and Requirements mentioning SSO and checking for a near-duplicate detected Gap.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-deterministic-mandatory-gaps.md`
+  summary: Migration 0038 downgrade deletes mandatory Gaps (leaving Assumption `origin_ref` ids dangling) and has no downgrade test.
+  evidence: `downgrade()` runs `DELETE FROM gaps_gaps WHERE origin = 'mandatory_checklist'`; no test seeds a mandatory Gap before downgrading. Prod-hardening track, skipped for now.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
+  summary: Add a test that `psa_app` cannot UPDATE `intake_requirement_integration_types` (the migration 0037 REVOKE).
+  evidence: Default privileges grant UPDATE on new tables; only the REVOKE removes it, and no test pins it (cf. `test_jobs.py:294`).
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
+  summary: Reconcile Story 4.1's `knowledge.get_coverage` with the Story 3.5 branch, which adds its own `get_coverage` in the same `coverage.py`.
+  evidence: The `story/3-5-knowledge-coverage-view` worktree adds `knowledge/application/coverage.py` and `tests/test_knowledge_coverage.py` with a different `get_coverage` shape. The second branch to merge adopts the other's API and points the banner link at `/knowledge/coverage`.

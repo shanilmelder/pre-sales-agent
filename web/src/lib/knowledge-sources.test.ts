@@ -14,6 +14,7 @@ import {
   formatDate,
   formatSize,
   hasFilters,
+  initialSourceFilters,
   isParsePending,
   isProcessing,
   mergeSources,
@@ -24,6 +25,8 @@ import {
   productsOf,
   upsert,
 } from "./knowledge-sources";
+
+const TYPE_ID = "00000000-0000-7000-8000-000000000002";
 
 describe("knowledge source helpers", () => {
   it("has the spec's empty state", () => {
@@ -47,6 +50,16 @@ describe("knowledge source helpers", () => {
     expect(applyFilters(all, { ...NO_FILTERS, staleOnly: true })).toEqual([b]);
     expect(hasFilters(NO_FILTERS)).toBe(false);
     expect(hasFilters({ ...NO_FILTERS, staleOnly: true })).toBe(true);
+  });
+
+  it("reads the initial filters from ?integration_type= and ?product= (Story 4.1)", () => {
+    expect(initialSourceFilters({})).toEqual(NO_FILTERS);
+    expect(initialSourceFilters({ integration_type: TYPE_ID, product: " AutoStore " })).toEqual({
+      ...NO_FILTERS,
+      integrationTypeId: TYPE_ID,
+      product: "AutoStore",
+    });
+    expect(initialSourceFilters({ product: ["a", "b"], owner: "x" })).toEqual(NO_FILTERS);
   });
 
   it("lists distinct products and owners", () => {

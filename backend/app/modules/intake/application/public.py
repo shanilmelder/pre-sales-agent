@@ -26,6 +26,8 @@ from app.modules.intake.application.models import (
     RequirementDeletion,
     RequirementDraft,
     RequirementEvidence,
+    RequirementIntegrationType,
+    RequirementIntegrationTypes,
     RequirementList,
     RequirementMerge,
     RequirementSplit,
@@ -47,6 +49,7 @@ from app.modules.intake.application.requirement_edits import (
     propose_requirement_change,
     reject_requirement_change,
     split_requirement,
+    tag_requirement_integration_types,
 )
 from app.modules.intake.application.requirement_refs import (
     RequirementSnapshot,
@@ -54,7 +57,11 @@ from app.modules.intake.application.requirement_refs import (
     active_requirement_snapshots,
     requirement_version_texts,
 )
-from app.modules.intake.application.requirements import list_requirements, start_extraction
+from app.modules.intake.application.requirements import (
+    integration_scope,
+    list_requirements,
+    start_extraction,
+)
 from app.modules.intake.application.source_viewer import source_download_link, source_text
 from app.modules.intake.application.sources import (
     MISSING_FILE_DETAIL,
@@ -103,6 +110,8 @@ __all__ = [
     "RequirementDeletion",
     "RequirementDraft",
     "RequirementEvidence",
+    "RequirementIntegrationType",
+    "RequirementIntegrationTypes",
     "RequirementList",
     "RequirementMerge",
     "RequirementSnapshot",
@@ -129,6 +138,7 @@ __all__ = [
     "extracted_text",
     "get_passage",
     "input_budget_chars",
+    "integration_scope",
     "list_requirements",
     "list_sources",
     "max_body_bytes",
@@ -146,4 +156,5 @@ __all__ = [
     "split_requirement",
     "start_extraction",
     "store_upload",
+    "tag_requirement_integration_types",
 ]

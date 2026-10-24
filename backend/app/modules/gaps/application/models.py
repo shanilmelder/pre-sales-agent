@@ -1,10 +1,10 @@
 """Read models for Gaps and their Clarification Questions (Story 4.3)."""
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, TypeAdapter
 
 from app.modules.gaps.domain.gaps import (
     ANSWER_MAX,
@@ -22,14 +22,31 @@ from app.modules.gaps.domain.gaps import (
     QuestionStatus,
 )
 from app.modules.intake.application.public import RequirementChangeRef
+from app.modules.knowledge.application.public import ChecklistDomain
 from app.modules.opportunities.application.public import UserRef
 
 
-class GapTrigger(BaseModel):
-    """What raised the Gap. In the demo, always the agent, by category."""
+class AgentCategoryTrigger(BaseModel):
+    """The agent raised the Gap, by category."""
 
     kind: Literal["agent_category"]
     category: GapCategory
+
+
+class ChecklistItemTrigger(BaseModel):
+    """A mandatory item of an applicable Checklist raised the Gap (Story 4.2): the
+    Checklist, the published version the Gap was raised from, and the stable item id."""
+
+    kind: Literal["checklist_item"]
+    checklist_id: str
+    version: int = Field(ge=1)
+    item_id: str
+    checklist_name: str
+
+
+GapTrigger = Annotated[AgentCategoryTrigger | ChecklistItemTrigger, Field(discriminator="kind")]
+"""What raised the Gap."""
+GAP_TRIGGER: TypeAdapter[AgentCategoryTrigger | ChecklistItemTrigger] = TypeAdapter(GapTrigger)
 
 
 class GapRequirement(BaseModel):
@@ -68,6 +85,11 @@ class ClarificationQuestion(BaseModel):
     sent_by: UserRef | None
     answered_on: date | None
     answered_by: UserRef | None
+    from_checklist: bool = Field(
+        default=False,
+        description="Drafted from a mandatory Checklist item's wording (Story 4.2), shown "
+        'as "from Checklist".',
+    )
 
 
 class QuestionChanges(BaseModel):
@@ -304,6 +326,16 @@ class Gap(BaseModel):
     last_changed_by: UserRef | None
     answer: GapAnswer | None
     answer_suggestions: list[AnswerSuggestion]
+    checklist_applies: bool = Field(
+        default=True,
+        description="Story 4.2: for an open `mandatory_checklist` Gap, whether its Checklist "
+        "item still applies (it can be dismissed only once this is false); true otherwise.",
+    )
+    why_entry_id: str | None = Field(
+        default=None,
+        description="The catalogue entry (Integration Type or Work Package) `why_it_matters` "
+        "names, from the Checklist item (Story 4.2); null when none.",
+    )
 
 
 class Detection(BaseModel):
@@ -314,11 +346,11 @@ class Detection(BaseModel):
 
 
 class GapList(BaseModel):
-    """The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
-    within an impact, followed by its converted Gaps (Story 8.4), then its dismissed Gaps
-    (Story 4.4), each group in the same order; and its latest detection (null when none has
-    been queued yet). `can_edit_gaps`: whether the caller may change impacts, dismiss and
-    reopen Gaps (Story 4.4).
+    """The Opportunity's open Gaps, high impact first, then medium, then low, mandatory Gaps
+    first within an impact (Story 4.2), then oldest first, followed by its converted Gaps
+    (Story 8.4), then its dismissed Gaps (Story 4.4), each group in the same order; and its
+    latest detection (null when none has been queued yet). `can_edit_gaps`: whether the
+    caller may change impacts, dismiss and reopen Gaps (Story 4.4).
     `can_start_detection`: whether the caller may start (retry) a detection;
     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
     (Story 4.5); `can_send_questions`: whether the caller may export questions, mark them
@@ -333,3 +365,42 @@ class GapList(BaseModel):
     can_edit_questions: bool
     can_edit_gaps: bool
     can_send_questions: bool
+
+
+# --- the Gaps tab context (Story 4.1) -------------------------------------------------------
+
+
+class GapsContextChecklist(BaseModel):
+    """A Checklist that applies to the Opportunity, at its latest published version."""
+
+    checklist_id: str
+    version: int = Field(ge=1)
+    name: str
+    domain: ChecklistDomain
+
+
+class UncoveredIntegrationType(BaseModel):
+    """An Integration Type in scope that no active, embedded Knowledge Source documents."""
+
+    id: str
+    name: str
+
+
+class UncoveredScope(BaseModel):
+    """What is in scope but undocumented in the Knowledge Base: the Opportunity's products
+    and its Requirements' Integration Types with no active, embedded Source."""
+
+    products: list[str]
+    integration_types: list[UncoveredIntegrationType]
+
+
+class GapsContext(BaseModel):
+    """What the Gaps tab shows above the list (Story 4.1). `applicable_checklists`: the
+    Checklists whose scope matches the Opportunity's products, its industry or the
+    Integration Types on its active Requirements, by name. `untagged_integration_count`: how
+    many active Requirements classified `integration` have no Integration Type.
+    `uncovered`: the scope the Knowledge Base doesn't document yet."""
+
+    applicable_checklists: list[GapsContextChecklist]
+    untagged_integration_count: int = Field(ge=0)
+    uncovered: UncoveredScope

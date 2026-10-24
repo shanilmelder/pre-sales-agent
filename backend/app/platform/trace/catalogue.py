@@ -272,6 +272,18 @@ class IntakeRequirementMerged(TracePayload):
 
 
 @register
+class IntakeRequirementIntegrationTypesTagged(TracePayload):
+    """A person changed a Requirement's Integration Type tags (Story 4.1). Subject: the
+    Requirement (`intake.requirement`), at its current version (tags are not versioned).
+    `added` and `removed`: catalogue entry ids."""
+
+    event_type: ClassVar[str] = "intake.requirement.integration_types_tagged"
+
+    added: list[str]
+    removed: list[str]
+
+
+@register
 class IntakeRequirementConfirmed(TracePayload):
     """A person confirmed a Requirement (Story 2.6), on its own or with **Confirm all**,
     locking it against re-extraction. Subject: the Requirement (`intake.requirement`)."""
@@ -326,7 +338,9 @@ class IntakeRequirementChangeRejected(TracePayload):
 @register
 class GapsGapRaised(TracePayload):
     """A detection raised a Gap. Subject: the Gap (`gaps.gap`). Actor: the agent
-    (`clarification_agent@<semver>`). `requirement_ids`: the Requirements it relates to."""
+    (`clarification_agent@<semver>`), or for a mandatory Gap (Story 4.2, `origin`
+    `mandatory_checklist`) the system (`gaps.detect_gaps`). `requirement_ids`: the
+    Requirements it relates to (none for a mandatory Gap)."""
 
     event_type: ClassVar[str] = "gaps.gap.raised"
 
@@ -334,6 +348,7 @@ class GapsGapRaised(TracePayload):
     category: str
     impact: str
     requirement_ids: list[str]
+    origin: str = "detected"
 
 
 @register

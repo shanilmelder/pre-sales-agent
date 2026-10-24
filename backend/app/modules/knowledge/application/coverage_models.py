@@ -18,7 +18,7 @@ class CoverageCounts(BaseModel):
 
 
 class CoveragePair(CoverageCounts):
-    """The counts for one asked-for pair (`get_coverage`)."""
+    """The counts for one asked-for pair (`get_pair_coverage`)."""
 
     product: str
     integration_type_id: str

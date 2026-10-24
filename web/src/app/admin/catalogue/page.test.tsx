@@ -65,8 +65,12 @@ describe("/admin/catalogue", () => {
     });
     const { container } = renderPage(await AdminCataloguePage());
 
-    expect(screen.getByRole("heading", { level: 1, name: "Catalogue" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Users & roles" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Admin" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Users and roles" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Integration Type and Work Package catalogue" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New entry" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Catalogue" }).getAttribute("aria-current")).toBe(
       "page",
     );

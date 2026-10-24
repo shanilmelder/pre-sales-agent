@@ -1081,6 +1081,52 @@ export async function editRequirement(input: unknown): Promise<RequirementWriteR
   }
 }
 
+export type RequirementTagInput = RequirementConfirmInput & {
+  /** The whole new set of catalogue Integration Type ids (it replaces the current one). */
+  integrationTypeIds: string[];
+};
+
+/** The most Integration Types one Requirement can carry (the API's limit). */
+const INTEGRATION_TYPES_MAX = 50;
+
+function isTagInput(input: unknown): input is RequirementTagInput {
+  if (!isRowTarget(input)) return false;
+  const { integrationTypeIds } = input as Record<string, unknown>;
+  return (
+    Array.isArray(integrationTypeIds) &&
+    integrationTypeIds.length <= INTEGRATION_TYPES_MAX &&
+    integrationTypeIds.every((id) => typeof id === "string" && UUID_RE.test(id))
+  );
+}
+
+/** `PUT /api/v1/opportunities/{id}/requirements/{rid}/integration-types` with `If-Match`
+ * (Story 4.1): replace the Requirement's Integration Type tags. Never retries or overwrites
+ * on 412. Logs ids and statuses only. */
+export async function tagRequirementIntegrationTypes(
+  input: unknown,
+): Promise<RequirementWriteResult> {
+  if (!isTagInput(input)) return { kind: "error" };
+  const { opportunityId, requirementId, rowVersion, integrationTypeIds } = input;
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.PUT(
+      "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/integration-types",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, requirement_id: requirementId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { integration_type_ids: integrationTypeIds },
+      },
+    );
+    if (data) return { kind: "ok", requirement: data };
+    return await requirementWriteFailure("tag requirement", input, response.status, error);
+  } catch (thrown) {
+    console.error(`tag requirement failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
 /** `POST /api/v1/opportunities/{id}/requirements/{rid}/confirm` with `If-Match`. Confirming
  * one already confirmed is a no-op on the API. */
 export async function confirmRequirement(input: unknown): Promise<RequirementWriteResult> {
@@ -1865,6 +1911,8 @@ export type GapWriteResult =
   | { kind: "gap-not-open" }
   /** 409 `gap_not_reopenable`: the Gap is neither dismissed nor answered (reopened meanwhile). */
   | { kind: "gap-not-reopenable" }
+  /** 409 `gap_mandatory` (Story 4.2): a mandatory Gap whose Checklist still applies. */
+  | { kind: "gap-mandatory" }
   | { kind: "forbidden" }
   /** 404: the Opportunity can't be read, or the Gap is gone. */
   | { kind: "not-found" }
@@ -1908,10 +1956,12 @@ async function gapWriteFailure(
           detail && !detail.startsWith("Invalid fields:") ? detail : "The change was not accepted.",
       };
     }
-    case 409:
-      return problem(error).code === "gap_not_reopenable"
-        ? { kind: "gap-not-reopenable" }
-        : { kind: "gap-not-open" };
+    case 409: {
+      const { code } = problem(error);
+      if (code === "gap_not_reopenable") return { kind: "gap-not-reopenable" };
+      if (code === "gap_mandatory") return { kind: "gap-mandatory" };
+      return { kind: "gap-not-open" };
+    }
     case 403:
       return { kind: "forbidden" };
     case 404:

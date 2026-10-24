@@ -3,7 +3,7 @@ title: 'Story 3.5: Knowledge coverage view'
 type: 'feature'
 created: '2026-10-23'
 status: 'in-review'
-baseline_commit: '293bae34ef49b41e6ddfd6937b331b77c881b9e1'
+baseline_commit: '6b24fae81f910547f3aade606e13bbe742254072'
 route: 'dispatch'
 review_loop_iteration: 1
 context:
@@ -16,7 +16,7 @@ context:
 
 **Problem:** Admins can't see which products and Integration Types lack documentation or Checklists, so they don't know where Gap detection is weak or whose time to ask for.
 
-**Approach:** `knowledge` gains a pure coverage rule, `knowledge.public.get_coverage(products, integration_type_ids)` and `GET /api/v1/knowledge/coverage`. The web app gets a Knowledge → Coverage sub-tab built to the new mockup (`ux-designs/ux-pre-sales-agent-2026-10-01/new-mockups/Presales Agent Design Spec (standalone).html`, Knowledge → Coverage). It has a product × active Integration Type matrix card, an "Industry Checklists" list, and cells that open the Sources or Checklists sub-tab filtered to that pair.
+**Approach:** `knowledge` gains a pure coverage rule, `knowledge.public.get_pair_coverage(products, integration_type_ids)` and `GET /api/v1/knowledge/coverage`. The web app gets a Knowledge → Coverage sub-tab built to the new mockup (`ux-designs/ux-pre-sales-agent-2026-10-01/new-mockups/Presales Agent Design Spec (standalone).html`, Knowledge → Coverage). It has a product × active Integration Type matrix card, an "Industry Checklists" list, and cells that open the Sources or Checklists sub-tab filtered to that pair.
 
 ## Boundaries & Constraints
 
@@ -55,13 +55,13 @@ context:
 - `backend/app/modules/knowledge/adapters/source_repository.py`: add a query for non-retired, latest-embed `ready` Sources with product, `last_reviewed_on` and tag entry ids. Reuse the `embed_status` join (:141) and `tags_for` (:189).
 - `backend/app/modules/knowledge/adapters/checklist_repository.py`: `published_active` (:110) and `tags_for` (:123) already give scope.
 - `backend/app/modules/knowledge/application/coverage.py` + `coverage_models.py` (new):
-  - `get_coverage(uow, *, products, integration_type_ids, stale_months)` returns counts per pair.
+  - `get_pair_coverage(uow, *, products, integration_type_ids, stale_months)` returns counts per pair. Story 4.1's `get_coverage` (per product and per type, Sources only) lives in the same file and shares `source_repository.ready_sources`.
   - `coverage_matrix(uow, actor, *, extra_products, stale_months)` returns the integration types, rows, cells and industries.
   - Integration Types come from `list_catalogue(uow, Kind.INTEGRATION_TYPE)` (`catalogue.py:374`). Matching uses `domain/checklists.match_key` (:140).
 - `backend/app/modules/knowledge/application/public.py:108-193`: export both functions and the models.
 - `backend/app/modules/knowledge/api/coverage_routes.py` (new): `GET /knowledge/coverage`, `operation_id="get_knowledge_coverage"`. Copy the pattern at `source_routes.py:131-162` (settings come from `request.app.state.settings`). Mount it in `app/main_api.py:142-145`.
 - `backend/pyproject.toml:272`: add `ignore_imports = ["app.modules.knowledge.api.coverage_routes -> app.modules.opportunities.application.public"]`. Precedent: the conflicts contract.
-- Tests: `backend/tests/test_knowledge_coverage_domain.py` (pure) and `test_knowledge_coverage.py`. Reuse the helpers `_ready`/`_drain`/`ollama` (`test_knowledge_embedding.py:114,230,301`), `_backdate` (`test_knowledge_sources.py:181`), `_entry`/`_published` (`test_knowledge_checklists.py:65,159`) and `tests/conftest.py`.
+- Tests: `backend/tests/test_knowledge_coverage_domain.py` (pure) and `test_knowledge_coverage_matrix.py` (`test_knowledge_coverage.py` is Story 4.1's). Reuse the helpers `_ready`/`_drain`/`ollama` (`test_knowledge_embedding.py:114,230,301`), `_backdate` (`test_knowledge_sources.py:181`), `_entry`/`_published` (`test_knowledge_checklists.py:65,159`) and `tests/conftest.py`.
 - `web/src/components/knowledge/knowledge-nav.tsx:3-8`: add Coverage (`/knowledge/coverage`). Restyle to the segmented track in `opportunities/opportunity-views.tsx:25-36`.
 - `web/src/app/knowledge/coverage/page.tsx` + `actions.ts` (new): copy `app/knowledge/checklists/page.tsx:32-55` (`getMe`, `AccessGate`, `AppShell`, `PageHeader`, `PageContent`).
 - `web/src/lib/coverage.ts` (new): types from `lib/api/schema.d.ts`, status labels and tones, and the cell href builder.
@@ -70,7 +70,7 @@ context:
   - Mockup layout: a `surface-alt` header band with a 12px secondary "Product" column of 200px, then equal columns and padded rows with a top border.
   - Grid keyboard code is new. Copy the roving approach in `sources-table.tsx:101`.
 - `web/src/lib/use-skeleton-done.ts` (new): extract `useSkeletonDone` from `opportunities/opportunities-table.tsx:47-54` (`SKELETON_MIN_MS`, `lib/opportunities.ts:42`) and reuse it there.
-- `web/src/app/knowledge/page.tsx` + `sources-tab.tsx:54`: an `initialFilters` prop seeded from `?product=&type=`.
+- `web/src/app/knowledge/page.tsx` + `sources-tab.tsx:54`: Story 4.1's `initialFilters` prop, seeded from `?product=&integration_type=` (`initialSourceFilters`, which uses `seededFilters`).
 - `web/src/app/knowledge/checklists/page.tsx` + `checklists-tab.tsx:51-55`: add product and Integration Type filters (client-side), seeded from the same params, in the same style as the selects at `sources-tab.tsx:168-190`.
 
 ## Tasks & Acceptance
@@ -87,7 +87,7 @@ context:
 **Acceptance Criteria:**
 - Given the Coverage page at 1440px, in light and dark, then it matches the mockup's card, header band, row padding and pill styling.
 - Given a cell, when it is activated, then the target sub-tab loads with its product and Integration Type filters already applied.
-- Given another module, when it calls `get_coverage(products, ids)`, then it gets the counts for exactly those pairs.
+- Given another module, when it calls `get_pair_coverage(products, ids)`, then it gets the counts for exactly those pairs.
 
 ## Implementation Notes
 
@@ -96,6 +96,7 @@ context:
 ## Spec Change Log
 
 - Review loop 1 (intent_gap): the pairing rule claimed parity with `find_applicable_checklists` but is product × type. The human chose to keep product × type, and the frozen claim is reworded. The code already follows the rule, so it wasn't reverted (re-derivation would produce the same code). KEEP: everything implemented. Still to do: the patches marked "Patch" in the Review Triage Log, and rewording the parity claim in the docstrings of `application/coverage.py` and `web/src/lib/checklists.ts` (`applyChecklistFilters`).
+- Merge of main (Stories 4.1 and 4.2), 24 Oct: 4.1 had already shipped its own `knowledge.get_coverage` (per product and per type, Sources only; used by the Gaps context) in the same `coverage.py`, plus `?product=&integration_type=` Sources filters. Decision (human): 4.1 keeps `get_coverage`; this story's pair counts become `get_pair_coverage`, and the frozen Approach and acceptance criterion are reworded to that name. The duplicate `ready_sources` query is merged into 3.5's (it carries tags), the URL param is `integration_type` everywhere (cells, Checklists, the Gaps banner) and parsed by `seededFilters` alone, and 3.5's API tests moved to `test_knowledge_coverage_matrix.py`. KEEP: everything else.
 
 ## Review Triage Log
 

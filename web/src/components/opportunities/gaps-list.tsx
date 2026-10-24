@@ -40,6 +40,8 @@ import {
   type GapFormOutcome,
   type QuestionField,
 } from "@/components/opportunities/gap-inspector";
+import { MandatoryLabel } from "@/components/knowledge/mandatory-label";
+import { ChecklistPane, GapsContextBar } from "@/components/opportunities/gaps-context";
 import { GapsFilters } from "@/components/opportunities/gaps-filters";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -62,7 +64,7 @@ import {
   approveSelectedLabel,
   APPROVED,
   categoryLabel,
-  CLARIFICATION_AGENT,
+  checklistNoLongerApplies,
   CLEAR_FILTERS,
   dismissReasonLabel,
   DETECTING,
@@ -78,11 +80,13 @@ import {
   hasGapFilters,
   impactLabel,
   isDetecting,
+  isMandatory,
   isSent,
   markAllSentLabel,
   markSelectedSentLabel,
   NO_ANSWER,
   NO_GAPS,
+  NO_LONGER_APPLIES,
   NO_FILTER_MATCH,
   NO_GAP_FILTERS,
   NO_GAPS_BODY,
@@ -96,6 +100,7 @@ import {
   STILL_DETECTING,
   toApprove,
   toSend,
+  triggerSource,
   type AnswerSuggestion,
   type ClarificationQuestion,
   type Detection,
@@ -103,6 +108,8 @@ import {
   type Gap,
   type GapFilters,
   type GapList,
+  type GapsContext,
+  type GapsContextChecklist,
   type Impact,
 } from "@/lib/gaps";
 import { tabHref } from "@/lib/workspace";
@@ -122,6 +129,8 @@ export const EDIT_NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can edit and approve questions.";
 export const GAP_NOT_OPEN =
   "This Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection.";
+export const GAP_MANDATORY =
+  "A mandatory Gap can be dismissed only once its Checklist no longer applies.";
 export const GAP_NOT_DISMISSED =
   "This Gap is no longer dismissed or answered: someone reopened it.";
 export const GAP_EDIT_NOT_ALLOWED =
@@ -155,7 +164,9 @@ const GRID_PLAIN = "grid-cols-1 md:grid-cols-[112px_minmax(0,1fr)_120px]";
  * medium, low, then lists answered, converted and dismissed ones in the same order). Each row
  * shows the checkbox (with `onToggle`), the impact bar coloured by impact, the title with a meta
  * line "{category} · Clarification Agent" (and the answer or possible-answer hint), and the
- * question's pill (none when the viewer may not see the question). A converted Gap's row is
+ * question's pill (none when the viewer may not see the question). Story 4.2: a mandatory
+ * Gap's trigger reads "Checklist · {name} v{n}" with the "Mandatory" label, and "Checklist no
+ * longer applies" once its Checklist no longer applies. A converted Gap's row is
  * greyed out and labelled "Converted to Condition" or "Converted to Contingency" (Story 8.4)
  * instead of the pill; a dismissed Gap's row is greyed out with "Dismissed · {reason}" (Story
  * 4.4). The opened row has the primary tint; otherwise an open High-impact Gap has the blocker
@@ -348,7 +359,11 @@ export function GapsList({
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-text-secondary">
                     <span>{categoryLabel(item.category)}</span>
                     <span aria-hidden="true">·</span>
-                    <TriggerPill>{CLARIFICATION_AGENT}</TriggerPill>
+                    <TriggerPill>{triggerSource(item)}</TriggerPill>
+                    {isMandatory(item) ? <MandatoryLabel /> : null}
+                    {item.status === "open" && checklistNoLongerApplies(item) ? (
+                      <span>{NO_LONGER_APPLIES}</span>
+                    ) : null}
                     {item.answer ? (
                       <span>{answeredLabel(item.answer.answered_on)}</span>
                     ) : item.answer_suggestions[0] ? (
@@ -499,9 +514,13 @@ function retryMessage(result: StartGapDetectionResult): string {
 export function GapsSection({
   opportunityId,
   initial,
+  context = null,
 }: {
   opportunityId: string;
   initial: GapList;
+  /** The applicable Checklists, untagged integration Requirements and uncovered scope (Story
+   * 4.1); null when it couldn't be read: the strip and banners are left out. */
+  context?: GapsContext | null;
 }) {
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
@@ -509,6 +528,9 @@ export function GapsSection({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
+  // Story 4.1: the applicable Checklist shown read-only in the right pane (instead of a Gap).
+  const [openChecklist, setOpenChecklist] = useState<GapsContextChecklist | null>(null);
+  const returnToChecklist = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -618,7 +640,14 @@ export function GapsSection({
     if (rightPaneOpen) return;
     const id = returnFocusTo.current;
     returnFocusTo.current = null;
+    const chip = returnToChecklist.current;
+    returnToChecklist.current = null;
     const active = document.activeElement;
+    if (chip && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
+      // Closing the Checklist view (Esc) puts focus back on its chip.
+      document.querySelector<HTMLElement>(`[data-checklist-chip="${chip}"]`)?.focus();
+      return;
+    }
     if (id && (active === document.body || active?.id === RIGHT_PANE_TOGGLE_ID)) {
       // A filtered-out row isn't rendered: fall back to the grid's tab-stop row.
       (
@@ -628,7 +657,18 @@ export function GapsSection({
     }
   }, [rightPaneOpen]);
 
+  function openChecklistView(checklist: GapsContextChecklist, viaKeyboard: boolean) {
+    setSelectedId(null);
+    setOpenChecklist(checklist);
+    returnFocusTo.current = null;
+    returnToChecklist.current = checklist.checklist_id;
+    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
+
   function open(item: Gap, viaKeyboard: boolean) {
+    setOpenChecklist(null);
+    returnToChecklist.current = null;
     setSelectedId(item.id);
     returnFocusTo.current = viaKeyboard ? item.id : null;
     setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
@@ -639,6 +679,8 @@ export function GapsSection({
   /** `e` on a row: open it with its question text being edited. */
   function startEdit(item: Gap) {
     if (locked) return;
+    setOpenChecklist(null);
+    returnToChecklist.current = null;
     setSelectedId(item.id);
     returnFocusTo.current = item.id;
     setFocusRequest(0);
@@ -1099,6 +1141,10 @@ export function GapsSection({
         say(GAP_NOT_DISMISSED);
         void refresh();
         return "failed";
+      case "gap-mandatory":
+        say(GAP_MANDATORY);
+        void refresh(); // its Checklist applies again: Dismiss goes away
+        return "failed";
       case "forbidden":
         say(GAP_EDIT_NOT_ALLOWED);
         void refresh(); // `can_edit_gaps` changed: the controls go away
@@ -1336,6 +1382,14 @@ export function GapsSection({
           </div>
         ) : null}
       </div>
+      {context ? (
+        <GapsContextBar
+          opportunityId={opportunityId}
+          context={context}
+          openChecklistId={rightPaneOpen ? (openChecklist?.checklist_id ?? null) : null}
+          onOpenChecklist={openChecklistView}
+        />
+      ) : null}
       <DetectionStatus
         detection={list.detection}
         canStart={list.can_start_detection}
@@ -1412,6 +1466,15 @@ export function GapsSection({
           actionLabel={OPEN_REQUIREMENTS}
           href={tabHref(opportunityId, "requirements")}
         />
+      ) : null}
+      {openChecklist && !selected ? (
+        <RightPaneContent>
+          <ChecklistPane
+            key={`checklist:${openChecklist.checklist_id}`}
+            checklist={openChecklist}
+            focusRequest={focusRequest}
+          />
+        </RightPaneContent>
       ) : null}
       {selected ? (
         <RightPaneContent>

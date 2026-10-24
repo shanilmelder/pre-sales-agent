@@ -41,20 +41,20 @@ describe("coverage words", () => {
 describe("filter links", () => {
   it("carry the product and the Integration Type", () => {
     expect(sourcesHref("SAP EWM & co", TYPE_ID)).toBe(
-      `/knowledge?product=SAP+EWM+%26+co&type=${TYPE_ID}`,
+      `/knowledge?product=SAP+EWM+%26+co&integration_type=${TYPE_ID}`,
     );
     expect(checklistsHref("HubSpot", TYPE_ID)).toBe(
-      `/knowledge/checklists?product=HubSpot&type=${TYPE_ID}`,
+      `/knowledge/checklists?product=HubSpot&integration_type=${TYPE_ID}`,
     );
   });
 
   it("are read back, ignoring anything malformed", () => {
-    expect(seededFilters({ product: " SAP EWM ", type: TYPE_ID.toUpperCase() })).toEqual({
+    expect(seededFilters({ product: " SAP EWM ", integration_type: TYPE_ID.toUpperCase() })).toEqual({
       product: "SAP EWM",
       integrationTypeId: TYPE_ID,
     });
-    expect(seededFilters({ product: ["A", "B"], type: "not-a-uuid" })).toEqual({
-      product: "A",
+    expect(seededFilters({ product: ["A", "B"], integration_type: "not-a-uuid" })).toEqual({
+      product: "",
       integrationTypeId: "",
     });
     expect(seededFilters({ product: "x".repeat(201) })).toEqual({

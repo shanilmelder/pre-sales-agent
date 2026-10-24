@@ -39,7 +39,7 @@ export function checklistsText(cell: Pick<CoverageCell, "checklists">): string {
 }
 
 function filterQuery(product: string, integrationTypeId: string): string {
-  return new URLSearchParams({ product, type: integrationTypeId }).toString();
+  return new URLSearchParams({ product, integration_type: integrationTypeId }).toString();
 }
 
 /** Knowledge → Sources filtered to the cell's product and Integration Type. */
@@ -53,14 +53,14 @@ export function checklistsHref(product: string, integrationTypeId: string): stri
 }
 
 /** The product and Integration Type filters a Sources or Checklists link carries
- * (`?product=&type=`). Anything malformed is ignored (no filter). */
+ * (`?product=&integration_type=`). Anything malformed or repeated is ignored (no filter). */
 export function seededFilters(
   params: Record<string, string | string[] | undefined> | undefined,
 ): { product: string; integrationTypeId: string } {
   const one = (value: string | string[] | undefined) =>
-    typeof value === "string" ? value : Array.isArray(value) ? (value[0] ?? "") : "";
+    typeof value === "string" ? value : "";
   const product = one(params?.product).trim();
-  const type = one(params?.type).trim();
+  const type = one(params?.integration_type).trim();
   return {
     product: product.length <= PRODUCT_PARAM_MAX ? product : "",
     integrationTypeId: UUID_RE.test(type) ? type.toLowerCase() : "",

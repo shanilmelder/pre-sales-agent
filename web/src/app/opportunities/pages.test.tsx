@@ -1327,7 +1327,8 @@ describe("/opportunities/[id] workspace", () => {
     expect(selectedTabs()).toEqual(["Requirements"]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { level: 2, name: "Requirements" })).toBeTruthy();
-    expect(within(panel).getByRole("heading", { level: 3, name: "Integration 1" })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "Integration" })).toBeTruthy();
+    expect(within(panel).getByRole("region", { name: "Integration 1 · 0 confirmed" })).toBeTruthy();
     expect(within(panel).getByText("[REQUIREMENT]")).toBeTruthy();
     expect(within(panel).getByText("S1 · call.vtt")).toBeTruthy();
     expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
@@ -1335,6 +1336,65 @@ describe("/opportunities/[id] workspace", () => {
       params: { path: { opportunity_id: OPP_ID } },
     });
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /requirements?untagged=integration: untagged rows and the type picker", async () => {
+    signedIn(["presales_engineer"]);
+    const requirement = (n: number, classification: string, tagged: boolean) => ({
+      id: `00000000-0000-7000-8000-0000000000e${n}`,
+      number: n,
+      text: `[REQUIREMENT ${n}]`,
+      classification,
+      origin: "extracted",
+      locked_by_human: false,
+      version: 1,
+      row_version: 1,
+      created_at: "2026-10-04T13:05:00Z",
+      confirmed_at: null,
+      confirmed_by: null,
+      last_changed_by: null,
+      pending_change: null,
+      evidence: [],
+      integration_types: tagged
+        ? [{ id: "00000000-0000-7000-8000-0000000000a1", code: "SAP", name: "SAP", retired: false }]
+        : [],
+    });
+    apiGet.mockImplementation(async (path: string) =>
+      path === "/api/v1/catalogue/entries"
+        ? {
+            data: { items: [{ id: "00000000-0000-7000-8000-0000000000a2", name: "[EDI]" }] },
+            response: new Response(null, { status: 200 }),
+          }
+        : path.endsWith("/requirements")
+          ? {
+              data: {
+                items: [
+                  requirement(1, "integration", true),
+                  requirement(2, "integration", false),
+                  requirement(3, "functional", false),
+                ],
+                extraction: { status: "succeeded", error_code: null, source_count: 1 },
+                can_start_extraction: true,
+                can_edit_requirements: true,
+                untagged_integration_count: 1,
+              },
+              response: new Response(null, { status: 200 }),
+            }
+          : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+    await renderWorkspace("requirements", OPP_ID, { untagged: "integration" });
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByTestId("untagged-filter").textContent).toContain(
+      "Showing 1 integration Requirement with no Integration Type",
+    );
+    expect(within(panel).queryByText("[REQUIREMENT 1]")).toBeNull();
+    expect(within(panel).queryByText("[REQUIREMENT 3]")).toBeNull();
+    await userEvent.setup().click(within(panel).getByText("[REQUIREMENT 2]"));
+    const details = await screen.findByRole("complementary", { name: "Details" });
+    expect(within(details).getByRole("checkbox", { name: "[EDI]" })).toBeTruthy();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/catalogue/entries", {
+      params: { query: { kind: "integration_type" } },
+    });
   });
 
   it("tab URL /requirements: the empty state", async () => {
@@ -1479,15 +1539,51 @@ describe("/opportunities/[id] workspace", () => {
     ).toBeTruthy();
   });
 
-  function foundWithGaps(body: unknown) {
+  /** `context`: the Gaps tab context (Story 4.1); left out, its read fails. */
+  function foundWithGaps(body: unknown, context?: unknown) {
     apiGet.mockImplementation(async (path: string) =>
-      path.endsWith("/gaps")
-        ? body
-          ? { data: body, response: new Response(null, { status: 200 }) }
+      path.endsWith("/gaps/context")
+        ? context
+          ? { data: context, response: new Response(null, { status: 200 }) }
           : { response: new Response(null, { status: 500 }) }
-        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+        : path.endsWith("/gaps")
+          ? body
+            ? { data: body, response: new Response(null, { status: 200 }) }
+            : { response: new Response(null, { status: 500 }) }
+          : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
     );
   }
+
+  it("tab URL /gaps: the applicable Checklists and banners under the header", async () => {
+    signedIn(["presales_engineer"]);
+    foundWithGaps(
+      { items: [], detection: null, can_start_detection: true, can_edit_questions: true },
+      {
+        applicable_checklists: [
+          {
+            checklist_id: "00000000-0000-7000-8000-0000000000c1",
+            version: 2,
+            name: "[CHECKLIST]",
+            domain: "security",
+          },
+        ],
+        untagged_integration_count: 1,
+        uncovered: { products: ["[PRODUCT]"], integration_types: [] },
+      },
+    );
+    await renderWorkspace("gaps");
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("button", { name: "[CHECKLIST] · v2" })).toBeTruthy();
+    expect(within(panel).getByTestId("untagged-banner").textContent).toContain(
+      "1 integration Requirement has no Integration Type",
+    );
+    expect(within(panel).getByTestId("coverage-banner").textContent).toContain(
+      "No documentation for 1 product in scope",
+    );
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/gaps/context", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+  });
 
   it("tab URL /gaps: the ranked Gaps with their category and Draft question", async () => {
     signedIn(["sales_representative"]);

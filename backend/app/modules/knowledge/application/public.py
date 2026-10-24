@@ -6,8 +6,11 @@ Evidence resolver, also registered with `app.platform.evidence` on import).
 Story 3.4: the Checklist commands and views, and `find_applicable_checklists` (the latest
 published version of every active Checklist whose scope matches, for Gap detection).
 
-Story 3.5: `get_coverage` (Source and Checklist counts and status per product and Integration
-Type pair) and `coverage_matrix` (the Coverage view)."""
+Story 3.5: `get_pair_coverage` (Source and Checklist counts and status per product and
+Integration Type pair) and `coverage_matrix` (the Coverage view).
+
+Story 4.1: `get_coverage` (whether active, embedded Sources document the products and
+Integration Types in scope)."""
 
 from app.modules.knowledge.application.catalogue import (
     create_entry,
@@ -49,7 +52,11 @@ from app.modules.knowledge.application.checklists import (
     retire_checklist,
     save_draft,
 )
-from app.modules.knowledge.application.coverage import coverage_matrix, get_coverage
+from app.modules.knowledge.application.coverage import (
+    coverage_matrix,
+    get_coverage,
+    get_pair_coverage,
+)
 from app.modules.knowledge.application.coverage_models import (
     CoverageCell,
     CoverageCounts,
@@ -71,7 +78,9 @@ from app.modules.knowledge.application.models import (
 )
 from app.modules.knowledge.application.search import search
 from app.modules.knowledge.application.source_models import (
+    Coverage,
     DownloadLink,
+    IntegrationTypeCoverage,
     IntegrationTypeTag,
     KnowledgeEvidence,
     KnowledgeSearchHit,
@@ -84,6 +93,7 @@ from app.modules.knowledge.application.source_models import (
     KnowledgeSourceVersionList,
     KnowledgeSpan,
     KnowledgeUserRef,
+    ProductCoverage,
     RetireSource,
     SourceChanges,
     SourceText,
@@ -140,6 +150,7 @@ __all__ = [
     "ChecklistVersion",
     "ChecklistVersionList",
     "ChecklistVersionSummary",
+    "Coverage",
     "CoverageCell",
     "CoverageCounts",
     "CoverageIndustry",
@@ -153,6 +164,7 @@ __all__ = [
     "EmbedErrorCode",
     "EmbedStatus",
     "EntryChanges",
+    "IntegrationTypeCoverage",
     "IntegrationTypeTag",
     "Kind",
     "KnowledgeCoverage",
@@ -169,6 +181,7 @@ __all__ = [
     "KnowledgeUserRef",
     "NewChecklist",
     "NewEntry",
+    "ProductCoverage",
     "RetireChecklist",
     "RetireRequest",
     "RetireSource",
@@ -186,6 +199,7 @@ __all__ = [
     "find_applicable_checklists",
     "get_catalogue_entry",
     "get_coverage",
+    "get_pair_coverage",
     "list_catalogue",
     "list_checklists",
     "list_entries",

@@ -375,11 +375,14 @@ def test_publish_makes_version_one_and_clears_the_draft(
     admin, _ = _admin(client)
     author = _author(client)
     type_id = _entry(client, admin)
+    # A unique industry: an active Checklist scoped to the industry every test Opportunity
+    # uses ("Retail") would raise mandatory Gaps in other suites (Story 4.2).
+    industry = f"Retail {uuid4().hex[:8]}"
     checklist = _ready(
         client,
         author,
         name="Published name",
-        industry="Retail",
+        industry=industry,
         integration_type_ids=[type_id],
         items=[_item(mandatory=True), _item(kind="risk", text="Old firmware", impact="low")],
     )
@@ -388,7 +391,7 @@ def test_publish_makes_version_one_and_clears_the_draft(
     assert published["current_version"] == 1
     assert published["draft"] is None
     assert published["name"] == "Published name"
-    assert published["industry"] == "Retail"
+    assert published["industry"] == industry
     assert [t["id"] for t in published["integration_types"]] == [type_id]
     assert (published["item_count"], published["mandatory_count"]) == (2, 1)
     assert [i["text"] for i in published["items"]] == ["Is SSO required?", "Old firmware"]

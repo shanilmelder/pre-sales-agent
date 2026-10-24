@@ -29,8 +29,8 @@ async function activeCatalogue(): Promise<CatalogueOption[] | null> {
   }
 }
 
-/** Knowledge → Checklists (Story 3.4). `?product=&type=` (a Coverage cell's link) seeds the
- * product and Integration Type filters. */
+/** Knowledge → Checklists (Story 3.4). `?product=&integration_type=` (a Coverage cell's
+ * link) seeds the product and Integration Type filters. */
 export default async function KnowledgeChecklistsPage({
   searchParams,
 }: {

@@ -171,14 +171,14 @@ describe("CoverageMatrix", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.tab();
     await user.keyboard("{ArrowRight}{Enter}");
-    expect(push).toHaveBeenCalledWith(`/knowledge?product=Dynamics+365+F%26O&type=${BATCH}`);
+    expect(push).toHaveBeenCalledWith(`/knowledge?product=Dynamics+365+F%26O&integration_type=${BATCH}`);
   });
 
   it("a click on a cell opens Sources too", async () => {
     await rendered();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.click(within(cellNamed(/^HubSpot REST API/)).getByText("Partial"));
-    expect(push).toHaveBeenCalledWith(`/knowledge?product=HubSpot&type=${REST}`);
+    expect(push).toHaveBeenCalledWith(`/knowledge?product=HubSpot&integration_type=${REST}`);
   });
 
   it("a modifier or middle click opens Sources in a new tab", async () => {
@@ -186,7 +186,7 @@ describe("CoverageMatrix", () => {
     const opened = vi.spyOn(window, "open").mockReturnValue(null);
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const target = within(cellNamed(/^HubSpot REST API/)).getByText("Partial");
-    const href = `/knowledge?product=HubSpot&type=${REST}`;
+    const href = `/knowledge?product=HubSpot&integration_type=${REST}`;
     for (const modifier of ["Control", "Meta", "Shift"]) {
       await user.keyboard(`{${modifier}>}`);
       await user.click(target);
@@ -207,7 +207,7 @@ describe("CoverageMatrix", () => {
     expect(link.tagName).toBe("A");
     expect(link.textContent).toBe("Checklists: 1");
     expect(link.getAttribute("href")).toBe(
-      `/knowledge/checklists?product=Dynamics+365+F%26O&type=${REST}`,
+      `/knowledge/checklists?product=Dynamics+365+F%26O&integration_type=${REST}`,
     );
     // Only the current cell's link is in the Tab order.
     const links = document.querySelectorAll<HTMLAnchorElement>("[data-checklists-link]");

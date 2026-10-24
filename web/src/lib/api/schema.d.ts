@@ -561,6 +561,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/requirements/{requirement_id}/integration-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Tag Requirement Integration Types
+         * @description Replace a Requirement's Integration Type tags. Its version stays; its `row_version`
+         *     moves on. An unchanged set writes nothing. The owner and collaborators, except sales
+         *     representatives.
+         */
+        put: operations["tag_requirement_integration_types"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/requirements/merge": {
         parameters: {
             query?: never;
@@ -644,6 +666,30 @@ export interface paths {
          *     no reason or note text. Answered Gaps (Story 4.7) follow the open ones.
          */
         get: operations["list_gaps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/gaps/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gaps Context
+         * @description What the Gaps tab shows above the list (Story 4.1): the Checklists that apply (by
+         *     the Opportunity's products, its industry and the Integration Types on its active
+         *     Requirements), how many integration Requirements have no Integration Type, and the
+         *     products and Integration Types in scope that no active, embedded Knowledge Source
+         *     documents. Anyone who can read the Opportunity, sales representatives included.
+         */
+        get: operations["get_gaps_context"];
         put?: never;
         post?: never;
         delete?: never;
@@ -799,7 +845,8 @@ export interface paths {
          * Dismiss Gap
          * @description Dismiss an open Gap as `not_relevant` (note optional) or `other` (note required). A
          *     later Gap detection never reopens it, and drops a Gap with the same category and title.
-         *     The owner and collaborators, except sales representatives.
+         *     A mandatory Gap only once its Checklist no longer applies. The owner and collaborators,
+         *     except sales representatives.
          */
         post: operations["dismiss_gap"];
         delete?: never;
@@ -2105,6 +2152,18 @@ export interface components {
             assessment: components["schemas"]["AssessmentView"] | null;
         };
         /**
+         * AgentCategoryTrigger
+         * @description The agent raised the Gap, by category.
+         */
+        AgentCategoryTrigger: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "agent_category";
+            category: components["schemas"]["GapCategory"];
+        };
+        /**
          * AgentConfigVersion
          * @description One immutable config version of an Agent. `model_digest` is `unpinned` until digests
          *     are pinned (Story 7.2); `created_by_id` is null for the versions the migration seeded.
@@ -2619,6 +2678,26 @@ export interface components {
             /** Mandatory */
             mandatory: boolean;
         };
+        /**
+         * ChecklistItemTrigger
+         * @description A mandatory item of an applicable Checklist raised the Gap (Story 4.2): the
+         *     Checklist, the published version the Gap was raised from, and the stable item id.
+         */
+        ChecklistItemTrigger: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "checklist_item";
+            /** Checklist Id */
+            checklist_id: string;
+            /** Version */
+            version: number;
+            /** Item Id */
+            item_id: string;
+            /** Checklist Name */
+            checklist_name: string;
+        };
         /** ChecklistList */
         ChecklistList: {
             /** Items */
@@ -2717,6 +2796,12 @@ export interface components {
             /** Answered On */
             answered_on: string | null;
             answered_by: components["schemas"]["UserRef"] | null;
+            /**
+             * From Checklist
+             * @description Drafted from a mandatory Checklist item's wording (Story 4.2), shown as "from Checklist".
+             * @default false
+             */
+            from_checklist: boolean;
         };
         /**
          * Classification
@@ -3520,7 +3605,8 @@ export interface components {
             /** Title */
             title: string;
             category: components["schemas"]["GapCategory"];
-            trigger: components["schemas"]["GapTrigger"];
+            /** Trigger */
+            trigger: components["schemas"]["AgentCategoryTrigger"] | components["schemas"]["ChecklistItemTrigger"];
             /** Why It Matters */
             why_it_matters: string;
             impact: components["schemas"]["Impact"];
@@ -3546,6 +3632,17 @@ export interface components {
             answer: components["schemas"]["GapAnswer"] | null;
             /** Answer Suggestions */
             answer_suggestions: components["schemas"]["AnswerSuggestion"][];
+            /**
+             * Checklist Applies
+             * @description Story 4.2: for an open `mandatory_checklist` Gap, whether its Checklist item still applies (it can be dismissed only once this is false); true otherwise.
+             * @default true
+             */
+            checklist_applies: boolean;
+            /**
+             * Why Entry Id
+             * @description The catalogue entry (Integration Type or Work Package) `why_it_matters` names, from the Checklist item (Story 4.2); null when none.
+             */
+            why_entry_id?: string | null;
         };
         /**
          * GapAnswer
@@ -3627,11 +3724,11 @@ export interface components {
         };
         /**
          * GapList
-         * @description The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
-         *     within an impact, followed by its converted Gaps (Story 8.4), then its dismissed Gaps
-         *     (Story 4.4), each group in the same order; and its latest detection (null when none has
-         *     been queued yet). `can_edit_gaps`: whether the caller may change impacts, dismiss and
-         *     reopen Gaps (Story 4.4).
+         * @description The Opportunity's open Gaps, high impact first, then medium, then low, mandatory Gaps
+         *     first within an impact (Story 4.2), then oldest first, followed by its converted Gaps
+         *     (Story 8.4), then its dismissed Gaps (Story 4.4), each group in the same order; and its
+         *     latest detection (null when none has been queued yet). `can_edit_gaps`: whether the
+         *     caller may change impacts, dismiss and reopen Gaps (Story 4.4).
          *     `can_start_detection`: whether the caller may start (retry) a detection;
          *     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
          *     (Story 4.5); `can_send_questions`: whether the caller may export questions, mark them
@@ -3657,7 +3754,7 @@ export interface components {
          * GapOrigin
          * @enum {string}
          */
-        GapOrigin: "detected";
+        GapOrigin: "detected" | "mandatory_checklist";
         /**
          * GapReopening
          * @description A person's reopening of a dismissed Gap (Story 4.4), with the reason.
@@ -3692,16 +3789,32 @@ export interface components {
          */
         GapStatus: "open" | "superseded" | "converted" | "dismissed" | "answered";
         /**
-         * GapTrigger
-         * @description What raised the Gap. In the demo, always the agent, by category.
+         * GapsContext
+         * @description What the Gaps tab shows above the list (Story 4.1). `applicable_checklists`: the
+         *     Checklists whose scope matches the Opportunity's products, its industry or the
+         *     Integration Types on its active Requirements, by name. `untagged_integration_count`: how
+         *     many active Requirements classified `integration` have no Integration Type.
+         *     `uncovered`: the scope the Knowledge Base doesn't document yet.
          */
-        GapTrigger: {
-            /**
-             * Kind
-             * @constant
-             */
-            kind: "agent_category";
-            category: components["schemas"]["GapCategory"];
+        GapsContext: {
+            /** Applicable Checklists */
+            applicable_checklists: components["schemas"]["GapsContextChecklist"][];
+            /** Untagged Integration Count */
+            untagged_integration_count: number;
+            uncovered: components["schemas"]["UncoveredScope"];
+        };
+        /**
+         * GapsContextChecklist
+         * @description A Checklist that applies to the Opportunity, at its latest published version.
+         */
+        GapsContextChecklist: {
+            /** Checklist Id */
+            checklist_id: string;
+            /** Version */
+            version: number;
+            /** Name */
+            name: string;
+            domain: components["schemas"]["Domain"];
         };
         /** HealthResponse */
         HealthResponse: {
@@ -4665,7 +4778,9 @@ export interface components {
          *     (null when the latest change was extraction's). `pending_change`: the open change
          *     proposed to it, if any (Story 2.7). `number`: its stable `R<n>` within the Opportunity,
          *     never reused (Story 2.6). A Requirement a person created has origin `human` and no
-         *     Evidence. `row_version` goes back in `If-Match`.
+         *     Evidence. `row_version` goes back in `If-Match`. `integration_types`: the catalogue
+         *     Integration Types a person tagged it with (Story 4.1), in the order they were tagged;
+         *     extraction never changes them.
          */
         Requirement: {
             /** Id */
@@ -4694,6 +4809,8 @@ export interface components {
             /** Evidence */
             evidence: components["schemas"]["RequirementEvidence"][];
             pending_change: components["schemas"]["PendingChange"] | null;
+            /** Integration Types */
+            integration_types: components["schemas"]["RequirementIntegrationType"][];
         };
         /**
          * RequirementChangeRef
@@ -4778,12 +4895,41 @@ export interface components {
             label: string;
         };
         /**
+         * RequirementIntegrationType
+         * @description A catalogue Integration Type a person tagged a Requirement with (Story 4.1). A tag
+         *     whose entry was retired since keeps resolving, with `retired` true.
+         */
+        RequirementIntegrationType: {
+            /** Id */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Retired */
+            retired: boolean;
+        };
+        /**
+         * RequirementIntegrationTypes
+         * @description The whole set of Integration Types to tag a Requirement with (Story 4.1); it replaces
+         *     the current set. Repeats count once.
+         */
+        RequirementIntegrationTypes: {
+            /**
+             * Integration Type Ids
+             * @description At most 50 catalogue Integration Type ids. A newly added one must be active; one the Requirement already has may stay after it was retired.
+             */
+            integration_type_ids: string[];
+        };
+        /**
          * RequirementList
          * @description The Opportunity's active Requirements by number (oldest first), and its latest
          *     extraction (null when none has been queued yet). `can_start_extraction`: whether the
          *     caller may start (retry) an extraction; `can_edit_requirements`: whether they may edit,
          *     confirm, create, delete, split and merge the Requirements (Story 2.6). The UI only uses
-         *     them to hide controls; the API decides.
+         *     them to hide controls; the API decides. `untagged_integration_count`: how many of the
+         *     active Requirements are classified `integration` and have no Integration Type (Story
+         *     4.1).
          */
         RequirementList: {
             /** Items */
@@ -4793,6 +4939,8 @@ export interface components {
             can_start_extraction: boolean;
             /** Can Edit Requirements */
             can_edit_requirements: boolean;
+            /** Untagged Integration Count */
+            untagged_integration_count: number;
         };
         /**
          * RequirementMerge
@@ -5133,6 +5281,27 @@ export interface components {
             title: string;
             category: components["schemas"]["GapCategory"];
             impact: components["schemas"]["Impact"];
+        };
+        /**
+         * UncoveredIntegrationType
+         * @description An Integration Type in scope that no active, embedded Knowledge Source documents.
+         */
+        UncoveredIntegrationType: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * UncoveredScope
+         * @description What is in scope but undocumented in the Knowledge Base: the Opportunity's products
+         *     and its Requirements' Integration Types with no active, embedded Source.
+         */
+        UncoveredScope: {
+            /** Products */
+            products: string[];
+            /** Integration Types */
+            integration_types: components["schemas"]["UncoveredIntegrationType"][];
         };
         /**
          * UserProfile
@@ -9303,6 +9472,192 @@ export interface operations {
             };
         };
     };
+    tag_requirement_integration_types: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Requirement as last read (its `row_version`), e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                requirement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementIntegrationTypes"];
+            };
+        };
+        responses: {
+            /** @description The Requirement */
+            200: {
+                headers: {
+                    /** @description The Requirement's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no active Requirement with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Requirement changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a newly added id is not an active catalogue Integration Type (the `detail` is the sentence to show), more than 50 ids, an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
     merge_requirements: {
         parameters: {
             query?: never;
@@ -9849,6 +10204,116 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GapList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_gaps_context: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GapsContext"];
                 };
             };
             /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
@@ -11127,7 +11592,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Gap is not open: it was dismissed, converted or superseded (`gap_not_open`); nothing changed */
+            /** @description The Gap is not open: it was dismissed, converted or superseded (`gap_not_open`), or it is a mandatory Gap whose Checklist still applies (`gap_mandatory`); nothing changed */
             409: {
                 headers: {
                     [name: string]: unknown;

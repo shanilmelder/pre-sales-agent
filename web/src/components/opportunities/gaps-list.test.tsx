@@ -78,6 +78,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   dismissGap,
   reopenGap,
 }));
+vi.mock("@/app/knowledge/checklists/actions", () => ({ loadChecklistVersion: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => "/opportunities/x/gaps",
@@ -127,6 +128,7 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
       sent_by: null,
       answered_on: null,
       answered_by: null,
+      from_checklist: false,
     },
     dismissal: null,
     history: [
@@ -143,6 +145,8 @@ function gap(n: number, impact: Impact, category: GapCategory = "integration_det
     last_changed_by: null,
     answer: null,
     answer_suggestions: [],
+    checklist_applies: true,
+    why_entry_id: null,
   };
 }
 
@@ -1208,6 +1212,66 @@ describe("changing, dismissing and reopening Gaps (Story 4.4)", () => {
       rowVersion: 1,
       reasonKind: "not_relevant",
     });
+  });
+
+  it("a mandatory Gap: label, Checklist trigger, from Checklist, no Dismiss while it applies (Story 4.2)", async () => {
+    const user = userEvent.setup();
+    const base = gap(1, "high", "security_and_compliance");
+    const mandatory: Gap = {
+      ...base,
+      origin: "mandatory_checklist",
+      trigger: {
+        kind: "checklist_item",
+        checklist_id: "00000000-0000-7000-8000-0000000000c1",
+        version: 2,
+        item_id: "00000000-0000-7000-8000-0000000000c2",
+        checklist_name: "Security baseline",
+      },
+      requirements: [],
+      question: base.question ? { ...base.question, from_checklist: true } : null,
+    };
+    renderSection(list([mandatory], succeeded, true, true));
+
+    expect(screen.getAllByRole("row")[0].textContent).toContain("Mandatory");
+    expect(screen.getAllByRole("row")[0].textContent).toContain("Checklist · Security baseline v2");
+    expect(screen.getAllByRole("row")[0].textContent).not.toContain("Checklist no longer applies");
+    const inspector = await openRow(user, 1);
+    expect(within(inspector).getByText("from Checklist")).toBeTruthy();
+    expect(within(inspector).queryByText("Related Requirements")).toBeNull();
+    expect(within(inspector).queryByRole("form", { name: "Dismiss the Gap" })).toBeNull();
+  });
+
+  it("a mandatory Gap whose Checklist no longer applies says so and can be dismissed", async () => {
+    const user = userEvent.setup();
+    const lapsed: Gap = {
+      ...gap(1, "high"),
+      origin: "mandatory_checklist",
+      checklist_applies: false,
+    };
+    renderSection(list([lapsed], succeeded, true, true));
+
+    expect(screen.getAllByRole("row")[0].textContent).toContain("Checklist no longer applies");
+    const inspector = await openRow(user, 1);
+    expect(within(inspector).getByText("Checklist no longer applies")).toBeTruthy();
+    expect(within(inspector).getByRole("form", { name: "Dismiss the Gap" })).toBeTruthy();
+  });
+
+  it("a 409 gap_mandatory on dismiss says so and re-reads", async () => {
+    const user = userEvent.setup();
+    dismissGap.mockResolvedValue({ kind: "gap-mandatory" });
+    loadGaps.mockResolvedValue({ kind: "ok", list: list([gap(1, "high")], succeeded, true, true) });
+    renderSection(list([gap(1, "high")], succeeded, true, true));
+    const inspector = await openRow(user, 1);
+    const form = within(inspector).getByRole("form", { name: "Dismiss the Gap" });
+
+    await user.click(within(form).getByRole("button", { name: "Dismiss" }));
+
+    expect(
+      await screen.findAllByText(
+        "A mandatory Gap can be dismissed only once its Checklist no longer applies.",
+      ),
+    ).not.toHaveLength(0);
+    expect(loadGaps).toHaveBeenCalled();
   });
 
   it("reopens a dismissed Gap with a reason", async () => {

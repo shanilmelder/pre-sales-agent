@@ -76,17 +76,21 @@ beforeEach(() => {
 });
 
 describe("filter links from Coverage", () => {
-  it("seed the Sources filters from ?product=&type=", async () => {
+  it("seed the Sources filters from ?product=&integration_type=", async () => {
     renderPage(
-      await KnowledgePage({ searchParams: query({ product: "hubspot", type: OTHER_TYPE }) }),
+      await KnowledgePage({
+        searchParams: query({ product: "hubspot", integration_type: OTHER_TYPE }),
+      }),
     );
     expect(valueOf("Product")).toBe("HubSpot");
     expect(valueOf("Integration Type")).toBe(OTHER_TYPE);
   });
 
-  it("seed the Checklists filters from ?product=&type=", async () => {
+  it("seed the Checklists filters from ?product=&integration_type=", async () => {
     renderPage(
-      await KnowledgeChecklistsPage({ searchParams: query({ product: "AutoStore", type: TYPE_ID }) }),
+      await KnowledgeChecklistsPage({
+        searchParams: query({ product: "AutoStore", integration_type: TYPE_ID }),
+      }),
     );
     expect(valueOf("Product")).toBe("AutoStore");
     expect(valueOf("Integration Type")).toBe(TYPE_ID);

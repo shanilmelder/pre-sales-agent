@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -34,12 +34,21 @@ function renderTable(entries: CatalogueEntry[] = ENTRIES, singleKeyShortcuts = t
 const row = (name: string) => screen.getByRole("button", { name });
 
 describe("CatalogueTable", () => {
-  it("shows two groups with code, name, version and status", () => {
-    renderTable();
-    expect(screen.getByRole("heading", { name: "Integration Types" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Work Packages" })).toBeTruthy();
+  it("shows one table with code, name, kind and status, Integration Types first", () => {
+    renderTable([ENTRIES[2], ENTRIES[0], ENTRIES[1]]);
+    const table = screen.getByRole("table", { name: "Catalogue entries" });
+    expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
+      "Code",
+      "Name",
+      "Kind",
+      "Status",
+    ]);
+    const kinds = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((r) => within(r).getAllByRole("cell")[1].textContent);
+    expect(kinds).toEqual(["Integration Type", "Integration Type", "Work Package"]);
     expect(screen.getByText("CODE-1")).toBeTruthy();
-    expect(screen.getByText("v3")).toBeTruthy();
     expect(screen.getAllByText("Active")).toHaveLength(2);
     expect(screen.getByText("Retired")).toBeTruthy();
   });

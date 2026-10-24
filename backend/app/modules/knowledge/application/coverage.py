@@ -1,7 +1,11 @@
-"""Knowledge coverage (Story 3.5): which products and Integration Types are covered by Ready
-Sources and published Checklists. Computed on every read; nothing is stored.
+"""Knowledge coverage: which products and Integration Types the Knowledge Base covers.
+Computed on every read; nothing is stored.
 
-Counting, per product and Integration Type pair:
+`get_coverage` (Story 4.1): per product and, separately, per Integration Type, whether any
+Ready Source documents it (its product, or one of its tags).
+
+`get_pair_coverage` and `coverage_matrix` (Story 3.5) count per product and Integration
+Type pair:
 
 - A Source counts when it isn't retired and its latest version's embedding is `ready`. It
   covers its one product with each of its Integration Type tags; `stale` counts the ones not
@@ -16,8 +20,8 @@ Counting, per product and Integration Type pair:
 
 Products match trimmed and case-folded (`match_key`).
 
-`get_coverage` is for other modules (no authorization: the caller decides what it may show);
-`coverage_matrix` is the Coverage view and needs a role.
+`get_coverage` and `get_pair_coverage` are for other modules (no authorization: the caller
+decides what it may show); `coverage_matrix` is the Coverage view and needs a role.
 """
 
 from collections.abc import Iterable
@@ -36,6 +40,11 @@ from app.modules.knowledge.application.coverage_models import (
     CoveragePair,
     CoverageRow,
     KnowledgeCoverage,
+)
+from app.modules.knowledge.application.source_models import (
+    Coverage,
+    IntegrationTypeCoverage,
+    ProductCoverage,
 )
 from app.modules.knowledge.application.sources import today_utc
 from app.modules.knowledge.domain.catalogue import Kind
@@ -139,6 +148,30 @@ def _counts(tallies: _Tallies, key: str, type_id: UUID) -> dict[str, object]:
 
 
 async def get_coverage(
+    uow: UnitOfWork, *, products: Iterable[str], integration_type_ids: Iterable[UUID]
+) -> Coverage:
+    """Per product and per Integration Type, `ready` when at least one active Source
+    matches (its product, trimmed and ignoring case; or one of its tags) and its latest
+    version is embedded (`ready`)."""
+    wanted_products = _distinct(products)
+    wanted_types = list(dict.fromkeys(integration_type_ids))
+
+    ready = await source_repository.ready_sources(uow)
+    ready_products = {match_key(source.product) for source in ready}
+    ready_types = {entry_id for source in ready for entry_id in source.integration_type_ids}
+    return Coverage(
+        products=[
+            ProductCoverage(product=name, ready=key in ready_products)
+            for key, name in wanted_products.items()
+        ],
+        integration_types=[
+            IntegrationTypeCoverage(id=str(entry_id), ready=entry_id in ready_types)
+            for entry_id in wanted_types
+        ],
+    )
+
+
+async def get_pair_coverage(
     uow: UnitOfWork,
     *,
     products: Iterable[str],

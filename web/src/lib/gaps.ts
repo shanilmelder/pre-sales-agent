@@ -33,6 +33,8 @@ export type GapAnswer = components["schemas"]["GapAnswer"];
 export type AnswerSuggestion = components["schemas"]["AnswerSuggestion"];
 export type AnswerPassage = components["schemas"]["AnswerPassage"];
 export type RequirementChangeRef = components["schemas"]["RequirementChangeRef"];
+export type GapsContext = components["schemas"]["GapsContext"];
+export type GapsContextChecklist = components["schemas"]["GapsContextChecklist"];
 
 /** The categories with their labels. */
 export const GAP_CATEGORIES: readonly { value: GapCategory; label: string }[] = [
@@ -316,10 +318,40 @@ export function gapStatus(status: GapStatus): {
 /** The agent that raises Gaps: the trigger pill's text. */
 export const CLARIFICATION_AGENT = "Clarification Agent";
 
-/** "Clarification Agent · Data volumes": what raised the Gap. */
-export function triggerLabel(gap: Pick<Gap, "category">): string {
+/** The trigger pill's text in a row: "Clarification Agent", or for a mandatory Checklist item
+ * (Story 4.2) "Checklist · Security baseline v2". */
+export function triggerSource(gap: Pick<Gap, "trigger">): string {
+  if (gap.trigger.kind === "checklist_item") {
+    return `Checklist · ${gap.trigger.checklist_name} v${gap.trigger.version}`;
+  }
+  return CLARIFICATION_AGENT;
+}
+
+/** What raised the Gap: "Clarification Agent · Data volumes", or for a mandatory Checklist
+ * item (Story 4.2) "Checklist · Security baseline v2". */
+export function triggerLabel(gap: Pick<Gap, "category" | "trigger">): string {
+  if (gap.trigger.kind === "checklist_item") return triggerSource(gap);
   return `${CLARIFICATION_AGENT} · ${categoryLabel(gap.category)}`;
 }
+
+/** Raised from a mandatory Checklist item (Story 4.2). */
+export function isMandatory(gap: Pick<Gap, "origin">): boolean {
+  return gap.origin === "mandatory_checklist";
+}
+
+/** A mandatory Gap whose Checklist no longer applies: it is kept, and may be dismissed. */
+export function checklistNoLongerApplies(gap: Pick<Gap, "origin" | "checklist_applies">): boolean {
+  return isMandatory(gap) && !gap.checklist_applies;
+}
+
+/** Whether Dismiss is offered: never for a mandatory Gap while its Checklist still applies. */
+export function canDismiss(gap: Pick<Gap, "origin" | "checklist_applies">): boolean {
+  return !isMandatory(gap) || !gap.checklist_applies;
+}
+
+export const NO_LONGER_APPLIES = "Checklist no longer applies";
+/** Next to a question drafted from the Checklist item's wording (Story 4.2). */
+export const FROM_CHECKLIST = "from Checklist";
 
 /** "9 total · 7 open · ranked by impact", plus " · showing 2" while a filter hides some
  * (`showing` is the number of rows shown; left out when no filter is on). */
@@ -483,14 +515,17 @@ export function historyByline(entry: GapHistoryEntry): string {
 
 const STATUS_ORDER: Record<string, number> = { open: 0, answered: 1, converted: 2, dismissed: 3 };
 
-/** Open Gaps, then answered, then converted, then dismissed; each ranked by impact, then oldest
- * first (the API's order, kept after a local change). */
+/** Open Gaps, then answered, then converted, then dismissed; each ranked by impact, mandatory
+ * first within an impact (Story 4.2), then oldest first (the API's order, kept after a local
+ * change). */
 export function rankGaps(items: readonly Gap[]): Gap[] {
   const rank = (impact: Impact) => IMPACTS.findIndex((i) => i.value === impact);
+  const mandatory = (gap: Gap) => (isMandatory(gap) ? 0 : 1);
   return [...items].sort(
     (a, b) =>
       (STATUS_ORDER[a.status] ?? 4) - (STATUS_ORDER[b.status] ?? 4) ||
       rank(a.impact) - rank(b.impact) ||
+      mandatory(a) - mandatory(b) ||
       a.created_at.localeCompare(b.created_at) ||
       a.id.localeCompare(b.id),
   );
@@ -582,4 +617,55 @@ export function gapsChangedAnnouncement(
   if (answered(before) === answered(after) && openGapCount(before) === open) return null;
   const n = answered(after);
   return `${n} ${n === 1 ? "Gap" : "Gaps"} answered, ${open} open`;
+}
+
+// --- the Gaps tab context (Story 4.1) ---------------------------------------------------------
+
+export const APPLICABLE_CHECKLISTS = "Applicable Checklists";
+export const NO_CHECKLISTS_APPLY =
+  "No Checklists apply yet — tag integration Requirements or set products and industry.";
+export const SHOW_UNTAGGED = "Show them";
+export const OPEN_KNOWLEDGE_SOURCES = "Open Knowledge Sources";
+
+/** A Checklist chip: "{name} · v{version}". */
+export function checklistChipLabel(checklist: Pick<GapsContextChecklist, "name" | "version">) {
+  return `${checklist.name} · v${checklist.version}`;
+}
+
+/** The untagged banner, e.g. "2 integration Requirements have no Integration Type — …". */
+export function untaggedBanner(n: number): string {
+  const subject = n === 1 ? "integration Requirement has" : "integration Requirements have";
+  return `${n} ${subject} no Integration Type — Checklists may not apply`;
+}
+
+/** Where **Show them** goes: the Requirements tab listing only the untagged ones. */
+export function untaggedHref(opportunityId: string): string {
+  return `/opportunities/${encodeURIComponent(opportunityId)}/requirements?untagged=integration`;
+}
+
+function counted(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The coverage banner, or null when everything in scope is documented. */
+export function coverageBanner(uncovered: GapsContext["uncovered"]): string | null {
+  const parts = [
+    uncovered.integration_types.length > 0
+      ? counted(uncovered.integration_types.length, "integration type", "integration types")
+      : null,
+    uncovered.products.length > 0
+      ? counted(uncovered.products.length, "product", "products")
+      : null,
+  ].filter((part): part is string => part !== null);
+  if (parts.length === 0) return null;
+  return `No documentation for ${parts.join(" and ")} in scope — Gap detection may be incomplete`;
+}
+
+/** Where **Open Knowledge Sources** goes: Sources filtered by the first uncovered Integration
+ * Type, or else by the first uncovered product. */
+export function coverageHref(uncovered: GapsContext["uncovered"]): string {
+  const type = uncovered.integration_types[0];
+  if (type) return `/knowledge?integration_type=${encodeURIComponent(type.id)}`;
+  const product = uncovered.products[0];
+  return product ? `/knowledge?product=${encodeURIComponent(product)}` : "/knowledge";
 }

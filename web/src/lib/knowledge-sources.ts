@@ -1,5 +1,6 @@
 // Knowledge Source display and form helpers (Story 3.2). Safe on server and client.
 import type { components } from "@/lib/api/client";
+import { seededFilters } from "@/lib/coverage";
 import type { Role } from "@/lib/navigation";
 import { UPLOAD_BODY_LIMIT_BYTES } from "@/lib/upload-limits";
 
@@ -146,6 +147,14 @@ export type Filters = {
 };
 
 export const NO_FILTERS: Filters = { product: "", integrationTypeId: "", ownerId: "", staleOnly: false };
+
+/** The filters a link asks for (`seededFilters`: `?integration_type=<id>` and
+ * `?product=<name>`); anything else starts empty. */
+export function initialSourceFilters(
+  params: Record<string, string | string[] | undefined>,
+): Filters {
+  return { ...NO_FILTERS, ...seededFilters(params) };
+}
 
 export function hasFilters(filters: Filters): boolean {
   return (

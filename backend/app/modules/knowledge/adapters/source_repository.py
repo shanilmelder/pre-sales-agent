@@ -217,7 +217,8 @@ class CoverageSource:
 
 async def ready_sources(uow: UnitOfWork) -> list[CoverageSource]:
     """Non-retired Sources whose latest version's embedding is `ready` (searchable), with
-    their Integration Type tags (Story 3.5)."""
+    their Integration Type tags: the Sources that count as documentation for coverage
+    (Stories 3.5 and 4.1)."""
     rows = (
         await uow.session.execute(
             select(S.id, S.product, S.last_reviewed_on)

@@ -7,6 +7,7 @@ edit routes (Story 2.6): `PATCH …/requirements/{requirement_id}`,
 the pending-change routes (Story 2.7): `POST …/requirements/{requirement_id}/change/accept`
 and `…/change/reject`, the list-shaping routes (Story 2.6 remainder): `POST …/requirements`,
 `POST …/requirements/merge`, `POST …/requirements/{requirement_id}/delete` and `…/split`,
+the Integration Type tag route (Story 4.1): `PUT …/requirements/{requirement_id}/integration-types`,
 and the Source viewer routes (Story 2.3):
 `GET …/sources/{source_id}/versions/{version}/text` and `POST …/download-link`.
 
@@ -40,6 +41,7 @@ from app.modules.intake.application.public import (
     RequirementChanges,
     RequirementDeletion,
     RequirementDraft,
+    RequirementIntegrationTypes,
     RequirementList,
     RequirementMerge,
     RequirementSplit,
@@ -574,6 +576,43 @@ async def reject_requirement_change(
         uow, actor, opportunity_id, requirement_id, body, if_match
     )
     return _with_etag(response, rejected)
+
+
+# --- Integration Type tags (Story 4.1) ------------------------------------------------------
+
+_TAG_RESPONSES = _edit_responses(403, 404, 412, 428)
+_TAG_RESPONSES[422] = {
+    "description": "`validation_error`: a newly added id is not an active catalogue "
+    "Integration Type (the `detail` is the sentence to show), more than 50 ids, an unknown "
+    "field, or an id that is not a UUID",
+    "content": PROBLEM_CONTENT,
+}
+
+
+@requirements_router.put(
+    "/requirements/{requirement_id}/integration-types",
+    operation_id="tag_requirement_integration_types",
+    responses={
+        **_TAG_RESPONSES,
+        200: {"description": "The Requirement", "headers": _ETAG_HEADER},
+    },
+)
+async def tag_requirement_integration_types(
+    opportunity_id: UUID,
+    requirement_id: UUID,
+    body: RequirementIntegrationTypes,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> Requirement:
+    """Replace a Requirement's Integration Type tags. Its version stays; its `row_version`
+    moves on. An unchanged set writes nothing. The owner and collaborators, except sales
+    representatives."""
+    tagged = await intake.tag_requirement_integration_types(
+        uow, actor, opportunity_id, requirement_id, body, if_match
+    )
+    return _with_etag(response, tagged)
 
 
 # --- shaping the list (Story 2.6 remainder) -------------------------------------------------

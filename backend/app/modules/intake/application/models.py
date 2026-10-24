@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.intake.domain.parsing import ParseErrorCode, ParseStatus
 from app.modules.intake.domain.requirements import (
+    INTEGRATION_TYPES_MAX,
     MERGE_MAX,
     MERGE_MIN,
     REJECT_REASON_MAX,
@@ -111,6 +112,16 @@ class PendingChange(BaseModel):
     proposed_at: datetime
 
 
+class RequirementIntegrationType(BaseModel):
+    """A catalogue Integration Type a person tagged a Requirement with (Story 4.1). A tag
+    whose entry was retired since keeps resolving, with `retired` true."""
+
+    id: str
+    code: str
+    name: str
+    retired: bool
+
+
 class Requirement(BaseModel):
     """An active Requirement of the Opportunity with the passages it cites. `origin` is
     `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
@@ -118,7 +129,9 @@ class Requirement(BaseModel):
     (null when the latest change was extraction's). `pending_change`: the open change
     proposed to it, if any (Story 2.7). `number`: its stable `R<n>` within the Opportunity,
     never reused (Story 2.6). A Requirement a person created has origin `human` and no
-    Evidence. `row_version` goes back in `If-Match`."""
+    Evidence. `row_version` goes back in `If-Match`. `integration_types`: the catalogue
+    Integration Types a person tagged it with (Story 4.1), in the order they were tagged;
+    extraction never changes them."""
 
     id: str
     number: int = Field(ge=1)
@@ -134,6 +147,7 @@ class Requirement(BaseModel):
     last_changed_by: UserRef | None
     evidence: list[RequirementEvidence]
     pending_change: PendingChange | None
+    integration_types: list[RequirementIntegrationType]
 
 
 class Extraction(BaseModel):
@@ -150,12 +164,15 @@ class RequirementList(BaseModel):
     extraction (null when none has been queued yet). `can_start_extraction`: whether the
     caller may start (retry) an extraction; `can_edit_requirements`: whether they may edit,
     confirm, create, delete, split and merge the Requirements (Story 2.6). The UI only uses
-    them to hide controls; the API decides."""
+    them to hide controls; the API decides. `untagged_integration_count`: how many of the
+    active Requirements are classified `integration` and have no Integration Type (Story
+    4.1)."""
 
     items: list[Requirement]
     extraction: Extraction | None
     can_start_extraction: bool
     can_edit_requirements: bool
+    untagged_integration_count: int = Field(ge=0)
 
 
 class RequirementChanges(BaseModel):
@@ -168,6 +185,20 @@ class RequirementChanges(BaseModel):
         description=f"The new text. Trimmed, it must be 1 to {REQUIREMENT_TEXT_MAX:,} characters.",
     )
     classification: Classification | None = None
+
+
+class RequirementIntegrationTypes(BaseModel):
+    """The whole set of Integration Types to tag a Requirement with (Story 4.1); it replaces
+    the current set. Repeats count once."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    integration_type_ids: list[UUID] = Field(
+        max_length=INTEGRATION_TYPES_MAX,
+        description=f"At most {INTEGRATION_TYPES_MAX} catalogue Integration Type ids. A newly "
+        "added one must be active; one the Requirement already has may stay after it was "
+        "retired.",
+    )
 
 
 class RequirementChangeRejection(BaseModel):

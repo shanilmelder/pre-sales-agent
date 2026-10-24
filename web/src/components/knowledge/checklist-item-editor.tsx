@@ -6,6 +6,7 @@ import { useId, useState } from "react";
 import type { CatalogueOption } from "@/components/knowledge/checklists-tab";
 import { MandatoryLabel } from "@/components/knowledge/mandatory-label";
 import { RetiredLabel } from "@/components/knowledge/sources-table";
+import { Pill } from "@/components/ui/pill";
 import {
   IMPACTS,
   ITEM_KINDS,
@@ -222,14 +223,29 @@ export function ChecklistItemEditor({
 }
 
 /** One published item, read-only. */
-export function ChecklistItemView({ item, index }: { item: ChecklistItem; index: number }) {
+export function ChecklistItemView({
+  item,
+  index,
+  optionalLabel = false,
+}: {
+  item: ChecklistItem;
+  index: number;
+  /** Label an optional item "Optional" too (Story 4.1: the Gaps tab's Checklist view). */
+  optionalLabel?: boolean;
+}) {
   return (
     <li data-item-id={item.id} className="flex flex-col gap-1 border-b border-border py-1.5">
       <p className="flex flex-wrap items-center gap-2 text-label">
         <span>
           {index + 1}. {kindLabel(item.kind)}
         </span>
-        {item.mandatory ? <MandatoryLabel /> : null}
+        {item.mandatory ? (
+          <MandatoryLabel />
+        ) : optionalLabel ? (
+          <Pill data-label="optional" tone="neutral" className="shrink-0">
+            Optional
+          </Pill>
+        ) : null}
         <span className="text-meta text-muted-foreground">
           Impact {impactLabel(item.impact)}
         </span>

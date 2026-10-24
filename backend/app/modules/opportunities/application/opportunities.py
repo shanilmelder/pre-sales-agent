@@ -14,6 +14,7 @@ no field, is a no-op that writes nothing and appends no event. Trace payloads an
 ids only, never customer content.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
@@ -133,6 +134,23 @@ async def _detail(
 async def get(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> Opportunity:
     record, members, resource = await _load_readable(uow, actor, opportunity_id)
     return await _detail(uow, actor, record, members, resource)
+
+
+@dataclass(frozen=True, slots=True)
+class OpportunityScope:
+    """What decides which Checklists apply to an Opportunity (Story 4.2)."""
+
+    products: tuple[str, ...]
+    industry: str | None
+
+
+async def opportunity_scope(uow: UnitOfWork, opportunity_id: UUID) -> OpportunityScope | None:
+    """The Opportunity's products and industry, or None if it doesn't exist. No
+    authorization: for jobs acting on the Opportunity (Gap detection), not the API."""
+    record = await repository.get(uow, opportunity_id)
+    if record is None:
+        return None
+    return OpportunityScope(products=tuple(record.products), industry=record.industry or None)
 
 
 async def readable_resource(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> Resource:

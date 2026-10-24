@@ -1,14 +1,18 @@
 """Gap rules (Story 4.3): categories, impacts and their order, statuses, detection states and
 error codes, and the validation of the agent's candidates. Pure.
 
-A Gap is grounded in the Requirements: it relates to at least one active Requirement (at its
-current version) and carries a category. Its trigger is stored as
-`{"kind": "agent_category", "category": ...}`, so Checklist and Knowledge triggers can be
-added later without a schema change.
+A `detected` Gap (raised by the agent) is grounded in the Requirements: it relates to at
+least one active Requirement (at its current version) and carries a category. Its trigger is
+stored as `{"kind": "agent_category", "category": ...}`.
+
+Story 4.2: before the agent runs, `mandatory_gaps` decides, without any model output, which
+mandatory Checklist items need a Gap (`origin: mandatory_checklist`, trigger `checklist_item`)
+and which mandatory Gaps still apply. Such a Gap has no related Requirement, and can't be
+dismissed while its Checklist still applies.
 """
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import StrEnum
@@ -56,6 +60,9 @@ def mark_unknown_to_customer(why_it_matters: str) -> str:
 
 
 TRIGGER_KIND = "agent_category"
+CHECKLIST_TRIGGER_KIND = "checklist_item"
+"""The trigger kind of a mandatory Gap (Story 4.2): `{"kind": "checklist_item",
+"checklist_id", "version", "item_id", "checklist_name"}`."""
 
 
 class GapCategory(StrEnum):
@@ -81,6 +88,9 @@ IMPACT_RANK: Mapping[Impact, int] = {Impact.HIGH: 0, Impact.MEDIUM: 1, Impact.LO
 
 class GapOrigin(StrEnum):
     DETECTED = "detected"
+    MANDATORY_CHECKLIST = "mandatory_checklist"
+    """Story 4.2: raised deterministically from a mandatory item of an applicable Checklist,
+    before the agent runs. Never superseded by a detection."""
 
 
 class GapStatus(StrEnum):
@@ -519,6 +529,16 @@ class GapNotOpenTransitionError(ValueError):
     answered."""
 
 
+class GapMandatoryError(ValueError):
+    """The Gap is a mandatory Gap whose Checklist still applies (Story 4.2): it can't be
+    dismissed."""
+
+
+MANDATORY_DISMISS_DETAIL = (
+    "A mandatory Gap can be dismissed only once its Checklist no longer applies."
+)
+
+
 class GapNotReopenableTransitionError(ValueError):
     """The Gap is neither `dismissed` nor `answered`: it can't be reopened."""
 
@@ -582,11 +602,15 @@ def dismiss_gap(
     note: str | None,
     user_id: UUID,
     at: datetime,
+    mandatory_applies: bool = False,
 ) -> GapState:
     """The `open` Gap dismissed by `user_id` at `at` with its reason. `note` is already
-    validated (`dismiss_note`)."""
+    validated (`dismiss_note`). `mandatory_applies`: the Gap is a mandatory Gap whose
+    Checklist item still applies (Story 4.2), which can't be dismissed."""
     if state.status != GapStatus.OPEN:
         raise GapNotOpenTransitionError("Only an open Gap can be dismissed.")
+    if mandatory_applies:
+        raise GapMandatoryError(MANDATORY_DISMISS_DETAIL)
     return replace(
         state,
         status=GapStatus.DISMISSED,
@@ -628,3 +652,136 @@ def reopen_gap(state: GapState) -> GapState:
         answer_passage_id=None,
         touched_by_human=True,
     )
+
+
+# --- mandatory Checklist items (Story 4.2) --------------------------------------------------
+
+CHECKLIST_DOMAIN_CATEGORY: Mapping[str, GapCategory] = {
+    "security": GapCategory.SECURITY_AND_COMPLIANCE,
+    "commercial": GapCategory.COMMERCIAL,
+    "delivery": GapCategory.SCOPE_AND_OWNERSHIP,
+    "engineering": GapCategory.INTEGRATION_DETAILS,
+    "general": GapCategory.OTHER,
+}
+"""The category of a mandatory Gap, by its Checklist's domain."""
+
+ELLIPSIS = "…"
+
+
+def cut(text: str, limit: int) -> str:
+    """`text` trimmed and, when longer than `limit` code points, cut to `limit` with `…`."""
+    trimmed = text.strip()
+    if len(trimmed) <= limit:
+        return trimmed
+    return trimmed[: limit - 1].rstrip() + ELLIPSIS
+
+
+def checklist_category(domain: str) -> GapCategory:
+    """The category of a mandatory Gap of a Checklist in `domain` (unknown domains: other)."""
+    return CHECKLIST_DOMAIN_CATEGORY.get(domain, GapCategory.OTHER)
+
+
+MandatoryKey = tuple[UUID, UUID]
+"""A mandatory Gap's identity within its Opportunity: (Checklist id, item id)."""
+
+
+@dataclass(frozen=True, slots=True)
+class ChecklistItemInput:
+    """An item of an applicable Checklist version, as the planner needs it."""
+
+    item_id: UUID
+    text: str = field(repr=False)
+    why_it_matters: str = field(repr=False)
+    affected_entry_id: UUID | None
+    impact: Impact
+    mandatory: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ChecklistInput:
+    """The latest published version of an applicable Checklist."""
+
+    checklist_id: UUID
+    version: int
+    name: str = field(repr=False)
+    domain: str
+    items: tuple[ChecklistItemInput, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MandatoryGap:
+    """A mandatory Gap to raise: its fields as stored, and a drafted question."""
+
+    key: MandatoryKey
+    title: str = field(repr=False)
+    category: GapCategory
+    why_it_matters: str = field(repr=False)
+    why_entry_id: UUID | None
+    impact: Impact
+    impact_basis: str = field(repr=False)
+    trigger: Mapping[str, object] = field(repr=False)
+    question_text: str = field(repr=False)
+    question_topic: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class MandatoryPlan:
+    new: tuple[MandatoryGap, ...]
+    """One per mandatory item of an applicable version that has no Gap yet (in any
+    status), in Checklist then item order."""
+    applies: frozenset[MandatoryKey]
+    """Every mandatory item of an applicable version: a mandatory Gap applies iff its key
+    is in here."""
+
+
+def checklist_trigger(checklist: ChecklistInput, item: ChecklistItemInput) -> dict[str, object]:
+    """The stored trigger of a mandatory Gap."""
+    return {
+        "kind": CHECKLIST_TRIGGER_KIND,
+        "checklist_id": str(checklist.checklist_id),
+        "version": checklist.version,
+        "item_id": str(item.item_id),
+        "checklist_name": checklist.name,
+    }
+
+
+def _mandatory_gap(checklist: ChecklistInput, item: ChecklistItemInput) -> MandatoryGap:
+    return MandatoryGap(
+        key=(checklist.checklist_id, item.item_id),
+        title=cut(item.text, TITLE_MAX),
+        category=checklist_category(checklist.domain),
+        why_it_matters=cut(item.why_it_matters, WHY_MAX),
+        why_entry_id=item.affected_entry_id,
+        impact=item.impact,
+        impact_basis=cut(
+            f'Default impact of mandatory item in Checklist "{checklist.name}" '
+            f"v{checklist.version}.",
+            IMPACT_BASIS_MAX,
+        ),
+        trigger=checklist_trigger(checklist, item),
+        question_text=cut(item.text, QUESTION_MAX),
+        question_topic=cut(checklist.name, TOPIC_MAX),
+    )
+
+
+def mandatory_gaps(
+    applicable: Sequence[ChecklistInput], existing_keys: Iterable[MandatoryKey]
+) -> MandatoryPlan:
+    """Which mandatory Gaps to raise and which apply. `applicable`: the latest published
+    version of each applicable Checklist; `existing_keys`: the keys of the Opportunity's
+    mandatory Gaps in any status (one of them is never raised again, nor reopened). Optional
+    items never raise a Gap. Pure: no model output is read."""
+    existing = set(existing_keys)
+    applies: set[MandatoryKey] = set()
+    new: list[MandatoryGap] = []
+    for checklist in applicable:
+        for item in checklist.items:
+            if not item.mandatory:
+                continue
+            key = (checklist.checklist_id, item.item_id)
+            applies.add(key)
+            if key in existing:
+                continue
+            existing.add(key)
+            new.append(_mandatory_gap(checklist, item))
+    return MandatoryPlan(tuple(new), frozenset(applies))
