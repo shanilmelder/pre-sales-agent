@@ -57,6 +57,7 @@ _JOB_MODULES: tuple[str, ...] = (
     "app.modules.workflows.application.runs",
     "app.modules.workflows.application.progress",
     "app.modules.opportunities.application.imports",
+    "app.platform.alerts.jobs",
 )
 _JITTER = 0.2
 EXECUTE_JOB_TYPE = "workflows.execute"

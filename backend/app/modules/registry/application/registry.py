@@ -18,8 +18,9 @@ input or output schema, or model profile it doesn't list is 422
 `registry_config_not_deployed`; an output schema written for another contract version than
 `CONTRACT_VERSION` is 422 `registry_config_incompatible_contract`. Nothing is stored then.
 
-Reads (`read_agents`, `read_agent`, `read_versions`, and `read_config_options`: what the
-deployed manifest lets a new version reference) are for platform administrators too. Config
+Reads (`read_agents`, `read_agent`, `read_versions`, `read_config_options`: what the
+deployed manifest lets a new version reference, and `read_tool_denials`: the ToolGateway's
+denied calls, Story 7.4) are for platform administrators too. Config
 versions carry their author's name, resolved through identity's public `user_names`.
 
 Evaluation results (Story 7.6): `record_eval_result` (the eval harness, a system actor; no
@@ -39,6 +40,7 @@ profile, and the model call records the profile actually used).
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -65,6 +67,9 @@ from app.modules.registry.application.models import (
     NewEvalResult,
     RegistryAgent,
     RegistryAgentList,
+    ToolDenial,
+    ToolDenialPage,
+    ToolPermissionOption,
 )
 from app.modules.registry.domain import evals as gate
 from app.modules.registry.domain import registry as rules
@@ -84,12 +89,13 @@ from app.platform.errors import (
     RegistryAgentDuplicateError,
     RegistryConfigIncompatibleContractError,
     RegistryConfigNotDeployedError,
+    RegistryPermissionForbiddenForAgentsError,
     RowVersionMismatchError,
-    ToolPermissionNotReadOnlyError,
     UnprocessableError,
 )
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
+from app.platform.tool_gateway import list_denials
 from app.platform.tool_gateway.catalogue import READ_TOOLS
 from app.platform.trace.catalogue import (
     RegistryAgentConfigVersionCreated,
@@ -104,6 +110,9 @@ MAX_ROW_VERSION = 2**31 - 1
 NOT_FOUND_DETAIL = "No Agent with this id."
 EVAL_NOT_FOUND_DETAIL = "No evaluation result with this id."
 EVAL_LIST_LIMIT = 100
+DENIALS_DEFAULT_PAGE_SIZE = 50
+DENIALS_MAX_PAGE_SIZE = 200
+DENIALS_MAX_PAGE = 1_000_000
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 _log = get_logger(__name__)
 
@@ -229,8 +238,8 @@ def check_deployed(agent_id: str, new: NewAgentConfig) -> _CheckedConfig:
     semver = _invalid(new.semver, rules.semver)
     try:
         tool_permissions = rules.tool_permissions(new.tool_permissions)
-    except rules.ToolPermissionNotReadOnly as exc:  # only READ tools (Story 5.4)
-        raise ToolPermissionNotReadOnlyError(str(exc)) from None
+    except rules.PermissionForbiddenForAgents as exc:  # read tools only (Story 7.4)
+        raise RegistryPermissionForbiddenForAgentsError(str(exc)) from None
     except ValueError as exc:
         raise UnprocessableError(str(exc)) from None
     budgets = _invalid(new.budgets, rules.budgets)
@@ -342,7 +351,8 @@ async def read_config_options(
 ) -> AgentConfigOptions:
     """What `check_deployed` accepts for a new version of this Agent: the deployed model
     profiles, its prompt and input schema versions, its output schema versions written for
-    `CONTRACT_VERSION`, and the ToolGateway's read-only tools."""
+    `CONTRACT_VERSION`, and the grantable tools (`read` actions that are ToolGateway tools,
+    each with its category; Story 7.4)."""
     _require_admin(actor)
     agent = await _load(uow, agent_id)
     manifest = deployed.load()
@@ -354,7 +364,56 @@ async def read_config_options(
         output_schema_versions=[
             v for v, entry in outputs.items() if entry.get("contract_version") == CONTRACT_VERSION
         ],
-        tool_permissions=sorted(READ_TOOLS),
+        tool_permissions=[
+            ToolPermissionOption(action=name, category="read")
+            for name in sorted(READ_TOOLS)
+            if rules.grantable(name)
+        ],
+    )
+
+
+async def read_tool_denials(
+    uow: UnitOfWork,
+    actor: Principal,
+    *,
+    agent_id: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = 1,
+    page_size: int = DENIALS_DEFAULT_PAGE_SIZE,
+) -> ToolDenialPage:
+    """Denied ToolGateway calls, newest first, one page at a time (Story 7.4), with the
+    calling config version's semver. Ids, codes and times only (NFR-9)."""
+    _require_admin(actor)
+    found = await list_denials(
+        uow,
+        agent_id=agent_id,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        page_size=page_size,
+    )
+    versions = await repo.versions_by_id(uow, list({d.config_version_id for d in found.items}))
+    return ToolDenialPage(
+        items=[
+            ToolDenial(
+                id=str(d.id),
+                created_at=d.created_at,
+                agent_id=d.agent_id,
+                semver=(v.semver if (v := versions.get(d.config_version_id)) else None),
+                config_version_id=str(d.config_version_id),
+                tool=d.tool,
+                reason=d.reason,
+                opportunity_id=str(d.opportunity_id),
+                run_id=None if d.run_id is None else str(d.run_id),
+                task_id=None if d.task_id is None else str(d.task_id),
+                threshold_exceeded=d.threshold_exceeded,
+            )
+            for d in found.items
+        ],
+        page=page,
+        page_size=page_size,
+        total=found.total,
     )
 
 

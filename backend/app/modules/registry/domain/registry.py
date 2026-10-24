@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid5
 
+from app.modules.identity.actions import PermissionCategory, action_category
 from app.platform.tool_gateway.catalogue import READ_TOOLS, is_read_tool
 
 SUBJECT_TYPE = "registry.agent"
@@ -20,8 +21,8 @@ SEMVER_MAX = 32
 TOOL_PERMISSION_RE = re.compile(
     r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
 )
-"""A tool permission is an action name, `<module>.<entity>.<verb>`, and since Story 5.4 one
-of the ToolGateway's READ tools."""
+"""A tool permission is an action name, `<module>.<entity>.<verb>`; since Story 5.4 one of
+the ToolGateway's tools, and since Story 7.4 also an action of category `read`."""
 TOOL_PERMISSIONS_MAX = 50
 BUDGET_KEYS_MAX = 20
 REASON_MAX = 500
@@ -140,13 +141,35 @@ def semver(value: str) -> str:
     return trimmed
 
 
-class ToolPermissionNotReadOnly(ValueError):
-    """A tool permission that is an action name but not a ToolGateway READ tool."""
+class PermissionForbiddenForAgents(ValueError):
+    """A tool permission that is an action name but not a `read` action that is also a
+    ToolGateway tool (Story 7.4): a write, delete, send or approve action, a read that is
+    no tool, or a name no action has."""
+
+
+def grantable(name: str) -> bool:
+    """Whether an Agent may hold `name`: a `read` action that is also a ToolGateway tool."""
+    return action_category(name) == PermissionCategory.READ and is_read_tool(name)
+
+
+def _forbidden(name: str) -> PermissionForbiddenForAgents:
+    category = action_category(name)
+    what = (
+        "is not an action"
+        if category is None
+        else f"is a {category.value} action"
+        if category != PermissionCategory.READ
+        else "is a read action but not a ToolGateway tool"
+    )
+    return PermissionForbiddenForAgents(
+        f"{name} {what}. Agents may only be granted these read tools: "
+        f"{', '.join(sorted(n for n in READ_TOOLS if grantable(n)))}."
+    )
 
 
 def tool_permissions(values: Sequence[str]) -> tuple[str, ...]:
-    """Distinct ToolGateway READ tool names, in the order given (Story 5.4). Raises
-    `ToolPermissionNotReadOnly` for any other action name, `ValueError` for a malformed
+    """Distinct grantable tool names (`grantable`), in the order given. Raises
+    `PermissionForbiddenForAgents` for any other action name, `ValueError` for a malformed
     one or too many."""
     if len(values) > TOOL_PERMISSIONS_MAX:
         raise ValueError(f"An agent can hold at most {TOOL_PERMISSIONS_MAX} tool permissions.")
@@ -157,11 +180,8 @@ def tool_permissions(values: Sequence[str]) -> tuple[str, ...]:
             raise ValueError(
                 "Each tool permission must be an action name, `<module>.<entity>.<verb>`."
             )
-        if not is_read_tool(name):
-            raise ToolPermissionNotReadOnly(
-                f"{name} is not a read-only tool. Agents may only be granted: "
-                f"{', '.join(sorted(READ_TOOLS))}."
-            )
+        if not grantable(name):
+            raise _forbidden(name)
         if name not in seen:
             seen.append(name)
     return tuple(seen)

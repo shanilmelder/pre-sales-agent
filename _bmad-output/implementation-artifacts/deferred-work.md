@@ -277,3 +277,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-3-admin-agents-view.md`
   summary: Story 7.3/7.8 "Not evaluated" badge on Agent config versions and the explicit save confirmation for an unevaluated config.
   evidence: Deferred by the user on 2026-10-24 while planning the Story 7.3 remainder; it belongs with the 7.8 eval gate.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-4-tool-permissions-and-denial-audit.md`
+  summary: The ToolGateway's per-run denial advisory lock (`_denial_threshold`) is taken partway through the specialist node's Unit of Work, which could invert lock order with row locks that run tasks share (unverified, medium if real).
+  evidence: maybe-false in 7.4 review; settle by tracing the node UoW around `SpecialistExecutor.prepare` (`orchestration/executors.py:78-99`) for row locks on run-shared rows taken before or after the gateway calls.

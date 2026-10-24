@@ -15,7 +15,12 @@ from sqlalchemy.engine import Engine
 import app.modules.gaps.application.public
 import app.modules.intake.application.public
 import app.modules.knowledge.application.public  # noqa: F401 - registers the handlers
-from app.modules.identity.actions import Action
+from app.modules.identity.actions import (
+    ACTION_CATEGORIES,
+    Action,
+    PermissionCategory,
+    action_category,
+)
 from app.modules.intake.application.requirement_refs import RequirementSnapshot
 from app.modules.registry.domain.registry import SEED_NAMESPACE
 from app.platform import tool_gateway
@@ -134,6 +139,19 @@ def test_the_catalogue_is_read_only_and_every_tool_is_an_action() -> None:
             assert forbidden not in name
     assert TOOLS[RESEARCH_PAGE_FETCH].network
     assert not any(spec.network for name, spec in TOOLS.items() if name != RESEARCH_PAGE_FETCH)
+
+
+def test_every_action_has_one_category_and_every_tool_is_a_read() -> None:
+    """Story 7.4: one category per action; the ToolGateway holds `read` actions only."""
+    missing = [a for a in Action if a not in ACTION_CATEGORIES]
+    assert missing == [], f"actions without a permission category: {missing}"
+    assert set(ACTION_CATEGORIES) == set(Action)
+    assert {c.value for c in PermissionCategory} == {"read", "write", "delete", "send", "approve"}
+    for name in TOOLS:
+        assert action_category(name) == PermissionCategory.READ, name
+    assert action_category("intake.requirement.edit") == PermissionCategory.WRITE
+    assert action_category("gaps.clarification_question.send") == PermissionCategory.SEND
+    assert action_category("gaps.question.send") is None
 
 
 def test_every_tool_has_a_handler_once_the_owning_modules_are_imported() -> None:

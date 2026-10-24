@@ -29,6 +29,19 @@ class PlatformToolCall(Base):
         CheckConstraint("result_count >= 0 AND duration_ms >= 0", name="counts"),
         Index(None, "run_id"),
         Index(None, "opportunity_id", "created_at"),
+        # The denied-call list (Story 7.4): newest first, and by Agent.
+        Index(
+            "ix_platform_tool_calls_denied_agent_id_created_at",
+            "agent_id",
+            "created_at",
+            postgresql_where=text("outcome = 'denied'"),
+        ),
+        Index(
+            "ix_platform_tool_calls_denied_created_at_id",
+            "created_at",
+            "id",
+            postgresql_where=text("outcome = 'denied'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)

@@ -17,22 +17,32 @@ The gateway, not the handler, records every call: one INSERT-only `platform_tool
 (ids, tool, outcome, reason, result count, duration, HTTP status) and, for a denial, the
 trace event `platform.tool_call.denied`, in the same Unit of Work as the read (or its own
 for the research fetch). Outcomes are values; nothing here raises for a denied or failed
-call. Logs, rows and trace hold ids and codes only.
+call, and nothing retries one. Logs, rows and trace hold ids and codes only.
+
+Denial alert (Story 7.4): when a denial takes its run's denied calls past
+`PSA_TOOL_DENIAL_ALERT_THRESHOLD` (default 3), the same Unit of Work traces
+`platform.tool_call.denial_threshold_exceeded` and enqueues one `platform.alert_email` job,
+once per run: a later denial sees the event and adds nothing. A run's denials are
+serialised by a transaction-level advisory lock on the run, so concurrent tasks count each
+other's committed denials.
 """
 
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import date
 from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import insert
+from sqlalchemy import func, insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.platform import trace
 from app.platform.actor import Actor
+from app.platform.alerts.jobs import ToolDenialAlert
 from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
+from app.platform.jobs.queue import enqueue
 from app.platform.logging import get_logger
 from app.platform.storage import BlobStore
 from app.platform.tool_gateway.allowlist import Allowlist
@@ -47,10 +57,18 @@ from app.platform.tool_gateway.port import (
     ToolResult,
     outcome_code,
 )
-from app.platform.trace.catalogue import PlatformToolCallDenied
+from app.platform.trace.catalogue import (
+    PlatformToolCallDenialThresholdExceeded,
+    PlatformToolCallDenied,
+)
+from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork, unit_of_work
 
 SUBJECT_TYPE = "platform.tool_call"
+RUN_SUBJECT_TYPE = "assessments.assessment_run"
+"""The trace subject type of a workflow run (`workflows.domain.runs.RUN_SUBJECT_TYPE`;
+repeated here because platform never imports a business module)."""
+THRESHOLD_EVENT = PlatformToolCallDenialThresholdExceeded.event_type
 _TOOL_NAME_MAX = 100
 _log = get_logger(__name__)
 
@@ -242,6 +260,8 @@ class ToolGateway:
                 opportunity_id=ctx.opportunity_id,
                 workflow_run_id=ctx.run_id,
             )
+            if ctx.run_id is not None:
+                await self._denial_threshold(uow, ctx, ctx.run_id)
         _log.info(
             f"tool_call.{code}",
             extra={
@@ -258,3 +278,95 @@ class ToolGateway:
                 "http_status": http_status,
             },
         )
+
+    async def _denial_threshold(self, uow: UnitOfWork, ctx: ToolContext, run_id: UUID) -> None:
+        """After a denial in a run: past the threshold and not yet alerted, trace the event
+        and enqueue the alert email (module docstring)."""
+        threshold = self._settings.tool_denial_alert_threshold
+        # Serialise the run's denials: each counts after the previous holder committed, so
+        # tasks running at the same time can neither both alert nor both miss the threshold.
+        # Taken last in the Unit of Work (after the audit row), it orders after every other
+        # lock the caller holds.
+        await uow.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"platform.tool_call.denials:{run_id}"},
+        )
+        count = await _denied_in_run(uow, run_id)
+        if count <= threshold or await _alerted(uow, run_id):
+            return
+        day_from, day_to = await _denial_days(uow, run_id)
+        await trace.append(
+            uow,
+            actor=Actor(type="agent", id=ctx.actor_id),
+            payload=PlatformToolCallDenialThresholdExceeded(
+                run_id=str(run_id),
+                actor_id=ctx.actor_id,
+                denial_count=count,
+                threshold=threshold,
+            ),
+            subject_type=RUN_SUBJECT_TYPE,
+            subject_id=run_id,
+            opportunity_id=ctx.opportunity_id,
+            workflow_run_id=run_id,
+        )
+        await enqueue(
+            uow,
+            ToolDenialAlert(
+                run_id=run_id,
+                opportunity_id=ctx.opportunity_id,
+                agent_id=ctx.agent_id,
+                semver=ctx.semver,
+                denial_count=count,
+                threshold=threshold,
+                day_from=day_from,
+                day_to=day_to,
+            ),
+        )
+        _log.warning(
+            "tool_call.denial_threshold_exceeded",
+            extra={
+                "run_id": str(run_id),
+                "agent_id": ctx.agent_id,
+                "opportunity_id": str(ctx.opportunity_id),
+                "denial_count": count,
+                "threshold": threshold,
+            },
+        )
+
+
+async def _denied_in_run(uow: UnitOfWork, run_id: UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(PlatformToolCall)
+        .where(PlatformToolCall.run_id == run_id, PlatformToolCall.outcome == "denied")
+    )
+    return int((await uow.session.execute(statement)).scalar_one())
+
+
+async def _denial_days(uow: UnitOfWork, run_id: UUID) -> tuple[date, date]:
+    """The UTC day of the run's first denied call and today's UTC day, both from the
+    database clock (the rows' `created_at` is the database's `now()`)."""
+    row = (
+        await uow.session.execute(
+            text(
+                "SELECT (min(created_at) AT TIME ZONE 'UTC')::date AS first, "
+                "(now() AT TIME ZONE 'UTC')::date AS today "
+                "FROM platform_tool_calls WHERE run_id = :r AND outcome = 'denied'"
+            ),
+            {"r": run_id},
+        )
+    ).one()
+    return row.first, row.today
+
+
+async def _alerted(uow: UnitOfWork, run_id: UUID) -> bool:
+    statement = select(
+        select(TraceEvent.id)
+        .where(
+            TraceEvent.subject_type == RUN_SUBJECT_TYPE,
+            TraceEvent.subject_id == run_id,
+            TraceEvent.event_type == THRESHOLD_EVENT,
+        )
+        .exists()
+    )
+    return bool((await uow.session.execute(statement)).scalar_one())

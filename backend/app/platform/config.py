@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.platform.model_gateway.profiles import EMBED_PROFILES, MODEL_PROFILES
 
@@ -221,6 +221,35 @@ class Settings(BaseSettings):
         gt=0,
         description="Largest research page body in bytes (2 MiB), counted while streaming.",
     )
+    tool_denial_alert_threshold: int = Field(
+        default=3,
+        ge=0,
+        le=10_000,
+        description=(
+            "Denied ToolGateway calls a run may have before an alert (Story 7.4): the first "
+            "denial past it traces `platform.tool_call.denial_threshold_exceeded` and queues "
+            "one alert email for the run."
+        ),
+    )
+    resend_api_key: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Resend API key for alert emails (Story 7.4). Unset or blank: alert jobs log a "
+            "warning and send nothing."
+        ),
+    )
+    alert_email_from: str | None = Field(
+        default=None,
+        description="The sender of alert emails, e.g. `PSA Alerts <alerts@example.com>`.",
+    )
+    alert_email_to: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Alert email recipients, a comma-separated list.",
+    )
+    web_base_url: str = Field(
+        default="http://localhost:3000",
+        description="The web app's base URL, for links in alert emails.",
+    )
     eval_database_url: str | None = Field(
         default=None,
         description=(
@@ -266,6 +295,13 @@ class Settings(BaseSettings):
         if self.job_heartbeat_s > self.job_lease_s / 2:
             raise ValueError("job_heartbeat_s must be at most half of job_lease_s")
         return self
+
+    @field_validator("alert_email_to", mode="before")
+    @classmethod
+    def _comma_list(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
     @field_validator("openai_model", "openai_reasoning_effort", mode="before")
     @classmethod

@@ -146,6 +146,39 @@ export function configValue(field: ConfigField, values: ConfigValues): string {
   }
 }
 
+// --- Tool permission categories (Story 7.4) ----------------------------------------------------
+
+export type ToolPermissionOption = components["schemas"]["ToolPermissionOption"];
+export type PermissionCategory = ToolPermissionOption["category"];
+
+const CATEGORY_LABELS: Record<PermissionCategory, string> = {
+  read: "Read",
+  write: "Write",
+  delete: "Delete",
+  send: "Send",
+  approve: "Approve",
+};
+
+export function categoryLabel(category: PermissionCategory): string {
+  return CATEGORY_LABELS[category];
+}
+
+/** The options the permission picker offers: `read` actions only, by action name. */
+export function grantableTools(options: readonly ToolPermissionOption[]): ToolPermissionOption[] {
+  return options
+    .filter((option) => option.category === "read")
+    .sort((a, b) => (a.action < b.action ? -1 : a.action > b.action ? 1 : 0));
+}
+
+/** A permission with its category, as the diff shows it: "knowledge.chunk.read (read)".
+ * Every stored permission is a `read` action: the registry refuses any other (Story 7.4). */
+export function permissionWithCategory(
+  action: string,
+  category: PermissionCategory = "read",
+): string {
+  return `${action} (${category})`;
+}
+
 /** Permissions granted (in `after`, not `before`) and removed, each sorted. */
 export function permissionChanges(
   before: readonly string[],
@@ -200,4 +233,97 @@ export function parseBudgets(
 /** Budgets as the textarea shows them: indented JSON, empty for none. */
 export function budgetsText(budgets: Record<string, unknown>): string {
   return Object.keys(budgets).length > 0 ? JSON.stringify(budgets, null, 2) : "";
+}
+
+// --- Denied tool calls (Story 7.4) --------------------------------------------------------------
+
+export type ToolDenial = components["schemas"]["ToolDenial"];
+export type ToolDenialPage = components["schemas"]["ToolDenialPage"];
+export type DenialReason = ToolDenial["reason"];
+
+export const DENIALS_PATH = "/admin/agents/denials";
+
+export const NO_DENIALS = "No denied tool calls.";
+
+export const NO_MATCHING_DENIALS = "No denied tool calls match these filters.";
+
+export const THRESHOLD_EXCEEDED = "Threshold exceeded";
+
+export const DENIALS_FOOTNOTE =
+  "Denied calls are blocked, audited and never retried. Ids only: no Opportunity names, prompts or Source text.";
+
+const DENIAL_REASON_LABELS: Record<DenialReason, string> = {
+  tool_not_permitted: "Not permitted",
+  out_of_scope: "Out of scope",
+  unknown_tool: "Unknown tool",
+  not_allowlisted: "Not allowlisted",
+};
+
+export function denialReasonLabel(reason: DenialReason): string {
+  return DENIAL_REASON_LABELS[reason];
+}
+
+/** "pm_agent@0.1.0", or the agent id alone when the calling version is unknown. */
+export function agentAtVersion(denial: Pick<ToolDenial, "agent_id" | "semver">): string {
+  return denial.semver ? `${denial.agent_id}@${denial.semver}` : denial.agent_id;
+}
+
+/** An id's first 8 characters, as the denial list shows it. */
+export function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/** The denial list filters in the URL query: all optional, combined with AND. */
+export type DenialFilters = { agent_id?: string; from?: string; to?: string };
+
+const DENIAL_FILTER_KEYS = ["agent_id", "from", "to"] as const;
+const AGENT_ID_RE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/** A real calendar date as `YYYY-MM-DD`. */
+export function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, y, m, d] = match.map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function firstParam(params: SearchParams | undefined, key: string): string | undefined {
+  const value = params?.[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** The filters in `params`. Invalid values are dropped, so a hand-edited URL never gets a 422
+ * from the API; a reversed range drops both dates. */
+export function parseDenialFilters(params: SearchParams | undefined): DenialFilters {
+  const filters: DenialFilters = {};
+  const agent = firstParam(params, "agent_id")?.trim();
+  if (agent && AGENT_ID_RE.test(agent)) filters.agent_id = agent;
+  const from = firstParam(params, "from");
+  const to = firstParam(params, "to");
+  const validFrom = from && isCalendarDate(from) ? from : undefined;
+  const validTo = to && isCalendarDate(to) ? to : undefined;
+  if (!(validFrom && validTo && validFrom > validTo)) {
+    if (validFrom) filters.from = validFrom;
+    if (validTo) filters.to = validTo;
+  }
+  return filters;
+}
+
+export function hasDenialFilters(filters: DenialFilters): boolean {
+  return DENIAL_FILTER_KEYS.some((key) => filters[key] !== undefined);
+}
+
+/** The denial list's URL with the filters (in a fixed order) and the page past the first. */
+export function denialsHref(filters: DenialFilters, page = 1): string {
+  const query = new URLSearchParams();
+  for (const key of DENIAL_FILTER_KEYS) {
+    const value = filters[key];
+    if (value) query.set(key, value);
+  }
+  if (page > 1) query.set("page", String(page));
+  const text = query.toString();
+  return text ? `${DENIALS_PATH}?${text}` : DENIALS_PATH;
 }

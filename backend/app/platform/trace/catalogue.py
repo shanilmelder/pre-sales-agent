@@ -1373,3 +1373,18 @@ class PlatformToolCallDenied(TracePayload):
     tool: str
     reason: Literal["tool_not_permitted", "out_of_scope", "unknown_tool", "not_allowlisted"]
     task_id: str | None
+
+
+@register
+class PlatformToolCallDenialThresholdExceeded(TracePayload):
+    """A run's denied ToolGateway calls passed `PSA_TOOL_DENIAL_ALERT_THRESHOLD` (Story 7.4);
+    appended once per run, with the denial that passed it, and an alert email is queued in
+    the same Unit of Work. Subject: the run (`assessments.assessment_run`). Actor: the Agent
+    whose call passed it (`actor_id`: `<agent_id>@<semver>`). Ids and counts only."""
+
+    event_type: ClassVar[str] = "platform.tool_call.denial_threshold_exceeded"
+
+    run_id: str
+    actor_id: str
+    denial_count: int
+    threshold: int
