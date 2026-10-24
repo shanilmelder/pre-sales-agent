@@ -443,6 +443,14 @@ class RegistryConfigNotDeployedError(UnprocessableError):
     title = "Config not deployed"
 
 
+class ToolPermissionNotReadOnlyError(UnprocessableError):
+    """A config version grants a tool permission that is not one of the ToolGateway's READ
+    tools (Story 5.4): Agents can never be granted a write, delete, send or approve."""
+
+    code = "tool_permission_not_read_only"
+    title = "Tool permission not read-only"
+
+
 class RegistryConfigIncompatibleContractError(UnprocessableError):
     """A config version's output schema was written for another `AgentResult` contract
     version than the one deployed (Story 7.1)."""

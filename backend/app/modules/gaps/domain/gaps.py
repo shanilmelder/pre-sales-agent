@@ -11,13 +11,14 @@ and which mandatory Gaps still apply. Such a Gap has no related Requirement, and
 dismissed while its Checklist still applies.
 """
 
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
 from uuid import UUID
+
+from app.platform.prompt_data import injection_suspected as injection_suspected
 
 DETECTION_SUBJECT_TYPE = "gaps.detection"
 """The trace subject of a detection run."""
@@ -464,43 +465,8 @@ def reopen_question(state: QuestionState) -> QuestionState:
     )
 
 
-_STATE_WORDS = (
-    r"(?:answered|resolved|closed|open|dismissed|done|complete|completed|approved|sent|"
-    r"irrelevant|not relevant)"
-)
-_INJECTION_PATTERNS = (
-    # "Ignore previous instructions", "disregard the rules above".
-    re.compile(
-        r"\b(?:ignore|disregard|forget|override|bypass)\b[^.!?\n]{0,40}?"
-        r"\b(?:instructions?|prompts?|rules?|directions?|guidelines?|context)\b"
-    ),
-    # "Mark all Gaps as answered", "set every question to resolved".
-    re.compile(
-        r"\b(?:mark|set|flag|change|update|move|treat|consider|record|close|resolve|dismiss|"
-        r"reopen|approve)\b[^.!?\n]{0,60}?"
-        r"\b(?:gaps?|questions?|clarifications?|status(?:es)?|requirements?|unknowns?)\b"
-        rf"[^.!?\n]{{0,40}}?\b(?:as|to|is|are)\b[^.!?\n]{{0,20}}?\b{_STATE_WORDS}\b"
-    ),
-    # "All Gaps are answered", "every question has been resolved".
-    re.compile(
-        r"\b(?:all|every|each|any)\b[^.!?\n]{0,20}?\b(?:gaps?|questions?)\b[^.!?\n]{0,20}?"
-        rf"\b(?:is|are|has been|have been|should be|must be)\b\s+{_STATE_WORDS}\b"
-    ),
-    # Talking to the model rather than to the vendor.
-    re.compile(
-        r"\b(?:you are now|from now on you|act as|pretend to be|system prompt|"
-        r"new instructions?|developer message|as an ai)\b"
-    ),
-)
-
-
-def injection_suspected(text: str) -> bool:
-    """Whether `text` reads like an instruction to the platform rather than a customer's
-    answer: an imperative about statuses, Gaps, questions or instructions (e.g. "Mark all
-    Gaps as answered", "Ignore previous instructions"). A heuristic that only flags: it never
-    changes what is stored or any status."""
-    folded = " ".join(text.casefold().split())
-    return any(pattern.search(folded) for pattern in _INJECTION_PATTERNS)
+# `injection_suspected` (Story 4.7) lives in `app.platform.prompt_data` since Story 5.4, which
+# runs it on every fenced data block; it is re-exported here.
 
 
 # --- changing impact, dismissing and reopening Gaps (Story 4.4) -----------------------------

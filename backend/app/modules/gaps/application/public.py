@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from app.modules.gaps.application import answer_matching, detection
+from app.modules.gaps.application import tools as tools  # registers the ToolGateway handler
 from app.modules.gaps.application.answer_matching import confirm_match, reject_match
 from app.modules.gaps.application.context import gaps_context
 from app.modules.gaps.application.conversion import mark_converted

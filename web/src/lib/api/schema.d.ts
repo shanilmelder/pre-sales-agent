@@ -2323,7 +2323,8 @@ export interface components {
         /**
          * AssessmentFinding
          * @description A specialist Finding: its kind, severity, specific title and detail, with the
-         *     Requirements it cites.
+         *     Requirements it cites. `injection_suspected` (Story 5.4): a cited Requirement's text
+         *     read like an injected instruction when the agent read it (the UI marks the row).
          */
         AssessmentFinding: {
             /** Id */
@@ -2338,6 +2339,8 @@ export interface components {
             detail: string;
             /** Requirements */
             requirements: components["schemas"]["FindingRequirement"][];
+            /** Injection Suspected */
+            injection_suspected: boolean;
         };
         /**
          * AssessmentRun

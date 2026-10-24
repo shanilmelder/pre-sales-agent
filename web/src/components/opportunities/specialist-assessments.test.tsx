@@ -88,6 +88,7 @@ function finding(
   n: number,
   severity: Severity,
   kind: AssessmentFinding["kind"] = "risk",
+  injection = false,
 ) {
   return {
     id: `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`,
@@ -104,6 +105,7 @@ function finding(
         excerpt: `[EXCERPT ${n}]`,
       },
     ],
+    injection_suspected: injection,
   } satisfies AssessmentFinding;
 }
 
@@ -773,6 +775,29 @@ function progress(event_type: string, summary: string) {
     summary,
   };
 }
+
+describe("a Finding citing a flagged Requirement (Story 5.4)", () => {
+  it("shows the Possible injected instruction marker on its row only", async () => {
+    const flagged = assessment("engineering_agent", 2, [
+      finding(3, "critical", "risk", true),
+      finding(1, "high", "constraint"),
+    ]);
+    const { container } = renderSection(
+      view(succeeded, { engineering_agent: flagged, pm_agent: PM }),
+    );
+
+    expect(findingRows()).toEqual([
+      "CriticalRisk[FINDING 3]Possible injected instructionEngineering Agent1 Requirement",
+      "HighConstraint[FINDING 1]Engineering Agent1 Requirement",
+      "LowDependency[FINDING 4]PM Agent1 Requirement",
+    ]);
+    const marker = within(row(3)).getByText("Possible injected instruction");
+    expect(marker.getAttribute("data-slot")).toBe("pill");
+    expect(marker.getAttribute("data-tone")).toBe("gap");
+    expect(within(row(1)).queryByText("Possible injected instruction")).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
 
 describe("live updates over the event stream (Story 5.2)", () => {
   beforeEach(() => {

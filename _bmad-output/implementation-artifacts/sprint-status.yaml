@@ -84,7 +84,7 @@ development_status:
   5-1-start-a-workflow-run-with-pinned-inputs-and-a-versioned-plan: done
   5-2-durable-langgraph-execution-in-the-worker: done
   5-3-assessments-and-the-standard-assessment-contract: done
-  5-4-toolgateway-with-task-scoped-read-only-tools-and-research-sn: backlog
+  5-4-toolgateway-with-task-scoped-read-only-tools-and-research-sn: review
   5-5-pause-for-human-input-resume-and-cancel: done
   5-6-budgets-timeouts-and-failure-handling: backlog
   5-7-agent-run-panel-and-activity-tab: done
