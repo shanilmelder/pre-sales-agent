@@ -291,6 +291,10 @@ forbidden_modules = [
     "app.modules.assessments",
     "app.modules.workflows",
 ]
+# Story 3.5: only the coverage route reads the Opportunities' products, through their public API.
+ignore_imports = [
+    "app.modules.knowledge.api.coverage_routes -> app.modules.opportunities.application.public",
+]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]

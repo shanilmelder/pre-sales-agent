@@ -2,14 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactNode,
-} from "react";
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
@@ -23,10 +16,10 @@ import {
   formatDate,
   formatHours,
   initials,
-  SKELETON_MIN_MS,
   type OpportunitySummary,
 } from "@/lib/opportunities";
 import { NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
+import { useSkeletonDone } from "@/lib/use-skeleton-done";
 import { cn } from "@/lib/utils";
 
 const SKELETON_ROWS = 5;
@@ -42,16 +35,6 @@ const COLUMN_WIDTHS = [undefined, "136px", "166px", "126px", "136px", "158px"];
 /** Each cell pads 8px a side (the 16px gap); the first and last pad 20px at the edge. */
 const cellPad = (index: number) =>
   index === 0 ? "pr-2 pl-5" : index === COLUMNS - 1 ? "pr-5 pl-2 text-right" : "px-2";
-
-/** True once the skeleton has been up for `SKELETON_MIN_MS` after the list first mounted. */
-function useSkeletonDone(): boolean {
-  const [done, setDone] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDone(true), SKELETON_MIN_MS);
-    return () => window.clearTimeout(timer);
-  }, []);
-  return done;
-}
 
 /** The list's bordered card. The page also puts its "not reachable" text in it. */
 export function OpportunitiesCard({ children }: { children: ReactNode }) {

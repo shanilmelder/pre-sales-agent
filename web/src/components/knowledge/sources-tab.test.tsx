@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { NO_FILTERS } from "@/lib/knowledge-sources";
+import { axeViolations } from "@/test/axe";
 import { source } from "@/test/knowledge-fixtures";
 
 vi.mock("@/app/knowledge/actions", () => ({
@@ -80,6 +82,18 @@ describe("SourcesTab initial filters (Story 4.1)", () => {
   it("opens unfiltered without a link", () => {
     renderTab();
     expect(select("Product").value).toBe("");
+    expect(screen.getByText("AutoStore guide")).toBeTruthy();
+    expect(screen.getByText("Pick station EDI guide")).toBeTruthy();
+  });
+
+  it("drops linked filters with Clear filters, with no axe violations", async () => {
+    const { container } = renderTab({
+      ...NO_FILTERS,
+      product: "Pick station",
+      integrationTypeId: EDI.id,
+    });
+    expect(await axeViolations(container)).toEqual([]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByText("AutoStore guide")).toBeTruthy();
     expect(screen.getByText("Pick station EDI guide")).toBeTruthy();
   });

@@ -13,14 +13,20 @@ import {
   useShell,
 } from "@/components/shell/shell-context";
 import {
+  applyChecklistFilters,
   canAuthor,
+  checklistProducts,
   DOMAINS,
   fieldError,
   NAME_MAX,
+  NO_CHECKLIST_FILTERS,
+  NO_MATCHES,
   upsert,
   type Checklist,
   type ChecklistDomain,
+  type ChecklistFilters,
 } from "@/lib/checklists";
+import { withOption } from "@/lib/coverage";
 import type { Permission } from "@/lib/navigation";
 
 /** An active catalogue entry, for scope tags (Integration Types) and affected areas (both
@@ -33,19 +39,25 @@ export type CatalogueOption = {
 
 const buttonClass =
   "h-7 shrink-0 rounded-md border border-border px-2 text-label outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary aria-disabled:opacity-60";
+const selectClass =
+  "h-7 rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary";
 const inputClass =
   "h-7 w-full rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
-/** Knowledge → Checklists: the list in the main pane; the selected Checklist's inspector,
- * or the create form (`c`, authors only), in the right pane. */
+/** Knowledge → Checklists: the list in the main pane, filtered by product and Integration
+ * Type (client-side; maybe seeded from a Coverage cell's link); the selected Checklist's
+ * inspector, or the create form (`c`, authors only), in the right pane. */
 export function ChecklistsTab({
   initialChecklists,
   catalogue,
   permissions,
+  initialFilters,
 }: {
   initialChecklists: readonly Checklist[];
   catalogue: readonly CatalogueOption[];
   permissions: readonly Permission[];
+  /** Filters applied on load (`?product=&integration_type=`, from a Coverage cell). */
+  initialFilters?: Partial<ChecklistFilters>;
 }) {
   const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();
   const [checklists, setChecklists] = useState<readonly Checklist[]>(initialChecklists);
@@ -55,6 +67,14 @@ export function ChecklistsTab({
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
   const mayAuthor = canAuthor(permissions);
+  const integrationTypes = catalogue.filter((entry) => entry.kind === "integration_type");
+  const [filters, setFilters] = useState<ChecklistFilters>(() => ({
+    product: withOption(checklistProducts(initialChecklists), initialFilters?.product ?? "")
+      .selected,
+    integrationTypeId: integrationTypes.some((t) => t.id === initialFilters?.integrationTypeId)
+      ? (initialFilters?.integrationTypeId ?? "")
+      : "",
+  }));
 
   // A server refresh (e.g. revisiting the page) brings new rows.
   if (initialChecklists !== syncedFrom) {
@@ -63,6 +83,10 @@ export function ChecklistsTab({
   }
 
   const selected = checklists.find((c) => c.id === selectedId) ?? null;
+  const visible = applyChecklistFilters(checklists, filters);
+  const filtered = filters.product !== "" || filters.integrationTypeId !== "";
+  // A seeded product no Checklist names yet stays choosable, so the filter shows what it is.
+  const products = withOption(checklistProducts(checklists), filters.product).options;
 
   // When the pane closes after a keyboard open, focus goes back to the row, not the toggle.
   useEffect(() => {
@@ -121,8 +145,43 @@ export function ChecklistsTab({
 
   return (
     <>
-      {mayAuthor ? (
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1 text-label text-muted-foreground">
+          Product
+          <select
+            value={filters.product}
+            onChange={(event) => setFilters({ ...filters, product: event.target.value })}
+            className={selectClass}
+          >
+            <option value="">All</option>
+            {products.map((product) => (
+              <option key={product} value={product}>
+                {product}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-label text-muted-foreground">
+          Integration Type
+          <select
+            value={filters.integrationTypeId}
+            onChange={(event) => setFilters({ ...filters, integrationTypeId: event.target.value })}
+            className={selectClass}
+          >
+            <option value="">All</option>
+            {integrationTypes.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {filtered ? (
+          <button type="button" onClick={() => setFilters(NO_CHECKLIST_FILTERS)} className={buttonClass}>
+            Clear filters
+          </button>
+        ) : null}
+        {mayAuthor ? (
           <button
             type="button"
             onClick={startCreate}
@@ -131,14 +190,18 @@ export function ChecklistsTab({
           >
             New Checklist
           </button>
-        </div>
-      ) : null}
-      <ChecklistsTable
-        checklists={checklists}
-        selectedId={selectedId}
-        mayAuthor={mayAuthor}
-        onOpen={open}
-      />
+        ) : null}
+      </div>
+      {filtered && visible.length === 0 && checklists.length > 0 ? (
+        <p className="text-muted-foreground">{NO_MATCHES}</p>
+      ) : (
+        <ChecklistsTable
+          checklists={visible}
+          selectedId={selectedId}
+          mayAuthor={mayAuthor}
+          onOpen={open}
+        />
+      )}
       {creating ? (
         <RightPaneContent>
           <ChecklistCreateForm onCreated={created} onCancel={() => setCreating(false)} />
