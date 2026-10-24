@@ -323,7 +323,7 @@ def test_checklist_scopes_and_source_tags_pair_as_the_spec_says(
 ) -> None:
     admin, _ = _admin(client)
     author = _author(client)
-    p, q = _product("P"), _product("Q")
+    p, q, r = _product("P"), _product("Q"), _product("R")
     t1, t2 = _type(client, admin), _type(client, admin)
     # A Source covers its one product with each of its tags.
     source = _register(client, admin, [t1, t2], "# Both\n\nTwo tags.\n", product=p)
@@ -337,6 +337,8 @@ def test_checklist_scopes_and_source_tags_pair_as_the_spec_says(
     _checklist(client, author, types=[t1])
     # Both: only their pairs.
     _checklist(client, author, products=[q], types=[t2])
+    # A third product, so the types-only Checklist has another row to reach.
+    _checklist(client, author, products=[r], types=[t2])
 
     matrix = _matrix(client, admin)
     assert _counts(_cell(matrix, p, t1)) == ("ready", 1, 0, 2)
@@ -344,11 +346,8 @@ def test_checklist_scopes_and_source_tags_pair_as_the_spec_says(
     assert _counts(_cell(matrix, q, t1)) == ("partial", 0, 0, 1)
     assert _counts(_cell(matrix, q, t2)) == ("partial", 0, 0, 1)
     # The types-only Checklist reaches other products' rows too.
-    others = [r for r in matrix["rows"] if r["product"] not in (p, q)]
-    assert others
-    for row in others:
-        cell = next(c for c in row["cells"] if c["integration_type_id"] == t1)
-        assert cell["checklists"] >= 1
+    assert _counts(_cell(matrix, r, t1)) == ("partial", 0, 0, 1)
+    assert _counts(_cell(matrix, r, t2)) == ("partial", 0, 0, 1)
 
 
 def test_rows_are_the_union_of_products_sorted_ignoring_case(

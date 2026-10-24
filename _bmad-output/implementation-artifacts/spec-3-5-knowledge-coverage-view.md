@@ -2,7 +2,7 @@
 title: 'Story 3.5: Knowledge coverage view'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-review'
+status: 'done'
 baseline_commit: '6b24fae81f910547f3aade606e13bbe742254072'
 route: 'dispatch'
 review_loop_iteration: 1
@@ -123,6 +123,25 @@ context:
 | `withOption` doesn't trim | false | `seededFilters` trims `wanted`; Source and Checklist products are stored trimmed by the API |
 | No page test that `?product=&type=` reaches the Sources and Checklists tabs | medium | Verification-gap, pre-verified. Patch: page tests with `searchParams` |
 | No test of the "latest version only" Ready condition | medium | Verification-gap, pre-verified. Patch: add a version to a Ready Source and assert the counts |
+| Review 2 (after the main merge): Checklists filter shows draft-only Checklists the count excludes | false | The list row carries the published scope (`current_version` null → no products or types), so `applyChecklistFilters` already excludes it under either filter. Rejected |
+| Review 2: list rows may carry the draft scope, not the published one | false | `Checklist` (`checklist_models.py:53`) documents products and types as the latest published version's. Rejected |
+| Review 2: the pairing test needs another product row left by other tests | medium | `others` was empty on a fresh DB, so the test failed when run alone. Patch: its own third product `r`, with exact counts |
+| Review 2: `get_coverage` (4.1) now always loads tags | low | One extra indexed query; no hot path. Rejected |
+| Review 2: no legend or stale threshold on the Coverage page | low | The mockup has none; labels are always shown. Rejected |
+| Review 2: sprint-status 3-5 `in-progress` vs spec `in-review`; 3-4 still `backlog` | low | carried: 3-4 already deferred; 3-5 is set to done on completion. Rejected |
+| Review 2: Tasks/AC names vs `stale_months` keyword | low | The fix edits this build's spec. Rejected |
+| Review 2: focus after creating a Checklist under a seeded filter | low | Rare (create after arriving from a Coverage link); the fix adds branches. Rejected |
+| Review 2: Checklists filter changes don't update the URL | low | Same as the Sources filters on main (4.1); not asked for. Rejected |
+| Review 2: Industry list shows before the matrix skeleton ends | low | Cosmetic, 150 ms; the fix adds a shared skeleton gate. Rejected |
+| Review 2: grid lacks `aria-readonly` | low | Direct attribute addition. Patch |
+| Review 2: middle click on a cell starts Windows autoscroll | low | Real on Windows Chromium; one `onMouseDown` guard. Patch |
+| Review 2: Ctrl/Shift+Enter doesn't open a new tab | low | Rare; adds a branch. Rejected |
+| Review 2: `lib/coverage.ts` imports a component type; `knowledge-sources` → `coverage` | low | Type-only, with precedent (`lib/pill-tone.ts`); no cycle. Rejected |
+| Review 2: `initialSourceFilters` now drops non-UUID / over-long params untested on the Sources page | low | `seededFilters` rules are tested in `coverage.test.ts`; the Gaps banner sends UUIDs. Rejected |
+| Review 2: `deferred-work.md` entry spacing | low | The file already mixes both styles. Rejected |
+| Review 2: seeded Integration Type retired since the link was made is silently dropped | false | Spec'd and tested ("drops a linked Integration Type the picker doesn't offer"). Rejected |
+| Review 2: `get_pair_coverage` given `str` ids drops them all | false | Typed `Iterable[UUID]`, enforced by mypy; the route parses. Rejected |
+| Review 2: the remount `key` on the seeded Sources/Checklists tabs is untested | medium | Verification-gap, pre-verified. Patch: `pages.test.tsx` rerenders both pages with new params (fails without the `key`) |
 
 ## Verification
 

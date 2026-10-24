@@ -207,6 +207,10 @@ export function CoverageMatrix({ coverage }: { coverage: KnowledgeCoverage }) {
         onKeyDown={(event) => onCellKeyDown(event, row, col)}
         onClick={(event) => onCellClick(event, product, c.integration_type_id)}
         onAuxClick={(event) => onCellClick(event, product, c.integration_type_id)}
+        // A middle click opens a new tab (onAuxClick), not Windows' autoscroll.
+        onMouseDown={(event) => {
+          if (event.button === 1) event.preventDefault();
+        }}
         className="-m-1.5 flex min-w-0 cursor-pointer flex-col items-start gap-1 rounded-md p-1.5 outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-primary"
       >
         <CoverageStatusPill status={c.status} id={`${id}-status`} />
@@ -237,6 +241,7 @@ export function CoverageMatrix({ coverage }: { coverage: KnowledgeCoverage }) {
         <div
           ref={grid}
           role="grid"
+          aria-readonly="true"
           aria-label="Knowledge coverage by product and Integration Type"
           aria-describedby={`${baseId}-hint`}
           aria-rowcount={rows.length + 1}

@@ -96,6 +96,29 @@ describe("filter links from Coverage", () => {
     expect(valueOf("Integration Type")).toBe(TYPE_ID);
   });
 
+  it("follow new params on the same page (the tab remounts)", async () => {
+    const first = { product: "AutoStore", integration_type: TYPE_ID };
+    const second = { product: "HubSpot", integration_type: OTHER_TYPE };
+    const sources = renderPage(await KnowledgePage({ searchParams: query(first) }));
+    sources.rerender(
+      <ShellProviders singleKeyShortcuts>
+        {await KnowledgePage({ searchParams: query(second) })}
+      </ShellProviders>,
+    );
+    expect(valueOf("Product")).toBe("HubSpot");
+    expect(valueOf("Integration Type")).toBe(OTHER_TYPE);
+    sources.unmount();
+
+    const checklists = renderPage(await KnowledgeChecklistsPage({ searchParams: query(first) }));
+    checklists.rerender(
+      <ShellProviders singleKeyShortcuts>
+        {await KnowledgeChecklistsPage({ searchParams: query(second) })}
+      </ShellProviders>,
+    );
+    expect(valueOf("Product")).toBe("HubSpot");
+    expect(valueOf("Integration Type")).toBe(OTHER_TYPE);
+  });
+
   it("leave the filters empty without them", async () => {
     renderPage(await KnowledgePage({ searchParams: query({}) }));
     expect(valueOf("Product")).toBe("");
