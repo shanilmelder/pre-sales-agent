@@ -13,7 +13,8 @@ Three kinds of grant, any of which allows an action:
   `RELATION_EXCLUDED_ROLES` withholds a relation grant from a principal whose roles are all
   excluded for that action (FR-64: sales representatives on an Opportunity can't edit its
   Requirements, start Gap detection, draft an Estimate, accept an Assumption, start a Red
-  Team Review, export the Estimate, edit its lines, or resolve or escalate a Conflict).
+  Team Review, export the Estimate, edit its lines, resolve or escalate a Conflict, or
+  resolve a run's decision).
   Roles add up, so someone who also holds a role that isn't excluded keeps the grant.
 - **Any-role grants**: `ANY_ROLE_GRANTS` are allowed to every user holding at least one
   role (e.g. searching the Knowledge Base, Story 3.3), with no permission or relation.
@@ -82,6 +83,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.ESTIMATE_LINE_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CONFLICT_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CONFLICT_ESCALATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.DECISION_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -107,6 +109,7 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.ESTIMATE_LINE_EDIT,
         Action.CONFLICT_RESOLVE,
         Action.CONFLICT_ESCALATE,
+        Action.DECISION_RESOLVE,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -127,6 +130,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.ESTIMATE_LINE_EDIT,
         Action.CONFLICT_RESOLVE,
         Action.CONFLICT_ESCALATE,
+        Action.DECISION_RESOLVE,
     }
 )
 

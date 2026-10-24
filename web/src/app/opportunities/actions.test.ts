@@ -20,6 +20,7 @@ import {
   addTextSource,
   approveAllClarificationQuestions,
   cancelAssessmentRun,
+  resolveRunDecision,
   approveClarificationQuestion,
   approveSelectedClarificationQuestions,
   changeCollaborator,
@@ -827,6 +828,75 @@ describe("loadRedTeam", () => {
     expect(await loadRedTeam(OPP_ID)).toEqual({ kind: "error" });
     api.GET.mockRejectedValueOnce(new Error("network"));
     expect(await loadRedTeam(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
+describe("resolveRunDecision (Story 5.5)", () => {
+  const RUN_ID = "00000000-0000-7000-8000-0000000000b1";
+  const DECISION_ID = "00000000-0000-7000-8000-0000000000d1";
+  const INPUT = {
+    opportunityId: OPP_ID,
+    runId: RUN_ID,
+    decisionId: DECISION_ID,
+    rowVersion: 1,
+    choice: "continue_without",
+  };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts the choice with the decision's version as If-Match", async () => {
+    const run = { id: RUN_ID, status: "queued", tasks: [] };
+    api.POST.mockResolvedValue({ data: run, response: new Response(null, { status: 200 }) });
+    expect(await resolveRunDecision(INPUT)).toEqual({ kind: "ok", run });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/decisions/{decision_id}/resolve",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, run_id: RUN_ID, decision_id: DECISION_ID },
+          header: { "If-Match": '"1"' },
+        },
+        body: { choice: "continue_without" },
+      },
+    );
+  });
+
+  it("maps 412 to the API's who-resolved-it sentence and 409 to why", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValueOnce({
+      error: { code: "row_version_mismatch", detail: "Already resolved by Sam Person." },
+      response: new Response(null, { status: 412 }),
+    });
+    expect(await resolveRunDecision(INPUT)).toEqual({
+      kind: "stale",
+      message: "Already resolved by Sam Person.",
+    });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "registry_agent_disabled", detail: "Security Agent is disabled" },
+      response: new Response(null, { status: 409 }),
+    });
+    expect(await resolveRunDecision({ ...INPUT, choice: "replan" })).toEqual({
+      kind: "conflict",
+      detail: "Security Agent is disabled",
+    });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "decision_not_open" },
+      response: new Response(null, { status: 409 }),
+    });
+    expect(await resolveRunDecision(INPUT)).toEqual({
+      kind: "conflict",
+      detail: "This decision is no longer open.",
+    });
+    api.POST.mockResolvedValueOnce({ error: {}, response: new Response(null, { status: 403 }) });
+    expect(await resolveRunDecision(INPUT)).toEqual({ kind: "forbidden" });
+    api.POST.mockResolvedValueOnce({ error: {}, response: new Response(null, { status: 500 }) });
+    expect(await resolveRunDecision(INPUT)).toEqual({ kind: "error" });
+  });
+
+  it("refuses a bad input without calling the API", async () => {
+    expect(await resolveRunDecision({ ...INPUT, choice: "skip" })).toEqual({ kind: "error" });
+    expect(await resolveRunDecision({ ...INPUT, decisionId: "nope" })).toEqual({ kind: "error" });
+    expect(await resolveRunDecision({ ...INPUT, rowVersion: "1" })).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
   });
 });
 

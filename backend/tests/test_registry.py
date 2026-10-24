@@ -59,6 +59,7 @@ from tests.test_intake_extraction import (
     HIDDEN,
     PROPOSE,
     RED_TEAM,
+    RESUME,
     drain,
     parsed,
 )
@@ -660,7 +661,8 @@ def test_psa_app_cannot_edit_or_delete_versions_or_delete_agents(sync_engine: En
         "UPDATE registry_agent_config_versions SET semver = '9.9.9' WHERE id = :v",
         "DELETE FROM registry_agent_config_versions WHERE id = :v",
         "DELETE FROM registry_agents WHERE agent_id = 'pm_agent' AND :v IS NOT NULL",
-        "UPDATE workflows_tasks SET config_version_id = :v WHERE false",
+        # Story 5.5: a Re-plan may re-pin a task's config version, nothing else of a pin.
+        "UPDATE workflows_tasks SET agent = 'pm_agent' WHERE false AND :v IS NOT NULL",
     ):
         with pytest.raises(sa.exc.ProgrammingError, match="permission denied"):
             with sync_engine.begin() as conn:
@@ -668,9 +670,28 @@ def test_psa_app_cannot_edit_or_delete_versions_or_delete_agents(sync_engine: En
 
 
 # --- disabled Agents in runs ---------------------------------------------------------------
+# Story 5.5 (pause and resume): a disabled Agent's task is no longer skipped silently; the
+# run waits for a person, who continues without it (the task then reads as skipped,
+# `agent_disabled`). Pause and resume itself is covered in `test_workflows_decisions.py`.
 
 
-def test_a_run_skips_a_disabled_agent_and_pins_the_others_versions(
+def _continue_without(
+    client: TestClient, headers: dict[str, str], opp_id: str, run_id: str, db_url: str
+) -> None:
+    """Resolve the waiting run's one open decision with Continue without, and resume it."""
+    view = client.get(f"{BASE}/{opp_id}/assessments", headers=headers).json()
+    assert view["run"]["status"] == "waiting_for_human"
+    (decision,) = [d for d in view["run"]["decisions"] if d["status"] == "open"]
+    resolved = client.post(
+        f"{BASE}/{opp_id}/assessment-runs/{run_id}/decisions/{decision['id']}/resolve",
+        headers={**headers, **_if_match(decision["row_version"])},
+        json={"choice": "continue_without"},
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert drain(db_url, RESUME) == ["succeeded"]
+
+
+def test_a_disabled_agents_task_waits_then_is_skipped_and_the_others_versions_pinned(
     client: TestClient,
     sync_engine: Engine,
     db_url: str,
@@ -684,12 +705,14 @@ def test_a_run_skips_a_disabled_agent_and_pins_the_others_versions(
 
     body = started(client, headers, opp["id"])
     tasks = {t["agent"]: t for t in body["tasks"]}
-    assert (tasks["security_agent"]["status"], tasks["security_agent"]["skip_reason"]) == (
-        "skipped",
-        "agent_disabled",
-    )
-    assert [tasks[a]["status"] for a in ("engineering_agent", "pm_agent")] == ["queued"] * 2
+    assert [tasks[a]["status"] for a in AGENTS] == ["queued"] * 3  # every task pinned
     assert drain(db_url, ASSESS) == ["succeeded"]
+    assert task_rows(sync_engine, body["id"])["security_agent"]["status"] == "queued"
+    _continue_without(client, headers, opp["id"], body["id"], db_url)
+    assert task_rows(sync_engine, body["id"])["security_agent"]["skip_reason"] == "agent_disabled"
+    # Continue without doesn't count against the run (Story 5.5, user decision 2026-10-24).
+    (run,) = rows(sync_engine, "SELECT * FROM workflows_runs WHERE id = :r", r=body["id"])
+    assert run["status"] == "succeeded"
 
     assert {r.caller.agent_id for r in fake.requests} == {"engineering_agent", "pm_agent"}
     pinned = task_rows(sync_engine, body["id"])
@@ -718,7 +741,7 @@ def test_a_run_skips_a_disabled_agent_and_pins_the_others_versions(
         "AND event_type = 'assessments.task.skipped'",
         o=opp["id"],
     )
-    assert skipped["payload"]["agent"] == "security_agent"
+    assert (skipped["actor_type"], skipped["payload"]["agent"]) == ("system", "security_agent")
     assert skipped["payload"]["reason"] == "agent_disabled"
     assert skipped["payload"]["config_version_id"] == str(
         pinned["security_agent"]["config_version_id"]
@@ -730,7 +753,7 @@ def test_a_run_skips_a_disabled_agent_and_pins_the_others_versions(
     assert assessed["pm_agent"]["config_version_id"] == str(pinned["pm_agent"]["config_version_id"])
 
 
-def test_an_agent_disabled_while_its_task_is_queued_is_skipped_at_job_start(
+def test_an_agent_disabled_while_its_task_is_queued_waits_at_job_start(
     client: TestClient,
     sync_engine: Engine,
     db_url: str,
@@ -744,6 +767,8 @@ def test_an_agent_disabled_while_its_task_is_queued_is_skipped_at_job_start(
     assert [t["status"] for t in body["tasks"]] == ["queued"] * len(AGENTS)
     _set_status(client, admin, "pm_agent", "eval_only")
     assert drain(db_url, ASSESS) == ["succeeded"]
+    assert task_rows(sync_engine, body["id"])["pm_agent"]["status"] == "queued"
+    _continue_without(client, headers, opp["id"], body["id"], db_url)
     tasks = task_rows(sync_engine, body["id"])
     assert (tasks["pm_agent"]["status"], tasks["pm_agent"]["skip_reason"]) == (
         "skipped",
@@ -751,6 +776,8 @@ def test_an_agent_disabled_while_its_task_is_queued_is_skipped_at_job_start(
     )
     assert tasks["engineering_agent"]["status"] == "succeeded"
     assert fake.calls("pm_agent") == 0
+    (run,) = rows(sync_engine, "SELECT * FROM workflows_runs WHERE id = :r", r=body["id"])
+    assert run["status"] == "succeeded"  # the chosen skip doesn't count against it
     (skipped,) = rows(
         sync_engine,
         "SELECT * FROM platform_trace_events WHERE opportunity_id = :o "

@@ -207,7 +207,8 @@ def test_progress_rows_are_not_updatable_by_psa_app(
     run_async(_record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED))
     for sql in (
         "UPDATE workflows_progress SET summary = 'x' WHERE run_id = :r",
-        "UPDATE workflows_runs SET plan_version = 2 WHERE id = :r",
+        # Story 5.5: a Re-plan bumps `plan_version`; the run's other columns stay protected.
+        "UPDATE workflows_runs SET opportunity_id = id WHERE id = :r",
         "UPDATE workflows_tasks SET requires = '{}' WHERE run_id = :r",
         "INSERT INTO platform_schedules (name, job_type, interval_s) VALUES ('x', 'x.y', 1)",
         "UPDATE platform_schedules SET job_type = 'x.y' WHERE false",

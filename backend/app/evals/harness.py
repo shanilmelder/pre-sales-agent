@@ -382,7 +382,13 @@ async def _failures(db: AsyncEngine, opportunity_id: UUID) -> list[StageFailure]
         if latest is not None and latest.status == "failed":
             failures.append(StageFailure(stage, latest.error_code or "failed"))
     run = await _latest(db, "workflows_runs", opportunity_id)
-    if run is not None and run.status in ("failed", "partially_failed", "cancelled"):
+    # A run waiting for a person (Story 5.5: an Agent is disabled) never finished its work.
+    if run is not None and run.status in (
+        "failed",
+        "partially_failed",
+        "cancelled",
+        "waiting_for_human",
+    ):
         failures.append(StageFailure("specialists", run.status))
     if run is not None and run.status == "succeeded":
         versions = await _rows(

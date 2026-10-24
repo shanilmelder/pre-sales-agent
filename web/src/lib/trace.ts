@@ -72,6 +72,8 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "assessments.assessment.completed": "Assessment completed",
   "assessments.assessment_run.completed": "Assessment run completed",
   "assessments.assessment_run.cancelled": "Assessment run cancelled",
+  "workflows.run.waiting_for_human": "Assessment run waiting for a decision",
+  "workflows.decision.resolved": "Run decision resolved",
   "knowledge.catalogue_entry.created": "Catalogue entry created",
   "knowledge.catalogue_entry.updated": "Catalogue entry updated",
   "knowledge.catalogue_entry.retired": "Catalogue entry retired",

@@ -1,5 +1,6 @@
 """Progress rows (AD-24, AD-30; Story 5.2): written in the same Unit of Work as each run
-queueing, task start, task end and run end, each with a NOTIFY carrying ids only. They are
+queueing, task start, task end, run end and run pause (Story 5.5), each with a NOTIFY
+carrying ids only. They are
 not audit records (the trace is): ids, an event type and a summary of Agent ids and
 statuses, never customer text.
 
@@ -20,6 +21,7 @@ from app.modules.workflows.domain.runs import (
     ProgressEvent,
     run_summary,
     task_summary,
+    waiting_summary,
 )
 from app.platform.jobs import JobContext, JobPayload, JobType, register
 from app.platform.logging import get_logger
@@ -74,6 +76,22 @@ async def run_changed(
         subject_type=RUN_PROGRESS_SUBJECT,
         subject_id=run_id,
         summary=run_summary(status),
+    )
+
+
+async def run_waiting(
+    uow: UnitOfWork, *, opportunity_id: UUID, run_id: UUID, task_id: UUID, agent: str
+) -> None:
+    """The run paused on an open decision about the task's Agent (Story 5.5)."""
+    await repo.insert_progress(
+        uow,
+        opportunity_id=opportunity_id,
+        run_id=run_id,
+        task_id=task_id,
+        event_type=ProgressEvent.RUN_WAITING.value,
+        subject_type=RUN_PROGRESS_SUBJECT,
+        subject_id=run_id,
+        summary=waiting_summary(agent),
     )
 
 

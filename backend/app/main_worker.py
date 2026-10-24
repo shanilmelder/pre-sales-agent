@@ -60,6 +60,8 @@ _JOB_MODULES: tuple[str, ...] = (
 )
 _JITTER = 0.2
 EXECUTE_JOB_TYPE = "workflows.execute"
+GRAPH_JOB_TYPES = frozenset({EXECUTE_JOB_TYPE, "workflows.resume"})
+"""The job types whose handler runs a graph (Story 5.2; resume, Story 5.5)."""
 SCHEDULE_CHECK_S = 60.0
 """How often the poll loop enqueues the jobs of due schedules."""
 
@@ -180,9 +182,10 @@ async def run(
         if models is None:
             models = ModelGateway(settings, db)
         model_gateway.install(models)
-        # Only a worker that claims `workflows.execute` jobs needs the graph runner.
+        # Only a worker that claims `workflows.execute` or `workflows.resume` jobs needs the
+        # graph runner.
         await stack.enter_async_context(
-            _graph_runner(settings, graph_runner and EXECUTE_JOB_TYPE in types)
+            _graph_runner(settings, graph_runner and bool(GRAPH_JOB_TYPES & types))
         )
         _log.info(
             "worker.started",

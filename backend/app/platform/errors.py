@@ -191,6 +191,14 @@ class AssessmentTaskNotFailedError(ConflictError):
     title = "Assessment task not failed"
 
 
+class DecisionNotOpenError(ConflictError):
+    """A run's decision was resolved that is no longer open, or whose run is cancelled or not
+    waiting for a person (Story 5.5)."""
+
+    code = "decision_not_open"
+    title = "Decision not open"
+
+
 class EstimateNotFoundError(ConflictError):
     """An Estimate export was asked for while the Opportunity has no Estimate Version yet
     (Story 8.8)."""

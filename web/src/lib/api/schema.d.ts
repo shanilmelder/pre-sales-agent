@@ -1312,6 +1312,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/decisions/{decision_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Run Decision
+         * @description Resolve the open decision a run waits on: **Continue without** skips the disabled
+         *     Agent's task, **Re-plan** (only once the Agent is active again) re-pins the task to the
+         *     Agent's current config version as a new plan version and runs it. The run then resumes
+         *     where it stopped. The owner and collaborators, except sales representatives.
+         */
+        post: operations["resolve_run_decision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/events": {
         parameters: {
             query?: never;
@@ -2322,8 +2345,10 @@ export interface components {
         /**
          * AssessmentRun
          * @description An assessment run: its status and one task per agent, in agent order. `queued_at`:
-         *     when it was last queued (a retry re-queues it); `finished_at`: null while in progress,
-         *     or for a lost run not yet recorded.
+         *     when it was last queued (a retry or a resolved decision re-queues it); `finished_at`:
+         *     null while in progress, or for a lost run not yet recorded. `waiting_for_human`: paused
+         *     on an open decision in `decisions` (Story 5.5). `plan_version`: its current plan;
+         *     `plan_versions`: every version, oldest first.
          */
         AssessmentRun: {
             /** Id */
@@ -2343,12 +2368,27 @@ export interface components {
             finished_at: string | null;
             /** Tasks */
             tasks: components["schemas"]["AssessmentTask"][];
+            /**
+             * Plan Version
+             * @default 1
+             */
+            plan_version: number;
+            /**
+             * Decisions
+             * @default []
+             */
+            decisions: components["schemas"]["RunDecision"][];
+            /**
+             * Plan Versions
+             * @default []
+             */
+            plan_versions: components["schemas"]["PlanVersion"][];
         };
         /**
          * AssessmentRunStatus
          * @enum {string}
          */
-        AssessmentRunStatus: "queued" | "running" | "succeeded" | "partially_failed" | "failed" | "cancelled";
+        AssessmentRunStatus: "queued" | "running" | "succeeded" | "partially_failed" | "failed" | "cancelled" | "waiting_for_human";
         /**
          * AssessmentStatus
          * @enum {string}
@@ -2357,8 +2397,9 @@ export interface components {
         /**
          * AssessmentTask
          * @description One agent's task in an assessment run. `error_code` is set only when `failed`;
-         *     `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
-         *     panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
+         *     `skip_reason` only when `skipped` because a person continued without its disabled Agent
+         *     (`agent_disabled`: the panel says "Agent disabled — assess manually"); a cancel's skipped
+         *     tasks have none.
          *     `started_at` / `finished_at`: when the task last started and finished (null before
          *     either); the panel derives elapsed time from them.
          */
@@ -2418,8 +2459,9 @@ export interface components {
          * AssessmentsView
          * @description The Opportunity's latest assessment run (null before the first) with its tasks, and
          *     one entry per agent (Engineering, PM, Security) with its current Assessment or null.
-         *     `can_start`: whether the caller may start a run or retry a task. The UI only uses it to
-         *     hide controls; the API decides.
+         *     `can_start`: whether the caller may start a run or retry a task; `can_resolve`: whether
+         *     they may resolve the run's decisions (Story 5.5). The UI only uses them to hide
+         *     controls; the API decides.
          */
         AssessmentsView: {
             run: components["schemas"]["AssessmentRun"] | null;
@@ -2427,6 +2469,11 @@ export interface components {
             assessments: components["schemas"]["AgentAssessment"][];
             /** Can Start */
             can_start: boolean;
+            /**
+             * Can Resolve
+             * @default false
+             */
+            can_resolve: boolean;
         };
         /**
          * Assumption
@@ -2985,6 +3032,29 @@ export interface components {
          * @enum {string}
          */
         ConvertedTo: "condition" | "contingency";
+        /**
+         * DecisionChoice
+         * @enum {string}
+         */
+        DecisionChoice: "continue_without" | "replan";
+        /**
+         * DecisionKind
+         * @description What a run waits on a person for.
+         * @enum {string}
+         */
+        DecisionKind: "plan_escalation";
+        /**
+         * DecisionResolution
+         * @description How a person resolves a run's decision.
+         */
+        DecisionResolution: {
+            choice: components["schemas"]["DecisionChoice"];
+        };
+        /**
+         * DecisionStatus
+         * @enum {string}
+         */
+        DecisionStatus: "open" | "resolved" | "cancelled";
         /**
          * DetectedBy
          * @enum {string}
@@ -4474,6 +4544,36 @@ export interface components {
             name: string;
         };
         /**
+         * PlanVersion
+         * @description One version of the run's plan (FR-15): v1 when the run was queued, one more per
+         *     Re-plan. `created_by`: who made it (a person's name, or "System" for an automatic run).
+         */
+        PlanVersion: {
+            /** Version */
+            version: number;
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Tasks */
+            tasks: components["schemas"]["PlanVersionTask"][];
+        };
+        /**
+         * PlanVersionTask
+         * @description One task of a plan version: its Agent and the config version it was pinned to
+         *     (`config_version`: that version's number for the Agent).
+         */
+        PlanVersionTask: {
+            agent: components["schemas"]["AssessmentAgent"];
+            /** Config Version Id */
+            config_version_id: string;
+            /** Config Version */
+            config_version: number | null;
+        };
+        /**
          * PositionSource
          * @enum {string}
          */
@@ -4942,6 +5042,36 @@ export interface components {
             project_manager: number;
             /** Qa */
             qa: number;
+        };
+        /**
+         * RunDecision
+         * @description A decision the run waits on, or waited on (Story 5.5). `plan_escalation`: the task of
+         *     `agent` was not planned because its Agent is disabled; **Continue without** skips it,
+         *     **Re-plan** runs it once the Agent is active again (`agent_active`). `row_version`: for
+         *     `If-Match` on the resolve. `resolved_by`: the resolver's name.
+         */
+        RunDecision: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["DecisionKind"];
+            agent: components["schemas"]["AssessmentAgent"];
+            /** Agent Name */
+            agent_name: string;
+            /** Agent Active */
+            agent_active: boolean;
+            status: components["schemas"]["DecisionStatus"];
+            choice: components["schemas"]["DecisionChoice"] | null;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Resolved By */
+            resolved_by: string | null;
+            /** Resolved At */
+            resolved_at: string | null;
         };
         /**
          * RunErrorCode
@@ -14494,7 +14624,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An assessment run is already queued or running (`assessment_in_progress`) */
+            /** @description An assessment run is already queued, running or waiting for a person (`assessment_in_progress`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14650,7 +14780,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An assessment run is already queued or running (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`), or its agent is disabled in the Agent Registry (`registry_agent_disabled`) */
+            /** @description An assessment run is already queued, running or waiting for a person (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`), or its agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14805,7 +14935,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The run is not the Opportunity's latest, or is no longer queued or running (`assessment_not_in_progress`) */
+            /** @description The run is not the Opportunity's latest, or is no longer queued, running or waiting for a person (`assessment_not_in_progress`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14829,6 +14959,215 @@ export interface operations {
             };
             /** @description An id is not a UUID (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    resolve_run_decision: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the decision as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                run_id: string;
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionResolution"];
+            };
+        };
+        responses: {
+            /** @description The run, `queued` again to resume, with the decision resolved */
+            200: {
+                headers: {
+                    /** @description The decision's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentRun"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no such assessment run or decision for it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The decision is not open, or its run was cancelled or is not waiting for a person (`decision_not_open`), or Re-plan was chosen while the Agent is still disabled in the Agent Registry (`registry_agent_disabled`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The decision changed since the caller read it (`row_version_mismatch`); the `detail` says who resolved it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID, or the choice is not `continue_without` or `replan` (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14897,7 +15236,7 @@ export interface operations {
                          * Event Type
                          * @enum {string}
                          */
-                        event_type: "workflows.run.queued" | "workflows.task.started" | "workflows.task.ended" | "workflows.run.ended";
+                        event_type: "workflows.run.queued" | "workflows.task.started" | "workflows.task.ended" | "workflows.run.ended" | "workflows.run.waiting_for_human";
                         /** Subject Type */
                         subject_type: string;
                         /** Subject Id */

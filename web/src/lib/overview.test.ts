@@ -32,6 +32,7 @@ import {
   sourceRunLabel,
   tasksCompleteLabel,
   unacceptedAssumptions,
+  waitingRunItems,
   type OverviewReads,
 } from "./overview";
 import type { RedTeamView } from "./red-team";
@@ -662,5 +663,61 @@ describe("latestDecision", () => {
       assessments: [{ agent: "pm_agent", assessment: { created_at: "x", findings: [] } }],
     } as unknown as AssessmentsView;
     expect(latestDecision(one)?.finding).toBeNull();
+  });
+});
+
+describe("a run waiting for a person (Story 5.5)", () => {
+  const waiting = {
+    run: {
+      id: "r",
+      status: "waiting_for_human",
+      created_at: "2026-10-23T09:00:00Z",
+      queued_at: "2026-10-23T09:00:00Z",
+      finished_at: null,
+      tasks: [],
+      plan_version: 1,
+      plan_versions: [],
+      decisions: [
+        {
+          id: "d1",
+          kind: "plan_escalation",
+          agent: "security_agent",
+          agent_name: "Security Agent",
+          agent_active: false,
+          status: "open",
+          choice: null,
+          row_version: 1,
+          created_at: "2026-10-23T09:01:00Z",
+          resolved_by: null,
+          resolved_at: null,
+        },
+      ],
+    },
+    assessments: [],
+    can_start: true,
+    can_resolve: true,
+  } satisfies AssessmentsView;
+
+  it("is a Needs you row ranked with escalated Conflicts, linking to the Assessments tab", () => {
+    expect(waitingRunItems(waiting)).toEqual([
+      {
+        key: "decision:d1",
+        kind: "waiting-run",
+        label: "Security assessment not planned: Security Agent is disabled",
+        tab: "assessments",
+      },
+    ]);
+    const items = attentionItems({
+      redTeam: null,
+      assessments: waiting,
+      gaps: null,
+      estimate: null,
+    });
+    expect(items.map((i) => i.kind)).toEqual(["waiting-run"]);
+  });
+
+  it("is nothing once the run no longer waits", () => {
+    expect(waitingRunItems({ ...waiting, run: { ...waiting.run, status: "queued" } })).toEqual([]);
+    expect(waitingRunItems(null)).toEqual([]);
   });
 });

@@ -3,12 +3,13 @@ from when `assessments` served them (Epic 5 slice 5A, Story 5.5):
 
 - `GET …/assessments`, `POST …/assessment-runs`, `POST …/assessment-runs/{run_id}/tasks/
   {agent}/retry`, `POST …/assessment-runs/{run_id}/cancel`;
+- `POST …/assessment-runs/{run_id}/decisions/{decision_id}/resolve` (Story 5.5);
 - `GET …/events`: the Opportunity's event stream (Server-Sent Events, AD-30)."""
 
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.modules.assessments.application.public import AssessmentAgent
@@ -18,9 +19,11 @@ from app.modules.workflows.application import public as workflows
 from app.modules.workflows.application.public import (
     AssessmentRun,
     AssessmentsView,
+    DecisionResolution,
     ProgressEventData,
     TraceEventData,
 )
+from app.platform.concurrency import etag
 from app.platform.config import Settings
 from app.platform.errors import PROBLEM_JSON, Problem
 from app.platform.uow import UoW
@@ -32,13 +35,27 @@ _DESCRIBED: dict[int, str] = {
     "or a collaborator, or is a sales representative",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
     422: "The Opportunity id is not a UUID (`validation_error`)",
-    4091: "An assessment run is already queued or running (`assessment_in_progress`)",
-    4092: "An assessment run is already queued or running (`assessment_in_progress`), or the "
+    4091: "An assessment run is already queued, running or waiting for a person "
+    "(`assessment_in_progress`)",
+    4092: "An assessment run is already queued, running or waiting for a person "
+    "(`assessment_in_progress`), or the "
     "task is not a failed task of the latest run, or that run was cancelled "
     "(`assessment_task_not_failed`), or its agent is disabled in the Agent Registry "
     "(`registry_agent_disabled`)",
-    4093: "The run is not the Opportunity's latest, or is no longer queued or running "
-    "(`assessment_not_in_progress`)",
+    4093: "The run is not the Opportunity's latest, or is no longer queued, running or waiting "
+    "for a person (`assessment_not_in_progress`)",
+    4094: "The decision is not open, or its run was cancelled or is not waiting for a person "
+    "(`decision_not_open`), or Re-plan was chosen while the Agent is still disabled in the "
+    "Agent Registry (`registry_agent_disabled`)",
+    4042: "No Opportunity with this id, or the caller may not see it, or no such assessment "
+    "run or decision for it (`not_found`)",
+    4031: "Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner "
+    "or a collaborator, or is a sales representative",
+    412: "The decision changed since the caller read it (`row_version_mismatch`); the `detail` "
+    "says who resolved it",
+    428: "No `If-Match` header (`if_match_required`)",
+    4223: "An id is not a UUID, or the choice is not `continue_without` or `replan` "
+    "(`validation_error`)",
     4041: "No Opportunity with this id, or the caller may not see it, or no such assessment "
     "run for it (`not_found`)",
     4221: "An id is not a UUID, or the agent is unknown (`validation_error`)",
@@ -128,6 +145,53 @@ async def cancel_assessment_run(
     run can't be retried; start a new one instead. The owner and collaborators, except sales
     representatives."""
     return await workflows.cancel_run(uow, actor, opportunity_id, run_id)
+
+
+_IF_MATCH = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description='The ETag of the decision as last read (its `row_version`), e.g. `"1"`.',
+    ),
+]
+
+
+@router.post(
+    "/assessment-runs/{run_id}/decisions/{decision_id}/resolve",
+    operation_id="resolve_run_decision",
+    responses={
+        **_responses(4031, 4042, 4094, 412, 4223, 428),
+        200: {
+            "description": "The run, `queued` again to resume, with the decision resolved",
+            "headers": {
+                "ETag": {
+                    "description": "The decision's row version, for `If-Match`.",
+                    "schema": {"type": "string"},
+                }
+            },
+        },
+    },
+)
+async def resolve_run_decision(
+    opportunity_id: UUID,
+    run_id: UUID,
+    decision_id: UUID,
+    body: DecisionResolution,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _IF_MATCH = None,
+) -> AssessmentRun:
+    """Resolve the open decision a run waits on: **Continue without** skips the disabled
+    Agent's task, **Re-plan** (only once the Agent is active again) re-pins the task to the
+    Agent's current config version as a new plan version and runs it. The run then resumes
+    where it stopped. The owner and collaborators, except sales representatives."""
+    run = await workflows.resolve_decision(
+        uow, actor, opportunity_id, run_id, decision_id, body, if_match
+    )
+    resolved = next(d for d in run.decisions if d.id == str(decision_id))
+    response.headers["ETag"] = etag(resolved.row_version)
+    return run
 
 
 @router.get(

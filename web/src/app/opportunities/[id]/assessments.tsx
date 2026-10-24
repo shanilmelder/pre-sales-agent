@@ -14,7 +14,12 @@ import type { AssessmentsView } from "@/lib/assessments";
 import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** The view shown when the Assessments read fails, so the Red Team still renders. */
-const EMPTY_ASSESSMENTS: AssessmentsView = { run: null, assessments: [], can_start: false };
+const EMPTY_ASSESSMENTS: AssessmentsView = {
+  run: null,
+  assessments: [],
+  can_start: false,
+  can_resolve: false,
+};
 
 /** Tab 5: the Opportunity's Assessments: the run header, Agent tasks, Results so far and
  * one Findings table across the Engineering, PM and Security Agents and the Red Team

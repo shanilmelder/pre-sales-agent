@@ -24,12 +24,16 @@ import { ActorTile } from "@/components/opportunities/actor-tile";
 import {
   RecommendationPill,
   TaskStatusPill,
+  WaitingForYouPill,
 } from "@/components/opportunities/specialist-assessments";
 import {
   agentLabel,
   confidenceLabel,
+  decisionSentence,
   evidenceLabels,
   failureReason,
+  isWaiting,
+  openDecision,
   skipNote,
   type AssessmentRun,
   type AssessmentsView,
@@ -440,6 +444,12 @@ const ATTENTION_DISPLAY: Record<
     tone: "text-gap",
     action: "Resolve",
   },
+  "waiting-run": {
+    state: "Waiting for you",
+    icon: ClockIcon,
+    tone: "text-gap",
+    action: "Resolve",
+  },
   "high-finding": { state: "High", icon: TriangleAlertIcon, tone: "text-gap", action: "Review" },
   gap: { state: "High impact", icon: CircleAlertIcon, tone: "text-gap", action: "Resolve" },
   assumption: { state: "Not accepted", icon: ClipboardListIcon, tone: "text-gap", action: "Open" },
@@ -722,7 +732,8 @@ function taskNote(task: AssessmentRun["tasks"][number]): string | null {
 }
 
 /** The latest Assessment run: when it started, how many tasks are done, and a compact card per
- * task. Shown only when a run exists; read-only (no Cancel here). */
+ * task (a task the run waits on shows **Waiting for you** and why, Story 5.5). Shown only when
+ * a run exists; read-only (no Cancel or Resolve here: Needs you links to the tab). */
 function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsView | null }) {
   const run = assessments?.run ?? null;
   if (run === null) return null;
@@ -749,7 +760,8 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
       {run.tasks.length > 0 ? (
         <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-3">
           {run.tasks.map((task) => {
-            const note = taskNote(task);
+            const decision = isWaiting(run) ? openDecision(run, task.agent) : null;
+            const note = decision ? decisionSentence(decision) : taskNote(task);
             return (
               <li
                 key={task.agent}
@@ -771,7 +783,7 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
                   </span>
                 </div>
                 <div className="flex">
-                  <TaskStatusPill status={task.status} />
+                  {decision ? <WaitingForYouPill /> : <TaskStatusPill status={task.status} />}
                 </div>
                 {note ? (
                   <p

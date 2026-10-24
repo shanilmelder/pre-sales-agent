@@ -3,7 +3,9 @@
 // totals come from the server and are never added up here.
 import {
   agentLabel,
+  decisionSentence,
   isAssessing,
+  openDecisions,
   runStatusLabel,
   type Assessment,
   type AssessmentFinding,
@@ -57,6 +59,7 @@ export function couldNotLoad(what: string): string {
 export type AttentionKind =
   | "critical-finding"
   | "escalated-conflict"
+  | "waiting-run"
   | "high-finding"
   | "gap"
   | "assumption";
@@ -71,11 +74,13 @@ export type AttentionItem = {
   tab: WorkspaceTabSlug;
 };
 
-/** Most severe first: critical Findings, then escalated Conflicts (Story 6.3), high Findings
- * and high-impact Gaps, then unaccepted Assumptions. */
+/** Most severe first: critical Findings, then escalated Conflicts (Story 6.3), a run waiting
+ * for a decision (Story 5.5), high Findings and high-impact Gaps, then unaccepted
+ * Assumptions. */
 const RANK: Record<AttentionKind, number> = {
   "critical-finding": 0,
   "escalated-conflict": 1,
+  "waiting-run": 1,
   "high-finding": 1,
   gap: 2,
   assumption: 3,
@@ -91,6 +96,19 @@ export function escalatedConflictItems(conflicts: ConflictsView | null | undefin
       label: `${typeLabel(c.type)} Conflict${c.requirement ? ` on ${c.requirement.label}` : ""} escalated to ${c.escalated_to!.name}`,
       tab: "conflicts",
     }));
+}
+
+/** The latest run's open decisions (Story 5.5): "Security assessment not planned: Security
+ * Agent is disabled", resolved in the Assessments tab. */
+export function waitingRunItems(assessments: AssessmentsView | null | undefined): AttentionItem[] {
+  const run = assessments?.run;
+  if (run?.status !== "waiting_for_human") return [];
+  return openDecisions(run).map((d) => ({
+    key: `decision:${d.id}`,
+    kind: "waiting-run",
+    label: decisionSentence(d),
+    tab: "assessments",
+  }));
 }
 
 type Sourced = { severity: Severity; title: string; id: string };
@@ -119,7 +137,8 @@ export function openGaps(list: GapList | null | undefined): Gap[] {
 }
 
 /** Everything that needs attention, most severe first (a read that failed is `null` and
- * contributes nothing). Within a rank the order is: Red Team, escalated Conflicts, then the
+ * contributes nothing). Within a rank the order is: Red Team, escalated Conflicts, a waiting
+ * run's decisions, then the
  * Engineering, PM and Security Agents, keeping each source's own order. Read-only; it blocks nothing. */
 export function attentionItems({
   redTeam,
@@ -131,6 +150,7 @@ export function attentionItems({
   const items: AttentionItem[] = [
     ...findingItems("Red Team", redTeam?.review?.findings ?? []),
     ...escalatedConflictItems(conflicts),
+    ...waitingRunItems(assessments),
     ...(assessments?.assessments ?? []).flatMap((slot) =>
       findingItems(agentLabel(slot.agent), slot.assessment?.findings ?? []),
     ),
@@ -365,6 +385,7 @@ function assessmentsStep(view: AssessmentsView | null): Omit<PipelineStep, "key"
   const sub = runStatusLabel(run);
   if (run.status === "succeeded") return { sub, state: "complete" };
   if (run.status === "queued" || run.status === "running") return { sub, state: "in-progress" };
+  // Failed, cancelled, or waiting for a person's decision (Story 5.5): someone has to act.
   return { sub, state: "blocked" };
 }
 

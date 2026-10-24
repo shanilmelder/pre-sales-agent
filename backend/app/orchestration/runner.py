@@ -5,9 +5,11 @@ For a run, it builds the graph from the run's plan and invokes it on the thread
 `thread_id = run_id`, checkpointed after every superstep (`durability="sync"`):
 
 - the thread has pending `next` nodes (the previous attempt was interrupted mid-run, e.g.
-  the worker was killed and the job reclaimed) and every unfinished task is among them (or
-  waits on one): it resumes with `None` input, so nodes whose writes were saved are not run
-  again;
+  the worker was killed and the job reclaimed, or a node interrupted for a person's
+  decision, Story 5.5) and every unfinished task is among them (or waits on one): it
+  resumes, so nodes whose writes were saved are not run again. Interrupts whose decision
+  (named in their payload) is resolved get `Command(resume={interrupt_id: choice})`; with
+  none, it resumes with `None` input (an open decision's node interrupts again);
 - otherwise (a new run, a finished attempt whose tasks failed, a manual task retry): it
   starts a fresh invocation on the same thread; nodes whose tasks already finished re-read
   them and do nothing.
@@ -25,6 +27,7 @@ from uuid import UUID
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.types import Command, Interrupt
 
 from app.modules.workflows.application import public as workflows
 from app.modules.workflows.application.public import GraphRun
@@ -66,6 +69,26 @@ def _unaccounted(
     ]
 
 
+def _decision_id(found: Interrupt) -> UUID | None:
+    value = found.value
+    if not isinstance(value, dict):
+        return None
+    try:
+        return UUID(str(value.get("decision_id")))
+    except ValueError:
+        return None
+
+
+async def resume_choices(run: GraphRun, interrupts: Sequence[Interrupt]) -> dict[str, str]:
+    """`{interrupt_id: choice}` for the pending interrupts whose decision is resolved."""
+    named = {i.id: d for i in interrupts if (d := _decision_id(i)) is not None}
+    if not named:
+        return {}
+    async with unit_of_work(run.engine) as uow:
+        choices = await workflows.decision_choices(uow, sorted(set(named.values())))
+    return {iid: choices[d] for iid, d in named.items() if d in choices}
+
+
 class LangGraphRunner:
     """`workflows.GraphRunner`: executes a run's graph with the Postgres checkpointer."""
 
@@ -95,8 +118,14 @@ class LangGraphRunner:
             graph = build_graph(plan, invocation, saver)
             snapshot = await graph.aget_state(config)
             if snapshot.next and not _unaccounted(plan, snapshot.values, snapshot.next):
-                _log.info("orchestration.run_resumed", extra={**ids, "pending": len(snapshot.next)})
-                await graph.ainvoke(None, config, durability="sync")
+                resume = await resume_choices(run, snapshot.interrupts)
+                _log.info(
+                    "orchestration.run_resumed",
+                    extra={**ids, "pending": len(snapshot.next), "resumed_count": len(resume)},
+                )
+                await graph.ainvoke(
+                    Command(resume=resume) if resume else None, config, durability="sync"
+                )
             else:
                 _log.info("orchestration.run_invoked", extra=ids)
                 await graph.ainvoke(
