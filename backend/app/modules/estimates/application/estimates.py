@@ -11,6 +11,9 @@
   are hidden.
 - `edit_line`: a person's edit of a draft line's hours and role mix (Story 8.2; see
   `line_edits`), answered with the whole Estimate so every total refreshes.
+- Story 8.5: `edit_assumption` (see `assumption_edits`), `create_risk` and `edit_risk` (see
+  `risks`); the Register's rows carry their number, whether their origin Gap was superseded
+  and whether it is an Unknown, and the version its Risks.
 - `start_draft`: queue a new draft, e.g. to retry a failed one (`estimates.draft.start`: the
   owner and collaborators except sales representatives; other readers 403, everyone else
   the Opportunity's 404). 409 `estimate_draft_in_progress` while one is queued or running;
@@ -30,15 +33,17 @@ from app.modules.estimates.adapters.repository import (
     AssumptionRecord,
     DraftRecord,
     LineRecord,
+    RiskRecord,
     VersionRecord,
 )
+from app.modules.estimates.application import assumption_edits, line_edits, risks
 from app.modules.estimates.application import assumptions as assumption_commands
 from app.modules.estimates.application import blockers as submission
-from app.modules.estimates.application import line_edits
 from app.modules.estimates.application.draft import fail_stale, queue_draft, stale_after
 from app.modules.estimates.application.models import (
     AcceptAllResult,
     Assumption,
+    AssumptionChanges,
     AssumptionCounts,
     AssumptionGroups,
     AssumptionLine,
@@ -52,6 +57,9 @@ from app.modules.estimates.application.models import (
     LineConflict,
     LineRequirement,
     OriginGap,
+    Risk,
+    RiskChanges,
+    RiskCreate,
     RoleHours,
     RoleMix,
     SubmissionBlockersView,
@@ -60,7 +68,11 @@ from app.modules.estimates.application.models import (
     UnconvertedGap,
 )
 from app.modules.estimates.domain import arithmetic
-from app.modules.estimates.domain.assumptions import AssumptionKind, ProposalStatus
+from app.modules.estimates.domain.assumptions import (
+    AssumptionKind,
+    ProposalStatus,
+    origin_superseded,
+)
 from app.modules.estimates.domain.estimates import (
     ESTIMATING_AGENT,
     IN_PROGRESS,
@@ -72,6 +84,7 @@ from app.modules.estimates.domain.estimates import (
     VersionSource,
     VersionStatus,
 )
+from app.modules.estimates.domain.risks import RiskLevel, risk_order
 from app.modules.gaps.application import public as gaps
 from app.modules.gaps.application.public import GapCategory, GapSummary, Impact
 from app.modules.identity.application import public as identity
@@ -185,8 +198,17 @@ async def _requirements(
     }
 
 
-def _gap_id(record: AssumptionRecord) -> UUID:
+def _gap_id(record: AssumptionRecord | RiskRecord) -> UUID:
     return UUID(str(record.origin_ref["id"]))
+
+
+def _superseded(summary: GapSummary | None, record: AssumptionRecord | RiskRecord) -> bool:
+    """Story 8.5: whether the origin Gap moved on since the record was made from it."""
+    if summary is None:  # pragma: no cover - Gaps are never deleted
+        return True
+    return origin_superseded(
+        summary.status, summary.row_version, record.origin_ref.get("row_version")
+    )
 
 
 def _origin(summary: GapSummary | None, gap_id: UUID) -> OriginGap:
@@ -277,8 +299,10 @@ async def _register(
     contingencies: list[Assumption] = []
     for a in assumptions:
         gap_id = _gap_id(a)
+        summary = origins.get(gap_id)
         view = Assumption(
             id=str(a.id),
+            position=a.position,
             kind=AssumptionKind(a.kind),
             wording=a.wording,
             amount_hours=None if a.amount_hours is None else _hours(a.amount_hours),
@@ -286,7 +310,9 @@ async def _register(
             if a.line_id is None
             else AssumptionLine(id=str(a.line_id), title=titles.get(a.line_id, "")),
             origin_kind="gap",
-            origin=_origin(origins.get(gap_id), gap_id),
+            origin=_origin(summary, gap_id),
+            origin_superseded=_superseded(summary, a),
+            origin_is_unknown=summary is not None and gaps.is_unknown(summary.why_it_matters),
             accepted_by=None
             if a.accepted_by is None
             else UserRef(id=str(a.accepted_by), name=names.get(a.accepted_by, UNKNOWN_USER)),
@@ -323,6 +349,43 @@ async def _register(
         total=len(assumptions), accepted=accepted, not_accepted=len(assumptions) - accepted
     )
     return groups, counts, unconverted
+
+
+async def _risks(uow: UnitOfWork, record: VersionRecord) -> list[Risk]:
+    """Story 8.5: the version's Risks, impact high first, then likelihood high first."""
+    found = sorted(
+        await repo.risks_of(uow, record.id),
+        key=lambda r: risk_order(r.impact, r.likelihood, r.position),
+    )
+    if not found:
+        return []
+    origins = await gaps.gap_summaries(
+        uow, record.opportunity_id, list({_gap_id(r) for r in found})
+    )
+    sources = await repo.risk_carried_from_versions(
+        uow, [r.carried_from for r in found if r.carried_from is not None]
+    )
+    views: list[Risk] = []
+    for r in found:
+        gap_id = _gap_id(r)
+        summary = origins.get(gap_id)
+        views.append(
+            Risk(
+                id=str(r.id),
+                position=r.position,
+                description=r.description,
+                likelihood=RiskLevel(r.likelihood),
+                impact=RiskLevel(r.impact),
+                origin_kind="gap",
+                origin=_origin(summary, gap_id),
+                origin_superseded=_superseded(summary, r),
+                row_version=r.row_version,
+                carried_from_version=None
+                if r.carried_from is None
+                else sources.get(r.carried_from),
+            )
+        )
+    return views
 
 
 def _calculate(
@@ -419,6 +482,7 @@ async def version_view(uow: UnitOfWork, record: VersionRecord) -> EstimateVersio
         counts=counts,
         unconverted_gaps=unconverted,
         unallocated_contingency_hours=_hours(calculated.unallocated),
+        risks=await _risks(uow, record),
         uncarried_edit_count=record.uncarried_edit_count,
         # The superseded draft is always the version just before (Story 8.1 numbering).
         uncarried_edits_from_version=record.version - 1 if record.uncarried_edit_count else None,
@@ -470,6 +534,9 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         can_accept_assumptions=identity.can(actor, Action.ASSUMPTION_ACCEPT, resource),
         can_export=identity.can(actor, Action.ESTIMATE_EXPORT, resource),
         can_edit_lines=identity.can(actor, Action.ESTIMATE_LINE_EDIT, resource),
+        can_edit_assumptions=identity.can(actor, Action.ASSUMPTION_EDIT, resource),
+        can_create_risks=identity.can(actor, Action.RISK_CREATE, resource),
+        can_edit_risks=identity.can(actor, Action.RISK_EDIT, resource),
         assessment_running=await _assessment_running(uow, opportunity_id),
         blockers=blockers,
         can_submit=_may_submit(actor, resource, record),
@@ -562,4 +629,45 @@ async def edit_line(
     """Edit a line of the current draft's effort and/or role mix with a reason (Story 8.2);
     the Estimate as it is now, every total recalculated."""
     await line_edits.edit_line(uow, actor, opportunity_id, line_id, changes, if_match)
+    return await get_estimate(uow, actor, opportunity_id)
+
+
+async def edit_assumption(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    assumption_id: UUID,
+    changes: AssumptionChanges,
+    if_match: str | None,
+) -> EstimateView:
+    """Edit an Assumption of the current draft with a reason (Story 8.5); the Estimate as it
+    is now, every total recalculated."""
+    await assumption_edits.edit_assumption(
+        uow, actor, opportunity_id, assumption_id, changes, if_match
+    )
+    return await get_estimate(uow, actor, opportunity_id)
+
+
+async def create_risk(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID, body: RiskCreate
+) -> Risk:
+    """Convert an open Gap to a Risk of the current draft (Story 8.5); the Risk as the
+    Estimate shows it."""
+    record = await risks.create_risk(uow, actor, opportunity_id, body)
+    version = await repo.get_version(uow, record.version_id)
+    assert version is not None  # the Risk belongs to it
+    return next(r for r in await _risks(uow, version) if r.id == str(record.id))
+
+
+async def edit_risk(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    risk_id: UUID,
+    changes: RiskChanges,
+    if_match: str | None,
+) -> EstimateView:
+    """Edit a Risk of the current draft with a reason (Story 8.5); the Estimate as it is
+    now."""
+    await risks.edit_risk(uow, actor, opportunity_id, risk_id, changes, if_match)
     return await get_estimate(uow, actor, opportunity_id)

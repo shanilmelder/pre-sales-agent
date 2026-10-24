@@ -176,6 +176,9 @@ def test_resource_scoped_grants() -> None:
         Action.GAP_QUESTION_SEND,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
+        Action.ASSUMPTION_EDIT,
+        Action.RISK_CREATE,
+        Action.RISK_EDIT,
         Action.RED_TEAM_START,
         Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
@@ -198,6 +201,9 @@ def test_resource_scoped_grants() -> None:
         Action.GAP_QUESTION_SEND,
         Action.ESTIMATE_DRAFT_START,
         Action.ASSUMPTION_ACCEPT,
+        Action.ASSUMPTION_EDIT,
+        Action.RISK_CREATE,
+        Action.RISK_EDIT,
         Action.RED_TEAM_START,
         Action.ASSESSMENT_START,
         Action.ESTIMATE_EXPORT,
@@ -215,6 +221,9 @@ def test_resource_scoped_grants() -> None:
         Action.GAP_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_DRAFT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSUMPTION_ACCEPT: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ASSUMPTION_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.RISK_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.RISK_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.RED_TEAM_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ASSESSMENT_START: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_EXPORT: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -253,6 +262,9 @@ def test_requirement_edit_for_owner_and_members_except_sales_reps(role: Role) ->
     assert can(member, Action.ESTIMATE_DRAFT_START, opportunity) is allowed
     assert can(owner, Action.ASSUMPTION_ACCEPT, opportunity) is allowed
     assert can(member, Action.ASSUMPTION_ACCEPT, opportunity) is allowed
+    for action in (Action.ASSUMPTION_EDIT, Action.RISK_CREATE, Action.RISK_EDIT):  # Story 8.5
+        assert can(owner, action, opportunity) is allowed
+        assert can(member, action, opportunity) is allowed
     assert can(owner, Action.RED_TEAM_START, opportunity) is allowed
     assert can(member, Action.RED_TEAM_START, opportunity) is allowed
     assert can(owner, Action.ASSESSMENT_START, opportunity) is allowed

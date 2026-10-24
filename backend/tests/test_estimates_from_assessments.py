@@ -240,6 +240,7 @@ def test_a_finished_run_builds_a_version_from_the_assessments(
         "requirement_count": 3,
         "superseded_count": 0,
         "carried_assumption_count": 0,
+        "carried_risk_count": 0,
         "carried_edit_count": 0,
         "uncarried_edit_count": 0,
         "source": "assessments",

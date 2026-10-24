@@ -1,13 +1,15 @@
 """Assumptions (Story 8.4): the `estimates.propose_assumptions` job,
-`estimates.accept_assumption_proposals`, and accepting Assumptions; and carrying accepted
-Assumptions to a re-draft (Story 8.7, demo slice).
+`estimates.accept_assumption_proposals`, and accepting Assumptions; and carrying Assumptions
+to a re-draft (Story 8.7, widened in Story 8.5).
 
 **Carrying.** `estimates.accept_draft` calls `carry_accepted` in its Unit of Work, under the
-Opportunity's draft lock, once the new version and its lines are stored: every **accepted**
-Assumption of the superseded draft is copied into the new version (same kind, wording,
-hours, origin and acceptance; new id, `row_version` 1, positions 1…n in the source order,
+Opportunity's draft lock, once the new version and its lines are stored: every Assumption of
+the superseded draft that is accepted or whose origin Gap is `converted` (Story 8.5: one a
+person edited after accepting it is unaccepted, and must not vanish while its Gap stays
+converted) is copied into the new version (same kind, wording, hours, origin and acceptance,
+or the lack of one; new id, `row_version` 1, positions 1…n in the source order,
 `carried_from` set). A carried Contingency links to the new version's one line with the same
-section and title (trimmed, case-insensitive), else to none (Unallocated). Unaccepted
+section and title (trimmed, case-insensitive), else to none (Unallocated). Other unaccepted
 Assumptions are not carried: their Gaps are still open and get fresh proposals, numbered
 after the carried ones.
 
@@ -41,6 +43,10 @@ Opportunity's draft lock and then its Assumption lock (always in that order; the
 takes the Assumption lock only), records who accepted and when, and calls
 `gaps.mark_converted` in the same Unit of Work: a Gap that is no longer `open` raises 409
 `gap_not_open` and nothing commits. Accepting an accepted Assumption changes nothing (200).
+Story 8.5: a Gap already converted to an Assumption is this Assumption's own conversion (one
+Assumption per Gap and version; an edit cleared its acceptance, or a re-draft carried it
+unaccepted): accepting it again only brings the Gap's `converted_to` in line with its kind. A
+Gap converted to a Risk is not open (409).
 
 Logs, trace and `last_error` carry ids, kinds, hours and counts only, never wording or Gap
 text.
@@ -83,6 +89,7 @@ from app.modules.estimates.domain.estimates import (
     VersionStatus,
 )
 from app.modules.gaps.application import public as gaps
+from app.modules.gaps.application.public import GapStatus
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal
 from app.modules.opportunities.application import public as opportunities
@@ -113,6 +120,7 @@ NOT_FOUND_DETAIL = "No Assumption with this id in the current draft Estimate."
 MAX_ROW_VERSION = 2**31 - 1
 _PROPOSING = tuple(sorted(s.value for s in PROPOSING))
 _RUNNING = (ProposalStatus.RUNNING.value,)
+ASSUMPTION_KINDS = frozenset(k.value for k in AssumptionKind)
 _log = get_logger(__name__)
 
 
@@ -141,10 +149,26 @@ async def enqueue_proposals(uow: UnitOfWork, *, version_id: UUID, opportunity_id
 async def carry_accepted(
     uow: UnitOfWork, *, source_version_id: UUID, target_version_id: UUID
 ) -> int:
-    """Copy the accepted Assumptions of `source_version_id` (the draft a re-draft supersedes)
-    into `target_version_id` (the new draft, its lines stored). The caller holds the
-    Opportunity's draft lock. Returns how many were carried."""
-    accepted = await repo.assumptions_of(uow, source_version_id, accepted_only=True)
+    """Copy the Assumptions of `source_version_id` (the draft a re-draft supersedes) that are
+    accepted or whose Gap is converted into `target_version_id` (the new draft, its lines
+    stored). The caller holds the Opportunity's draft lock. Returns how many were carried."""
+    every = await repo.assumptions_of(uow, source_version_id)
+    if not every:
+        return 0
+    source_version = await repo.get_version(uow, source_version_id)
+    if source_version is None:  # pragma: no cover - the caller just read it
+        return 0
+    origins = await gaps.gap_summaries(
+        uow, source_version.opportunity_id, list({_gap_of(a) for a in every})
+    )
+
+    def kept(a: AssumptionRecord) -> bool:
+        origin = origins.get(_gap_of(a))
+        return a.accepted_at is not None or (
+            origin is not None and origin.status == GapStatus.CONVERTED
+        )
+
+    accepted = [a for a in every if kept(a)]
     if not accepted:
         return 0
     old_lines = {line.id: line for line in await repo.lines_of(uow, source_version_id)}
@@ -164,6 +188,10 @@ async def carry_accepted(
         )
     await repo.insert_carried_assumptions(uow, target_version_id, carried)
     return len(carried)
+
+
+def _gap_of(record: AssumptionRecord) -> UUID:
+    return UUID(str(record.origin_ref["id"]))
 
 
 # --- accepting the proposals ----------------------------------------------------------------
@@ -531,10 +559,19 @@ async def _accepted(
     record: AssumptionRecord,
     user_id: UUID,
 ) -> None:
-    """Convert the accepted Assumption's Gap (409 `gap_not_open` unless it is open) and trace
-    the acceptance."""
-    gap_id = UUID(str(record.origin_ref["id"]))
-    await gaps.mark_converted(uow, gap_id, actor=actor.actor, assumption_kind=record.kind)
+    """Convert the accepted Assumption's Gap (409 `gap_not_open` unless it is open, or already
+    converted to an Assumption: then this one's, re-accepted after an edit or a carry) and
+    trace the acceptance."""
+    gap_id = _gap_of(record)
+    origin = (await gaps.gap_summaries(uow, opportunity_id, [gap_id])).get(gap_id)
+    if (
+        origin is not None
+        and origin.status == GapStatus.CONVERTED
+        and origin.converted_to in ASSUMPTION_KINDS
+    ):
+        await gaps.set_converted_to(uow, gap_id, record.kind)
+    else:
+        await gaps.mark_converted(uow, gap_id, actor=actor.actor, assumption_kind=record.kind)
     await trace.append(
         uow,
         actor=actor.actor,

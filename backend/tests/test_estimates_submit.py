@@ -30,6 +30,7 @@ from tests.test_assessments_findings_decisions import override
 from tests.test_assessments_red_team import finding, findings_out
 from tests.test_estimates_assumptions import events, proposed
 from tests.test_estimates_draft import SIX, lines_out
+from tests.test_estimates_risks import _convert
 from tests.test_gaps_detection import rows
 from tests.test_health import assert_problem
 from tests.test_intake_extraction import BASE, DRAFT, PROPOSE, RED_TEAM, FakeGateway, drain
@@ -472,6 +473,26 @@ def test_a_submitted_version_has_no_blockers_and_the_list_says_submitted(
     assert row["blocker_count"] == 0
     assert row["estimate"]["status"] == "submitted"
     assert batched_count(db_url, [opp["id"]]) == {UUID(opp["id"]): 0}
+
+
+def test_converting_a_gap_to_a_risk_never_touches_a_submitted_version(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    headers, opp = ready(client, sync_engine, db_url, gateway)
+    assert submit_current(client, headers, opp["id"]).status_code == 200
+    _gap(sync_engine, opp["id"])  # raised after the submission
+    gap_sql = "SELECT id FROM gaps_gaps WHERE opportunity_id = :o AND status = 'open'"
+    (gap,) = rows(sync_engine, gap_sql, o=opp["id"])
+    gap_id = str(gap["id"])
+
+    resp = _convert(client, headers, opp["id"], gap_id)
+
+    assert_problem(resp.json(), 409, "no_draft_estimate")
+    risks_sql = (
+        "SELECT r.id FROM estimates_risks r JOIN estimates_estimate_versions v "
+        "ON v.id = r.version_id WHERE v.opportunity_id = :o"
+    )
+    assert rows(sync_engine, risks_sql, o=opp["id"]) == []
 
 
 # --- serialisation --------------------------------------------------------------------------

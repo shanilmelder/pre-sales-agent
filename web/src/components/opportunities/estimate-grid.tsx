@@ -11,14 +11,26 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
+  acceptAssumption,
+  editAssumption,
   editEstimateLine,
+  editRisk,
   loadEstimate,
+  type AssumptionAcceptResult,
+  type EstimateItemEditResult,
   type EstimateLineEditResult,
 } from "@/app/opportunities/actions";
 import {
+  AssumptionInspector,
+  type AssumptionFields,
+} from "@/components/opportunities/assumption-inspector";
+import {
+  acceptFailure,
   AssumptionsRegister,
   OriginGapInspector,
 } from "@/components/opportunities/assumptions-register";
+import { RiskInspector, type RiskFields } from "@/components/opportunities/risk-inspector";
+import { RisksCard } from "@/components/opportunities/risks-card";
 import { Card } from "@/components/ui/card";
 import { submittedBanner } from "@/lib/submission";
 import { Chip } from "@/components/ui/chip";
@@ -56,7 +68,12 @@ import {
   UNALLOCATED_CONTINGENCY,
   uncarriedEditsNote,
   uncoveredBanner,
+  acceptedLabel,
+  assumptionId,
+  ITEM_GONE,
   registerSummary,
+  riskId,
+  staleMessage,
   VERSION_REPLACED,
   versionLabel,
   versionNote,
@@ -66,6 +83,7 @@ import {
   type EstimateLine,
   type EstimateVersion,
   type EstimateView,
+  type Risk,
   type Totals,
 } from "@/lib/estimates";
 import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
@@ -555,8 +573,14 @@ export function UncoveredBanner({ count }: { count: number }) {
   );
 }
 
-/** What the right pane shows: a line, or the Gap an Assumption was made from. */
-type Selection = { kind: "line"; id: string } | { kind: "gap"; assumptionId: string };
+/** What the right pane shows: a line, an Assumption (Story 8.5), a Risk (Story 8.5), or the
+ * Gap an Assumption or a Risk was made from. */
+type Selection =
+  | { kind: "line"; id: string }
+  | { kind: "assumption"; id: string }
+  | { kind: "risk"; id: string }
+  | { kind: "gap"; assumptionId: string }
+  | { kind: "risk-gap"; riskId: string };
 
 /** The Estimate tab's content: the toolbar, the Version lifecycle card, the uncovered banner,
  * the grid and the Assumptions Register below it in the main pane, and the selected line's (or Assumption's Gap's) inspector in the right pane
@@ -631,10 +655,21 @@ export function EstimateSection({
     : [];
   const selected =
     selection?.kind === "line" ? (lines.find((line) => line.id === selection.id) ?? null) : null;
-  const selectedAssumption =
+  const risks = view.version?.risks ?? [];
+  const gapOf =
     selection?.kind === "gap"
       ? (register.find((a) => a.id === selection.assumptionId) ?? null)
+      : selection?.kind === "risk-gap"
+        ? (risks.find((r) => r.id === selection.riskId) ?? null)
+        : null;
+  const selectedAssumption =
+    selection?.kind === "assumption"
+      ? (register.find((a) => a.id === selection.id) ?? null)
       : null;
+  const selectedRisk =
+    selection?.kind === "risk" ? (risks.find((r) => r.id === selection.id) ?? null) : null;
+  const [accepting, setAccepting] = useState(false);
+  const [acceptMessage, setAcceptMessage] = useState<string | null>(null);
 
   // The pane's content unmounts on close: reopening it must not take focus again.
   const [paneWasOpen, setPaneWasOpen] = useState(rightPaneOpen);
@@ -664,6 +699,27 @@ export function EstimateSection({
     // Focus goes to the title, or with `e` to the form's Effort field: never both.
     setFocusRequest((n) => (viaKeyboard && !edit ? n + 1 : 0));
     setEditFocusRequest((n) => (edit ? n + 1 : 0));
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
+
+  function openAssumption(assumption: Assumption, viaKeyboard: boolean) {
+    setSelection({ kind: "assumption", id: assumption.id });
+    setReplaced(false);
+    setAcceptMessage(null);
+    returnFocusTo.current = viaKeyboard
+      ? `[data-assumption-id="${assumption.id}"] [data-open-assumption]`
+      : null;
+    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    setEditFocusRequest(0);
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
+
+  function openRisk(risk: Risk, viaKeyboard: boolean) {
+    setSelection({ kind: "risk", id: risk.id });
+    setReplaced(false);
+    returnFocusTo.current = viaKeyboard ? `[data-risk-id="${risk.id}"] [data-risk-row]` : null;
+    setFocusRequest((n) => (viaKeyboard ? n + 1 : 0));
+    setEditFocusRequest(0);
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
 
@@ -778,6 +834,108 @@ export function EstimateSection({
     return outcome;
   }
 
+  /** Story 8.5: the outcome of saving an Assumption's or a Risk's edit. */
+  function itemOutcome(result: EstimateItemEditResult, label: string): EditOutcome {
+    let outcome: EditOutcome;
+    switch (result.kind) {
+      case "ok":
+        mutation.current += 1;
+        setView(result.estimate);
+        announce(`Saved: ${label}`);
+        return { ok: true };
+      case "stale":
+        outcome = { ok: false, message: result.message, reload: true };
+        break;
+      case "not-draft":
+        outcome = { ok: false, message: VERSION_REPLACED, reload: true };
+        break;
+      case "invalid":
+        outcome = { ok: false, message: result.detail };
+        break;
+      case "forbidden":
+        outcome = { ok: false, message: EDIT_NOT_ALLOWED };
+        break;
+      case "not-found":
+        outcome = { ok: false, message: ITEM_GONE, reload: true };
+        break;
+      default:
+        outcome = { ok: false, message: EDIT_SAVE_FAILED };
+    }
+    announce(outcome.message);
+    return outcome;
+  }
+
+  async function saveAssumption(
+    assumption: Assumption,
+    fields: AssumptionFields,
+    reason: string,
+    rowVersion: number,
+  ): Promise<EditOutcome> {
+    let result: EstimateItemEditResult;
+    try {
+      result = await editAssumption({
+        opportunityId,
+        assumptionId: assumption.id,
+        rowVersion,
+        ...fields,
+        reason,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    return itemOutcome(result, assumptionId(assumption));
+  }
+
+  async function saveRisk(
+    risk: Risk,
+    fields: RiskFields,
+    reason: string,
+    rowVersion: number,
+  ): Promise<EditOutcome> {
+    let result: EstimateItemEditResult;
+    try {
+      result = await editRisk({ opportunityId, riskId: risk.id, rowVersion, ...fields, reason });
+    } catch {
+      result = { kind: "error" };
+    }
+    return itemOutcome(result, riskId(risk));
+  }
+
+  /** Story 8.5: **Accept** from the Assumption inspector; the Estimate is read again. */
+  async function acceptFromInspector(assumption: Assumption) {
+    if (accepting) return;
+    setAccepting(true);
+    setAcceptMessage(null);
+    let result: AssumptionAcceptResult;
+    try {
+      result = await acceptAssumption({
+        opportunityId,
+        assumptionId: assumption.id,
+        rowVersion: assumption.row_version,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    if (result.kind === "ok") {
+      try {
+        const loaded = await loadEstimate(opportunityId);
+        if (loaded.kind === "ok") {
+          mutation.current += 1;
+          setView(loaded.estimate);
+        }
+      } catch {
+        // The tab stays as it is.
+      }
+      announce(acceptedLabel(result.assumption));
+    } else {
+      const sentence =
+        result.kind === "stale" ? staleMessage(result.changedBy) : acceptFailure(result);
+      setAcceptMessage(sentence);
+      announce(sentence);
+    }
+    setAccepting(false);
+  }
+
   async function reloadEstimate() {
     try {
       const loaded = await loadEstimate(opportunityId);
@@ -792,8 +950,13 @@ export function EstimateSection({
   }
 
   const { version } = view;
-  const canEditLines = view.can_edit_lines && version?.status === "draft";
-  const isDraft = version?.status === "draft";
+  const draft = version?.status === "draft";
+  const canEditLines = view.can_edit_lines && draft;
+  // Story 8.5: a version that isn't the draft, and sales representatives, see no Accept,
+  // Accept all, Edit or Risk edit controls.
+  const canAccept = view.can_accept_assumptions && draft;
+  const canEditAssumptions = view.can_edit_assumptions && draft;
+  const canEditRisks = view.can_edit_risks && draft;
   return (
     <div className="flex flex-col gap-4">
       <EstimateHeader
@@ -837,14 +1000,17 @@ export function EstimateSection({
           <AssumptionsRegister
             opportunityId={opportunityId}
             version={version}
-            canAccept={view.can_accept_assumptions && isDraft}
-            selectedId={selectedAssumption?.id ?? null}
+            canAccept={canAccept}
+            selectedId={selection?.kind === "gap" ? (gapOf?.id ?? null) : null}
+            selectedAssumptionId={selectedAssumption?.id ?? null}
             onChanged={(estimate) => {
               mutation.current += 1;
               setView(estimate);
             }}
+            onOpen={openAssumption}
             onOpenGap={openGap}
           />
+          <RisksCard risks={version.risks} selectedId={selectedRisk?.id ?? null} onOpen={openRisk} />
         </>
       ) : !building ? (
         <EmptyTabCard
@@ -878,11 +1044,51 @@ export function EstimateSection({
         </RightPaneContent>
       ) : selectedAssumption ? (
         <RightPaneContent>
-          <OriginGapInspector
-            key={selectedAssumption.id}
-            gap={selectedAssumption.origin}
+          <AssumptionInspector
+            key={`${version?.id}-${selectedAssumption.id}`}
+            assumption={selectedAssumption}
             focusRequest={focusRequest}
+            onOpenGap={() => openGap(selectedAssumption, false)}
+            accepting={
+              canAccept
+                ? {
+                    busy: accepting,
+                    onAccept: () => void acceptFromInspector(selectedAssumption),
+                    message: acceptMessage,
+                  }
+                : undefined
+            }
+            editing={
+              canEditAssumptions
+                ? {
+                    lines: lines.map((line) => ({ id: line.id, title: line.title })),
+                    onSave: saveAssumption,
+                    onReload: () => void reloadEstimate(),
+                  }
+                : undefined
+            }
           />
+        </RightPaneContent>
+      ) : selectedRisk ? (
+        <RightPaneContent>
+          <RiskInspector
+            key={`${version?.id}-${selectedRisk.id}`}
+            risk={selectedRisk}
+            focusRequest={focusRequest}
+            onOpenGap={() => {
+              setSelection({ kind: "risk-gap", riskId: selectedRisk.id });
+              setFocusRequest(0);
+            }}
+            editing={
+              canEditRisks
+                ? { onSave: saveRisk, onReload: () => void reloadEstimate() }
+                : undefined
+            }
+          />
+        </RightPaneContent>
+      ) : gapOf ? (
+        <RightPaneContent>
+          <OriginGapInspector key={gapOf.id} gap={gapOf.origin} focusRequest={focusRequest} />
         </RightPaneContent>
       ) : null}
     </div>

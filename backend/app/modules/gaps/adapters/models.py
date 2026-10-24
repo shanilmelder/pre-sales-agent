@@ -91,9 +91,10 @@ class GapRow(RowVersioned, Base):
     Gaps, unique per (Opportunity, Checklist id, item id), which are never superseded.
     Detection inserts `open`, `detected` Gaps, and a later
     detection marks them `superseded`. Accepting an Assumption made from an `open` Gap marks it
-    `converted`, recording the Assumption's kind in `converted_to` (Story 8.4). Story 4.4: a
-    person may change an `open` Gap's impact, dismiss it (`dismiss_*` / `dismissed_*`, set only
-    while `dismissed`, a note required for `other`) and reopen it. `changed_by`: the person
+    `converted`, recording the Assumption's kind in `converted_to` (Story 8.4), or `risk` once
+    converted to a Risk (Story 8.5). Story 4.4: a person may change an `open` Gap's impact,
+    dismiss it (`dismiss_*` / `dismissed_*`, set only while `dismissed`, a note required for
+    `other`) and reopen it. `changed_by`: the person
     behind its latest change; `touched_by_human`: set by an impact change or a reopen, so a
     later detection keeps it."""
 
@@ -113,7 +114,7 @@ class GapRow(RowVersioned, Base):
             name="status",
         ),
         CheckConstraint(
-            "converted_to IS NULL OR converted_to IN ('condition', 'contingency')",
+            "converted_to IS NULL OR converted_to IN ('condition', 'contingency', 'risk')",
             name="converted_to",
         ),
         CheckConstraint(

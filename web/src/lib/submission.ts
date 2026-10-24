@@ -20,6 +20,8 @@ export const BLOCKER_TRACE_EVENTS: readonly string[] = [
   "estimates.estimate_version.superseded",
   "estimates.assumption.proposed",
   "estimates.assumption.accepted",
+  "estimates.assumption.edited",
+  "estimates.risk.created",
   "estimates.estimate_line.edited",
   "assessments.finding.resolved",
   "assessments.finding.overridden",

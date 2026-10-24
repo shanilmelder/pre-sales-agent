@@ -8,8 +8,8 @@ unchanged.
 
 `psa_app` already has SELECT, INSERT and UPDATE on the table (0012); still no DELETE.
 
-Revision ID: 0043_submitted_status
-Revises: 0042_blocking_findings
+Revision ID: 0044_submitted_status
+Revises: 0043_estimates_risks
 Create Date: 2026-10-24
 """
 
@@ -18,8 +18,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0043_submitted_status"
-down_revision: str | None = "0042_blocking_findings"
+revision: str = "0044_submitted_status"
+down_revision: str | None = "0043_estimates_risks"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

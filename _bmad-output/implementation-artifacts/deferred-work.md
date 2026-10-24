@@ -265,3 +265,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-6-submission-blockers.md`
   summary: Add a migration test for 0043 that downgrades with a `submitted` row present (expect `superseded`, `submitted_at` dropped) and upgrades again.
   evidence: Story 8.6 review (verification gap): no test references 0043; `test_assessments_findings_migration.py` is the pattern.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-5-assumptions-register-and-risks.md`
+  summary: A Risk can't be deleted or unconverted; a mistaken Convert to Risk stays on the Gap and is carried by every re-draft.
+  evidence: No delete endpoint; `estimates_risks` has no DELETE grant (migration 0043); `carry_risks` copies every Risk.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-5-assumptions-register-and-risks.md`
+  summary: Narrow the table-wide DELETE grant on `estimates_assumptions` (e.g. a trigger allowing only unaccepted rows of a draft version).
+  evidence: Migration 0043 grants psa_app DELETE on the whole table; only `delete_unaccepted_for_gap` narrows it in app code.

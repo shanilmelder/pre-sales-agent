@@ -1,8 +1,9 @@
-"""Read models for the Estimate (Stories 8.1 and 8.4). Every number is calculated on the
+"""Read models for the Estimate (Stories 8.1, 8.4 and 8.5). Every number is calculated on the
 server by `domain/arithmetic.py`; hours are person-hours with one decimal place."""
 
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 
@@ -16,6 +17,7 @@ from app.modules.estimates.domain.estimates import (
     VersionSource,
     VersionStatus,
 )
+from app.modules.estimates.domain.risks import RiskLevel
 from app.modules.gaps.application.public import GapCategory, Impact
 from app.modules.opportunities.application.public import UserRef
 
@@ -107,8 +109,9 @@ class EstimateSection(BaseModel):
 
 
 class OriginGap(BaseModel):
-    """The Gap an Assumption was made from, as it is now. `status` is `open`, `converted`
-    (once an Assumption made from it was accepted) or `superseded`."""
+    """The Gap an Assumption or a Risk was made from, as it is now. `status` is `open`,
+    `converted` (converted to an Assumption, accepted or since edited, or to a Risk) or
+    `superseded`."""
 
     id: str
     title: str
@@ -129,17 +132,25 @@ class Assumption(BaseModel):
     """An Assumption of the version: a `condition` (proposal-ready wording, no hours) or a
     `contingency` (`amount_hours`, and the line it is linked to, if any), made from one Gap
     (`origin`). `accepted_by` and `accepted_at` are null until someone accepts it.
-    `row_version` goes back in `If-Match` to accept it. `carried_from_version`: the number of
-    the earlier version a re-draft carried this accepted Assumption from (Story 8.7), null
-    for a proposal."""
+    `row_version` goes back in `If-Match` to accept or edit it. `carried_from_version`: the
+    number of the earlier version a re-draft carried this Assumption from (Story 8.7), null
+    for a proposal.
+
+    Story 8.5: `position` is its register number (`A{position}`); `origin_superseded` is true
+    when the Gap is no longer `open` or `converted`, or is open but changed since the
+    Assumption was made from it; `origin_is_unknown` is true when the Gap is an Unknown (its
+    why it matters opens with "Unknown to the customer:")."""
 
     id: str
+    position: int = Field(ge=1)
     kind: AssumptionKind
     wording: str
     amount_hours: float | None
     line: AssumptionLine | None
     origin_kind: Literal["gap"]
     origin: OriginGap
+    origin_superseded: bool
+    origin_is_unknown: bool
     accepted_by: UserRef | None
     accepted_at: datetime | None
     row_version: int = Field(ge=1)
@@ -153,6 +164,25 @@ class AssumptionGroups(BaseModel):
     conditions: list[Assumption]
     contingencies: list[Assumption]
     contingency_hours: float
+
+
+class Risk(BaseModel):
+    """A Risk of the version (Story 8.5), made from one Gap (`origin`, with
+    `origin_superseded` as for an Assumption): a description, a likelihood and an impact. It
+    is never accepted and never blocks submission. `position` is its number (`R{position}`);
+    `row_version` goes back in `If-Match` to edit it; `carried_from_version`: the number of the
+    earlier version a re-draft carried it from, null otherwise."""
+
+    id: str
+    position: int = Field(ge=1)
+    description: str
+    likelihood: RiskLevel
+    impact: RiskLevel
+    origin_kind: Literal["gap"]
+    origin: OriginGap
+    origin_superseded: bool
+    row_version: int = Field(ge=1)
+    carried_from_version: int | None
 
 
 class AssumptionCounts(BaseModel):
@@ -188,7 +218,9 @@ class EstimateVersion(BaseModel):
 
     Story 8.3: `source` is `assessments` for a version built from the specialist Assessments
     when an assessment run finished (`source_run`, that run's number), `model` for an
-    accepted model draft."""
+    accepted model draft.
+
+    Story 8.5: `risks` are its Risks, impact high first, then likelihood high first."""
 
     id: str
     version: int = Field(ge=1)
@@ -206,6 +238,7 @@ class EstimateVersion(BaseModel):
     counts: AssumptionCounts
     unconverted_gaps: list[UnconvertedGap]
     unallocated_contingency_hours: float
+    risks: list[Risk]
     uncarried_edit_count: int = Field(ge=0)
     uncarried_edits_from_version: int | None
     source: VersionSource
@@ -292,8 +325,10 @@ class EstimateView(BaseModel):
     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
     `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
     whether the caller may edit the draft's lines (Story 8.2); `assessment_running` (Story
-    8.3): whether an assessment run is queued or running. The UI only uses them to hide
-    controls; the API decides."""
+    8.3): whether an assessment run is queued or running; `can_edit_assumptions`,
+    `can_create_risks` and `can_edit_risks` (Story 8.5): whether the caller may edit
+    Assumptions, convert Gaps to Risks and edit Risks. The UI only uses them to hide
+    controls; the API decides (and no version but the draft can be changed)."""
 
     version: EstimateVersion | None
     draft: EstimateDraft | None
@@ -301,6 +336,9 @@ class EstimateView(BaseModel):
     can_accept_assumptions: bool
     can_export: bool
     can_edit_lines: bool
+    can_edit_assumptions: bool
+    can_create_risks: bool
+    can_edit_risks: bool
     assessment_running: bool = Field(
         description="Story 8.3: whether an assessment run of the Opportunity is queued or "
         "running (the Estimate is built when it finishes).",
@@ -347,3 +385,50 @@ class AcceptAllResult(BaseModel):
     """How many Assumptions were accepted."""
 
     count: int = Field(ge=0)
+
+
+class AssumptionChanges(BaseModel):
+    """A person's edit of an Assumption (Story 8.5): its kind, wording, hours and line, and
+    why. Fields left out stay as they are; `amount_hours` and `line_id` may be null (a
+    Condition has neither; a Contingency with no line is Unallocated). The whole result must
+    keep the Story 8.4 rules."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: AssumptionKind | None = Field(default=None, description="`condition` or `contingency`.")
+    wording: StrictStr | None = Field(
+        default=None, description="Proposal-ready wording; trimmed, 1 to 500 characters."
+    )
+    amount_hours: StrictInt | StrictFloat | None = Field(
+        default=None,
+        description="A Contingency's hours, 0.5 to 1,000, rounded half up to 0.1; null for a "
+        "Condition.",
+    )
+    line_id: UUID | None = Field(
+        default=None,
+        description="The line of this version a Contingency is linked to; null for none "
+        "(Unallocated) and for a Condition.",
+    )
+    reason: StrictStr = Field(description="Why. Trimmed, it must be 1 to 300 characters.")
+
+
+class RiskCreate(BaseModel):
+    """Convert an open Gap to a Risk of the current draft (Story 8.5)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gap_id: UUID
+    description: StrictStr = Field(description="Trimmed, 1 to 500 characters.")
+    likelihood: RiskLevel
+    impact: RiskLevel
+
+
+class RiskChanges(BaseModel):
+    """A person's edit of a Risk (Story 8.5); fields left out stay as they are."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: StrictStr | None = Field(default=None, description="Trimmed, 1 to 500 characters.")
+    likelihood: RiskLevel | None = None
+    impact: RiskLevel | None = None
+    reason: StrictStr = Field(description="Why. Trimmed, it must be 1 to 300 characters.")

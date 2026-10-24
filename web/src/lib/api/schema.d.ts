@@ -1130,6 +1130,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit Assumption
+         * @description Change an Assumption of the draft Estimate: its kind, wording, hours and/or line, with
+         *     a reason. A change clears the acceptance (the Assumption blocks submission again until
+         *     someone accepts it) and is traced with the before and after kind, hours, line and wording
+         *     length. Values equal to the stored ones change nothing, and the acceptance stays. The
+         *     answer is the whole Estimate, so every total comes from the server. The owner and
+         *     collaborators, except sales representatives.
+         */
+        patch: operations["edit_assumption"];
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/risks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Risk
+         * @description Convert an open Gap to a Risk of the draft Estimate, with a description, a likelihood
+         *     and an impact. In the same transaction the Gap becomes `converted` (to `risk`) and the
+         *     draft's unaccepted Assumption proposed for it is removed. Risks are never accepted and
+         *     never block submission. The owner and collaborators, except sales representatives.
+         */
+        post: operations["create_risk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/risks/{risk_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit Risk
+         * @description Change a Risk of the draft Estimate: its description, likelihood and/or impact, with a
+         *     reason. Traced with the before and after levels and description length. Values equal to
+         *     the stored ones change nothing. The owner and collaborators, except sales
+         *     representatives.
+         */
+        patch: operations["edit_risk"];
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}": {
         parameters: {
             query?: never;
@@ -2663,13 +2734,20 @@ export interface components {
          * @description An Assumption of the version: a `condition` (proposal-ready wording, no hours) or a
          *     `contingency` (`amount_hours`, and the line it is linked to, if any), made from one Gap
          *     (`origin`). `accepted_by` and `accepted_at` are null until someone accepts it.
-         *     `row_version` goes back in `If-Match` to accept it. `carried_from_version`: the number of
-         *     the earlier version a re-draft carried this accepted Assumption from (Story 8.7), null
+         *     `row_version` goes back in `If-Match` to accept or edit it. `carried_from_version`: the
+         *     number of the earlier version a re-draft carried this Assumption from (Story 8.7), null
          *     for a proposal.
+         *
+         *     Story 8.5: `position` is its register number (`A{position}`); `origin_superseded` is true
+         *     when the Gap is no longer `open` or `converted`, or is open but changed since the
+         *     Assumption was made from it; `origin_is_unknown` is true when the Gap is an Unknown (its
+         *     why it matters opens with "Unknown to the customer:").
          */
         Assumption: {
             /** Id */
             id: string;
+            /** Position */
+            position: number;
             kind: components["schemas"]["AssumptionKind"];
             /** Wording */
             wording: string;
@@ -2682,6 +2760,10 @@ export interface components {
              */
             origin_kind: "gap";
             origin: components["schemas"]["OriginGap"];
+            /** Origin Superseded */
+            origin_superseded: boolean;
+            /** Origin Is Unknown */
+            origin_is_unknown: boolean;
             accepted_by: components["schemas"]["UserRef"] | null;
             /** Accepted At */
             accepted_at: string | null;
@@ -2689,6 +2771,37 @@ export interface components {
             row_version: number;
             /** Carried From Version */
             carried_from_version: number | null;
+        };
+        /**
+         * AssumptionChanges
+         * @description A person's edit of an Assumption (Story 8.5): its kind, wording, hours and line, and
+         *     why. Fields left out stay as they are; `amount_hours` and `line_id` may be null (a
+         *     Condition has neither; a Contingency with no line is Unallocated). The whole result must
+         *     keep the Story 8.4 rules.
+         */
+        AssumptionChanges: {
+            /** @description `condition` or `contingency`. */
+            kind?: components["schemas"]["AssumptionKind"] | null;
+            /**
+             * Wording
+             * @description Proposal-ready wording; trimmed, 1 to 500 characters.
+             */
+            wording?: string | null;
+            /**
+             * Amount Hours
+             * @description A Contingency's hours, 0.5 to 1,000, rounded half up to 0.1; null for a Condition.
+             */
+            amount_hours?: number | null;
+            /**
+             * Line Id
+             * @description The line of this version a Contingency is linked to; null for none (Unallocated) and for a Condition.
+             */
+            line_id?: string | null;
+            /**
+             * Reason
+             * @description Why. Trimmed, it must be 1 to 300 characters.
+             */
+            reason: string;
         };
         /** AssumptionCounts */
         AssumptionCounts: {
@@ -3251,10 +3364,11 @@ export interface components {
         };
         /**
          * ConvertedTo
-         * @description The kind of Assumption a converted Gap became.
+         * @description What a converted Gap became: an Assumption of either kind (Story 8.4) or a Risk
+         *     (Story 8.5).
          * @enum {string}
          */
-        ConvertedTo: "condition" | "contingency";
+        ConvertedTo: "condition" | "contingency" | "risk";
         /** CoverageCell */
         CoverageCell: {
             /** Sources */
@@ -3666,6 +3780,8 @@ export interface components {
          *     Story 8.3: `source` is `assessments` for a version built from the specialist Assessments
          *     when an assessment run finished (`source_run`, that run's number), `model` for an
          *     accepted model draft.
+         *
+         *     Story 8.5: `risks` are its Risks, impact high first, then likelihood high first.
          */
         EstimateVersion: {
             /** Id */
@@ -3698,6 +3814,8 @@ export interface components {
             unconverted_gaps: components["schemas"]["UnconvertedGap"][];
             /** Unallocated Contingency Hours */
             unallocated_contingency_hours: number;
+            /** Risks */
+            risks: components["schemas"]["Risk"][];
             /** Uncarried Edit Count */
             uncarried_edit_count: number;
             /** Uncarried Edits From Version */
@@ -3722,8 +3840,10 @@ export interface components {
          *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
          *     `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
          *     whether the caller may edit the draft's lines (Story 8.2); `assessment_running` (Story
-         *     8.3): whether an assessment run is queued or running. The UI only uses them to hide
-         *     controls; the API decides.
+         *     8.3): whether an assessment run is queued or running; `can_edit_assumptions`,
+         *     `can_create_risks` and `can_edit_risks` (Story 8.5): whether the caller may edit
+         *     Assumptions, convert Gaps to Risks and edit Risks. The UI only uses them to hide
+         *     controls; the API decides (and no version but the draft can be changed).
          */
         EstimateView: {
             version: components["schemas"]["EstimateVersion"] | null;
@@ -3736,6 +3856,12 @@ export interface components {
             can_export: boolean;
             /** Can Edit Lines */
             can_edit_lines: boolean;
+            /** Can Edit Assumptions */
+            can_edit_assumptions: boolean;
+            /** Can Create Risks */
+            can_create_risks: boolean;
+            /** Can Edit Risks */
+            can_edit_risks: boolean;
             /**
              * Assessment Running
              * @description Story 8.3: whether an assessment run of the Opportunity is queued or running (the Estimate is built when it finishes).
@@ -4126,12 +4252,12 @@ export interface components {
         /**
          * Gap
          * @description A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
-         *     `converted` once an Assumption made from it was accepted (Story 8.4; `converted_to` then
-         *     names the Assumption's kind, `condition` or `contingency`, and is null otherwise),
-         *     `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise), or
-         *     `answered` (Story 4.7). `answer`: the customer's answer once its question is answered
-         *     (whether or not it settled the Gap), else null; `answer_suggestions`: the open
-         *     suggestions for its question. `history`: its changes, oldest first. `last_changed_by`:
+         *     `converted` once converted to an Assumption (accepted, or since edited; Story 8.4) or to a
+         *     Risk (Story 8.5): `converted_to` then names what it became (`condition`, `contingency` or
+         *     `risk`), and is null otherwise; `dismissed` (Story 4.4: `dismissal` says why, by whom and
+         *     when; null otherwise), or `answered` (Story 4.7). `answer`: the customer's answer once its
+         *     question is answered (whether or not it settled the Gap), else null; `answer_suggestions`:
+         *     the open suggestions for its question. `history`: its changes, oldest first. `last_changed_by`:
          *     the person behind its latest change (null until a person changes it).
          */
         Gap: {
@@ -4994,8 +5120,9 @@ export interface components {
         };
         /**
          * OriginGap
-         * @description The Gap an Assumption was made from, as it is now. `status` is `open`, `converted`
-         *     (once an Assumption made from it was accepted) or `superseded`.
+         * @description The Gap an Assumption or a Risk was made from, as it is now. `status` is `open`,
+         *     `converted` (converted to an Assumption, accepted or since edited, or to a Risk) or
+         *     `superseded`.
          */
         OriginGap: {
             /** Id */
@@ -5612,6 +5739,77 @@ export interface components {
          * @enum {string}
          */
         ReviewStatus: "current" | "superseded";
+        /**
+         * Risk
+         * @description A Risk of the version (Story 8.5), made from one Gap (`origin`, with
+         *     `origin_superseded` as for an Assumption): a description, a likelihood and an impact. It
+         *     is never accepted and never blocks submission. `position` is its number (`R{position}`);
+         *     `row_version` goes back in `If-Match` to edit it; `carried_from_version`: the number of the
+         *     earlier version a re-draft carried it from, null otherwise.
+         */
+        Risk: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            /** Description */
+            description: string;
+            likelihood: components["schemas"]["RiskLevel"];
+            impact: components["schemas"]["RiskLevel"];
+            /**
+             * Origin Kind
+             * @constant
+             */
+            origin_kind: "gap";
+            origin: components["schemas"]["OriginGap"];
+            /** Origin Superseded */
+            origin_superseded: boolean;
+            /** Row Version */
+            row_version: number;
+            /** Carried From Version */
+            carried_from_version: number | null;
+        };
+        /**
+         * RiskChanges
+         * @description A person's edit of a Risk (Story 8.5); fields left out stay as they are.
+         */
+        RiskChanges: {
+            /**
+             * Description
+             * @description Trimmed, 1 to 500 characters.
+             */
+            description?: string | null;
+            likelihood?: components["schemas"]["RiskLevel"] | null;
+            impact?: components["schemas"]["RiskLevel"] | null;
+            /**
+             * Reason
+             * @description Why. Trimmed, it must be 1 to 300 characters.
+             */
+            reason: string;
+        };
+        /**
+         * RiskCreate
+         * @description Convert an open Gap to a Risk of the current draft (Story 8.5).
+         */
+        RiskCreate: {
+            /**
+             * Gap Id
+             * Format: uuid
+             */
+            gap_id: string;
+            /**
+             * Description
+             * @description Trimmed, 1 to 500 characters.
+             */
+            description: string;
+            likelihood: components["schemas"]["RiskLevel"];
+            impact: components["schemas"]["RiskLevel"];
+        };
+        /**
+         * RiskLevel
+         * @enum {string}
+         */
+        RiskLevel: "low" | "medium" | "high";
         /**
          * Role
          * @enum {string}
@@ -14405,6 +14603,578 @@ export interface operations {
                 };
             };
             /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    edit_assumption: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Assumption as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                assumption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssumptionChanges"];
+            };
+        };
+        responses: {
+            /** @description The Estimate as it is now, every total recalculated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Assumption with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Estimate Version is not the draft (`estimate_version_not_draft`): a re-draft replaced it; nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description It changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: wording not 1-500 characters, a Contingency without 0.5-1,000 hours, a Condition with hours or a line, or a line not of this version, a blank or over-300-character reason (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_risk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskCreate"];
+            };
+        };
+        responses: {
+            /** @description The new Risk */
+            201: {
+                headers: {
+                    /** @description The Risk's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Risk"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Gap with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity has no draft Estimate (`no_draft_estimate`), or the Gap is no longer open (`gap_not_open`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a description not 1-500 characters, an unknown level or field, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    edit_risk: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Risk as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                risk_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskChanges"];
+            };
+        };
+        responses: {
+            /** @description The Estimate as it is now, every total recalculated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Risk with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Estimate Version is not the draft (`estimate_version_not_draft`): a re-draft replaced it; nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description It changed since the caller read it (`row_version_mismatch`); the `detail` names who changed it */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a description not 1-500 characters, an unknown level, a blank or over-300-character reason (the `detail` is the sentence to show), an unknown field, or an id that is not a UUID */
             422: {
                 headers: {
                     [name: string]: unknown;

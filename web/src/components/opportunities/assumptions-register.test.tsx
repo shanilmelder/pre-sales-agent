@@ -75,6 +75,7 @@ function assumption(
 ): Assumption {
   return {
     id: `00000000-0000-7000-8000-0000000000a${n}`,
+    position: n,
     kind,
     wording: `[WORDING ${n}]`,
     amount_hours: kind === "contingency" ? (options.hours ?? 8) : null,
@@ -88,6 +89,8 @@ function assumption(
       why_it_matters: `[WHY ${n}]`,
       status: options.accepted ? "converted" : "open",
     },
+    origin_superseded: false,
+    origin_is_unknown: false,
     accepted_by: options.accepted ? { id: "u1", name: "[NAME]" } : null,
     accepted_at: options.accepted ? "2026-10-05T09:00:00Z" : null,
     row_version: options.accepted ? 2 : 1,
@@ -147,6 +150,7 @@ function version(
     },
     unconverted_gaps: [],
     unallocated_contingency_hours: unallocated,
+    risks: [],
     uncarried_edit_count: 0,
     uncarried_edits_from_version: null,
     source: "assessments",
@@ -170,6 +174,9 @@ function view(v: EstimateVersion, canAccept = true): EstimateView {
     can_accept_assumptions: canAccept,
     can_export: false,
     can_edit_lines: false,
+    can_edit_assumptions: false,
+    can_create_risks: false,
+    can_edit_risks: false,
     assessment_running: false,
     blockers: { to_submit: [], to_baseline: [] },
     can_submit: false,
@@ -237,10 +244,10 @@ describe("the Assumptions Register", () => {
     expect(notAccepted.parentElement?.className).toContain("text-blocker");
     expect(notAccepted.parentElement?.querySelector("svg")).toBeTruthy();
     expect(within(row(2)).getByRole("button", { name: "Accept: [WORDING 2]" })).toBeTruthy();
-    expect(within(row(2)).getByText("8.0 h")).toBeTruthy();
+    expect(within(row(2)).getByText("Contingency · 8.0 h ·")).toBeTruthy();
     expect(within(row(2)).getByText("Line: [LINE]")).toBeTruthy();
     expect(within(row(4)).queryByText(/^Line:/)).toBeNull();
-    expect(within(row(3)).queryByText(/ h$/)).toBeNull();
+    expect(within(row(3)).queryByText(/ h ·$/)).toBeNull();
     expect(within(row(3)).getByRole("button", { name: "from Gap: [GAP 3]" })).toBeTruthy();
 
     // The grid prices the Contingencies: the line's and the unallocated row.

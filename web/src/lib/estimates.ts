@@ -423,13 +423,100 @@ export function staleMessage(changedBy: string | null | undefined): string {
 }
 
 /** A converted Gap's label on the Gaps tab. */
-export function convertedLabel(
-  kind: AssumptionKind | null | undefined,
-): string {
-  return kind === "contingency"
-    ? "Converted to Contingency"
-    : "Converted to Condition";
+export function convertedLabel(kind: AssumptionKind | "risk" | null | undefined): string {
+  if (kind === "risk") return "Converted to Risk";
+  return kind === "contingency" ? "Converted to Contingency" : "Converted to Condition";
 }
+
+// --- Assumptions Register and Risks (Story 8.5) ---------------------------------------------
+
+export type Risk = components["schemas"]["Risk"];
+export type RiskLevel = components["schemas"]["RiskLevel"];
+
+/** The register number: "A3". */
+export function assumptionId(assumption: Pick<Assumption, "position">): string {
+  return `A${assumption.position}`;
+}
+
+/** The Risks card number: "R2". */
+export function riskId(risk: Pick<Risk, "position">): string {
+  return `R${risk.position}`;
+}
+
+/** "Condition" or "Contingency · 8.0 h". */
+export function assumptionLabel(
+  assumption: Pick<Assumption, "kind" | "amount_hours">,
+): string {
+  const kind = assumptionKindLabel(assumption.kind);
+  return assumption.amount_hours !== null && assumption.kind === "contingency"
+    ? `${kind} · ${hours(assumption.amount_hours)} h`
+    : kind;
+}
+
+/** The origin chip's text: "from Unknown: {title}" for an Unknown, else "from Gap: {title}". */
+export function originLabel(item: {
+  origin: { title: string };
+  origin_is_unknown?: boolean;
+}): string {
+  return `from ${item.origin_is_unknown ? "Unknown" : "Gap"}: ${item.origin.title}`;
+}
+
+/** The origin chip's prefix ("from Gap: " / "from Unknown: "), shown before the title. */
+export function originPrefix(item: { origin_is_unknown?: boolean }): string {
+  return `from ${item.origin_is_unknown ? "Unknown" : "Gap"}: `;
+}
+
+/** A 404 on an Assumption or Risk edit. */
+export const ITEM_GONE = "This item is no longer in the draft Estimate. Reload to see the latest.";
+
+/** The text label beside a struck-through origin title (never colour alone). */
+export const SUPERSEDED_ORIGIN = "superseded";
+
+/** The Assumption inspector's edit hint. */
+export const ASSUMPTION_EDIT_HINT = "Saving clears the acceptance. Recorded in the Decision Trace.";
+
+/** The Risk inspector's edit hint. */
+export const RISK_EDIT_HINT = "Recorded in the Decision Trace.";
+
+/** Shown in place of the acceptance on an unaccepted Assumption. */
+export const NOT_ACCEPTED_YET = "Not accepted";
+
+/** In Unicode code points, on the trimmed text (the API's rule). */
+export const WORDING_MAX = 500;
+export const DESCRIPTION_MAX = 500;
+export const CONTINGENCY_HOURS_MIN = 0.5;
+export const CONTINGENCY_HOURS_MAX = 1000;
+export const WORDING_RULE = "The wording must be 1 to 500 characters.";
+export const CONTINGENCY_HOURS_RULE = "A Contingency needs 0.5 to 1,000 hours.";
+export const DESCRIPTION_RULE = "The description must be 1 to 500 characters.";
+
+/** A Contingency's hours as typed, if they round (half up, 0.1) into 0.5-1,000; else null. */
+export function parseContingencyHours(raw: string): number | null {
+  const value = parseEffort(raw);
+  if (value === null) return null;
+  const rounded = roundHours(value);
+  return rounded >= CONTINGENCY_HOURS_MIN && rounded <= CONTINGENCY_HOURS_MAX ? value : null;
+}
+
+/** Risk levels, highest first, with their labels. */
+export const RISK_LEVELS: readonly { value: RiskLevel; label: string }[] = [
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+];
+
+/** "High", "Medium" or "Low". */
+export function riskLevelLabel(level: RiskLevel): string {
+  return RISK_LEVELS.find((l) => l.value === level)?.label ?? level;
+}
+
+/** The Risks card heading: "Risks · 2". */
+export function risksHeading(n: number): string {
+  return `Risks · ${n}`;
+}
+
+/** The Risks card's empty text. */
+export const NO_RISKS = "No Risks yet. Convert a Gap to a Risk from the Gaps tab.";
 
 // --- Export (Story 8.8, demo scope) ---------------------------------------------------------
 

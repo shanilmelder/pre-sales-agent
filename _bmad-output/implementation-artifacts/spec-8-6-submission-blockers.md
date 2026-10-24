@@ -86,7 +86,7 @@ context:
 - `platform/trace/catalogue.py:564-662` -- the `submitted` and `superseded` payloads; `web/src/lib/trace.ts:65` labels.
 - `identity/actions.py`, `identity/domain/policy.py:72,91,114` -- the submit action and grants (Auth0 is mapped by hand; add the permission to the README Auth0 list).
 - `opportunities/application/opportunities.py:190-235` `_page`, `models.py:104` `OpportunitySummary.blocker_count`.
-- Migration `0043` after `20261024_0042_blocking_findings.py`.
+- Migration `0044` after `20261024_0043_estimates_risks.py` (Story 8.5 took 0043; renumbered at the merge).
 - Web:
   - `components/opportunities/overview-summary.tsx:533-597` (card) and `lib/overview.ts:485-549` (`blockers()`, to delete; its uncovered row moves to the API kind), `:50` copy.
   - `workspace-header.tsx:40`, `inline-field.tsx:267/413` and `header-parts.tsx` (actions slot).
@@ -117,7 +117,7 @@ context:
 
 ## Implementation Notes
 
-- **`submitted_at` (added):** migration 0043 also adds `estimates_estimate_versions.submitted_at` (set by submit, kept once superseded; a check makes a `submitted` version always have it) so the Estimate tab banner can read "Submitted v3, 14 Oct". `EstimateVersion` and `SubmissionVersion` expose it.
+- **`submitted_at` (added):** migration 0044 also adds `estimates_estimate_versions.submitted_at` (set by submit, kept once superseded; a check makes a `submitted` version always have it) so the Estimate tab banner can read "Submitted v3, 14 Oct". `EstimateVersion` and `SubmissionVersion` expose it.
 - **Current version:** `repo.current_version(s)` returns the draft, else the latest `submitted`. `repo.draft_version` (draft only) is used by the Conflict decision's line edit (6.3), so a submitted version is never changed. Accept and Accept all on a submitted current version are 409 `estimate_version_not_draft` ("This Estimate Version was submitted and can't be edited."); a re-draft after a submission carries the submitted version's accepted Assumptions and edits. The export header says "Submitted" for a submitted version.
 - **Read API shape:** `GET …/submission-blockers` returns `SubmissionBlockersView` = `SubmissionBlockers` plus `version` (id, number, status, `row_version` for `If-Match`, `created_at`, `submitted_at`) and `can_submit`. Submit returns `SubmittedVersion` with an `ETag`. Hrefs are `/opportunities/{id}/{tab}#{gap|assumption|conflict|finding|requirement}-{id}`; the rows of those tabs carry the matching DOM ids.
 - **Before the first version** the blockers list only the Opportunity's own kinds (Gaps, Conflicts, Findings); `can_submit` is false.
@@ -150,7 +150,7 @@ context:
 | 16 | verification | No list test with submitted v1 + draft v2 | medium | patch | The batched-count test has at most one version per Opportunity. |
 | 17 | verification | `submitEstimateVersion` status mapping untested | medium | patch | Component tests mock the action. |
 | 18 | verification | Blocker href anchors vs row ids not pinned | low | patch | The backend test checks only the tab and `subject_id in href`. |
-| 19 | verification | Migration 0043 downgrade untested | low | defer | Rollbacks are on the excluded prod-hardening track; 0042 has a migration test to copy. |
+| 19 | verification | Migration 0044 (was 0043) downgrade untested | low | defer | Rollbacks are on the excluded prod-hardening track; 0042 has a migration test to copy. |
 | 20 | edge | A decision on a submitted version reports `no_line` | low | reject | The message is imprecise but nothing changes; a new enum value adds surface. |
 | 21 | edge | Partial blockers body without `to_submit`/`to_baseline` crashes the provider | false | reject | The API always returns both arrays (typed response model); the layout guard already covers a failed read. |
 | 22 | edge | An in-flight `load()` can overwrite a newer server `initial` | low | patch | Confirmed in `submission-context.tsx`; a one-line bump of `reads.current`. |

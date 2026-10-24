@@ -9,6 +9,7 @@ import type {
   GapWriteResult,
   MarkSentResult,
   QuestionWriteResult,
+  RiskConvertResult,
   StartGapDetectionResult,
 } from "@/app/opportunities/actions";
 import type { GapsResult } from "@/app/opportunities/data";
@@ -58,6 +59,9 @@ const confirmAnswerMatch = vi.hoisted(() =>
 const rejectAnswerMatch = vi.hoisted(() =>
   vi.fn<(input: unknown) => Promise<AnswerWriteResult>>(),
 );
+const convertGapToRisk = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<RiskConvertResult>>(),
+);
 const copyClarificationQuestions = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<CopyQuestionsResult>>(),
 );
@@ -77,6 +81,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   changeGapImpact,
   dismissGap,
   reopenGap,
+  convertGapToRisk,
 }));
 vi.mock("@/app/knowledge/checklists/actions", () => ({ loadChecklistVersion: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -201,6 +206,7 @@ beforeEach(() => {
   recordAnswer.mockReset();
   confirmAnswerMatch.mockReset();
   rejectAnswerMatch.mockReset();
+  convertGapToRisk.mockReset();
 });
 
 afterEach(() => {
@@ -259,7 +265,14 @@ describe("GapsList", () => {
     };
     const { container } = render(
       <ShellProviders singleKeyShortcuts>
-        <GapsList items={[gap(1, "medium"), condition, contingency]} />
+        <GapsList
+          items={[
+            gap(1, "medium"),
+            condition,
+            contingency,
+            { ...gap(4, "high"), status: "converted", converted_to: "risk" },
+          ]}
+        />
       </ShellProviders>,
     );
     const rows = screen.getAllByRole("row");
@@ -272,6 +285,9 @@ describe("GapsList", () => {
     );
     expect(rows[2].textContent).toBe(
       "LowConverted [GAP 3]Commercial·Clarification AgentConverted to Contingency",
+    );
+    expect(rows[3].textContent).toBe(
+      "HighConverted [GAP 4]Integration details·Clarification AgentConverted to Risk",
     );
     expect(rows[1].hasAttribute("data-converted")).toBe(true);
     expect(rows[1].className).toContain("text-muted-foreground");
@@ -2119,5 +2135,82 @@ describe("the Gaps tab redesign (matrix)", () => {
     fireEvent.click(clears[1]);
     expect(screen.getAllByRole("row")).toHaveLength(5);
     expect(screen.queryByText("No Gaps match these filters.")).toBeNull();
+  });
+});
+
+describe("Convert to Risk (Story 8.5)", () => {
+  function renderWithRisks(initial: GapList, canConvertToRisk = true) {
+    return render(
+      <ShellProviders singleKeyShortcuts>
+        <GapsSection opportunityId={OPP_ID} initial={initial} canConvertToRisk={canConvertToRisk} />
+        <RightPane />
+      </ShellProviders>,
+    );
+  }
+
+  it("converts an open Gap with its title, medium likelihood and its own impact", async () => {
+    const user = userEvent.setup();
+    const converted: Gap = { ...gap(1, "high"), status: "converted", converted_to: "risk" };
+    convertGapToRisk.mockResolvedValue({
+      kind: "ok",
+      risk: {} as Extract<RiskConvertResult, { kind: "ok" }>["risk"],
+    });
+    loadGaps.mockResolvedValue({ kind: "ok", list: list([converted], succeeded, true, true) });
+    const { container } = renderWithRisks(list([gap(1, "high")], succeeded, true, true));
+    await user.click(row(1));
+
+    const form = within(pane()).getByRole("form", { name: "Convert to Risk" });
+    expect((within(form).getByLabelText("Description") as HTMLTextAreaElement).value).toBe(
+      "[GAP 1]",
+    );
+    expect((within(form).getByLabelText("Likelihood") as HTMLSelectElement).value).toBe("medium");
+    expect((within(form).getByLabelText("Impact") as HTMLSelectElement).value).toBe("high");
+    expect(await axeViolations(container)).toEqual([]);
+    await user.selectOptions(within(form).getByLabelText("Likelihood"), "low");
+    await user.click(within(form).getByRole("button", { name: "Convert to Risk" }));
+
+    expect(convertGapToRisk).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      gapId: gap(1, "high").id,
+      description: "[GAP 1]",
+      likelihood: "low",
+      impact: "high",
+    });
+    await waitFor(() =>
+      expect(screen.getAllByRole("row")[0].textContent).toContain("Converted to Risk"),
+    );
+    expect(within(pane()).queryByRole("form", { name: "Convert to Risk" })).toBeNull();
+  });
+
+  it("refuses a blank description and says when there is no draft Estimate", async () => {
+    const user = userEvent.setup();
+    convertGapToRisk.mockResolvedValue({ kind: "no-draft" });
+    renderWithRisks(list([gap(1, "high")], succeeded, true, true));
+    await user.click(row(1));
+    const form = within(pane()).getByRole("form", { name: "Convert to Risk" });
+
+    await user.clear(within(form).getByLabelText("Description"));
+    await user.click(within(form).getByRole("button", { name: "Convert to Risk" }));
+    expect(within(form).getByText("The description must be 1 to 500 characters.")).toBeTruthy();
+    expect(convertGapToRisk).not.toHaveBeenCalled();
+
+    await user.type(within(form).getByLabelText("Description"), "Spike risk");
+    await user.click(within(form).getByRole("button", { name: "Convert to Risk" }));
+    expect(
+      await within(form).findByText("There is no draft Estimate to add the Risk to."),
+    ).toBeTruthy();
+  });
+
+  it("is not offered without a draft Estimate or the right, nor on a Gap that isn't open", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderWithRisks(list([gap(1, "high")], succeeded, true, true), false);
+    await user.click(row(1));
+    expect(within(pane()).queryByRole("form", { name: "Convert to Risk" })).toBeNull();
+    unmount();
+
+    const converted: Gap = { ...gap(2, "high"), status: "converted", converted_to: "condition" };
+    renderWithRisks(list([converted], succeeded, true, true));
+    await user.click(row(2));
+    expect(within(pane()).queryByRole("form", { name: "Convert to Risk" })).toBeNull();
   });
 });

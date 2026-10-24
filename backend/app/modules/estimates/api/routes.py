@@ -1,7 +1,9 @@
 """Estimate routes (Stories 8.1 and 8.4): `GET /api/v1/opportunities/{opportunity_id}/estimate`,
 `POST /api/v1/opportunities/{opportunity_id}/estimate-drafts`, accepting Assumptions
 (`POST …/assumptions/{assumption_id}/accept`, `POST …/assumptions/accept-all`), editing a
-line's hours and role mix (Story 8.2, `PATCH …/estimate-lines/{line_id}`), exporting the
+line's hours and role mix (Story 8.2, `PATCH …/estimate-lines/{line_id}`), editing an
+Assumption (Story 8.5, `PATCH …/assumptions/{assumption_id}`), converting a Gap to a Risk and
+editing a Risk (Story 8.5, `POST …/risks`, `PATCH …/risks/{risk_id}`), exporting the
 Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`), and the submission blockers
 and submitting a version (Story 8.6, `GET …/submission-blockers`,
 `POST …/estimate/versions/{version_id}/submit`). No endpoint accepts a total."""
@@ -16,10 +18,14 @@ from app.modules.estimates.application.export_content import MEDIA_TYPES
 from app.modules.estimates.application.public import (
     AcceptAllResult,
     Assumption,
+    AssumptionChanges,
     EstimateDraft,
     EstimateLineChanges,
     EstimateView,
     ExportFormat,
+    Risk,
+    RiskChanges,
+    RiskCreate,
     SubmissionBlockers,
     SubmissionBlockersView,
     SubmittedVersion,
@@ -167,6 +173,144 @@ async def accept_assumption(
     )
     response.headers["ETag"] = etag(accepted.row_version)
     return accepted
+
+
+# --- Editing an Assumption, and Risks (Story 8.5) -------------------------------------------
+
+_NOT_DRAFT_409 = (
+    "The Estimate Version is not the draft (`estimate_version_not_draft`): a re-draft "
+    "replaced it; nothing changed"
+)
+_STALE_412 = (
+    "It changed since the caller read it (`row_version_mismatch`); the `detail` names who "
+    "changed it"
+)
+
+
+def _edit_responses(subject: str, rules: str) -> dict[int | str, dict[str, Any]]:
+    responses = _responses(428)
+    responses[403] = {"description": _ACCEPT_403, "content": PROBLEM_CONTENT}
+    responses[404] = {
+        "description": "No Opportunity with this id, or the caller may not see it, or no "
+        f"{subject} with this id in it (`not_found`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[409] = {"description": _NOT_DRAFT_409, "content": PROBLEM_CONTENT}
+    responses[412] = {"description": _STALE_412, "content": PROBLEM_CONTENT}
+    responses[422] = {
+        "description": f"`validation_error`: {rules}, a blank or over-300-character reason "
+        "(the `detail` is the sentence to show), an unknown field, or an id that is not a UUID",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[200] = {"description": "The Estimate as it is now, every total recalculated"}
+    return responses
+
+
+_ASSUMPTION_RULES = (
+    "wording not 1-500 characters, a Contingency without 0.5-1,000 hours, a Condition with "
+    "hours or a line, or a line not of this version"
+)
+
+
+@router.patch(
+    "/assumptions/{assumption_id}",
+    operation_id="edit_assumption",
+    responses=_edit_responses("Assumption", _ASSUMPTION_RULES),
+)
+async def edit_assumption(
+    opportunity_id: UUID,
+    assumption_id: UUID,
+    body: AssumptionChanges,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    if_match: _IF_MATCH = None,
+) -> EstimateView:
+    """Change an Assumption of the draft Estimate: its kind, wording, hours and/or line, with
+    a reason. A change clears the acceptance (the Assumption blocks submission again until
+    someone accepts it) and is traced with the before and after kind, hours, line and wording
+    length. Values equal to the stored ones change nothing, and the acceptance stays. The
+    answer is the whole Estimate, so every total comes from the server. The owner and
+    collaborators, except sales representatives."""
+    return await estimates.edit_assumption(
+        uow, actor, opportunity_id, assumption_id, body, if_match
+    )
+
+
+def _create_risk_responses() -> dict[int | str, dict[str, Any]]:
+    responses = _responses()
+    responses[403] = {"description": _ACCEPT_403, "content": PROBLEM_CONTENT}
+    responses[404] = {
+        "description": "No Opportunity with this id, or the caller may not see it, or no Gap "
+        "with this id in it (`not_found`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[409] = {
+        "description": "The Opportunity has no draft Estimate (`no_draft_estimate`), or the "
+        "Gap is no longer open (`gap_not_open`); nothing changed",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[422] = {
+        "description": "`validation_error`: a description not 1-500 characters, an unknown "
+        "level or field, or an id that is not a UUID",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[201] = {
+        "description": "The new Risk",
+        "headers": {
+            "ETag": {
+                "description": "The Risk's row version, for `If-Match`.",
+                "schema": {"type": "string"},
+            }
+        },
+    }
+    return responses
+
+
+@router.post(
+    "/risks",
+    operation_id="create_risk",
+    status_code=201,
+    responses=_create_risk_responses(),
+)
+async def create_risk(
+    opportunity_id: UUID, body: RiskCreate, actor: CurrentPrincipal, uow: UoW, response: Response
+) -> Risk:
+    """Convert an open Gap to a Risk of the draft Estimate, with a description, a likelihood
+    and an impact. In the same transaction the Gap becomes `converted` (to `risk`) and the
+    draft's unaccepted Assumption proposed for it is removed. Risks are never accepted and
+    never block submission. The owner and collaborators, except sales representatives."""
+    created = await estimates.create_risk(uow, actor, opportunity_id, body)
+    response.headers["ETag"] = etag(created.row_version)
+    return created
+
+
+_RISK_IF_MATCH = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description='The ETag of the Risk as last read (its `row_version`), e.g. `"1"`.',
+    ),
+]
+
+
+@router.patch(
+    "/risks/{risk_id}",
+    operation_id="edit_risk",
+    responses=_edit_responses("Risk", "a description not 1-500 characters, an unknown level"),
+)
+async def edit_risk(
+    opportunity_id: UUID,
+    risk_id: UUID,
+    body: RiskChanges,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    if_match: _RISK_IF_MATCH = None,
+) -> EstimateView:
+    """Change a Risk of the draft Estimate: its description, likelihood and/or impact, with a
+    reason. Traced with the before and after levels and description length. Values equal to
+    the stored ones change nothing. The owner and collaborators, except sales
+    representatives."""
+    return await estimates.edit_risk(uow, actor, opportunity_id, risk_id, body, if_match)
 
 
 # --- Editing a line (Story 8.2) -------------------------------------------------------------
