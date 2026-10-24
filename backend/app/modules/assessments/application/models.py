@@ -1,5 +1,5 @@
-"""Read models for the Red Team Review (Story 6.5) and the specialist Assessments (Epic 5
-slice 5A)."""
+"""Read models for the Red Team Review (Story 6.5), the Critic Review (Story 6.4) and the
+specialist Assessments (Epic 5 slice 5A)."""
 
 from datetime import datetime
 
@@ -12,6 +12,7 @@ from app.modules.assessments.domain.assessments import (
     FindingKind,
     Recommendation,
 )
+from app.modules.assessments.domain.critic import CriticCategory
 from app.modules.assessments.domain.reviews import (
     FindingCategory,
     ReviewStatus,
@@ -97,12 +98,65 @@ class RedTeamView(BaseModel):
     can_start: bool
 
 
+# --- the Critic Review (Story 6.4) ---------------------------------------------------------
+
+
+class CitedFinding(BaseModel):
+    """A specialist Finding a Critic Finding cites, at the Assessment version it was read:
+    the agent and its role in words, the Assessment's id and version, and the Finding's
+    title."""
+
+    id: str
+    agent: AssessmentAgent
+    role: str
+    assessment_id: str
+    assessment_version: int = Field(ge=1)
+    title: str
+
+
+class CriticFinding(BaseModel):
+    """A Critic Finding: its category, severity, specific title and argument, with the
+    Requirements and the specialist Findings it cites."""
+
+    id: str
+    position: int = Field(ge=1)
+    category: CriticCategory
+    severity: Severity
+    title: str
+    argument: str
+    requirements: list[FindingRequirement]
+    findings: list[CitedFinding]
+
+
+class CriticReviewView(BaseModel):
+    """The Opportunity's current Critic Review. `findings`: critical first, then high, medium
+    and low, then in the order they were raised (code-written coverage Findings last).
+    `run_id`: the assessment run reviewed. `dropped_count`: proposed Findings that broke a
+    rule."""
+
+    id: str
+    version: int = Field(ge=1)
+    status: ReviewStatus
+    run_id: str | None
+    dropped_count: int = Field(ge=0)
+    created_at: datetime
+    counts: SeverityCounts
+    findings: list[CriticFinding]
+
+
+class CriticView(BaseModel):
+    """The Opportunity's current Critic Review, null before the first. Read-only."""
+
+    review: CriticReviewView | None
+
+
 # --- specialist Assessments (Epic 5 slice 5A) ----------------------------------------------
 
 
 class AssessmentFinding(BaseModel):
     """A specialist Finding: its kind, severity, specific title and detail, with the
-    Requirements it cites."""
+    Requirements it cites. `injection_suspected` (Story 5.4): a cited Requirement's text
+    read like an injected instruction when the agent read it (the UI marks the row)."""
 
     id: str
     position: int = Field(ge=1)
@@ -111,6 +165,7 @@ class AssessmentFinding(BaseModel):
     title: str
     detail: str
     requirements: list[FindingRequirement]
+    injection_suspected: bool
 
 
 class AssessmentEffort(BaseModel):

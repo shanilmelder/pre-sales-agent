@@ -45,6 +45,7 @@ class FindingRecord:
     severity: str
     title: str = field(repr=False)
     detail: str = field(repr=False)
+    injection_suspected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,7 @@ class NewFinding:
     title: str = field(repr=False)
     detail: str = field(repr=False)
     requirements: Sequence[tuple[UUID, int]] = ()
+    injection_suspected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +190,7 @@ async def insert_assessment(
                     "severity": f.severity,
                     "title": f.title,
                     "detail": f.detail,
+                    "injection_suspected": f.injection_suspected,
                 }
                 for finding_id, f in zip(finding_ids, findings, strict=True)
             ],
@@ -228,6 +231,34 @@ async def current_assessments(uow: UnitOfWork, opportunity_id: UUID) -> list[Ass
     return [_assessment(row) for row in rows.scalars()]
 
 
+async def run_assessments(
+    uow: UnitOfWork, opportunity_id: UUID, run_id: UUID
+) -> list[AssessmentRecord]:
+    """The Assessments of the Opportunity accepted in the run (Story 6.4), the newest per
+    agent, current or since superseded."""
+    rows = await uow.session.execute(
+        select(AssessmentRow)
+        .where(AssessmentRow.opportunity_id == opportunity_id, AssessmentRow.run_id == run_id)
+        .order_by(AssessmentRow.agent, AssessmentRow.version.desc())
+    )
+    newest: dict[str, AssessmentRecord] = {}
+    for row in rows.scalars():
+        newest.setdefault(row.agent, _assessment(row))
+    return list(newest.values())
+
+
+async def assessments_by_id(
+    uow: UnitOfWork, assessment_ids: Sequence[UUID]
+) -> list[AssessmentRecord]:
+    """These Assessments (current or superseded), in no particular order."""
+    if not assessment_ids:
+        return []
+    rows = await uow.session.execute(
+        select(AssessmentRow).where(AssessmentRow.id.in_(list(assessment_ids)))
+    )
+    return [_assessment(row) for row in rows.scalars()]
+
+
 async def findings_of(uow: UnitOfWork, assessment_ids: Sequence[UUID]) -> list[FindingRecord]:
     if not assessment_ids:
         return []
@@ -245,6 +276,7 @@ async def findings_of(uow: UnitOfWork, assessment_ids: Sequence[UUID]) -> list[F
             severity=row.severity,
             title=row.title,
             detail=row.detail,
+            injection_suspected=row.injection_suspected,
         )
         for row in rows.scalars()
     ]
@@ -266,6 +298,7 @@ async def findings_by_id(uow: UnitOfWork, finding_ids: Sequence[UUID]) -> list[F
             severity=row.severity,
             title=row.title,
             detail=row.detail,
+            injection_suspected=row.injection_suspected,
         )
         for row in rows.scalars()
     ]

@@ -1,7 +1,9 @@
 """Persistence for Red Team runs, Reviews, their Findings and the Findings' Requirement and
-Estimate line links (Story 6.5). Runs inside the caller's Unit of Work."""
+Estimate line links (Story 6.5), and (Story 6.4) the Critic's Finding targets: the specialist
+Findings a Critic Finding cites, at their Assessment version. Runs inside the caller's Unit
+of Work."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -11,6 +13,7 @@ from app.modules.assessments.adapters.models import (
     FindingLineRow,
     FindingRequirementRow,
     FindingRow,
+    FindingTargetRow,
     RedTeamRunRow,
     ReviewRow,
 )
@@ -37,6 +40,8 @@ class ReviewRecord:
     status: str
     dropped_count: int
     created_at: datetime
+    run_id: UUID | None = None
+    """The assessment run a Critic Review reviewed (Story 6.4); None for a Red Team Review."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +68,16 @@ class FindingLineRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class FindingTargetRecord:
+    """A Critic Finding cites a specialist Finding at its Assessment's version."""
+
+    finding_id: UUID
+    assessment_finding_id: UUID
+    assessment_id: UUID
+    assessment_version: int
+
+
+@dataclass(frozen=True, slots=True)
 class NewFinding:
     finding_id: UUID
     position: int
@@ -72,9 +87,21 @@ class NewFinding:
     argument: str
     requirements: list[tuple[UUID, int]]
     lines: list[UUID]
+    targets: list[tuple[UUID, UUID, int]] = field(default_factory=list)
+    """Specialist Findings cited (Story 6.4): (Finding id, Assessment id, Assessment
+    version)."""
 
 
 # --- runs -----------------------------------------------------------------------------------
+
+
+async def lock_reviews(uow: UnitOfWork, opportunity_id: UUID, kind: str) -> None:
+    """Serialise accepting the Opportunity's Reviews of `kind` until commit (which numbers
+    and supersedes them). The Red Team uses `lock_opportunity`, which also covers its runs."""
+    await uow.session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"assessments.review:{kind}:{opportunity_id}"},
+    )
 
 
 async def lock_opportunity(uow: UnitOfWork, opportunity_id: UUID) -> None:
@@ -212,6 +239,7 @@ def _review(row: ReviewRow) -> ReviewRecord:
         status=row.status,
         dropped_count=row.dropped_count,
         created_at=row.created_at,
+        run_id=row.run_id,
     )
 
 
@@ -254,8 +282,10 @@ async def insert_review(
     estimate_version_id: UUID | None,
     dropped_count: int,
     findings: list[NewFinding],
+    run_id: UUID | None = None,
 ) -> None:
-    """A `current` Review with its Findings and their Requirement and line links."""
+    """A `current` Review with its Findings and their Requirement, line and (Story 6.4)
+    target links."""
     await uow.session.execute(
         insert(ReviewRow).values(
             id=review_id,
@@ -265,6 +295,7 @@ async def insert_review(
             estimate_version_id=estimate_version_id,
             status="current",
             dropped_count=dropped_count,
+            run_id=run_id,
         )
     )
     if not findings:
@@ -284,14 +315,25 @@ async def insert_review(
             for f in findings
         ],
     )
-    await uow.session.execute(
-        insert(FindingRequirementRow),
-        [
-            {"finding_id": f.finding_id, "requirement_id": rid, "requirement_version": at}
-            for f in findings
-            for rid, at in f.requirements
-        ],
-    )
+    requirement_links = [
+        {"finding_id": f.finding_id, "requirement_id": rid, "requirement_version": at}
+        for f in findings
+        for rid, at in f.requirements
+    ]
+    if requirement_links:
+        await uow.session.execute(insert(FindingRequirementRow), requirement_links)
+    target_links = [
+        {
+            "finding_id": f.finding_id,
+            "assessment_finding_id": target,
+            "assessment_id": assessment_id,
+            "assessment_version": version,
+        }
+        for f in findings
+        for target, assessment_id, version in f.targets
+    ]
+    if target_links:
+        await uow.session.execute(insert(FindingTargetRow), target_links)
     line_links = [
         {"finding_id": f.finding_id, "line_id": line_id} for f in findings for line_id in f.lines
     ]
@@ -359,4 +401,22 @@ async def line_links_for(uow: UnitOfWork, finding_ids: list[UUID]) -> list[Findi
     )
     return [
         FindingLineRecord(finding_id=row.finding_id, line_id=row.line_id) for row in rows.scalars()
+    ]
+
+
+async def target_links_for(uow: UnitOfWork, finding_ids: list[UUID]) -> list[FindingTargetRecord]:
+    """The specialist Findings these Critic Findings cite (Story 6.4)."""
+    if not finding_ids:
+        return []
+    rows = await uow.session.execute(
+        select(FindingTargetRow).where(FindingTargetRow.finding_id.in_(finding_ids))
+    )
+    return [
+        FindingTargetRecord(
+            finding_id=row.finding_id,
+            assessment_finding_id=row.assessment_finding_id,
+            assessment_id=row.assessment_id,
+            assessment_version=row.assessment_version,
+        )
+        for row in rows.scalars()
     ]

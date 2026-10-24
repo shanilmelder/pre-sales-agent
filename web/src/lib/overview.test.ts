@@ -154,6 +154,51 @@ describe("escalated Conflicts (Story 6.3)", () => {
   });
 });
 
+describe("a run waiting for a person (Story 5.5)", () => {
+  it("lists each open decision of a waiting run, ranked with escalated Conflicts", () => {
+    const waiting = {
+      ...assessments(),
+      run: {
+        status: "waiting_for_human",
+        tasks: [],
+        decisions: [
+          { id: "d1", agent: "security_agent", agent_name: "Security Agent", status: "open" },
+          { id: "d2", agent: "pm_agent", agent_name: "PM Agent", status: "resolved" },
+        ],
+      },
+    } as unknown as AssessmentsView;
+    const items = attentionItems({
+      redTeam: redTeam([finding("critical", "ERP fields"), finding("high", "No SSO")]),
+      assessments: waiting,
+      gaps: null,
+      estimate: null,
+    });
+    expect(items.map((i) => [i.kind, i.label, i.tab])).toEqual([
+      ["critical-finding", "Red Team: ERP fields", "assessments"],
+      ["high-finding", "Red Team: No SSO", "assessments"],
+      [
+        "waiting-run",
+        "Security assessment not planned: Security Agent is disabled",
+        "assessments",
+      ],
+    ]);
+  });
+
+  it("lists nothing once the run is no longer waiting", () => {
+    const queued = {
+      ...assessments(),
+      run: {
+        status: "queued",
+        tasks: [],
+        decisions: [{ id: "d1", agent: "security_agent", agent_name: "Security Agent", status: "open" }],
+      },
+    } as unknown as AssessmentsView;
+    expect(
+      attentionItems({ redTeam: null, assessments: queued, gaps: null, estimate: null }),
+    ).toEqual([]);
+  });
+});
+
 describe("attentionItems", () => {
   it("is empty when nothing needs attention or every read failed", () => {
     expect(

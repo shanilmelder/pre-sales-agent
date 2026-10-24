@@ -186,8 +186,8 @@ def test_a_run_writes_progress_for_each_task_start_and_end(
     kinds = [r["event_type"] for r in found]
     assert kinds[0] == "workflows.run.queued"
     assert kinds[-1] == "workflows.run.ended"
-    assert kinds.count("workflows.task.started") == 3
-    assert kinds.count("workflows.task.ended") == 3
+    assert kinds.count("workflows.task.started") == 4  # with the Critic's (Story 6.4)
+    assert kinds.count("workflows.task.ended") == 4
     assert {r["opportunity_id"] for r in found} == {UUID(opp["id"])}
     summaries = {r["summary"] for r in found}
     assert {"engineering_agent running", "pm_agent succeeded", "run succeeded"} <= summaries
@@ -207,7 +207,7 @@ def test_progress_rows_are_not_updatable_by_psa_app(
     run_async(_record(db_url, opp["id"], run_id, AssessmentRunStatus.QUEUED))
     for sql in (
         "UPDATE workflows_progress SET summary = 'x' WHERE run_id = :r",
-        "UPDATE workflows_runs SET plan_version = 2 WHERE id = :r",
+        "UPDATE workflows_runs SET opportunity_id = opportunity_id WHERE id = :r",
         "UPDATE workflows_tasks SET requires = '{}' WHERE run_id = :r",
         "INSERT INTO platform_schedules (name, job_type, interval_s) VALUES ('x', 'x.y', 1)",
         "UPDATE platform_schedules SET job_type = 'x.y' WHERE false",

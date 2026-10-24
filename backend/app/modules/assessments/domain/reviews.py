@@ -1,5 +1,6 @@
 """Red Team Review rules (Story 6.5): review, run and Finding states, the Finding categories
-and severities, and the validation of the agent's proposed Findings. Pure."""
+and severities, and the validation of the agent's proposed Findings. Pure. (The Critic's
+rules, Story 6.4, are in `critic.py`; they share the review kinds, severities and limits.)"""
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -11,6 +12,8 @@ REVIEW_SUBJECT_TYPE = "assessments.review"
 
 class ReviewKind(StrEnum):
     RED_TEAM = "red_team"
+    CRITIC = "critic"
+    """Story 6.4: the Critic's review of an assessment run's Assessments."""
 
 
 class ReviewStatus(StrEnum):

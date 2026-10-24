@@ -49,6 +49,7 @@ from app.modules.conflicts.domain.conflicts import (
 )
 from app.modules.conflicts.domain.rules import ConflictCandidate, PositionCandidate
 from app.modules.conflicts.domain.semantic import (
+    NOT_RAISED_AGAIN,
     SEMANTIC_PREFIX,
     FindingSnapshot,
     LabelledFinding,
@@ -305,6 +306,9 @@ async def _resolve_gone(
     current: dict[str, tuple[UUID, int]],
     *,
     superseded: bool = False,
+    detected_by: DetectedBy = DetectedBy.SEMANTIC,
+    not_raised: str = NOT_RAISED_AGAIN,
+    actor: Actor = _GONE,
 ) -> int:
     """Resolve, as the system, every `open` semantic Conflict of the Opportunity that this
     pass did not raise (with `superseded`, only those citing an Assessment that is no longer
@@ -315,7 +319,7 @@ async def _resolve_gone(
             uow,
             opportunity_id,
             statuses=(ConflictStatus.OPEN.value,),
-            detected_by=DetectedBy.SEMANTIC.value,
+            detected_by=detected_by.value,
         )
         if c.id not in raised
     ]
@@ -331,9 +335,9 @@ async def _resolve_gone(
     versions = {agent: version for agent, (_, version) in current.items()}
     resolved = 0
     for conflict in gone:
-        reason = gone_reason(positions.get(conflict.id, []), versions)
+        reason = gone_reason(positions.get(conflict.id, []), versions, not_raised)
         if await repo.resolve(uow, conflict.id, reason=reason):
-            await _trace_resolved(uow, conflict, run_id, "no_longer_present", _GONE)
+            await _trace_resolved(uow, conflict, run_id, "no_longer_present", actor)
             resolved += 1
     return resolved
 

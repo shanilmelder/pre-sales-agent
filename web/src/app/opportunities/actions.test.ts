@@ -50,6 +50,7 @@ import {
   loadImport,
   loadOutdatedAssessments,
   loadRedTeam,
+  loadCritic,
   loadRequirements,
   loadSources,
   markClarificationQuestionsSent,
@@ -57,6 +58,7 @@ import {
   rejectRequirementChange,
   reopenGap,
   resolveConflict,
+  resolveRunDecision,
   retryAssessmentTask,
   retryParse,
   searchUsers,
@@ -806,6 +808,30 @@ describe("startRedTeamReview", () => {
   });
 });
 
+describe("loadCritic", () => {
+  it("reads the Opportunity's Critic Review (Story 6.4)", async () => {
+    const VIEW = { review: null };
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ data: VIEW, response: new Response(null, { status: 200 }) });
+    expect(await loadCritic(OPP_ID)).toEqual({ kind: "ok", critic: VIEW });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/critic", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await loadCritic(7)).toEqual({ kind: "error" });
+    expect(await loadCritic("../../users")).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("is an error when the API fails or throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    expect(await loadCritic(OPP_ID)).toEqual({ kind: "error" });
+    api.GET.mockRejectedValueOnce(new Error("network"));
+    expect(await loadCritic(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
 describe("loadRedTeam", () => {
   it("reads the Opportunity's Red Team Review and latest run", async () => {
     const VIEW = { review: null, run: null, can_start: false };
@@ -857,6 +883,14 @@ describe("startAssessmentRun / retryAssessmentTask / cancelAssessmentRun", () =>
     );
   });
 
+  it("posts the Critic's retry too (Story 6.4)", async () => {
+    api.POST.mockResolvedValue({ data: RUN, response: new Response(null, { status: 200 }) });
+    expect(await retryAssessmentTask(OPP_ID, RUN_ID, "critic_agent")).toEqual({
+      kind: "ok",
+      run: RUN,
+    });
+  });
+
   it("posts a cancel to the run's cancel route", async () => {
     const cancelled = { ...RUN, status: "cancelled" };
     api.POST.mockResolvedValue({ data: cancelled, response: new Response(null, { status: 200 }) });
@@ -899,6 +933,87 @@ describe("startAssessmentRun / retryAssessmentTask / cancelAssessmentRun", () =>
     });
     expect(await cancelAssessmentRun("nope", RUN_ID)).toEqual({ kind: "error" });
     expect(await cancelAssessmentRun(OPP_ID, undefined)).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveRunDecision (Story 5.5)", () => {
+  const RUN_ID = "00000000-0000-7000-8000-0000000000b1";
+  const DECISION_ID = "00000000-0000-7000-8000-0000000000d1";
+  const RUN = { id: RUN_ID, status: "queued", tasks: [] };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts the choice with If-Match and returns the queued run", async () => {
+    api.POST.mockResolvedValue({ data: RUN, response: new Response(null, { status: 200 }) });
+    expect(
+      await resolveRunDecision(OPP_ID, RUN_ID, DECISION_ID, 1, "continue_without"),
+    ).toEqual({ kind: "ok", run: RUN });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/decisions/{decision_id}/resolve",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, run_id: RUN_ID, decision_id: DECISION_ID },
+          header: { "If-Match": '"1"' },
+        },
+        body: { choice: "continue_without" },
+      },
+    );
+  });
+
+  it("maps 412 to stale with the API's sentence", async () => {
+    api.POST.mockResolvedValue({
+      error: { code: "row_version_mismatch", detail: "Already resolved by Ana Lee." },
+      response: new Response(null, { status: 412 }),
+    });
+    expect(await resolveRunDecision(OPP_ID, RUN_ID, DECISION_ID, 1, "replan")).toEqual({
+      kind: "stale",
+      message: "Already resolved by Ana Lee.",
+    });
+  });
+
+  it("maps 409 to conflict: a disabled agent says so, otherwise not open", async () => {
+    api.POST.mockResolvedValueOnce({
+      error: { code: "registry_agent_disabled", detail: "Security Agent is disabled" },
+      response: new Response(null, { status: 409 }),
+    });
+    expect(await resolveRunDecision(OPP_ID, RUN_ID, DECISION_ID, 1, "replan")).toEqual({
+      kind: "conflict",
+      detail: "Security Agent is disabled",
+    });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "decision_not_open" },
+      response: new Response(null, { status: 409 }),
+    });
+    expect(await resolveRunDecision(OPP_ID, RUN_ID, DECISION_ID, 1, "replan")).toEqual({
+      kind: "conflict",
+      detail: "This decision is no longer open.",
+    });
+  });
+
+  it.each([
+    [403, "forbidden"],
+    [404, "not-found"],
+    [500, "error"],
+  ])("maps %i to %s", async (status, kind) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error: { code: "x" }, response: new Response(null, { status }) });
+    expect(await resolveRunDecision(OPP_ID, RUN_ID, DECISION_ID, 2, "replan")).toEqual({ kind });
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(await resolveRunDecision("nope", RUN_ID, DECISION_ID, 1, "replan")).toEqual({
+      kind: "error",
+    });
+    expect(await resolveRunDecision(OPP_ID, RUN_ID, "nope", 1, "replan")).toEqual({
+      kind: "error",
+    });
+    expect(await resolveRunDecision(OPP_ID, RUN_ID, DECISION_ID, 0, "replan")).toEqual({
+      kind: "error",
+    });
+    expect(await resolveRunDecision(OPP_ID, RUN_ID, DECISION_ID, 1, "skip")).toEqual({
+      kind: "error",
+    });
     expect(api.POST).not.toHaveBeenCalled();
   });
 });

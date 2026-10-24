@@ -1,8 +1,9 @@
 """The DB-owned Agent Registry (Story 7.1) against a real, migrated Postgres as psa_app: the
 seed and its backfill, the spec's I/O matrix (register, new version, not deployed, bad
 contract, bad or duplicate id, disable), 403/412/428, the grants, trace events, disabled
-Agents in assessment runs and single-agent steps, run pinning, the profile override, the
-manifest's drift check and that no runtime path reads the agents' old code constants.
+Agents in assessment runs (escalated to a person since Story 5.5) and single-agent steps,
+run pinning, the profile override, the manifest's drift check and that no runtime path reads
+the agents' old code constants.
 
 Tests that disable a seeded Agent restore it (`restore_agents`): the registry is shared by
 every test. New config versions go on test Agents (`t<hex>_agent`) registered against a
@@ -59,11 +60,13 @@ from tests.test_intake_extraction import (
     HIDDEN,
     PROPOSE,
     RED_TEAM,
+    RESUME,
     drain,
     parsed,
 )
 from tests.test_intake_parse_job import _alembic
 from tests.test_role_admin import _admin, _signed_in
+from tests.test_workflows_decisions import resolve as resolve_decision
 
 storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
@@ -91,6 +94,10 @@ SEEDED_0026 = (
 SEEDED_0033 = (("conflict_agent", "Conflict Agent"),)
 """Story 6.2 seeds the Conflict Agent the same way."""
 SEEDED = SEEDED_0026 + SEEDED_0033
+MIGRATION_0039 = BACKEND / "migrations" / "versions" / "20261023_0039_critic_review.py"
+SEEDED_0039 = (("critic_agent", "Critic Agent"),)
+"""Story 6.4 seeds the Critic Agent the same way, granting the `assessments.run.read` tool."""
+EVERY_SEEDED = SEEDED + SEEDED_0039
 CODES = {
     403: "forbidden",
     404: "not_found",
@@ -119,7 +126,7 @@ def _config(**overrides: Any) -> dict[str, Any]:
         "prompt_version": 1,
         "input_schema_version": 1,
         "output_schema_version": 1,
-        "tool_permissions": ["intake.requirement.read"],
+        "tool_permissions": ["intake.requirement.list"],
         "budgets": {"max_tokens_per_run": 20000},
     }
     return {**body, **overrides}
@@ -174,7 +181,7 @@ def restore_agents(sync_engine: Engine) -> Iterator[None]:
                 "UPDATE registry_agents SET status = 'active', row_version = row_version + 1 "
                 "WHERE agent_id = ANY(:ids) AND status <> 'active'"
             ),
-            {"ids": [agent_id for agent_id, _ in SEEDED]},
+            {"ids": [agent_id for agent_id, _ in EVERY_SEEDED]},
         )
 
 
@@ -213,7 +220,7 @@ def test_the_committed_manifest_matches_the_code() -> None:
 
 def test_the_manifest_lists_every_prompt_schema_and_profile() -> None:
     manifest = deployed.load()
-    for agent_id, _ in SEEDED:
+    for agent_id, _ in EVERY_SEEDED:
         assert manifest.has_prompt(agent_id, 1), agent_id
         assert manifest.schema(agent_id, "input", 1) is not None
         output = manifest.schema(agent_id, "output", 1)
@@ -236,7 +243,11 @@ def test_prompt_hashes_ignore_line_endings(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("path", "seeded", "agent_id"),
-    [(MIGRATION, SEEDED_0026, "pm_agent"), (MIGRATION_0033, SEEDED_0033, "conflict_agent")],
+    [
+        (MIGRATION, SEEDED_0026, "pm_agent"),
+        (MIGRATION_0033, SEEDED_0033, "conflict_agent"),
+        (MIGRATION_0039, SEEDED_0039, "critic_agent"),
+    ],
 )
 def test_the_migration_seed_matches_the_domain_and_never_imports_the_app(
     path: Path, seeded: tuple[tuple[str, str], ...], agent_id: str
@@ -290,7 +301,10 @@ def test_agent_id_rules() -> None:
             rules.agent_id(bad)
     with pytest.raises(ValueError):
         rules.tool_permissions(["Not An Action"])
-    assert rules.tool_permissions(["a.b.read", "a.b.read"]) == ("a.b.read",)
+    assert rules.tool_permissions(["gaps.gap.list", "gaps.gap.list"]) == ("gaps.gap.list",)
+    for write in ("intake.requirement.edit", "a.b.read", "gaps.clarification_question.send"):
+        with pytest.raises(rules.ToolPermissionNotReadOnly):
+            rules.tool_permissions([write])
 
 
 def test_the_profile_override_applies_only_when_set_explicitly(
@@ -389,7 +403,7 @@ def test_the_migration_backfills_existing_assessments_to_version_one(
     assert (task["config_version_id"], task["skip_reason"]) == (seeded, None)
     assert [a["status"] for a in rows(sync_engine, "SELECT status FROM registry_agents")] == [
         "active"
-    ] * len(SEEDED)
+    ] * len(EVERY_SEEDED)
 
 
 # --- the API --------------------------------------------------------------------------------
@@ -456,7 +470,7 @@ def test_register_inserts_the_agent_and_version_one_with_a_trace_event(
     config = agent["current_config"]
     assert (config["version"], config["semver"], config["model_digest"]) == (1, "0.2.0", "unpinned")
     assert (config["contract_version"], config["created_by_id"]) == ("1", str(admin_id))
-    assert config["tool_permissions"] == ["intake.requirement.read"]
+    assert config["tool_permissions"] == ["intake.requirement.list"]
     assert config["budgets"] == {"max_tokens_per_run": 20000}
     (event,) = _events(sync_engine, agent["id"])
     assert event["event_type"] == "registry.agent.registered"
@@ -590,6 +604,31 @@ def test_invalid_config_fields_are_422(client: TestClient, test_manifest: str) -
         )
 
 
+def test_a_non_read_tool_permission_is_422_and_stores_nothing(
+    client: TestClient, sync_engine: Engine, test_manifest: str
+) -> None:
+    """Story 5.4: only the ToolGateway's READ tools can be granted."""
+    admin, _ = _admin(client)
+    _register(client, admin, test_manifest)
+    url = f"{URL}/{test_manifest}/config-versions"
+    for grant in (["intake.requirement.edit"], ["gaps.gap.list", "estimates.estimate.export"]):
+        resp = client.post(
+            url, headers={**admin, **_if_match(1)}, json=_config(tool_permissions=grant)
+        )
+        _problem(resp, 422, "tool_permission_not_read_only")
+    assert len(_version_rows(sync_engine, test_manifest)) == 1
+    resp = client.post(
+        URL,
+        headers=admin,
+        json={
+            "agent_id": f"{test_manifest[:-6]}_two_agent",
+            "name": "Second",
+            "config": _config(tool_permissions=["knowledge.source.retire"]),
+        },
+    )
+    _problem(resp, 422, "tool_permission_not_read_only")
+
+
 def test_disable_eval_only_and_enable_with_if_match_and_trace(
     client: TestClient, sync_engine: Engine, test_manifest: str
 ) -> None:
@@ -632,7 +671,8 @@ def test_psa_app_cannot_edit_or_delete_versions_or_delete_agents(sync_engine: En
         "UPDATE registry_agent_config_versions SET semver = '9.9.9' WHERE id = :v",
         "DELETE FROM registry_agent_config_versions WHERE id = :v",
         "DELETE FROM registry_agents WHERE agent_id = 'pm_agent' AND :v IS NOT NULL",
-        "UPDATE workflows_tasks SET config_version_id = :v WHERE false",
+        # Story 5.5: a Re-plan re-pins a task (`config_version_id`), but its Agent is fixed.
+        "UPDATE workflows_tasks SET agent = 'pm_agent' WHERE config_version_id = :v AND false",
     ):
         with pytest.raises(sa.exc.ProgrammingError, match="permission denied"):
             with sync_engine.begin() as conn:
@@ -642,13 +682,15 @@ def test_psa_app_cannot_edit_or_delete_versions_or_delete_agents(sync_engine: En
 # --- disabled Agents in runs ---------------------------------------------------------------
 
 
-def test_a_run_skips_a_disabled_agent_and_pins_the_others_versions(
+def test_a_run_escalates_a_disabled_agent_and_pins_every_version(
     client: TestClient,
     sync_engine: Engine,
     db_url: str,
     gateway: Any,
     restore_agents: None,
 ) -> None:
+    """Story 5.5: the disabled Agent's task is queued and pinned like the others; its node
+    asks a person, and Continue without skips it (`agent_disabled`)."""
     admin, _ = _admin(client)
     headers, opp = prepared(client, sync_engine, db_url, gateway)
     _set_status(client, admin, "security_agent", "disabled")
@@ -656,15 +698,30 @@ def test_a_run_skips_a_disabled_agent_and_pins_the_others_versions(
 
     body = started(client, headers, opp["id"])
     tasks = {t["agent"]: t for t in body["tasks"]}
-    assert (tasks["security_agent"]["status"], tasks["security_agent"]["skip_reason"]) == (
+    assert [(tasks[a]["status"], tasks[a]["skip_reason"]) for a in AGENTS] == [
+        ("queued", None)
+    ] * len(AGENTS)
+    assert drain(db_url, ASSESS) == ["succeeded"]
+    assert task_rows(sync_engine, body["id"])["security_agent"]["status"] == "queued"
+    waiting_view = client.get(f"{BASE}/{opp['id']}/assessments", headers=headers).json()
+    assert waiting_view["run"]["status"] == "waiting_for_human"
+    (decision,) = waiting_view["run"]["decisions"]
+    resolved = resolve_decision(
+        client, headers, opp["id"], body["id"], decision["id"], "continue_without"
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert drain(db_url, ASSESS, RESUME) == ["succeeded"]
+
+    assert {r.caller.agent_id for r in fake.requests} == {
+        "engineering_agent",
+        "pm_agent",
+        "critic_agent",  # Story 6.4: it reviews the two Assessments
+    }
+    pinned = task_rows(sync_engine, body["id"])
+    assert (pinned["security_agent"]["status"], pinned["security_agent"]["skip_reason"]) == (
         "skipped",
         "agent_disabled",
     )
-    assert [tasks[a]["status"] for a in ("engineering_agent", "pm_agent")] == ["queued"] * 2
-    assert drain(db_url, ASSESS) == ["succeeded"]
-
-    assert {r.caller.agent_id for r in fake.requests} == {"engineering_agent", "pm_agent"}
-    pinned = task_rows(sync_engine, body["id"])
     for request in fake.requests:
         assert request.caller.config_version == str(
             pinned[request.caller.agent_id]["config_version_id"]
@@ -702,7 +759,7 @@ def test_a_run_skips_a_disabled_agent_and_pins_the_others_versions(
     assert assessed["pm_agent"]["config_version_id"] == str(pinned["pm_agent"]["config_version_id"])
 
 
-def test_an_agent_disabled_while_its_task_is_queued_is_skipped_at_job_start(
+def test_an_agent_disabled_while_its_task_is_queued_escalates_when_its_node_runs(
     client: TestClient,
     sync_engine: Engine,
     db_url: str,
@@ -713,9 +770,17 @@ def test_an_agent_disabled_while_its_task_is_queued_is_skipped_at_job_start(
     headers, opp = prepared(client, sync_engine, db_url, gateway)
     fake = install(AgentGateway(replies()))
     body = started(client, headers, opp["id"])
-    assert [t["status"] for t in body["tasks"]] == ["queued"] * len(AGENTS)
+    assert [t["status"] for t in body["tasks"]] == ["queued"] * (len(AGENTS) + 1)
     _set_status(client, admin, "pm_agent", "eval_only")
     assert drain(db_url, ASSESS) == ["succeeded"]
+    waiting_view = client.get(f"{BASE}/{opp['id']}/assessments", headers=headers).json()
+    (decision,) = waiting_view["run"]["decisions"]
+    assert (decision["agent"], decision["status"]) == ("pm_agent", "open")
+    resolved = resolve_decision(
+        client, headers, opp["id"], body["id"], decision["id"], "continue_without"
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert drain(db_url, RESUME) == ["succeeded"]
     tasks = task_rows(sync_engine, body["id"])
     assert (tasks["pm_agent"]["status"], tasks["pm_agent"]["skip_reason"]) == (
         "skipped",

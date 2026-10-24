@@ -24,12 +24,16 @@ import { ActorTile } from "@/components/opportunities/actor-tile";
 import {
   RecommendationPill,
   TaskStatusPill,
+  WaitingForYouPill,
 } from "@/components/opportunities/specialist-assessments";
 import {
   agentLabel,
   confidenceLabel,
+  decisionSentence,
   evidenceLabels,
   failureReason,
+  isWaiting,
+  openDecision,
   skipNote,
   type AssessmentRun,
   type AssessmentsView,
@@ -434,6 +438,12 @@ const ATTENTION_DISPLAY: Record<
     tone: "text-blocker",
     action: "Review",
   },
+  "waiting-run": {
+    state: "Waiting for you",
+    icon: ClockIcon,
+    tone: "text-gap",
+    action: "Resolve",
+  },
   "escalated-conflict": {
     state: "Escalated",
     icon: ArrowUpIcon,
@@ -717,12 +727,15 @@ function LatestDecision({ id, assessments }: { id: string; assessments: Assessme
 
 // --- Agent run -------------------------------------------------------------------------------
 
-function taskNote(task: AssessmentRun["tasks"][number]): string | null {
+function taskNote(run: AssessmentRun, task: AssessmentRun["tasks"][number]): string | null {
+  const decision = task.status === "queued" ? openDecision(run, task.agent) : null;
+  if (decision) return decisionSentence(decision);
   return task.status === "failed" ? failureReason(task.error_code) : skipNote(task);
 }
 
 /** The latest Assessment run: when it started, how many tasks are done, and a compact card per
- * task. Shown only when a run exists; read-only (no Cancel here). */
+ * task. Shown only when a run exists; read-only (no Cancel or Resolve here). A run waiting for
+ * a person (Story 5.5) shows the amber Waiting for you pill, on the card and on the task. */
 function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsView | null }) {
   const run = assessments?.run ?? null;
   if (run === null) return null;
@@ -740,6 +753,7 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
             </time>{" "}
             · {tasksCompleteLabel(done, run.tasks.length)}
           </span>
+          {isWaiting(run) ? <WaitingForYouPill /> : null}
           <Link href={tabHref(id, "assessments")} className={outlineLink}>
             Open Assessments
           </Link>
@@ -747,13 +761,14 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
       }
     >
       {run.tasks.length > 0 ? (
-        <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-3">
+        <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-4">
           {run.tasks.map((task) => {
-            const note = taskNote(task);
+            const note = taskNote(run, task);
+            const waiting = task.status === "queued" && openDecision(run, task.agent) !== null;
             return (
               <li
                 key={task.agent}
-                data-task-status={task.status}
+                data-task-status={waiting ? "waiting_for_human" : task.status}
                 className={cn(
                   "flex flex-col gap-2.5 rounded-[10px] border border-border p-3.5",
                   task.status === "failed" && "bg-blocker-tint",
@@ -771,7 +786,7 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
                   </span>
                 </div>
                 <div className="flex">
-                  <TaskStatusPill status={task.status} />
+                  {waiting ? <WaitingForYouPill /> : <TaskStatusPill status={task.status} />}
                 </div>
                 {note ? (
                   <p

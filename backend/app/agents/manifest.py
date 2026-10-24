@@ -37,6 +37,8 @@ from app.agents.clarification_agent.schema import AnswerMatchOutput, Clarificati
 from app.agents.conflict_agent.agent import ConflictTask
 from app.agents.conflict_agent.schema import ConflictOutput
 from app.agents.contract import CONTRACT_VERSION
+from app.agents.critic_agent.agent import CriticTask
+from app.agents.critic_agent.schema import CriticOutput
 from app.agents.engineering_agent.schema import EngineeringOutput
 from app.agents.estimating_agent.agent import AssumptionsTask, EstimatingTask
 from app.agents.estimating_agent.schema import AssumptionsOutput, EstimatingOutput
@@ -84,6 +86,8 @@ SCHEMA_VERSIONS: tuple[SchemaVersion, ...] = (
     SchemaVersion("clarification_agent", "output", 1, ClarificationOutput | AnswerMatchOutput, "1"),
     SchemaVersion("conflict_agent", "input", 1, ConflictTask, "1"),
     SchemaVersion("conflict_agent", "output", 1, ConflictOutput, "1"),
+    SchemaVersion("critic_agent", "input", 1, CriticTask, "1"),
+    SchemaVersion("critic_agent", "output", 1, CriticOutput, "1"),
     SchemaVersion("engineering_agent", "input", 1, SpecialistTask, "1"),
     SchemaVersion("engineering_agent", "output", 1, EngineeringOutput, "1"),
     SchemaVersion("estimating_agent", "input", 1, EstimatingTask | AssumptionsTask, "1"),

@@ -1176,6 +1176,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/critic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Critic
+         * @description The Opportunity's current Critic Review (null before the first): the Critic's Findings
+         *     on the latest assessment run's Assessments, critical first, then high, medium and low,
+         *     each with the Requirements and the specialist Findings (at their Assessment version) it
+         *     cites, and the counts per severity. Anyone who can read the Opportunity; read-only.
+         */
+        get: operations["get_critic"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/red-team-reviews": {
         parameters: {
             query?: never;
@@ -1278,8 +1301,9 @@ export interface paths {
         put?: never;
         /**
          * Retry Assessment Task
-         * @description Re-run one failed task of the Opportunity's latest assessment run; the other tasks
-         *     keep their results. The owner and collaborators, except sales representatives.
+         * @description Re-run one failed task of the Opportunity's latest assessment run (a specialist's or,
+         *     Story 6.4, the Critic's); the other tasks keep their results. The owner and
+         *     collaborators, except sales representatives.
          */
         post: operations["retry_assessment_task"];
         delete?: never;
@@ -1305,6 +1329,29 @@ export interface paths {
          *     representatives.
          */
         post: operations["cancel_assessment_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/decisions/{decision_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Run Decision
+         * @description Resolve a decision the Opportunity's run waits on: `continue_without` skips the
+         *     Agent's task, `replan` (once the Agent is active again) re-pins it to the Agent's current
+         *     config version as a new plan version and runs it. The run resumes where it stopped. The
+         *     owner and collaborators, except sales representatives.
+         */
+        post: operations["resolve_run_decision"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2287,7 +2334,8 @@ export interface components {
         /**
          * AssessmentFinding
          * @description A specialist Finding: its kind, severity, specific title and detail, with the
-         *     Requirements it cites.
+         *     Requirements it cites. `injection_suspected` (Story 5.4): a cited Requirement's text
+         *     read like an injected instruction when the agent read it (the UI marks the row).
          */
         AssessmentFinding: {
             /** Id */
@@ -2302,12 +2350,16 @@ export interface components {
             detail: string;
             /** Requirements */
             requirements: components["schemas"]["FindingRequirement"][];
+            /** Injection Suspected */
+            injection_suspected: boolean;
         };
         /**
          * AssessmentRun
          * @description An assessment run: its status and one task per agent, in agent order. `queued_at`:
-         *     when it was last queued (a retry re-queues it); `finished_at`: null while in progress,
-         *     or for a lost run not yet recorded.
+         *     when it was last queued (a retry or a resolved decision re-queues it); `finished_at`:
+         *     null while in progress, or for a lost run not yet recorded. `waiting_for_human`: a
+         *     task waits on one of `decisions` (Story 5.5). `plan_version`: the run's current plan
+         *     version; `plan_versions` lists them all, oldest first.
          */
         AssessmentRun: {
             /** Id */
@@ -2327,12 +2379,27 @@ export interface components {
             finished_at: string | null;
             /** Tasks */
             tasks: components["schemas"]["AssessmentTask"][];
+            /**
+             * Plan Version
+             * @default 1
+             */
+            plan_version: number;
+            /**
+             * Decisions
+             * @default []
+             */
+            decisions: components["schemas"]["RunDecision"][];
+            /**
+             * Plan Versions
+             * @default []
+             */
+            plan_versions: components["schemas"]["PlanVersion"][];
         };
         /**
          * AssessmentRunStatus
          * @enum {string}
          */
-        AssessmentRunStatus: "queued" | "running" | "succeeded" | "partially_failed" | "failed" | "cancelled";
+        AssessmentRunStatus: "queued" | "running" | "succeeded" | "partially_failed" | "failed" | "cancelled" | "waiting_for_human";
         /**
          * AssessmentStatus
          * @enum {string}
@@ -2340,14 +2407,15 @@ export interface components {
         AssessmentStatus: "current" | "superseded";
         /**
          * AssessmentTask
-         * @description One agent's task in an assessment run. `error_code` is set only when `failed`;
+         * @description One agent's task in an assessment run: a specialist's, or (Story 6.4) the Critic's,
+         *     which runs once the specialists' have ended. `error_code` is set only when `failed`;
          *     `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
          *     panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
          *     `started_at` / `finished_at`: when the task last started and finished (null before
          *     either); the panel derives elapsed time from them.
          */
         AssessmentTask: {
-            agent: components["schemas"]["AssessmentAgent"];
+            agent: components["schemas"]["TaskAgent"];
             status: components["schemas"]["AssessmentTaskStatus"];
             error_code: components["schemas"]["RunErrorCode"] | null;
             skip_reason?: components["schemas"]["TaskSkipReason"] | null;
@@ -2402,8 +2470,9 @@ export interface components {
          * AssessmentsView
          * @description The Opportunity's latest assessment run (null before the first) with its tasks, and
          *     one entry per agent (Engineering, PM, Security) with its current Assessment or null.
-         *     `can_start`: whether the caller may start a run or retry a task. The UI only uses it to
-         *     hide controls; the API decides.
+         *     `can_start`: whether the caller may start a run or retry a task; `can_resolve`: whether
+         *     they may resolve the run's decisions (Story 5.5). The UI only uses them to hide
+         *     controls; the API decides.
          */
         AssessmentsView: {
             run: components["schemas"]["AssessmentRun"] | null;
@@ -2411,6 +2480,11 @@ export interface components {
             assessments: components["schemas"]["AgentAssessment"][];
             /** Can Start */
             can_start: boolean;
+            /**
+             * Can Resolve
+             * @default false
+             */
+            can_resolve: boolean;
         };
         /**
          * Assumption
@@ -2703,6 +2777,25 @@ export interface components {
             mandatory_count: number;
         };
         /**
+         * CitedFinding
+         * @description A specialist Finding a Critic Finding cites, at the Assessment version it was read:
+         *     the agent and its role in words, the Assessment's id and version, and the Finding's
+         *     title.
+         */
+        CitedFinding: {
+            /** Id */
+            id: string;
+            agent: components["schemas"]["AssessmentAgent"];
+            /** Role */
+            role: string;
+            /** Assessment Id */
+            assessment_id: string;
+            /** Assessment Version */
+            assessment_version: number;
+            /** Title */
+            title: string;
+        };
+        /**
          * ClarificationQuestion
          * @description A Gap's Clarification Question. `status` is `drafted` or `approved` (Story 4.5), then
          *     `sent` and `unanswered` ("No answer", Story 4.6), then `answered` (Story 4.7);
@@ -2943,6 +3036,89 @@ export interface components {
          * @enum {string}
          */
         ConvertedTo: "condition" | "contingency";
+        /**
+         * CriticCategory
+         * @enum {string}
+         */
+        CriticCategory: "coverage" | "unsupported_claim" | "timeline" | "dependency" | "risk_coverage";
+        /**
+         * CriticFinding
+         * @description A Critic Finding: its category, severity, specific title and argument, with the
+         *     Requirements and the specialist Findings it cites.
+         */
+        CriticFinding: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            category: components["schemas"]["CriticCategory"];
+            severity: components["schemas"]["Severity"];
+            /** Title */
+            title: string;
+            /** Argument */
+            argument: string;
+            /** Requirements */
+            requirements: components["schemas"]["FindingRequirement"][];
+            /** Findings */
+            findings: components["schemas"]["CitedFinding"][];
+        };
+        /**
+         * CriticReviewView
+         * @description The Opportunity's current Critic Review. `findings`: critical first, then high, medium
+         *     and low, then in the order they were raised (code-written coverage Findings last).
+         *     `run_id`: the assessment run reviewed. `dropped_count`: proposed Findings that broke a
+         *     rule.
+         */
+        CriticReviewView: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["ReviewStatus"];
+            /** Run Id */
+            run_id: string | null;
+            /** Dropped Count */
+            dropped_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            counts: components["schemas"]["SeverityCounts"];
+            /** Findings */
+            findings: components["schemas"]["CriticFinding"][];
+        };
+        /**
+         * CriticView
+         * @description The Opportunity's current Critic Review, null before the first. Read-only.
+         */
+        CriticView: {
+            review: components["schemas"]["CriticReviewView"] | null;
+        };
+        /**
+         * DecisionChoice
+         * @description What a person chose for a `plan_escalation`.
+         * @enum {string}
+         */
+        DecisionChoice: "continue_without" | "replan";
+        /**
+         * DecisionKind
+         * @description `workflows_decisions.kind`: what a person is asked to decide (Story 5.5).
+         * @enum {string}
+         */
+        DecisionKind: "plan_escalation";
+        /**
+         * DecisionResolution
+         * @description A person's choice on a decision the run waits on (Story 5.5).
+         */
+        DecisionResolution: {
+            choice: components["schemas"]["DecisionChoice"];
+        };
+        /**
+         * DecisionStatus
+         * @enum {string}
+         */
+        DecisionStatus: "open" | "resolved" | "cancelled";
         /**
          * DetectedBy
          * @enum {string}
@@ -4432,6 +4608,37 @@ export interface components {
             name: string;
         };
         /**
+         * PlanVersion
+         * @description One version of the run's plan (FR-15): v1 when the run was queued, v2+ on each
+         *     Re-plan. `created_by`: the person's name, or null for the system (an automatic run).
+         */
+        PlanVersion: {
+            /** Version */
+            version: number;
+            /** Created By */
+            created_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Tasks */
+            tasks: components["schemas"]["PlanVersionTask"][];
+        };
+        /**
+         * PlanVersionTask
+         * @description One task of a plan version: its Agent and the config version it was pinned to.
+         */
+        PlanVersionTask: {
+            agent: components["schemas"]["TaskAgent"];
+            /** Config Version Id */
+            config_version_id: string;
+            /** Config Version */
+            config_version: number | null;
+            /** Semver */
+            semver: string | null;
+        };
+        /**
          * PositionSource
          * @enum {string}
          */
@@ -4902,6 +5109,37 @@ export interface components {
             qa: number;
         };
         /**
+         * RunDecision
+         * @description A decision the run waits on, or waited on (Story 5.5). `plan_escalation`: the
+         *     Agent's task was not planned because the Agent is `disabled` or `eval_only`; a person
+         *     chooses `continue_without` (the task is skipped) or `replan` (allowed once
+         *     `agent_active`: the task is re-pinned to the Agent's current config and runs).
+         *     `row_version` is its ETag for `If-Match`. `resolved_by`: the resolver's name.
+         */
+        RunDecision: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["DecisionKind"];
+            agent: components["schemas"]["TaskAgent"];
+            /** Agent Name */
+            agent_name: string;
+            /** Agent Active */
+            agent_active: boolean;
+            status: components["schemas"]["DecisionStatus"];
+            choice: components["schemas"]["DecisionChoice"] | null;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Resolved By */
+            resolved_by: string | null;
+            /** Resolved At */
+            resolved_at: string | null;
+        };
+        /**
          * RunErrorCode
          * @enum {string}
          */
@@ -5037,6 +5275,13 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /**
+         * TaskAgent
+         * @description The Agents a run plans a task for, in the order they are listed: the specialists, then
+         *     the Critic (Story 6.4).
+         * @enum {string}
+         */
+        TaskAgent: "engineering_agent" | "pm_agent" | "security_agent" | "critic_agent";
         /**
          * TaskSkipReason
          * @description Why a task was skipped other than by a cancel (Story 7.1).
@@ -13992,6 +14237,116 @@ export interface operations {
             };
         };
     };
+    get_critic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CriticView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
     start_red_team_review: {
         parameters: {
             query?: never;
@@ -14452,7 +14807,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An assessment run is already queued or running (`assessment_in_progress`) */
+            /** @description An assessment run is already queued, running or waiting for a person (`assessment_in_progress`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14527,7 +14882,7 @@ export interface operations {
             path: {
                 opportunity_id: string;
                 run_id: string;
-                agent: components["schemas"]["AssessmentAgent"];
+                agent: components["schemas"]["TaskAgent"];
             };
             cookie?: never;
         };
@@ -14608,7 +14963,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description An assessment run is already queued or running (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`), or its agent is disabled in the Agent Registry (`registry_agent_disabled`) */
+            /** @description An assessment run is already queued, running or waiting (`assessment_in_progress`), or the task is not a failed task of the latest run, or that run was cancelled (`assessment_task_not_failed`), or its agent is disabled in the Agent Registry (`registry_agent_disabled`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14763,7 +15118,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The run is not the Opportunity's latest, or is no longer queued or running (`assessment_not_in_progress`) */
+            /** @description The run is not the Opportunity's latest, or is no longer queued, running or waiting for a person (`assessment_not_in_progress`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14787,6 +15142,215 @@ export interface operations {
             };
             /** @description An id is not a UUID (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    resolve_run_decision: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the decision as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                run_id: string;
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionResolution"];
+            };
+        };
+        responses: {
+            /** @description The run, `queued` again to resume, with the decision `resolved` */
+            200: {
+                headers: {
+                    /** @description The decision's row version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentRun"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no such assessment run or decision for it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The decision is not open: already resolved, or cancelled with its run, or the run isn't waiting for it (`decision_not_open`); or Re-plan while the Agent is still disabled in the Agent Registry (`registry_agent_disabled`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The decision changed since the caller read it (`row_version_mismatch`); the `detail` says who resolved it: "Already resolved by {name}." */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An id is not a UUID, or the choice is not `continue_without` or `replan` (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14855,7 +15419,7 @@ export interface operations {
                          * Event Type
                          * @enum {string}
                          */
-                        event_type: "workflows.run.queued" | "workflows.task.started" | "workflows.task.ended" | "workflows.run.ended";
+                        event_type: "workflows.run.queued" | "workflows.task.started" | "workflows.task.ended" | "workflows.run.ended" | "workflows.run.waiting_for_human";
                         /** Subject Type */
                         subject_type: string;
                         /** Subject Id */

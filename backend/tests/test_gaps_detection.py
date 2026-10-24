@@ -736,6 +736,7 @@ def test_a_successful_detection_queues_an_assessment_run(
     assert run["status"] == "queued"
     tasks = rows(sync_engine, "SELECT * FROM workflows_tasks WHERE run_id = :r", r=run["id"])
     assert sorted((t["agent"], t["status"]) for t in tasks) == [
+        ("critic_agent", "queued"),  # Story 6.4: after the specialists
         ("engineering_agent", "queued"),
         ("pm_agent", "queued"),
         ("security_agent", "queued"),
@@ -751,7 +752,7 @@ def test_a_successful_detection_queues_an_assessment_run(
         o=opp["id"],
     )
     assert (event["actor_type"], event["actor_id"]) == ("system", "workflows.execute")
-    assert (event["subject_id"], event["payload"]) == (run["id"], {"agent_count": 3})
+    assert (event["subject_id"], event["payload"]) == (run["id"], {"agent_count": 4})
 
 
 def test_a_failed_detection_queues_no_assessment_run(

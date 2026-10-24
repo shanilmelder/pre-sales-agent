@@ -11,6 +11,7 @@ import {
   LayoutPanelLeftIcon,
   LoaderCircleIcon,
   QuoteIcon,
+  ScanSearchIcon,
   ShieldCheckIcon,
   SparklesIcon,
   SwordsIcon,
@@ -30,8 +31,11 @@ import {
 import {
   cancelAssessmentRun,
   loadAssessments,
+  loadCritic,
+  resolveRunDecision,
   retryAssessmentTask,
   startAssessmentRun,
+  type ResolveDecisionResult,
   type StartAssessmentResult,
 } from "@/app/opportunities/actions";
 import { Card } from "@/components/ui/card";
@@ -39,6 +43,7 @@ import { Chip } from "@/components/ui/chip";
 import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
 import { AssessmentFindingInspector } from "@/components/opportunities/assessment-finding-inspector";
+import { CriticInspector } from "@/components/opportunities/critic-inspector";
 import { useFindingSelection } from "@/components/opportunities/finding-selection";
 import { CountChip, useRedTeam } from "@/components/opportunities/red-team-list";
 import { RedTeamInspector } from "@/components/opportunities/red-team-inspector";
@@ -70,16 +75,24 @@ import {
   CANCEL_RUN_KEEP,
   CANCEL_RUN_TITLE,
   confidenceLabel,
+  CONTINUE_WITHOUT,
+  decisionSentence,
+  ENABLE_AGENT_FIRST,
   evidenceLabels,
   failureReason,
   findingKey,
   isAssessing,
+  isWaiting,
   mergeFindings,
   NO_ASSESSMENT,
   NOTHING_TO_ASSESS,
+  openDecision,
+  planLabel,
+  planTaskLabel,
   RED_TEAM_LABEL,
   RED_TEAM_ROLE,
   recommendationInfo,
+  REPLAN,
   RUN_ASSESSMENT,
   runAlert,
   runStatusLabel,
@@ -93,14 +106,27 @@ import {
   taskElapsed,
   taskStatusLabel,
   WAITING_FOR_WORKER,
+  WAITING_FOR_YOU,
+  injectionSuspected,
+  POSSIBLE_INJECTION,
   type Assessment,
-  type AssessmentAgent,
   type AssessmentRun,
   type AssessmentsView,
+  type DecisionChoice,
   type FindingRow,
+  type PlanVersion,
   type Recommendation,
+  type RunDecision,
+  type TaskAgent,
   type TaskStatus,
 } from "@/lib/assessments";
+import {
+  CRITIC_LABEL,
+  CRITIC_REVIEWING,
+  criticReviewLabel,
+  type CriticReview,
+  type CriticView,
+} from "@/lib/critic";
 import { hours } from "@/lib/estimates";
 import { formatDateTime } from "@/lib/sources";
 import { useOpportunityEvents } from "@/lib/opportunity-events";
@@ -124,21 +150,24 @@ import { cn } from "@/lib/utils";
 export const RETRY = "Retry";
 const START_FAILED = "The assessment could not be started. Try again.";
 const CANCEL_FAILED = "The run could not be cancelled. Try again.";
+const RESOLVE_FAILED = "The decision could not be saved. Try again.";
 const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can run an assessment.";
 const ASSESSMENTS_NOT_LOADED =
   "The Specialist Assessments could not be loaded. Try again in a moment.";
 const RED_TEAM_NOT_LOADED =
   "The Red Team Review could not be loaded. Try again in a moment.";
+const CRITIC_NOT_LOADED = "The Critic Review could not be loaded. Try again in a moment.";
 export const NO_FINDINGS = "No Findings.";
 export const SHOW_EFFORT = "Show effort";
 export const HIDE_EFFORT = "Hide effort";
 
 /** Each agent's icon on its task card. */
-const AGENT_ICONS: Record<AssessmentAgent, LucideIcon> = {
+const AGENT_ICONS: Record<TaskAgent, LucideIcon> = {
   engineering_agent: LayoutPanelLeftIcon,
   pm_agent: CalendarRangeIcon,
   security_agent: ShieldCheckIcon,
+  critic_agent: ScanSearchIcon,
 };
 
 /** A recommendation: always an icon and a label, never colour alone. */
@@ -190,8 +219,9 @@ function SeverityCountsLine({ counts }: { counts: SeverityCounts }) {
 const FINDING_COLUMNS =
   "md:grid-cols-[5.5rem_9rem_minmax(0,1fr)_9rem_6.5rem]";
 
-/** Every agent's and the Red Team's Findings in one table, in the order given (ranked
- * critical to low): severity, type, the specific title, who raised it and the evidence counts.
+/** Every agent's, the Red Team's and the Critic's Findings in one table, in the order given
+ * (ranked critical to low): severity, type, the specific title, who raised it and the evidence
+ * counts (a Critic row also counts the specialist Findings it cites).
  * Critical rows are tinted red. One Tab stop (roving tabindex); j/k (with single-key shortcuts
  * on) or the arrows move between rows; Enter, Space or a click opens the row, which is then
  * `aria-selected`. */
@@ -289,14 +319,22 @@ export function FindingsTable({
                   <span className="truncate text-meta text-muted-foreground">
                     {row.type}
                   </span>
-                  <span className="col-span-2 min-w-0 text-body-strong md:col-span-1">
-                    {row.finding.title}
+                  <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 text-body-strong md:col-span-1">
+                    <span className="min-w-0">{row.finding.title}</span>
+                    {injectionSuspected(row) ? (
+                      <Pill tone="gap" className="w-fit">
+                        {POSSIBLE_INJECTION}
+                      </Pill>
+                    ) : null}
                   </span>
                   <span className="truncate text-body">{row.raisedBy}</span>
                   <span className="flex items-center gap-1 md:justify-end">
                     <CountChip count={row.requirements} kind="requirement" />
                     {row.lines !== null ? (
                       <CountChip count={row.lines} kind="line" />
+                    ) : null}
+                    {row.source === "critic" ? (
+                      <CountChip count={row.cited} kind="finding" />
                     ) : null}
                   </span>
                 </button>
@@ -486,6 +524,47 @@ export function RedTeamResultCard({ review }: { review: RedTeamReview }) {
   );
 }
 
+/** The Critic's result card (Story 6.4): "Critic v2" with its severity counts and Finding
+ * count, or "Critic reviewing" while the run's Critic task runs (before its first Review, the
+ * card shows only that). */
+export function CriticResultCard({
+  review,
+  reviewing = false,
+}: {
+  review: CriticReview | null;
+  reviewing?: boolean;
+}) {
+  return (
+    <ResultCard
+      name={CRITIC_LABEL}
+      badges={
+        review ? (
+          <>
+            <span className="text-meta text-muted-foreground">v{review.version}</span>
+            <SeverityCountsLine counts={review.counts} />
+          </>
+        ) : null
+      }
+    >
+      {reviewing ? (
+        <p data-testid="critic-reviewing" className="flex items-center gap-1.5 text-body">
+          <LoaderCircleIcon aria-hidden="true" className="size-3.5 shrink-0 text-agent" />
+          {CRITIC_REVIEWING}
+        </p>
+      ) : null}
+      {review ? (
+        <>
+          <p className="text-body">
+            <span className="sr-only">{criticReviewLabel(review)}: </span>
+            {findingCount(review.findings.length)} on the run&apos;s Assessments
+          </p>
+          <EvidenceChips items={evidenceLabels(review.findings)} />
+        </>
+      ) : null}
+    </ResultCard>
+  );
+}
+
 const TASK_PILL_ICONS: Record<TaskStatus, { icon: LucideIcon; tone: string }> =
   {
     queued: { icon: ClockIcon, tone: "text-muted-foreground" },
@@ -508,6 +587,20 @@ export function TaskStatusPill({ status }: { status: TaskStatus }) {
       className="w-[5.5rem] shrink-0"
     >
       {taskStatusLabel(status)}
+    </Pill>
+  );
+}
+
+/** A task waiting for a person's decision (Story 5.5): amber, with a clock icon. */
+export function WaitingForYouPill() {
+  return (
+    <Pill
+      data-task-pill="waiting_for_human"
+      tone={pillToneFor("text-gap")}
+      icon={<ClockIcon />}
+      className="shrink-0"
+    >
+      {WAITING_FOR_YOU}
     </Pill>
   );
 }
@@ -581,6 +674,7 @@ function TaskCard({
   elapsed,
   note,
   action,
+  waiting = false,
 }: {
   status: TaskStatus;
   icon: LucideIcon;
@@ -591,12 +685,24 @@ function TaskCard({
   elapsed?: string;
   note: string | null;
   action: ReactNode;
+  /** The task waits for a person's decision (Story 5.5): the amber Waiting for you pill. */
+  waiting?: boolean;
 }) {
   const failed = status === "failed";
   const runningDot = status === "running" && !stalled;
-  const StatusIcon = (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).icon;
+  const StatusIcon = waiting
+    ? ClockIcon
+    : (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).icon;
+  const statusTone = waiting
+    ? "text-gap"
+    : (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).tone;
   return (
-    <Card className={cn("h-full gap-3 p-4", taskCardTone(status))}>
+    <Card
+      className={cn(
+        "h-full gap-3 p-4",
+        waiting ? "border-gap bg-gap-tint" : taskCardTone(status),
+      )}
+    >
       <div className="flex items-start gap-3">
         <span
           aria-hidden="true"
@@ -617,18 +723,13 @@ function TaskCard({
               className="size-5 text-agent"
             />
           ) : (
-            <StatusIcon
-              className={cn(
-                "size-5",
-                (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).tone,
-              )}
-            />
+            <StatusIcon className={cn("size-5", statusTone)} />
           )}
         </span>
       </div>
       <StateBar status={status} still={stalled} />
       <div className="flex items-center justify-between gap-2 text-label">
-        <TaskStatusPill status={status} />
+        {waiting ? <WaitingForYouPill /> : <TaskStatusPill status={status} />}
         {elapsed !== undefined ? (
           <span
             data-testid="elapsed"
@@ -644,14 +745,58 @@ function TaskCard({
           data-part="note"
           className={cn(
             "text-label",
-            failed ? "text-blocker" : "text-muted-foreground",
+            failed ? "text-blocker" : waiting ? "text-foreground" : "text-muted-foreground",
           )}
         >
           {note}
         </p>
       ) : null}
-      {action ? <div className="flex gap-2">{action}</div> : null}
+      {action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
     </Card>
+  );
+}
+
+/** **Continue without** and **Re-plan** for a waiting task's decision (Story 5.5). Re-plan
+ * is disabled, with "Enable the agent first", while the Agent is still disabled. */
+function DecisionActions({
+  decision,
+  busy,
+  onResolve,
+}: {
+  decision: RunDecision;
+  busy: boolean;
+  onResolve?: (decision: RunDecision, choice: DecisionChoice) => void;
+}) {
+  const hintId = useId();
+  const name = decision.agent_name || agentLabel(decision.agent);
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        disabled={busy}
+        aria-label={`${CONTINUE_WITHOUT} ${name}`}
+        onClick={() => onResolve?.(decision, "continue_without")}
+      >
+        {CONTINUE_WITHOUT}
+      </Button>
+      <Button
+        type="button"
+        size="xs"
+        disabled={busy || !decision.agent_active}
+        aria-label={`${REPLAN} with ${name}`}
+        aria-describedby={decision.agent_active ? undefined : hintId}
+        onClick={() => onResolve?.(decision, "replan")}
+      >
+        {REPLAN}
+      </Button>
+      {decision.agent_active ? null : (
+        <span id={hintId} className="text-meta text-muted-foreground">
+          {ENABLE_AGENT_FIRST}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -675,21 +820,27 @@ export type RedTeamTask = {
  * worker"; failed tasks give the reason and **Retry** for those who may start one (never in
  * a cancelled run); a task skipped because its Agent is disabled says "Agent disabled —
  * assess manually". Elapsed time comes from the task's timestamps and the browser's clock, so
- * it ticks without a fetch. */
+ * it ticks without a fetch. A task waiting for a person's decision (Story 5.5) shows the
+ * amber **Waiting for you** pill, why ("Security assessment not planned: Security Agent is
+ * disabled") and, for those who may resolve it, **Continue without** and **Re-plan**. */
 export function AgentRunPanel({
   run,
   redTeam = null,
   canStart = false,
+  canResolve = false,
   busy = false,
   stalled = false,
   onRetry,
+  onResolve,
 }: {
   run: AssessmentRun | null;
   redTeam?: RedTeamTask | null;
   canStart?: boolean;
+  canResolve?: boolean;
   busy?: boolean;
   stalled?: boolean;
-  onRetry?: (agent: AssessmentAgent) => void;
+  onRetry?: (agent: TaskAgent) => void;
+  onResolve?: (decision: RunDecision, choice: DecisionChoice) => void;
 }) {
   const assessing = isAssessing(run);
   const now = useNow(assessing && !stalled);
@@ -698,19 +849,25 @@ export function AgentRunPanel({
   return (
     <ul
       aria-label="Agent progress"
-      className="grid w-full grid-cols-1 gap-4 md:grid-cols-3"
+      className="grid w-full grid-cols-1 gap-4 md:grid-cols-4"
     >
       {(run?.tasks ?? []).map((task) => {
         const failed = task.status === "failed";
-        const note =
-          task.status === "queued"
+        const decision = task.status === "queued" ? openDecision(run, task.agent) : null;
+        const note = decision
+          ? decisionSentence(decision)
+          : task.status === "queued"
             ? WAITING_FOR_WORKER
             : failed
               ? failureReason(task.error_code)
               : skipNote(task);
         return (
-          <li key={task.agent} data-task-status={task.status}>
+          <li
+            key={task.agent}
+            data-task-status={decision ? "waiting_for_human" : task.status}
+          >
             <TaskCard
+              waiting={decision !== null}
               status={task.status}
               icon={AGENT_ICONS[task.agent] ?? SparklesIcon}
               name={agentLabel(task.agent)}
@@ -719,10 +876,15 @@ export function AgentRunPanel({
               elapsed={taskElapsed(task, now)}
               note={note}
               action={
-                failed &&
-                canStart &&
-                !assessing &&
-                run?.status !== "cancelled" ? (
+                decision ? (
+                  canResolve ? (
+                    <DecisionActions decision={decision} busy={busy} onResolve={onResolve} />
+                  ) : null
+                ) : failed &&
+                  canStart &&
+                  !assessing &&
+                  !isWaiting(run) &&
+                  run?.status !== "cancelled" ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -821,6 +983,30 @@ function CancelRunButton({
   );
 }
 
+/** "Plan v{n}" with a disclosure listing each plan version's Agents and config versions, who
+ * made it and when (FR-15, Story 5.5). */
+function PlanVersions({ current, versions }: { current: number; versions: PlanVersion[] }) {
+  if (versions.length === 0) {
+    return <span className="text-meta text-muted-foreground">{planLabel(current)}</span>;
+  }
+  return (
+    <details data-testid="plan-versions" className="text-meta text-muted-foreground">
+      <summary className="cursor-pointer select-none">{planLabel(current)}</summary>
+      <ol className="mt-2 flex flex-col gap-2">
+        {versions.map((plan) => (
+          <li key={plan.version} data-plan-version={plan.version} className="flex flex-col">
+            <span className="text-body-strong text-foreground">
+              {planLabel(plan.version)} · {plan.created_by ?? "Automatic run"} ·{" "}
+              <time dateTime={plan.created_at}>{formatDateTime(plan.created_at)}</time>
+            </span>
+            <span>{plan.tasks.map(planTaskLabel).join(" · ")}</span>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 /** The tone of a counter's number. */
 const COUNTER_TONES: Record<string, string> = {
   complete: "text-primary-text",
@@ -828,9 +1014,10 @@ const COUNTER_TONES: Record<string, string> = {
   running: "text-agent",
 };
 
-/** The run header: a card with the run's status, when it started, its counters (over the
- * run's tasks plus `extraStatuses`, e.g. the Red Team's) and, for those who may start one,
- * **Cancel run** (while queued or running) over **Start new run**; then an alert when the run
+/** The run header: a card with the run's status, when it started, its plan version (with
+ * the plan history), its counters (over the run's tasks plus `extraStatuses`, e.g. the Red
+ * Team's) and, for those who may start one, **Cancel run** (while queued, running or waiting
+ * for a person) over **Start new run**; then an alert when the run
  * stopped early. Before any run, only **Run assessment** (for those who may start one).
  * "Still assessing — reload to check." once polling has stopped. */
 export function SpecialistAssessmentsHeader({
@@ -860,6 +1047,7 @@ export function SpecialistAssessmentsHeader({
   onCancel?: () => void;
 }) {
   const assessing = isAssessing(run);
+  const active = assessing || isWaiting(run);
   const startRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (focusStartRequest > 0) startRef.current?.focus();
@@ -868,7 +1056,7 @@ export function SpecialistAssessmentsHeader({
     <Button
       ref={startRef}
       type="button"
-      disabled={busy || assessing}
+      disabled={busy || active}
       onClick={() => onStart?.()}
     >
       {run ? START_NEW_RUN : RUN_ASSESSMENT}
@@ -902,6 +1090,7 @@ export function SpecialistAssessmentsHeader({
             <p className="text-meta text-muted-foreground">
               Started {formatDateTime(run.queued_at || run.created_at)}
             </p>
+            <PlanVersions current={run.plan_version ?? 1} versions={run.plan_versions ?? []} />
           </div>
           {statuses.length > 0 ? (
             <ul
@@ -932,7 +1121,7 @@ export function SpecialistAssessmentsHeader({
           ) : null}
           {canStart ? (
             <div className="flex flex-col gap-2">
-              {assessing ? (
+              {active ? (
                 <CancelRunButton busy={busy} onConfirm={onCancel} />
               ) : null}
               {start}
@@ -1005,27 +1194,31 @@ function Subsection({
   );
 }
 
-/** The Assessments tab body: the run header and alert, the Agent tasks (each specialist task
- * of the latest run, then the Red Team's run), Results so far (one card per agent with an
- * Assessment, then the Red Team review) and one Findings table across all of them; the
+/** The Assessments tab body: the run header and alert, the Agent tasks (each task of the
+ * latest run, the Critic's last, then the Red Team's run), Results so far (one card per agent
+ * with an Assessment, the Red Team review, then the Critic Review, Story 6.4, "Critic
+ * reviewing" while its task runs) and one Findings table across all of them; the
  * selected Finding's inspector goes in the right pane (opened if closed). It follows the
  * Opportunity's event stream (Story 5.2) and is re-read as each task starts and ends, a run
  * is queued or ends, and whenever the stream (re)connects. While the stream is not connected
  * and a run is queued or running, it falls back to re-reading every 2 s: paused while the tab
  * is hidden, and stopped after 15 minutes. The Red Team is re-read the same way while it
  * reviews (`useRedTeam`). Inside a `FindingSelectionProvider` its selection is shared with
- * the tab's other sections. Read-only for sales representatives (no Run assessment, Retry or
- * Cancel run). `redTeam` null says the Red Team could not be loaded; left out, the Red Team
- * is not shown. */
+ * the tab's other sections. Read-only for sales representatives (no Run assessment, Retry,
+ * Cancel run, Continue without or Re-plan). `redTeam` null says the Red Team could not be
+ * loaded; left out, the Red Team is not shown. The Critic Review is re-read with the run;
+ * `critic` null says it could not be loaded; left out, none is shown until a re-read. */
 export function SpecialistAssessmentsSection({
   opportunityId,
   initial,
   redTeam: redTeamInitial,
+  critic: criticInitial,
   assessmentsFailed = false,
 }: {
   opportunityId: string;
   initial: AssessmentsView;
   redTeam?: RedTeamView | null;
+  critic?: CriticView | null;
   /** The Assessments read failed (`initial` is an empty view): say so instead of the
    * no-Assessment text. */
   assessmentsFailed?: boolean;
@@ -1040,6 +1233,10 @@ export function SpecialistAssessmentsSection({
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<AssessmentsView>(initial);
   const redTeam = useRedTeam(opportunityId, redTeamInitial ?? null);
+  const [critic, setCritic] = useState<CriticView | null>(criticInitial ?? null);
+  const [criticSyncedFrom, setCriticSyncedFrom] = useState(criticInitial);
+  /** The Critic Review could not be read (on load, until a re-read succeeds). */
+  const [criticFailed, setCriticFailed] = useState(criticInitial === null);
   const [selectedKey, setSelectedKey] = useFindingSelection("assessments");
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
@@ -1082,6 +1279,16 @@ export function SpecialistAssessmentsSection({
       appliedSeq.current = seq;
       const wasAssessing = assessingRef.current;
       setView(result.assessments);
+      try {
+        // The Critic Review moves with the run (its task is the run's last).
+        const loaded = await loadCritic(opportunityId);
+        if (loaded.kind === "ok" && seq === appliedSeq.current) {
+          setCritic(loaded.critic);
+          setCriticFailed(false);
+        }
+      } catch {
+        // Kept as it is; the next re-read tries again.
+      }
       const { run, assessments } = result.assessments;
       if (wasAssessing && run && !isAssessing(run)) {
         routerRef.current.refresh();
@@ -1108,9 +1315,17 @@ export function SpecialistAssessmentsSection({
     setView(initial);
     setStalled(false);
   }
+  if (criticInitial !== criticSyncedFrom) {
+    setCriticSyncedFrom(criticInitial);
+    setCritic(criticInitial ?? null);
+    setCriticFailed(criticInitial === null);
+  }
 
   const review = redTeam.view?.review ?? null;
-  const rows = mergeFindings(view.assessments, review);
+  const criticReview = critic?.review ?? null;
+  const criticTask = view.run?.tasks.find((t) => t.agent === "critic_agent");
+  const criticReviewing = assessing && criticTask?.status === "running";
+  const rows = mergeFindings(view.assessments, review, criticReview);
   const selected =
     selectedKey === null
       ? null
@@ -1256,12 +1471,66 @@ export function SpecialistAssessmentsSection({
     }
   }
 
+  /** Resolve a waiting task's decision (Story 5.5). A 412 says who resolved it first and
+   * re-reads; a 409 (no longer open, or the Agent is still disabled) says why and re-reads. */
+  async function resolveDecision(decision: RunDecision, choice: DecisionChoice) {
+    if (busy || !runId) return;
+    setBusy(true);
+    setMessage(null);
+    let result: ResolveDecisionResult;
+    try {
+      result = await resolveRunDecision(
+        opportunityId,
+        runId,
+        decision.id,
+        decision.row_version,
+        choice,
+      );
+    } catch {
+      result = { kind: "error" };
+    }
+    setBusy(false);
+    if (result.kind === "ok") {
+      const { run } = result;
+      mutation.current += 1;
+      assessingSince.current = null;
+      setStalled(false);
+      setView((current) => ({ ...current, run }));
+      announce(runStatusLabel(run));
+      return;
+    }
+    const sentence =
+      result.kind === "stale"
+        ? result.message
+        : result.kind === "conflict"
+          ? result.detail
+          : result.kind === "forbidden"
+            ? NOT_ALLOWED
+            : result.kind === "not-found"
+              ? NO_ACCESS_TO_OPPORTUNITY
+              : RESOLVE_FAILED;
+    setMessage(sentence);
+    announce(sentence);
+    if (result.kind === "stale" || result.kind === "conflict") {
+      try {
+        const loaded = await loadAssessments(opportunityId);
+        if (loaded.kind === "ok") {
+          mutation.current += 1;
+          setView(loaded.assessments);
+        }
+      } catch {
+        // The section stays as it is.
+      }
+    }
+  }
+
   const runId = view.run?.id;
   const redRun = redTeam.view?.run ?? null;
   const results = view.assessments.flatMap((slot) =>
     slot.assessment ? [slot.assessment] : [],
   );
-  const anyResult = results.length > 0 || review !== null;
+  const anyResult =
+    results.length > 0 || review !== null || criticReview !== null || criticReviewing;
   const taskStatuses: TaskStatus[] = [
     ...(view.run?.tasks.map((t) => t.status) ?? []),
     ...(redRun ? [redRun.status] : []),
@@ -1322,11 +1591,13 @@ export function SpecialistAssessmentsSection({
           <AgentRunPanel
             run={view.run}
             canStart={view.can_start}
+            canResolve={view.can_resolve ?? false}
             busy={busy}
             stalled={assessing && stalled}
             onRetry={(agent) =>
               void act(() => retryAssessmentTask(opportunityId, runId, agent))
             }
+            onResolve={(decision, choice) => void resolveDecision(decision, choice)}
             redTeam={
               redRun
                 ? {
@@ -1352,6 +1623,7 @@ export function SpecialistAssessmentsSection({
         </p>
       ))}
       {redTeamInitial === null ? <p>{RED_TEAM_NOT_LOADED}</p> : null}
+      {criticFailed ? <p>{CRITIC_NOT_LOADED}</p> : null}
       {anyResult ? (
         <Subsection title="Results so far">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1359,6 +1631,9 @@ export function SpecialistAssessmentsSection({
               <AssessmentCard key={assessment.agent} assessment={assessment} />
             ))}
             {review ? <RedTeamResultCard review={review} /> : null}
+            {criticReview || criticReviewing ? (
+              <CriticResultCard review={criticReview} reviewing={criticReviewing} />
+            ) : null}
           </div>
         </Subsection>
       ) : null}
@@ -1391,6 +1666,12 @@ export function SpecialistAssessmentsSection({
               key={findingKey(selected)}
               finding={selected.finding}
               agent={selected.agent}
+              focusRequest={focusRequest}
+            />
+          ) : selected.source === "critic" ? (
+            <CriticInspector
+              key={findingKey(selected)}
+              finding={selected.finding}
               focusRequest={focusRequest}
             />
           ) : (

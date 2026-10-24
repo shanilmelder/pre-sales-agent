@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 10-23-2026 20:35
+last_updated: 10-24-2026 12:52
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -84,7 +84,7 @@ development_status:
   5-1-start-a-workflow-run-with-pinned-inputs-and-a-versioned-plan: done
   5-2-durable-langgraph-execution-in-the-worker: done
   5-3-assessments-and-the-standard-assessment-contract: done
-  5-4-toolgateway-with-task-scoped-read-only-tools-and-research-sn: backlog
+  5-4-toolgateway-with-task-scoped-read-only-tools-and-research-sn: in-progress
   5-5-pause-for-human-input-resume-and-cancel: done
   5-6-budgets-timeouts-and-failure-handling: backlog
   5-7-agent-run-panel-and-activity-tab: done
@@ -97,7 +97,7 @@ development_status:
   6-1-detect-conflicts-with-deterministic-rules: done
   6-2-llm-assisted-conflict-detection-for-free-text: done
   6-3-resolve-conflicts-with-a-reason: done
-  6-4-critic-review: backlog
+  6-4-critic-review: review
   6-5-red-team-review: done
   6-6-blocking-findings-and-overrides: backlog
   epic-6-retrospective: optional

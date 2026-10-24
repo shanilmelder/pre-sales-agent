@@ -9,6 +9,13 @@ import {
 
 import type { components } from "@/lib/api/client";
 import {
+  CRITIC_LABEL,
+  CRITIC_ROLE,
+  criticCategoryLabel,
+  type CriticFinding,
+  type CriticReview,
+} from "@/lib/critic";
+import {
   categoryLabel,
   REVIEW_FAILURE_REASONS,
   SEVERITIES,
@@ -27,9 +34,14 @@ export type AssessmentEffort = components["schemas"]["AssessmentEffort"];
 export type AssessmentRun = components["schemas"]["AssessmentRun"];
 export type AssessmentTask = components["schemas"]["AssessmentTask"];
 export type AssessmentAgent = components["schemas"]["AssessmentAgent"];
+/** An Agent a run plans a task for: a specialist, or the Critic (Story 6.4). */
+export type TaskAgent = components["schemas"]["TaskAgent"];
 export type Recommendation = components["schemas"]["Recommendation"];
 export type Confidence = components["schemas"]["Confidence"];
 export type FindingKind = components["schemas"]["FindingKind"];
+export type RunDecision = components["schemas"]["RunDecision"];
+export type DecisionChoice = components["schemas"]["DecisionChoice"];
+export type PlanVersion = components["schemas"]["PlanVersion"];
 
 /** The specialist agents by role, in the order the tab lists them. */
 export const AGENTS: readonly { value: AssessmentAgent; label: string }[] = [
@@ -38,20 +50,23 @@ export const AGENTS: readonly { value: AssessmentAgent; label: string }[] = [
   { value: "security_agent", label: "Security Agent" },
 ];
 
-/** An agent's role in words (its own id for one this build doesn't know). */
-export function agentLabel(value: AssessmentAgent): string {
+/** An agent's role in words ("Critic" for the Critic; its own id for one this build doesn't
+ * know). */
+export function agentLabel(value: TaskAgent): string {
+  if (value === "critic_agent") return CRITIC_LABEL;
   return AGENTS.find((a) => a.value === value)?.label ?? value;
 }
 
-/** One line on what each agent assesses, shown on its run card. */
-export const AGENT_ROLES: Record<AssessmentAgent, string> = {
+/** One line on what each agent assesses (or checks), shown on its run card. */
+export const AGENT_ROLES: Record<TaskAgent, string> = {
   engineering_agent: "Feasibility, architecture and per-integration effort",
   pm_agent: "Delivery approach, phases and customer dependencies",
   security_agent: "Mandatory controls and the effort they need",
+  critic_agent: CRITIC_ROLE,
 };
 
 /** An agent's role description ("" for one this build doesn't know). */
-export function agentRole(value: AssessmentAgent): string {
+export function agentRole(value: TaskAgent): string {
   return AGENT_ROLES[value] ?? "";
 }
 
@@ -126,6 +141,48 @@ export function isAssessing(run: AssessmentRun | null | undefined): boolean {
   return run?.status === "queued" || run?.status === "running";
 }
 
+/** True while the run waits for a person to resolve a decision (Story 5.5). */
+export function isWaiting(run: AssessmentRun | null | undefined): boolean {
+  return run?.status === "waiting_for_human";
+}
+
+/** The run's open decision on the agent's task, while the run waits (null otherwise). */
+export function openDecision(
+  run: AssessmentRun | null | undefined,
+  agent: TaskAgent,
+): RunDecision | null {
+  if (!isWaiting(run)) return null;
+  return run?.decisions?.find((d) => d.agent === agent && d.status === "open") ?? null;
+}
+
+/** The waiting task's pill (Story 5.5). */
+export const WAITING_FOR_YOU = "Waiting for you";
+export const CONTINUE_WITHOUT = "Continue without";
+export const REPLAN = "Re-plan";
+/** Why Re-plan is disabled: the Agent is still disabled in the Agent Registry. */
+export const ENABLE_AGENT_FIRST = "Enable the agent first";
+
+/** "Security assessment not planned: Security Agent is disabled". */
+export function decisionSentence(decision: Pick<RunDecision, "agent" | "agent_name">): string {
+  const name = decision.agent_name || agentLabel(decision.agent);
+  const short = name.replace(/ Agent$/, "");
+  return `${short} assessment not planned: ${name} is disabled`;
+}
+
+/** "Plan v2". */
+export function planLabel(version: number): string {
+  return `Plan v${version}`;
+}
+
+/** One plan version's Agents and pins: "Engineering Agent 0.1.0 (config v1)". */
+export function planTaskLabel(task: PlanVersion["tasks"][number]): string {
+  const pin =
+    task.semver === null
+      ? ""
+      : ` ${task.semver}${task.config_version === null ? "" : ` (config v${task.config_version})`}`;
+  return `${agentLabel(task.agent)}${pin}`;
+}
+
 /** The latest run's status in words. */
 export const RUN_STATUS_LABELS: Record<AssessmentRun["status"], string> = {
   queued: "Assessment queued",
@@ -134,6 +191,7 @@ export const RUN_STATUS_LABELS: Record<AssessmentRun["status"], string> = {
   partially_failed: "Assessment partly failed",
   failed: "Assessment failed",
   cancelled: "Cancelled — completed results kept",
+  waiting_for_human: WAITING_FOR_YOU,
 };
 
 export function runStatusLabel(run: AssessmentRun): string {
@@ -210,6 +268,15 @@ export const NOTHING_TO_ASSESS = "There were no active Requirements to assess.";
 /** An agent without a current Assessment while others have one. */
 export const NO_AGENT_ASSESSMENT = "No Assessment yet.";
 
+/** Story 5.4: the marker on a Finding that cites a Requirement whose text read like an
+ * injected instruction when the agent read it (`injection_suspected`). */
+export const POSSIBLE_INJECTION = "Possible injected instruction";
+
+/** Whether a Findings row is a specialist Finding flagged `injection_suspected`. */
+export function injectionSuspected(row: FindingRow): boolean {
+  return row.source === "specialist" && row.finding.injection_suspected;
+}
+
 /** Shown instead of the running indicator once polling has stopped (15 minutes). */
 export const STILL_ASSESSING = "Still assessing — reload to check.";
 
@@ -284,8 +351,8 @@ export function runAlert(
   };
 }
 
-/** One row of the Assessments tab's Findings table: a specialist agent's or the Red Team's
- * Finding. */
+/** One row of the Assessments tab's Findings table: a specialist agent's, the Red Team's or
+ * (Story 6.4) the Critic's Finding. `cited`: the specialist Findings a Critic Finding cites. */
 export type FindingRow =
   | {
       source: "specialist";
@@ -307,12 +374,23 @@ export type FindingRow =
       raisedBy: string;
       requirements: number;
       lines: number;
+    }
+  | {
+      source: "critic";
+      finding: CriticFinding;
+      id: string;
+      severity: Severity;
+      type: string;
+      raisedBy: string;
+      requirements: number;
+      lines: null;
+      cited: number;
     };
 
-/** A Finding row's selection key, unique across both sources ("red-team:<id>",
+/** A Finding row's selection key, unique across the sources ("red-team:<id>", "critic:<id>",
  * "<agent>:<id>"). */
 export function findingKey(row: FindingRow): string {
-  return `${row.source === "red-team" ? "red-team" : row.agent}:${row.id}`;
+  return `${row.source === "specialist" ? row.agent : row.source}:${row.id}`;
 }
 
 function severityRank(value: Severity): number {
@@ -320,11 +398,13 @@ function severityRank(value: Severity): number {
   return index === -1 ? SEVERITIES.length : index;
 }
 
-/** Every agent's Findings and the Red Team's in one list, ranked critical to low (a stable
- * sort: the agents in tab order, then the Red Team, each in the API's order). */
+/** Every agent's Findings, the Red Team's and the Critic's in one list, ranked critical to low
+ * (a stable sort: the agents in tab order, then the Red Team, then the Critic, each in the
+ * API's order). */
 export function mergeFindings(
   assessments: readonly AgentAssessment[],
   review: Pick<RedTeamReview, "findings"> | null | undefined,
+  critic: Pick<CriticReview, "findings"> | null | undefined = null,
 ): FindingRow[] {
   const rows: FindingRow[] = [];
   for (const slot of assessments) {
@@ -352,6 +432,19 @@ export function mergeFindings(
       raisedBy: RED_TEAM_LABEL,
       requirements: finding.requirements.length,
       lines: finding.lines.length,
+    });
+  }
+  for (const finding of critic?.findings ?? []) {
+    rows.push({
+      source: "critic",
+      finding,
+      id: finding.id,
+      severity: finding.severity,
+      type: criticCategoryLabel(finding.category),
+      raisedBy: CRITIC_LABEL,
+      requirements: finding.requirements.length,
+      lines: null,
+      cited: finding.findings.length,
     });
   }
   return rows
@@ -409,6 +502,7 @@ export function runStatusTone(status: AssessmentRun["status"]): string {
     case "running":
       return "text-agent";
     case "partially_failed":
+    case "waiting_for_human":
       return "text-gap";
     case "failed":
       return "text-blocker";

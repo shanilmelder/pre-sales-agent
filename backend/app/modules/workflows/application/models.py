@@ -9,24 +9,28 @@ from pydantic import BaseModel
 
 from app.modules.assessments.application.public import (
     AgentAssessment,
-    AssessmentAgent,
     RunErrorCode,
 )
 from app.modules.workflows.domain.runs import (
     AssessmentRunStatus,
     AssessmentTaskStatus,
+    DecisionChoice,
+    DecisionKind,
+    DecisionStatus,
+    TaskAgent,
     TaskSkipReason,
 )
 
 
 class AssessmentTask(BaseModel):
-    """One agent's task in an assessment run. `error_code` is set only when `failed`;
+    """One agent's task in an assessment run: a specialist's, or (Story 6.4) the Critic's,
+    which runs once the specialists' have ended. `error_code` is set only when `failed`;
     `skip_reason` only when `skipped` because its Agent is disabled (`agent_disabled`: the
     panel says "Agent disabled — assess manually"); a cancel's skipped tasks have none.
     `started_at` / `finished_at`: when the task last started and finished (null before
     either); the panel derives elapsed time from them."""
 
-    agent: AssessmentAgent
+    agent: TaskAgent
     status: AssessmentTaskStatus
     error_code: RunErrorCode | None
     skip_reason: TaskSkipReason | None = None
@@ -34,10 +38,51 @@ class AssessmentTask(BaseModel):
     finished_at: datetime | None
 
 
+class RunDecision(BaseModel):
+    """A decision the run waits on, or waited on (Story 5.5). `plan_escalation`: the
+    Agent's task was not planned because the Agent is `disabled` or `eval_only`; a person
+    chooses `continue_without` (the task is skipped) or `replan` (allowed once
+    `agent_active`: the task is re-pinned to the Agent's current config and runs).
+    `row_version` is its ETag for `If-Match`. `resolved_by`: the resolver's name."""
+
+    id: str
+    kind: DecisionKind
+    agent: TaskAgent
+    agent_name: str
+    agent_active: bool
+    status: DecisionStatus
+    choice: DecisionChoice | None
+    row_version: int
+    created_at: datetime
+    resolved_by: str | None
+    resolved_at: datetime | None
+
+
+class PlanVersionTask(BaseModel):
+    """One task of a plan version: its Agent and the config version it was pinned to."""
+
+    agent: TaskAgent
+    config_version_id: str
+    config_version: int | None
+    semver: str | None
+
+
+class PlanVersion(BaseModel):
+    """One version of the run's plan (FR-15): v1 when the run was queued, v2+ on each
+    Re-plan. `created_by`: the person's name, or null for the system (an automatic run)."""
+
+    version: int
+    created_by: str | None
+    created_at: datetime
+    tasks: list[PlanVersionTask]
+
+
 class AssessmentRun(BaseModel):
     """An assessment run: its status and one task per agent, in agent order. `queued_at`:
-    when it was last queued (a retry re-queues it); `finished_at`: null while in progress,
-    or for a lost run not yet recorded."""
+    when it was last queued (a retry or a resolved decision re-queues it); `finished_at`:
+    null while in progress, or for a lost run not yet recorded. `waiting_for_human`: a
+    task waits on one of `decisions` (Story 5.5). `plan_version`: the run's current plan
+    version; `plan_versions` lists them all, oldest first."""
 
     id: str
     status: AssessmentRunStatus
@@ -45,17 +90,28 @@ class AssessmentRun(BaseModel):
     queued_at: datetime
     finished_at: datetime | None
     tasks: list[AssessmentTask]
+    plan_version: int = 1
+    decisions: list[RunDecision] = []
+    plan_versions: list[PlanVersion] = []
+
+
+class DecisionResolution(BaseModel):
+    """A person's choice on a decision the run waits on (Story 5.5)."""
+
+    choice: DecisionChoice
 
 
 class AssessmentsView(BaseModel):
     """The Opportunity's latest assessment run (null before the first) with its tasks, and
     one entry per agent (Engineering, PM, Security) with its current Assessment or null.
-    `can_start`: whether the caller may start a run or retry a task. The UI only uses it to
-    hide controls; the API decides."""
+    `can_start`: whether the caller may start a run or retry a task; `can_resolve`: whether
+    they may resolve the run's decisions (Story 5.5). The UI only uses them to hide
+    controls; the API decides."""
 
     run: AssessmentRun | None
     assessments: list[AgentAssessment]
     can_start: bool
+    can_resolve: bool = False
 
 
 class ProgressEventData(BaseModel):
@@ -67,6 +123,7 @@ class ProgressEventData(BaseModel):
         "workflows.task.started",
         "workflows.task.ended",
         "workflows.run.ended",
+        "workflows.run.waiting_for_human",
     ]
     subject_type: str
     subject_id: str

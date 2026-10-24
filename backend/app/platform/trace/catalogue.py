@@ -18,13 +18,18 @@ EVENT_TYPE_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 # past participles here when an event needs one. This is a heuristic, not a guarantee:
 # non-past words that end in "ed" (need, seed) also pass, so reviewers still check names.
 _IRREGULAR_PAST_TENSE = frozenset({"built", "done", "lost", "made", "run", "sent", "split", "won"})
+# A state entered rather than a verb: named events the architecture fixes (Story 5.5).
+_STATE_EVENTS = frozenset({"waiting_for_human"})
 
 
 def is_valid_event_type(name: str) -> bool:
     """Shape check plus the past-tense heuristic above (not a grammatical guarantee)."""
     if not EVENT_TYPE_RE.match(name):
         return False
-    last_word = name.rsplit(".", 1)[1].rsplit("_", 1)[-1]
+    verb = name.rsplit(".", 1)[1]
+    if verb in _STATE_EVENTS:
+        return True
+    last_word = verb.rsplit("_", 1)[-1]
     return last_word.endswith("ed") or last_word in _IRREGULAR_PAST_TENSE
 
 
@@ -677,6 +682,28 @@ class AssessmentsRedTeamReviewCompleted(TracePayload):
     superseded_count: int
 
 
+@register
+class AssessmentsCriticReviewCompleted(TracePayload):
+    """An accepted Critic task created a Critic Review (Story 6.4). Subject: the Review
+    (`assessments.review`). Actor: the agent (`critic_agent@<semver>`). Counts only: Findings
+    stored (and per severity), proposed Findings dropped, coverage Findings written by code
+    for uncovered Requirements the agent did not report, Conflicts raised from its
+    contradictions, and earlier Critic Reviews superseded."""
+
+    event_type: ClassVar[str] = "assessments.critic_review.completed"
+
+    version: int
+    finding_count: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    dropped_count: int
+    backstopped_count: int
+    conflict_count: int
+    superseded_count: int
+
+
 # Epic 5 slice 5A. Payloads hold ids, enums and counts only, never Requirement, Gap or Finding
 # text.
 
@@ -734,9 +761,10 @@ class AssessmentsAssessmentCompleted(TracePayload):
 @register
 class AssessmentsTaskSkipped(TracePayload):
     """An assessment run's task was skipped before it started because its Agent is not
-    active in the Agent Registry (Story 7.1): when the run was queued, or when its job
-    started. Subject: the run (`assessments.assessment_run`). Actor: whoever queued the run,
-    or the system when the job skipped it. Ids and the reason only; nobody is notified."""
+    active in the Agent Registry (Story 7.1): since Story 5.5, when a person chose Continue
+    without on the run's `plan_escalation` (runs before it: when the run was queued or its
+    job started). Subject: the run (`assessments.assessment_run`). Actor: the system
+    (`workflows.execute`), which skips it when the run resumes. Ids and the reason only."""
 
     event_type: ClassVar[str] = "assessments.task.skipped"
 
@@ -745,6 +773,38 @@ class AssessmentsTaskSkipped(TracePayload):
     agent: str
     config_version_id: str
     reason: Literal["agent_disabled"]
+
+
+@register
+class WorkflowsRunWaitingForHuman(TracePayload):
+    """A run paused for a person (Story 5.5): a task's Agent is `disabled` or `eval_only`,
+    so its node recorded a `plan_escalation` decision and the run waits until someone
+    chooses Continue without or Re-plan. Subject: the run (`assessments.assessment_run`).
+    Actor: the system (`workflows.execute`). Ids and codes only."""
+
+    event_type: ClassVar[str] = "workflows.run.waiting_for_human"
+
+    decision_id: str
+    task_id: str
+    agent: str
+    kind: Literal["plan_escalation"]
+
+
+@register
+class WorkflowsDecisionResolved(TracePayload):
+    """A person resolved a decision a run waited on (Story 5.5); the run is queued again to
+    resume. Subject: the run (`assessments.assessment_run`). Actor: that person. Ids and
+    codes only; `plan_version`: the run's plan version after it (a Re-plan bumps it)."""
+
+    event_type: ClassVar[str] = "workflows.decision.resolved"
+
+    decision_id: str
+    task_id: str
+    agent: str
+    kind: Literal["plan_escalation"]
+    choice: Literal["continue_without", "replan"]
+    plan_version: int
+    row_version: int
 
 
 @register
@@ -951,6 +1011,28 @@ class KnowledgeChecklistRetired(TracePayload):
     discarded_draft: bool
 
 
+# Story 5.4: Research Snapshots. Ids, codes, sizes and hashes only, never the URL or page text.
+
+
+@register
+class KnowledgeResearchSnapshotCaptured(TracePayload):
+    """The research fetch kept a page as an immutable Research Snapshot. Subject: the snapshot
+    (`knowledge.research_snapshot`). Actor: the Agent (`<agent_id>@<semver>`). The URL is not
+    traced (it may carry customer terms); the row holds it."""
+
+    event_type: ClassVar[str] = "knowledge.research_snapshot.captured"
+
+    run_id: str | None
+    task_id: str | None
+    http_status: int
+    content_type: Literal["text/html", "text/plain"]
+    content_sha256: str
+    text_sha256: str
+    byte_count: int
+    char_count: int
+    parser: str
+
+
 # --- conflicts ------------------------------------------------------------------------------
 
 
@@ -1111,3 +1193,21 @@ class RegistryEvalCompleted(TracePayload):
     failure_count: int
     passed: bool
     accepted: bool
+
+
+# --- platform -----------------------------------------------------------------------------
+
+
+@register
+class PlatformToolCallDenied(TracePayload):
+    """The ToolGateway refused an Agent's tool call (Story 5.4). Subject: the call's
+    `platform_tool_calls` row (`platform.tool_call`). Actor: the Agent. `actor_id`:
+    `<agent_id>@<semver>`; `reason`: `tool_not_permitted | out_of_scope | unknown_tool |
+    not_allowlisted`. Ids and codes only."""
+
+    event_type: ClassVar[str] = "platform.tool_call.denied"
+
+    actor_id: str
+    tool: str
+    reason: Literal["tool_not_permitted", "out_of_scope", "unknown_tool", "not_allowlisted"]
+    task_id: str | None

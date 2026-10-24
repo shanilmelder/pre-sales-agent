@@ -12,7 +12,8 @@ run or task status.
 Assessment when a run finishes (the Estimate is built from them, Story 8.3, and the Conflict
 rules run over them, Story 6.1). `current_finding_snapshots` and `finding_titles` give
 `conflicts` the current Findings for the Conflict Agent and a cited Finding's title and kind
-(Story 6.2).
+(Story 6.2). Their run-scoped variants (`run_assessment_snapshots`, `run_finding_snapshots`)
+give the Critic the Assessments accepted in one run (Story 6.4).
 
 Logs and trace carry ids, codes and counts only, never Requirement, Gap or Finding text.
 """
@@ -47,6 +48,7 @@ from app.platform.actor import Actor
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
 from app.platform.model_gateway.port import ModelOutputInvalidError
+from app.platform.prompt_data import injection_suspected
 from app.platform.trace.catalogue import AssessmentsAssessmentCompleted
 from app.platform.uow import UnitOfWork
 
@@ -71,6 +73,8 @@ class AssessedRequirement:
     version: int
     classification: str
     text: str = field(repr=False)
+    injection_suspected: bool = False
+    """Its text read like an injected instruction (`platform.prompt_data`, Story 5.4)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,11 +97,12 @@ class AssessmentInputs:
     gaps: Sequence[AssessedGap] = field(default=(), repr=False)
 
 
-async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs:
-    """The Opportunity's active Requirements at their current versions, labelled `R<n>`, and
-    its open Gaps, labelled `G<n>` (queries; no authorization)."""
-    snapshots = await intake.active_requirement_snapshots(uow, opportunity_id)
-    open_gaps = await gaps.open_gap_summaries(uow, opportunity_id)
+def build_inputs(
+    requirements: Sequence[intake.RequirementSnapshot], open_gaps: Sequence[gaps.GapSummary]
+) -> AssessmentInputs:
+    """What a task read, labelled: the active Requirements `R<n>` (by their stable number,
+    each flagged when its text reads like an injected instruction) and the open Gaps
+    `G<n>` in the order given."""
     return AssessmentInputs(
         requirements=[
             AssessedRequirement(
@@ -106,8 +111,9 @@ async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs
                 version=s.version,
                 classification=s.classification,
                 text=s.text,
+                injection_suspected=injection_suspected(s.text),
             )
-            for s in snapshots
+            for s in requirements
         ],
         gap_count=len(open_gaps),
         gaps=[
@@ -120,6 +126,16 @@ async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs
             )
             for n, g in enumerate(open_gaps, start=1)
         ],
+    )
+
+
+async def load_inputs(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentInputs:
+    """The Opportunity's active Requirements at their current versions, labelled `R<n>`, and
+    its open Gaps, labelled `G<n>` (queries; no authorization). The specialist executors read
+    them through the ToolGateway instead (Story 5.4) and call `build_inputs`."""
+    return build_inputs(
+        await intake.active_requirement_snapshots(uow, opportunity_id),
+        await gaps.open_gap_summaries(uow, opportunity_id),
     )
 
 
@@ -187,6 +203,7 @@ async def accept_assessment(
         for r in inputs.requirements
         if (r.requirement_id, r.version) in current
     }
+    flagged = {(r.requirement_id, r.version) for r in inputs.requirements if r.injection_suspected}
     validation = validate_assessment(proposed, labels)
     if validation is None:
         _log.info("assessments.assessment_reply_invalid", extra={**ids, "agent": agent.value})
@@ -221,6 +238,7 @@ async def accept_assessment(
                 title=f.title,
                 detail=f.detail,
                 requirements=list(f.requirements),
+                injection_suspected=any(ref in flagged for ref in f.requirements),
             )
             for position, f in enumerate(validation.findings, start=1)
         ],
@@ -268,15 +286,30 @@ async def accept_assessment(
     return validation
 
 
+def _in_agent_order(records: Sequence[repo.AssessmentRecord]) -> list[repo.AssessmentRecord]:
+    return sorted(records, key=lambda r: AGENTS.index(AssessmentAgent(r.agent)))
+
+
 async def current_assessment_snapshots(
     uow: UnitOfWork, opportunity_id: UUID
 ) -> list[conflicts.AssessmentSnapshot]:
     """Each agent's current Assessment of the Opportunity: id, version, recommendation and
     effort rows (Requirement id and version, hours), in agent order. No authorization."""
-    records = sorted(
-        await repo.current_assessments(uow, opportunity_id),
-        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
-    )
+    return await _assessment_snapshots(uow, await repo.current_assessments(uow, opportunity_id))
+
+
+async def run_assessment_snapshots(
+    uow: UnitOfWork, opportunity_id: UUID, run_id: UUID
+) -> list[conflicts.AssessmentSnapshot]:
+    """`current_assessment_snapshots` for the Assessments accepted in the run (Story 6.4: what
+    the Critic reviews), the newest per agent. No authorization."""
+    return await _assessment_snapshots(uow, await repo.run_assessments(uow, opportunity_id, run_id))
+
+
+async def _assessment_snapshots(
+    uow: UnitOfWork, found: Sequence[repo.AssessmentRecord]
+) -> list[conflicts.AssessmentSnapshot]:
+    records = _in_agent_order(found)
     effort: dict[UUID, list[conflicts.EffortSnapshot]] = {}
     for row in await repo.effort_of(uow, [r.id for r in records]):
         effort.setdefault(row.assessment_id, []).append(
@@ -305,10 +338,21 @@ async def current_finding_snapshots(
     the Conflict Agent compares): ids, the agent and Assessment version, kind, severity,
     title, detail and the cited Requirements (id and version), in agent and Finding order.
     No authorization."""
-    records = sorted(
-        await repo.current_assessments(uow, opportunity_id),
-        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
-    )
+    return await _finding_snapshots(uow, await repo.current_assessments(uow, opportunity_id))
+
+
+async def run_finding_snapshots(
+    uow: UnitOfWork, opportunity_id: UUID, run_id: UUID
+) -> list[conflicts.FindingSnapshot]:
+    """`current_finding_snapshots` for the Assessments accepted in the run (Story 6.4: what
+    the Critic reviews), the newest per agent. No authorization."""
+    return await _finding_snapshots(uow, await repo.run_assessments(uow, opportunity_id, run_id))
+
+
+async def _finding_snapshots(
+    uow: UnitOfWork, assessed: Sequence[repo.AssessmentRecord]
+) -> list[conflicts.FindingSnapshot]:
+    records = _in_agent_order(assessed)
     by_id = {r.id: r for r in records}
     found = await repo.findings_of(uow, list(by_id))
     cited: dict[UUID, list[tuple[UUID, int]]] = {}

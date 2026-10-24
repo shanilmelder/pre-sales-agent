@@ -67,11 +67,17 @@ def test_before_any_run_there_is_none(client: TestClient, sync_engine: Engine) -
 
     assert mine.status_code == 200, mine.text
     empty = [{"agent": agent, "assessment": None} for agent in AGENTS]
-    assert mine.json() == {"run": None, "assessments": empty, "can_start": True}
+    assert mine.json() == {
+        "run": None,
+        "assessments": empty,
+        "can_start": True,
+        "can_resolve": True,
+    }
     assert _get(client, reader, opp["id"]).json() == {
         "run": None,
         "assessments": empty,
         "can_start": False,
+        "can_resolve": False,
     }
 
 
@@ -88,7 +94,8 @@ def test_the_assessments_show_ranked_findings_chips_effort_and_totals(
     assert queued["run"]["queued_at"] is not None
     assert queued["run"]["finished_at"] is None
     assert [(t["started_at"], t["finished_at"]) for t in queued["run"]["tasks"]] == [
-        (None, None) for _ in AGENTS
+        (None, None)
+        for _ in range(len(AGENTS) + 1)  # and the Critic's (Story 6.4)
     ]
     assert drain(db_url, ASSESS) == ["succeeded"]
 
@@ -98,7 +105,7 @@ def test_the_assessments_show_ranked_findings_chips_effort_and_totals(
     run = view["run"]
     assert (run["id"], run["status"]) == (body["id"], "succeeded")
     assert [(t["agent"], t["status"], t["error_code"]) for t in run["tasks"]] == [
-        (agent, "succeeded", None) for agent in AGENTS
+        (agent, "succeeded", None) for agent in (*AGENTS, "critic_agent")
     ]
     queued_at, finished_at = _at(run["queued_at"]), _at(run["finished_at"])
     for task in run["tasks"]:  # each task's window sits inside the run's
@@ -309,6 +316,7 @@ def test_a_lost_run_reads_as_failed_and_can_be_started_again(
         ("engineering_agent", "failed", "model_timeout"),
         ("pm_agent", "succeeded", None),
         ("security_agent", "failed", "model_timeout"),
+        ("critic_agent", "failed", "model_timeout"),
     ]
     timings = {t["agent"]: (t["started_at"], t["finished_at"]) for t in run["tasks"]}
     assert timings["engineering_agent"] == (None, None)  # never started: no time to show
@@ -431,7 +439,8 @@ def test_who_may_cancel_and_who_reads_a_cancelled_run(
     assert (run["id"], run["status"]) == (body["id"], "cancelled")
     assert run["finished_at"] is not None
     assert [(t["status"], t["started_at"], t["finished_at"]) for t in run["tasks"]] == [
-        ("skipped", None, None) for _ in AGENTS
+        ("skipped", None, None)
+        for _ in range(len(AGENTS) + 1)  # and the Critic's
     ]
 
 
@@ -467,6 +476,7 @@ def test_after_a_cancel_a_new_run_starts_and_the_cancelled_one_cant_be_retried(
         "engineering_agent": "skipped",
         "pm_agent": "skipped",
         "security_agent": "failed",
+        "critic_agent": "skipped",
     }
     refused = retry(client, headers, opp["id"], body["id"], "security_agent")
     assert refused.status_code == 409

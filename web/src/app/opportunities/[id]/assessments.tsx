@@ -1,5 +1,6 @@
 import {
   getAssessments,
+  getCritic,
   getEstimate,
   getOpportunity,
   getRedTeam,
@@ -14,23 +15,30 @@ import type { AssessmentsView } from "@/lib/assessments";
 import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** The view shown when the Assessments read fails, so the Red Team still renders. */
-const EMPTY_ASSESSMENTS: AssessmentsView = { run: null, assessments: [], can_start: false };
+const EMPTY_ASSESSMENTS: AssessmentsView = {
+  run: null,
+  assessments: [],
+  can_start: false,
+  can_resolve: false,
+};
 
 /** Tab 5: the Opportunity's Assessments: the run header, Agent tasks, Results so far and
- * one Findings table across the Engineering, PM and Security Agents and the Red Team
- * (Story 6.5, folded in as a fourth agent), then the Effort comparison (Story 5.3: the
- * agents' hours per Requirement next to the Estimate's). Only one Finding is selected at a
- * time. A failed Assessments or Red Team read says so; the other still renders. Renders nothing when the user may not read the Opportunity; the
- * workspace layout shows why. */
+ * one Findings table across the Engineering, PM and Security Agents, the Red Team (Story 6.5,
+ * folded in as a fourth agent) and the Critic (Story 6.4, a fifth), then the Effort comparison
+ * (Story 5.3: the agents' hours per Requirement next to the Estimate's). Only one Finding is
+ * selected at a time. A failed Assessments, Red Team or Critic read says so; the others still
+ * render. Renders nothing when the user may not read the Opportunity; the workspace layout
+ * shows why. */
 export async function AssessmentsTab({ id }: { id: string }) {
   const result = await getMe();
   if (!hasAccess(result)) return null;
   const loaded = await getOpportunity(id);
   if (loaded.kind !== "ok") return null;
   const { opportunity } = loaded;
-  const [assessments, redTeam, estimate, requirements] = await Promise.all([
+  const [assessments, redTeam, critic, estimate, requirements] = await Promise.all([
     getAssessments(opportunity.id),
     getRedTeam(opportunity.id),
+    getCritic(opportunity.id),
     getEstimate(opportunity.id),
     listRequirements(opportunity.id),
   ]);
@@ -44,6 +52,7 @@ export async function AssessmentsTab({ id }: { id: string }) {
           initial={assessments.kind === "ok" ? assessments.assessments : EMPTY_ASSESSMENTS}
           assessmentsFailed={assessments.kind !== "ok"}
           redTeam={redTeam.kind === "ok" ? redTeam.redTeam : null}
+          critic={critic.kind === "ok" ? critic.critic : null}
         />
         <EffortComparisonSection
           requirements={requirements.kind === "ok" ? requirements.list.items : null}

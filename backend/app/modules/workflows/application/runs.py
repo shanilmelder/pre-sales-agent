@@ -1,36 +1,52 @@
 """Workflow Runs (Story 5.2; moved from `assessments`, Epic 5 slice 5A and Stories 5.1, 5.5,
-7.1): queueing, retry, cancel, finishing, and the `workflows.execute` job.
+7.1): queueing, retry, cancel, pause and resume, finishing, and the `workflows.execute` and
+`workflows.resume` jobs.
 
-**Queueing.** `queue_run` inserts a `queued` run (plan version 1) with one `queued` task per
-specialist Agent (`engineering_agent`, `pm_agent`, `security_agent`; none `requires`
-another, so they run concurrently) and one job (background priority). Each task pins its
-Agent's current config version from the Agent Registry; a task whose Agent is `disabled` or
-`eval_only` is inserted `skipped` (`agent_disabled`, traced). `enqueue_run` (Story 5.1:
-after every successful Gap detection) queues one as the system, coalescing with a run
-already queued or running. `requeue_task` puts one `failed` task back to `queued` and
-enqueues a job for the run again (a fresh graph invocation on the same thread runs only that
-task). The callers hold the Opportunity's run lock until commit.
+**Queueing.** `queue_run` inserts a `queued` run (plan version 1, stored in
+`workflows_plan_versions`) with one `queued` task per specialist Agent (`engineering_agent`,
+`pm_agent`, `security_agent`; none `requires` another, so they run concurrently), one
+`critic_agent` task that runs `after` all of them, once each has ended whatever the outcome
+(Story 6.4: the Critic reviews the Assessments the run accepted), and one job (background
+priority). Each task pins its Agent's current config version from the Agent
+Registry, active or not: a task whose Agent is `disabled` or `eval_only` asks a person when
+its node is reached (Story 5.5, below). `enqueue_run` (Story 5.1: after every successful Gap
+detection) queues one as the system, coalescing with a run already queued, running or
+waiting for a person. `requeue_task` puts one `failed` task back to `queued` (Story 6.4: with
+every ended task that runs `after` it, i.e. the Critic's, so the retried Assessment is
+reviewed again) and enqueues a job for the run again (a fresh graph invocation on the same
+thread runs only those tasks). The callers hold the Opportunity's run lock until commit.
 
-**The job** (`workflows.execute`, one per run queueing). Short Unit of Work: skips the
-tasks still `queued` whose Agent is no longer active and marks the run `running` (nothing
-left: finishes it). Then, with no Unit of Work open, the graph runner the worker installed
-(`install_runner`; only the worker imports `app.orchestration` and `langgraph`) executes the
-run as a LangGraph graph checkpointed under `thread_id = run_id`: one node per task, each
-re-reading its task here, starting it, calling its Agent and submitting the result. A node
-whose Agent call fails reports the error and, on the job's final attempt, marks its task
-`failed`; before that the task stays `running` for the next attempt, which re-runs only
-unfinished tasks. When no task is left in progress the run is finished: `succeeded`,
-`partially_failed` or `failed`, traced, and (when a task succeeded) the Estimate is built
-from the Assessments and the Conflict rules run (Stories 8.3, 6.1), then the semantic
-Conflict detection is queued (Story 6.2).
+**The job** (`workflows.execute`, one per run queueing). Short Unit of Work: marks the run
+`running` (nothing left: finishes it). Then, with no Unit of Work open, the graph runner the
+worker installed (`install_runner`; only the worker imports `app.orchestration` and
+`langgraph`) executes the run as a LangGraph graph checkpointed under `thread_id = run_id`:
+one node per task, each re-reading its task here, starting it, calling its Agent and
+submitting the result. A node whose Agent call fails reports the error and, on the job's
+final attempt, marks its task `failed`; before that the task stays `running` for the next
+attempt, which re-runs only unfinished tasks. When no task is left in progress the run is
+finished: `succeeded`, `partially_failed` or `failed`, traced, and (when a specialist task
+succeeded) the Estimate is built from the Assessments and the Conflict rules run (Stories 8.3, 6.1),
+then the semantic Conflict detection is queued (Story 6.2).
 
 A run stuck past `stale_after()` (its job died without recording it) is failed on the next
-start, retry or cancel: its unfinished tasks `failed` / `model_timeout`.
+start, retry or cancel: its unfinished tasks `failed` / `model_timeout`. A run waiting for a
+person is never stale.
 
-**Cancelling** (Story 5.5). `cancel` marks the run's unfinished tasks `skipped` and the run
-`cancelled`. While the graph works, the handler re-reads the run every `CANCEL_POLL_S`
-seconds and, once it is `cancelled`, cancels the graph (its in-flight Agent calls release
-their model slots) and ends without error; no node starts afterwards.
+**Pausing and resuming** (Story 5.5). A node whose task's Agent is not active records a
+`plan_escalation` decision and interrupts the graph (`interrupt()`); the other nodes of the
+superstep finish. When the graph returns with an open decision and no task running, the
+handler marks the run `waiting_for_human` (`mark_waiting`: a progress row and the trace
+event `workflows.run.waiting_for_human`) and the job ends without error. Resolving the
+decision (`assessment_runs.resolve_decision`) queues the run again with a
+`workflows.resume` job, whose handler is this one: the runner resumes the checkpointed
+thread with `Command(resume=…)` from the interrupted node, so finished nodes are not run
+again, even after days and a worker restart.
+
+**Cancelling** (Story 5.5). `cancel` marks the run's unfinished tasks `skipped`, its open
+decisions `cancelled` and the run `cancelled` (also while it waits for a person). While the
+graph works, the handler re-reads the run every `CANCEL_POLL_S` seconds and, once it is
+`cancelled`, cancels the graph (its in-flight Agent calls release their model slots) and
+ends without error; no node starts afterwards.
 
 Every task start, task end, run queueing and run end also writes a progress row (and a
 NOTIFY) in the same Unit of Work. Logs, trace, progress and `last_error` carry ids, codes
@@ -52,16 +68,23 @@ from app.modules.conflicts.application import public as conflicts
 from app.modules.estimates.application import public as estimates
 from app.modules.registry.application import public as registry
 from app.modules.workflows.adapters import repository as repo
-from app.modules.workflows.adapters.repository import ChangedTask, NewTask, RunRecord
+from app.modules.workflows.adapters.repository import (
+    ChangedTask,
+    NewTask,
+    PlannedTask,
+    RunRecord,
+    TaskRecord,
+)
 from app.modules.workflows.application import progress
 from app.modules.workflows.domain.runs import (
     PLAN_VERSION,
+    RUN_ACTIVE,
     RUN_IN_PROGRESS,
     RUN_SUBJECT_TYPE,
     TASK_IN_PROGRESS,
     AssessmentRunStatus,
     AssessmentTaskStatus,
-    TaskSkipReason,
+    DecisionStatus,
     run_status,
 )
 from app.platform import trace
@@ -74,12 +97,14 @@ from app.platform.trace.catalogue import (
     AssessmentsAssessmentRunCancelled,
     AssessmentsAssessmentRunCompleted,
     AssessmentsAssessmentRunStarted,
-    AssessmentsTaskSkipped,
+    WorkflowsRunWaitingForHuman,
 )
 from app.platform.uow import UnitOfWork, unit_of_work
 
 EXECUTE = "workflows.execute"
+RESUME = "workflows.resume"
 _RUN_IN_PROGRESS = tuple(sorted(s.value for s in RUN_IN_PROGRESS))
+_RUN_ACTIVE = tuple(sorted(s.value for s in RUN_ACTIVE))
 _TASK_IN_PROGRESS = tuple(sorted(s.value for s in TASK_IN_PROGRESS))
 _RUNNING = (AssessmentTaskStatus.RUNNING.value,)
 _QUEUED = (AssessmentTaskStatus.QUEUED.value,)
@@ -90,6 +115,12 @@ _log = get_logger(__name__)
 
 
 class ExecuteRun(JobPayload):
+    run_id: UUID
+
+
+class ResumeRun(JobPayload):
+    """Resume a run whose decision a person resolved (Story 5.5)."""
+
     run_id: UUID
 
 
@@ -146,84 +177,52 @@ def stale_after() -> timedelta:
 
 
 async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID:
-    """Insert a `queued` run with one task per specialist Agent, its job, the trace event and
-    a progress row. Each task pins its Agent's current config version; an Agent that is not
-    active gets a `skipped` task (`agent_disabled`, traced). The caller holds the
-    Opportunity's run lock."""
+    """Insert a `queued` run with one `queued` task per specialist Agent and the Critic's task
+    after them (Story 6.4), its plan v1, its job, the trace event and a progress row. Each
+    task pins its Agent's current config version (an inactive Agent's task escalates when its
+    node is reached). The caller holds the Opportunity's run lock."""
     run_id = new_id()
     tasks: list[NewTask] = []
     for agent in assessments.AGENTS:
         current = await registry.current_config(uow, agent.value)
-        tasks.append(
-            NewTask(
-                id=new_id(),
-                agent=agent.value,
-                config_version_id=current.current.id,
-                skip_reason=None if current.runs_tasks else TaskSkipReason.AGENT_DISABLED.value,
-            )
+        tasks.append(NewTask(id=new_id(), agent=agent.value, config_version_id=current.current.id))
+    critic = await registry.current_config(uow, assessments.CRITIC_AGENT)
+    tasks.append(
+        NewTask(
+            id=new_id(),
+            agent=assessments.CRITIC_AGENT,
+            config_version_id=critic.current.id,
+            after=tuple(t.id for t in tasks),
         )
+    )
     await repo.insert_run(
         uow, run_id=run_id, opportunity_id=opportunity_id, tasks=tasks, plan_version=PLAN_VERSION
     )
+    await repo.insert_plan_version(
+        uow,
+        run_id=run_id,
+        version=PLAN_VERSION,
+        tasks=[PlannedTask(t.id, t.agent, t.config_version_id, t.after) for t in tasks],
+        actor=actor,
+    )
     await enqueue(uow, ExecuteRun(run_id=run_id), opportunity_id=opportunity_id)
     await _trace_started(uow, run_id, opportunity_id, actor, agent_count=len(tasks))
-    for task in tasks:
-        if task.skip_reason is not None:
-            await _trace_skipped(
-                uow,
-                run_id,
-                opportunity_id,
-                actor,
-                task_id=task.id,
-                agent=task.agent,
-                config_version_id=task.config_version_id,
-            )
     await progress.run_changed(
         uow, opportunity_id=opportunity_id, run_id=run_id, status=AssessmentRunStatus.QUEUED
     )
     return run_id
 
 
-async def _trace_skipped(
-    uow: UnitOfWork,
-    run_id: UUID,
-    opportunity_id: UUID,
-    actor: Actor,
-    *,
-    task_id: UUID,
-    agent: str,
-    config_version_id: UUID,
-) -> None:
-    await trace.append(
-        uow,
-        actor=actor,
-        payload=AssessmentsTaskSkipped(
-            run_id=str(run_id),
-            task_id=str(task_id),
-            agent=agent,
-            config_version_id=str(config_version_id),
-            reason=TaskSkipReason.AGENT_DISABLED.value,
-        ),
-        subject_type=RUN_SUBJECT_TYPE,
-        subject_id=run_id,
-        opportunity_id=opportunity_id,
-    )
-    _log.info(
-        "workflows.task_skipped_disabled",
-        extra={"run_id": str(run_id), "agent": agent, "config_version_id": str(config_version_id)},
-    )
-
-
 async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     """Queue an assessment run of the Opportunity in the caller's Unit of Work, as the
-    system, unless one of its runs is already queued or running: then that run's id is
-    returned and nothing added (a running run keeps the inputs it read). Lost runs are
-    failed first. Never refuses with a conflict; any other error (e.g. the database) fails
-    the caller's Unit of Work."""
+    system, unless one of its runs is already queued, running or waiting for a person: then
+    that run's id is returned and nothing added (a running run keeps the inputs it read).
+    Lost runs are failed first. Never refuses with a conflict; any other error (e.g. the
+    database) fails the caller's Unit of Work."""
     await repo.lock_runs(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     ids = {"opportunity_id": str(opportunity_id)}
-    active = await repo.run_in_progress(uow, opportunity_id)
+    active = await repo.run_active(uow, opportunity_id)
     if active is not None:
         _log.info("workflows.run_coalesced", extra={**ids, "run_id": str(active)})
         return active
@@ -233,10 +232,11 @@ async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 
 async def requeue_task(uow: UnitOfWork, run: RunRecord, agent: str, actor: Actor) -> None:
-    """Put the run's `failed` task of `agent` back to `queued`, queue the run again and
-    enqueue a job for it. The caller holds the Opportunity's run lock and has checked the
-    task is `failed`."""
-    await repo.update_tasks(
+    """Put the run's `failed` task of `agent` back to `queued`, with every succeeded or
+    failed task that runs `after` it (Story 6.4: the Critic reviews the run again), queue the
+    run again and enqueue a job for it. The caller holds the Opportunity's run lock and has
+    checked the task is `failed`."""
+    retried = await repo.update_tasks(
         uow,
         run.id,
         agents=[agent],
@@ -244,6 +244,25 @@ async def requeue_task(uow: UnitOfWork, run: RunRecord, agent: str, actor: Actor
         status=AssessmentTaskStatus.QUEUED.value,
         reset=True,
     )
+    retried_ids = {t.id for t in retried}
+    dependents = [
+        t.id
+        for t in await repo.tasks_of(uow, run.id)
+        if retried_ids & set(t.after)
+        and t.status in (AssessmentTaskStatus.SUCCEEDED, AssessmentTaskStatus.FAILED)
+    ]
+    if dependents:
+        await repo.update_tasks(
+            uow,
+            run.id,
+            task_ids=dependents,
+            from_statuses=(
+                AssessmentTaskStatus.SUCCEEDED.value,
+                AssessmentTaskStatus.FAILED.value,
+            ),
+            status=AssessmentTaskStatus.QUEUED.value,
+            reset=True,
+        )
     await repo.set_run_status(
         uow,
         run.id,
@@ -252,7 +271,9 @@ async def requeue_task(uow: UnitOfWork, run: RunRecord, agent: str, actor: Actor
         requeued=True,
     )
     await enqueue(uow, ExecuteRun(run_id=run.id), opportunity_id=run.opportunity_id)
-    await _trace_started(uow, run.id, run.opportunity_id, actor, agent_count=1)
+    await _trace_started(
+        uow, run.id, run.opportunity_id, actor, agent_count=len(retried) + len(dependents)
+    )
     await progress.run_changed(
         uow, opportunity_id=run.opportunity_id, run_id=run.id, status=AssessmentRunStatus.QUEUED
     )
@@ -287,9 +308,10 @@ async def _tasks_ended(
 
 async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, int]:
     """Cancel the run: its unfinished tasks `skipped` (a started one keeps when it stopped,
-    for its duration), the run `cancelled` and finished, the trace event and progress rows.
-    Assessments already accepted stay current. The caller holds the Opportunity's run lock
-    and has checked the run is queued or running. Returns (skipped, succeeded) task counts."""
+    for its duration), its open decisions `cancelled`, the run `cancelled` and finished, the
+    trace event and progress rows. Assessments already accepted stay current. The caller
+    holds the Opportunity's run lock and has checked the run is queued, running or waiting
+    for a person. Returns (skipped, succeeded) task counts."""
     stopped = await repo.update_tasks(
         uow,
         run.id,
@@ -300,10 +322,11 @@ async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, in
     unstarted = await repo.update_tasks(
         uow, run.id, from_statuses=_QUEUED, status=AssessmentTaskStatus.SKIPPED.value
     )
+    await repo.cancel_open_decisions(uow, run.id)
     await repo.set_run_status(
         uow,
         run.id,
-        from_statuses=_RUN_IN_PROGRESS,
+        from_statuses=_RUN_ACTIVE,
         status=AssessmentRunStatus.CANCELLED.value,
         finished=True,
     )
@@ -311,6 +334,7 @@ async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, in
     tasks = await repo.tasks_of(uow, run.id)
     succeeded = sum(1 for t in tasks if t.status == AssessmentTaskStatus.SUCCEEDED)
     skipped = len(stopped) + len(unstarted)
+    assessed = _specialists_succeeded(tasks)
     await trace.append(
         uow,
         actor=actor,
@@ -325,7 +349,7 @@ async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, in
         run_id=run.id,
         status=AssessmentRunStatus.CANCELLED,
     )
-    if succeeded:
+    if assessed:
         # Story 8.3: the Assessments that completed before the cancel are current, so the
         # Estimate is built from them and the Conflicts re-checked, as `finish_run` does.
         await estimates.build_from_assessments(
@@ -373,10 +397,24 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
     statuses = [AssessmentTaskStatus(t.status) for t in tasks]
     if any(s in TASK_IN_PROGRESS for s in statuses):
         return None
+    # Story 6.4: when the run finished before and only the Critic's task ran since (a Critic
+    # retry), there is nothing new to build an Estimate from or detect Conflicts in.
+    ended_before = await repo.last_run_end(uow, run_id)
+    specialists_changed = ended_before is None or any(
+        t.agent != assessments.CRITIC_AGENT
+        and t.finished_at is not None
+        and t.finished_at > ended_before
+        for t in tasks
+    )
     status = run_status(statuses)
+    if status == AssessmentRunStatus.PARTIALLY_FAILED and not _specialists_succeeded(tasks):
+        # Only the Critic's task succeeded (Story 6.4): no Assessment came out of the run.
+        status = AssessmentRunStatus.FAILED
     await repo.set_run_status(
         uow, run_id, from_statuses=_RUN_IN_PROGRESS, status=status.value, finished=True
     )
+    # No task is left to decide about (e.g. a lost run failed them all).
+    await repo.cancel_open_decisions(uow, run_id)
     succeeded = sum(1 for s in statuses if s == AssessmentTaskStatus.SUCCEEDED)
     completed = AssessmentsAssessmentRunCompleted(
         status=status.value,
@@ -403,9 +441,12 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
             **completed.model_dump(),
         },
     )
-    if succeeded:
+    if not specialists_changed:
+        return status
+    if _specialists_succeeded(tasks):
         # Story 8.3: the Estimate is built from the agents' current Assessments, before the
-        # Conflict detection, which therefore compares against this new version.
+        # Conflict detection, which therefore compares against this new version. The
+        # Critic's task (Story 6.4) stores no Assessment, so it doesn't count here.
         await estimates.build_from_assessments(
             uow,
             record.opportunity_id,
@@ -414,6 +455,16 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
         )
     await detect_conflicts(uow, record.opportunity_id, run_id)
     return status
+
+
+def _specialists_succeeded(tasks: Sequence[TaskRecord]) -> int:
+    """How many specialist tasks succeeded (each stored an Assessment); the Critic's task is
+    not one."""
+    return sum(
+        1
+        for t in tasks
+        if t.status == AssessmentTaskStatus.SUCCEEDED and t.agent != assessments.CRITIC_AGENT
+    )
 
 
 async def detect_conflicts(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> None:
@@ -469,12 +520,15 @@ class RunIncompleteError(RuntimeError):
 async def _fail_open(ctx: JobContext, run_id: UUID, code: RunErrorCode) -> bool:
     """Mark the run's unfinished tasks `failed` with `code` and finish the run. True when a
     task changed. A cancelled run has no unfinished task and is already finished, so it is
-    left alone."""
+    left alone; so is a run waiting for a person (its task waits on the decision)."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_run(uow, run_id)
         if record is None:
             return False
         await repo.lock_runs(uow, record.opportunity_id)
+        record = await repo.get_run(uow, run_id, for_update=True)
+        if record is None or record.status == AssessmentRunStatus.WAITING_FOR_HUMAN:
+            return False
         failed = await repo.update_tasks(
             uow,
             run_id,
@@ -541,40 +595,10 @@ async def _fail_open_shielded(ctx: JobContext, run_id: UUID, ids: dict[str, str]
     )
 
 
-async def _skip_disabled(uow: UnitOfWork, run: RunRecord) -> None:
-    """Skip the run's tasks still `queued` whose Agent is no longer active in the Agent
-    Registry (`agent_disabled`, traced as the system). Running tasks finish."""
-    for task in await repo.tasks_of(uow, run.id):
-        if task.status != AssessmentTaskStatus.QUEUED:
-            continue
-        current = await registry.current_config(uow, task.agent)
-        if current.runs_tasks:
-            continue
-        skipped = await repo.update_tasks(
-            uow,
-            run.id,
-            task_ids=[task.id],
-            from_statuses=_QUEUED,
-            status=AssessmentTaskStatus.SKIPPED.value,
-            skip_reason=TaskSkipReason.AGENT_DISABLED.value,
-        )
-        if skipped:
-            await _tasks_ended(uow, run, skipped, AssessmentTaskStatus.SKIPPED)
-            await _trace_skipped(
-                uow,
-                run.id,
-                run.opportunity_id,
-                SYSTEM,
-                task_id=task.id,
-                agent=task.agent,
-                config_version_id=task.config_version_id,
-            )
-
-
 async def _start(ctx: JobContext, run_id: UUID) -> RunRecord | None:
-    """Mark the run `running` after skipping the tasks whose Agent is no longer active; None
-    if the run is no longer queued or running (a duplicate or late job), or has no task
-    left in progress (it is finished here)."""
+    """Mark the run `running`; None if the run is no longer queued or running (a duplicate
+    or late job, or a run waiting for a person), or has no task left in progress (it is
+    finished here)."""
     async with unit_of_work(ctx.engine) as uow:
         record = await repo.get_run(uow, run_id)
         if record is None:
@@ -583,7 +607,6 @@ async def _start(ctx: JobContext, run_id: UUID) -> RunRecord | None:
         record = await repo.get_run(uow, run_id, for_update=True)
         if record is None or AssessmentRunStatus(record.status) not in RUN_IN_PROGRESS:
             return None
-        await _skip_disabled(uow, record)
         tasks = await repo.tasks_of(uow, run_id)
         if not any(AssessmentTaskStatus(t.status) in TASK_IN_PROGRESS for t in tasks):
             await finish_run(uow, run_id)  # nothing left: finish what an attempt left open
@@ -626,6 +649,64 @@ async def _watch_cancel(ctx: JobContext, run_id: UUID, graph: asyncio.Task[Any])
         if await _cancelled_or_unknown(ctx, run_id):
             graph.cancel()
             return True
+
+
+async def mark_waiting(uow: UnitOfWork, run_id: UUID) -> bool:
+    """When the run is `running` with an open decision and no task `running`, mark it
+    `waiting_for_human`, with a progress row and the trace event (per open decision). False
+    (and no change) otherwise. The caller holds the Opportunity's run lock."""
+    record = await repo.get_run(uow, run_id, for_update=True)
+    if record is None or record.status != AssessmentRunStatus.RUNNING:
+        return False
+    tasks = await repo.tasks_of(uow, run_id)
+    if any(t.status == AssessmentTaskStatus.RUNNING for t in tasks):
+        return False
+    open_decisions = [
+        d for d in await repo.decisions_of(uow, run_id) if d.status == DecisionStatus.OPEN
+    ]
+    if not open_decisions:
+        return False
+    await repo.set_run_status(
+        uow,
+        run_id,
+        from_statuses=(AssessmentRunStatus.RUNNING.value,),
+        status=AssessmentRunStatus.WAITING_FOR_HUMAN.value,
+    )
+    agents = {t.id: t.agent for t in tasks}
+    for decision in open_decisions:
+        agent = agents.get(decision.task_id, "")
+        await progress.run_waiting(
+            uow, opportunity_id=record.opportunity_id, run_id=run_id, agent=agent
+        )
+        await trace.append(
+            uow,
+            actor=SYSTEM,
+            payload=WorkflowsRunWaitingForHuman(
+                decision_id=str(decision.id),
+                task_id=str(decision.task_id),
+                agent=agent,
+                kind="plan_escalation",
+            ),
+            subject_type=RUN_SUBJECT_TYPE,
+            subject_id=run_id,
+            opportunity_id=record.opportunity_id,
+        )
+        _log.info(
+            "workflows.run_waiting",
+            extra={
+                "run_id": str(run_id),
+                "opportunity_id": str(record.opportunity_id),
+                "decision_id": str(decision.id),
+                "agent": agent,
+            },
+        )
+    return True
+
+
+async def _wait(ctx: JobContext, run_id: UUID, opportunity_id: UUID) -> bool:
+    async with unit_of_work(ctx.engine) as uow:
+        await repo.lock_runs(uow, opportunity_id)
+        return await mark_waiting(uow, run_id)
 
 
 async def _unfinished(ctx: JobContext, run_id: UUID) -> int:
@@ -672,6 +753,10 @@ async def _execute(ctx: JobContext, payload: ExecuteRun) -> None:
         errors = [graph.exception()]  # type: ignore[list-item]
     else:
         errors = list(graph.result())
+    if await _wait(ctx, run_id, started.opportunity_id):
+        # A task waits for a person (Story 5.5): the resume job continues the run.
+        _log.info("workflows.run_paused", extra={**ids, "error_count": len(errors)})
+        return
     unfinished = await _unfinished(ctx, run_id)
     if (errors or unfinished) and ctx.attempt < ctx.max_attempts:
         if await _cancelled_or_unknown(ctx, run_id):  # cancelled meanwhile: no retry
@@ -692,6 +777,17 @@ async def _execute(ctx: JobContext, payload: ExecuteRun) -> None:
         raise errors[0]  # recorded; the job ends dead, as its tasks did
 
 
+async def enqueue_resume(uow: UnitOfWork, run: RunRecord) -> None:
+    """Queue the run's resume job (Story 5.5: a decision was resolved)."""
+    await enqueue(uow, ResumeRun(run_id=run.id), opportunity_id=run.opportunity_id)
+
+
+async def resume_run(ctx: JobContext, payload: ResumeRun) -> None:
+    """The resume job's handler (Story 5.5): the execute handler. The runner resumes the
+    thread's interrupted nodes with the resolved choices."""
+    await execute_run(ctx, ExecuteRun(run_id=payload.run_id))
+
+
 EXECUTE_JOB = register(
     JobType(
         name=EXECUTE,
@@ -704,5 +800,18 @@ EXECUTE_JOB = register(
         max_attempts=2,
         backoff_base_s=15.0,
         backoff_cap_s=120.0,
+    )
+)
+
+RESUME_JOB = register(
+    JobType(
+        name=RESUME,
+        payload=ResumeRun,
+        handler=resume_run,
+        priority="background",
+        timeout_s=EXECUTE_JOB.timeout_s,
+        max_attempts=EXECUTE_JOB.max_attempts,
+        backoff_base_s=EXECUTE_JOB.backoff_base_s,
+        backoff_cap_s=EXECUTE_JOB.backoff_cap_s,
     )
 )

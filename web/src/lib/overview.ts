@@ -3,7 +3,9 @@
 // totals come from the server and are never added up here.
 import {
   agentLabel,
+  decisionSentence,
   isAssessing,
+  isWaiting,
   runStatusLabel,
   type Assessment,
   type AssessmentFinding,
@@ -56,6 +58,7 @@ export function couldNotLoad(what: string): string {
 
 export type AttentionKind =
   | "critical-finding"
+  | "waiting-run"
   | "escalated-conflict"
   | "high-finding"
   | "gap"
@@ -71,10 +74,12 @@ export type AttentionItem = {
   tab: WorkspaceTabSlug;
 };
 
-/** Most severe first: critical Findings, then escalated Conflicts (Story 6.3), high Findings
- * and high-impact Gaps, then unaccepted Assumptions. */
+/** Most severe first: critical Findings, then a run waiting for a person (Story 5.5),
+ * escalated Conflicts (Story 6.3), high Findings and high-impact Gaps, then unaccepted
+ * Assumptions. */
 const RANK: Record<AttentionKind, number> = {
   "critical-finding": 0,
+  "waiting-run": 1,
   "escalated-conflict": 1,
   "high-finding": 1,
   gap: 2,
@@ -90,6 +95,21 @@ export function escalatedConflictItems(conflicts: ConflictsView | null | undefin
       kind: "escalated-conflict",
       label: `${typeLabel(c.type)} Conflict${c.requirement ? ` on ${c.requirement.label}` : ""} escalated to ${c.escalated_to!.name}`,
       tab: "conflicts",
+    }));
+}
+
+/** The open decisions of a run waiting for a person (Story 5.5): "Security assessment not
+ * planned: Security Agent is disabled", resolved on the Assessments tab. */
+export function waitingRunItems(assessments: AssessmentsView | null | undefined): AttentionItem[] {
+  const run = assessments?.run;
+  if (!run || !isWaiting(run)) return [];
+  return (run.decisions ?? [])
+    .filter((d) => d.status === "open")
+    .map((d) => ({
+      key: `decision:${d.id}`,
+      kind: "waiting-run",
+      label: decisionSentence(d),
+      tab: "assessments",
     }));
 }
 
@@ -130,6 +150,7 @@ export function attentionItems({
 }: Pick<OverviewReads, "redTeam" | "assessments" | "gaps" | "estimate" | "conflicts">): AttentionItem[] {
   const items: AttentionItem[] = [
     ...findingItems("Red Team", redTeam?.review?.findings ?? []),
+    ...waitingRunItems(assessments),
     ...escalatedConflictItems(conflicts),
     ...(assessments?.assessments ?? []).flatMap((slot) =>
       findingItems(agentLabel(slot.agent), slot.assessment?.findings ?? []),
@@ -381,7 +402,10 @@ function conflictsStep(
     };
   if (conflicts.conflicts.length === 0 && !assessmentsStarted(assessments))
     return { sub: "Appear after the Assessments", state: "not-started" };
-  if (conflicts.conflicts.length === 0 && isAssessing(assessments?.run))
+  if (
+    conflicts.conflicts.length === 0 &&
+    (isAssessing(assessments?.run) || isWaiting(assessments?.run))
+  )
     return { sub: "Waiting for the Assessments", state: "in-progress" };
   return { sub: "No open Conflicts", state: "complete" };
 }

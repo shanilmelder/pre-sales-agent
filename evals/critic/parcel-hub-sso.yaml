@@ -1,0 +1,58 @@
+# Parcel hub: nobody covers the label printer replacement (R5); Security claims the
+# customer's identity provider supports SCIM with nothing behind it; Engineering's phased
+# commissioning can't fit PM's single cut-over weekend.
+requirements:
+  - number: 1
+    classification: functional
+    text: Sort 20,000 parcels per hour across 120 destinations.
+  - number: 2
+    classification: integration
+    text: Users sign in with the customer's identity provider and are provisioned automatically.
+  - number: 3
+    classification: commercial
+    text: Cut over from the old sorter in one weekend without stopping operations on Monday.
+  - number: 4
+    classification: non_functional
+    text: 99.5% availability during operating hours.
+  - number: 5
+    classification: functional
+    text: Replace the 40 label printers at the induction stations.
+findings:
+  engineering_agent:
+    - key: eng-phased-commissioning
+      kind: constraint
+      severity: high
+      title: Commissioning in three phases over four weeks
+      detail: >-
+        Each of the three sorter loops must be commissioned and tested separately, taking
+        about four weeks before full-rate operation.
+      requirements: [1, 3]
+    - key: eng-availability-spares
+      kind: risk
+      severity: medium
+      title: 99.5% availability needs an on-site spares stock
+      detail: Without on-site spares the availability target can't be met.
+      requirements: [4]
+  pm_agent:
+    - key: pm-single-weekend
+      kind: constraint
+      severity: medium
+      title: Single cut-over weekend planned
+      detail: The plan switches every loop over in one weekend, as the customer asked.
+      requirements: [3]
+  security_agent:
+    - key: sec-scim-supported
+      kind: opportunity
+      severity: low
+      title: Customer identity provider supports SCIM provisioning
+      detail: >-
+        The customer's identity provider supports SCIM, so automatic provisioning needs no
+        custom work.
+      requirements: [2]
+effort:
+  engineering_agent: {1: 1200, 4: 80}
+  security_agent: {2: 16}
+seeded:
+  uncovered: [5]
+  unsupported_claim: [sec-scim-supported]
+  timeline: [pm-single-weekend, eng-phased-commissioning]

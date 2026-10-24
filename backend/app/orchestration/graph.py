@@ -1,6 +1,7 @@
 """A Workflow Run's graph (AD-5, AD-6; Story 5.2): one node per task, built from the run's
-plan. A task that `requires` none starts from START; one that does waits for all of them
-(a waiting edge), so independent tasks run in the same superstep, concurrently.
+plan. A task that waits for none starts from START; one that does (the tasks it `requires`,
+and, Story 6.4, those it runs `after`: the Critic's waits for every specialist's) waits for
+all of them (a waiting edge), so independent tasks run in the same superstep, concurrently.
 
 The checkpointed state is a cache of control data: the run id and the ids of the tasks a
 node finished. Every node re-reads its task from `workflows` before doing anything:
@@ -8,9 +9,15 @@ node finished. Every node re-reads its task from `workflows` before doing anythi
 1. Its task no longer queued or running, or its run no longer in progress (cancelled,
    failed as lost, or already done, e.g. accepted but not yet checkpointed before a crash):
    the node does nothing.
-2. A task it requires ended without succeeding: the task is skipped. One still in progress
-   (it failed on an earlier attempt and runs again): the node does nothing this time.
-3. Otherwise: one Unit of Work marks the task `running` and loads its inputs; the Agent is
+2. A task it requires ended without succeeding: the task is skipped. One it requires or runs
+   after still in progress (it failed on an earlier attempt and runs again): the node does
+   nothing this time.
+3. Its Agent is not active (Story 5.5): the node records a `plan_escalation` decision
+   (idempotently) and calls `interrupt()` with its payload, outside every `try/except`
+   (`GraphInterrupt` is an `Exception`). The run waits for a person; on resume the node runs
+   again from its start and reads the decision: Continue without skips the task, Re-plan
+   lets it run as below. The decision row is the truth, not the value resumed with.
+4. Otherwise: one Unit of Work marks the task `running` and loads its inputs; the Agent is
    called with none open; one Unit of Work locks the task as still `running` (else the
    result is discarded: a cancel came first), submits the result to its owner's `accept_*`
    and marks the task `succeeded`.
@@ -30,10 +37,11 @@ from uuid import UUID
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import interrupt
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.modules.workflows.application import public as workflows
-from app.modules.workflows.application.public import GraphRun, NodeTask
+from app.modules.workflows.application.public import Escalation, GraphRun, NodeTask
 from app.orchestration.executors import TaskExecutor, executor_for
 from app.platform.logging import get_logger
 from app.platform.uow import unit_of_work
@@ -105,6 +113,7 @@ async def run_task(invocation: Invocation, task_id: UUID) -> RunState:
     engine = invocation.run.engine
     ids = {"run_id": str(invocation.run.run_id), "task_id": str(task_id)}
     _log.info("orchestration.node_entered", extra=ids)
+    escalated: Escalation | None = None
     try:
         async with unit_of_work(engine) as uow:
             current = await workflows.node_task(uow, task_id)
@@ -118,17 +127,37 @@ async def run_task(invocation: Invocation, task_id: UUID) -> RunState:
             if current.readiness == "waiting":
                 _log.info("orchestration.task_waiting", extra=ids)
                 return {}
-            executor = executor_for(current.agent)
-            started = await workflows.begin_task(uow, task_id)
-            if started is None:
-                return {}
-            prepared = await executor.prepare(uow, started)
+            escalation = await workflows.escalation(uow, task_id)
+            if escalation is not None and escalation.continue_without:
+                skipped = await workflows.skip_disabled_task(uow, task_id)
+                _log.info("orchestration.task_continued_without", extra={**ids, "skipped": skipped})
+                return {"finished": [str(task_id)]} if skipped else {}
+            if escalation is not None and not escalation.replanned:
+                escalated = escalation  # open (or cancelled with its run): no start
+            else:
+                executor = executor_for(current.agent)
+                started = await workflows.begin_task(uow, task_id)
+                if started is None:
+                    return {}
+                prepared = await executor.prepare(uow, started)
     except Exception as exc:  # e.g. the database: the task stays pending for the handler
         invocation.errors.append(exc)
         _log.warning(
             "orchestration.node_start_failed", extra={**ids, "exc_type": type(exc).__name__}
         )
         return {}
+    if escalated is not None:
+        # The decision is committed: wait for a person. Outside every `try`: `interrupt`
+        # raises `GraphInterrupt` (an `Exception`), which LangGraph must see.
+        if escalated.open:
+            _log.info(
+                "orchestration.task_escalated",
+                extra={**ids, "decision_id": str(escalated.decision_id)},
+            )
+            interrupt(escalated.payload)
+        # Resumed while the decision is still open, or it was cancelled: nothing to do now.
+        return {}
+    assert started is not None  # set whenever no decision stopped the node
     try:
         result = await executor.run(prepared)
         if not await submit(engine, task_id, executor, prepared, result):
@@ -159,8 +188,8 @@ def build_graph(
     invocation: Invocation,
     checkpointer: BaseCheckpointSaver[Any] | None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """The run's graph from its plan (each task's id and the ids it requires). A required
-    id that is not a task of the plan is ignored."""
+    """The run's graph from its plan (each task's id and the ids it waits for). An id that
+    is not a task of the plan is ignored."""
     tasks = {task_id for task_id, _ in plan}
     builder: StateGraph[Any, Any, Any, Any] = StateGraph(RunState)
     required: set[UUID] = set()

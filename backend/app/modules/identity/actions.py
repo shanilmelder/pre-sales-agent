@@ -31,6 +31,7 @@ class Action(StrEnum):
     ASSUMPTION_ACCEPT = "estimates.assumption.accept"
     RED_TEAM_START = "assessments.red_team.start"
     ASSESSMENT_START = "assessments.assessment.start"
+    DECISION_RESOLVE = "workflows.decision.resolve"
     ESTIMATE_EXPORT = "estimates.estimate.export"
     CATALOGUE_ENTRY_CREATE = "knowledge.catalogue_entry.create"
     CATALOGUE_ENTRY_EDIT = "knowledge.catalogue_entry.edit"
@@ -54,3 +55,14 @@ class Action(StrEnum):
     REGISTRY_AGENT_REGISTER = "registry.agent.register"
     REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
     REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"
+    # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
+    # hold them through their registry `tool_permissions`; no human role is granted them
+    # (`KNOWLEDGE_CHUNK_SEARCH` above is also the human Knowledge search, open to all roles).
+    TOOL_REQUIREMENT_LIST = "intake.requirement.list"
+    TOOL_PASSAGE_READ = "intake.passage.read"
+    TOOL_CHUNK_READ = "knowledge.chunk.read"
+    TOOL_CATALOGUE_ENTRY_LIST = "knowledge.catalogue_entry.list"
+    TOOL_GAP_LIST = "gaps.gap.list"
+    TOOL_RESEARCH_PAGE_FETCH = "knowledge.research_page.fetch"
+    TOOL_RUN_ASSESSMENT_READ = "assessments.run.read"
+    """Story 6.4: the Critic reads its run's accepted Assessments and Findings."""

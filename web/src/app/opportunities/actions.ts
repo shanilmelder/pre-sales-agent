@@ -3,6 +3,7 @@
 import {
   getAssessments,
   getConflicts,
+  getCritic,
   getEstimate,
   getOpportunity,
   getRedTeam,
@@ -11,6 +12,7 @@ import {
   listRequirements,
   listSources,
   type AssessmentsResult,
+  type CriticResult,
   type EstimateResult,
   type GapsResult,
   type OutdatedAssessmentsResult,
@@ -19,7 +21,7 @@ import {
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
-import type { AssessmentAgent, AssessmentRun } from "@/lib/assessments";
+import type { AssessmentRun, TaskAgent } from "@/lib/assessments";
 import type { Conflict } from "@/lib/conflicts";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
@@ -781,6 +783,12 @@ export async function startEstimateDraft(
   }
 }
 
+/** The current Critic Review (Story 6.4), re-read by the Assessments tab as its run moves on. */
+export async function loadCritic(opportunityId: unknown): Promise<CriticResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return getCritic(opportunityId);
+}
+
 /** The Opportunity's Red Team Review and latest run as stored now (the Assessments tab polls
  * this while a review runs). */
 export async function loadRedTeam(opportunityId: unknown): Promise<RedTeamResult> {
@@ -829,7 +837,13 @@ export async function loadAssessments(opportunityId: unknown): Promise<Assessmen
   return getAssessments(opportunityId);
 }
 
-const ASSESSMENT_AGENTS: readonly string[] = ["engineering_agent", "pm_agent", "security_agent"];
+/** The Agents whose failed task may be retried: the specialists and (Story 6.4) the Critic. */
+const ASSESSMENT_AGENTS: readonly string[] = [
+  "engineering_agent",
+  "pm_agent",
+  "security_agent",
+  "critic_agent",
+];
 
 function startResult(
   label: string,
@@ -889,7 +903,7 @@ export async function retryAssessmentTask(
           path: {
             opportunity_id: opportunityId,
             run_id: runId,
-            agent: agent as AssessmentAgent,
+            agent: agent as TaskAgent,
           },
         },
       },
@@ -922,6 +936,76 @@ export async function cancelAssessmentRun(
   } catch (thrown) {
     console.error(
       `cancel assessment run failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+export type ResolveDecisionResult =
+  | { kind: "ok"; run: AssessmentRun }
+  /** 412: someone resolved it first; `message` is the API's "Already resolved by {name}." */
+  | { kind: "stale"; message: string }
+  /** 409: the decision is no longer open, or Re-plan while the Agent is still disabled. */
+  | { kind: "conflict"; detail: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+const DECISION_CHOICES: readonly string[] = ["continue_without", "replan"];
+
+/** `POST /api/v1/opportunities/{id}/assessment-runs/{run_id}/decisions/{decision_id}/resolve`
+ * with `If-Match` (Story 5.5): Continue without or Re-plan, and the run resumes. Never
+ * retries or overwrites on 412. Logs ids and statuses only. */
+export async function resolveRunDecision(
+  opportunityId: unknown,
+  runId: unknown,
+  decisionId: unknown,
+  rowVersion: unknown,
+  choice: unknown,
+): Promise<ResolveDecisionResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof runId !== "string" || !UUID_RE.test(runId)) return { kind: "error" };
+  if (typeof decisionId !== "string" || !UUID_RE.test(decisionId)) return { kind: "error" };
+  if (typeof rowVersion !== "number" || !Number.isInteger(rowVersion) || rowVersion < 1) {
+    return { kind: "error" };
+  }
+  if (typeof choice !== "string" || !DECISION_CHOICES.includes(choice)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/decisions/{decision_id}/resolve",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, run_id: runId, decision_id: decisionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { choice: choice as "continue_without" | "replan" },
+      },
+    );
+    if (data) return { kind: "ok", run: data };
+    const { detail, code } = problem(error);
+    switch (response.status) {
+      case 412:
+        return { kind: "stale", message: detail ?? "Already resolved by someone else." };
+      case 409:
+        return {
+          kind: "conflict",
+          detail:
+            code === "registry_agent_disabled"
+              ? (detail ?? "Enable the agent first.")
+              : "This decision is no longer open.",
+        };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(`resolve run decision failed: status=${response.status} code=${String(code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `resolve run decision failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

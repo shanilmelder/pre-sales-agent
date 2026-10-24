@@ -24,6 +24,12 @@ import {
   skipNote,
   taskElapsed,
   taskStatusLabel,
+  decisionSentence,
+  isWaiting,
+  openDecision,
+  planLabel,
+  planTaskLabel,
+  RUN_STATUS_LABELS,
 } from "@/lib/assessments";
 
 describe("assessment labels", () => {
@@ -80,6 +86,9 @@ describe("assessment labels", () => {
       queued_at: "2026-10-05T09:00:00Z",
       finished_at: null,
       tasks: [],
+      plan_version: 1,
+      decisions: [],
+      plan_versions: [],
     });
     expect(isAssessing(run("queued"))).toBe(true);
     expect(isAssessing(run("running"))).toBe(true);
@@ -336,6 +345,38 @@ describe("merged Findings", () => {
     expect(mergeFindings([slot("pm_agent", [])], null)).toEqual([]);
   });
 
+  it("folds in the Critic's Findings, raised by Critic, after the Red Team's (Story 6.4)", () => {
+    const critic = (id: string, severity: string, category = "timeline") =>
+      ({
+        id,
+        position: 1,
+        category,
+        severity,
+        title: id,
+        argument: "",
+        requirements: [req("r4", "R4")],
+        findings: [{ id: "f1" }, { id: "f2" }],
+      }) as never;
+    const rows = mergeFindings(
+      [slot("engineering_agent", [specialist("e1", "high")])],
+      { findings: [red("t1", "high")] },
+      { findings: [critic("c1", "critical"), critic("c2", "high", "coverage")] },
+    );
+    expect(rows.map((r) => r.id)).toEqual(["c1", "e1", "t1", "c2"]);
+    expect(rows[0]).toMatchObject({
+      source: "critic",
+      type: "Timeline",
+      raisedBy: "Critic",
+      requirements: 1,
+      lines: null,
+      cited: 2,
+    });
+    expect(rows[3].type).toBe("Coverage");
+    expect(findingKey(rows[0])).toBe("critic:c1");
+    expect(agentLabel("critic_agent")).toBe("Critic");
+    expect(agentRole("critic_agent")).toContain("coverage");
+  });
+
   it("lists up to three distinct Requirement labels, Findings first", () => {
     expect(
       evidenceLabels(
@@ -343,5 +384,60 @@ describe("merged Findings", () => {
         [{ requirement: req("c", "R3") }, { requirement: req("d", "R4") }],
       ).map((r) => r.label),
     ).toEqual(["R1", "R2", "R3"]);
+  });
+});
+
+describe("waiting for a person (Story 5.5)", () => {
+  it("names the decision and the plan, and reads waiting as amber and not assessing", () => {
+    expect(
+      decisionSentence({ agent: "security_agent", agent_name: "Security Agent" }),
+    ).toBe("Security assessment not planned: Security Agent is disabled");
+    expect(decisionSentence({ agent: "pm_agent", agent_name: "" })).toBe(
+      "PM assessment not planned: PM Agent is disabled",
+    );
+    expect(planLabel(2)).toBe("Plan v2");
+    expect(
+      planTaskLabel({
+        agent: "engineering_agent",
+        config_version_id: "x",
+        config_version: 3,
+        semver: "0.2.0",
+      }),
+    ).toBe("Engineering Agent 0.2.0 (config v3)");
+    expect(
+      planTaskLabel({ agent: "pm_agent", config_version_id: "x", config_version: null, semver: null }),
+    ).toBe("PM Agent");
+    expect(runStatusTone("waiting_for_human")).toBe("text-gap");
+    expect(RUN_STATUS_LABELS.waiting_for_human).toBe("Waiting for you");
+    const waiting = {
+      id: "x",
+      status: "waiting_for_human" as const,
+      created_at: "2026-10-05T09:00:00Z",
+      queued_at: "2026-10-05T09:00:00Z",
+      finished_at: null,
+      tasks: [],
+      plan_version: 1,
+      plan_versions: [],
+      decisions: [
+        {
+          id: "d",
+          kind: "plan_escalation" as const,
+          agent: "security_agent" as const,
+          agent_name: "Security Agent",
+          agent_active: false,
+          status: "open" as const,
+          choice: null,
+          row_version: 1,
+          created_at: "2026-10-05T09:00:00Z",
+          resolved_by: null,
+          resolved_at: null,
+        },
+      ],
+    };
+    expect(isAssessing(waiting)).toBe(false);
+    expect(isWaiting(waiting)).toBe(true);
+    expect(openDecision(waiting, "security_agent")?.id).toBe("d");
+    expect(openDecision(waiting, "pm_agent")).toBeNull();
+    expect(openDecision({ ...waiting, status: "queued" }, "security_agent")).toBeNull();
   });
 });
