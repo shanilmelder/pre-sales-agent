@@ -119,7 +119,7 @@ def new_config_version(client: TestClient, admin: dict[str, str], agent: str) ->
     created = client.post(
         f"{REGISTRY}/{agent}/config-versions",
         headers={**admin, **if_match(current["row_version"])},
-        json=same,
+        json={**same, "reason": "Re-pin test"},
     )
     assert created.status_code == 201, created.text
     return UUID(created.json()["current_config"]["id"])

@@ -48,6 +48,8 @@ def config_version(row: V) -> ConfigVersion:
         budgets=dict(row.budgets),
         created_by=row.created_by,
         created_at=row.created_at,
+        reason=row.reason,
+        restored_from_version=row.restored_from_version,
     )
 
 
@@ -156,6 +158,8 @@ async def insert_version(
     tool_permissions: Sequence[str],
     budgets: Mapping[str, Any],
     user_id: UUID | None,
+    reason: str | None = None,
+    restored_from_version: int | None = None,
 ) -> None:
     await uow.session.execute(
         insert(V).values(
@@ -171,6 +175,8 @@ async def insert_version(
             contract_version=contract_version,
             tool_permissions=list(tool_permissions),
             budgets=dict(budgets),
+            reason=reason,
+            restored_from_version=restored_from_version,
             created_by=user_id,
         )
     )
@@ -198,6 +204,14 @@ async def bump(
         )
     ).one_or_none()
     return None if row is None else row[0]
+
+
+async def get_version_number(uow: UnitOfWork, agent_id: str, version: int) -> ConfigVersion | None:
+    """The Agent's config version with this number, if any."""
+    row = (
+        await uow.session.execute(select(V).where(V.agent_id == agent_id, V.version == version))
+    ).scalar_one_or_none()
+    return None if row is None else config_version(row)
 
 
 async def max_version(uow: UnitOfWork, agent_id: str) -> int:

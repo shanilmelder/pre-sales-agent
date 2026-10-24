@@ -7,8 +7,10 @@ the caller's Unit of Work.
 
 - `register_agent`: a new Agent (`active`) with its config version 1. A taken agent id is
   409 `registry_agent_duplicate`.
-- `create_config_version`: inserts version n+1, which becomes current. Runs already in
-  progress keep the version they pinned.
+- `create_config_version`: inserts version n+1, which becomes current, with the
+  administrator's required reason (Story 7.3). Runs already in progress keep the version they
+  pinned. A restore names the earlier version it copies in `restored_from_version` (422 when
+  the Agent has no such version); the earlier row is never changed.
 - `set_status`: `active`, `disabled` or `eval_only`; the same status is a 200 no-op.
 
 Every config is checked against the deployed manifest (`app.agents.manifest`): a prompt,
@@ -16,7 +18,9 @@ input or output schema, or model profile it doesn't list is 422
 `registry_config_not_deployed`; an output schema written for another contract version than
 `CONTRACT_VERSION` is 422 `registry_config_incompatible_contract`. Nothing is stored then.
 
-Reads (`read_agents`, `read_agent`, `read_versions`) are for platform administrators too.
+Reads (`read_agents`, `read_agent`, `read_versions`, and `read_config_options`: what the
+deployed manifest lets a new version reference) are for platform administrators too. Config
+versions carry their author's name, resolved through identity's public `user_names`.
 
 Evaluation results (Story 7.6): `record_eval_result` (the eval harness, a system actor; no
 authorization) judges the scores against the bars and the last accepted result of the same
@@ -33,7 +37,7 @@ profile, and the model call records the profile actually used).
 """
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -45,6 +49,7 @@ from app.modules.identity.application.public import Action, Principal, Role
 from app.modules.registry.adapters import repository as repo
 from app.modules.registry.adapters.models import EvalResultRow
 from app.modules.registry.application.models import (
+    AgentConfigOptions,
     AgentConfigVersion,
     AgentConfigVersionList,
     AgentStatusChange,
@@ -56,6 +61,7 @@ from app.modules.registry.application.models import (
     EvalScores,
     NewAgent,
     NewAgentConfig,
+    NewAgentConfigVersion,
     NewEvalResult,
     RegistryAgent,
     RegistryAgentList,
@@ -84,6 +90,7 @@ from app.platform.errors import (
 )
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
+from app.platform.tool_gateway.catalogue import READ_TOOLS
 from app.platform.trace.catalogue import (
     RegistryAgentConfigVersionCreated,
     RegistryAgentDisabled,
@@ -108,7 +115,13 @@ class UnknownAgentError(LookupError):
 # --- views ---------------------------------------------------------------------------------
 
 
-def version_view(version: ConfigVersion) -> AgentConfigVersion:
+def version_view(
+    version: ConfigVersion, names: Mapping[UUID, str] | None = None
+) -> AgentConfigVersion:
+    """The read model; `names` maps author ids to names (an unknown author has no name)."""
+    created_by_name = None
+    if version.created_by is not None and names is not None:
+        created_by_name = names.get(version.created_by)
     return AgentConfigVersion(
         id=str(version.id),
         agent_id=version.agent_id,
@@ -123,11 +136,14 @@ def version_view(version: ConfigVersion) -> AgentConfigVersion:
         tool_permissions=list(version.tool_permissions),
         budgets=dict(version.budgets),
         created_by_id=None if version.created_by is None else str(version.created_by),
+        created_by_name=created_by_name,
+        reason=version.reason,
+        restored_from_version=version.restored_from_version,
         created_at=version.created_at,
     )
 
 
-def agent_view(agent: RegisteredAgent) -> RegistryAgent:
+def agent_view(agent: RegisteredAgent, names: Mapping[UUID, str] | None = None) -> RegistryAgent:
     return RegistryAgent(
         id=str(agent.id),
         agent_id=agent.agent_id,
@@ -135,7 +151,7 @@ def agent_view(agent: RegisteredAgent) -> RegistryAgent:
         status=agent.status,
         row_version=agent.row_version,
         created_at=agent.created_at,
-        current_config=version_view(agent.current),
+        current_config=version_view(agent.current, names),
     )
 
 
@@ -174,6 +190,16 @@ def _invalid[T, V](value: V, check: Callable[[V], T]) -> T:
         return check(value)
     except ValueError as exc:
         raise UnprocessableError(str(exc)) from None
+
+
+async def _names(uow: UnitOfWork, versions: Iterable[ConfigVersion]) -> dict[UUID, str]:
+    """The authors' names, by user id (seeded versions have no author)."""
+    ids = {v.created_by for v in versions if v.created_by is not None}
+    return await identity.user_names(uow, ids) if ids else {}
+
+
+async def _agent_view(uow: UnitOfWork, agent: RegisteredAgent) -> RegistryAgent:
+    return agent_view(agent, await _names(uow, [agent.current]))
 
 
 async def _load(uow: UnitOfWork, agent_id: str) -> RegisteredAgent:
@@ -242,12 +268,27 @@ def check_deployed(agent_id: str, new: NewAgentConfig) -> _CheckedConfig:
     )
 
 
+def _config_fields(config: _CheckedConfig | ConfigVersion) -> tuple[object, ...]:
+    """The fields a restore must copy unchanged (tool permissions in any order)."""
+    return (
+        config.model_profile,
+        config.prompt_version,
+        config.input_schema_version,
+        config.output_schema_version,
+        tuple(sorted(config.tool_permissions)),
+        dict(config.budgets),
+    )
+
+
 async def _insert_version(
     uow: UnitOfWork,
     agent_id: str,
     version: int,
     config: _CheckedConfig,
     user_id: UUID,
+    *,
+    reason: str | None = None,
+    restored_from_version: int | None = None,
 ) -> UUID:
     config_version_id = new_id()
     await repo.insert_version(
@@ -265,6 +306,8 @@ async def _insert_version(
         tool_permissions=config.tool_permissions,
         budgets=config.budgets,
         user_id=user_id,
+        reason=reason,
+        restored_from_version=restored_from_version,
     )
     return config_version_id
 
@@ -275,20 +318,43 @@ async def _insert_version(
 async def read_agents(uow: UnitOfWork, actor: Principal) -> RegistryAgentList:
     """Every Agent with its status and current config version, by agent id."""
     _require_admin(actor)
-    return RegistryAgentList(items=[agent_view(a) for a in await repo.list_agents(uow)])
+    agents = await repo.list_agents(uow)
+    names = await _names(uow, [a.current for a in agents])
+    return RegistryAgentList(items=[agent_view(a, names) for a in agents])
 
 
 async def read_agent(uow: UnitOfWork, actor: Principal, agent_id: str) -> RegistryAgent:
     _require_admin(actor)
-    return agent_view(await _load(uow, agent_id))
+    return await _agent_view(uow, await _load(uow, agent_id))
 
 
 async def read_versions(uow: UnitOfWork, actor: Principal, agent_id: str) -> AgentConfigVersionList:
-    """The Agent's config versions, newest first."""
+    """The Agent's config versions, newest first, with their authors' names."""
     _require_admin(actor)
     await _load(uow, agent_id)
-    return AgentConfigVersionList(
-        items=[version_view(v) for v in await repo.list_versions(uow, agent_id)]
+    versions = await repo.list_versions(uow, agent_id)
+    names = await _names(uow, versions)
+    return AgentConfigVersionList(items=[version_view(v, names) for v in versions])
+
+
+async def read_config_options(
+    uow: UnitOfWork, actor: Principal, agent_id: str
+) -> AgentConfigOptions:
+    """What `check_deployed` accepts for a new version of this Agent: the deployed model
+    profiles, its prompt and input schema versions, its output schema versions written for
+    `CONTRACT_VERSION`, and the ToolGateway's read-only tools."""
+    _require_admin(actor)
+    agent = await _load(uow, agent_id)
+    manifest = deployed.load()
+    outputs = manifest.schemas(agent.agent_id, "output")
+    return AgentConfigOptions(
+        model_profiles=manifest.profiles(),
+        prompt_versions=manifest.prompt_versions(agent.agent_id),
+        input_schema_versions=list(manifest.schemas(agent.agent_id, "input")),
+        output_schema_versions=[
+            v for v, entry in outputs.items() if entry.get("contract_version") == CONTRACT_VERSION
+        ],
+        tool_permissions=sorted(READ_TOOLS),
     )
 
 
@@ -341,15 +407,27 @@ async def create_config_version(
     uow: UnitOfWork,
     actor: Principal,
     agent_id: str,
-    new: NewAgentConfig,
+    new: NewAgentConfigVersion,
     if_match: str | None,
 ) -> RegistryAgent:
     """Insert the Agent's next config version, which becomes current. `if_match` is the raw
-    `If-Match` header (the Agent's row version)."""
+    `If-Match` header (the Agent's row version). A restore (`restored_from_version`) must name
+    an existing version of this Agent; its row is left unchanged."""
     user_id = _writer(actor, Action.REGISTRY_AGENT_CONFIG_CREATE)
+    reason = _invalid(new.reason, rules.reason)
     expected = _expected(if_match)
     agent = await _load(uow, agent_id)
     config = check_deployed(agent.agent_id, new)
+    restored = new.restored_from_version
+    if restored is not None:
+        source = await repo.get_version_number(uow, agent.agent_id, restored)
+        if source is None:
+            raise UnprocessableError(f"{agent.name} has no config version {restored} to restore.")
+        if _config_fields(config) != _config_fields(source):
+            raise UnprocessableError(
+                f"A restore must copy version {restored} exactly; only the semver and the "
+                "reason can change."
+            )
     if agent.row_version != expected:
         raise _stale()
     if await repo.bump(uow, agent.agent_id, expected_row_version=expected) is None:
@@ -357,7 +435,15 @@ async def create_config_version(
     # The bump holds the Agent's row lock until commit, so the number can't be raced.
     before = await _load(uow, agent.agent_id)
     to_version = before.current.version + 1
-    config_version_id = await _insert_version(uow, agent.agent_id, to_version, config, user_id)
+    config_version_id = await _insert_version(
+        uow,
+        agent.agent_id,
+        to_version,
+        config,
+        user_id,
+        reason=reason,
+        restored_from_version=restored,
+    )
     await trace.append(
         uow,
         actor=actor.actor,
@@ -366,6 +452,8 @@ async def create_config_version(
             version=to_version,
             from_config_version_id=str(before.current.id),
             to_config_version_id=str(config_version_id),
+            reason=reason,
+            restored_from_version=restored,
         ),
         subject_type=rules.SUBJECT_TYPE,
         subject_id=agent.id,
@@ -377,10 +465,11 @@ async def create_config_version(
             "agent_id": agent.agent_id,
             "version": to_version,
             "config_version_id": str(config_version_id),
+            "restored_from_version": restored,
             "actor_id": str(user_id),
         },
     )
-    return agent_view(await _load(uow, agent.agent_id))
+    return await _agent_view(uow, await _load(uow, agent.agent_id))
 
 
 async def set_status(
@@ -398,7 +487,7 @@ async def set_status(
     if agent.row_version != expected:
         raise _stale()
     if agent.status == change.status:
-        return agent_view(agent)
+        return await _agent_view(uow, agent)
     if (
         await repo.bump(uow, agent.agent_id, expected_row_version=expected, status=change.status)
         is None
@@ -439,7 +528,7 @@ async def set_status(
             "actor_id": str(user_id),
         },
     )
-    return agent_view(await _load(uow, agent.agent_id))
+    return await _agent_view(uow, await _load(uow, agent.agent_id))
 
 
 # --- for other modules (no authorization) ---------------------------------------------------
@@ -684,6 +773,9 @@ async def install_eval_config(
         tool_permissions=version.tool_permissions,
         budgets=version.budgets,
         user_id=version.created_by,
+        reason=version.reason,
+        # Not copied: the eval database numbers its versions on its own, so the source's
+        # restore number may not name an earlier version there.
     )
 
 

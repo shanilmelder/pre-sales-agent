@@ -251,3 +251,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-6-blocking-findings-and-overrides.md`
   summary: Pin that `latest_overrides` shows the newest of several earlier overrides with the same fingerprint (test with overrides on Review v1 and v2, expect v2's on v3).
   evidence: Story 6.6 review (verification gap): the carry-over test has a single earlier override, so reversing the ordering in `assessments/adapters/repository.py` `latest_overrides` passes every test; it only changes which earlier reason is shown.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-admin-agents-view.md`
+  summary: Story 7.3/7.8 "Not evaluated" badge on Agent config versions and the explicit save confirmation for an unevaluated config.
+  evidence: Deferred by the user on 2026-10-24 while planning the Story 7.3 remainder; it belongs with the 7.8 eval gate.

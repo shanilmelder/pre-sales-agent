@@ -24,6 +24,8 @@ TOOL_PERMISSION_RE = re.compile(
 of the ToolGateway's READ tools."""
 TOOL_PERMISSIONS_MAX = 50
 BUDGET_KEYS_MAX = 20
+REASON_MAX = 500
+"""A config version's reason (Story 7.3): required, trimmed, 1-500 characters."""
 UNPINNED_DIGEST = "unpinned"
 """The model digest of a config version until digests are pinned (Story 7.2)."""
 
@@ -73,6 +75,10 @@ class ConfigVersion:
     created_by: UUID | None
     """The administrator who created it; None for the versions the migration seeded."""
     created_at: datetime
+    reason: str | None = None
+    """Why an administrator created it (Story 7.3); None for seeded and earlier versions."""
+    restored_from_version: int | None = None
+    """The earlier version a restore copied (Story 7.3); None unless a restore."""
 
     @property
     def actor_id(self) -> str:
@@ -120,6 +126,11 @@ def agent_id(value: str) -> str:
 
 def agent_name(value: str) -> str:
     return _bounded(value, "name", NAME_MAX)
+
+
+def reason(value: str) -> str:
+    """Why a config version was created: required, trimmed, at most 500 characters."""
+    return _bounded(value, "reason", REASON_MAX)
 
 
 def semver(value: str) -> str:

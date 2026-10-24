@@ -31,6 +31,7 @@ from app.modules.registry.application import public as registry
 from app.modules.registry.domain import registry as rules
 from app.platform.config import Settings
 from app.platform.model_gateway.port import ModelUnavailableError
+from app.platform.tool_gateway.catalogue import READ_TOOLS
 from tests import test_assessments_specialists as specialist_tests
 from tests import test_estimates_assumptions as assumption_tests
 from tests import test_estimates_draft as draft_tests
@@ -128,6 +129,11 @@ def _config(**overrides: Any) -> dict[str, Any]:
         "budgets": {"max_tokens_per_run": 20000},
     }
     return {**body, **overrides}
+
+
+def _version(reason: str = "Test change", **overrides: Any) -> dict[str, Any]:
+    """A new config version's body (Story 7.3): a config plus the required reason."""
+    return {**_config(**overrides), "reason": reason}
 
 
 def _agent_rows(engine: Engine, agent_id: str) -> dict[str, Any]:
@@ -428,6 +434,7 @@ def test_non_admins_get_403_on_every_registry_endpoint(client: TestClient) -> No
         _problem(client.get(URL, headers=headers), 403)
         _problem(client.get(f"{URL}/pm_agent", headers=headers), 403)
         _problem(client.get(f"{URL}/pm_agent/config-versions", headers=headers), 403)
+        _problem(client.get(f"{URL}/pm_agent/config-options", headers=headers), 403)
         _problem(
             client.post(
                 URL,
@@ -440,7 +447,7 @@ def test_non_admins_get_403_on_every_registry_endpoint(client: TestClient) -> No
             client.post(
                 f"{URL}/pm_agent/config-versions",
                 headers={**headers, **_if_match(1)},
-                json=_config(),
+                json=_version(),
             ),
             403,
         )
@@ -509,10 +516,10 @@ def test_a_new_version_becomes_current_with_a_trace_event(
     agent = _register(client, admin, test_manifest)
     v1 = agent["current_config"]["id"]
     url = f"{URL}/{test_manifest}/config-versions"
-    _problem(client.post(url, headers=admin, json=_config(prompt_version=2)), 428)
-    _problem(client.post(url, headers={**admin, **_if_match(9)}, json=_config()), 412)
+    _problem(client.post(url, headers=admin, json=_version(prompt_version=2)), 428)
+    _problem(client.post(url, headers={**admin, **_if_match(9)}, json=_version()), 412)
     resp = client.post(
-        url, headers={**admin, **_if_match(1)}, json=_config(semver="0.3.0", prompt_version=2)
+        url, headers={**admin, **_if_match(1)}, json=_version(semver="0.3.0", prompt_version=2)
     )
     assert resp.status_code == 201, resp.text
     changed = resp.json()
@@ -537,6 +544,8 @@ def test_a_new_version_becomes_current_with_a_trace_event(
         "version": 2,
         "from_config_version_id": v1,
         "to_config_version_id": v2,
+        "reason": "Test change",
+        "restored_from_version": None,
     }
     # Runs resolve the new current version.
     assert _version_rows(sync_engine, test_manifest)[-1]["id"] == UUID(v2)
@@ -559,7 +568,7 @@ def test_a_config_outside_the_manifest_is_422_not_deployed(
     resp = client.post(
         f"{URL}/{test_manifest}/config-versions",
         headers={**admin, **_if_match(1)},
-        json=_config(**overrides),
+        json=_version(**overrides),
     )
     _problem(resp, 422, "registry_config_not_deployed")
     assert len(_version_rows(sync_engine, test_manifest)) == 1
@@ -581,7 +590,7 @@ def test_an_output_schema_for_another_contract_is_422(
     resp = client.post(
         f"{URL}/{test_manifest}/config-versions",
         headers={**admin, **_if_match(1)},
-        json=_config(output_schema_version=2),
+        json=_version(output_schema_version=2),
     )
     _problem(resp, 422, "registry_config_incompatible_contract")
     assert len(_version_rows(sync_engine, test_manifest)) == 1
@@ -598,7 +607,7 @@ def test_invalid_config_fields_are_422(client: TestClient, test_manifest: str) -
         {"unknown": 1},
     ):
         _problem(
-            client.post(url, headers={**admin, **_if_match(1)}, json=_config(**overrides)), 422
+            client.post(url, headers={**admin, **_if_match(1)}, json=_version(**overrides)), 422
         )
 
 
@@ -611,7 +620,7 @@ def test_a_non_read_tool_permission_is_422_and_stores_nothing(
     url = f"{URL}/{test_manifest}/config-versions"
     for grant in (["intake.requirement.edit"], ["gaps.gap.list", "estimates.estimate.export"]):
         resp = client.post(
-            url, headers={**admin, **_if_match(1)}, json=_config(tool_permissions=grant)
+            url, headers={**admin, **_if_match(1)}, json=_version(tool_permissions=grant)
         )
         _problem(resp, 422, "tool_permission_not_read_only")
     assert len(_version_rows(sync_engine, test_manifest)) == 1
@@ -675,6 +684,190 @@ def test_psa_app_cannot_edit_or_delete_versions_or_delete_agents(sync_engine: En
         with pytest.raises(sa.exc.ProgrammingError, match="permission denied"):
             with sync_engine.begin() as conn:
                 conn.execute(sa.text(statement), {"v": seeded})
+
+
+# --- reasons, restores, author names and options (Story 7.3) ------------------------------
+
+
+@pytest.mark.parametrize("reason", ["", "   ", "x" * 501, None])
+def test_a_new_version_needs_a_reason_of_at_most_500_characters(
+    client: TestClient, sync_engine: Engine, test_manifest: str, reason: str | None
+) -> None:
+    admin, _ = _admin(client)
+    _register(client, admin, test_manifest)
+    body = _version()
+    if reason is None:
+        del body["reason"]
+    else:
+        body["reason"] = reason
+    resp = client.post(
+        f"{URL}/{test_manifest}/config-versions", headers={**admin, **_if_match(1)}, json=body
+    )
+    _problem(resp, 422)
+    assert len(_version_rows(sync_engine, test_manifest)) == 1
+    assert _agent_rows(sync_engine, test_manifest)["row_version"] == 1
+
+
+def test_the_reason_is_trimmed_and_stored_with_the_author_name(
+    client: TestClient, sync_engine: Engine, test_manifest: str
+) -> None:
+    admin, admin_id = _admin(client, "Ada Admin")
+    _register(client, admin, test_manifest)
+    url = f"{URL}/{test_manifest}/config-versions"
+    reason = "  " + "r" * 500 + "  "
+    resp = client.post(
+        url, headers={**admin, **_if_match(1)}, json=_version(reason, prompt_version=2)
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["current_config"]["reason"] == "r" * 500
+    assert resp.json()["current_config"]["created_by_name"] == "Ada Admin"
+    stored = _version_rows(sync_engine, test_manifest)
+    assert [(v["reason"], v["restored_from_version"]) for v in stored] == [
+        (None, None),
+        ("r" * 500, None),
+    ]
+    newest, first = client.get(url, headers=admin).json()["items"]
+    assert (newest["version"], newest["created_by_id"], newest["created_by_name"]) == (
+        2,
+        str(admin_id),
+        "Ada Admin",
+    )
+    assert (first["reason"], first["created_by_name"]) == (None, "Ada Admin")
+    listed = {a["agent_id"]: a for a in client.get(URL, headers=admin).json()["items"]}
+    assert listed[test_manifest]["current_config"]["created_by_name"] == "Ada Admin"
+
+
+def test_seeded_versions_have_no_author_name_or_reason(client: TestClient) -> None:
+    admin, _ = _admin(client)
+    versions = client.get(f"{URL}/pm_agent/config-versions", headers=admin).json()["items"]
+    seeded = versions[-1]
+    assert seeded["id"] == str(rules.seed_config_version_id("pm_agent"))
+    assert (seeded["created_by_id"], seeded["created_by_name"]) == (None, None)
+    assert (seeded["reason"], seeded["restored_from_version"]) == (None, None)
+
+
+def test_a_restore_inserts_a_copy_and_records_its_source(
+    client: TestClient, sync_engine: Engine, test_manifest: str
+) -> None:
+    admin, admin_id = _admin(client)
+    agent = _register(client, admin, test_manifest)
+    url = f"{URL}/{test_manifest}/config-versions"
+    changed = client.post(
+        url, headers={**admin, **_if_match(1)}, json=_version(semver="0.3.0", prompt_version=2)
+    )
+    assert changed.status_code == 201, changed.text
+    v1 = _version_rows(sync_engine, test_manifest)[0]
+    restore = _version("Back to the first prompt", semver="0.3.1") | {"restored_from_version": 1}
+    resp = client.post(url, headers={**admin, **_if_match(2)}, json=restore)
+    assert resp.status_code == 201, resp.text
+    current = resp.json()["current_config"]
+    assert (current["version"], current["prompt_version"], current["semver"]) == (3, 1, "0.3.1")
+    assert (current["restored_from_version"], current["reason"]) == (1, "Back to the first prompt")
+    after = _version_rows(sync_engine, test_manifest)
+    assert after[0] == v1  # the restored row is unchanged
+    assert [v["restored_from_version"] for v in after] == [None, None, 1]
+    event = _events(sync_engine, agent["id"])[-1]
+    assert event["event_type"] == "registry.agent_config.version_created"
+    assert event["actor_id"] == str(admin_id)
+    assert event["payload"] == {
+        "agent_id": test_manifest,
+        "version": 3,
+        "from_config_version_id": str(after[1]["id"]),
+        "to_config_version_id": current["id"],
+        "reason": "Back to the first prompt",
+        "restored_from_version": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"prompt_version": 2},
+        {"model_profile": "demo-chat"},
+        {"tool_permissions": []},
+        {"budgets": {"max_tokens_per_run": 1}},
+    ],
+)
+def test_a_restore_that_changes_a_config_field_is_422(
+    client: TestClient, sync_engine: Engine, test_manifest: str, overrides: dict[str, Any]
+) -> None:
+    admin, _ = _admin(client)
+    _register(client, admin, test_manifest)
+    resp = client.post(
+        f"{URL}/{test_manifest}/config-versions",
+        headers={**admin, **_if_match(1)},
+        json=_version(semver="0.2.1", **overrides) | {"restored_from_version": 1},
+    )
+    body = _problem(resp, 422)
+    assert "must copy version 1 exactly" in body["detail"]
+    assert len(_version_rows(sync_engine, test_manifest)) == 1
+    assert _agent_rows(sync_engine, test_manifest)["row_version"] == 1
+
+
+@pytest.mark.parametrize("restored", [2, 99])
+def test_restoring_a_version_the_agent_lacks_is_422(
+    client: TestClient, sync_engine: Engine, test_manifest: str, restored: int
+) -> None:
+    admin, _ = _admin(client)
+    _register(client, admin, test_manifest)
+    resp = client.post(
+        f"{URL}/{test_manifest}/config-versions",
+        headers={**admin, **_if_match(1)},
+        json=_version() | {"restored_from_version": restored},
+    )
+    body = _problem(resp, 422)
+    assert f"no config version {restored}" in body["detail"]
+    assert len(_version_rows(sync_engine, test_manifest)) == 1
+    assert _agent_rows(sync_engine, test_manifest)["row_version"] == 1
+
+
+def test_admins_read_the_deployed_config_options(client: TestClient, test_manifest: str) -> None:
+    admin, _ = _admin(client)
+    _register(client, admin, test_manifest)
+    resp = client.get(f"{URL}/{test_manifest}/config-options", headers=admin)
+    assert resp.status_code == 200, resp.text
+    manifest = deployed.load()
+    assert resp.json() == {
+        "model_profiles": sorted(manifest.data["profiles"]),
+        "prompt_versions": [1, 2],
+        "input_schema_versions": [1],
+        "output_schema_versions": [1],  # v2 is written for another contract version
+        "tool_permissions": sorted(READ_TOOLS),
+    }
+    estimating = client.get(f"{URL}/estimating_agent/config-options", headers=admin).json()
+    assert estimating["prompt_versions"] == [1]
+    _problem(client.get(f"{URL}/nobody_agent/config-options", headers=admin), 404)
+
+
+def test_the_reason_migration_downgrades_and_upgrades(sync_engine: Engine) -> None:
+    def columns() -> set[str]:
+        found = rows(
+            sync_engine,
+            "SELECT column_name FROM information_schema.columns WHERE table_name = :t",
+            t="registry_agent_config_versions",
+        )
+        return {row["column_name"] for row in found}
+
+    assert {"reason", "restored_from_version"} <= columns()
+    _alembic("downgrade", "0042_blocking_findings")
+    try:
+        assert not {"reason", "restored_from_version"} & columns()
+    finally:
+        _alembic("upgrade", "head")
+    assert {"reason", "restored_from_version"} <= columns()
+    # A restore can only name an earlier version.
+    with pytest.raises(sa.exc.IntegrityError):
+        with sync_engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO registry_agent_config_versions (id, agent_id, version, semver, "
+                    "model_profile, model_digest, prompt_version, input_schema_version, "
+                    "output_schema_version, contract_version, tool_permissions, budgets, "
+                    "restored_from_version) VALUES (:id, 'pm_agent', 999, '0.1.0', 'demo-chat', "
+                    "'unpinned', 1, 1, 1, '1', '[]', '{}', 999)"
+                ),
+                {"id": uuid4()},
+            )
 
 
 # --- disabled Agents in runs ---------------------------------------------------------------
@@ -857,7 +1050,7 @@ def test_a_run_keeps_the_version_it_pinned_when_a_new_one_is_created(
     created = client.post(
         f"{URL}/engineering_agent/config-versions",
         headers={**admin, **_if_match(current["row_version"])},
-        json=same,
+        json={**same, "reason": "Pinning test"},
     )
     assert created.status_code == 201, created.text
     after = UUID(created.json()["current_config"]["id"])
@@ -1020,7 +1213,7 @@ def test_a_prompt_version_missing_a_named_prompt_file_is_422_not_deployed(
     resp = client.post(
         f"{URL}/estimating_agent/config-versions",
         headers={**admin, **_if_match(current["row_version"])},
-        json=_config(semver="0.1.0", model_profile="demo-chat", prompt_version=2),
+        json=_version(semver="0.1.0", model_profile="demo-chat", prompt_version=2),
     )
     _problem(resp, 422, "registry_config_not_deployed")
     assert len(_version_rows(sync_engine, "estimating_agent")) == before

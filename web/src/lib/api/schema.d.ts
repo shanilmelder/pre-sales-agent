@@ -2146,10 +2146,32 @@ export interface paths {
         put?: never;
         /**
          * Create Agent Config Version
-         * @description Create the Agent's next config version; it becomes current for new runs. Runs in
-         *     progress keep the version they pinned.
+         * @description Create the Agent's next config version with a required reason; it becomes current for
+         *     new runs. Runs in progress keep the version they pinned. A restore names the earlier
+         *     version it copies in `restored_from_version`; that version is left unchanged.
          */
         post: operations["create_agent_config_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/agents/{agent_id}/config-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Config Options
+         * @description What a new config version of the Agent may reference: the deployed model profiles,
+         *     its prompt and schema versions, and the read-only tools.
+         */
+        get: operations["get_agent_config_options"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2298,9 +2320,30 @@ export interface components {
             category: components["schemas"]["GapCategory"];
         };
         /**
+         * AgentConfigOptions
+         * @description What a new config version of this Agent may reference, from the deployed manifest
+         *     (Story 7.3): the model profiles, the Agent's deployed prompt versions, its input schema
+         *     versions and its output schema versions written for the deployed contract version, and
+         *     the ToolGateway's read-only tools. Each list is sorted.
+         */
+        AgentConfigOptions: {
+            /** Model Profiles */
+            model_profiles: string[];
+            /** Prompt Versions */
+            prompt_versions: number[];
+            /** Input Schema Versions */
+            input_schema_versions: number[];
+            /** Output Schema Versions */
+            output_schema_versions: number[];
+            /** Tool Permissions */
+            tool_permissions: string[];
+        };
+        /**
          * AgentConfigVersion
          * @description One immutable config version of an Agent. `model_digest` is `unpinned` until digests
-         *     are pinned (Story 7.2); `created_by_id` is null for the versions the migration seeded.
+         *     are pinned (Story 7.2); `created_by_id` and `created_by_name` are null for the versions
+         *     the migration seeded. `reason` is null for seeded and earlier versions (Story 7.3);
+         *     `restored_from_version` is the earlier version a restore copied, else null.
          */
         AgentConfigVersion: {
             /** Id */
@@ -2331,6 +2374,12 @@ export interface components {
             };
             /** Created By Id */
             created_by_id: string | null;
+            /** Created By Name */
+            created_by_name: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Restored From Version */
+            restored_from_version: number | null;
             /**
              * Created At
              * Format: date-time
@@ -4657,6 +4706,35 @@ export interface components {
             budgets?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * NewAgentConfigVersion
+         * @description A new config version of an existing Agent (Story 7.3). `reason`: required, trimmed,
+         *     1-500 characters. `restored_from_version`: set when the version restores an earlier one
+         *     of the same Agent (422 when the Agent has no such version); its fields are the ones
+         *     given here, which the client copies from that version.
+         */
+        NewAgentConfigVersion: {
+            /** Semver */
+            semver: string;
+            /** Model Profile */
+            model_profile: string;
+            /** Prompt Version */
+            prompt_version: number;
+            /** Input Schema Version */
+            input_schema_version: number;
+            /** Output Schema Version */
+            output_schema_version: number;
+            /** Tool Permissions */
+            tool_permissions?: string[];
+            /** Budgets */
+            budgets?: {
+                [key: string]: unknown;
+            };
+            /** Reason */
+            reason: string;
+            /** Restored From Version */
+            restored_from_version?: number | null;
         };
         /**
          * NewChecklist
@@ -22656,7 +22734,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NewAgentConfig"];
+                "application/json": components["schemas"]["NewAgentConfigVersion"];
             };
         };
         responses: {
@@ -22783,6 +22861,139 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_agent_config_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Agent's id, e.g. `pm_agent`. */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigOptions"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Agent with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
