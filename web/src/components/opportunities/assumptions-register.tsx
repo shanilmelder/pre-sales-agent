@@ -18,6 +18,9 @@ import {
 } from "@/app/opportunities/actions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { ACCEPT } from "@/components/opportunities/assumption-inspector";
+import { OriginText } from "@/components/opportunities/estimate-item-parts";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { Pill } from "@/components/ui/pill";
 import { ImpactBar } from "@/components/opportunities/impact-bar";
@@ -25,7 +28,8 @@ import { useAnnounce } from "@/components/shell/live-region";
 import {
   acceptAllLabel,
   acceptedLabel,
-  assumptionKindLabel,
+  assumptionId,
+  assumptionLabel,
   carriedLabel,
   CONDITIONS,
   CONTINGENCIES,
@@ -46,7 +50,7 @@ import {
 import { categoryLabel } from "@/lib/gaps";
 import { cn } from "@/lib/utils";
 
-export const ACCEPT = "Accept";
+export { ACCEPT };
 export const RELOAD = "Reload";
 const ACCEPT_FAILED = "The Assumption could not be accepted. Try again.";
 const ACCEPT_NOT_ALLOWED =
@@ -55,7 +59,9 @@ const GAP_NOT_OPEN =
   "Its Gap is no longer open: it was dismissed, converted or replaced by a newer Gap detection. Reload to see the latest.";
 const GONE = "This Assumption is no longer in the current draft. Reload to see the latest.";
 
-function failure(result: AssumptionAcceptResult | AcceptAllAssumptionsResult): string {
+export function acceptFailure(
+  result: AssumptionAcceptResult | AcceptAllAssumptionsResult,
+): string {
   switch (result.kind) {
     case "gap-not-open":
       return GAP_NOT_OPEN;
@@ -68,24 +74,32 @@ function failure(result: AssumptionAcceptResult | AcceptAllAssumptionsResult): s
   }
 }
 
-/** One Assumption as a Register row: its wording, "{kind} · from Gap: {title}" (the Gap opens
- * in the inspector), its hours and line, and its status. An unaccepted row is a blocker row:
- * blocker tint, a 2px blocker bar and a red "Not accepted" with an alert icon (never colour
- * alone), with **Accept** for those who may accept. An accepted row reads, in green with a
- * check, "Accepted by {name} · {date}". */
+/** One Assumption as a Register row (Story 8.5 anatomy): its `A{n}` ID chip and wording (a
+ * button that opens the Assumption inspector; a click anywhere on the row does too), then a
+ * muted "{Condition | Contingency · N.N h} · from {Gap | Unknown}: {title}" (the chip opens the
+ * origin Gap in the inspector; a superseded origin is struck through and labelled), the linked
+ * line, and its status. An unaccepted row is a blocker row: blocker tint, a 2px blocker bar and
+ * a red "Not accepted" with an alert icon (never colour alone), with **Accept** for those who
+ * may accept. An accepted row reads, in green with a check, "Accepted by {name} · {date}". */
 function AssumptionRow({
   assumption,
   canAccept,
   busy,
   selected,
+  gapSelected,
   onAccept,
+  onOpen,
   onOpenGap,
 }: {
   assumption: Assumption;
   canAccept: boolean;
   busy: boolean;
+  /** The Assumption is open in the inspector. */
   selected: boolean;
+  /** Its origin Gap is open in the inspector. */
+  gapSelected: boolean;
   onAccept: (assumption: Assumption) => void;
+  onOpen?: (assumption: Assumption, viaKeyboard: boolean) => void;
   onOpenGap: (assumption: Assumption, viaKeyboard: boolean) => void;
 }) {
   const accepted = assumption.accepted_at !== null;
@@ -94,38 +108,63 @@ function AssumptionRow({
     <li
       data-assumption-id={assumption.id}
       data-blocker={accepted ? undefined : ""}
+      data-selected={selected ? "" : undefined}
+      onClick={(event) => {
+        // A click on the row opens it, except on its own buttons (Accept, the origin chip).
+        const target = event.target as HTMLElement;
+        if (target.closest("button")) return;
+        onOpen?.(assumption, false);
+      }}
       className={cn(
         "flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-border px-5 py-3",
-        accepted ? "" : "bg-blocker-tint shadow-[inset_2px_0_0_var(--blocker)]",
+        onOpen ? "cursor-pointer" : "",
+        selected
+          ? "bg-primary-tint"
+          : accepted
+            ? ""
+            : "bg-blocker-tint shadow-[inset_2px_0_0_var(--blocker)]",
+        selected && !accepted ? "shadow-[inset_2px_0_0_var(--blocker)]" : "",
       )}
     >
-      <div className="flex min-w-0 flex-1 basis-72 flex-col gap-1">
-        <p className="break-words text-body">{assumption.wording}</p>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-          <span className="flex min-w-0 items-center gap-1">
-            <span className="text-meta">{`${assumptionKindLabel(assumption.kind)} ·`}</span>
+      <div className="flex min-w-0 flex-1 basis-72 items-start gap-3">
+        <Chip className="mt-0.5 shrink-0 px-1.5 py-0" data-assumption-label="">
+          {assumptionId(assumption)}
+        </Chip>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {onOpen ? (
             <button
               type="button"
-              data-gap-chip=""
+              data-open-assumption=""
               aria-pressed={selected}
-              onClick={(event) => onOpenGap(assumption, event.detail === 0)}
-              className={cn(
-                "max-w-72 truncate rounded-sm text-left underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary",
-                selected ? "text-foreground underline" : "text-primary-text",
-              )}
+              onClick={(event) => onOpen(assumption, event.detail === 0)}
+              className="w-fit rounded-sm text-left break-words text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <span className="text-meta">{`from Gap: ${assumption.origin.title}`}</span>
+              {assumption.wording}
             </button>
-          </span>
-          {assumption.amount_hours !== null ? (
-            <span className="text-numeric whitespace-nowrap text-foreground">
-              {`${hours(assumption.amount_hours)} h`}
+          ) : (
+            <p className="break-words text-body">{assumption.wording}</p>
+          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="text-meta">{`${assumptionLabel(assumption)} ·`}</span>
+              <button
+                type="button"
+                data-gap-chip=""
+                aria-pressed={gapSelected}
+                onClick={(event) => onOpenGap(assumption, event.detail === 0)}
+                className={cn(
+                  "max-w-80 truncate rounded-sm text-left underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary",
+                  gapSelected ? "text-foreground underline" : "text-primary-text",
+                )}
+              >
+                <OriginText item={assumption} />
+              </button>
             </span>
-          ) : null}
-          {assumption.line ? (
-            <span className="min-w-0 truncate text-meta">{`Line: ${assumption.line.title}`}</span>
-          ) : null}
-          {carried ? <span className="text-meta">{carried}</span> : null}
+            {assumption.line ? (
+              <span className="min-w-0 truncate text-meta">{`Line: ${assumption.line.title}`}</span>
+            ) : null}
+            {carried ? <span className="text-meta">{carried}</span> : null}
+          </div>
         </div>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-3">
@@ -173,7 +212,9 @@ function Group({
   canAccept: boolean;
   busyId: string | null;
   selectedId: string | null;
+  selectedAssumptionId: string | null;
   onAccept: (assumption: Assumption) => void;
+  onOpen?: (assumption: Assumption, viaKeyboard: boolean) => void;
   onOpenGap: (assumption: Assumption, viaKeyboard: boolean) => void;
 }) {
   const headingId = useId();
@@ -196,8 +237,10 @@ function Group({
             assumption={assumption}
             canAccept={row.canAccept}
             busy={row.busyId !== null}
-            selected={assumption.id === row.selectedId}
+            selected={assumption.id === row.selectedAssumptionId}
+            gapSelected={assumption.id === row.selectedId}
             onAccept={row.onAccept}
+            onOpen={row.onOpen}
             onOpenGap={row.onOpenGap}
           />
         ))}
@@ -220,16 +263,23 @@ export function AssumptionsRegister({
   version,
   canAccept,
   selectedId = null,
+  selectedAssumptionId = null,
   onChanged,
+  onOpen,
   onOpenGap,
 }: {
   opportunityId: string;
   version: EstimateVersion;
+  /** Whether Accept and Accept all are offered (a draft version, and the caller may accept). */
   canAccept: boolean;
   /** The Assumption whose Gap is open in the inspector. */
   selectedId?: string | null;
+  /** The Assumption open in the inspector (Story 8.5). */
+  selectedAssumptionId?: string | null;
   /** The Estimate as read again after an accept or a Reload. */
   onChanged: (estimate: EstimateView) => void;
+  /** Open the Assumption in the inspector (Story 8.5). */
+  onOpen?: (assumption: Assumption, viaKeyboard: boolean) => void;
   onOpenGap: (assumption: Assumption, viaKeyboard: boolean) => void;
 }) {
   const announce = useAnnounce();
@@ -277,7 +327,7 @@ export function AssumptionsRegister({
       setStale({ changedBy: result.changedBy });
       announce(staleMessage(result.changedBy));
     } else {
-      const sentence = failure(result);
+      const sentence = acceptFailure(result);
       setMessage(sentence);
       announce(sentence);
     }
@@ -299,7 +349,7 @@ export function AssumptionsRegister({
       await reload();
       announce(`${result.count} accepted`);
     } else {
-      const sentence = failure(result);
+      const sentence = acceptFailure(result);
       setMessage(sentence);
       announce(sentence);
     }
@@ -310,7 +360,9 @@ export function AssumptionsRegister({
     canAccept,
     busyId,
     selectedId,
+    selectedAssumptionId,
     onAccept: (a: Assumption) => void accept(a),
+    onOpen,
     onOpenGap,
   };
   const status = registerStatus(counts);

@@ -835,9 +835,11 @@ def test_accepting_fails_whole_when_the_gap_is_no_longer_open(
 ) -> None:
     headers, opp = proposed(client, sync_engine, db_url, gateway)
     wms = _all(_register(client, headers, opp["id"]))["WMS version unknown"]
-    with sync_engine.begin() as conn:  # converted elsewhere first
+    # Converted elsewhere first: to a Risk (Story 8.5; a Gap converted to an Assumption is
+    # this Assumption's own conversion, accepted again after an edit).
+    with sync_engine.begin() as conn:
         conn.exec_driver_sql(
-            "UPDATE gaps_gaps SET status = 'converted', converted_to = 'condition', "
+            "UPDATE gaps_gaps SET status = 'converted', converted_to = 'risk', "
             "row_version = row_version + 1 WHERE id = %s",
             (UUID(wms["origin"]["id"]),),
         )
@@ -970,13 +972,18 @@ def test_redetection_leaves_converted_gaps_alone(
     assert_problem(_accept(client, headers, opp["id"], wms["id"]).json(), 409, "gap_not_open")
 
 
-def test_psa_app_cannot_delete_assumptions(
+def test_psa_app_may_delete_assumptions(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
+    """Story 8.5 grants DELETE (converting a Gap to a Risk removes its unaccepted proposal);
+    the grant is the table's, so this only checks it exists."""
     _, opp = proposed(client, sync_engine, db_url, gateway)
-    first = assumption_rows(sync_engine, opp["id"])[0]
-    with pytest.raises(sa.exc.ProgrammingError), sync_engine.begin() as conn:
-        conn.execute(sa.text("DELETE FROM estimates_assumptions WHERE id = :i"), {"i": first["id"]})
+    with sync_engine.connect() as conn:
+        allowed = conn.execute(
+            sa.text("SELECT has_table_privilege('estimates_assumptions', 'DELETE')")
+        ).scalar_one()
+    assert allowed is True
+    assert len(assumption_rows(sync_engine, opp["id"])) == 4
 
 
 class _Hanging:

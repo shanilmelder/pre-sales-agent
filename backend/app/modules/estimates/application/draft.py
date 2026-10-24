@@ -58,6 +58,7 @@ from app.agents.estimating_agent.schema import EstimatingOutput
 from app.modules.estimates.adapters import repository as repo
 from app.modules.estimates.application.assumptions import carry_accepted, enqueue_proposals
 from app.modules.estimates.application.line_edits import CarriedEdits, carry_edits
+from app.modules.estimates.application.risks import carry_risks
 from app.modules.estimates.domain.assumptions import ProposalStatus
 from app.modules.estimates.domain.estimates import (
     ESTIMATING_AGENT,
@@ -284,7 +285,7 @@ async def store_version(
 ) -> StoredVersion:
     """Store `lines` as the Opportunity's new `draft` Estimate Version, superseding its
     current draft, and do what follows every new version: carry the superseded draft's
-    accepted Assumptions (Story 8.7) and line edits (Story 8.2) onto it, trace
+    Assumptions (Stories 8.7 and 8.5), Risks (Story 8.5) and line edits (Story 8.2) onto it, trace
     `estimates.estimate_version.created`, queue its Assumption proposals (Story 8.4) and the
     Opportunity's Red Team Review (Story 6.5). No model call. The caller holds the
     Opportunity's draft lock (`repo.lock_opportunity`).
@@ -327,6 +328,12 @@ async def store_version(
         if previous is None
         else await carry_accepted(uow, source_version_id=previous.id, target_version_id=version_id)
     )
+    # Story 8.5: every Risk of the superseded draft is carried.
+    carried_risks = (
+        0
+        if previous is None
+        else await carry_risks(uow, source_version_id=previous.id, target_version_id=version_id)
+    )
     # Story 8.2: a person's edits of the superseded draft's lines go onto the matching lines.
     edits = (
         CarriedEdits(0, 0)
@@ -342,6 +349,7 @@ async def store_version(
         requirement_count=requirement_count,
         superseded_count=superseded,
         carried_assumption_count=carried,
+        carried_risk_count=carried_risks,
         carried_edit_count=edits.carried,
         uncarried_edit_count=edits.uncarried,
         source=source.value,
