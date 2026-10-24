@@ -6,7 +6,7 @@ from app.modules.gaps.application import answer_matching, detection
 from app.modules.gaps.application import tools as tools  # registers the ToolGateway handler
 from app.modules.gaps.application.answer_matching import confirm_match, reject_match
 from app.modules.gaps.application.context import gaps_context
-from app.modules.gaps.application.conversion import mark_converted
+from app.modules.gaps.application.conversion import mark_converted, set_converted_to
 from app.modules.gaps.application.gap_commands import change_impact, dismiss_gap, reopen_gap
 from app.modules.gaps.application.gap_refs import (
     GapSummary,
@@ -57,7 +57,7 @@ from app.modules.gaps.application.questions import (
     mark_sent,
     mark_unanswered,
 )
-from app.modules.gaps.domain.gaps import GapCategory, Impact
+from app.modules.gaps.domain.gaps import GapCategory, GapStatus, Impact, is_unknown
 from app.platform.uow import UnitOfWork
 
 
@@ -98,6 +98,7 @@ __all__ = [
     "GapList",
     "GapReopening",
     "GapRequirement",
+    "GapStatus",
     "GapSummary",
     "GapTrigger",
     "GapsContext",
@@ -128,6 +129,7 @@ __all__ = [
     "gap_summaries",
     "gaps_context",
     "irrelevance_share",
+    "is_unknown",
     "list_gaps",
     "mark_converted",
     "mark_sent",
@@ -137,5 +139,6 @@ __all__ = [
     "reject_match",
     "reopen_gap",
     "security_policies",
+    "set_converted_to",
     "start_detection",
 ]

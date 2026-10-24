@@ -484,7 +484,10 @@ export function dismissedLabel(dismissal: GapDismissal): string {
 }
 
 /** What a history entry says happened, e.g. "Impact changed from High to Low". */
-export function historyAction(entry: GapHistoryEntry): string {
+export function historyAction(
+  entry: GapHistoryEntry,
+  convertedTo?: Gap["converted_to"],
+): string {
   switch (entry.kind) {
     case "raised":
       return "Raised by Clarification Agent";
@@ -499,7 +502,7 @@ export function historyAction(entry: GapHistoryEntry): string {
     case "reopened":
       return "Reopened";
     case "converted":
-      return "Converted to Assumption";
+      return convertedTo === "risk" ? "Converted to Risk" : "Converted to Assumption";
     case "answered":
       return "Answered";
     default:

@@ -68,6 +68,7 @@ def _assumption(
 ) -> dict[str, Any]:
     return {
         "id": f"0199b1a0-0000-7000-8000-0000000002{n:02d}",
+        "position": n,
         "kind": kind,
         "wording": f"Wording {n}",
         "amount_hours": hours,
@@ -81,6 +82,8 @@ def _assumption(
             "why_it_matters": "",
             "status": "converted" if accepted else "open",
         },
+        "origin_superseded": False,
+        "origin_is_unknown": False,
         "accepted_by": USER if accepted else None,
         "accepted_at": "2026-10-04T09:00:00Z" if accepted else None,
         "row_version": 1,
@@ -124,6 +127,7 @@ def version(unallocated: float = 12.0) -> EstimateVersion:
             "counts": {"total": 4, "accepted": 3, "not_accepted": 1},
             "unconverted_gaps": [],
             "unallocated_contingency_hours": unallocated,
+            "risks": [],
             "uncarried_edit_count": 0,
             "uncarried_edits_from_version": None,
             "source": "model",

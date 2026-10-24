@@ -1,4 +1,4 @@
-import { getGapsContext, getOpportunity, listGaps } from "@/app/opportunities/data";
+import { getEstimate, getGapsContext, getOpportunity, listGaps } from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { GapsSection } from "@/components/opportunities/gaps-list";
 import { getMe } from "@/lib/api/server";
@@ -15,10 +15,16 @@ export async function GapsTab({ id }: { id: string }) {
   const loaded = await getOpportunity(id);
   if (loaded.kind !== "ok") return null;
   const { opportunity } = loaded;
-  const [listed, context] = await Promise.all([
+  const [listed, context, estimate] = await Promise.all([
     listGaps(opportunity.id),
     getGapsContext(opportunity.id),
+    getEstimate(opportunity.id),
   ]);
+  // Story 8.5: Convert to Risk needs a draft Estimate and the right to create Risks.
+  const canConvertToRisk =
+    estimate.kind === "ok" &&
+    estimate.estimate.version?.status === "draft" &&
+    estimate.estimate.can_create_risks;
 
   return (
     <div className={`flex flex-col gap-4 ${PAGE_PADDING}`}>
@@ -29,6 +35,7 @@ export async function GapsTab({ id }: { id: string }) {
           opportunityId={opportunity.id}
           initial={listed.list}
           context={context.kind === "ok" ? context.context : null}
+          canConvertToRisk={canConvertToRisk}
         />
       ) : (
         <>

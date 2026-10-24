@@ -1,4 +1,4 @@
-"""The estimates module's tables (Stories 8.1 and 8.4). `opportunity_id`, `requirement_id`
+"""The estimates module's tables (Stories 8.1, 8.4 and 8.5). `opportunity_id`, `requirement_id`
 and an Assumption's origin Gap and `accepted_by` hold ids owned by other modules without
 foreign keys (AD-2)."""
 
@@ -176,7 +176,10 @@ class AssumptionRow(RowVersioned, Base):
     origin (`origin_ref`: `{kind: "gap", id, row_version}`). Inserted unaccepted; accepting
     sets `accepted_by` and `accepted_at` together. `position` keeps the proposal order.
     `carried_from` (Story 8.7): the accepted Assumption of the superseded version this one
-    was copied from by a re-draft, null for a proposal."""
+    was copied from by a re-draft, null for a proposal. Story 8.5: a person may edit its kind,
+    wording, hours and line on a `draft` version, which clears the acceptance and bumps
+    `row_version`; `changed_by` is the person behind its latest accept or edit. Deleted only
+    when its Gap is converted to a Risk while it is unaccepted."""
 
     __tablename__ = "estimates_assumptions"
     __table_args__ = (
@@ -225,3 +228,48 @@ class AssumptionRow(RowVersioned, Base):
         ),
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    changed_by: Mapped[UUID | None] = mapped_column(Uuid)
+
+
+class RiskRow(RowVersioned, Base):
+    """A Risk of an Estimate Version (Story 8.5), made from one Gap (`origin_ref`: `{kind:
+    "gap", id, row_version}`) by a person (`created_by`): a description and a `likelihood` and
+    `impact` (`low|medium|high`). Never accepted and never a blocker. A person may edit it on
+    a `draft` version (`changed_by`, `row_version`). `carried_from`: the Risk of the
+    superseded draft a re-draft copied it from."""
+
+    __tablename__ = "estimates_risks"
+    __table_args__ = (
+        UniqueConstraint("version_id", "position"),
+        CheckConstraint("likelihood IN ('low', 'medium', 'high')", name="likelihood"),
+        CheckConstraint("impact IN ('low', 'medium', 'high')", name="impact"),
+        CheckConstraint("char_length(description) BETWEEN 1 AND 500", name="description"),
+        CheckConstraint("position >= 1", name="position"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    version_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "estimates_estimate_versions.id",
+            ondelete="CASCADE",
+            name="fk_estimates_risks_version_id",
+        ),
+        index=True,
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(Text)
+    likelihood: Mapped[str] = mapped_column(Text)
+    impact: Mapped[str] = mapped_column(Text)
+    origin_ref: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_by: Mapped[UUID] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    changed_by: Mapped[UUID | None] = mapped_column(Uuid)
+    carried_from: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "estimates_risks.id",
+            ondelete="SET NULL",
+            name="fk_estimates_risks_carried_from",
+        ),
+    )

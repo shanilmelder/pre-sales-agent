@@ -299,12 +299,12 @@ class AnswerRequest(BaseModel):
 
 class Gap(BaseModel):
     """A Gap with the Requirements it relates to and its drafted question. `status` is `open`,
-    `converted` once an Assumption made from it was accepted (Story 8.4; `converted_to` then
-    names the Assumption's kind, `condition` or `contingency`, and is null otherwise),
-    `dismissed` (Story 4.4: `dismissal` says why, by whom and when; null otherwise), or
-    `answered` (Story 4.7). `answer`: the customer's answer once its question is answered
-    (whether or not it settled the Gap), else null; `answer_suggestions`: the open
-    suggestions for its question. `history`: its changes, oldest first. `last_changed_by`:
+    `converted` once converted to an Assumption (accepted, or since edited; Story 8.4) or to a
+    Risk (Story 8.5): `converted_to` then names what it became (`condition`, `contingency` or
+    `risk`), and is null otherwise; `dismissed` (Story 4.4: `dismissal` says why, by whom and
+    when; null otherwise), or `answered` (Story 4.7). `answer`: the customer's answer once its
+    question is answered (whether or not it settled the Gap), else null; `answer_suggestions`:
+    the open suggestions for its question. `history`: its changes, oldest first. `last_changed_by`:
     the person behind its latest change (null until a person changes it)."""
 
     id: str

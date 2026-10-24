@@ -849,7 +849,7 @@ def test_the_reason_migration_downgrades_and_upgrades(sync_engine: Engine) -> No
         return {row["column_name"] for row in found}
 
     assert {"reason", "restored_from_version"} <= columns()
-    _alembic("downgrade", "0042_blocking_findings")
+    _alembic("downgrade", "0043_estimates_risks")
     try:
         assert not {"reason", "restored_from_version"} & columns()
     finally:

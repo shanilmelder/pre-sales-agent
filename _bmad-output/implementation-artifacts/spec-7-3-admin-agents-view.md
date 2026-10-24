@@ -61,7 +61,7 @@ context:
 ## Code Map
 
 - `backend/app/modules/registry/adapters/models.py:52` `ConfigVersionRow` -- add nullable `reason text`, `restored_from_version int`. `adapters/repository.py` `insert_version` / version mapping -- carry both.
-- `backend/migrations/versions/` -- new `20261024_0043_registry_config_reason.py`, revision `0043_registry_config_reason`, down `0042_blocking_findings` (check head). Grants unchanged (INSERT already granted).
+- `backend/migrations/versions/` -- new `20261024_0044_registry_config_reason.py`, revision `0044_registry_config_reason`, down `0043_estimates_risks` (check head). Grants unchanged (INSERT already granted).
 - `backend/app/modules/registry/domain/registry.py` -- `ConfigVersion` gains both fields; add a `reason()` rule (`_bounded`, max 500). `READ_TOOLS` from `app.platform.tool_gateway.catalogue`.
 - `backend/app/modules/registry/application/models.py` -- `AgentConfigVersion` += `reason`, `restored_from_version`, `created_by_name` (null for seeded); new `NewAgentConfigVersion(NewAgentConfig)` with `reason: StrictStr`, `restored_from_version: int | None`; new `AgentConfigOptions` (profiles, prompt_versions, input/output schema versions, tool_permissions).
 - `backend/app/modules/registry/application/registry.py:330` `create_config_version` -- take `NewAgentConfigVersion`; a `restored_from_version` must name an existing version of this Agent (422). `read_versions` resolves names via `identity.user_names` (identity public; allowed). New `read_config_options(uow, actor, agent_id)` from `deployed.load()` (admin only). `register_agent` unchanged.
@@ -80,7 +80,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `backend/migrations/versions/20261024_0043_registry_config_reason.py`, registry adapters/domain -- columns, mapping, reason rule.
+- [x] `backend/migrations/versions/20261024_0044_registry_config_reason.py`, registry adapters/domain -- columns, mapping, reason rule.
 - [x] registry application/api/public + `manifest.py` + trace catalogue -- reason, restore, author names, config-options read.
 - [x] `backend/tests/test_registry.py` -- reason required/trimmed/too long, restore copies and records `restored_from_version`, unknown restore version 422, names resolved (seed null), options endpoint (admin 200, non-admin 403), trace payload, migration up/down.
 - [x] `web`: `npm run gen:api`; `app/admin/agents/actions.ts` (+ test); `components/admin/agents-admin.tsx`, `agents-table.tsx` (selectable), `agent-inspector.tsx`, `agent-config-form.tsx`, `agent-config-diff.tsx`, `agent-status-dialog.tsx`; `lib/admin.ts`; `app/admin/agents/page.tsx` -- wire it.
@@ -91,6 +91,8 @@ context:
 - Given the inspector, when it renders, then it shows agent ID, name, status, current version, semver, model profile, prompt version, schema versions, tool permissions and budgets.
 
 ## Implementation Notes
+
+- Main merged in after Story 8.5 (#82) took `0043_estimates_risks`: this story's migration renumbered to `0044_registry_config_reason` (down `0043_estimates_risks`).
 
 - The migration adds two checks besides the columns: `reason` 1-500 characters when set, and `restored_from_version` between 1 and `version - 1`.
 - Author names are resolved for the list, the single Agent and the history (`created_by_name`); a missing user shows "Unknown user", a seeded version "System".
@@ -135,5 +137,5 @@ Work only in the git worktree `D:/Projects/Office/pre-sales-agent-73` (its own `
 
 **Commands:**
 - `cd backend && uv run ruff check . && uv run mypy app && uv run lint-imports && uv run pytest tests/test_registry.py` -- pass, against `psa_test73` at `127.0.0.1` (app and owner URLs), never the dev `psa` DB.
-- `cd backend && uv run alembic upgrade head && uv run alembic downgrade 0042_blocking_findings && uv run alembic upgrade head && uv run alembic check` (against `psa_test73`) -- clean.
+- `cd backend && uv run alembic upgrade head && uv run alembic downgrade 0043_estimates_risks && uv run alembic upgrade head && uv run alembic check` (against `psa_test73`) -- clean.
 - `cd web && npm run gen:api` against a freshly started local uvicorn, then `npm run lint && npm run typecheck && npm test` -- pass, no schema drift.
