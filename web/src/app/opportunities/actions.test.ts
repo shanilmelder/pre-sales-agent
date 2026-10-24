@@ -54,6 +54,7 @@ import {
   loadImport,
   loadOutdatedAssessments,
   loadRedTeam,
+  loadCritic,
   loadRequirements,
   loadSources,
   markClarificationQuestionsSent,
@@ -810,6 +811,30 @@ describe("startRedTeamReview", () => {
   });
 });
 
+describe("loadCritic", () => {
+  it("reads the Opportunity's Critic Review (Story 6.4)", async () => {
+    const VIEW = { review: null };
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ data: VIEW, response: new Response(null, { status: 200 }) });
+    expect(await loadCritic(OPP_ID)).toEqual({ kind: "ok", critic: VIEW });
+    expect(api.GET).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/critic", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await loadCritic(7)).toEqual({ kind: "error" });
+    expect(await loadCritic("../../users")).toEqual({ kind: "error" });
+    expect(api.GET).toHaveBeenCalledTimes(1);
+  });
+
+  it("is an error when the API fails or throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.GET.mockReset();
+    api.GET.mockResolvedValue({ response: new Response(null, { status: 500 }) });
+    expect(await loadCritic(OPP_ID)).toEqual({ kind: "error" });
+    api.GET.mockRejectedValueOnce(new Error("network"));
+    expect(await loadCritic(OPP_ID)).toEqual({ kind: "error" });
+  });
+});
+
 describe("loadRedTeam", () => {
   it("reads the Opportunity's Red Team Review and latest run", async () => {
     const VIEW = { review: null, run: null, can_start: false };
@@ -928,6 +953,14 @@ describe("startAssessmentRun / retryAssessmentTask / cancelAssessmentRun", () =>
       "/api/v1/opportunities/{opportunity_id}/assessment-runs/{run_id}/tasks/{agent}/retry",
       { params: { path: { opportunity_id: OPP_ID, run_id: RUN_ID, agent: "security_agent" } } },
     );
+  });
+
+  it("posts the Critic's retry too (Story 6.4)", async () => {
+    api.POST.mockResolvedValue({ data: RUN, response: new Response(null, { status: 200 }) });
+    expect(await retryAssessmentTask(OPP_ID, RUN_ID, "critic_agent")).toEqual({
+      kind: "ok",
+      run: RUN,
+    });
   });
 
   it("posts a cancel to the run's cancel route", async () => {

@@ -10,8 +10,10 @@ import type {
 } from "@/app/opportunities/actions";
 import type {
   AssessmentsResult,
+  CriticResult,
   RedTeamResult,
 } from "@/app/opportunities/data";
+import type { CriticView } from "@/lib/critic";
 import type {
   Assessment,
   AssessmentAgent,
@@ -53,7 +55,11 @@ const startRedTeamReview = vi.hoisted(() =>
 const loadRedTeam = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<RedTeamResult>>(),
 );
+const loadCritic = vi.hoisted(() =>
+  vi.fn<(opportunityId: string) => Promise<CriticResult>>(),
+);
 vi.mock("@/app/opportunities/actions", () => ({
+  loadCritic,
   startAssessmentRun,
   retryAssessmentTask,
   cancelAssessmentRun,
@@ -317,6 +323,7 @@ beforeEach(() => {
   loadAssessments.mockReset();
   startRedTeamReview.mockReset();
   loadRedTeam.mockReset();
+  loadCritic.mockReset();
 });
 
 afterEach(() => {
@@ -1978,5 +1985,194 @@ describe("Assessments tab redesign: the I/O matrix", () => {
     );
     expect(screen.getByTestId("run-header")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("the Critic (Story 6.4)", () => {
+  const CRITIC: CriticView = {
+    review: {
+      id: "00000000-0000-7000-8000-0000000000d1",
+      version: 2,
+      status: "current",
+      run_id: RUN_ID,
+      dropped_count: 0,
+      created_at: "2026-10-05T09:10:00Z",
+      counts: { critical: 1, high: 0, medium: 1, low: 0 },
+      findings: [
+        {
+          id: "00000000-0000-7000-8000-0000000000d2",
+          position: 1,
+          category: "timeline",
+          severity: "critical",
+          title: "[CRITIC TIMELINE]",
+          argument: "[CRITIC ARGUMENT]",
+          requirements: [
+            {
+              id: "00000000-0000-7000-8000-0000000000e2",
+              version: 1,
+              label: "R2",
+              excerpt: "[CRITIC EXCERPT]",
+            },
+          ],
+          findings: [
+            {
+              id: "00000000-0000-7000-8000-000000000003",
+              agent: "engineering_agent",
+              role: "Engineering Agent",
+              assessment_id: "00000000-0000-7000-8000-0000000b0002",
+              assessment_version: 2,
+              title: "[FINDING 3]",
+            },
+          ],
+        },
+        {
+          id: "00000000-0000-7000-8000-0000000000d3",
+          position: 2,
+          category: "coverage",
+          severity: "medium",
+          title: "No specialist Assessment covers R5",
+          argument: "[COVERAGE ARGUMENT]",
+          requirements: [
+            {
+              id: "00000000-0000-7000-8000-0000000000e5",
+              version: 1,
+              label: "R5",
+              excerpt: "[R5 EXCERPT]",
+            },
+          ],
+          findings: [],
+        },
+      ],
+    },
+  };
+  const withCritic = run("succeeded", [
+    ...AGENTS.map((a) => task(a, "succeeded")),
+    { ...task("security_agent", "succeeded"), agent: "critic_agent" },
+  ]);
+
+  function renderWithCritic(initial: AssessmentsView, critic: CriticView | null) {
+    return render(
+      <ShellProviders singleKeyShortcuts>
+        <FindingSelectionProvider>
+          <SpecialistAssessmentsSection
+            opportunityId={OPP_ID}
+            initial={initial}
+            critic={critic}
+          />
+        </FindingSelectionProvider>
+        <RightPane />
+      </ShellProviders>,
+    );
+  }
+
+  it("folds the Critic in: a result card, its task and its Findings raised by Critic", async () => {
+    const { container } = renderWithCritic(view(withCritic, FULL), CRITIC);
+
+    const card = screen.getByRole("article", { name: "Critic" });
+    expect(within(card).getByText("v2")).toBeTruthy();
+    expect(within(card).getByText(/2 Findings/)).toBeTruthy();
+    expect(within(card).getByText("Critic v2:")).toBeTruthy();
+    expect(panelRows().map((r) => r[0])).toEqual([
+      "Engineering Agent",
+      "PM Agent",
+      "Security Agent",
+      "Critic",
+    ]);
+    expect(findingRows()).toEqual([
+      "CriticalRisk[FINDING 3]Engineering Agent1 Requirement",
+      "CriticalTimeline[CRITIC TIMELINE]Critic1 Requirement1 cited Finding",
+      "HighConstraint[FINDING 1]Engineering Agent1 Requirement",
+      "MediumCoverageNo specialist Assessment covers R5Critic1 Requirement0 cited Findings",
+      "LowDependency[FINDING 4]PM Agent1 Requirement",
+    ]);
+    // A critical Critic Finding sits on the blocker tint, with the blocker icon and label.
+    const critical = screen
+      .getByRole("button", { name: /\[CRITIC TIMELINE\]/ })
+      .closest("[role=row]");
+    expect(critical?.getAttribute("data-severity-row")).toBe("critical");
+    expect(critical?.className).toContain("bg-blocker-tint");
+    const pill = critical?.querySelector("[data-severity]");
+    expect(pill?.getAttribute("data-severity")).toBe("critical");
+    expect(pill?.getAttribute("data-tone")).toBe("blocker");
+    expect(pill?.querySelector("svg")).toBeTruthy();
+    expect(
+      screen.getByText("2 Critical · 1 High · 1 Medium · 1 Low"),
+    ).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("opens a Critic Finding read-only: argument, cited Findings and Requirement chips", async () => {
+    const user = userEvent.setup();
+    const { container } = renderWithCritic(view(withCritic, FULL), CRITIC);
+
+    await user.click(screen.getByRole("button", { name: /\[CRITIC TIMELINE\]/ }));
+
+    const inspector = pane();
+    expect(
+      within(inspector).getByRole("heading", { level: 3, name: "[CRITIC TIMELINE]" }),
+    ).toBeTruthy();
+    expect(within(inspector).getByText("Timeline")).toBeTruthy();
+    expect(within(inspector).getByText("[CRITIC ARGUMENT]")).toBeTruthy();
+    expect(within(inspector).getByText("Cited Findings")).toBeTruthy();
+    expect(within(inspector).getByText("Engineering Agent v2")).toBeTruthy();
+    expect(within(inspector).getByText("[FINDING 3]")).toBeTruthy();
+    expect(within(inspector).getByText("R2")).toBeTruthy();
+    expect(within(inspector).getByText("[CRITIC EXCERPT]")).toBeTruthy();
+    const region = within(inspector).getByRole("region", { name: "[CRITIC TIMELINE]" });
+    expect(within(region).queryByRole("button")).toBeNull();
+    expect(within(region).queryByRole("textbox")).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("says Critic reviewing while its task runs, then shows the new Review", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const reviewing = run("running", [
+      ...AGENTS.map((a) => task(a, "succeeded")),
+      { ...task("security_agent", "running"), agent: "critic_agent" },
+    ]);
+    loadAssessments.mockResolvedValue({ kind: "ok", assessments: view(withCritic, FULL) });
+    loadCritic.mockResolvedValue({ kind: "ok", critic: CRITIC });
+    const { container } = renderWithCritic(view(reviewing, FULL), { review: null });
+
+    const card = screen.getByRole("article", { name: "Critic" });
+    expect(within(card).getByTestId("critic-reviewing").textContent).toBe("Critic reviewing");
+    expect(await axeViolations(container)).toEqual([]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    await waitFor(() => expect(loadCritic).toHaveBeenCalledWith(OPP_ID));
+    await waitFor(() =>
+      expect(screen.queryByTestId("critic-reviewing")).toBeNull(),
+    );
+    expect(
+      within(screen.getByRole("article", { name: "Critic" })).getByText("v2"),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /\[CRITIC TIMELINE\]/ })).toBeTruthy();
+  });
+
+  it("says so when the Critic Review could not be loaded", () => {
+    renderWithCritic(view(withCritic, FULL), null);
+    expect(
+      screen.getByText("The Critic Review could not be loaded. Try again in a moment."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("article", { name: "Critic" })).toBeNull();
+  });
+
+  it("drops the could-not-load sentence once a re-read of the Critic succeeds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    loadAssessments.mockResolvedValue({ kind: "ok", assessments: view(withCritic, FULL) });
+    loadCritic.mockResolvedValue({ kind: "ok", critic: CRITIC });
+    renderWithCritic(view(running, FULL), null);
+    const failed = "The Critic Review could not be loaded. Try again in a moment.";
+    expect(screen.getByText(failed)).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    await waitFor(() => expect(screen.queryByText(failed)).toBeNull());
+    expect(screen.getByRole("article", { name: "Critic" })).toBeTruthy();
   });
 });

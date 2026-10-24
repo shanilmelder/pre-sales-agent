@@ -188,6 +188,53 @@ nothing). Exit `0` once the report is written, `2` for an invalid or unknown cas
 
 There are six cases: one per type and two decoys (an aligned design, unrelated topics).
 
+## Critic (`make eval-critic`)
+
+Story 6.4 records the share of seeded defects `critic_agent` finds in a run's Assessments. Like
+`make eval-conflicts` it needs no eval database and stores nothing in the Agent Registry, but
+it has one gate: it **fails (exit 1) unless every case's uncovered Requirement is reported**.
+
+```sh
+make eval-critic                                   # every case, PSA_MODEL_PROFILE_CHAT
+make eval-critic ARGS="--only erp-golive-crunch"   # one case (repeatable)
+make eval-critic ARGS="--profile demo-chat"        # another model profile
+```
+
+Each case in `critic/<name>.yaml` holds the active Requirements, the specialists' Findings and
+effort of one run, and the defects seeded in them:
+
+```yaml
+requirements:
+  - number: 1
+    classification: integration
+    text: Exchange orders and stock levels with SAP S/4HANA in near real time.
+findings:
+  engineering_agent:            # engineering_agent, pm_agent, security_agent
+    - key: eng-connector-proven # unique in the case; `seeded` cites it
+      kind: opportunity         # risk | constraint | dependency | opportunity (default risk)
+      severity: low             # low | medium | high | critical (default medium)
+      title: Standard SAP connector already proven
+      detail: Our standard connector is proven and needs only configuration.
+      requirements: [1]         # cited Requirement numbers
+effort:                         # optional: hours per Requirement number, per agent
+  engineering_agent: {1: 900}
+seeded:
+  uncovered: [4]                # exactly the Requirements no Finding or effort row cites
+  unsupported_claim: [eng-connector-proven]
+  timeline: [pm-golive-six-weeks, eng-interface-sizing]
+```
+
+The runner builds the Critic's inputs with the task's own code (which computes the uncovered
+Requirements; a case whose `uncovered` differs is refused), sends them to the agent (prompt 1)
+on the live ModelGateway (no call rows), and scores the agent's own valid Findings **before
+the coverage backstop**: an uncovered Requirement is found by a `coverage` Finding citing it,
+the unsupported claim by an `unsupported_claim` Finding citing one of its Findings, the
+timeline by a `timeline` Finding citing one of its Findings. It prints the share found per
+defect kind and overall and writes `out/critic-<timestamp>/report.json` (each case's seeded
+and found defects and the Findings the agent reported). A case whose model call fails counts
+as finding nothing. Exit `0` when every uncovered Requirement was reported, `1` otherwise, `2`
+for an invalid or unknown case. There are three cases.
+
 ## Knowledge retrieval (`make eval-retrieval`)
 
 Story 3.3 measures Knowledge search: how often the passage that answers a question is in the

@@ -3,13 +3,17 @@
 
 **Queueing.** `queue_run` inserts a `queued` run (plan version 1, stored in
 `workflows_plan_versions`) with one `queued` task per specialist Agent (`engineering_agent`,
-`pm_agent`, `security_agent`; none `requires` another, so they run concurrently) and one job
-(background priority). Each task pins its Agent's current config version from the Agent
-Registry, a disabled Agent's too: its node asks a person instead (Story 5.5). `enqueue_run`
-(Story 5.1: after every successful Gap detection) queues one as the system, coalescing with
-a run already queued, running or waiting for a person. `requeue_task` puts one `failed`
-task back to `queued` and enqueues a job for the run again (a fresh graph invocation on the
-same thread runs only that task). The callers hold the Opportunity's run lock until commit.
+`pm_agent`, `security_agent`; none `requires` another, so they run concurrently), one
+`critic_agent` task that runs `after` all of them, once each has ended whatever the outcome
+(Story 6.4: the Critic reviews the Assessments the run accepted), and one job (background
+priority). Each task pins its Agent's current config version from the Agent
+Registry, active or not: a task whose Agent is `disabled` or `eval_only` asks a person when
+its node is reached (Story 5.5, below). `enqueue_run` (Story 5.1: after every successful Gap
+detection) queues one as the system, coalescing with a run already queued, running or
+waiting for a person. `requeue_task` puts one `failed` task back to `queued` (Story 6.4: with
+every ended task that runs `after` it, i.e. the Critic's, so the retried Assessment is
+reviewed again) and enqueues a job for the run again (a fresh graph invocation on the same
+thread runs only those tasks). The callers hold the Opportunity's run lock until commit.
 
 **The job** (`workflows.execute`, one per run queueing; `workflows.resume` after a
 person resolves a decision runs the same handler). Short Unit of Work: marks the run
@@ -20,8 +24,8 @@ one node per task, each re-reading its task here, starting it, calling its Agent
 submitting the result. A node whose Agent call fails reports the error and, on the job's
 final attempt, marks its task `failed`; before that the task stays `running` for the next
 attempt, which re-runs only unfinished tasks. When no task is left in progress the run is
-finished: `succeeded`, `partially_failed` or `failed`, traced, and (when a task succeeded)
-the Estimate is built from the Assessments and the Conflict rules run (Stories 8.3, 6.1),
+finished: `succeeded`, `partially_failed` or `failed`, traced, and (when a specialist task
+succeeded) the Estimate is built from the Assessments and the Conflict rules run (Stories 8.3, 6.1),
 then the semantic Conflict detection is queued (Story 6.2).
 
 A run stuck past `stale_after()` (its job died without recording it) is failed on the next
@@ -173,15 +177,25 @@ def stale_after() -> timedelta:
 
 
 async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID:
-    """Insert a `queued` run with one `queued` task per specialist Agent, its plan v1, its
-    job, the trace event and a progress row. Each task pins its Agent's current config
-    version, whatever the Agent's status: a task whose Agent is not active asks a person when
-    its node starts (Story 5.5). The caller holds the Opportunity's run lock."""
+    """Insert a `queued` run with one `queued` task per specialist Agent and the Critic's task
+    after them (Story 6.4), its plan v1, its job, the trace event and a progress row. Each
+    task pins its Agent's current config version, whatever the Agent's status: a task whose
+    Agent is not active asks a person when its node starts (Story 5.5). The caller holds the
+    Opportunity's run lock."""
     run_id = new_id()
     tasks: list[NewTask] = []
     for agent in assessments.AGENTS:
         current = await registry.current_config(uow, agent.value)
         tasks.append(NewTask(id=new_id(), agent=agent.value, config_version_id=current.current.id))
+    critic = await registry.current_config(uow, assessments.CRITIC_AGENT)
+    tasks.append(
+        NewTask(
+            id=new_id(),
+            agent=assessments.CRITIC_AGENT,
+            config_version_id=critic.current.id,
+            after=tuple(t.id for t in tasks),
+        )
+    )
     await repo.insert_run(
         uow, run_id=run_id, opportunity_id=opportunity_id, tasks=tasks, plan_version=PLAN_VERSION
     )
@@ -189,7 +203,7 @@ async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID
         uow,
         run_id=run_id,
         version=PLAN_VERSION,
-        tasks=[PlanTask(t.id, t.agent, t.config_version_id) for t in tasks],
+        tasks=[PlanTask(t.id, t.agent, t.config_version_id, t.after) for t in tasks],
         actor=actor,
     )
     await enqueue(uow, ExecuteRun(run_id=run_id), opportunity_id=opportunity_id)
@@ -220,10 +234,11 @@ async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 
 async def requeue_task(uow: UnitOfWork, run: RunRecord, agent: str, actor: Actor) -> None:
-    """Put the run's `failed` task of `agent` back to `queued`, queue the run again and
-    enqueue a job for it. The caller holds the Opportunity's run lock and has checked the
-    task is `failed`."""
-    await repo.update_tasks(
+    """Put the run's `failed` task of `agent` back to `queued`, with every succeeded or
+    failed task that runs `after` it (Story 6.4: the Critic reviews the run again), queue the
+    run again and enqueue a job for it. The caller holds the Opportunity's run lock and has
+    checked the task is `failed`."""
+    retried = await repo.update_tasks(
         uow,
         run.id,
         agents=[agent],
@@ -231,6 +246,25 @@ async def requeue_task(uow: UnitOfWork, run: RunRecord, agent: str, actor: Actor
         status=AssessmentTaskStatus.QUEUED.value,
         reset=True,
     )
+    retried_ids = {t.id for t in retried}
+    dependents = [
+        t.id
+        for t in await repo.tasks_of(uow, run.id)
+        if retried_ids & set(t.after)
+        and t.status in (AssessmentTaskStatus.SUCCEEDED, AssessmentTaskStatus.FAILED)
+    ]
+    if dependents:
+        await repo.update_tasks(
+            uow,
+            run.id,
+            task_ids=dependents,
+            from_statuses=(
+                AssessmentTaskStatus.SUCCEEDED.value,
+                AssessmentTaskStatus.FAILED.value,
+            ),
+            status=AssessmentTaskStatus.QUEUED.value,
+            reset=True,
+        )
     await repo.set_run_status(
         uow,
         run.id,
@@ -239,14 +273,19 @@ async def requeue_task(uow: UnitOfWork, run: RunRecord, agent: str, actor: Actor
         requeued=True,
     )
     await enqueue(uow, ExecuteRun(run_id=run.id), opportunity_id=run.opportunity_id)
-    await _trace_started(uow, run.id, run.opportunity_id, actor, agent_count=1)
+    await _trace_started(
+        uow, run.id, run.opportunity_id, actor, agent_count=len(retried) + len(dependents)
+    )
     await progress.run_changed(
         uow, opportunity_id=run.opportunity_id, run_id=run.id, status=AssessmentRunStatus.QUEUED
     )
 
 
 async def plan_tasks(uow: UnitOfWork, run_id: UUID) -> list[PlanTask]:
-    return [PlanTask(t.id, t.agent, t.config_version_id) for t in await repo.tasks_of(uow, run_id)]
+    return [
+        PlanTask(t.id, t.agent, t.config_version_id, t.after)
+        for t in await repo.tasks_of(uow, run_id)
+    ]
 
 
 async def queue_resume(uow: UnitOfWork, run: RunRecord) -> None:
@@ -316,6 +355,7 @@ async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, in
     tasks = await repo.tasks_of(uow, run.id)
     succeeded = sum(1 for t in tasks if t.status == AssessmentTaskStatus.SUCCEEDED)
     skipped = len(stopped) + len(unstarted)
+    assessed = _specialists_succeeded(tasks)
     await trace.append(
         uow,
         actor=actor,
@@ -330,7 +370,7 @@ async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, in
         run_id=run.id,
         status=AssessmentRunStatus.CANCELLED,
     )
-    if succeeded:
+    if assessed:
         # Story 8.3: the Assessments that completed before the cancel are current, so the
         # Estimate is built from them and the Conflicts re-checked, as `finish_run` does.
         await estimates.build_from_assessments(
@@ -378,9 +418,21 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
     statuses = [AssessmentTaskStatus(t.status) for t in tasks]
     if any(s in TASK_IN_PROGRESS for s in statuses):
         return None
+    # Story 6.4: when the run finished before and only the Critic's task ran since (a Critic
+    # retry), there is nothing new to build an Estimate from or detect Conflicts in.
+    ended_before = await repo.last_run_end(uow, run_id)
+    specialists_changed = ended_before is None or any(
+        t.agent != assessments.CRITIC_AGENT
+        and t.finished_at is not None
+        and t.finished_at > ended_before
+        for t in tasks
+    )
     # A person's Continue without (Story 5.5) doesn't count against the run.
     chosen = sum(1 for t in tasks if chosen_skip(AssessmentTaskStatus(t.status), t.skip_reason))
     status = run_status(statuses, chosen_skips=chosen)
+    if status == AssessmentRunStatus.PARTIALLY_FAILED and not _specialists_succeeded(tasks):
+        # Only the Critic's task succeeded (Story 6.4): no Assessment came out of the run.
+        status = AssessmentRunStatus.FAILED
     await repo.set_run_status(
         uow, run_id, from_statuses=_RUN_IN_PROGRESS, status=status.value, finished=True
     )
@@ -411,9 +463,12 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
             **completed.model_dump(),
         },
     )
-    if succeeded:
+    if not specialists_changed:
+        return status
+    if _specialists_succeeded(tasks):
         # Story 8.3: the Estimate is built from the agents' current Assessments, before the
-        # Conflict detection, which therefore compares against this new version.
+        # Conflict detection, which therefore compares against this new version. The
+        # Critic's task (Story 6.4) stores no Assessment, so it doesn't count here.
         await estimates.build_from_assessments(
             uow,
             record.opportunity_id,
@@ -422,6 +477,16 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
         )
     await detect_conflicts(uow, record.opportunity_id, run_id)
     return status
+
+
+def _specialists_succeeded(tasks: Sequence[TaskRecord]) -> int:
+    """How many specialist tasks succeeded (each stored an Assessment); the Critic's task is
+    not one."""
+    return sum(
+        1
+        for t in tasks
+        if t.status == AssessmentTaskStatus.SUCCEEDED and t.agent != assessments.CRITIC_AGENT
+    )
 
 
 async def detect_conflicts(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> None:

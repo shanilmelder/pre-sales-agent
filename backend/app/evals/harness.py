@@ -9,8 +9,10 @@ isolated evaluation database, scores it and stores the result.
 4. **Install** each chosen version there as its Agent's newest, so the job chain uses it.
 5. **Run**: one Opportunity per reference Opportunity, its Sources added as uploads; the
    worker loop (`app.main_worker.run`) drains parse → extraction → Gap detection →
-   Specialists → Estimate → Red Team through the ModelGateway (Agents send `background`
-   priority). Assumption proposals are not run. There is no Critic Agent yet.
+   Specialists → Critic → Estimate → Red Team through the ModelGateway (Agents send
+   `background` priority). The Critic (Story 6.4) runs as the assessment run's last task;
+   its Review is reported (Findings per severity), with no bar. Assumption proposals are not
+   run.
 6. **Score** what the chain stored (`scoring`), with the model calls' tokens and wall time.
 7. **Main database, write**: `registry.record_eval_result` inserts the result row and its
    `registry.eval.completed` trace event in one Unit of Work.
@@ -48,6 +50,7 @@ from app.evals.annotations import (
     reference_set_digest,
 )
 from app.evals.scoring import (
+    CriticSummary,
     DetectedGap,
     ExtractedRequirement,
     Finding,
@@ -77,6 +80,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 OUT_DIR = BACKEND_DIR.parent / "evals" / "out"
 HARNESS_ACTOR = Actor(type="system", id="eval_harness")
 TIMED_OUT_MESSAGE = "Eval timed out — GPU busy"
+CRITIC_AGENT = "critic_agent"
 DEFAULT_TIMEOUT_S = 3600.0
 
 EVAL_JOB_TYPES = frozenset(
@@ -382,15 +386,27 @@ async def _failures(db: AsyncEngine, opportunity_id: UUID) -> list[StageFailure]
         if latest is not None and latest.status == "failed":
             failures.append(StageFailure(stage, latest.error_code or "failed"))
     run = await _latest(db, "workflows_runs", opportunity_id)
-    # A run waiting for a person (Story 5.5: an Agent is disabled) never finished its work.
-    if run is not None and run.status in (
-        "failed",
-        "partially_failed",
-        "cancelled",
-        "waiting_for_human",
-    ):
+    tasks = (
+        []
+        if run is None
+        else await _rows(db, "SELECT * FROM workflows_tasks WHERE run_id = :r", r=run.id)
+    )
+    specialists = [t for t in tasks if t.agent != CRITIC_AGENT]
+    critic = next((t for t in tasks if t.agent == CRITIC_AGENT), None)
+    # A run waiting for a person (Story 5.5: a specialist Agent is not active) never ends here.
+    if run is not None and run.status in ("cancelled", "waiting_for_human"):
         failures.append(StageFailure("specialists", run.status))
-    if run is not None and run.status == "succeeded":
+    elif specialists and any(t.status != "succeeded" for t in specialists):
+        # Story 6.4: the run's status also counts the Critic's task; the stage doesn't.
+        ok = any(t.status == "succeeded" for t in specialists)
+        failures.append(StageFailure("specialists", "partially_failed" if ok else "failed"))
+    if critic is not None and critic.status == "failed":
+        failures.append(StageFailure("critic", critic.error_code or "failed"))
+    if (
+        run is not None
+        and run.status in ("succeeded", "partially_failed")
+        and not any(f.stage == "specialists" for f in failures)
+    ):
         versions = await _rows(
             db,
             "SELECT 1 FROM estimates_estimate_versions WHERE opportunity_id = :o LIMIT 1",
@@ -408,6 +424,8 @@ async def _failures(db: AsyncEngine, opportunity_id: UUID) -> list[StageFailure]
     seen = {f.stage for f in failures}
     for row in dead:
         stage = _STAGE_OF_JOB[row.job_type]
+        if stage == "specialists" and "critic" in seen:
+            continue  # the run's job died of the Critic's task, recorded above
         if stage not in seen:
             failures.append(StageFailure(stage, "job_dead"))
             seen.add(stage)
@@ -480,8 +498,16 @@ async def collect(
         "array_remove(array_agg(fr.requirement_id), NULL) AS requirement_ids "
         "FROM assessments_findings f JOIN assessments_reviews r ON r.id = f.review_id "
         "LEFT JOIN assessments_finding_requirements fr ON fr.finding_id = f.id "
-        "WHERE r.opportunity_id = :o AND r.status = 'current' "
+        "WHERE r.opportunity_id = :o AND r.status = 'current' AND r.kind = 'red_team' "
         "GROUP BY f.id, f.category, f.title, f.argument",
+        o=opportunity_id,
+    )
+    critic = await _rows(
+        db,
+        "SELECT r.version, f.severity, count(f.id) AS n FROM assessments_reviews r "
+        "LEFT JOIN assessments_findings f ON f.review_id = r.id "
+        "WHERE r.opportunity_id = :o AND r.kind = 'critic' AND r.status = 'current' "
+        "GROUP BY r.version, f.severity",
         o=opportunity_id,
     )
     findings = [
@@ -512,6 +538,21 @@ async def collect(
         gaps=[DetectedGap(str(g.id), g.title, g.why_it_matters) for g in gaps],
         findings=findings,
         failures=await _failures(db, opportunity_id),
+        critic=_critic_summary(critic),
+    )
+
+
+def _critic_summary(rows: Sequence[sa.Row[Any]]) -> CriticSummary | None:
+    """The current Critic Review's version and Findings per severity (None without one)."""
+    if not rows:
+        return None
+    counts = {r.severity: int(r.n) for r in rows if r.severity is not None}
+    return CriticSummary(
+        version=int(rows[0].version),
+        critical=counts.get("critical", 0),
+        high=counts.get("high", 0),
+        medium=counts.get("medium", 0),
+        low=counts.get("low", 0),
     )
 
 

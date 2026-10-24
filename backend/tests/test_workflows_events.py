@@ -186,8 +186,8 @@ def test_a_run_writes_progress_for_each_task_start_and_end(
     kinds = [r["event_type"] for r in found]
     assert kinds[0] == "workflows.run.queued"
     assert kinds[-1] == "workflows.run.ended"
-    assert kinds.count("workflows.task.started") == 3
-    assert kinds.count("workflows.task.ended") == 3
+    assert kinds.count("workflows.task.started") == 4  # with the Critic's (Story 6.4)
+    assert kinds.count("workflows.task.ended") == 4
     assert {r["opportunity_id"] for r in found} == {UUID(opp["id"])}
     summaries = {r["summary"] for r in found}
     assert {"engineering_agent running", "pm_agent succeeded", "run succeeded"} <= summaries

@@ -15,8 +15,8 @@
 Downgrade: Gaps converted to a Risk go back to `open`, and the table, column and grant are
 dropped.
 
-Revision ID: 0041_estimates_risks
-Revises: 0040_workflows_decisions
+Revision ID: 0042_estimates_risks
+Revises: 0041_critic_review
 Create Date: 2026-10-24
 """
 
@@ -26,8 +26,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0041_estimates_risks"
-down_revision: str | None = "0040_workflows_decisions"
+revision: str = "0042_estimates_risks"
+down_revision: str | None = "0041_critic_review"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -78,9 +78,11 @@ def _run(record: RunRecord | None) -> RedTeamRun | None:
     )
 
 
-async def _requirements(
+async def requirement_chips(
     uow: UnitOfWork, opportunity_id: UUID, findings: list[FindingRecord]
 ) -> dict[UUID, list[FindingRequirement]]:
+    """Each Review Finding's Requirement chips (Red Team and, Story 6.4, Critic), in
+    Requirement order (no longer active ones last, labelled `Superseded`)."""
     links = await repo.requirement_links_for(uow, [f.id for f in findings])
     active = {
         s.id: s.number for s in await intake.active_requirement_snapshots(uow, opportunity_id)
@@ -114,7 +116,7 @@ async def _requirements(
 async def review_view(uow: UnitOfWork, record: ReviewRecord) -> RedTeamReviewView:
     """The Review with its ranked Findings, their chips and the counts per severity."""
     findings = await repo.findings_of(uow, record.id)
-    cited = await _requirements(uow, record.opportunity_id, findings)
+    cited = await requirement_chips(uow, record.opportunity_id, findings)
     estimate = (
         None
         if record.estimate_version_id is None

@@ -1,7 +1,8 @@
-"""The assessments module's tables: Red Team Reviews (Story 6.5) and specialist Assessments
-(Epic 5 slice 5A). `opportunity_id`, `estimate_version_id`, `requirement_id`, `line_id` and
-an Assessment's `run_id` (a Workflow Run, owned by `workflows` since Story 5.2) hold ids owned
-by other modules without foreign keys (AD-2)."""
+"""The assessments module's tables: Red Team Reviews (Story 6.5), Critic Reviews (Story 6.4)
+and specialist Assessments (Epic 5 slice 5A). `opportunity_id`, `estimate_version_id`,
+`requirement_id`, `line_id` and an Assessment's or a Review's `run_id` (a Workflow Run, owned
+by `workflows` since Story 5.2) hold ids owned by other modules without foreign keys
+(AD-2)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -53,10 +54,12 @@ class RedTeamRunRow(Base):
 
 
 class ReviewRow(Base):
-    """A Review of an Opportunity (`kind` `red_team` in Story 6.5). An accepted run inserts a
-    `current` review numbered one past the latest of its kind, and marks the earlier
-    `current` one `superseded`. At most one `current` per Opportunity and kind.
-    `estimate_version_id`: the Estimate Version reviewed (null when there was none)."""
+    """A Review of an Opportunity: `red_team` (Story 6.5) or `critic` (Story 6.4). An accepted
+    run inserts a `current` review numbered one past the latest of its kind, and marks the
+    earlier `current` one `superseded`. At most one `current` per Opportunity and kind.
+    `estimate_version_id`: the Estimate Version a Red Team Review reviewed (null when there
+    was none). `run_id`: the assessment run (a Workflow Run, owned by `workflows`: no foreign
+    key, AD-2) a Critic Review reviewed; null for a Red Team Review."""
 
     __tablename__ = "assessments_reviews"
     __table_args__ = (
@@ -68,7 +71,7 @@ class ReviewRow(Base):
             unique=True,
             postgresql_where=text("status = 'current'"),
         ),
-        CheckConstraint("kind IN ('red_team')", name="kind"),
+        CheckConstraint("kind IN ('red_team', 'critic')", name="kind"),
         CheckConstraint("status IN ('current', 'superseded')", name="status"),
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint("dropped_count >= 0", name="dropped_count"),
@@ -82,17 +85,33 @@ class ReviewRow(Base):
     status: Mapped[str] = mapped_column(Text)
     dropped_count: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    run_id: Mapped[UUID | None] = mapped_column(Uuid)
+
+
+REVIEW_CATEGORIES = (
+    # Red Team (Story 6.5)
+    "integration_harder",
+    "requirement_incomplete",
+    "capability_overstated",
+    "hidden_dependency",
+    # Critic (Story 6.4)
+    "coverage",
+    "unsupported_claim",
+    "timeline",
+    "dependency",
+    "risk_coverage",
+)
 
 
 class FindingRow(Base):
-    """A Finding of a Review. Insert-only (no resolving or overriding in Story 6.5)."""
+    """A Finding of a Review. Insert-only (no resolving or overriding in Stories 6.4 and
+    6.5)."""
 
     __tablename__ = "assessments_findings"
     __table_args__ = (
         UniqueConstraint("review_id", "position"),
         CheckConstraint(
-            "category IN ('integration_harder', 'requirement_incomplete', "
-            "'capability_overstated', 'hidden_dependency')",
+            "category IN (" + ", ".join(f"'{c}'" for c in REVIEW_CATEGORIES) + ")",
             name="category",
         ),
         CheckConstraint("severity IN ('low', 'medium', 'high', 'critical')", name="severity"),
@@ -146,6 +165,28 @@ class FindingLineRow(Base):
         primary_key=True,
     )
     line_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+
+
+class FindingTargetRow(Base):
+    """A Critic Finding cites a specialist Finding at its Assessment's version (Story 6.4).
+    `assessment_finding_id` and `assessment_id` are `assessments_assessment_findings` and
+    `assessments_assessments` ids, kept without foreign keys so the link reads as it was.
+    Insert-only."""
+
+    __tablename__ = "assessments_finding_targets"
+
+    finding_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "assessments_findings.id",
+            ondelete="CASCADE",
+            name="fk_assessments_finding_targets_finding_id",
+        ),
+        primary_key=True,
+    )
+    assessment_finding_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    assessment_id: Mapped[UUID] = mapped_column(Uuid)
+    assessment_version: Mapped[int] = mapped_column(Integer)
 
 
 # --- specialist Assessments (Epic 5 slice 5A) ----------------------------------------------

@@ -28,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.platform.db import Base
 
 _NOW = text("now()")
-_AGENTS = "('engineering_agent', 'pm_agent', 'security_agent')"
+_AGENTS = "('engineering_agent', 'pm_agent', 'security_agent', 'critic_agent')"
 _ERROR_CODES = "('model_unavailable', 'model_timeout', 'output_invalid')"
 PROGRESS_EVENTS = (
     "workflows.run.queued",
@@ -72,8 +72,9 @@ class WorkflowTaskRow(Base):
     run was cancelled before it finished (Story 5.5), its Agent was not active in the Agent
     Registry before it started (`skip_reason` `agent_disabled`, Story 7.1), or a task it
     `requires` ended without succeeding (Story 5.2). `requires`: the ids of the run's tasks it
-    waits for (empty: it starts at once). `config_version_id`: the registry config version
-    pinned when the run was queued."""
+    waits for (empty: it starts at once). `after` (Story 6.4): the ids of the run's tasks it
+    starts after, once each has ended whatever the outcome (the Critic's: the specialists').
+    `config_version_id`: the registry config version pinned when the run was queued."""
 
     __tablename__ = "workflows_tasks"
     __table_args__ = (
@@ -106,6 +107,7 @@ class WorkflowTaskRow(Base):
     )
     skip_reason: Mapped[str | None] = mapped_column(Text)
     requires: Mapped[list[UUID]] = mapped_column(ARRAY(Uuid), server_default=text("'{}'"))
+    after: Mapped[list[UUID]] = mapped_column(ARRAY(Uuid), server_default=text("'{}'"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -182,10 +184,10 @@ class WorkflowDecisionRow(Base):
 
 
 class WorkflowPlanVersionRow(Base):
-    """One version of a run's plan (FR-15; Story 5.5): per task its id, Agent and pinned
-    config version (`tasks`, a JSON list), who made it (`created_by_type`, `created_by`: the
-    trace actor) and when. v1 is written when the run is queued, each Re-plan adds the next.
-    Insert-only."""
+    """One version of a run's plan (FR-15; Story 5.5): per task its id, Agent, pinned config
+    version and (Story 6.4) the tasks it runs after (`tasks`, a JSON list), who made it
+    (`created_by_type`, `created_by`: the trace actor) and when. v1 is written when the run
+    is queued, each Re-plan adds the next. Insert-only."""
 
     __tablename__ = "workflows_plan_versions"
     __table_args__ = (

@@ -345,6 +345,38 @@ describe("merged Findings", () => {
     expect(mergeFindings([slot("pm_agent", [])], null)).toEqual([]);
   });
 
+  it("folds in the Critic's Findings, raised by Critic, after the Red Team's (Story 6.4)", () => {
+    const critic = (id: string, severity: string, category = "timeline") =>
+      ({
+        id,
+        position: 1,
+        category,
+        severity,
+        title: id,
+        argument: "",
+        requirements: [req("r4", "R4")],
+        findings: [{ id: "f1" }, { id: "f2" }],
+      }) as never;
+    const rows = mergeFindings(
+      [slot("engineering_agent", [specialist("e1", "high")])],
+      { findings: [red("t1", "high")] },
+      { findings: [critic("c1", "critical"), critic("c2", "high", "coverage")] },
+    );
+    expect(rows.map((r) => r.id)).toEqual(["c1", "e1", "t1", "c2"]);
+    expect(rows[0]).toMatchObject({
+      source: "critic",
+      type: "Timeline",
+      raisedBy: "Critic",
+      requirements: 1,
+      lines: null,
+      cited: 2,
+    });
+    expect(rows[3].type).toBe("Coverage");
+    expect(findingKey(rows[0])).toBe("critic:c1");
+    expect(agentLabel("critic_agent")).toBe("Critic");
+    expect(agentRole("critic_agent")).toContain("coverage");
+  });
+
   it("lists up to three distinct Requirement labels, Findings first", () => {
     expect(
       evidenceLabels(

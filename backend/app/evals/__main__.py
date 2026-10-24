@@ -2,7 +2,10 @@
 [--timeout <s>]` (`make eval ARGS="..."`), and `python -m app.evals conflicts [--only <case>
 ...] [--profile <name>]` (`make eval-conflicts ARGS="..."`, Story 6.2: precision and recall of
 semantic Conflict detection per type; exit 0 once the report is written, 2 for an invalid or
-unknown case), and `python -m app.evals retrieval [--timeout <s>]` (`make eval-retrieval`,
+unknown case), `python -m app.evals critic [--only <case> ...] [--profile <name>]` (`make
+eval-critic ARGS="..."`, Story 6.4: the share of seeded defects the Critic finds; exit 0 when
+every case's uncovered Requirement is reported, 1 otherwise, 2 for an invalid or unknown
+case), and `python -m app.evals retrieval [--timeout <s>]` (`make eval-retrieval`,
 Story 3.3: hit rate at k and citation validity of Knowledge search in the eval database;
 exit 0 once the report is written, 2 refused, 3 timed out).
 
@@ -18,6 +21,7 @@ import sys
 from collections.abc import Sequence
 
 from app.evals import conflicts as conflicts_eval
+from app.evals import critic as critic_eval
 from app.evals import retrieval as retrieval_eval
 from app.evals.annotations import ReferenceSetError
 from app.evals.harness import (
@@ -72,6 +76,19 @@ def _parser() -> argparse.ArgumentParser:
     semantic.add_argument(
         "--profile", default=None, help="The model profile (default: PSA_MODEL_PROFILE_CHAT)."
     )
+    critic = commands.add_parser(
+        "critic", help="Run the Critic cases (evals/critic/): share of seeded defects found."
+    )
+    critic.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="CASE",
+        help="Run only this case (repeatable).",
+    )
+    critic.add_argument(
+        "--profile", default=None, help="The model profile (default: PSA_MODEL_PROFILE_CHAT)."
+    )
     retrieval = commands.add_parser(
         "retrieval", help="Score Knowledge search on evals/knowledge/ (hit rate, citations)."
     )
@@ -124,6 +141,22 @@ def _conflicts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _critic(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    try:
+        outcome = asyncio.run(
+            critic_eval.run_critic_eval(settings, only=tuple(args.only), profile=args.profile),
+            loop_factory=loop_factory,
+        )
+    except critic_eval.CaseError as exc:
+        print(f"Eval refused: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    print(critic_eval.render(outcome.report))
+    print(f"\nReport: {outcome.out_dir / 'report.json'}")
+    return 0 if outcome.passed else EXIT_FAILED
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     # The report prints ≥ and ≤, which a Windows console's legacy code page can't encode.
@@ -133,6 +166,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging("WARNING")
     if args.command == "conflicts":
         return _conflicts(args)
+    if args.command == "critic":
+        return _critic(args)
     if args.command == "retrieval":
         return _retrieval(args)
     settings = get_settings()

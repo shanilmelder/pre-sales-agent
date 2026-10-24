@@ -92,6 +92,10 @@ SEEDED_0026 = (
 SEEDED_0033 = (("conflict_agent", "Conflict Agent"),)
 """Story 6.2 seeds the Conflict Agent the same way."""
 SEEDED = SEEDED_0026 + SEEDED_0033
+MIGRATION_0039 = BACKEND / "migrations" / "versions" / "20261024_0041_critic_review.py"
+SEEDED_0039 = (("critic_agent", "Critic Agent"),)
+"""Story 6.4 seeds the Critic Agent the same way, granting the `assessments.run.read` tool."""
+EVERY_SEEDED = SEEDED + SEEDED_0039
 CODES = {
     403: "forbidden",
     404: "not_found",
@@ -175,7 +179,7 @@ def restore_agents(sync_engine: Engine) -> Iterator[None]:
                 "UPDATE registry_agents SET status = 'active', row_version = row_version + 1 "
                 "WHERE agent_id = ANY(:ids) AND status <> 'active'"
             ),
-            {"ids": [agent_id for agent_id, _ in SEEDED]},
+            {"ids": [agent_id for agent_id, _ in EVERY_SEEDED]},
         )
 
 
@@ -214,7 +218,7 @@ def test_the_committed_manifest_matches_the_code() -> None:
 
 def test_the_manifest_lists_every_prompt_schema_and_profile() -> None:
     manifest = deployed.load()
-    for agent_id, _ in SEEDED:
+    for agent_id, _ in EVERY_SEEDED:
         assert manifest.has_prompt(agent_id, 1), agent_id
         assert manifest.schema(agent_id, "input", 1) is not None
         output = manifest.schema(agent_id, "output", 1)
@@ -237,7 +241,11 @@ def test_prompt_hashes_ignore_line_endings(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("path", "seeded", "agent_id"),
-    [(MIGRATION, SEEDED_0026, "pm_agent"), (MIGRATION_0033, SEEDED_0033, "conflict_agent")],
+    [
+        (MIGRATION, SEEDED_0026, "pm_agent"),
+        (MIGRATION_0033, SEEDED_0033, "conflict_agent"),
+        (MIGRATION_0039, SEEDED_0039, "critic_agent"),
+    ],
 )
 def test_the_migration_seed_matches_the_domain_and_never_imports_the_app(
     path: Path, seeded: tuple[tuple[str, str], ...], agent_id: str
@@ -393,7 +401,7 @@ def test_the_migration_backfills_existing_assessments_to_version_one(
     assert (task["config_version_id"], task["skip_reason"]) == (seeded, None)
     assert [a["status"] for a in rows(sync_engine, "SELECT status FROM registry_agents")] == [
         "active"
-    ] * len(SEEDED)
+    ] * len(EVERY_SEEDED)
 
 
 # --- the API --------------------------------------------------------------------------------
@@ -714,7 +722,11 @@ def test_a_disabled_agents_task_waits_then_is_skipped_and_the_others_versions_pi
     (run,) = rows(sync_engine, "SELECT * FROM workflows_runs WHERE id = :r", r=body["id"])
     assert run["status"] == "succeeded"
 
-    assert {r.caller.agent_id for r in fake.requests} == {"engineering_agent", "pm_agent"}
+    assert {r.caller.agent_id for r in fake.requests} == {
+        "engineering_agent",
+        "pm_agent",
+        "critic_agent",  # Story 6.4: it reviews the two Assessments
+    }
     pinned = task_rows(sync_engine, body["id"])
     for request in fake.requests:
         assert request.caller.config_version == str(
@@ -764,7 +776,7 @@ def test_an_agent_disabled_while_its_task_is_queued_waits_at_job_start(
     headers, opp = prepared(client, sync_engine, db_url, gateway)
     fake = install(AgentGateway(replies()))
     body = started(client, headers, opp["id"])
-    assert [t["status"] for t in body["tasks"]] == ["queued"] * len(AGENTS)
+    assert [t["status"] for t in body["tasks"]] == ["queued"] * (len(AGENTS) + 1)
     _set_status(client, admin, "pm_agent", "eval_only")
     assert drain(db_url, ASSESS) == ["succeeded"]
     assert task_rows(sync_engine, body["id"])["pm_agent"]["status"] == "queued"

@@ -322,7 +322,11 @@ def validate_semantic(
     return SemanticValidation(tuple(kept), sum(reasons.values()), reasons)
 
 
-def gone_reason(positions: Sequence[tuple[str, int]], current_versions: Mapping[str, int]) -> str:
+def gone_reason(
+    positions: Sequence[tuple[str, int]],
+    current_versions: Mapping[str, int],
+    not_raised: str = NOT_RAISED_AGAIN,
+) -> str:
     """The system's reason when a semantic Conflict is not raised again: the agents whose
     current Assessment is newer than the cited one ("No longer present in Engineering
     Assessment v3"), else "Not raised again by the Conflict Agent." `positions`: each cited
@@ -335,5 +339,5 @@ def gone_reason(positions: Sequence[tuple[str, int]], current_versions: Mapping[
             if named not in newer:
                 newer.append(named)
     if not newer:
-        return NOT_RAISED_AGAIN
+        return not_raised
     return f"{NO_LONGER_PRESENT} " + " and ".join(f"{name} v{v}" for name, v in newer)

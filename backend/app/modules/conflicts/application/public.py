@@ -16,6 +16,7 @@ from app.modules.conflicts.application.conflicts import (
     open_conflict_counts,
     raise_conflict,
 )
+from app.modules.conflicts.application.critic import CriticConflicts, raise_critic_conflicts
 from app.modules.conflicts.application.decisions import (
     AppliedDecision,
     EstimateLink,
@@ -51,7 +52,9 @@ from app.modules.conflicts.domain.rules import (
 from app.modules.conflicts.domain.semantic import (
     FindingSnapshot,
     FindingTitle,
+    SemanticCandidate,
     SemanticValidation,
+    StanceCandidate,
     ValidSemantic,
 )
 
@@ -68,6 +71,7 @@ __all__ = [
     "ConflictType",
     "ConflictView",
     "ConflictsView",
+    "CriticConflicts",
     "DetectedBy",
     "Detection",
     "EffortSnapshot",
@@ -81,7 +85,9 @@ __all__ = [
     "PositionCandidate",
     "RaisedConflict",
     "RequirementConflict",
+    "SemanticCandidate",
     "SemanticValidation",
+    "StanceCandidate",
     "ValidSemantic",
     "accept_semantic_conflicts",
     "detect_for_run",
@@ -93,5 +99,6 @@ __all__ = [
     "open_conflict_counts",
     "queue_semantic_detection",
     "raise_conflict",
+    "raise_critic_conflicts",
     "resolve_conflict",
 ]

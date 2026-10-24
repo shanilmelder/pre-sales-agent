@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Engine
 
 from app.agents.contract import AgentConfig, AgentResult
+from app.agents.critic_agent.schema import CriticOutput
 from app.agents.engineering_agent.agent import prompt as engineering_prompt
 from app.agents.engineering_agent.schema import EngineeringOutput
 from app.agents.pm_agent.agent import prompt as pm_prompt
@@ -66,6 +67,8 @@ _chat_profile = detection_tests._chat_profile
 _draft_profile = draft_tests._draft_profile
 
 AGENTS = ("engineering_agent", "pm_agent", "security_agent")
+TASKS = (*AGENTS, "critic_agent")
+"""Every run's tasks (Story 6.4: the Critic's runs after the specialists')."""
 
 
 @pytest.fixture(autouse=True)
@@ -101,9 +104,15 @@ def _no_auto_run(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 Reply = BaseModel | Exception | Callable[[StructuredRequest[Any]], BaseModel]
 
 
+NO_CRITIC_FINDINGS = CriticOutput(findings=[], contradictions=[])
+"""The Critic's default reply (Story 6.4): nothing to report (uncovered Requirements are
+backstopped by code)."""
+
+
 class AgentGateway:
     """Answers `complete_structured` from `replies[agent_id]` in order (the last one
-    repeats), after a short sleep, and records each call's time window per agent."""
+    repeats), after a short sleep, and records each call's time window per agent. The
+    Critic (Story 6.4), unless given replies, answers `NO_CRITIC_FINDINGS`."""
 
     def __init__(self, replies: Mapping[str, list[Reply]], *, delay_s: float = 0.2) -> None:
         self.replies = {agent: list(queue) for agent, queue in replies.items()}
@@ -119,7 +128,9 @@ class AgentGateway:
         self.requests.append(request)
         started = time.monotonic()
         await asyncio.sleep(self.delay_s)
-        queue = self.replies[agent]
+        queue = self.replies.get(agent) or (
+            [NO_CRITIC_FINDINGS] if agent == "critic_agent" else self.replies[agent]
+        )
         reply = queue.pop(0) if len(queue) > 1 else queue[0]
         self.windows[agent].append((started, time.monotonic()))
         if isinstance(reply, Exception):
@@ -368,7 +379,7 @@ def test_a_run_stores_three_assessments_with_findings_effort_and_trace(
 
     assert body["status"] == "queued"
     assert [(t["agent"], t["status"], t["error_code"]) for t in body["tasks"]] == [
-        (agent, "queued", None) for agent in AGENTS
+        (agent, "queued", None) for agent in TASKS
     ]
     (job,) = assess_jobs(sync_engine, opp["id"])
     assert job["payload"] == {"run_id": body["id"]}
@@ -382,7 +393,7 @@ def test_a_run_stores_three_assessments_with_findings_effort_and_trace(
     assert run["finished_at"] is not None
     tasks = task_rows(sync_engine, run["id"])
     assert {a: (t["status"], t["error_code"]) for a, t in tasks.items()} == {
-        a: ("succeeded", None) for a in AGENTS
+        a: ("succeeded", None) for a in TASKS
     }
     assert all(t["started_at"] and t["finished_at"] for t in tasks.values())
 
@@ -424,7 +435,7 @@ def test_a_run_stores_three_assessments_with_findings_effort_and_trace(
     trail = events(sync_engine, opp["id"])
     assert trail[0]["event_type"] == "assessments.assessment_run.started"
     assert trail[0]["actor_type"] == "user"
-    assert trail[0]["payload"] == {"agent_count": 3}
+    assert trail[0]["payload"] == {"agent_count": 4}
     assert (trail[0]["subject_type"], str(trail[0]["subject_id"])) == (
         "assessments.assessment_run",
         body["id"],
@@ -466,20 +477,22 @@ def test_a_run_stores_three_assessments_with_findings_effort_and_trace(
     assert (last["actor_type"], last["actor_id"]) == ("system", ASSESS)
     assert last["payload"] == {
         "status": "succeeded",
-        "task_count": 3,
-        "succeeded_count": 3,
+        "task_count": 4,
+        "succeeded_count": 4,
         "failed_count": 0,
     }
 
     # One call per agent: its own instructions as the system message; the Requirements and
     # Gaps only as data blocks.
-    assert sorted(r.caller.agent_id for r in fake.requests) == list(AGENTS)
+    assert sorted(r.caller.agent_id for r in fake.requests) == sorted(TASKS)
     prompts = {
         "engineering_agent": engineering_prompt(1),
         "pm_agent": pm_prompt(1),
         "security_agent": security_prompt(1),
     }
     for request in fake.requests:
+        if request.caller.agent_id == "critic_agent":  # Story 6.4: tested on its own
+            continue
         system, user = request.messages
         assert (system.role, system.content) == ("system", prompts[request.caller.agent_id])
         assert "<<<REQUIREMENT R1 classification=integration token=" in user.content
@@ -577,8 +590,8 @@ def test_a_failing_agent_leaves_the_run_partially_failed_and_the_others_stored(
     done = events(sync_engine, opp["id"])[-1]
     assert done["payload"] == {
         "status": "partially_failed",
-        "task_count": 3,
-        "succeeded_count": 2,
+        "task_count": 4,
+        "succeeded_count": 3,
         "failed_count": 1,
     }
 
@@ -591,6 +604,7 @@ def test_a_failing_agent_leaves_the_run_partially_failed_and_the_others_stored(
         "engineering_agent": "succeeded",
         "pm_agent": "succeeded",
         "security_agent": "queued",
+        "critic_agent": "queued",  # Story 6.4: it reviews the run again after the retry
     }
     assert len(assess_jobs(sync_engine, opp["id"])) == 2
     queued = [p for p in progress(sync_engine, body["id"]) if p[0] == "workflows.run.queued"]
@@ -607,7 +621,7 @@ def test_a_failing_agent_leaves_the_run_partially_failed_and_the_others_stored(
     assert current(sync_engine, opp["id"], "security_agent")["version"] == 1
     trail = events(sync_engine, opp["id"])
     restarted = [e for e in trail if e["event_type"] == "assessments.assessment_run.started"]
-    assert [e["payload"] for e in restarted] == [{"agent_count": 3}, {"agent_count": 1}]
+    assert [e["payload"] for e in restarted] == [{"agent_count": 4}, {"agent_count": 2}]
     assert trail[-1]["payload"]["status"] == "succeeded"
 
 
@@ -634,9 +648,10 @@ def test_every_agent_failing_fails_the_run(
 
     (run,) = run_rows(sync_engine, opp["id"])
     assert run["status"] == "failed"
-    assert {(t["status"], t["error_code"]) for t in task_rows(sync_engine, run["id"]).values()} == {
-        ("failed", code)
-    }
+    tasks = task_rows(sync_engine, run["id"])
+    assert {(tasks[a]["status"], tasks[a]["error_code"]) for a in AGENTS} == {("failed", code)}
+    # Story 6.4: nothing to review, so the Critic's task succeeds without a call.
+    assert tasks["critic_agent"]["status"] == "succeeded"
     assert assessment_rows(sync_engine, opp["id"]) == []
     (job,) = assess_jobs(sync_engine, opp["id"])
     assert (job["status"], job["attempts"]) == ("dead", 2)
@@ -823,9 +838,13 @@ def test_a_cancelled_run_is_recorded_as_timed_out_only_on_the_final_attempt(
 
     (run,) = run_rows(sync_engine, opp["id"])
     assert run["status"] == run_status
-    assert {(t["status"], t["error_code"]) for t in task_rows(sync_engine, run["id"]).values()} == {
-        (task_status, code)
-    }
+    tasks = task_rows(sync_engine, run["id"])
+    assert {(tasks[a]["status"], tasks[a]["error_code"]) for a in AGENTS} == {(task_status, code)}
+    # The Critic's task never started: it waits for the specialists (failed with them at the end).
+    critic = tasks["critic_agent"]
+    assert (critic["status"], critic["error_code"]) == (
+        ("failed", code) if code else ("queued", None)
+    )
 
 
 def test_a_job_whose_run_is_no_longer_in_progress_is_skipped(
@@ -871,8 +890,8 @@ def test_starting_fails_a_lost_run_first(
     } == {("failed", "model_timeout")}
     assert new["status"] == "queued"
     ended = progress(sync_engine, lost["id"])[1:]  # after its `run queued`
-    assert sorted(ended[:3]) == [("workflows.task.ended", f"{a} failed") for a in AGENTS]
-    assert ended[3:] == [("workflows.run.ended", "run failed")]
+    assert sorted(ended[:4]) == sorted(("workflows.task.ended", f"{a} failed") for a in TASKS)
+    assert ended[4:] == [("workflows.run.ended", "run failed")]
 
 
 def test_retry_fails_a_lost_run_first(
@@ -1145,6 +1164,7 @@ def test_cancelling_a_running_run_skips_the_rest_and_keeps_what_completed(
         "engineering_agent": ("succeeded", None),
         "pm_agent": ("skipped", None),
         "security_agent": ("skipped", None),
+        "critic_agent": ("skipped", None),
     }
     (run,) = run_rows(sync_engine, opp["id"])
     assert run["status"] == "cancelled"
@@ -1155,12 +1175,13 @@ def test_cancelling_a_running_run_skips_the_rest_and_keeps_what_completed(
     engineering = current(sync_engine, opp["id"], "engineering_agent")
     assert (engineering["version"], engineering["run_id"]) == (1, run["id"])
     assert assessment_rows(sync_engine, opp["id"], "pm_agent") == []
-    cancelled = progress(sync_engine, run["id"])[-3:]
-    assert sorted(cancelled[:2]) == [
+    cancelled = progress(sync_engine, run["id"])[-4:]
+    assert sorted(cancelled[:3]) == [
+        ("workflows.task.ended", "critic_agent skipped"),
         ("workflows.task.ended", "pm_agent skipped"),
         ("workflows.task.ended", "security_agent skipped"),
     ]
-    assert cancelled[2] == ("workflows.run.ended", "run cancelled")
+    assert cancelled[3] == ("workflows.run.ended", "run cancelled")
     last = events(sync_engine, opp["id"])[-1]
     assert last["event_type"] == "assessments.assessment_run.cancelled"
     assert last["actor_type"] == "user"
@@ -1168,7 +1189,7 @@ def test_cancelling_a_running_run_skips_the_rest_and_keeps_what_completed(
         "assessments.assessment_run",
         body["id"],
     )
-    assert last["payload"] == {"skipped_count": 2, "succeeded_count": 1}
+    assert last["payload"] == {"skipped_count": 3, "succeeded_count": 1}
 
 
 def test_a_reply_after_the_cancel_is_discarded(
@@ -1211,7 +1232,7 @@ def test_a_cancelled_queued_run_skips_its_job(
         ("skipped", None, None)  # never started: no duration
     }
     assert events(sync_engine, opp["id"])[-1]["payload"] == {
-        "skipped_count": 3,
+        "skipped_count": 4,
         "succeeded_count": 0,
     }
 
@@ -1469,7 +1490,7 @@ def test_enqueue_fails_a_lost_run_first_then_queues_one(
         (t["status"], t["error_code"]) for t in task_rows(sync_engine, lost["id"]).values()
     } == {("failed", "model_timeout")}
     assert (new["id"], new["status"]) == (new_id, "queued")
-    assert set(task_rows(sync_engine, new["id"])) == set(AGENTS)
+    assert set(task_rows(sync_engine, new["id"])) == set(TASKS)
     assert len(assess_jobs(sync_engine, opp["id"])) == 2
 
 

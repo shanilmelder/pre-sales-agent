@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict
 
 from app.modules.assessments.application.public import (
     AgentAssessment,
-    AssessmentAgent,
     RunErrorCode,
 )
 from app.modules.workflows.domain.runs import (
@@ -18,19 +17,21 @@ from app.modules.workflows.domain.runs import (
     DecisionChoice,
     DecisionKind,
     DecisionStatus,
+    TaskAgent,
     TaskSkipReason,
 )
 
 
 class AssessmentTask(BaseModel):
-    """One agent's task in an assessment run. `error_code` is set only when `failed`;
+    """One agent's task in an assessment run: a specialist's, or (Story 6.4) the Critic's,
+    which runs once the specialists' have ended. `error_code` is set only when `failed`;
     `skip_reason` only when `skipped` because a person continued without its disabled Agent
     (`agent_disabled`: the panel says "Agent disabled — assess manually"); a cancel's skipped
     tasks have none.
     `started_at` / `finished_at`: when the task last started and finished (null before
     either); the panel derives elapsed time from them."""
 
-    agent: AssessmentAgent
+    agent: TaskAgent
     status: AssessmentTaskStatus
     error_code: RunErrorCode | None
     skip_reason: TaskSkipReason | None = None
@@ -46,7 +47,7 @@ class RunDecision(BaseModel):
 
     id: str
     kind: DecisionKind
-    agent: AssessmentAgent
+    agent: TaskAgent
     agent_name: str
     agent_active: bool
     status: DecisionStatus
@@ -61,7 +62,7 @@ class PlanVersionTask(BaseModel):
     """One task of a plan version: its Agent and the config version it was pinned to
     (`config_version`: that version's number for the Agent)."""
 
-    agent: AssessmentAgent
+    agent: TaskAgent
     config_version_id: str
     config_version: int | None
 

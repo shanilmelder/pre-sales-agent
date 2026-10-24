@@ -12,7 +12,8 @@ run or task status.
 Assessment when a run finishes (the Estimate is built from them, Story 8.3, and the Conflict
 rules run over them, Story 6.1). `current_finding_snapshots` and `finding_titles` give
 `conflicts` the current Findings for the Conflict Agent and a cited Finding's title and kind
-(Story 6.2).
+(Story 6.2). Their run-scoped variants (`run_assessment_snapshots`, `run_finding_snapshots`)
+give the Critic the Assessments accepted in one run (Story 6.4).
 
 Logs and trace carry ids, codes and counts only, never Requirement, Gap or Finding text.
 """
@@ -285,15 +286,30 @@ async def accept_assessment(
     return validation
 
 
+def _in_agent_order(records: Sequence[repo.AssessmentRecord]) -> list[repo.AssessmentRecord]:
+    return sorted(records, key=lambda r: AGENTS.index(AssessmentAgent(r.agent)))
+
+
 async def current_assessment_snapshots(
     uow: UnitOfWork, opportunity_id: UUID
 ) -> list[conflicts.AssessmentSnapshot]:
     """Each agent's current Assessment of the Opportunity: id, version, recommendation and
     effort rows (Requirement id and version, hours), in agent order. No authorization."""
-    records = sorted(
-        await repo.current_assessments(uow, opportunity_id),
-        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
-    )
+    return await _assessment_snapshots(uow, await repo.current_assessments(uow, opportunity_id))
+
+
+async def run_assessment_snapshots(
+    uow: UnitOfWork, opportunity_id: UUID, run_id: UUID
+) -> list[conflicts.AssessmentSnapshot]:
+    """`current_assessment_snapshots` for the Assessments accepted in the run (Story 6.4: what
+    the Critic reviews), the newest per agent. No authorization."""
+    return await _assessment_snapshots(uow, await repo.run_assessments(uow, opportunity_id, run_id))
+
+
+async def _assessment_snapshots(
+    uow: UnitOfWork, found: Sequence[repo.AssessmentRecord]
+) -> list[conflicts.AssessmentSnapshot]:
+    records = _in_agent_order(found)
     effort: dict[UUID, list[conflicts.EffortSnapshot]] = {}
     for row in await repo.effort_of(uow, [r.id for r in records]):
         effort.setdefault(row.assessment_id, []).append(
@@ -322,10 +338,21 @@ async def current_finding_snapshots(
     the Conflict Agent compares): ids, the agent and Assessment version, kind, severity,
     title, detail and the cited Requirements (id and version), in agent and Finding order.
     No authorization."""
-    records = sorted(
-        await repo.current_assessments(uow, opportunity_id),
-        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
-    )
+    return await _finding_snapshots(uow, await repo.current_assessments(uow, opportunity_id))
+
+
+async def run_finding_snapshots(
+    uow: UnitOfWork, opportunity_id: UUID, run_id: UUID
+) -> list[conflicts.FindingSnapshot]:
+    """`current_finding_snapshots` for the Assessments accepted in the run (Story 6.4: what
+    the Critic reviews), the newest per agent. No authorization."""
+    return await _finding_snapshots(uow, await repo.run_assessments(uow, opportunity_id, run_id))
+
+
+async def _finding_snapshots(
+    uow: UnitOfWork, assessed: Sequence[repo.AssessmentRecord]
+) -> list[conflicts.FindingSnapshot]:
+    records = _in_agent_order(assessed)
     by_id = {r.id: r for r in records}
     found = await repo.findings_of(uow, list(by_id))
     cited: dict[UUID, list[tuple[UUID, int]]] = {}

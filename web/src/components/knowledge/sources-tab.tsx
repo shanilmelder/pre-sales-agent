@@ -36,8 +36,9 @@ const selectClass =
   "h-7 rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
 /** Knowledge → Sources: the list in the main pane (filters by product, Integration Type,
- * owner and stale; status updates by polling while a parse is pending); the selected
- * Source's inspector, or the register form (`c`), in the right pane. */
+ * owner and stale, the first two maybe seeded from a Coverage cell's link; status updates by
+ * polling while a parse is pending); the selected Source's inspector, or the register form
+ * (`c`), in the right pane. */
 export function SourcesTab({
   initialSources,
   integrationTypes,
@@ -47,7 +48,8 @@ export function SourcesTab({
   initialSources: readonly KnowledgeSource[];
   /** The active Integration Types, for tagging. */
   integrationTypes: readonly IntegrationTypeOption[];
-  /** The filters the page opens with (Story 4.1: from `?integration_type=` and `?product=`). */
+  /** The filters the page opens with (`?integration_type=` and `?product=`, from the Gaps
+   * tab's coverage banner or a Coverage cell). */
   initialFilters?: Filters;
   me: { id: string; roles: readonly Role[] };
 }) {

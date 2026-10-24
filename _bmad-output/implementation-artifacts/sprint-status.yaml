@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 10-24-2026 04:15
+last_updated: 10-24-2026 13:30
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -66,7 +66,7 @@ development_status:
   3-2-register-knowledge-sources-by-upload: done
   3-3-chunk-embed-and-search-knowledge-with-citable-passages: done
   3-4-author-and-version-checklists: backlog
-  3-5-knowledge-coverage-view: backlog
+  3-5-knowledge-coverage-view: review
   3-6-knowledge-graph: backlog
   epic-3-retrospective: optional
 
@@ -97,7 +97,7 @@ development_status:
   6-1-detect-conflicts-with-deterministic-rules: done
   6-2-llm-assisted-conflict-detection-for-free-text: done
   6-3-resolve-conflicts-with-a-reason: done
-  6-4-critic-review: backlog
+  6-4-critic-review: review
   6-5-red-team-review: done
   6-6-blocking-findings-and-overrides: backlog
   epic-6-retrospective: optional

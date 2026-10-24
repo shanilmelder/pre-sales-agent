@@ -12,7 +12,6 @@ from uuid import UUID
 from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import StreamingResponse
 
-from app.modules.assessments.application.public import AssessmentAgent
 from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.workflows.application import events
 from app.modules.workflows.application import public as workflows
@@ -21,6 +20,7 @@ from app.modules.workflows.application.public import (
     AssessmentsView,
     DecisionResolution,
     ProgressEventData,
+    TaskAgent,
     TraceEventData,
 )
 from app.platform.concurrency import etag
@@ -120,12 +120,13 @@ async def start_assessment_run(
 async def retry_assessment_task(
     opportunity_id: UUID,
     run_id: UUID,
-    agent: AssessmentAgent,
+    agent: TaskAgent,
     actor: CurrentPrincipal,
     uow: UoW,
 ) -> AssessmentRun:
-    """Re-run one failed task of the Opportunity's latest assessment run; the other tasks
-    keep their results. The owner and collaborators, except sales representatives."""
+    """Re-run one failed task of the Opportunity's latest assessment run (a specialist's or,
+    Story 6.4, the Critic's); the other tasks keep their results. The owner and
+    collaborators, except sales representatives."""
     return await workflows.retry_task(uow, actor, opportunity_id, run_id, agent)
 
 

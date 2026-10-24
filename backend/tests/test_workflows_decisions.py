@@ -217,8 +217,8 @@ def test_a_disabled_agent_escalates_and_the_run_waits_for_a_person(
     headers, _, opp, body, fake = waiting(client, sync_engine, db_url, gateway)
 
     # Every task was queued and pinned, the disabled Agent's too: nothing is skipped.
-    assert [t["status"] for t in body["tasks"]] == ["queued"] * 3
-    assert [t["skip_reason"] for t in body["tasks"]] == [None] * 3
+    assert [t["status"] for t in body["tasks"]] == ["queued"] * 4  # with the Critic's (6.4)
+    assert [t["skip_reason"] for t in body["tasks"]] == [None] * 4
     (run,) = run_rows(sync_engine, opp["id"])
     assert run["status"] == "waiting_for_human"
     assert run["finished_at"] is None
@@ -228,6 +228,7 @@ def test_a_disabled_agent_escalates_and_the_run_waits_for_a_person(
         "pm_agent": "succeeded",
         SECURITY: "queued",
     }
+    assert tasks["critic_agent"]["status"] == "queued"  # it waits for every specialist
     assert (tasks[SECURITY]["started_at"], tasks[SECURITY]["skip_reason"]) == (None, None)
     assert {r.caller.agent_id for r in fake.requests} == {"engineering_agent", "pm_agent"}
 
@@ -281,7 +282,7 @@ def test_a_disabled_agent_escalates_and_the_run_waits_for_a_person(
     (plan,) = shown["run"]["plan_versions"]
     assert (plan["version"], plan["created_by"]) == (1, "Owner Person")
     assert {t["agent"]: t["config_version_id"] for t in plan["tasks"]} == {
-        a: str(tasks[a]["config_version_id"]) for a in AGENTS
+        a: str(tasks[a]["config_version_id"]) for a in (*AGENTS, "critic_agent")
     }
 
     # The Estimate tab's "run in progress" is queued/running only.
@@ -409,8 +410,8 @@ def test_continue_without_skips_the_task_and_finishes_without_rerunning_the_othe
     (completed,) = trace_rows(sync_engine, opp["id"], "assessments.assessment_run.completed")
     assert completed["payload"] == {
         "status": "succeeded",
-        "task_count": 3,
-        "succeeded_count": 2,
+        "task_count": 4,  # the three specialists and the Critic (Story 6.4)
+        "succeeded_count": 3,
         "failed_count": 0,  # the chosen skip is not a failure
     }
 
@@ -516,7 +517,8 @@ def test_a_waiting_run_resumes_from_its_checkpoint_with_a_fresh_runner_and_pool(
         if r.getMessage() == "orchestration.node_entered"
     }
     tasks = task_rows(sync_engine, body["id"])
-    assert entered == {str(tasks[SECURITY]["id"])}  # only the interrupted node runs again
+    # Security's node resumes; the Critic's (Story 6.4) runs once Security has ended.
+    assert entered == {str(tasks[SECURITY]["id"]), str(tasks["critic_agent"]["id"])}
     assert (fake.calls("engineering_agent"), fake.calls("pm_agent")) == (1, 1)
     for agent in ("engineering_agent", "pm_agent"):  # no duplicate Assessments
         assert len(assessment_rows(sync_engine, opp["id"], agent)) == 1

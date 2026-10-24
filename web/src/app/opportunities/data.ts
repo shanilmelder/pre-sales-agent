@@ -9,6 +9,7 @@ import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/oppo
 import { UUID_RE } from "@/lib/opportunities";
 import type { AssessmentsView } from "@/lib/assessments";
 import type { ConflictsView } from "@/lib/conflicts";
+import type { CriticView } from "@/lib/critic";
 import type { EstimateView } from "@/lib/estimates";
 import type { GapList, GapsContext } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
@@ -33,6 +34,7 @@ export type IntegrationTypeOption = { id: string; name: string };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
 export type TraceResult = { kind: "ok"; page: TracePage } | { kind: "error" };
 export type RedTeamResult = { kind: "ok"; redTeam: RedTeamView } | { kind: "error" };
+export type CriticResult = { kind: "ok"; critic: CriticView } | { kind: "error" };
 export type ConflictsResult = { kind: "ok"; conflicts: ConflictsView } | { kind: "error" };
 export type AssessmentsResult =
   | { kind: "ok"; assessments: AssessmentsView }
@@ -249,6 +251,24 @@ export async function getRedTeam(id: string): Promise<RedTeamResult> {
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET red-team failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `GET /api/v1/opportunities/{id}/critic`: the current Critic Review (Story 6.4). Logs
+ * statuses only. */
+export async function getCritic(id: string): Promise<CriticResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/critic", {
+      params: { path: { opportunity_id: id } },
+    });
+    if (data) return { kind: "ok", critic: data };
+    console.error(`GET critic failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET critic failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }
