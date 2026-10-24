@@ -214,6 +214,14 @@ class GapNotOpenError(ConflictError):
     title = "Gap not open"
 
 
+class GapMandatoryError(ConflictError):
+    """A dismissal was asked for on a mandatory Gap whose Checklist still applies (Story
+    4.2)."""
+
+    code = "gap_mandatory"
+    title = "Gap mandatory"
+
+
 class GapNotReopenableError(ConflictError):
     """A Gap reopen was asked for on a Gap that is neither `dismissed` (Story 4.4) nor
     `answered` (Story 4.7)."""

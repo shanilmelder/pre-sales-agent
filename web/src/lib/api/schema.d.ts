@@ -845,7 +845,8 @@ export interface paths {
          * Dismiss Gap
          * @description Dismiss an open Gap as `not_relevant` (note optional) or `other` (note required). A
          *     later Gap detection never reopens it, and drops a Gap with the same category and title.
-         *     The owner and collaborators, except sales representatives.
+         *     A mandatory Gap only once its Checklist no longer applies. The owner and collaborators,
+         *     except sales representatives.
          */
         post: operations["dismiss_gap"];
         delete?: never;
@@ -2128,6 +2129,18 @@ export interface components {
             assessment: components["schemas"]["AssessmentView"] | null;
         };
         /**
+         * AgentCategoryTrigger
+         * @description The agent raised the Gap, by category.
+         */
+        AgentCategoryTrigger: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "agent_category";
+            category: components["schemas"]["GapCategory"];
+        };
+        /**
          * AgentConfigVersion
          * @description One immutable config version of an Agent. `model_digest` is `unpinned` until digests
          *     are pinned (Story 7.2); `created_by_id` is null for the versions the migration seeded.
@@ -2645,6 +2658,26 @@ export interface components {
             /** Mandatory */
             mandatory: boolean;
         };
+        /**
+         * ChecklistItemTrigger
+         * @description A mandatory item of an applicable Checklist raised the Gap (Story 4.2): the
+         *     Checklist, the published version the Gap was raised from, and the stable item id.
+         */
+        ChecklistItemTrigger: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "checklist_item";
+            /** Checklist Id */
+            checklist_id: string;
+            /** Version */
+            version: number;
+            /** Item Id */
+            item_id: string;
+            /** Checklist Name */
+            checklist_name: string;
+        };
         /** ChecklistList */
         ChecklistList: {
             /** Items */
@@ -2743,6 +2776,12 @@ export interface components {
             /** Answered On */
             answered_on: string | null;
             answered_by: components["schemas"]["UserRef"] | null;
+            /**
+             * From Checklist
+             * @description Drafted from a mandatory Checklist item's wording (Story 4.2), shown as "from Checklist".
+             * @default false
+             */
+            from_checklist: boolean;
         };
         /**
          * Classification
@@ -3492,7 +3531,8 @@ export interface components {
             /** Title */
             title: string;
             category: components["schemas"]["GapCategory"];
-            trigger: components["schemas"]["GapTrigger"];
+            /** Trigger */
+            trigger: components["schemas"]["AgentCategoryTrigger"] | components["schemas"]["ChecklistItemTrigger"];
             /** Why It Matters */
             why_it_matters: string;
             impact: components["schemas"]["Impact"];
@@ -3518,6 +3558,17 @@ export interface components {
             answer: components["schemas"]["GapAnswer"] | null;
             /** Answer Suggestions */
             answer_suggestions: components["schemas"]["AnswerSuggestion"][];
+            /**
+             * Checklist Applies
+             * @description Story 4.2: for an open `mandatory_checklist` Gap, whether its Checklist item still applies (it can be dismissed only once this is false); true otherwise.
+             * @default true
+             */
+            checklist_applies: boolean;
+            /**
+             * Why Entry Id
+             * @description The catalogue entry (Integration Type or Work Package) `why_it_matters` names, from the Checklist item (Story 4.2); null when none.
+             */
+            why_entry_id?: string | null;
         };
         /**
          * GapAnswer
@@ -3599,11 +3650,11 @@ export interface components {
         };
         /**
          * GapList
-         * @description The Opportunity's open Gaps, high impact first, then medium, then low, oldest first
-         *     within an impact, followed by its converted Gaps (Story 8.4), then its dismissed Gaps
-         *     (Story 4.4), each group in the same order; and its latest detection (null when none has
-         *     been queued yet). `can_edit_gaps`: whether the caller may change impacts, dismiss and
-         *     reopen Gaps (Story 4.4).
+         * @description The Opportunity's open Gaps, high impact first, then medium, then low, mandatory Gaps
+         *     first within an impact (Story 4.2), then oldest first, followed by its converted Gaps
+         *     (Story 8.4), then its dismissed Gaps (Story 4.4), each group in the same order; and its
+         *     latest detection (null when none has been queued yet). `can_edit_gaps`: whether the
+         *     caller may change impacts, dismiss and reopen Gaps (Story 4.4).
          *     `can_start_detection`: whether the caller may start (retry) a detection;
          *     `can_edit_questions`: whether the caller may edit and approve Clarification Questions
          *     (Story 4.5); `can_send_questions`: whether the caller may export questions, mark them
@@ -3629,7 +3680,7 @@ export interface components {
          * GapOrigin
          * @enum {string}
          */
-        GapOrigin: "detected";
+        GapOrigin: "detected" | "mandatory_checklist";
         /**
          * GapReopening
          * @description A person's reopening of a dismissed Gap (Story 4.4), with the reason.
@@ -3663,18 +3714,6 @@ export interface components {
          * @enum {string}
          */
         GapStatus: "open" | "superseded" | "converted" | "dismissed" | "answered";
-        /**
-         * GapTrigger
-         * @description What raised the Gap. In the demo, always the agent, by category.
-         */
-        GapTrigger: {
-            /**
-             * Kind
-             * @constant
-             */
-            kind: "agent_category";
-            category: components["schemas"]["GapCategory"];
-        };
         /**
          * GapsContext
          * @description What the Gaps tab shows above the list (Story 4.1). `applicable_checklists`: the
@@ -11463,7 +11502,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Gap is not open: it was dismissed, converted or superseded (`gap_not_open`); nothing changed */
+            /** @description The Gap is not open: it was dismissed, converted or superseded (`gap_not_open`), or it is a mandatory Gap whose Checklist still applies (`gap_mandatory`); nothing changed */
             409: {
                 headers: {
                     [name: string]: unknown;

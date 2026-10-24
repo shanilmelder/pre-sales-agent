@@ -18,8 +18,8 @@
 Downgrade: Assessments and tasks pinned to those versions are re-pinned to the version before,
 the versions are deleted, and the column and tables are dropped.
 
-Revision ID: 0038_tool_gateway
-Revises: 0037_requirement_tags
+Revision ID: 0039_tool_gateway
+Revises: 0038_mandatory_gaps
 Create Date: 2026-10-23
 """
 
@@ -30,8 +30,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0038_tool_gateway"
-down_revision: str | None = "0037_requirement_tags"
+revision: str = "0039_tool_gateway"
+down_revision: str | None = "0038_mandatory_gaps"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
