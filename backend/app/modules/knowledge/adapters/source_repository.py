@@ -205,6 +205,39 @@ async def tags_for(uow: UnitOfWork, source_ids: list[UUID]) -> dict[UUID, list[U
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class CoverageSource:
+    """What coverage needs about one Source: its product, last-reviewed date and tags."""
+
+    id: UUID
+    product: str
+    last_reviewed_on: date
+    integration_type_ids: list[UUID]
+
+
+async def ready_sources(uow: UnitOfWork) -> list[CoverageSource]:
+    """Non-retired Sources whose latest version's embedding is `ready` (searchable), with
+    their Integration Type tags (Story 3.5)."""
+    rows = (
+        await uow.session.execute(
+            select(S.id, S.product, S.last_reviewed_on)
+            .join(E, (E.source_id == S.id) & (E.version == _latest()))
+            .where(S.status == "active", E.status == "ready")
+            .order_by(S.id)
+        )
+    ).all()
+    tags = await tags_for(uow, [r.id for r in rows])
+    return [
+        CoverageSource(
+            id=r.id,
+            product=r.product,
+            last_reviewed_on=r.last_reviewed_on,
+            integration_type_ids=tags.get(r.id, []),
+        )
+        for r in rows
+    ]
+
+
 async def entry_kinds(uow: UnitOfWork, entry_ids: list[UUID]) -> dict[UUID, str]:
     """`{entry_id: kind}` for the catalogue entries that exist."""
     if not entry_ids:

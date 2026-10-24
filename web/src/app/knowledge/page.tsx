@@ -6,6 +6,7 @@ import { SourcesTab } from "@/components/knowledge/sources-tab";
 import { AppShell } from "@/components/shell/app-shell";
 import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
+import { seededFilters } from "@/lib/coverage";
 import type { KnowledgeSource } from "@/lib/knowledge-sources";
 
 import { loadSources } from "./actions";
@@ -27,10 +28,16 @@ async function activeIntegrationTypes(): Promise<{ id: string; name: string }[] 
   }
 }
 
-/** Knowledge → Sources (Checklists has its own route; Coverage comes with Story 3.5). */
-export default async function KnowledgePage() {
+/** Knowledge → Sources (Checklists and Coverage have their own routes). `?product=&type=`
+ * (a Coverage cell's link) seeds the product and Integration Type filters. */
+export default async function KnowledgePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
+  const seeded = seededFilters(await searchParams);
 
   const [list, types] = await Promise.all([loadSources(), activeIntegrationTypes()]);
   const sources: readonly KnowledgeSource[] = list.kind === "ok" ? list.sources : [];
@@ -44,6 +51,8 @@ export default async function KnowledgePage() {
           <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : (
           <SourcesTab
+            key={`${seeded.product}|${seeded.integrationTypeId}`}
+            initialFilters={seeded}
             initialSources={sources}
             integrationTypes={types}
             me={{ id: result.me.id, roles: result.me.roles }}

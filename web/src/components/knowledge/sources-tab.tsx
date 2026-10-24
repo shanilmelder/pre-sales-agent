@@ -15,6 +15,7 @@ import {
   RightPaneContent,
   useShell,
 } from "@/components/shell/shell-context";
+import { withOption } from "@/lib/coverage";
 import type { Role } from "@/lib/navigation";
 import {
   applyFilters,
@@ -36,22 +37,32 @@ const selectClass =
   "h-7 rounded-md border border-input bg-background px-1.5 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
 /** Knowledge → Sources: the list in the main pane (filters by product, Integration Type,
- * owner and stale; status updates by polling while a parse is pending); the selected
- * Source's inspector, or the register form (`c`), in the right pane. */
+ * owner and stale, the first two maybe seeded from a Coverage cell's link; status updates by
+ * polling while a parse is pending); the selected Source's inspector, or the register form
+ * (`c`), in the right pane. */
 export function SourcesTab({
   initialSources,
   integrationTypes,
   me,
+  initialFilters,
 }: {
   initialSources: readonly KnowledgeSource[];
   /** The active Integration Types, for tagging. */
   integrationTypes: readonly IntegrationTypeOption[];
   me: { id: string; roles: readonly Role[] };
+  /** Filters applied on load (`?product=&type=`, from a Coverage cell). */
+  initialFilters?: Partial<Pick<Filters, "product" | "integrationTypeId">>;
 }) {
   const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();
   const [sources, setSources] = useState<readonly KnowledgeSource[]>(initialSources);
   const [syncedFrom, setSyncedFrom] = useState(initialSources);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...NO_FILTERS,
+    product: withOption(productsOf(initialSources), initialFilters?.product ?? "").selected,
+    integrationTypeId: integrationTypes.some((t) => t.id === initialFilters?.integrationTypeId)
+      ? (initialFilters?.integrationTypeId ?? "")
+      : "",
+  }));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -158,7 +169,8 @@ export function SourcesTab({
     }
   }
 
-  const products = productsOf(sources);
+  // A seeded product with no Source yet stays choosable, so the filter shows what it is.
+  const products = withOption(productsOf(sources), filters.product).options;
   const owners = ownersOf(sources);
 
   return (

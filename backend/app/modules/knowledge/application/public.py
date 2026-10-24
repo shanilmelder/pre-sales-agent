@@ -4,7 +4,10 @@ Story 3.3: `search` (citable top-k chunks) and `resolve_evidence` (the `knowledg
 Evidence resolver, also registered with `app.platform.evidence` on import).
 
 Story 3.4: the Checklist commands and views, and `find_applicable_checklists` (the latest
-published version of every active Checklist whose scope matches, for Gap detection)."""
+published version of every active Checklist whose scope matches, for Gap detection).
+
+Story 3.5: `get_coverage` (Source and Checklist counts and status per product and Integration
+Type pair) and `coverage_matrix` (the Coverage view)."""
 
 from app.modules.knowledge.application.catalogue import (
     create_entry,
@@ -45,6 +48,16 @@ from app.modules.knowledge.application.checklists import (
     read_checklist_versions,
     retire_checklist,
     save_draft,
+)
+from app.modules.knowledge.application.coverage import coverage_matrix, get_coverage
+from app.modules.knowledge.application.coverage_models import (
+    CoverageCell,
+    CoverageCounts,
+    CoverageIndustry,
+    CoverageIntegrationType,
+    CoveragePair,
+    CoverageRow,
+    KnowledgeCoverage,
 )
 from app.modules.knowledge.application.evidence import check_chunk_refs, resolve_evidence
 from app.modules.knowledge.application.models import (
@@ -97,6 +110,7 @@ from app.modules.knowledge.domain.catalogue import Kind, Status
 from app.modules.knowledge.domain.checklists import Domain as ChecklistDomain
 from app.modules.knowledge.domain.checklists import Impact as ChecklistImpact
 from app.modules.knowledge.domain.checklists import ItemKind as ChecklistItemKind
+from app.modules.knowledge.domain.coverage import CoverageStatus
 from app.modules.knowledge.domain.embedding import (
     EVIDENCE_KIND,
     SEARCH_K_DEFAULT,
@@ -126,6 +140,13 @@ __all__ = [
     "ChecklistVersion",
     "ChecklistVersionList",
     "ChecklistVersionSummary",
+    "CoverageCell",
+    "CoverageCounts",
+    "CoverageIndustry",
+    "CoverageIntegrationType",
+    "CoveragePair",
+    "CoverageRow",
+    "CoverageStatus",
     "DownloadLink",
     "DraftInput",
     "DraftItemInput",
@@ -134,6 +155,7 @@ __all__ = [
     "EntryChanges",
     "IntegrationTypeTag",
     "Kind",
+    "KnowledgeCoverage",
     "KnowledgeEvidence",
     "KnowledgeSearchHit",
     "KnowledgeSearchResult",
@@ -155,6 +177,7 @@ __all__ = [
     "Status",
     "add_version",
     "check_chunk_refs",
+    "coverage_matrix",
     "create_checklist",
     "create_entry",
     "download_link",
@@ -162,6 +185,7 @@ __all__ = [
     "edit_source",
     "find_applicable_checklists",
     "get_catalogue_entry",
+    "get_coverage",
     "list_catalogue",
     "list_checklists",
     "list_entries",

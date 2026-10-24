@@ -1794,6 +1794,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Coverage
+         * @description Products (from Sources, Checklists and the Opportunities the caller can read, sorted
+         *     ignoring case) by active Integration Types: per cell the Ready Sources, how many of them
+         *     are stale, the published Checklists and the status (`ready`, `partial`, `missing`).
+         *     Checklists scoped only by industry are listed under `industries`. Any user with a role.
+         */
+        get: operations["get_knowledge_coverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/downloads/{token}": {
         parameters: {
             query?: never;
@@ -2897,6 +2920,60 @@ export interface components {
          * @enum {string}
          */
         ConvertedTo: "condition" | "contingency";
+        /** CoverageCell */
+        CoverageCell: {
+            /** Sources */
+            sources: number;
+            /** Stale */
+            stale: number;
+            /** Checklists */
+            checklists: number;
+            status: components["schemas"]["CoverageStatus"];
+            /** Integration Type Id */
+            integration_type_id: string;
+        };
+        /**
+         * CoverageIndustry
+         * @description Checklists scoped only by this industry (no products, no Integration Types).
+         */
+        CoverageIndustry: {
+            /** Industry */
+            industry: string;
+            /** Checklists */
+            checklists: number;
+            /**
+             * Names
+             * @description The Checklists' names, by name.
+             */
+            names: string[];
+        };
+        /**
+         * CoverageIntegrationType
+         * @description A column: an active Integration Type.
+         */
+        CoverageIntegrationType: {
+            /** Id */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * CoverageRow
+         * @description One product, with a cell per column, in column order.
+         */
+        CoverageRow: {
+            /** Product */
+            product: string;
+            /** Cells */
+            cells: components["schemas"]["CoverageCell"][];
+        };
+        /**
+         * CoverageStatus
+         * @enum {string}
+         */
+        CoverageStatus: "ready" | "partial" | "missing";
         /**
          * DetectedBy
          * @enum {string}
@@ -3712,6 +3789,22 @@ export interface components {
          * @enum {string}
          */
         Kind: "integration_type" | "work_package";
+        /**
+         * KnowledgeCoverage
+         * @description The coverage matrix: products (rows, sorted ignoring case) by active Integration Types
+         *     (columns), and the industry-only Checklists. `stale_months` is the review age after which
+         *     a Source is stale.
+         */
+        KnowledgeCoverage: {
+            /** Integration Types */
+            integration_types: components["schemas"]["CoverageIntegrationType"][];
+            /** Rows */
+            rows: components["schemas"]["CoverageRow"][];
+            /** Industries */
+            industries: components["schemas"]["CoverageIndustry"][];
+            /** Stale Months */
+            stale_months: number;
+        };
         /**
          * KnowledgeEvidence
          * @description A citable Evidence reference to a chunk (AD-13): `id` is the chunk, `version` the
@@ -19244,6 +19337,92 @@ export interface operations {
             };
             /** @description The write has no `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_knowledge_coverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeCoverage"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller has no role (`forbidden`) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

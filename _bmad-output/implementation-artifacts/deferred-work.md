@@ -225,3 +225,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-assessments-tab.md`
   summary: Findings tables (Assessments, and the pattern in Conflicts and Trace) put a whole row in one gridcell button, so screen readers read Severity, Type, Finding and Raised by as one run-on string with no column headers.
   evidence: Review of the Assessments redesign; the structure is inherited from `AssessmentFindingList` and `RedTeamList`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5-knowledge-coverage-view.md`
+  summary: sprint-status.yaml still lists 3-4-author-and-version-checklists as backlog although Story 3.4 is merged and its spec is done.
+  evidence: origin/story/3-4-author-version-checklists is an ancestor of origin/main, and spec-3-4 frontmatter has status done; found during Story 3.5 review.

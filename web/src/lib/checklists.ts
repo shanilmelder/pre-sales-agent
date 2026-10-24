@@ -158,6 +158,51 @@ export function upsert(checklists: readonly Checklist[], checklist: Checklist): 
   );
 }
 
+/** The Checklists list's product and Integration Type filters ("" is any). */
+export type ChecklistFilters = { product: string; integrationTypeId: string };
+
+export const NO_CHECKLIST_FILTERS: ChecklistFilters = { product: "", integrationTypeId: "" };
+
+/** Shown when the filters hide every Checklist. */
+export const NO_MATCHES = "No Checklists match these filters.";
+
+const scopeKey = (value: string) => value.trim().toLowerCase();
+
+/** The Checklists whose published scope covers the filters, by Coverage's pairing rule
+ * (deliberately narrower than Gap detection's, which matches on any one dimension: a Coverage
+ * cell answers whether that exact product and Integration Type pair is covered). A product
+ * matches one the Checklist names (ignoring case), or any product when it names none but has
+ * Integration Types; an Integration Type matches one it names, or any when it names none but
+ * has products. A Checklist scoped only by industry matches neither filter, and with either
+ * filter set retired Checklists are left out, as Coverage doesn't count them. */
+export function applyChecklistFilters(
+  checklists: readonly Checklist[],
+  filters: ChecklistFilters,
+): Checklist[] {
+  const filtered = filters.product !== "" || filters.integrationTypeId !== "";
+  return checklists.filter((c) => {
+    if (filtered && c.status === "retired") return false;
+    const products = c.products.map(scopeKey);
+    const types = c.integration_types.map((t) => t.id);
+    const productOk =
+      filters.product === "" ||
+      (products.length === 0 ? types.length > 0 : products.includes(scopeKey(filters.product)));
+    const typeOk =
+      filters.integrationTypeId === "" ||
+      (types.length === 0 ? products.length > 0 : types.includes(filters.integrationTypeId));
+    return productOk && typeOk;
+  });
+}
+
+/** The distinct products the Checklists name, sorted, ignoring case (first spelling kept). */
+export function checklistProducts(checklists: readonly Checklist[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const c of checklists) {
+    for (const p of c.products) if (!byKey.has(scopeKey(p))) byKey.set(scopeKey(p), p.trim());
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+}
+
 /** The 412 notice. */
 export function staleChangeMessage(): string {
   return "Changed by someone else since you opened it. Reload to see their change.";
