@@ -14,7 +14,7 @@ Three kinds of grant, any of which allows an action:
   excluded for that action (FR-64: sales representatives on an Opportunity can't edit its
   Requirements, start Gap detection, draft an Estimate, accept an Assumption, start a Red
   Team Review, export the Estimate, edit its lines, resolve or escalate a Conflict, or
-  resolve a decision a Workflow Run waits on).
+  resolve a decision a Workflow Run waits on, or resolve or override a Finding).
   Roles add up, so someone who also holds a role that isn't excluded keeps the grant.
 - **Any-role grants**: `ANY_ROLE_GRANTS` are allowed to every user holding at least one
   role (e.g. searching the Knowledge Base, Story 3.3), with no permission or relation.
@@ -23,6 +23,7 @@ Three kinds of grant, any of which allows an action:
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from types import MappingProxyType
 from uuid import UUID
 
@@ -84,6 +85,8 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.ESTIMATE_LINE_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CONFLICT_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CONFLICT_ESCALATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.FINDING_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.FINDING_OVERRIDE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -110,6 +113,8 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.ESTIMATE_LINE_EDIT,
         Action.CONFLICT_RESOLVE,
         Action.CONFLICT_ESCALATE,
+        Action.FINDING_RESOLVE,
+        Action.FINDING_OVERRIDE,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -131,6 +136,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.ESTIMATE_LINE_EDIT,
         Action.CONFLICT_RESOLVE,
         Action.CONFLICT_ESCALATE,
+        Action.FINDING_RESOLVE,
     }
 )
 
@@ -183,3 +189,38 @@ def is_allowed(principal: Principal, action: Action, resource: Resource | None =
     if action in OWNER_GRANTS and resource.owner_id is not None and user_id == resource.owner_id:
         return True
     return action in MEMBER_GRANTS and user_id in resource.member_ids
+
+
+class OverrideBasis(StrEnum):
+    """Why a person may override a Critic or Red Team Finding (Story 6.6, R1)."""
+
+    OWNER = "owner"
+    HEAD_OF_DELIVERY = "head_of_delivery"
+    SECURITY_REVIEWER = "security_reviewer"
+
+
+def override_basis(
+    principal: Principal, resource: Resource, *, security_discipline: bool
+) -> OverrideBasis | None:
+    """The grant that lets the principal override a Finding of the Opportunity, or None
+    (R1). The Opportunity's owner (not as a sales representative alone) may override any
+    overridable Finding; a holder of `assessments.finding.override` may as a Head of Delivery,
+    or as a security reviewer only a security-discipline Finding. Collaborators, sales
+    representatives and everyone else may not. Whether the Finding is overridable at all
+    (its `policy_ref`) is the caller's check, made first."""
+    if principal.user_id is None or not principal.roles:
+        return None
+    if (
+        resource.type == OPPORTUNITY_RESOURCE
+        and resource.owner_id is not None
+        and principal.user_id == resource.owner_id
+        and is_allowed(principal, Action.FINDING_OVERRIDE, resource)
+    ):
+        return OverrideBasis.OWNER
+    if Action.FINDING_OVERRIDE not in principal.permissions:
+        return None
+    if Role.HEAD_OF_DELIVERY in principal.roles:
+        return OverrideBasis.HEAD_OF_DELIVERY
+    if Role.SECURITY_REVIEWER in principal.roles and security_discipline:
+        return OverrideBasis.SECURITY_REVIEWER
+    return None

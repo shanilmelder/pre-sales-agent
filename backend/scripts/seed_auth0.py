@@ -71,10 +71,12 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
         }
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
-    Role.HEAD_OF_DELIVERY: frozenset({Action.OPPORTUNITY_READ}),
+    # Overriding a Critic or Red Team Finding (Story 6.6, R1): a Head of Delivery on any
+    # overridable Finding, a security reviewer on a security one only (the policy narrows it).
+    Role.HEAD_OF_DELIVERY: frozenset({Action.OPPORTUNITY_READ, Action.FINDING_OVERRIDE}),
     Role.ENGINEERING_REVIEWER: CHECKLIST_AUTHOR,
     Role.PM_REVIEWER: CHECKLIST_AUTHOR,
-    Role.SECURITY_REVIEWER: CHECKLIST_AUTHOR,
+    Role.SECURITY_REVIEWER: CHECKLIST_AUTHOR | {Action.FINDING_OVERRIDE},
 }
 """Which role holds which permission (README "Auth0 setup"). Roles not listed hold none:
 their access comes from being an Opportunity's owner or collaborator."""
@@ -104,6 +106,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.REGISTRY_AGENT_REGISTER: "Register Agents in the Agent Registry",
     Action.REGISTRY_AGENT_CONFIG_CREATE: "Create a new config version of an Agent",
     Action.REGISTRY_AGENT_SET_STATUS: "Enable, disable or set an Agent to eval only",
+    Action.FINDING_OVERRIDE: "Override a Critic or Red Team Finding with a reason",
 }
 
 TIMEOUT = 30.0

@@ -697,6 +697,47 @@ async def version_texts(
     return {(row.requirement_id, row.version): (row.text, row.classification) for row in rows}
 
 
+async def requirement_version_owners(
+    uow: UnitOfWork, refs: list[tuple[UUID, int]]
+) -> dict[tuple[UUID, int], UUID]:
+    """`{(id, version): opportunity_id}` for the Requirement versions that exist (Story 6.6:
+    the `requirement` Evidence resolver)."""
+    if not refs:
+        return {}
+    rows = await uow.session.execute(
+        select(
+            RequirementVersionRow.requirement_id,
+            RequirementVersionRow.version,
+            RequirementRow.opportunity_id,
+        )
+        .join(RequirementRow, RequirementRow.id == RequirementVersionRow.requirement_id)
+        .where(
+            tuple_(RequirementVersionRow.requirement_id, RequirementVersionRow.version).in_(refs)
+        )
+    )
+    return {(row.requirement_id, row.version): row.opportunity_id for row in rows}
+
+
+async def source_version_owners(
+    uow: UnitOfWork, refs: list[tuple[UUID, int]]
+) -> dict[tuple[UUID, int], tuple[UUID, str]]:
+    """`{(id, version): (opportunity_id, filename)}` for the Source versions that exist
+    (Story 6.6: the `source_document` Evidence resolver)."""
+    if not refs:
+        return {}
+    rows = await uow.session.execute(
+        select(
+            SourceVersionRow.source_id,
+            SourceVersionRow.version,
+            SourceVersionRow.filename,
+            SourceRow.opportunity_id,
+        )
+        .join(SourceRow, SourceRow.id == SourceVersionRow.source_id)
+        .where(tuple_(SourceVersionRow.source_id, SourceVersionRow.version).in_(refs))
+    )
+    return {(row.source_id, row.version): (row.opportunity_id, row.filename) for row in rows}
+
+
 # --- incremental intake (Story 2.7) ---------------------------------------------------------
 
 

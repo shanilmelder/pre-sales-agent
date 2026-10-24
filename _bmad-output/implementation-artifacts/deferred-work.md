@@ -238,3 +238,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
   summary: Reconcile Story 4.1's `knowledge.get_coverage` with the Story 3.5 branch, which adds its own `get_coverage` in the same `coverage.py`.
   evidence: The `story/3-5-knowledge-coverage-view` worktree adds `knowledge/application/coverage.py` and `tests/test_knowledge_coverage.py` with a different `get_coverage` shape. The second branch to merge adopts the other's API and points the banner link at `/knowledge/coverage`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-6-blocking-findings-and-overrides.md`
+  summary: Pin that `latest_overrides` shows the newest of several earlier overrides with the same fingerprint (test with overrides on Review v1 and v2, expect v2's on v3).
+  evidence: Story 6.6 review (verification gap): the carry-over test has a single earlier override, so reversing the ordering in `assessments/adapters/repository.py` `latest_overrides` passes every test; it only changes which earlier reason is shown.

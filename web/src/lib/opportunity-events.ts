@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { paths } from "@/lib/api/client";
+import { FINDING_EVENTS } from "@/lib/findings";
 
 type StreamContent =
   paths["/api/v1/opportunities/{opportunity_id}/events"]["get"]["responses"][200]["content"]["text/event-stream"];
@@ -309,6 +310,18 @@ export function useSourceEvents(
   enabled = true,
 ): boolean {
   const status = useStream(opportunityId, SOURCE_EVENTS, () => onChange(), onChange, enabled);
+  return status === "open";
+}
+
+/** Story 6.6: subscribe to the Opportunity's Finding and Review trace frames
+ * (`FINDING_EVENTS`) while `enabled` (the Assessments tab's blocking badge). `onChange` runs for
+ * each and whenever the stream (re)connects. Returns whether the stream is connected. */
+export function useFindingsEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  const status = useStream(opportunityId, FINDING_EVENTS, () => onChange(), onChange, enabled);
   return status === "open";
 }
 

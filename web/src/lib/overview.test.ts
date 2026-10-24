@@ -211,7 +211,7 @@ describe("attentionItems", () => {
     ).toEqual([]);
     expect(
       attentionItems({
-        redTeam: { review: null, run: null, can_start: false },
+        redTeam: { review: null, run: null, can_start: false, blocking_count: 0 },
         assessments: assessments([finding("medium", "M")]),
         gaps: gaps([gap("Low", "low"), gap("Done", "high", "converted")]),
         estimate: estimate([assumption("Accepted", 8, true)]),
@@ -499,7 +499,7 @@ const EMPTY: OverviewReads = {
     can_start: false,
     assessments: [{ agent: "engineering_agent", assessment: null }],
   } as unknown as AssessmentsView,
-  redTeam: { review: null, run: null, can_start: false },
+  redTeam: { review: null, run: null, can_start: false, blocking_count: 0 },
   trace: [],
   conflicts: { conflicts: [], open_count: 0, reviewers: [] },
 };

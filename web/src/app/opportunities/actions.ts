@@ -24,6 +24,7 @@ import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentRun, TaskAgent } from "@/lib/assessments";
 import type { Conflict } from "@/lib/conflicts";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
+import { totalBlocking, type EvidenceOption, type FindingState } from "@/lib/findings";
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
@@ -2709,4 +2710,175 @@ export async function escalateConflict(input: unknown): Promise<ConflictDecision
     );
     return { kind: "error" };
   }
+}
+
+// --- blocking Findings and overrides (Story 6.6) ------------------------------------------------
+
+/** What a person does to an open Critic or Red Team Finding. `refs` (Supply Evidence): the
+ * Requirements and Sources cited, as the Evidence picker lists them; `reason` is the note. */
+export type FindingDecisionInput = {
+  opportunityId: string;
+  findingId: string;
+  rowVersion: number;
+  action: "evidence" | "resolve" | "override";
+  reason: string;
+  refs?: { kind: string; id: string; version: number }[];
+};
+
+export type FindingDecisionResult =
+  /** The Finding's state as it is now. */
+  | { kind: "ok"; finding: FindingState }
+  /** 412: someone changed it first; `message` is the API's "Changed by {name} since you
+   * opened it." */
+  | { kind: "stale"; message: string }
+  /** 422: a readable reason (a blank reason, Evidence that doesn't resolve, or a Finding that
+   * can't be overridden). */
+  | { kind: "invalid"; detail: string }
+  /** 409: already resolved or overridden, or from an earlier Review. */
+  | { kind: "conflict"; detail: string }
+  | { kind: "forbidden" }
+  /** 404: the Opportunity can't be read, or the Finding is gone. */
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isEvidenceRef(value: unknown): value is { kind: string; id: string; version: number } {
+  if (typeof value !== "object" || value === null) return false;
+  const ref = value as Record<string, unknown>;
+  return (
+    typeof ref.kind === "string" &&
+    typeof ref.id === "string" &&
+    UUID_RE.test(ref.id) &&
+    typeof ref.version === "number" &&
+    Number.isSafeInteger(ref.version) &&
+    ref.version >= 1
+  );
+}
+
+function isFindingDecision(input: unknown): input is FindingDecisionInput {
+  if (typeof input !== "object" || input === null) return false;
+  const record = input as Record<string, unknown>;
+  const { opportunityId, findingId, rowVersion, action, reason, refs } = record;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof findingId === "string" &&
+    UUID_RE.test(findingId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0 &&
+    typeof reason === "string" &&
+    (action === "evidence" || action === "resolve" || action === "override") &&
+    (refs === undefined || (Array.isArray(refs) && refs.every(isEvidenceRef)))
+  );
+}
+
+function findingDecisionFailure(
+  label: string,
+  status: number,
+  error: unknown,
+): FindingDecisionResult {
+  const { detail, code } = problem(error);
+  switch (status) {
+    case 412:
+      return {
+        kind: "stale",
+        message: detail ?? "Changed by someone else since you opened it.",
+      };
+    case 422:
+      return {
+        kind: "invalid",
+        detail:
+          code === "evidence_unresolvable"
+            ? "That Evidence can't be cited: choose this Opportunity's Requirements or Sources."
+            : detail && !detail.startsWith("Invalid fields:")
+              ? detail
+              : "The change was not accepted.",
+      };
+    case 409:
+      return {
+        kind: "conflict",
+        detail: detail ?? "This Finding is already resolved or overridden.",
+      };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${status} code=${String(code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** Supply Evidence, Mark resolved or Override an open Critic or Red Team Finding, with
+ * `If-Match` (`POST …/findings/{fid}/evidence | resolution | override`). Never retries or
+ * overwrites on 412. Logs ids and statuses only (never the reason). */
+export async function decideFinding(input: unknown): Promise<FindingDecisionResult> {
+  if (!isFindingDecision(input)) return { kind: "error" };
+  const { opportunityId, findingId, rowVersion, action, reason, refs } = input;
+  const params = {
+    path: { opportunity_id: opportunityId, finding_id: findingId },
+    header: { "If-Match": `"${rowVersion}"` },
+  };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } =
+      action === "evidence"
+        ? await api.POST(
+            "/api/v1/opportunities/{opportunity_id}/findings/{finding_id}/evidence",
+            { params, body: { refs: refs ?? [], note: reason } },
+          )
+        : action === "resolve"
+          ? await api.POST(
+              "/api/v1/opportunities/{opportunity_id}/findings/{finding_id}/resolution",
+              { params, body: { reason } },
+            )
+          : await api.POST(
+              "/api/v1/opportunities/{opportunity_id}/findings/{finding_id}/override",
+              { params, body: { reason } },
+            );
+    if (data) return { kind: "ok", finding: data };
+    return findingDecisionFailure(`finding ${action}`, response.status, error);
+  } catch (thrown) {
+    console.error(`finding ${action} failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type EvidenceOptionsResult =
+  | { kind: "ok"; items: EvidenceOption[] }
+  | { kind: "error" };
+
+/** `GET /api/v1/opportunities/{id}/evidence-options`: the Requirements and Sources a person
+ * may cite when supplying Evidence for a Finding. */
+export async function loadEvidenceOptions(opportunityId: unknown): Promise<EvidenceOptionsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/evidence-options",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", items: data.items };
+    console.error(`GET evidence options failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET evidence options failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** How many open critical Critic and Red Team Findings block submission (the Assessments tab
+ * badge, Story 6.6); null when neither Review can be read. */
+export async function countBlockingFindings(opportunityId: unknown): Promise<number | null> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return null;
+  const [redTeam, critic] = await Promise.all([
+    getRedTeam(opportunityId),
+    getCritic(opportunityId),
+  ]);
+  return totalBlocking(
+    redTeam.kind === "ok" ? redTeam.redTeam : null,
+    critic.kind === "ok" ? critic.critic : null,
+  );
 }

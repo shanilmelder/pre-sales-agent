@@ -95,6 +95,7 @@ import {
   SpecialistAssessmentsHeader,
   SpecialistAssessmentsSection,
 } from "./specialist-assessments";
+import { OPEN_STATE } from "@/test/finding-fixtures";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
 const RUN_ID = "00000000-0000-7000-8000-0000000000a1";
@@ -1150,6 +1151,7 @@ describe("one Finding selected across the tab", () => {
       counts: { critical: 0, high: 1, medium: 0, low: 0 },
       findings: [
         {
+          ...OPEN_STATE,
           id: "00000000-0000-7000-8000-0000000000c2",
           position: 1,
           category: "integration_harder",
@@ -1163,6 +1165,7 @@ describe("one Finding selected across the tab", () => {
     },
     run: { status: "succeeded", error_code: null },
     can_start: false,
+    blocking_count: 0,
   };
 
   it("selecting a Red Team Finding clears the specialist selection, and back", async () => {
@@ -1204,6 +1207,34 @@ describe("one Finding selected across the tab", () => {
       "false",
     );
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("passes the Opportunity to the Red Team inspector: a Finding the caller may resolve shows its actions (Story 6.6)", async () => {
+    const user = userEvent.setup();
+    const actionable: RedTeamView = {
+      ...redTeam,
+      review: {
+        ...redTeam.review!,
+        findings: redTeam.review!.findings.map((f) => ({ ...f, can_resolve: true })),
+      },
+    };
+    render(
+      <ShellProviders singleKeyShortcuts>
+        <FindingSelectionProvider>
+          <SpecialistAssessmentsSection
+            opportunityId={OPP_ID}
+            initial={view(succeeded, FULL)}
+            redTeam={actionable}
+          />
+        </FindingSelectionProvider>
+        <RightPane />
+      </ShellProviders>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /\[RED TEAM FINDING\]/ }));
+
+    const actions = within(pane()).getByRole("group", { name: "Finding actions" });
+    expect(within(actions).getByRole("button", { name: "Supply Evidence" })).toBeTruthy();
   });
 });
 
@@ -1491,6 +1522,7 @@ describe("Assessments run header and agent cards (Story 17.3c)", () => {
 
 describe("Assessments tab redesign: the I/O matrix", () => {
   const redFinding = {
+    ...OPEN_STATE,
     id: "00000000-0000-7000-8000-0000000000d2",
     position: 1,
     category: "hidden_dependency" as const,
@@ -1533,6 +1565,7 @@ describe("Assessments tab redesign: the I/O matrix", () => {
           }
         : null,
       can_start: canStart,
+      blocking_count: 0,
     };
   }
   function renderTab(initial: AssessmentsView, redTeam: RedTeamView) {
@@ -1703,7 +1736,7 @@ describe("Assessments tab redesign: the I/O matrix", () => {
     );
     expect(findingRows()).toEqual([
       "CriticalRisk[FINDING 6]Security Agent1 Requirement",
-      "HighHidden dependency[RED FINDING]Red Team1 Requirement0 Estimate lines",
+      "HighHidden dependency[RED FINDING]OpenRed Team1 Requirement0 Estimate lines",
       "LowRisk[FINDING 5]Engineering Agent1 Requirement",
     ]);
     expect(
@@ -2026,6 +2059,7 @@ describe("the Critic (Story 6.4)", () => {
       counts: { critical: 1, high: 0, medium: 1, low: 0 },
       findings: [
         {
+          ...OPEN_STATE,
           id: "00000000-0000-7000-8000-0000000000d2",
           position: 1,
           category: "timeline",
@@ -2052,6 +2086,7 @@ describe("the Critic (Story 6.4)", () => {
           ],
         },
         {
+          ...OPEN_STATE,
           id: "00000000-0000-7000-8000-0000000000d3",
           position: 2,
           category: "coverage",
@@ -2070,6 +2105,7 @@ describe("the Critic (Story 6.4)", () => {
         },
       ],
     },
+    blocking_count: 1,
   };
   const withCritic = run("succeeded", [
     ...AGENTS.map((a) => task(a, "succeeded")),
@@ -2106,9 +2142,9 @@ describe("the Critic (Story 6.4)", () => {
     ]);
     expect(findingRows()).toEqual([
       "CriticalRisk[FINDING 3]Engineering Agent1 Requirement",
-      "CriticalTimeline[CRITIC TIMELINE]Critic1 Requirement1 cited Finding",
+      "CriticalTimeline[CRITIC TIMELINE]OpenBlocks submission until resolvedCritic1 Requirement1 cited Finding",
       "HighConstraint[FINDING 1]Engineering Agent1 Requirement",
-      "MediumCoverageNo specialist Assessment covers R5Critic1 Requirement0 cited Findings",
+      "MediumCoverageNo specialist Assessment covers R5OpenCritic1 Requirement0 cited Findings",
       "LowDependency[FINDING 4]PM Agent1 Requirement",
     ]);
     // A critical Critic Finding sits on the blocker tint, with the blocker icon and label.
@@ -2158,7 +2194,7 @@ describe("the Critic (Story 6.4)", () => {
     ]);
     loadAssessments.mockResolvedValue({ kind: "ok", assessments: view(withCritic, FULL) });
     loadCritic.mockResolvedValue({ kind: "ok", critic: CRITIC });
-    const { container } = renderWithCritic(view(reviewing, FULL), { review: null });
+    const { container } = renderWithCritic(view(reviewing, FULL), { review: null, blocking_count: 0 });
 
     const card = screen.getByRole("article", { name: "Critic" });
     expect(within(card).getByTestId("critic-reviewing").textContent).toBe("Critic reviewing");
@@ -2200,5 +2236,82 @@ describe("the Critic (Story 6.4)", () => {
 
     await waitFor(() => expect(screen.queryByText(failed)).toBeNull());
     expect(screen.getByRole("article", { name: "Critic" })).toBeTruthy();
+  });
+
+  // --- Story 6.6: the Finding's actions and live status --------------------------------------
+
+  const ACTIONABLE: CriticView = {
+    ...CRITIC,
+    review: {
+      ...CRITIC.review!,
+      findings: CRITIC.review!.findings.map((f) => ({ ...f, can_resolve: true })),
+    },
+  };
+
+  it("passes the Opportunity to the Critic inspector: a Finding the caller may resolve shows its actions", async () => {
+    const user = userEvent.setup();
+    renderWithCritic(view(withCritic, FULL), ACTIONABLE);
+
+    await user.click(screen.getByRole("button", { name: /\[CRITIC TIMELINE\]/ }));
+
+    const actions = within(pane()).getByRole("group", { name: "Finding actions" });
+    expect(within(actions).getByRole("button", { name: "Mark resolved" })).toBeTruthy();
+  });
+
+  it("re-reads the Critic and the Red Team on a Finding frame, so the pill follows", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    try {
+      const overridden: CriticView = {
+        ...CRITIC,
+        review: {
+          ...CRITIC.review!,
+          findings: CRITIC.review!.findings.map((f, i) =>
+            i === 0 ? { ...f, status: "overridden" as const } : f,
+          ),
+        },
+        blocking_count: 0,
+      };
+      loadAssessments.mockResolvedValue({ kind: "ok", assessments: view(withCritic, FULL) });
+      loadCritic.mockResolvedValue({ kind: "ok", critic: overridden });
+      loadRedTeam.mockResolvedValue({
+        kind: "ok",
+        redTeam: { review: null, run: null, can_start: false, blocking_count: 0 },
+      });
+      render(
+        <ShellProviders singleKeyShortcuts>
+          <FindingSelectionProvider>
+            <SpecialistAssessmentsSection
+              opportunityId={OPP_ID}
+              initial={view(withCritic, FULL)}
+              critic={CRITIC}
+              redTeam={{ review: null, run: null, can_start: false, blocking_count: 0 }}
+            />
+          </FindingSelectionProvider>
+          <RightPane />
+        </ShellProviders>,
+      );
+      const timeline = () =>
+        screen.getByRole("button", { name: /\[CRITIC TIMELINE\]/ }).closest("[role=row]")!;
+      expect(timeline().querySelector("[data-finding-status]")?.textContent).toBe("Open");
+      loadCritic.mockClear();
+      loadRedTeam.mockClear();
+
+      await act(async () => {
+        FakeEventSource.instances[0]!.emit("assessments.finding.overridden", {
+          event_type: "assessments.finding.overridden",
+        });
+      });
+
+      await waitFor(() =>
+        expect(timeline().querySelector("[data-finding-status]")?.textContent).toBe(
+          "Overridden",
+        ),
+      );
+      expect(loadCritic).toHaveBeenCalledWith(OPP_ID);
+      expect(loadRedTeam).toHaveBeenCalledWith(OPP_ID);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

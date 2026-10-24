@@ -75,6 +75,8 @@ export type RedTeamState = {
   message: string | null;
   /** Start a new review (Retry). */
   retry: () => void;
+  /** Re-read the view now (Story 6.6: a Finding was resolved or overridden elsewhere). */
+  refresh: () => void;
 };
 
 /** The Assessments tab's Red Team state. While a review is queued or running it is re-read
@@ -194,11 +196,22 @@ export function useRedTeam(
     }
   }
 
+  async function refresh() {
+    const startedAt = mutation.current;
+    try {
+      const loaded = await loadRedTeam(opportunityId);
+      if (loaded.kind === "ok" && mutation.current === startedAt) setView(loaded.redTeam);
+    } catch {
+      // Kept as it is; the next frame or poll tries again.
+    }
+  }
+
   return {
     view,
     stalled,
     busy,
     message,
     retry: () => void retry(),
+    refresh: () => void refresh(),
   };
 }

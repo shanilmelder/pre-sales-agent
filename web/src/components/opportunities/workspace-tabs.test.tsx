@@ -274,6 +274,30 @@ describe("the live Gaps badge (Story 4.7)", () => {
     expect(screen.getByTestId("tab-count-conflicts").textContent).toBe("1, 1 open");
     expect(screen.getByTestId("tab-count-gaps").textContent).toBe("3, 3 open");
   });
+
+  it("follows Finding frames with the Assessments blocking count, in the blocker tint (Story 6.6)", async () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const loadBlockingCount = vi.fn(async () => 1);
+    const { container } = render(
+      <ShellProviders singleKeyShortcuts>
+        <AppShell me={ME}>
+          <WorkspaceTabs id={ID} counts={{ assessments: 2 }} loadBlockingCount={loadBlockingCount}>
+            <p>Tab body</p>
+          </WorkspaceTabs>
+        </AppShell>
+      </ShellProviders>,
+    );
+    const badge = screen.getByTestId("tab-count-assessments");
+    expect(badge.textContent).toBe("2, 2 blocking");
+    expect(badge.className).toContain("bg-blocker-tint");
+    expect(screen.getByRole("tab", { name: "Assessments, 2 blocking" })).toBeTruthy();
+
+    await act(async () => FakeSource.last!.emit("assessments.finding.overridden"));
+
+    expect(loadBlockingCount).toHaveBeenCalledWith(ID);
+    expect(screen.getByTestId("tab-count-assessments").textContent).toBe("1, 1 blocking");
+    expect(await axeViolations(container)).toEqual([]);
+  });
 });
 
 describe("the connection status bar (Story 2.3)", () => {
