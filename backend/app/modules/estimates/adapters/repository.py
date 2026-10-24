@@ -1,6 +1,6 @@
 """Persistence for drafts, Estimate Versions, their lines and the lines' Requirement links
-(Story 8.1), and Assumptions (Story 8.4; carried to a re-draft, Story 8.7). Runs inside the
-caller's Unit of Work."""
+(Story 8.1), Assumptions (Story 8.4; carried to a re-draft, Story 8.7; edited, Story 8.5)
+and Risks (Story 8.5). Runs inside the caller's Unit of Work."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, insert, select, text, tuple_, update
+from sqlalchemy import delete, func, insert, select, text, tuple_, update
 
 from app.modules.estimates.adapters.models import (
     AssumptionRow,
@@ -16,6 +16,7 @@ from app.modules.estimates.adapters.models import (
     EstimateLineRow,
     EstimateVersionRow,
     LineRequirementRow,
+    RiskRow,
 )
 from app.platform.uow import UnitOfWork
 
@@ -558,6 +559,7 @@ class AssumptionRecord:
     row_version: int
     created_at: datetime
     carried_from: UUID | None = None
+    changed_by: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -586,6 +588,7 @@ def _assumption(row: AssumptionRow) -> AssumptionRecord:
         row_version=row.row_version,
         created_at=row.created_at,
         carried_from=row.carried_from,
+        changed_by=row.changed_by,
     )
 
 
@@ -642,6 +645,7 @@ async def insert_carried_assumptions(
                 "accepted_by": c.source.accepted_by,
                 "accepted_at": c.source.accepted_at,
                 "carried_from": c.source.id,
+                "changed_by": c.source.changed_by,
                 "row_version": 1,
             }
             for c in carried
@@ -753,6 +757,7 @@ async def accept_assumption(
             .values(
                 accepted_by=user_id,
                 accepted_at=func.now(),
+                changed_by=user_id,
                 row_version=AssumptionRow.row_version + 1,
             )
             .returning(AssumptionRow.id)
@@ -760,3 +765,235 @@ async def accept_assumption(
         )
     ).one_or_none()
     return None if changed is None else await get_assumption(uow, assumption_id)
+
+
+async def edit_assumption(
+    uow: UnitOfWork,
+    assumption_id: UUID,
+    *,
+    expected_row_version: int,
+    kind: str,
+    wording: str,
+    amount_hours: Decimal | None,
+    line_id: UUID | None,
+    user_id: UUID,
+) -> AssumptionRecord | None:
+    """Story 8.5: a person's edit of the Assumption at `expected_row_version`: its kind,
+    wording, hours and line, the acceptance cleared. Bumps `row_version`. None (and no
+    change) when it is at another row version."""
+    changed = (
+        await uow.session.execute(
+            update(AssumptionRow)
+            .where(
+                AssumptionRow.id == assumption_id,
+                AssumptionRow.row_version == expected_row_version,
+            )
+            .values(
+                kind=kind,
+                wording=wording,
+                amount_hours=amount_hours,
+                line_id=line_id,
+                accepted_by=None,
+                accepted_at=None,
+                changed_by=user_id,
+                row_version=AssumptionRow.row_version + 1,
+            )
+            .returning(AssumptionRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_assumption(uow, assumption_id)
+
+
+async def delete_unaccepted_for_gap(uow: UnitOfWork, version_id: UUID, gap_id: UUID) -> int:
+    """Story 8.5: remove the version's unaccepted Assumptions made from `gap_id` (its Gap
+    became a Risk). Returns how many."""
+    result = await uow.session.execute(
+        delete(AssumptionRow)
+        .where(
+            AssumptionRow.version_id == version_id,
+            AssumptionRow.accepted_at.is_(None),
+            AssumptionRow.origin_ref["id"].astext == str(gap_id),
+        )
+        .returning(AssumptionRow.id)
+        .execution_options(synchronize_session=False)
+    )
+    return len(result.all())
+
+
+# --- Risks (Story 8.5) ----------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RiskRecord:
+    id: UUID
+    version_id: UUID
+    position: int
+    description: str
+    likelihood: str
+    impact: str
+    origin_ref: dict[str, Any]
+    created_by: UUID
+    created_at: datetime
+    row_version: int
+    changed_by: UUID | None = None
+    carried_from: UUID | None = None
+
+
+def _risk(row: RiskRow) -> RiskRecord:
+    return RiskRecord(
+        id=row.id,
+        version_id=row.version_id,
+        position=row.position,
+        description=row.description,
+        likelihood=row.likelihood,
+        impact=row.impact,
+        origin_ref=row.origin_ref,
+        created_by=row.created_by,
+        created_at=row.created_at,
+        row_version=row.row_version,
+        changed_by=row.changed_by,
+        carried_from=row.carried_from,
+    )
+
+
+async def last_risk_position(uow: UnitOfWork, version_id: UUID) -> int:
+    """The version's highest Risk position, 0 when it has none."""
+    found = (
+        await uow.session.execute(
+            select(func.max(RiskRow.position)).where(RiskRow.version_id == version_id)
+        )
+    ).scalar_one_or_none()
+    return found or 0
+
+
+async def insert_risk(
+    uow: UnitOfWork,
+    *,
+    risk_id: UUID,
+    version_id: UUID,
+    position: int,
+    description: str,
+    likelihood: str,
+    impact: str,
+    origin_ref: dict[str, Any],
+    user_id: UUID,
+) -> RiskRecord:
+    await uow.session.execute(
+        insert(RiskRow).values(
+            id=risk_id,
+            version_id=version_id,
+            position=position,
+            description=description,
+            likelihood=likelihood,
+            impact=impact,
+            origin_ref=origin_ref,
+            created_by=user_id,
+            changed_by=user_id,
+            row_version=1,
+        )
+    )
+    found = await get_risk(uow, risk_id)
+    if found is None:  # pragma: no cover - just inserted
+        raise RuntimeError("The Risk was not stored.")
+    return found
+
+
+async def get_risk(uow: UnitOfWork, risk_id: UUID) -> RiskRecord | None:
+    row = (
+        await uow.session.execute(
+            select(RiskRow).where(RiskRow.id == risk_id).execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _risk(row)
+
+
+async def risks_of(uow: UnitOfWork, version_id: UUID) -> list[RiskRecord]:
+    """The version's Risks in the order they were made (carried ones first)."""
+    rows = await uow.session.execute(
+        select(RiskRow)
+        .where(RiskRow.version_id == version_id)
+        .order_by(RiskRow.position)
+        .execution_options(populate_existing=True)
+    )
+    return [_risk(row) for row in rows.scalars()]
+
+
+async def edit_risk(
+    uow: UnitOfWork,
+    risk_id: UUID,
+    *,
+    expected_row_version: int,
+    description: str,
+    likelihood: str,
+    impact: str,
+    user_id: UUID,
+) -> RiskRecord | None:
+    """A person's edit of the Risk at `expected_row_version`. Bumps `row_version`. None (and
+    no change) when it is at another row version."""
+    changed = (
+        await uow.session.execute(
+            update(RiskRow)
+            .where(RiskRow.id == risk_id, RiskRow.row_version == expected_row_version)
+            .values(
+                description=description,
+                likelihood=likelihood,
+                impact=impact,
+                changed_by=user_id,
+                row_version=RiskRow.row_version + 1,
+            )
+            .returning(RiskRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_risk(uow, risk_id)
+
+
+@dataclass(frozen=True, slots=True)
+class CarriedRisk:
+    """A copy of a Risk into a new version (Story 8.5)."""
+
+    risk_id: UUID
+    position: int
+    source: RiskRecord
+
+
+async def insert_carried_risks(
+    uow: UnitOfWork, version_id: UUID, carried: list[CarriedRisk]
+) -> None:
+    """Copies of earlier Risks: same description, levels, origin and creator, a new id,
+    `row_version` 1, and `carried_from` the source's id."""
+    if not carried:
+        return
+    await uow.session.execute(
+        insert(RiskRow),
+        [
+            {
+                "id": c.risk_id,
+                "version_id": version_id,
+                "position": c.position,
+                "description": c.source.description,
+                "likelihood": c.source.likelihood,
+                "impact": c.source.impact,
+                "origin_ref": c.source.origin_ref,
+                "created_by": c.source.created_by,
+                "created_at": c.source.created_at,
+                "changed_by": c.source.changed_by,
+                "carried_from": c.source.id,
+                "row_version": 1,
+            }
+            for c in carried
+        ],
+    )
+
+
+async def risk_carried_from_versions(uow: UnitOfWork, source_ids: list[UUID]) -> dict[UUID, int]:
+    """`{source Risk id: its version number}`."""
+    if not source_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(RiskRow.id, EstimateVersionRow.version)
+        .join(EstimateVersionRow, EstimateVersionRow.id == RiskRow.version_id)
+        .where(RiskRow.id.in_(source_ids))
+    )
+    return {row.id: row.version for row in rows}

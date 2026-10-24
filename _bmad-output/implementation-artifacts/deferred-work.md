@@ -251,3 +251,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-6-blocking-findings-and-overrides.md`
   summary: Pin that `latest_overrides` shows the newest of several earlier overrides with the same fingerprint (test with overrides on Review v1 and v2, expect v2's on v3).
   evidence: Story 6.6 review (verification gap): the carry-over test has a single earlier override, so reversing the ordering in `assessments/adapters/repository.py` `latest_overrides` passes every test; it only changes which earlier reason is shown.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-5-assumptions-register-and-risks.md`
+  summary: A Risk can't be deleted or unconverted; a mistaken Convert to Risk stays on the Gap and is carried by every re-draft.
+  evidence: No delete endpoint; `estimates_risks` has no DELETE grant (migration 0043); `carry_risks` copies every Risk.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-5-assumptions-register-and-risks.md`
+  summary: Narrow the table-wide DELETE grant on `estimates_assumptions` (e.g. a trigger allowing only unaccepted rows of a draft version).
+  evidence: Migration 0043 grants psa_app DELETE on the whole table; only `delete_unaccepted_for_gap` narrows it in app code.

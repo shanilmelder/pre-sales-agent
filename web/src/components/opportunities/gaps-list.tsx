@@ -16,6 +16,7 @@ import {
   approveSelectedClarificationQuestions,
   changeGapImpact,
   confirmAnswerMatch,
+  convertGapToRisk,
   dismissGap,
   editClarificationQuestion,
   loadGaps,
@@ -28,6 +29,7 @@ import {
   type AnswerWriteResult,
   type ApproveAllQuestionsResult,
   type GapWriteResult,
+  type RiskConvertResult,
   type MarkSentResult,
   type QuestionWriteResult,
   type StartGapDetectionResult,
@@ -113,7 +115,12 @@ import {
   type Impact,
 } from "@/lib/gaps";
 import { tabHref } from "@/lib/workspace";
-import { convertedLabel } from "@/lib/estimates";
+import { convertedLabel, type RiskLevel } from "@/lib/estimates";
+
+/** Story 8.5: Convert to Risk while there is no draft Estimate. */
+const NO_DRAFT_FOR_RISK = "There is no draft Estimate to add the Risk to.";
+const RISK_NOT_ALLOWED =
+  "Only the owner and collaborators, except sales representatives, can convert Gaps to Risks.";
 import { NO_ACCESS_TO_OPPORTUNITY, staleMessage } from "@/lib/opportunities";
 import { useGapsEvents } from "@/lib/opportunity-events";
 
@@ -515,9 +522,12 @@ export function GapsSection({
   opportunityId,
   initial,
   context = null,
+  canConvertToRisk = false,
 }: {
   opportunityId: string;
   initial: GapList;
+  /** Story 8.5: a draft Estimate exists and the user may convert Gaps to Risks. */
+  canConvertToRisk?: boolean;
   /** The applicable Checklists, untagged integration Requirements and uncovered scope (Story
    * 4.1); null when it couldn't be read: the strip and banners are left out. */
   context?: GapsContext | null;
@@ -1191,6 +1201,58 @@ export function GapsSection({
     );
   }
 
+  /** Story 8.5: convert the open Gap to a Risk of the draft Estimate; the list is read again
+   * (the Gap is converted, to a Risk). */
+  async function convertToRisk(
+    item: Gap,
+    description: string,
+    likelihood: RiskLevel,
+    impact: RiskLevel,
+  ): Promise<GapFormOutcome> {
+    if (locked || busyIds.has(item.id)) return "failed";
+    setNotice(null);
+    markBusy(item.id, true);
+    let result: RiskConvertResult;
+    try {
+      result = await convertGapToRisk({
+        opportunityId,
+        gapId: item.id,
+        description,
+        likelihood,
+        impact,
+      });
+    } catch {
+      result = { kind: "error" };
+    }
+    markBusy(item.id, false);
+    switch (result.kind) {
+      case "ok":
+        await refresh();
+        announce(`Converted to Risk: ${item.title}`);
+        return "ok";
+      case "invalid":
+        announce(result.detail);
+        return { invalid: result.detail };
+      case "gap-not-open":
+        say(GAP_NOT_OPEN);
+        void refresh();
+        return "failed";
+      case "no-draft":
+        announce(NO_DRAFT_FOR_RISK);
+        return { invalid: NO_DRAFT_FOR_RISK };
+      case "forbidden":
+        say(RISK_NOT_ALLOWED);
+        return "failed";
+      case "not-found":
+        say(GAP_GONE);
+        void refresh();
+        return "failed";
+      default:
+        say(SAVE_FAILED);
+        return "failed";
+    }
+  }
+
   function reopen(item: Gap, reason: string): Promise<GapFormOutcome> {
     return writeGap(
       item,
@@ -1503,6 +1565,16 @@ export function GapsSection({
                     onImpact: (impact, reason) => changeImpact(selected, impact, reason),
                     onDismiss: (kind, note) => dismiss(selected, kind, note),
                     onReopen: (reason) => reopen(selected, reason),
+                  }
+                : undefined
+            }
+            risk={
+              canConvertToRisk
+                ? {
+                    busy: busyIds.has(selected.id),
+                    locked,
+                    onConvert: (description, likelihood, impact) =>
+                      convertToRisk(selected, description, likelihood, impact),
                   }
                 : undefined
             }

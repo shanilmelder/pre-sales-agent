@@ -215,8 +215,17 @@ class EstimateVersionNotDraftError(ConflictError):
     title = "Estimate Version not draft"
 
 
+class NoDraftEstimateError(ConflictError):
+    """A Gap was converted to a Risk while the Opportunity has no draft Estimate Version
+    (Story 8.5)."""
+
+    code = "no_draft_estimate"
+    title = "No draft Estimate"
+
+
 class GapNotOpenError(ConflictError):
-    """An Assumption was accepted whose origin Gap is no longer `open` (Story 8.4)."""
+    """An Assumption was accepted, or a Gap converted to a Risk, whose Gap is no longer `open`
+    (Stories 8.4 and 8.5)."""
 
     code = "gap_not_open"
     title = "Gap not open"

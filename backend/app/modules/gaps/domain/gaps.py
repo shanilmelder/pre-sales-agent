@@ -50,6 +50,12 @@ UNKNOWN_TO_CUSTOMER = "Unknown to the customer:"
 `estimating_agent` proposes a Contingency for such a Gap."""
 
 
+def is_unknown(why_it_matters: str) -> bool:
+    """Whether the Gap is an Unknown (Story 8.5): its `why_it_matters` opens with
+    `UNKNOWN_TO_CUSTOMER` (trimmed, case-insensitive)."""
+    return why_it_matters.strip().casefold().startswith(UNKNOWN_TO_CUSTOMER.casefold())
+
+
 def mark_unknown_to_customer(why_it_matters: str) -> str:
     """`why_it_matters` opened with `UNKNOWN_TO_CUSTOMER`, unless it already is or the marked
     text would exceed `WHY_MAX` (then it is returned unchanged)."""
@@ -109,10 +115,12 @@ class GapStatus(StrEnum):
 
 
 class ConvertedTo(StrEnum):
-    """The kind of Assumption a converted Gap became."""
+    """What a converted Gap became: an Assumption of either kind (Story 8.4) or a Risk
+    (Story 8.5)."""
 
     CONDITION = "condition"
     CONTINGENCY = "contingency"
+    RISK = "risk"
 
 
 class QuestionStatus(StrEnum):
