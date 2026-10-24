@@ -11,13 +11,11 @@ lost-run failure moved it on: the reply is discarded), submits the result to its
 marks it `failed` (`fail_task`); a task whose required task ended without succeeding is
 skipped (`skip_blocked_task`). Each change writes a progress row.
 
-**Escalation** (Story 5.5). Before a queued task starts, its node asks `escalation`: when
-the task's Agent is `disabled` or `eval_only` in the Agent Registry, a `plan_escalation`
-decision is recorded (idempotently: one per task) and returned `open`, and the node
-interrupts the graph; the run then waits for a person. Once the decision is resolved, the
-node (re-run on resume) gets the resolved choice from the same call: Continue without skips
-the task (`skip_disabled_task`, `agent_disabled`), Re-plan lets it run (the resolve command
-already re-pinned it). The decision row is the truth, not the value the graph resumed with.
+Before starting a queued task the node asks `escalation` (Story 5.5): the task's
+`plan_escalation` decision, recorded `open` (idempotently) when its Agent is `disabled` or
+`eval_only` and none exists yet. The decision row is the truth on every resume: open, the
+node interrupts; resolved **Continue without**, the task is skipped (`skip_disabled_task`,
+`agent_disabled`); resolved **Re-plan**, the task runs (re-pinned by the resolve).
 """
 
 from dataclasses import dataclass
@@ -26,9 +24,10 @@ from uuid import UUID
 
 from app.modules.registry.application import public as registry
 from app.modules.workflows.adapters import repository as repo
-from app.modules.workflows.adapters.repository import DecisionRecord, TaskRecord
+from app.modules.workflows.adapters.repository import TaskRecord
 from app.modules.workflows.application import progress
 from app.modules.workflows.domain.runs import (
+    PLAN_ESCALATION_CHOICES,
     RUN_IN_PROGRESS,
     RUN_SUBJECT_TYPE,
     TASK_IN_PROGRESS,
@@ -51,8 +50,7 @@ from app.platform.uow import UnitOfWork
 _TASK_IN_PROGRESS = tuple(sorted(s.value for s in TASK_IN_PROGRESS))
 _RUNNING = (AssessmentTaskStatus.RUNNING.value,)
 _QUEUED = (AssessmentTaskStatus.QUEUED.value,)
-NODE_ACTOR = Actor(type="system", id="workflows.execute")
-"""Who a node's own commands act as (the job's system actor)."""
+SYSTEM = Actor(type="system", id="workflows.execute")
 _log = get_logger(__name__)
 
 
@@ -210,13 +208,13 @@ async def skip_blocked_task(uow: UnitOfWork, task_id: UUID) -> bool:
     )
 
 
-# --- escalation (Story 5.5) -----------------------------------------------------------------
+# --- escalation (Story 5.5) -------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class Escalation:
-    """A task's `plan_escalation` as its node sees it. `payload`: what the node passes to
-    `interrupt()` while it is `open` (ids and codes only)."""
+    """A queued task's `plan_escalation` decision as its node sees it. `payload`: what the
+    node interrupts with (ids and codes only)."""
 
     decision_id: UUID
     status: DecisionStatus
@@ -227,90 +225,72 @@ class Escalation:
     def open(self) -> bool:
         return self.status == DecisionStatus.OPEN
 
-    @property
-    def continue_without(self) -> bool:
-        return (
-            self.status == DecisionStatus.RESOLVED
-            and self.choice == DecisionChoice.CONTINUE_WITHOUT
-        )
 
-    @property
-    def replanned(self) -> bool:
-        return self.status == DecisionStatus.RESOLVED and self.choice == DecisionChoice.REPLAN
-
-
-def _escalation(decision: DecisionRecord) -> Escalation:
+def _escalation(decision: repo.DecisionRecord) -> Escalation:
     return Escalation(
         decision_id=decision.id,
         status=DecisionStatus(decision.status),
         choice=None if decision.choice is None else DecisionChoice(decision.choice),
-        payload=dict(decision.payload),
+        payload=decision.payload,
     )
 
 
-def escalation_payload(decision_id: UUID, task: TaskRecord) -> dict[str, Any]:
-    """The interrupt payload of a task's `plan_escalation`: ids, codes and the choices."""
-    return {
-        "decision_id": str(decision_id),
-        "kind": DecisionKind.PLAN_ESCALATION.value,
-        "run_id": str(task.run_id),
-        "task_id": str(task.id),
-        "agent": task.agent,
-        "choices": [c.value for c in DecisionChoice],
-    }
-
-
 async def escalation(uow: UnitOfWork, task_id: UUID) -> Escalation | None:
-    """The task's `plan_escalation`, recording it first when its Agent is not active: None
-    when the task may run (no decision and its Agent is active, or the task isn't queued).
-    Recording is idempotent (insert on conflict do nothing), so a node that runs again
-    before the decision is resolved finds the same open decision."""
+    """The decision about a queued task's Agent: the one recorded (whatever the Agent's
+    status now: the row is the truth; but a `cancelled` one, closed when its run ended, is
+    passed over once the Agent is active again, so a retried task runs), else a new `open`
+    one when the Agent is `disabled` or `eval_only` (insert on conflict do nothing, so a node
+    run again records nothing twice), else None (the task runs)."""
     task = await repo.get_task_by_id(uow, task_id)
-    if task is None:
+    if task is None or task.status != AssessmentTaskStatus.QUEUED:
         return None
     kind = DecisionKind.PLAN_ESCALATION.value
-    existing = await repo.task_decision(uow, task_id, kind)
-    if existing is not None:
-        return _escalation(existing)
-    if task.status != AssessmentTaskStatus.QUEUED:
-        return None  # already started (e.g. it runs again after a failed attempt)
-    agent = await registry.current_config(uow, task.agent)
-    if agent.runs_tasks:
+    found = await repo.task_decision(uow, task_id, kind)
+    active = (await registry.current_config(uow, task.agent)).runs_tasks
+    if found is not None and found.status == DecisionStatus.CANCELLED and active:
+        # Closed unresolved when its run ended (e.g. failed on the job's final attempt); the
+        # task was retried once its Agent is active again, so it runs.
+        return None
+    if found is not None:
+        return _escalation(found)
+    if active:
         return None
     decision_id = new_id()
-    inserted = await repo.insert_decision(
+    recorded = await repo.record_decision(
         uow,
         decision_id=decision_id,
         run_id=task.run_id,
         task_id=task_id,
         kind=kind,
-        payload=escalation_payload(decision_id, task),
+        payload={
+            "decision_id": str(decision_id),
+            "kind": kind,
+            "run_id": str(task.run_id),
+            "task_id": str(task_id),
+            "agent": task.agent,
+            "choices": [c.value for c in PLAN_ESCALATION_CHOICES],
+        },
     )
-    if inserted:
-        _log.info(
-            "workflows.decision_recorded",
-            extra={
-                "run_id": str(task.run_id),
-                "task_id": str(task_id),
-                "decision_id": str(decision_id),
-                "agent": task.agent,
-                "kind": kind,
-            },
-        )
-    recorded = await repo.task_decision(uow, task_id, kind)
-    assert recorded is not None  # inserted here or by a concurrent node
     return _escalation(recorded)
 
 
+async def decision_choices(uow: UnitOfWork, decision_ids: list[UUID]) -> dict[UUID, str]:
+    """The choices of the resolved decisions among `decision_ids` (for resuming a graph's
+    interrupts)."""
+    found = await repo.decisions_by_id(uow, decision_ids)
+    return {
+        decision_id: decision.choice
+        for decision_id, decision in found.items()
+        if decision.status == DecisionStatus.RESOLVED and decision.choice is not None
+    }
+
+
 async def skip_disabled_task(uow: UnitOfWork, task_id: UUID) -> bool:
-    """`queued` → `skipped` / `agent_disabled` (Continue without; it never started, so it
-    has no duration), traced as `assessments.task.skipped` by the system. False (and no
-    change) otherwise."""
-    task = await repo.get_task_by_id(uow, task_id)
-    if task is None:
-        return False
-    run = await repo.get_run(uow, task.run_id)
-    if run is None:
+    """`queued` → `skipped` (`agent_disabled`) after a person chose **Continue without** its
+    Agent (it never started, so it has no duration); traced `assessments.task.skipped` by the
+    system. False (and no change) otherwise."""
+    current = await node_task(uow, task_id)
+    if current is None or not current.pending:
         return False
     skipped = await _end(
         uow,
@@ -324,25 +304,20 @@ async def skip_disabled_task(uow: UnitOfWork, task_id: UUID) -> bool:
         return False
     await trace.append(
         uow,
-        actor=NODE_ACTOR,
+        actor=SYSTEM,
         payload=AssessmentsTaskSkipped(
-            run_id=str(task.run_id),
+            run_id=str(current.run_id),
             task_id=str(task_id),
-            agent=task.agent,
-            config_version_id=str(task.config_version_id),
+            agent=current.agent,
+            config_version_id=str(current.config_version_id),
             reason=TaskSkipReason.AGENT_DISABLED.value,
         ),
         subject_type=RUN_SUBJECT_TYPE,
-        subject_id=task.run_id,
-        opportunity_id=run.opportunity_id,
+        subject_id=current.run_id,
+        opportunity_id=current.opportunity_id,
     )
     _log.info(
         "workflows.task_skipped_disabled",
-        extra={
-            "run_id": str(task.run_id),
-            "task_id": str(task_id),
-            "agent": task.agent,
-            "config_version_id": str(task.config_version_id),
-        },
+        extra={"run_id": str(current.run_id), "task_id": str(task_id), "agent": current.agent},
     )
     return True

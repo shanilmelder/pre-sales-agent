@@ -48,6 +48,7 @@ import {
   FINDING_GONE,
   FINDING_NOT_ALLOWED,
   findingStatusInfo,
+  isEvidenceKind,
   MARK_RESOLVED,
   NOT_OVERRIDABLE,
   NOTE_LABEL,
@@ -405,7 +406,11 @@ export function FindingDecisions({
       action,
       reason,
       ...(action === "evidence"
-        ? { refs: chosen.map((c) => ({ kind: c.kind, id: c.id, version: c.version })) }
+        ? {
+            refs: chosen.flatMap((c) =>
+              isEvidenceKind(c.kind) ? [{ kind: c.kind, id: c.id, version: c.version }] : [],
+            ),
+          }
         : {}),
     };
     startTransition(async () => {

@@ -1,7 +1,7 @@
 """The assessment run query and commands behind the unchanged Assessments API (Story 5.2;
 moved from `assessments`, Epic 5 slice 5A and Story 5.5).
 
-- `get_assessments`: the Opportunity's latest run with its tasks, its decisions and plan
+- `get_assessments`: the Opportunity's latest run with its tasks, decisions and plan
   versions, and per agent its current Assessment (read through `assessments`' public API),
   anyone who can read the Opportunity.
 - `start_run`: queue a new run with one task per agent (`assessments.assessment.start`: the
@@ -10,25 +10,24 @@ moved from `assessments`, Epic 5 slice 5A and Story 5.5).
   waiting for a person; one past `stale_after()` is failed (`model_timeout`) first, so it
   never blocks.
 - `retry_task`: re-run one `failed` task of the latest run (same action). 409
-  `assessment_in_progress` while a run is queued, running or waiting, 409
+  `assessment_in_progress` while the run is queued, running or waiting, 409
   `assessment_task_not_failed` unless that task is `failed` in the latest run (never in a
   cancelled one); 404 for a run that isn't the Opportunity's.
 - `cancel_run`: cancel the Opportunity's latest run while it is queued, running or waiting
   for a person (same action). 409 `assessment_not_in_progress` otherwise; 404 for a run
   that isn't the Opportunity's.
-- `resolve_decision` (Story 5.5): a person resolves an open decision of the latest run
-  while it waits (`workflows.decision.resolve`: the owner and collaborators except sales
-  representatives). `If-Match` carries the decision's `row_version`: 428 without it, 412
-  "Already resolved by {name}." when stale; 409 `decision_not_open` when the decision is
-  not open, its run was cancelled, or the run isn't waiting; 409 `registry_agent_disabled`
-  for Re-plan while the Agent is still inactive. In one Unit of Work under the run lock it
-  records the choice (Re-plan also re-pins the task to the Agent's current config version
-  and writes plan version n+1), queues the run again with a `workflows.resume` job, writes
-  a progress row and traces `workflows.decision.resolved`.
+- `resolve_decision` (Story 5.5): resolve a waiting run's open decision with **Continue
+  without** or **Re-plan** (`workflows.decision.resolve`: the owner and collaborators
+  except sales representatives). With the decision's `row_version` in `If-Match`: 428
+  without; 409 `decision_not_open` when the decision or its run was cancelled; 412 "Already
+  resolved by {name}." when stale; 409 `decision_not_open` when the decision is not open or
+  the run is not waiting; 409 `registry_agent_disabled` for a Re-plan while the Agent is
+  still not active. In one Unit of Work under the run lock it records the choice (a Re-plan
+  also re-pins the task to the Agent's current config version and adds a plan version),
+  queues the run with a `workflows.resume` job and traces `workflows.decision.resolved`.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -41,12 +40,10 @@ from app.modules.registry.application import public as registry
 from app.modules.workflows.adapters import repository as repo
 from app.modules.workflows.adapters.repository import (
     DecisionRecord,
-    PlannedTask,
     PlanVersionRecord,
     RunRecord,
     TaskRecord,
 )
-from app.modules.workflows.application import progress
 from app.modules.workflows.application.models import (
     AssessmentRun,
     AssessmentsView,
@@ -58,8 +55,9 @@ from app.modules.workflows.application.models import (
 )
 from app.modules.workflows.application.runs import (
     cancel,
-    enqueue_resume,
     fail_stale,
+    plan_tasks,
+    queue_resume,
     queue_run,
     requeue_task,
     stale_after,
@@ -76,6 +74,7 @@ from app.modules.workflows.domain.runs import (
     DecisionStatus,
     TaskAgent,
     TaskSkipReason,
+    chosen_skip,
     run_status,
     task_agent_rank,
 )
@@ -102,8 +101,8 @@ NOT_IN_PROGRESS_DETAIL = (
 RUN_NOT_FOUND_DETAIL = "No such assessment run for this Opportunity."
 DECISION_NOT_FOUND_DETAIL = "No such decision for this assessment run."
 DECISION_NOT_OPEN_DETAIL = "This decision is no longer open."
-RUN_NOT_WAITING_DETAIL = "The run isn't waiting for this decision."
 SOMEONE_ELSE = "someone else"
+SYSTEM_NAME = "System"
 MAX_ROW_VERSION = 2**31 - 1
 _log = get_logger(__name__)
 
@@ -112,22 +111,16 @@ def _agent_order(agent: str) -> int:
     return task_agent_rank(agent)
 
 
-@dataclass(frozen=True, slots=True)
-class _RunExtras:
-    """What a run's view reads besides the run and its tasks (Story 5.5)."""
-
-    decisions: Sequence[RunDecision] = ()
-    plan_versions: Sequence[PlanVersion] = ()
-
-
 def run_view(
-    record: RunRecord, tasks: Sequence[TaskRecord], extras: _RunExtras | None = None
+    record: RunRecord,
+    tasks: Sequence[TaskRecord],
+    decisions: Sequence[RunDecision] = (),
+    plan_versions: Sequence[PlanVersion] = (),
 ) -> AssessmentRun:
     """The read model of a run. One still queued or running past `stale_after()` is lost: its
     unfinished tasks read as failed with `model_timeout` and the run's status follows from
     its tasks', so it can be started again (`start_run` records that). A run waiting for a
     person is never lost. Tasks keep their timestamps either way."""
-    extras = extras or _RunExtras()
     lost = (
         AssessmentRunStatus(record.status) in RUN_IN_PROGRESS
         and datetime.now(UTC) - record.queued_at > stale_after()
@@ -150,7 +143,12 @@ def run_view(
                 finished_at=task.finished_at,
             )
         )
-    overall = run_status(t.status for t in views) if lost else AssessmentRunStatus(record.status)
+    chosen = sum(1 for t in views if chosen_skip(t.status, t.skip_reason))
+    overall = (
+        run_status([t.status for t in views], chosen_skips=chosen)
+        if lost
+        else AssessmentRunStatus(record.status)
+    )
     return AssessmentRun(
         id=str(record.id),
         status=overall,
@@ -159,68 +157,73 @@ def run_view(
         finished_at=record.finished_at,
         tasks=views,
         plan_version=record.plan_version,
-        decisions=list(extras.decisions),
-        plan_versions=list(extras.plan_versions),
+        decisions=list(decisions),
+        plan_versions=list(plan_versions),
     )
 
 
-async def _names(uow: UnitOfWork, ids: set[UUID]) -> dict[UUID, str]:
-    return await identity.user_names(uow, ids) if ids else {}
-
-
-def _user_id(value: str) -> UUID | None:
+def _user_id(actor_id: str) -> UUID | None:
     try:
-        return UUID(value)
+        return UUID(actor_id)
     except ValueError:
         return None
 
 
-async def _extras(
+async def _decision_views(
     uow: UnitOfWork,
-    tasks: Sequence[TaskRecord],
     decisions: Sequence[DecisionRecord],
-    plans: Sequence[PlanVersionRecord],
-) -> _RunExtras:
+    tasks: Sequence[TaskRecord],
+    names: dict[UUID, str],
+) -> list[RunDecision]:
     agents = {t.id: t.agent for t in tasks}
     registered = {
         agent: await registry.current_config(uow, agent)
         for agent in sorted({agents[d.task_id] for d in decisions if d.task_id in agents})
     }
-    plan_users = {
-        uid
-        for p in plans
-        if p.created_by_type == "user" and (uid := _user_id(p.created_by)) is not None
-    }
-    names = await _names(
-        uow, {d.resolved_by for d in decisions if d.resolved_by is not None} | plan_users
-    )
+    views: list[RunDecision] = []
+    for decision in decisions:
+        agent = agents.get(decision.task_id)
+        if agent is None:  # pragma: no cover - a decision's task is one of its run's
+            continue
+        views.append(
+            RunDecision(
+                id=str(decision.id),
+                kind=DecisionKind(decision.kind),
+                agent=TaskAgent(agent),
+                agent_name=registered[agent].name,
+                agent_active=registered[agent].runs_tasks,
+                status=DecisionStatus(decision.status),
+                choice=None if decision.choice is None else DecisionChoice(decision.choice),
+                row_version=decision.row_version,
+                created_at=decision.created_at,
+                resolved_by=(
+                    None
+                    if decision.resolved_by is None
+                    else names.get(decision.resolved_by, SOMEONE_ELSE)
+                ),
+                resolved_at=decision.resolved_at,
+            )
+        )
+    return views
+
+
+async def _plan_views(
+    uow: UnitOfWork, plans: Sequence[PlanVersionRecord], names: dict[UUID, str]
+) -> list[PlanVersion]:
     versions = await registry.get_config_versions(
         uow, sorted({t.config_version_id for p in plans for t in p.tasks})
     )
-    decision_views = [
-        RunDecision(
-            id=str(d.id),
-            kind=DecisionKind(d.kind),
-            agent=TaskAgent(agents[d.task_id]),
-            agent_name=registered[agents[d.task_id]].name,
-            agent_active=registered[agents[d.task_id]].runs_tasks,
-            status=DecisionStatus(d.status),
-            choice=None if d.choice is None else DecisionChoice(d.choice),
-            row_version=d.row_version,
-            created_at=d.created_at,
-            resolved_by=(None if d.resolved_by is None else names.get(d.resolved_by, SOMEONE_ELSE)),
-            resolved_at=d.resolved_at,
-        )
-        for d in decisions
-        if d.task_id in agents
-    ]
-    plan_views = []
+    views: list[PlanVersion] = []
     for plan in plans:
-        uid = _user_id(plan.created_by) if plan.created_by_type == "user" else None
-        plan_views.append(
+        if plan.created_by_type == "user":
+            user_id = _user_id(plan.created_by)
+            who = SOMEONE_ELSE if user_id is None else names.get(user_id, SOMEONE_ELSE)
+        else:
+            who = SYSTEM_NAME
+        views.append(
             PlanVersion(
                 version=plan.version,
-                created_by=None if uid is None else names.get(uid, SOMEONE_ELSE),
+                created_by=who,
                 created_at=plan.created_at,
                 tasks=[
                     PlanVersionTask(
@@ -231,34 +234,37 @@ async def _extras(
                             if t.config_version_id in versions
                             else None
                         ),
-                        semver=(
-                            versions[t.config_version_id].semver
-                            if t.config_version_id in versions
-                            else None
-                        ),
                     )
                     for t in sorted(plan.tasks, key=lambda t: _agent_order(t.agent))
                 ],
             )
         )
-    return _RunExtras(decisions=decision_views, plan_versions=plan_views)
+    return views
 
 
-async def _full_view(uow: UnitOfWork, record: RunRecord) -> AssessmentRun:
+async def full_run_view(uow: UnitOfWork, record: RunRecord) -> AssessmentRun:
+    """`run_view` with the run's decisions and plan versions."""
     tasks = await repo.tasks_of(uow, record.id)
-    extras = await _extras(
-        uow,
+    decisions = await repo.decisions_of(uow, record.id)
+    plans = await repo.plan_versions_of(uow, record.id)
+    people = {d.resolved_by for d in decisions if d.resolved_by is not None} | {
+        user_id
+        for p in plans
+        if p.created_by_type == "user" and (user_id := _user_id(p.created_by)) is not None
+    }
+    names = await identity.user_names(uow, people) if people else {}
+    return run_view(
+        record,
         tasks,
-        await repo.decisions_of(uow, record.id),
-        await repo.plan_versions_of(uow, record.id),
+        await _decision_views(uow, decisions, tasks, names),
+        await _plan_views(uow, plans, names),
     )
-    return run_view(record, tasks, extras)
 
 
 async def latest_run_view(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentRun | None:
     """The Opportunity's latest run (null before the first). No authorization."""
     latest = await repo.latest_run(uow, opportunity_id)
-    return None if latest is None else await _full_view(uow, latest)
+    return None if latest is None else await full_run_view(uow, latest)
 
 
 async def get_assessments(
@@ -276,7 +282,7 @@ async def get_assessments(
 async def _current_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRun:
     record = await repo.get_run(uow, run_id)
     assert record is not None  # inserted or locked in this Unit of Work
-    return await _full_view(uow, record)
+    return await full_run_view(uow, record)
 
 
 async def start_run(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> AssessmentRun:
@@ -345,8 +351,8 @@ async def retry_task(
 async def cancel_run(
     uow: UnitOfWork, actor: Principal, opportunity_id: UUID, run_id: UUID
 ) -> AssessmentRun:
-    """Cancel the Opportunity's latest assessment run while it is queued, running or
-    waiting for a person."""
+    """Cancel the Opportunity's latest assessment run while it is queued, running or waiting
+    for a person."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.ASSESSMENT_START, resource)
     await repo.lock_runs(uow, opportunity_id)
@@ -380,22 +386,15 @@ async def cancel_run(
     return await _current_run(uow, run_id)
 
 
-# --- resolving a decision (Story 5.5) -------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedDecision:
-    """The run as it is after the decision, and the decision's new `row_version` (its
-    ETag)."""
-
-    run: AssessmentRun
-    row_version: int
+# --- resolving a decision (Story 5.5) ---------------------------------------------------------
 
 
 async def _stale(uow: UnitOfWork, decision: DecisionRecord) -> RowVersionMismatchError:
     name = SOMEONE_ELSE
     if decision.resolved_by is not None:
-        name = (await _names(uow, {decision.resolved_by})).get(decision.resolved_by, name)
+        name = (await identity.user_names(uow, {decision.resolved_by})).get(
+            decision.resolved_by, name
+        )
     return RowVersionMismatchError(f"Already resolved by {name}.")
 
 
@@ -407,70 +406,60 @@ async def resolve_decision(
     decision_id: UUID,
     resolution: DecisionResolution,
     if_match: str | None,
-) -> ResolvedDecision:
-    """Resolve an open decision of the Opportunity's waiting run (see the module
-    docstring)."""
+) -> AssessmentRun:
+    """Resolve a waiting run's open decision (see the module docstring); the run as it is
+    now, queued to resume."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.DECISION_RESOLVE, resource)
     user_id = actor.user_id
-    if user_id is None:  # pragma: no cover - the policy grants this action to users only
+    if user_id is None:  # pragma: no cover - the policy grants the action to users only
         raise ForbiddenError("Only people can resolve decisions.")
     await repo.lock_runs(uow, opportunity_id)
-    record = await repo.get_run(uow, run_id, for_update=True)
-    if record is None or record.opportunity_id != opportunity_id:
+    run = await repo.get_run(uow, run_id, for_update=True)
+    if run is None or run.opportunity_id != opportunity_id:
         raise NotFoundError(RUN_NOT_FOUND_DETAIL)
     decision = await repo.get_decision(uow, decision_id, for_update=True)
     if decision is None or decision.run_id != run_id:
         raise NotFoundError(DECISION_NOT_FOUND_DETAIL)
-    expected = parse_if_match(if_match)  # 428 without; 412 for a malformed one
+    expected = parse_if_match(if_match)
+    if decision.status == DecisionStatus.CANCELLED or run.status == AssessmentRunStatus.CANCELLED:
+        raise DecisionNotOpenError(DECISION_NOT_OPEN_DETAIL)
+    if expected >= MAX_ROW_VERSION or expected != decision.row_version:
+        raise await _stale(uow, decision)
     if (
-        decision.status == DecisionStatus.CANCELLED
-        or record.status == AssessmentRunStatus.CANCELLED
+        decision.status != DecisionStatus.OPEN
+        or run.status != AssessmentRunStatus.WAITING_FOR_HUMAN
     ):
         raise DecisionNotOpenError(DECISION_NOT_OPEN_DETAIL)
-    if expected >= MAX_ROW_VERSION or decision.row_version != expected:
-        raise await _stale(uow, decision)
-    if decision.status != DecisionStatus.OPEN:
-        raise DecisionNotOpenError(DECISION_NOT_OPEN_DETAIL)
-    if record.status != AssessmentRunStatus.WAITING_FOR_HUMAN:
-        raise DecisionNotOpenError(RUN_NOT_WAITING_DETAIL)
     task = await repo.get_task_by_id(uow, decision.task_id)
-    assert task is not None  # the decision's foreign key
+    assert task is not None  # the decision's task is one of its run's
     choice = resolution.choice
-
-    plan_version = record.plan_version
+    config_version_id = task.config_version_id
+    plan_version = run.plan_version
     if choice == DecisionChoice.REPLAN:
-        agent = await registry.require_enabled(uow, task.agent)  # 409 while still inactive
-        await repo.repin_task(uow, task.id, agent.current.id)
-        plan_version = record.plan_version + 1
-        await repo.set_plan_version(uow, run_id, plan_version)
+        agent = await registry.require_enabled(uow, task.agent)  # 409 while still disabled
+        config_version_id = agent.current.id
+    new_version = await repo.resolve_decision(
+        uow,
+        decision.id,
+        expected_row_version=expected,
+        choice=choice.value,
+        user_id=user_id,
+    )
+    if new_version is None:  # pragma: no cover - the run lock serialises resolves
+        raise await _stale(uow, decision)
+    if choice == DecisionChoice.REPLAN:
+        plan_version = run.plan_version + 1
+        await repo.repin_task(uow, task.id, config_version_id)
+        await repo.set_plan_version(uow, run.id, plan_version)
         await repo.insert_plan_version(
             uow,
-            run_id=run_id,
+            run_id=run.id,
             version=plan_version,
-            tasks=[
-                PlannedTask(t.id, t.agent, t.config_version_id, t.after)
-                for t in await repo.tasks_of(uow, run_id)
-            ],
+            tasks=await plan_tasks(uow, run.id),
             actor=actor.actor,
         )
-
-    new_version = await repo.resolve_decision(
-        uow, decision.id, expected_row_version=expected, choice=choice.value, user_id=user_id
-    )
-    if new_version is None:  # pragma: no cover - the run lock and row lock serialise resolves
-        raise await _stale(uow, decision)
-    await repo.set_run_status(
-        uow,
-        run_id,
-        from_statuses=(AssessmentRunStatus.WAITING_FOR_HUMAN.value,),
-        status=AssessmentRunStatus.QUEUED.value,
-        requeued=True,
-    )
-    await enqueue_resume(uow, record)
-    await progress.run_changed(
-        uow, opportunity_id=opportunity_id, run_id=run_id, status=AssessmentRunStatus.QUEUED
-    )
+    await queue_resume(uow, run)
     await trace.append(
         uow,
         actor=actor.actor,
@@ -481,10 +470,10 @@ async def resolve_decision(
             kind=DecisionKind(decision.kind).value,
             choice=choice.value,
             plan_version=plan_version,
-            row_version=new_version,
+            config_version_id=str(config_version_id),
         ),
         subject_type=RUN_SUBJECT_TYPE,
-        subject_id=run_id,
+        subject_id=run.id,
         opportunity_id=opportunity_id,
     )
     _log.info(
@@ -492,21 +481,11 @@ async def resolve_decision(
         extra={
             "opportunity_id": str(opportunity_id),
             "run_id": str(run_id),
-            "decision_id": str(decision.id),
-            "agent": task.agent,
+            "decision_id": str(decision_id),
+            "actor_id": actor.actor.id,
             "choice": choice.value,
             "plan_version": plan_version,
-            "actor_id": actor.actor.id,
+            "row_version": new_version,
         },
     )
-    return ResolvedDecision(run=await _current_run(uow, run_id), row_version=new_version)
-
-
-async def resolved_choices(uow: UnitOfWork, run_id: UUID) -> dict[str, str]:
-    """`{decision_id: choice}` for the run's resolved decisions (for the graph runner's
-    resume). No authorization."""
-    return {
-        str(d.id): d.choice
-        for d in await repo.decisions_of(uow, run_id)
-        if d.status == DecisionStatus.RESOLVED and d.choice is not None
-    }
+    return await _current_run(uow, run_id)

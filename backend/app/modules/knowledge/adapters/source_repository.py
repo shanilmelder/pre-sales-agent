@@ -178,17 +178,6 @@ async def list_sources(
     return [_record(r) for r in rows]
 
 
-async def ready_sources(uow: UnitOfWork) -> list[tuple[UUID, str]]:
-    """`(source_id, product)` of every active Source whose latest version is embedded
-    (`ready`): the Sources that count as documentation for coverage (Story 4.1)."""
-    rows = await uow.session.execute(
-        select(S.id, S.product)
-        .join(E, (E.source_id == S.id) & (E.version == _latest()))
-        .where(S.status == "active", E.status == "ready")
-    )
-    return [(source_id, product) for source_id, product in rows]
-
-
 async def get_source(
     uow: UnitOfWork, source_id: UUID, *, version: int | None = None
 ) -> SourceRecord | None:
@@ -214,6 +203,40 @@ async def tags_for(uow: UnitOfWork, source_ids: list[UUID]) -> dict[UUID, list[U
     for source_id, entry_id in rows:
         result.setdefault(source_id, []).append(entry_id)
     return result
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageSource:
+    """What coverage needs about one Source: its product, last-reviewed date and tags."""
+
+    id: UUID
+    product: str
+    last_reviewed_on: date
+    integration_type_ids: list[UUID]
+
+
+async def ready_sources(uow: UnitOfWork) -> list[CoverageSource]:
+    """Non-retired Sources whose latest version's embedding is `ready` (searchable), with
+    their Integration Type tags: the Sources that count as documentation for coverage
+    (Stories 3.5 and 4.1)."""
+    rows = (
+        await uow.session.execute(
+            select(S.id, S.product, S.last_reviewed_on)
+            .join(E, (E.source_id == S.id) & (E.version == _latest()))
+            .where(S.status == "active", E.status == "ready")
+            .order_by(S.id)
+        )
+    ).all()
+    tags = await tags_for(uow, [r.id for r in rows])
+    return [
+        CoverageSource(
+            id=r.id,
+            product=r.product,
+            last_reviewed_on=r.last_reviewed_on,
+            integration_type_ids=tags.get(r.id, []),
+        )
+        for r in rows
+    ]
 
 
 async def entry_kinds(uow: UnitOfWork, entry_ids: list[UUID]) -> dict[UUID, str]:

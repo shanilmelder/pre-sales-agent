@@ -4,8 +4,8 @@ use workflows only from here.
 - Other modules: `enqueue_run` (gaps, after a Gap detection), `run_in_progress` and
   `run_number` (estimates).
 - The graph's nodes (`app.orchestration`): `node_task`, `begin_task`, `lock_running_task`,
-  `complete_task`, `fail_task`, `skip_blocked_task`, `escalation`, `skip_disabled_task`,
-  `plan_of`, `resolved_choices`, `error_code`.
+  `complete_task`, `fail_task`, `skip_blocked_task`, `plan_of`, `error_code`; for pausing
+  (Story 5.5) `escalation`, `skip_disabled_task` and, for the runner, `decision_choices`.
 - The worker: `install_runner` (the graph runner hook) and the job type names.
 """
 
@@ -15,12 +15,10 @@ from app.modules.workflows.adapters import repository as _repo
 from app.modules.workflows.application import progress as _progress
 from app.modules.workflows.application import runs as _runs
 from app.modules.workflows.application.assessment_runs import (
-    ResolvedDecision,
     cancel_run,
     get_assessments,
     latest_run_view,
     resolve_decision,
-    resolved_choices,
     retry_task,
     start_run,
 )
@@ -49,6 +47,7 @@ from app.modules.workflows.application.tasks import (
     NodeTask,
     begin_task,
     complete_task,
+    decision_choices,
     escalation,
     fail_task,
     lock_running_task,
@@ -60,6 +59,8 @@ from app.modules.workflows.domain.runs import (
     TASK_AGENTS,
     AssessmentRunStatus,
     AssessmentTaskStatus,
+    DecisionChoice,
+    DecisionStatus,
     TaskAgent,
 )
 from app.platform.uow import UnitOfWork
@@ -69,7 +70,8 @@ PRUNE_PROGRESS = _progress.PRUNE_PROGRESS
 
 async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     """Queue an assessment run of the Opportunity in the caller's Unit of Work (Story 5.1:
-    after every successful Gap detection). Coalesces with a run that is queued or running;
+    after every successful Gap detection). Coalesces with a run that is queued, running or
+    waiting for a person;
     returns the run's id. Never refuses with a conflict; any other error (e.g. the
     database) fails the caller's Unit of Work."""
     return await _runs.enqueue_run(uow, opportunity_id)
@@ -108,7 +110,9 @@ __all__ = [
     "AssessmentTask",
     "AssessmentTaskStatus",
     "AssessmentsView",
+    "DecisionChoice",
     "DecisionResolution",
+    "DecisionStatus",
     "Escalation",
     "GraphRun",
     "GraphRunner",
@@ -117,13 +121,13 @@ __all__ = [
     "PlanVersion",
     "PlanVersionTask",
     "ProgressEventData",
-    "ResolvedDecision",
     "RunDecision",
     "TaskAgent",
     "TraceEventData",
     "begin_task",
     "cancel_run",
     "complete_task",
+    "decision_choices",
     "enqueue_run",
     "error_code",
     "escalation",
@@ -135,7 +139,6 @@ __all__ = [
     "node_task",
     "plan_of",
     "resolve_decision",
-    "resolved_choices",
     "retry_task",
     "run_in_progress",
     "run_number",

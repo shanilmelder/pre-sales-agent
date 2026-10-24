@@ -25,6 +25,7 @@ from app.modules.identity.application.public import TokenValidator
 from app.modules.intake.api.routes import requirements_router as intake_requirements_router
 from app.modules.intake.api.routes import router as intake_router
 from app.modules.knowledge.api.checklist_routes import router as knowledge_checklists_router
+from app.modules.knowledge.api.coverage_routes import router as knowledge_coverage_router
 from app.modules.knowledge.api.routes import router as knowledge_router
 from app.modules.knowledge.api.source_routes import router as knowledge_sources_router
 from app.modules.knowledge.api.source_routes import search_router as knowledge_search_router
@@ -143,6 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(knowledge_sources_router, prefix=API_PREFIX)
     app.include_router(knowledge_search_router, prefix=API_PREFIX)
     app.include_router(knowledge_checklists_router, prefix=API_PREFIX)
+    app.include_router(knowledge_coverage_router, prefix=API_PREFIX)
     app.include_router(downloads_router, prefix=API_PREFIX)
     app.include_router(conflicts_router, prefix=API_PREFIX)
     app.include_router(registry_router, prefix=API_PREFIX)

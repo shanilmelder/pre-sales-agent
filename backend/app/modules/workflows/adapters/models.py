@@ -1,5 +1,5 @@
-"""The workflows module's tables (Story 5.2): runs, their tasks and the progress rows; and
-(Story 5.5, pause and resume) the decisions a run waits on and every version of its plan.
+"""The workflows module's tables (Story 5.2): runs, their tasks and the progress rows; the
+decisions a run waits on and every version of its plan (Story 5.5).
 
 `workflows_runs` and `workflows_tasks` are the former `assessments_runs` and
 `assessments_tasks`, renamed in place (ids and history kept). `opportunity_id` holds an id
@@ -37,30 +37,22 @@ PROGRESS_EVENTS = (
     "workflows.run.ended",
     "workflows.run.waiting_for_human",
 )
-RUN_STATUSES = (
-    "queued",
-    "running",
-    "succeeded",
-    "partially_failed",
-    "failed",
-    "cancelled",
-    "waiting_for_human",
-)
 
 
 class WorkflowRunRow(Base):
     """One Workflow Run of an Opportunity: one task per planned Agent. Inserted `queued` with
     its job; its status follows its tasks', except `cancelled` (Story 5.5), which a person
-    sets, and `waiting_for_human` (Story 5.5), set while a decision is open. `queued_at`:
-    when it was last queued (a task retry or a resolved decision queues it again);
-    staleness counts from there. `plan_version`: the plan it was built with (1 until plans can be
-    edited; a Re-plan bumps it)."""
+    sets, and `waiting_for_human` (Story 5.5), which the job sets when the run pauses on an
+    open decision. `queued_at`: when it was last queued (a task retry or a resolved decision
+    queues it again); staleness counts from there. `plan_version`: its current plan (1, then
+    one more per Re-plan; every version is in `workflows_plan_versions`)."""
 
     __tablename__ = "workflows_runs"
     __table_args__ = (
         Index(None, "opportunity_id", "created_at"),
         CheckConstraint(
-            "status IN (" + ", ".join(f"'{s}'" for s in RUN_STATUSES) + ")",
+            "status IN ('queued', 'running', 'succeeded', 'partially_failed', 'failed', "
+            "'cancelled', 'waiting_for_human')",
             name="status",
         ),
         CheckConstraint("plan_version >= 1", name="plan_version"),
@@ -151,10 +143,11 @@ class WorkflowProgressRow(Base):
 
 
 class WorkflowDecisionRow(Base):
-    """A decision a run waits on (Story 5.5): a `plan_escalation` for a task whose Agent is
-    not active. Recorded `open` once per (run, task, kind) before the node interrupts;
-    `resolved` with the person's `choice`, or `cancelled` with its run. `payload` holds ids
-    and codes only. `row_version` is the `If-Match` of the resolve command."""
+    """A decision a run waits on (Story 5.5): `plan_escalation` for a queued task whose
+    Agent is not active. Recorded once per (run, task, kind) before the node interrupts,
+    `open` until a person resolves it (`choice`, `resolved_by`, `resolved_at`) or the run is
+    cancelled or ends first (`cancelled`). `payload`: ids and codes only. `row_version`: for
+    `If-Match` on the resolve."""
 
     __tablename__ = "workflows_decisions"
     __table_args__ = (
@@ -191,10 +184,10 @@ class WorkflowDecisionRow(Base):
 
 
 class WorkflowPlanVersionRow(Base):
-    """One version of a run's plan (FR-15; Story 5.5): per task its Agent, pinned config
-    version and (Story 6.4) the tasks it runs after (`tasks`: `[{task_id, agent,
-    config_version_id, after}]`), who made it and when. v1 is
-    written when the run is queued, v2+ on each Re-plan. Insert-only."""
+    """One version of a run's plan (FR-15; Story 5.5): per task its id, Agent, pinned config
+    version and (Story 6.4) the tasks it runs after (`tasks`, a JSON list), who made it
+    (`created_by_type`, `created_by`: the trace actor) and when. v1 is written when the run
+    is queued, each Re-plan adds the next. Insert-only."""
 
     __tablename__ = "workflows_plan_versions"
     __table_args__ = (

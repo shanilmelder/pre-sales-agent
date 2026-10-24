@@ -383,8 +383,9 @@ def test_continue_without_skips_the_task_and_finishes_without_rerunning_the_othe
     )
     assert tasks[SECURITY]["started_at"] is None
     (finished,) = run_rows(sync_engine, opp["id"])
-    # A run with a skipped task never shows plain success (Story 7.1, epic 5).
-    assert finished["status"] == "partially_failed"
+    # A person chose to continue without the Agent: that skip doesn't count against the run
+    # (user decision, 2026-10-24).
+    assert finished["status"] == "succeeded"
     assert finished["finished_at"] is not None
     assert (fake.calls("engineering_agent"), fake.calls("pm_agent"), fake.calls(SECURITY)) == (
         1,
@@ -404,7 +405,15 @@ def test_continue_without_skips_the_task_and_finishes_without_rerunning_the_othe
     shown = view(client, headers, opp["id"])["run"]
     (security,) = [t for t in shown["tasks"] if t["agent"] == SECURITY]
     assert security["skip_reason"] == "agent_disabled"
-    assert progress(sync_engine, body["id"])[-1] == ("workflows.run.ended", "run partially_failed")
+    assert shown["status"] == "succeeded"
+    assert progress(sync_engine, body["id"])[-1] == ("workflows.run.ended", "run succeeded")
+    (completed,) = trace_rows(sync_engine, opp["id"], "assessments.assessment_run.completed")
+    assert completed["payload"] == {
+        "status": "succeeded",
+        "task_count": 4,  # the three specialists and the Critic (Story 6.4)
+        "succeeded_count": 3,
+        "failed_count": 0,  # the chosen skip is not a failure
+    }
 
 
 # --- re-plan --------------------------------------------------------------------------------
@@ -514,7 +523,7 @@ def test_a_waiting_run_resumes_from_its_checkpoint_with_a_fresh_runner_and_pool(
     for agent in ("engineering_agent", "pm_agent"):  # no duplicate Assessments
         assert len(assessment_rows(sync_engine, opp["id"], agent)) == 1
     assert task_rows(sync_engine, body["id"])[SECURITY]["status"] == "skipped"
-    assert run_rows(sync_engine, opp["id"])[0]["status"] == "partially_failed"
+    assert run_rows(sync_engine, opp["id"])[0]["status"] == "succeeded"
 
 
 # --- race -----------------------------------------------------------------------------------
@@ -645,7 +654,7 @@ def test_only_the_owner_and_collaborators_except_sales_reps_resolve(
         resp = resolve(client, who, opp["id"], body["id"], decision["id"], "continue_without")
         problem(resp, status, code)
     resp = resolve(client, outsider, opp["id"], body["id"], decision["id"], "continue_without")
-    assert resp.status_code in (403, 404)
+    problem(resp, 404, "not_found")  # not a member: the Opportunity's 404
     assert decision_rows(sync_engine, body["id"])[0]["status"] == "open"
     unknown = resolve(
         client, headers, opp["id"], body["id"], "0190e2c4-0000-7000-8000-000000000000", "replan"
@@ -657,6 +666,138 @@ def test_only_the_owner_and_collaborators_except_sales_reps_resolve(
         json={"choice": "skip"},
     )
     problem(bad, 422, "validation_error")
+
+
+# --- two open decisions --------------------------------------------------------------------
+
+
+def test_two_disabled_agents_wait_on_two_decisions_resolved_one_at_a_time(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    restore_agents: None,
+) -> None:
+    admin, _ = _admin(client)
+    headers, opp = prepared(client, sync_engine, db_url, gateway)
+    set_status(client, admin, "pm_agent", "disabled")
+    set_status(client, admin, SECURITY, "disabled")
+    fake = install(AgentGateway(replies()))
+    body = started(client, headers, opp["id"])
+    assert drain(db_url, ASSESS) == ["succeeded"]
+    decisions = {d["agent"]: d for d in view(client, headers, opp["id"])["run"]["decisions"]}
+    assert {a: d["status"] for a, d in decisions.items()} == {"pm_agent": "open", SECURITY: "open"}
+    waiting_rows = [p for p in progress(sync_engine, body["id"]) if p[0].endswith("for_human")]
+    assert len(waiting_rows) == 2  # one per open decision
+
+    first = resolve(
+        client, headers, opp["id"], body["id"], decisions["pm_agent"]["id"], "continue_without"
+    )
+    assert first.status_code == 200, first.text
+    assert drain(db_url, RESUME) == ["succeeded"]
+
+    (run,) = run_rows(sync_engine, opp["id"])
+    assert run["status"] == "waiting_for_human"  # it waits on the other decision again
+    after = {d["agent"]: d for d in view(client, headers, opp["id"])["run"]["decisions"]}
+    assert (after["pm_agent"]["status"], after[SECURITY]["status"]) == ("resolved", "open")
+    assert task_rows(sync_engine, body["id"])["pm_agent"]["status"] == "skipped"
+    events = trace_rows(sync_engine, opp["id"], "workflows.run.waiting_for_human")
+    assert sorted(e["payload"]["decision_id"] for e in events) == sorted(
+        d["id"] for d in decisions.values()
+    )  # exactly one per decision, none again for the one still open
+    again = [p for p in progress(sync_engine, body["id"]) if p[0].endswith("for_human")]
+    assert again[2:] == [("workflows.run.waiting_for_human", "security_agent waiting_for_human")]
+
+    second = resolve(
+        client,
+        headers,
+        opp["id"],
+        body["id"],
+        after[SECURITY]["id"],
+        "continue_without",
+        after[SECURITY]["row_version"],
+    )
+    assert second.status_code == 200, second.text
+    assert drain(db_url, RESUME) == ["succeeded"]
+    (done,) = run_rows(sync_engine, opp["id"])
+    assert done["status"] == "succeeded"  # both skips were chosen
+    assert done["finished_at"] is not None
+    assert fake.calls("engineering_agent") == 1
+    assert (fake.calls("pm_agent"), fake.calls(SECURITY)) == (0, 0)
+
+
+# --- a decision of another run --------------------------------------------------------------
+
+
+def test_a_decision_of_another_opportunitys_run_is_404(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    restore_agents: None,
+) -> None:
+    admin, _ = _admin(client)
+    headers_a, opp_a = prepared(client, sync_engine, db_url, gateway)
+    headers_b, opp_b = prepared(client, sync_engine, db_url, gateway)
+    set_status(client, admin, SECURITY, "disabled")
+    install(AgentGateway(replies()))
+    run_a = started(client, headers_a, opp_a["id"])
+    run_b = started(client, headers_b, opp_b["id"])
+    assert drain(db_url, ASSESS) == ["succeeded", "succeeded"]
+    (decision_b,) = view(client, headers_b, opp_b["id"])["run"]["decisions"]
+
+    # B's decision through A's Opportunity and run: not A's.
+    wrong = resolve(client, headers_a, opp_a["id"], run_a["id"], decision_b["id"], "replan")
+    problem(wrong, 404, "not_found")
+    # B's run under A's Opportunity: not A's either.
+    wrong_run = resolve(
+        client, headers_a, opp_a["id"], run_b["id"], decision_b["id"], "continue_without"
+    )
+    problem(wrong_run, 404, "not_found")
+    (row,) = decision_rows(sync_engine, run_b["id"])
+    assert (row["status"], row["row_version"]) == ("open", 1)
+    assert run_rows(sync_engine, opp_b["id"])[0]["status"] == "waiting_for_human"
+
+
+# --- a cancelled decision, then a retry --------------------------------------------------------
+
+
+def test_a_task_whose_decision_was_closed_runs_when_retried_once_the_agent_is_active(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    restore_agents: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every attempt dies before the run is marked waiting: the final attempt fails the
+    queued task and finishing the run closes its decision. Once the Agent is active again,
+    retrying the task runs it."""
+    admin, _ = _admin(client)
+    headers, opp = prepared(client, sync_engine, db_url, gateway)
+    set_status(client, admin, SECURITY, "disabled")
+    fake = install(AgentGateway(replies()))
+    body = started(client, headers, opp["id"])
+
+    async def dies(ctx: Any, run_id: UUID, opportunity_id: UUID) -> bool:
+        raise RuntimeError("the worker died")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(workflows_runs, "_wait", dies)
+        assert drain(db_url, ASSESS) == ["failed_retrying", "dead"]
+    tasks = task_rows(sync_engine, body["id"])
+    assert tasks[SECURITY]["status"] == "failed"
+    assert run_rows(sync_engine, opp["id"])[0]["status"] == "partially_failed"
+    assert decision_rows(sync_engine, body["id"])[0]["status"] == "cancelled"
+
+    set_status(client, admin, SECURITY, "active")
+    assert retry(client, headers, opp["id"], body["id"], SECURITY).status_code == 201
+    assert drain(db_url, ASSESS) == ["succeeded"]
+
+    assert task_rows(sync_engine, body["id"])[SECURITY]["status"] == "succeeded"
+    assert fake.calls(SECURITY) == 1
+    assert run_rows(sync_engine, opp["id"])[0]["status"] == "succeeded"
+    assert decision_rows(sync_engine, body["id"])[0]["status"] == "cancelled"  # untouched
 
 
 # --- the grants -----------------------------------------------------------------------------

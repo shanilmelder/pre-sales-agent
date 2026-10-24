@@ -142,6 +142,8 @@ context:
 
 - **Migration renumbered on merging main (2026-10-24):** Story 5.4 merged as `0039_tool_gateway` (after 4.2's `0038_mandatory_gaps`), so this branch's chain is now `0039_tool_gateway` → `0040_workflows_decisions` (5.5, `20261024_0040_workflows_decisions.py`) → `0041_critic_review` (`20261024_0041_critic_review.py`); the branch's own `0038_tool_gateway` was dropped (identical upgrade to main's).
 
+- **Rebuilt on the finished Story 5.5 (2026-10-24):** the branch first carried an earlier, unfinished 5.5 attempt. After 5.5 merged (PR #81), the 6.4 delta was re-applied onto main and ported to 5.5's final API: `after` on `PlanTask` and its plan-version JSON, `TaskAgent` for decisions and `openDecision`, the Critic-only-finish rule next to 5.5's chosen-skip run status. A 5.5 test now counts the Critic's task (4 tasks, 3 succeeded). The chain stays `0039_tool_gateway` → `0040_workflows_decisions` → `0041_critic_review`.
+
 ## Spec Change Log
 
 - **Loop 1 (review triage #1–#3):** review found that retries and re-runs were unspecified: a specialist retry left the Critic Review stale, a Critic-only retry rebuilt the Estimate and re-queued the Red Team, and Critic Conflicts were never retired. Amended: added "Re-run rules" to Design Notes. Known-bad state avoided: stale coverage backstops after a retry, needless Estimate versions, permanently open Critic Conflicts. User chose to patch in place instead of revert/re-derive (a concurrent Story 5.4 session shares files in the tree). KEEP: everything else in the implementation — the plan `after` readiness, `TaskAgent`, accept/backstop rules, the Conflicts path via `validate_semantic`, migration 0039, the web card/table/inspector, and the eval.

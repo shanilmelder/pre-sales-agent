@@ -12,11 +12,12 @@ node finished. Every node re-reads its task from `workflows` before doing anythi
 2. A task it requires ended without succeeding: the task is skipped. One it requires or runs
    after still in progress (it failed on an earlier attempt and runs again): the node does
    nothing this time.
-3. Its Agent is not active (Story 5.5): the node records a `plan_escalation` decision
-   (idempotently) and calls `interrupt()` with its payload, outside every `try/except`
-   (`GraphInterrupt` is an `Exception`). The run waits for a person; on resume the node runs
-   again from its start and reads the decision: Continue without skips the task, Re-plan
-   lets it run as below. The decision row is the truth, not the value resumed with.
+3. A queued task whose Agent is not active (Story 5.5): `workflows.escalation` records a
+   `plan_escalation` decision (idempotently, committed first), and the node calls
+   LangGraph's `interrupt()` with its payload (ids and codes), outside every `try` (a
+   `GraphInterrupt` is an `Exception`). The run then waits for a person. On resume the node
+   runs again from its start and the decision row decides: **Continue without** skips the
+   task (`agent_disabled`), **Re-plan** runs it (step 4), still open interrupts again.
 4. Otherwise: one Unit of Work marks the task `running` and loads its inputs; the Agent is
    called with none open; one Unit of Work locks the task as still `running` (else the
    result is discarded: a cancel came first), submits the result to its owner's `accept_*`
@@ -41,7 +42,13 @@ from langgraph.types import interrupt
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.modules.workflows.application import public as workflows
-from app.modules.workflows.application.public import Escalation, GraphRun, NodeTask
+from app.modules.workflows.application.public import (
+    DecisionChoice,
+    DecisionStatus,
+    Escalation,
+    GraphRun,
+    NodeTask,
+)
 from app.orchestration.executors import TaskExecutor, executor_for
 from app.platform.logging import get_logger
 from app.platform.uow import unit_of_work
@@ -113,7 +120,7 @@ async def run_task(invocation: Invocation, task_id: UUID) -> RunState:
     engine = invocation.run.engine
     ids = {"run_id": str(invocation.run.run_id), "task_id": str(task_id)}
     _log.info("orchestration.node_entered", extra=ids)
-    escalated: Escalation | None = None
+    ask: Escalation | None = None
     try:
         async with unit_of_work(engine) as uow:
             current = await workflows.node_task(uow, task_id)
@@ -127,14 +134,16 @@ async def run_task(invocation: Invocation, task_id: UUID) -> RunState:
             if current.readiness == "waiting":
                 _log.info("orchestration.task_waiting", extra=ids)
                 return {}
-            escalation = await workflows.escalation(uow, task_id)
-            if escalation is not None and escalation.continue_without:
+            decided = await workflows.escalation(uow, task_id)
+            if decided is not None and decided.open:
+                ask = decided  # committed when the Unit of Work closes, before interrupting
+            elif decided is not None and decided.choice == DecisionChoice.CONTINUE_WITHOUT:
                 skipped = await workflows.skip_disabled_task(uow, task_id)
                 _log.info("orchestration.task_continued_without", extra={**ids, "skipped": skipped})
                 return {"finished": [str(task_id)]} if skipped else {}
-            if escalation is not None and not escalation.replanned:
-                escalated = escalation  # open (or cancelled with its run): no start
-            else:
+            elif decided is not None and decided.status == DecisionStatus.CANCELLED:
+                return {}  # its run was cancelled or ended
+            if ask is None:
                 executor = executor_for(current.agent)
                 started = await workflows.begin_task(uow, task_id)
                 if started is None:
@@ -146,18 +155,15 @@ async def run_task(invocation: Invocation, task_id: UUID) -> RunState:
             "orchestration.node_start_failed", extra={**ids, "exc_type": type(exc).__name__}
         )
         return {}
-    if escalated is not None:
-        # The decision is committed: wait for a person. Outside every `try`: `interrupt`
-        # raises `GraphInterrupt` (an `Exception`), which LangGraph must see.
-        if escalated.open:
-            _log.info(
-                "orchestration.task_escalated",
-                extra={**ids, "decision_id": str(escalated.decision_id)},
-            )
-            interrupt(escalated.payload)
-        # Resumed while the decision is still open, or it was cancelled: nothing to do now.
-        return {}
-    assert started is not None  # set whenever no decision stopped the node
+    if ask is not None:
+        _log.info(
+            "orchestration.task_escalated", extra={**ids, "decision_id": str(ask.decision_id)}
+        )
+        # Outside every `try`: the GraphInterrupt must reach LangGraph. On resume the node
+        # starts again from the top, where the decision row decides.
+        interrupt(ask.payload)
+        return await run_task(invocation, task_id)
+    assert started is not None  # set whenever no decision was asked
     try:
         result = await executor.run(prepared)
         if not await submit(engine, task_id, executor, prepared, result):

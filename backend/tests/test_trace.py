@@ -41,7 +41,12 @@ def test_every_event_type_matches_naming_rule() -> None:
 
 @pytest.mark.parametrize(
     "good",
-    ["identity.user.provisioned", "identity.user.role_assigned", "opportunities.opportunity.won"],
+    [
+        "identity.user.provisioned",
+        "identity.user.role_assigned",
+        "opportunities.opportunity.won",
+        "workflows.run.waiting_for_human",  # an allow-listed state event (Story 5.5)
+    ],
 )
 def test_event_type_rule_accepts(good: str) -> None:
     assert is_valid_event_type(good)
@@ -55,6 +60,7 @@ def test_event_type_rule_accepts(good: str) -> None:
         "identity.user.role.assigned",  # four segments
         "Identity.user.provisioned",  # uppercase
         "identity.user-x.provisioned",  # hyphen
+        "workflows.run.waiting",  # not past tense and not an allow-listed state event
     ],
 )
 def test_event_type_rule_rejects(bad: str) -> None:

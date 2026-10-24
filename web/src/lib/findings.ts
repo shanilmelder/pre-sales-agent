@@ -10,6 +10,12 @@ export type FindingStatus = FindingState["status"];
 export type FindingOverride = components["schemas"]["FindingOverride"];
 export type FindingResolution = components["schemas"]["FindingResolution"];
 export type EvidenceOption = components["schemas"]["EvidenceOption"];
+export type EvidenceRef = components["schemas"]["EvidenceRefIn"];
+
+/** The kinds of Evidence a Finding accepts: Requirements and Sources. */
+export function isEvidenceKind(kind: string): kind is EvidenceRef["kind"] {
+  return kind === "requirement" || kind === "source_document";
+}
 
 /** A Finding's status pill: always an icon and a label. Open is blocker-coloured only when
  * critical (it then blocks submission); Resolved uses the resolved tone with a check;

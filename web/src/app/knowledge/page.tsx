@@ -27,9 +27,9 @@ async function activeIntegrationTypes(): Promise<{ id: string; name: string }[] 
   }
 }
 
-/** Knowledge → Sources (Checklists has its own route; Coverage comes with Story 3.5).
- * `?integration_type=<id>` and `?product=<name>` seed the filters (Story 4.1: the Gaps tab's
- * coverage banner links here). */
+/** Knowledge → Sources (Checklists and Coverage have their own routes).
+ * `?integration_type=<id>` and `?product=<name>` seed the filters (the Gaps tab's coverage
+ * banner and Coverage cells link here). */
 export default async function KnowledgePage({
   searchParams,
 }: {
@@ -51,6 +51,7 @@ export default async function KnowledgePage({
           <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : (
           <SourcesTab
+            key={`${filters.product}|${filters.integrationTypeId}`}
             initialSources={sources}
             integrationTypes={types}
             initialFilters={filters}

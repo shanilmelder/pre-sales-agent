@@ -66,7 +66,7 @@ development_status:
   3-2-register-knowledge-sources-by-upload: done
   3-3-chunk-embed-and-search-knowledge-with-citable-passages: done
   3-4-author-and-version-checklists: backlog
-  3-5-knowledge-coverage-view: backlog
+  3-5-knowledge-coverage-view: review
   3-6-knowledge-graph: backlog
   epic-3-retrospective: optional
 

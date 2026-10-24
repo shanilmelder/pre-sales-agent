@@ -20,18 +20,19 @@ EVENT_TYPE_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 _IRREGULAR_PAST_TENSE = frozenset(
     {"built", "done", "lost", "made", "overridden", "run", "sent", "split", "won"}
 )
-# A state entered rather than a verb: named events the architecture fixes (Story 5.5).
-_STATE_EVENTS = frozenset({"waiting_for_human"})
+# State events: names that report a state entered rather than a past-tense verb. Kept to the
+# few the architecture names verbatim (Story 5.5: AD-7's `workflows.run.waiting_for_human`).
+_STATE_EVENTS = frozenset({"workflows.run.waiting_for_human"})
 
 
 def is_valid_event_type(name: str) -> bool:
-    """Shape check plus the past-tense heuristic above (not a grammatical guarantee)."""
+    """Shape check plus the past-tense heuristic above (not a grammatical guarantee), or one
+    of the allow-listed state events."""
     if not EVENT_TYPE_RE.match(name):
         return False
-    verb = name.rsplit(".", 1)[1]
-    if verb in _STATE_EVENTS:
+    if name in _STATE_EVENTS:
         return True
-    last_word = verb.rsplit("_", 1)[-1]
+    last_word = name.rsplit(".", 1)[1].rsplit("_", 1)[-1]
     return last_word.endswith("ed") or last_word in _IRREGULAR_PAST_TENSE
 
 
@@ -818,10 +819,10 @@ class AssessmentsAssessmentCompleted(TracePayload):
 @register
 class AssessmentsTaskSkipped(TracePayload):
     """An assessment run's task was skipped before it started because its Agent is not
-    active in the Agent Registry (Story 7.1): since Story 5.5, when a person chose Continue
-    without on the run's `plan_escalation` (runs before it: when the run was queued or its
-    job started). Subject: the run (`assessments.assessment_run`). Actor: the system
-    (`workflows.execute`), which skips it when the run resumes. Ids and the reason only."""
+    active in the Agent Registry (Story 7.1): since Story 5.5, once a person chose
+    **Continue without** it and the run resumed. Subject: the run
+    (`assessments.assessment_run`). Actor: the system (`workflows.execute`). Ids and the
+    reason only."""
 
     event_type: ClassVar[str] = "assessments.task.skipped"
 
@@ -833,11 +834,29 @@ class AssessmentsTaskSkipped(TracePayload):
 
 
 @register
+class AssessmentsAssessmentRunCompleted(TracePayload):
+    """Every task of an assessment run has finished. Subject: the run
+    (`assessments.assessment_run`). Actor: the system (`workflows.execute`).
+    `failed_count`: the tasks that neither succeeded nor were skipped by a person's choice
+    to continue without their disabled Agent (Story 5.5), so `succeeded` has none."""
+
+    event_type: ClassVar[str] = "assessments.assessment_run.completed"
+
+    status: Literal["succeeded", "partially_failed", "failed"]
+    task_count: int
+    succeeded_count: int
+    failed_count: int
+
+
+# --- workflows ----------------------------------------------------------------------------
+# Story 5.5 (pause and resume). Ids and codes only.
+
+
+@register
 class WorkflowsRunWaitingForHuman(TracePayload):
-    """A run paused for a person (Story 5.5): a task's Agent is `disabled` or `eval_only`,
-    so its node recorded a `plan_escalation` decision and the run waits until someone
-    chooses Continue without or Re-plan. Subject: the run (`assessments.assessment_run`).
-    Actor: the system (`workflows.execute`). Ids and codes only."""
+    """An assessment run paused on an open decision: a queued task's Agent is not active, so
+    a person decides whether the run goes on without it. Appended once per decision. Subject:
+    the run (`assessments.assessment_run`). Actor: the system (`workflows.execute`)."""
 
     event_type: ClassVar[str] = "workflows.run.waiting_for_human"
 
@@ -849,9 +868,10 @@ class WorkflowsRunWaitingForHuman(TracePayload):
 
 @register
 class WorkflowsDecisionResolved(TracePayload):
-    """A person resolved a decision a run waited on (Story 5.5); the run is queued again to
-    resume. Subject: the run (`assessments.assessment_run`). Actor: that person. Ids and
-    codes only; `plan_version`: the run's plan version after it (a Re-plan bumps it)."""
+    """A person resolved a run's decision: **Continue without** the Agent, or **Re-plan**
+    (the task re-pinned to the Agent's current config version, a new plan version). The run
+    is queued to resume. Subject: the run (`assessments.assessment_run`). Actor: that
+    person. `config_version_id`: the task's pin after the decision."""
 
     event_type: ClassVar[str] = "workflows.decision.resolved"
 
@@ -861,20 +881,7 @@ class WorkflowsDecisionResolved(TracePayload):
     kind: Literal["plan_escalation"]
     choice: Literal["continue_without", "replan"]
     plan_version: int
-    row_version: int
-
-
-@register
-class AssessmentsAssessmentRunCompleted(TracePayload):
-    """Every task of an assessment run has finished. Subject: the run
-    (`assessments.assessment_run`). Actor: the system (`workflows.execute`)."""
-
-    event_type: ClassVar[str] = "assessments.assessment_run.completed"
-
-    status: Literal["succeeded", "partially_failed", "failed"]
-    task_count: int
-    succeeded_count: int
-    failed_count: int
+    config_version_id: str
 
 
 # --- knowledge ----------------------------------------------------------------------------

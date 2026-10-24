@@ -19,7 +19,7 @@ RUN_SUBJECT_TYPE = "assessments.assessment_run"
 TASK_PROGRESS_SUBJECT = "workflows.task"
 RUN_PROGRESS_SUBJECT = "workflows.run"
 PLAN_VERSION = 1
-"""The plan version every run is planned with until plans can be edited."""
+"""The plan version every run starts with; a Re-plan (Story 5.5) adds the next one."""
 
 
 class TaskAgent(StrEnum):
@@ -53,17 +53,17 @@ class AssessmentRunStatus(StrEnum):
     """Stopped by a person (Story 5.5): set directly by the cancel command, never derived from
     the tasks', and final (nothing moves a cancelled run again)."""
     WAITING_FOR_HUMAN = "waiting_for_human"
-    """Paused on an open decision (Story 5.5, pause and resume): set when the graph returns
-    with a task waiting for a person and none running; resolving the decision queues the
-    run again. Never derived from the tasks'."""
+    """Paused on an open decision (Story 5.5, pause and resume): its graph interrupted and no
+    task is running. Set by the job, never derived from the tasks'; resolving the decision
+    queues it again. Never lost however long it waits."""
 
 
 RUN_IN_PROGRESS = frozenset({AssessmentRunStatus.QUEUED, AssessmentRunStatus.RUNNING})
-"""A run a job is working on (or about to): queued or running. The Estimate tab's "run in
-progress" and stale-run handling use this."""
+"""A run a job is working on (or will): the Estimate tab's "run in progress", and what a lost
+run can be."""
 RUN_ACTIVE = RUN_IN_PROGRESS | {AssessmentRunStatus.WAITING_FOR_HUMAN}
-"""A run that is not finished: in progress, or waiting for a person. A new start is 409
-while one is active, an automatic run coalesces with it, and it can be cancelled."""
+"""A run that is not over: a new start gets 409, `enqueue_run` coalesces with it, a retry
+gets 409, and it can be cancelled."""
 
 
 class AssessmentTaskStatus(StrEnum):
@@ -72,9 +72,9 @@ class AssessmentTaskStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     SKIPPED = "skipped"
-    """Unfinished when its run was cancelled (Story 5.5), its Agent was not active in the
-    Agent Registry before it started (Story 7.1, with a `skip_reason`), or a task it requires
-    ended without succeeding (Story 5.2)."""
+    """Unfinished when its run was cancelled (Story 5.5), a person chose to continue without
+    its disabled Agent (Story 5.5, with the `skip_reason` `agent_disabled`), or a task it
+    requires ended without succeeding (Story 5.2)."""
 
 
 TASK_IN_PROGRESS = frozenset({AssessmentTaskStatus.QUEUED, AssessmentTaskStatus.RUNNING})
@@ -84,24 +84,72 @@ class TaskSkipReason(StrEnum):
     """Why a task was skipped other than by a cancel (Story 7.1)."""
 
     AGENT_DISABLED = "agent_disabled"
-    """Its Agent was `disabled` or `eval_only`: assess that part manually."""
+    """Its Agent was `disabled` or `eval_only` and a person chose **Continue without** (Story
+    5.5): assess that part manually."""
 
 
-def run_status(tasks: Iterable[AssessmentTaskStatus]) -> AssessmentRunStatus:
+# --- decisions (Story 5.5, pause and resume) --------------------------------------------------
+
+
+class DecisionKind(StrEnum):
+    """What a run waits on a person for."""
+
+    PLAN_ESCALATION = "plan_escalation"
+    """A queued task's Agent is `disabled` or `eval_only`: continue without it, or re-plan
+    once it is active again."""
+
+
+class DecisionStatus(StrEnum):
+    OPEN = "open"
+    RESOLVED = "resolved"
+    CANCELLED = "cancelled"
+    """Its run was cancelled, or ended, before anyone resolved it."""
+
+
+class DecisionChoice(StrEnum):
+    CONTINUE_WITHOUT = "continue_without"
+    """The task is skipped (`agent_disabled`) and the run goes on."""
+    REPLAN = "replan"
+    """The task is re-pinned to its Agent's current config version (a new plan version)
+    and runs. Only once the Agent is active again."""
+
+
+PLAN_ESCALATION_CHOICES = (DecisionChoice.CONTINUE_WITHOUT, DecisionChoice.REPLAN)
+
+
+def run_status(
+    tasks: Iterable[AssessmentTaskStatus], *, chosen_skips: int = 0
+) -> AssessmentRunStatus:
     """A run's status from its tasks': `queued` while every task is queued, `running` while
-    any is still queued or running, then `succeeded` when all succeeded, `failed` when none
-    did, otherwise `partially_failed`. A `cancelled` run is never derived: the cancel sets it."""
+    any is still queued or running, then `failed` when none succeeded, `succeeded` when every
+    task succeeded or was skipped by choice, otherwise `partially_failed`. `chosen_skips`:
+    how many of the `skipped` tasks a person chose to continue without (`agent_disabled`,
+    Story 5.5); they don't count against the run (user decision, 2026-10-24). Tasks skipped
+    by a cancel or a blocked requirement still do. A `cancelled` run is never derived: the
+    cancel sets it."""
     statuses = list(tasks)
     if statuses and all(s == AssessmentTaskStatus.QUEUED for s in statuses):
         return AssessmentRunStatus.QUEUED
     if any(s in TASK_IN_PROGRESS for s in statuses):
         return AssessmentRunStatus.RUNNING
     succeeded = sum(1 for s in statuses if s == AssessmentTaskStatus.SUCCEEDED)
+    skipped = sum(1 for s in statuses if s == AssessmentTaskStatus.SKIPPED)
+    chosen = max(0, min(chosen_skips, skipped))
     if succeeded == len(statuses):
         return AssessmentRunStatus.SUCCEEDED
     if succeeded == 0:
         return AssessmentRunStatus.FAILED
+    if succeeded + chosen == len(statuses):
+        return AssessmentRunStatus.SUCCEEDED
     return AssessmentRunStatus.PARTIALLY_FAILED
+
+
+def chosen_skip(status: AssessmentTaskStatus, skip_reason: str | None) -> bool:
+    """A task skipped because a person chose to continue without its Agent (Story 5.5)."""
+    return (
+        status == AssessmentTaskStatus.SKIPPED
+        and skip_reason == TaskSkipReason.AGENT_DISABLED.value
+    )
 
 
 Readiness = Literal["ready", "waiting", "blocked"]
@@ -134,31 +182,7 @@ class ProgressEvent(StrEnum):
     TASK_ENDED = "workflows.task.ended"
     RUN_ENDED = "workflows.run.ended"
     RUN_WAITING = "workflows.run.waiting_for_human"
-
-
-class DecisionKind(StrEnum):
-    """`workflows_decisions.kind`: what a person is asked to decide (Story 5.5)."""
-
-    PLAN_ESCALATION = "plan_escalation"
-    """A task's Agent is `disabled` or `eval_only`: go on without it, or re-plan once it is
-    active again."""
-
-
-class DecisionStatus(StrEnum):
-    OPEN = "open"
-    RESOLVED = "resolved"
-    CANCELLED = "cancelled"
-    """Its run was cancelled while it was open: it can no longer be resolved."""
-
-
-class DecisionChoice(StrEnum):
-    """What a person chose for a `plan_escalation`."""
-
-    CONTINUE_WITHOUT = "continue_without"
-    """The task is skipped (`agent_disabled`) and the run goes on without it."""
-    REPLAN = "replan"
-    """The task is re-pinned to its Agent's current config version (a new plan version) and
-    runs. Allowed only once the Agent is active again."""
+    """The run paused on an open decision (Story 5.5); one row per open decision."""
 
 
 PROGRESS_RETENTION_DAYS = 30
@@ -170,10 +194,10 @@ def task_summary(agent: str, status: AssessmentTaskStatus) -> str:
     return f"{agent} {status.value}"
 
 
-def waiting_summary(agent: str) -> str:
-    """A waiting run's progress summary: the Agent id it waits on, never customer text."""
-    return f"{agent} waiting_for_human"
-
-
 def run_summary(status: AssessmentRunStatus) -> str:
     return f"run {status.value}"
+
+
+def waiting_summary(agent: str) -> str:
+    """A waiting row's summary: the Agent whose decision the run waits on."""
+    return f"{agent} {AssessmentRunStatus.WAITING_FOR_HUMAN.value}"

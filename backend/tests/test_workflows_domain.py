@@ -10,6 +10,7 @@ from app.modules.workflows.domain.runs import (
     TASK_AGENTS,
     AssessmentRunStatus,
     AssessmentTaskStatus,
+    chosen_skip,
     readiness,
     run_status,
     task_agent_rank,
@@ -41,6 +42,31 @@ def test_the_run_status_follows_its_tasks(
     tasks: tuple[AssessmentTaskStatus, ...], expected: AssessmentRunStatus
 ) -> None:
     assert run_status(tasks) is expected
+
+
+@pytest.mark.parametrize(
+    ("tasks", "chosen", "expected"),
+    [
+        # Story 5.5: a person chose Continue without the disabled Agent.
+        ((S, S, K), 1, AssessmentRunStatus.SUCCEEDED),
+        ((S, K, K), 2, AssessmentRunStatus.SUCCEEDED),
+        ((S, K, K), 1, AssessmentRunStatus.PARTIALLY_FAILED),  # the other skip still counts
+        ((S, F, K), 1, AssessmentRunStatus.PARTIALLY_FAILED),
+        ((K, K, K), 3, AssessmentRunStatus.FAILED),  # nothing assessed
+        ((S, S, S), 5, AssessmentRunStatus.SUCCEEDED),  # more than skipped: capped
+        ((Q, Q, K), 1, AssessmentRunStatus.RUNNING),
+    ],
+)
+def test_a_chosen_skip_does_not_count_against_the_run(
+    tasks: tuple[AssessmentTaskStatus, ...], chosen: int, expected: AssessmentRunStatus
+) -> None:
+    assert run_status(tasks, chosen_skips=chosen) is expected
+
+
+def test_only_a_skip_for_a_disabled_agent_is_chosen() -> None:
+    assert chosen_skip(K, "agent_disabled") is True
+    assert chosen_skip(K, None) is False  # a cancel's, or a blocked requirement's
+    assert chosen_skip(F, "agent_disabled") is False
 
 
 def test_a_task_requiring_nothing_is_ready() -> None:

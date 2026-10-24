@@ -24,7 +24,13 @@ import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentRun, TaskAgent } from "@/lib/assessments";
 import type { Conflict } from "@/lib/conflicts";
 import type { Assumption, EstimateDraft, EstimateView, RoleMix } from "@/lib/estimates";
-import { totalBlocking, type EvidenceOption, type FindingState } from "@/lib/findings";
+import {
+  isEvidenceKind,
+  totalBlocking,
+  type EvidenceOption,
+  type EvidenceRef,
+  type FindingState,
+} from "@/lib/findings";
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
@@ -919,7 +925,8 @@ export async function retryAssessmentTask(
 }
 
 /** `POST /api/v1/opportunities/{id}/assessment-runs/{run_id}/cancel`: cancel the latest run
- * while it is queued or running (Story 5.5); completed Assessments are kept. 409 (`conflict`)
+ * while it is queued, running or waiting for a person (Story 5.5); completed Assessments are
+ * kept. 409 (`conflict`)
  * once it is no longer in progress. */
 export async function cancelAssessmentRun(
   opportunityId: unknown,
@@ -942,35 +949,56 @@ export async function cancelAssessmentRun(
   }
 }
 
-export type ResolveDecisionResult =
+export type RunDecisionChoice = "continue_without" | "replan";
+
+export type ResolveRunDecisionInput = {
+  opportunityId: string;
+  runId: string;
+  decisionId: string;
+  /** The decision's `row_version` last seen; sent as `If-Match`. */
+  rowVersion: number;
+  choice: RunDecisionChoice;
+};
+
+export type RunDecisionResult =
+  /** The run, queued again to resume. */
   | { kind: "ok"; run: AssessmentRun }
   /** 412: someone resolved it first; `message` is the API's "Already resolved by {name}." */
   | { kind: "stale"; message: string }
-  /** 409: the decision is no longer open, or Re-plan while the Agent is still disabled. */
+  /** 409: the decision is no longer open (or its run was cancelled), or Re-plan while the
+   * Agent is still disabled; `detail` is a sentence to show. */
   | { kind: "conflict"; detail: string }
   | { kind: "forbidden" }
   | { kind: "not-found" }
   | { kind: "error" };
 
-const DECISION_CHOICES: readonly string[] = ["continue_without", "replan"];
+function isResolveRunDecisionInput(input: unknown): input is ResolveRunDecisionInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, runId, decisionId, rowVersion, choice } = input as Record<
+    string,
+    unknown
+  >;
+  return (
+    typeof opportunityId === "string" &&
+    UUID_RE.test(opportunityId) &&
+    typeof runId === "string" &&
+    UUID_RE.test(runId) &&
+    typeof decisionId === "string" &&
+    UUID_RE.test(decisionId) &&
+    typeof rowVersion === "number" &&
+    Number.isSafeInteger(rowVersion) &&
+    rowVersion >= 0 &&
+    (choice === "continue_without" || choice === "replan")
+  );
+}
 
 /** `POST /api/v1/opportunities/{id}/assessment-runs/{run_id}/decisions/{decision_id}/resolve`
- * with `If-Match` (Story 5.5): Continue without or Re-plan, and the run resumes. Never
- * retries or overwrites on 412. Logs ids and statuses only. */
-export async function resolveRunDecision(
-  opportunityId: unknown,
-  runId: unknown,
-  decisionId: unknown,
-  rowVersion: unknown,
-  choice: unknown,
-): Promise<ResolveDecisionResult> {
-  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
-  if (typeof runId !== "string" || !UUID_RE.test(runId)) return { kind: "error" };
-  if (typeof decisionId !== "string" || !UUID_RE.test(decisionId)) return { kind: "error" };
-  if (typeof rowVersion !== "number" || !Number.isInteger(rowVersion) || rowVersion < 1) {
-    return { kind: "error" };
-  }
-  if (typeof choice !== "string" || !DECISION_CHOICES.includes(choice)) return { kind: "error" };
+ * with `If-Match` (Story 5.5): **Continue without** the disabled Agent, or **Re-plan** once it
+ * is active again; the run then resumes. Never retries or overwrites on 412. Logs ids and
+ * statuses only. */
+export async function resolveRunDecision(input: unknown): Promise<RunDecisionResult> {
+  if (!isResolveRunDecisionInput(input)) return { kind: "error" };
+  const { opportunityId, runId, decisionId, rowVersion, choice } = input;
   try {
     const api = await createServerApiClient();
     const { data, error, response } = await api.POST(
@@ -980,7 +1008,7 @@ export async function resolveRunDecision(
           path: { opportunity_id: opportunityId, run_id: runId, decision_id: decisionId },
           header: { "If-Match": `"${rowVersion}"` },
         },
-        body: { choice: choice as "continue_without" | "replan" },
+        body: { choice },
       },
     );
     if (data) return { kind: "ok", run: data };
@@ -993,7 +1021,7 @@ export async function resolveRunDecision(
           kind: "conflict",
           detail:
             code === "registry_agent_disabled"
-              ? (detail ?? "Enable the agent first.")
+              ? (detail ?? "The Agent is still disabled.")
               : "This decision is no longer open.",
         };
       case 403:
@@ -2722,7 +2750,7 @@ export type FindingDecisionInput = {
   rowVersion: number;
   action: "evidence" | "resolve" | "override";
   reason: string;
-  refs?: { kind: string; id: string; version: number }[];
+  refs?: EvidenceRef[];
 };
 
 export type FindingDecisionResult =
@@ -2741,11 +2769,12 @@ export type FindingDecisionResult =
   | { kind: "not-found" }
   | { kind: "error" };
 
-function isEvidenceRef(value: unknown): value is { kind: string; id: string; version: number } {
+function isEvidenceRef(value: unknown): value is EvidenceRef {
   if (typeof value !== "object" || value === null) return false;
   const ref = value as Record<string, unknown>;
   return (
     typeof ref.kind === "string" &&
+    isEvidenceKind(ref.kind) &&
     typeof ref.id === "string" &&
     UUID_RE.test(ref.id) &&
     typeof ref.version === "number" &&

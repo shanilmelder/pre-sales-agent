@@ -35,7 +35,7 @@ import {
   resolveRunDecision,
   retryAssessmentTask,
   startAssessmentRun,
-  type ResolveDecisionResult,
+  type RunDecisionChoice,
   type StartAssessmentResult,
 } from "@/app/opportunities/actions";
 import { Card } from "@/components/ui/card";
@@ -83,17 +83,19 @@ import {
   failureReason,
   findingKey,
   isAssessing,
+  isRunActive,
   isWaiting,
   mergeFindings,
   NO_ASSESSMENT,
   NOTHING_TO_ASSESS,
   openDecision,
-  planLabel,
-  planTaskLabel,
+  planVersionAgents,
+  planVersionLabel,
   RED_TEAM_LABEL,
   RED_TEAM_ROLE,
   recommendationInfo,
   REPLAN,
+  RESOLVE_FAILED,
   RUN_ASSESSMENT,
   runAlert,
   runStatusLabel,
@@ -113,9 +115,7 @@ import {
   type Assessment,
   type AssessmentRun,
   type AssessmentsView,
-  type DecisionChoice,
   type FindingRow,
-  type PlanVersion,
   type Recommendation,
   type RunDecision,
   type TaskAgent,
@@ -152,7 +152,6 @@ import { cn } from "@/lib/utils";
 export const RETRY = "Retry";
 const START_FAILED = "The assessment could not be started. Try again.";
 const CANCEL_FAILED = "The run could not be cancelled. Try again.";
-const RESOLVE_FAILED = "The decision could not be saved. Try again.";
 const NOT_ALLOWED =
   "Only the owner and collaborators, except sales representatives, can run an assessment.";
 const ASSESSMENTS_NOT_LOADED =
@@ -610,17 +609,58 @@ export function TaskStatusPill({ status }: { status: TaskStatus }) {
   );
 }
 
-/** A task waiting for a person's decision (Story 5.5): amber, with a clock icon. */
+/** **Waiting for you** (Story 5.5): amber with a clock, on a task the run waits on. */
 export function WaitingForYouPill() {
   return (
-    <Pill
-      data-task-pill="waiting_for_human"
-      tone={pillToneFor("text-gap")}
-      icon={<ClockIcon />}
-      className="shrink-0"
-    >
+    <Pill data-waiting="true" tone="gap" icon={<ClockIcon />} className="shrink-0">
       {WAITING_FOR_YOU}
     </Pill>
+  );
+}
+
+/** **Continue without** and **Re-plan** for an open decision (Story 5.5). Re-plan is disabled
+ * while the Agent is not active, described by "Enable the agent first". */
+function DecisionActions({
+  decision,
+  busy = false,
+  onResolve,
+}: {
+  decision: RunDecision;
+  busy?: boolean;
+  onResolve?: (decision: RunDecision, choice: RunDecisionChoice) => void;
+}) {
+  const hintId = useId();
+  const name = decision.agent_name || agentLabel(decision.agent);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          disabled={busy}
+          aria-label={`${CONTINUE_WITHOUT} ${name}`}
+          onClick={() => onResolve?.(decision, "continue_without")}
+        >
+          {CONTINUE_WITHOUT}
+        </Button>
+        <Button
+          type="button"
+          size="xs"
+          disabled={busy || !decision.agent_active}
+          aria-label={`${REPLAN} ${name}`}
+          aria-describedby={decision.agent_active ? undefined : hintId}
+          onClick={() => onResolve?.(decision, "replan")}
+        >
+          {REPLAN}
+        </Button>
+      </div>
+      {decision.agent_active ? null : (
+        <p id={hintId} className="text-meta text-muted-foreground">
+          {ENABLE_AGENT_FIRST}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -704,7 +744,7 @@ function TaskCard({
   elapsed?: string;
   note: string | null;
   action: ReactNode;
-  /** The task waits for a person's decision (Story 5.5): the amber Waiting for you pill. */
+  /** The run waits for a person's decision about this task (Story 5.5). */
   waiting?: boolean;
 }) {
   const failed = status === "failed";
@@ -712,15 +752,10 @@ function TaskCard({
   const StatusIcon = waiting
     ? ClockIcon
     : (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).icon;
-  const statusTone = waiting
-    ? "text-gap"
-    : (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).tone;
   return (
     <Card
-      className={cn(
-        "h-full gap-3 p-4",
-        waiting ? "border-gap bg-gap-tint" : taskCardTone(status),
-      )}
+      className={cn("h-full gap-3 p-4", waiting ? "border-gap" : taskCardTone(status))}
+      data-waiting={waiting ? "true" : undefined}
     >
       <div className="flex items-start gap-3">
         <span
@@ -742,7 +777,14 @@ function TaskCard({
               className="size-5 text-agent"
             />
           ) : (
-            <StatusIcon className={cn("size-5", statusTone)} />
+            <StatusIcon
+              className={cn(
+                "size-5",
+                waiting
+                  ? "text-gap"
+                  : (TASK_PILL_ICONS[status] ?? TASK_PILL_ICONS.queued).tone,
+              )}
+            />
           )}
         </span>
       </div>
@@ -764,58 +806,14 @@ function TaskCard({
           data-part="note"
           className={cn(
             "text-label",
-            failed ? "text-blocker" : waiting ? "text-foreground" : "text-muted-foreground",
+            failed ? "text-blocker" : waiting ? "text-gap" : "text-muted-foreground",
           )}
         >
           {note}
         </p>
       ) : null}
-      {action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
+      {action ? <div className="flex gap-2">{action}</div> : null}
     </Card>
-  );
-}
-
-/** **Continue without** and **Re-plan** for a waiting task's decision (Story 5.5). Re-plan
- * is disabled, with "Enable the agent first", while the Agent is still disabled. */
-function DecisionActions({
-  decision,
-  busy,
-  onResolve,
-}: {
-  decision: RunDecision;
-  busy: boolean;
-  onResolve?: (decision: RunDecision, choice: DecisionChoice) => void;
-}) {
-  const hintId = useId();
-  const name = decision.agent_name || agentLabel(decision.agent);
-  return (
-    <>
-      <Button
-        type="button"
-        variant="outline"
-        size="xs"
-        disabled={busy}
-        aria-label={`${CONTINUE_WITHOUT} ${name}`}
-        onClick={() => onResolve?.(decision, "continue_without")}
-      >
-        {CONTINUE_WITHOUT}
-      </Button>
-      <Button
-        type="button"
-        size="xs"
-        disabled={busy || !decision.agent_active}
-        aria-label={`${REPLAN} with ${name}`}
-        aria-describedby={decision.agent_active ? undefined : hintId}
-        onClick={() => onResolve?.(decision, "replan")}
-      >
-        {REPLAN}
-      </Button>
-      {decision.agent_active ? null : (
-        <span id={hintId} className="text-meta text-muted-foreground">
-          {ENABLE_AGENT_FIRST}
-        </span>
-      )}
-    </>
   );
 }
 
@@ -838,10 +836,10 @@ export type RedTeamTask = {
  * Team, whose run has no timestamps), a note and **Retry**. Queued tasks say "Waiting for the
  * worker"; failed tasks give the reason and **Retry** for those who may start one (never in
  * a cancelled run); a task skipped because its Agent is disabled says "Agent disabled —
- * assess manually". Elapsed time comes from the task's timestamps and the browser's clock, so
- * it ticks without a fetch. A task waiting for a person's decision (Story 5.5) shows the
- * amber **Waiting for you** pill, why ("Security assessment not planned: Security Agent is
- * disabled") and, for those who may resolve it, **Continue without** and **Re-plan**. */
+ * assess manually". A task the run waits on (Story 5.5) shows **Waiting for you**, why ("…
+ * assessment not planned: … is disabled") and, for those who may resolve it, **Continue
+ * without** and **Re-plan**. Elapsed time comes from the task's timestamps and the browser's
+ * clock, so it ticks without a fetch. */
 export function AgentRunPanel({
   run,
   redTeam = null,
@@ -855,11 +853,12 @@ export function AgentRunPanel({
   run: AssessmentRun | null;
   redTeam?: RedTeamTask | null;
   canStart?: boolean;
+  /** The caller may resolve the run's decisions. */
   canResolve?: boolean;
   busy?: boolean;
   stalled?: boolean;
   onRetry?: (agent: TaskAgent) => void;
-  onResolve?: (decision: RunDecision, choice: DecisionChoice) => void;
+  onResolve?: (decision: RunDecision, choice: RunDecisionChoice) => void;
 }) {
   const assessing = isAssessing(run);
   const now = useNow(assessing && !stalled);
@@ -872,7 +871,9 @@ export function AgentRunPanel({
     >
       {(run?.tasks ?? []).map((task) => {
         const failed = task.status === "failed";
-        const decision = task.status === "queued" ? openDecision(run, task.agent) : null;
+        // Only while the run waits: once it is queued again, a decision still open (another
+        // Agent's) can't be resolved until the run waits on it again.
+        const decision = isWaiting(run) ? openDecision(run, task.agent) : null;
         const note = decision
           ? decisionSentence(decision)
           : task.status === "queued"
@@ -881,10 +882,7 @@ export function AgentRunPanel({
               ? failureReason(task.error_code)
               : skipNote(task);
         return (
-          <li
-            key={task.agent}
-            data-task-status={decision ? "waiting_for_human" : task.status}
-          >
+          <li key={task.agent} data-task-status={task.status}>
             <TaskCard
               waiting={decision !== null}
               status={task.status}
@@ -900,10 +898,9 @@ export function AgentRunPanel({
                     <DecisionActions decision={decision} busy={busy} onResolve={onResolve} />
                   ) : null
                 ) : failed &&
-                  canStart &&
-                  !assessing &&
-                  !isWaiting(run) &&
-                  run?.status !== "cancelled" ? (
+                canStart &&
+                !assessing &&
+                run?.status !== "cancelled" ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -1002,23 +999,20 @@ function CancelRunButton({
   );
 }
 
-/** "Plan v{n}" with a disclosure listing each plan version's Agents and config versions, who
- * made it and when (FR-15, Story 5.5). */
-function PlanVersions({ current, versions }: { current: number; versions: PlanVersion[] }) {
-  if (versions.length === 0) {
-    return <span className="text-meta text-muted-foreground">{planLabel(current)}</span>;
-  }
+/** "Plan v{n}" with a disclosure listing every plan version's Agents, their config versions,
+ * who made it and when (FR-15, Story 5.5). Nothing before the API returns any. */
+function PlanVersions({ run }: { run: AssessmentRun }) {
+  const versions = run.plan_versions ?? [];
+  if (versions.length === 0) return null;
   return (
     <details data-testid="plan-versions" className="text-meta text-muted-foreground">
-      <summary className="cursor-pointer select-none">{planLabel(current)}</summary>
-      <ol className="mt-2 flex flex-col gap-2">
+      <summary className="cursor-pointer select-none">{planVersionLabel(run.plan_version)}</summary>
+      <ol className="mt-1 flex flex-col gap-1">
         {versions.map((plan) => (
-          <li key={plan.version} data-plan-version={plan.version} className="flex flex-col">
-            <span className="text-body-strong text-foreground">
-              {planLabel(plan.version)} · {plan.created_by ?? "Automatic run"} ·{" "}
-              <time dateTime={plan.created_at}>{formatDateTime(plan.created_at)}</time>
-            </span>
-            <span>{plan.tasks.map(planTaskLabel).join(" · ")}</span>
+          <li key={plan.version} data-plan-version={plan.version}>
+            <span className="text-foreground">{planVersionLabel(plan.version)}</span>:{" "}
+            {planVersionAgents(plan)} · {plan.created_by} ·{" "}
+            <time dateTime={plan.created_at}>{formatDateTime(plan.created_at)}</time>
           </li>
         ))}
       </ol>
@@ -1033,10 +1027,10 @@ const COUNTER_TONES: Record<string, string> = {
   running: "text-agent",
 };
 
-/** The run header: a card with the run's status, when it started, its plan version (with
- * the plan history), its counters (over the run's tasks plus `extraStatuses`, e.g. the Red
- * Team's) and, for those who may start one, **Cancel run** (while queued, running or waiting
- * for a person) over **Start new run**; then an alert when the run
+/** The run header: a card with the run's status, when it started, its counters (over the
+ * run's tasks plus `extraStatuses`, e.g. the Red Team's) and, for those who may start one,
+ * **Cancel run** (while queued, running or waiting for a person) over **Start new run**, and
+ * the plan version with its history; then an alert when the run
  * stopped early. Before any run, only **Run assessment** (for those who may start one).
  * "Still assessing — reload to check." once polling has stopped. */
 export function SpecialistAssessmentsHeader({
@@ -1066,7 +1060,7 @@ export function SpecialistAssessmentsHeader({
   onCancel?: () => void;
 }) {
   const assessing = isAssessing(run);
-  const active = assessing || isWaiting(run);
+  const active = isRunActive(run);
   const startRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (focusStartRequest > 0) startRef.current?.focus();
@@ -1109,7 +1103,7 @@ export function SpecialistAssessmentsHeader({
             <p className="text-meta text-muted-foreground">
               Started {formatDateTime(run.queued_at || run.created_at)}
             </p>
-            <PlanVersions current={run.plan_version ?? 1} versions={run.plan_versions ?? []} />
+            <PlanVersions run={run} />
           </div>
           {statuses.length > 0 ? (
             <ul
@@ -1223,10 +1217,12 @@ function Subsection({
  * and a run is queued or running, it falls back to re-reading every 2 s: paused while the tab
  * is hidden, and stopped after 15 minutes. The Red Team is re-read the same way while it
  * reviews (`useRedTeam`). Inside a `FindingSelectionProvider` its selection is shared with
- * the tab's other sections. Read-only for sales representatives (no Run assessment, Retry,
- * Cancel run, Continue without or Re-plan). `redTeam` null says the Red Team could not be
- * loaded; left out, the Red Team is not shown. The Critic Review is re-read with the run;
- * `critic` null says it could not be loaded; left out, none is shown until a re-read. */
+ * the tab's other sections. A run waiting for a person (Story 5.5) is resolved on its
+ * task's card; a decision someone else resolved first says "Already resolved by …" and
+ * re-reads. Read-only for sales representatives (no Run assessment, Retry, Cancel run or
+ * Resolve). `redTeam` null says the Red Team could not be loaded; left out, the Red Team
+ * is not shown. The Critic Review is re-read with the run; `critic` null says it could not
+ * be loaded; left out, none is shown until a re-read. */
 export function SpecialistAssessmentsSection({
   opportunityId,
   initial,
@@ -1462,6 +1458,8 @@ export function SpecialistAssessmentsSection({
       setFocusStartRequest((n) => n + 1);
   }
 
+  const runId = view.run?.id;
+
   async function act(
     request: () => Promise<StartAssessmentResult>,
     failed: string = START_FAILED,
@@ -1510,21 +1508,21 @@ export function SpecialistAssessmentsSection({
     }
   }
 
-  /** Resolve a waiting task's decision (Story 5.5). A 412 says who resolved it first and
-   * re-reads; a 409 (no longer open, or the Agent is still disabled) says why and re-reads. */
-  async function resolveDecision(decision: RunDecision, choice: DecisionChoice) {
+  /** Resolve a waiting run's decision (Story 5.5); a stale or closed decision says why and
+   * re-reads the section. */
+  async function resolve(decision: RunDecision, choice: RunDecisionChoice) {
     if (busy || !runId) return;
     setBusy(true);
     setMessage(null);
-    let result: ResolveDecisionResult;
+    let result: Awaited<ReturnType<typeof resolveRunDecision>>;
     try {
-      result = await resolveRunDecision(
+      result = await resolveRunDecision({
         opportunityId,
         runId,
-        decision.id,
-        decision.row_version,
+        decisionId: decision.id,
+        rowVersion: decision.row_version,
         choice,
-      );
+      });
     } catch {
       result = { kind: "error" };
     }
@@ -1563,7 +1561,6 @@ export function SpecialistAssessmentsSection({
     }
   }
 
-  const runId = view.run?.id;
   const redRun = redTeam.view?.run ?? null;
   const results = view.assessments.flatMap((slot) =>
     slot.assessment ? [slot.assessment] : [],
@@ -1630,13 +1627,13 @@ export function SpecialistAssessmentsSection({
           <AgentRunPanel
             run={view.run}
             canStart={view.can_start}
-            canResolve={view.can_resolve ?? false}
+            canResolve={view.can_resolve}
             busy={busy}
             stalled={assessing && stalled}
+            onResolve={(decision, choice) => void resolve(decision, choice)}
             onRetry={(agent) =>
               void act(() => retryAssessmentTask(opportunityId, runId, agent))
             }
-            onResolve={(decision, choice) => void resolveDecision(decision, choice)}
             redTeam={
               redRun
                 ? {

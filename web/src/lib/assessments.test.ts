@@ -25,11 +25,11 @@ import {
   taskElapsed,
   taskStatusLabel,
   decisionSentence,
+  isRunActive,
   isWaiting,
   openDecision,
-  planLabel,
-  planTaskLabel,
-  RUN_STATUS_LABELS,
+  planVersionAgents,
+  planVersionLabel,
 } from "@/lib/assessments";
 
 describe("assessment labels", () => {
@@ -388,56 +388,34 @@ describe("merged Findings", () => {
 });
 
 describe("waiting for a person (Story 5.5)", () => {
-  it("names the decision and the plan, and reads waiting as amber and not assessing", () => {
-    expect(
-      decisionSentence({ agent: "security_agent", agent_name: "Security Agent" }),
-    ).toBe("Security assessment not planned: Security Agent is disabled");
-    expect(decisionSentence({ agent: "pm_agent", agent_name: "" })).toBe(
-      "PM assessment not planned: PM Agent is disabled",
+  it("names the decision and the plan", () => {
+    expect(decisionSentence({ agent: "security_agent", agent_name: "Security Agent" })).toBe(
+      "Security assessment not planned: Security Agent is disabled",
     );
-    expect(planLabel(2)).toBe("Plan v2");
+    expect(planVersionLabel(2)).toBe("Plan v2");
     expect(
-      planTaskLabel({
-        agent: "engineering_agent",
-        config_version_id: "x",
-        config_version: 3,
-        semver: "0.2.0",
+      planVersionAgents({
+        tasks: [
+          { agent: "engineering_agent", config_version_id: "a", config_version: 1 },
+          { agent: "security_agent", config_version_id: "b", config_version: null },
+        ],
       }),
-    ).toBe("Engineering Agent 0.2.0 (config v3)");
-    expect(
-      planTaskLabel({ agent: "pm_agent", config_version_id: "x", config_version: null, semver: null }),
-    ).toBe("PM Agent");
-    expect(runStatusTone("waiting_for_human")).toBe("text-gap");
-    expect(RUN_STATUS_LABELS.waiting_for_human).toBe("Waiting for you");
-    const waiting = {
-      id: "x",
+    ).toBe("Engineering Agent v1 · Security Agent");
+  });
+
+  it("finds the open decision and treats a waiting run as active, not assessing", () => {
+    const run = {
       status: "waiting_for_human" as const,
-      created_at: "2026-10-05T09:00:00Z",
-      queued_at: "2026-10-05T09:00:00Z",
-      finished_at: null,
-      tasks: [],
-      plan_version: 1,
-      plan_versions: [],
       decisions: [
-        {
-          id: "d",
-          kind: "plan_escalation" as const,
-          agent: "security_agent" as const,
-          agent_name: "Security Agent",
-          agent_active: false,
-          status: "open" as const,
-          choice: null,
-          row_version: 1,
-          created_at: "2026-10-05T09:00:00Z",
-          resolved_by: null,
-          resolved_at: null,
-        },
+        { agent: "pm_agent" as const, status: "resolved" as const },
+        { agent: "security_agent" as const, status: "open" as const },
       ],
     };
-    expect(isAssessing(waiting)).toBe(false);
-    expect(isWaiting(waiting)).toBe(true);
-    expect(openDecision(waiting, "security_agent")?.id).toBe("d");
-    expect(openDecision(waiting, "pm_agent")).toBeNull();
-    expect(openDecision({ ...waiting, status: "queued" }, "security_agent")).toBeNull();
+    expect(openDecision(run as never, "security_agent")?.status).toBe("open");
+    expect(openDecision(run as never, "pm_agent")).toBeNull();
+    expect(isWaiting(run as never)).toBe(true);
+    expect(isRunActive(run as never)).toBe(true);
+    expect(isAssessing(run as never)).toBe(false);
+    expect(isRunActive({ status: "cancelled" } as never)).toBe(false);
   });
 });

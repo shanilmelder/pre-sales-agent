@@ -50,6 +50,10 @@ describe("labels", () => {
     expect(eventLabel("knowledge.catalogue_entry.reactivated")).toBe("Catalogue entry reactivated");
     expect(subjectLabel("knowledge.catalogue_entry")).toBe("Catalogue entry");
     expect(eventLabel("conflicts.conflict.escalated")).toBe("Conflict escalated");
+    expect(eventLabel("workflows.run.waiting_for_human")).toBe(
+      "Assessment run waiting for a decision",
+    );
+    expect(eventLabel("workflows.decision.resolved")).toBe("Run decision resolved");
     expect(eventLabel("intake.requirement_change.proposed")).toBe("Requirement change proposed");
     expect(eventLabel("intake.requirement_change.accepted")).toBe("Requirement change accepted");
     expect(eventLabel("intake.requirement_change.rejected")).toBe("Requirement change rejected");

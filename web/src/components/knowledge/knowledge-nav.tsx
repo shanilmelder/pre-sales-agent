@@ -1,31 +1,39 @@
 import Link from "next/link";
 
-const TABS = [
-  { id: "sources", label: "Sources", href: "/knowledge" },
-  { id: "checklists", label: "Checklists", href: "/knowledge/checklists" },
+import { CHECKLISTS_HREF, COVERAGE_HREF, SOURCES_HREF } from "@/lib/coverage";
+import { cn } from "@/lib/utils";
+
+/** Knowledge's sub-tabs, in order (the Graph tab comes with Story 3.6). */
+export const KNOWLEDGE_TABS = [
+  { id: "sources", label: "Sources", href: SOURCES_HREF },
+  { id: "checklists", label: "Checklists", href: CHECKLISTS_HREF },
+  { id: "coverage", label: "Coverage", href: COVERAGE_HREF },
 ] as const;
 
-/** Knowledge's sub-tabs as links (the Coverage tab comes with Story 3.5). */
-export function KnowledgeNav({ current }: { current: (typeof TABS)[number]["id"] }) {
+export type KnowledgeTab = (typeof KNOWLEDGE_TABS)[number]["id"];
+
+/** Knowledge's sub-tabs as links, in the mockup's segmented track. */
+export function KnowledgeNav({ current }: { current: KnowledgeTab }) {
   return (
-    <nav aria-label="Knowledge sections" className="flex gap-4 border-b border-border">
-      {TABS.map((tab) => {
-        const active = tab.id === current;
-        return (
-          <Link
-            key={tab.id}
-            href={tab.href}
-            aria-current={active ? "page" : undefined}
-            className={`-mb-px border-b-2 py-2 text-label outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-              active
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
+    <nav
+      aria-label="Knowledge sections"
+      className="flex items-center gap-0.5 self-start rounded-[9px] bg-surface-alt p-[3px]"
+    >
+      {KNOWLEDGE_TABS.map((tab) => (
+        <Link
+          key={tab.id}
+          href={tab.href}
+          aria-current={tab.id === current ? "page" : undefined}
+          className={`${cn(
+            "rounded-[7px] px-3.5 py-[5px] outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            tab.id === current
+              ? "bg-surface text-foreground"
+              : "text-text-secondary hover:text-foreground",
+          )} text-control`}
+        >
+          {tab.label}
+        </Link>
+      ))}
     </nav>
   );
 }

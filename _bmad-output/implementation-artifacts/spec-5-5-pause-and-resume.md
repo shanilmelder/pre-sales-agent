@@ -2,7 +2,7 @@
 title: 'Story 5.5 (pause and resume): a run waits for a person when an Agent is disabled'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '6a38bd5e8360caffdf029249f1bc521a0197b6d4'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -72,7 +72,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `backend/migrations/versions/20261023_0038_workflows_decisions.py`, `workflows/adapters/*` -- decisions and plan-versions tables (backfill v1 for existing runs from their tasks), CHECKs, grants (psa_app: insert/select; update only on decision status columns)
+- [x] `backend/migrations/versions/20261024_0040_workflows_decisions.py`, `workflows/adapters/*` -- decisions and plan-versions tables (backfill v1 for existing runs from their tasks), CHECKs, grants (psa_app: insert/select; update only on decision status columns)
 - [x] `workflows/domain`, `application/{runs,tasks,assessment_runs,models,public}.py`, `api/routes.py`, identity, errors, trace -- escalation, waiting, resolve, resume job, cancel
 - [x] `app/orchestration/{graph,runner}.py` -- interrupt and `Command(resume)`
 - [x] `backend/tests/test_workflows_decisions.py` + updated tests -- every matrix row, the restart row with a fresh runner
@@ -84,8 +84,8 @@ context:
 
 ## Implementation Notes
 
-- **Migration** is `0038_workflows_decisions` (revises `0037_requirement_tags`, the real revision id of `20261023_0037_intake_requirement_integration_types.py`). Besides the two tables it grants `psa_app` UPDATE on `workflows_tasks.config_version_id` and `workflows_runs.plan_version` (Re-plan needs both); the two tests that asserted those were denied now assert other columns are. Downgrade also fails the waiting runs' unfinished tasks (`model_timeout`), kills open `workflows.resume` jobs and deletes the waiting progress rows.
-- **Run status after Continue without** stays the existing domain rule: a run with a skipped task ends `partially_failed` (epic: "a run with skipped tasks never shows plain success"); the job itself ends `succeeded`. The matrix's "run finishes succeeded" was read as the job.
+- **Migration** is `0040_workflows_decisions` (revises `0039_tool_gateway`; first written as 0038 on `0037_requirement_tags`, renumbered when main with 4.2 and 5.4 was merged in). Besides the two tables it grants `psa_app` UPDATE on `workflows_tasks.config_version_id` and `workflows_runs.plan_version` (Re-plan needs both); the two tests that asserted those were denied now assert other columns are. Downgrade also fails the waiting runs' unfinished tasks (`model_timeout`), kills open `workflows.resume` jobs and deletes the waiting progress rows.
+- **Run status after Continue without**: the run ends `succeeded` when its other tasks succeeded, because a chosen skip (`agent_disabled`) doesn't count against it (user decision, 2026-10-24). `run_status` takes a `chosen_skips` count; tasks skipped by a cancel or a blocked requirement still count, a run with nothing succeeded is still `failed`, and `assessments.assessment_run.completed`'s `failed_count` leaves chosen skips out.
 - **Trace name** `workflows.run.waiting_for_human` is not a past-tense verb: `catalogue.is_valid_event_type` gained a one-entry allow-list of state events. Both new events take the run (`assessments.assessment_run`) as subject.
 - **Node** (`orchestration/graph.py`): `workflows.escalation()` runs for queued tasks only, before `begin_task`; it records the decision with insert-on-conflict-do-nothing and commits before `interrupt()`, which is called outside every `try`. On resume the node re-reads the decision: Continue without → `skip_disabled_task` (traced `assessments.task.skipped` by the system), Re-plan → runs. The runner resumes with `Command(resume={interrupt.id: choice})` for interrupts whose decision (named in the payload) is resolved, else `None`.
 - **Handler**: after the graph returns, `_wait` (under the run lock) marks the run `waiting_for_human` when a decision is open and no task is running, so a job that dies before that and runs again re-interrupts without a second decision or trace event. `finish_run` and the cancel close any decision still open. `workflows.resume` (`ResumeRun`) reuses the execute handler; the worker installs the graph runner when it claims either type.
@@ -95,6 +95,38 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1 (2026-10-24; blind-hunter, edge-case-hunter, verification-gap):
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---------|---------|----------|-------|
+| 1 | Run panel and Overview Agent run card show Waiting for you and the Resolve buttons for an open decision while the run is queued/running (second of two decisions after the first is resolved); clicks 409 "no longer open" (edge ×2, VG other, edge claim) | medium | `openDecision` ignores run status; the resolve refuses unless the run is `waiting_for_human`; Needs you (`waitingRunItems`) already gates on it | patch: gate panel and Overview card on `isWaiting(run)` |
+| 2 | Two open decisions on one run untested: partial `Command(resume)`, re-wait, trace once per decision (VG) | medium | Pre-verified: every test disables one Agent | patch: test |
+| 3 | Resolve with another run's/Opportunity's real decision id untested (VG) | medium | Pre-verified: only a non-existent id is tested; the `decision.run_id != run_id` check is the scoping guard | patch: test |
+| 4 | Live `workflows.run.waiting_for_human` frame untested in the web (VG) | medium | Pre-verified: live-update tests emit only the four Story 5.2 events | patch: test |
+| 5 | A failed task retried after its decision was cancelled (`_fail_open` → `finish_run`) never runs: node returns `{}` on a cancelled decision (edge) | low | Real: `retry_task` needs the Agent enabled, then the node sees the cancelled row and does nothing, so the task stays queued until the job dies; needs a final-attempt failure while escalated | patch: `escalation` ignores a cancelled decision when the Agent is active |
+| 6 | Re-plan button has no agent-specific accessible name (blind) | low | Two open decisions give two "Re-plan" buttons; direct correction | patch |
+| 7 | Doc comment over ~100 columns in `specialist-assessments.tsx` (blind) | low | House style is hand-wrapped at ~100 | patch |
+| 8 | Outsider resolve asserted as `403 or 404` (blind) | low | Loose assertion; one-line fix | patch |
+| 9 | Re-plan runs the Agent if it is disabled again before the resume job (blind, edge) | low | Real, but the spec makes the decision row the truth and the window is seconds; the fix adds a re-escalation path | reject |
+| 10 | 412 says "Already resolved by someone else." for a mismatch on an open decision (blind, edge) | low | An open decision is always at `row_version` 1 (only resolve/cancel bump it), so only a crafted If-Match reaches it | reject |
+| 11 | Waiting run has no timeout or notification; blocks starts (blind) | low | Intent: waiting runs are never stale; Inbox is Story 9.2 | reject |
+| 12 | Gap detection while waiting coalesces, so new inputs are not re-run (edge) | low | Frozen decision: `enqueue_run` coalesces with a waiting run | reject |
+| 13 | "is disabled" copy when the Agent is `eval_only` or active again; `agent_active` stale until reload (blind) | low | Spec's exact copy; the registry's own 409 says "is disabled" for `eval_only` too | reject |
+| 14 | Waiting for you shown to read-only readers (blind) | low | Spec: the view is read-only for sales reps, not hidden; Needs you rows are links | reject |
+| 15 | No index on `workflows_decisions.task_id` or on the trace payload lookup (blind) | low | A few rows per run; demo scale | reject |
+| 16 | Downgrade leaves a just-resolved run `queued` until stale; resume-job kill untested (blind, VG other) | low | Rollback is not on the demo path; the run fails as lost later | reject |
+| 17 | `_DESCRIBED` 4031/4042 near-duplicates; worker hardcodes `"workflows.resume"` (blind) | low | Existing variant-key pattern; `EXECUTE_JOB_TYPE` is a literal the same way | reject |
+| 18 | `next(...)` in the route could raise `StopIteration` (blind) | false | Reached only for a decision of the run's own task; `_decision_views` skips none in practice (`pragma: no cover` branch unreachable) | reject |
+| 19 | `run_task` recurses after `interrupt()` (blind) | low | Depth bounded by resumes of one node; interrupt only returns with a resume value | reject |
+| 20 | `resolveRunDecision` doesn't revalidate the Overview (blind) | low | The section calls `router.refresh()` on the queued/ended events | reject |
+| 21 | No extra-field (`extra="forbid"`) test (blind) | low | Pydantic config; negligible | reject |
+| 22 | `_wait` returns without logging graph errors (edge) | false | The node logs `orchestration.node_start_failed` for each; the task stays queued and re-runs on resume | reject |
+| 23 | Runs in flight at upgrade with Story 7.1 `agent_disabled` skips now finish `succeeded` (edge) | low | Only runs queued/running during the upgrade; finished runs keep their status | reject |
+| 24 | Backfill inner JOIN skips runs with no tasks (edge) | false | Every run is inserted with one task per specialist Agent | reject |
+| 25 | Spec says decision-column-only UPDATE grants, code also grants `plan_version`/`config_version_id` (edge claim) | low | Documented in Implementation Notes; fixing it would edit the spec | reject |
+| 26 | Eval harness's waiting-run failure untested; evals with a disabled specialist now end waiting with no Estimate (VG, VG other) | medium | Pre-verified; the DB-backed harness test is skipped by default | defer |
+| 27 | A worker claiming only `workflows.resume` untested (VG) | low | Pre-verified; the default worker claims every type | defer |
 
 ## Verification
 
