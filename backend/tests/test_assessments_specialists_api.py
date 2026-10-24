@@ -67,11 +67,17 @@ def test_before_any_run_there_is_none(client: TestClient, sync_engine: Engine) -
 
     assert mine.status_code == 200, mine.text
     empty = [{"agent": agent, "assessment": None} for agent in AGENTS]
-    assert mine.json() == {"run": None, "assessments": empty, "can_start": True}
+    assert mine.json() == {
+        "run": None,
+        "assessments": empty,
+        "can_start": True,
+        "can_resolve": True,  # Story 5.5
+    }
     assert _get(client, reader, opp["id"]).json() == {
         "run": None,
         "assessments": empty,
         "can_start": False,
+        "can_resolve": False,
     }
 
 

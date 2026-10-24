@@ -235,3 +235,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1-integration-types-and-applicable-checklists.md`
   summary: Reconcile Story 4.1's `knowledge.get_coverage` with the Story 3.5 branch, which adds its own `get_coverage` in the same `coverage.py`.
   evidence: The `story/3-5-knowledge-coverage-view` worktree adds `knowledge/application/coverage.py` and `tests/test_knowledge_coverage.py` with a different `get_coverage` shape. The second branch to merge adopts the other's API and points the banner link at `/knowledge/coverage`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-pause-and-resume.md`
+  summary: Evals with a disabled specialist now end with a `waiting_for_human` run and no Estimate (the harness never resolves decisions and doesn't claim `workflows.resume`); add a `_failures` test for the waiting branch and decide whether evals should auto-continue without.
+  evidence: Review pass 1 (verification-gap), `backend/app/evals/harness.py:386-392`; the DB-backed harness test is skipped unless `PSA_EVAL_DATABASE_URL` is set.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-pause-and-resume.md`
+  summary: Add a worker test with `job_types=("workflows.resume",)` asserting the graph runner is installed.
+  evidence: Review pass 1 (verification-gap), `backend/app/main_worker.py` `GRAPH_JOB_TYPES`; only split deployments are affected.

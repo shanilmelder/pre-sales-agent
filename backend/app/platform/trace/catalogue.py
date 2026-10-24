@@ -18,12 +18,18 @@ EVENT_TYPE_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 # past participles here when an event needs one. This is a heuristic, not a guarantee:
 # non-past words that end in "ed" (need, seed) also pass, so reviewers still check names.
 _IRREGULAR_PAST_TENSE = frozenset({"built", "done", "lost", "made", "run", "sent", "split", "won"})
+# State events: names that report a state entered rather than a past-tense verb. Kept to the
+# few the architecture names verbatim (Story 5.5: AD-7's `workflows.run.waiting_for_human`).
+_STATE_EVENTS = frozenset({"workflows.run.waiting_for_human"})
 
 
 def is_valid_event_type(name: str) -> bool:
-    """Shape check plus the past-tense heuristic above (not a grammatical guarantee)."""
+    """Shape check plus the past-tense heuristic above (not a grammatical guarantee), or one
+    of the allow-listed state events."""
     if not EVENT_TYPE_RE.match(name):
         return False
+    if name in _STATE_EVENTS:
+        return True
     last_word = name.rsplit(".", 1)[1].rsplit("_", 1)[-1]
     return last_word.endswith("ed") or last_word in _IRREGULAR_PAST_TENSE
 
@@ -734,9 +740,10 @@ class AssessmentsAssessmentCompleted(TracePayload):
 @register
 class AssessmentsTaskSkipped(TracePayload):
     """An assessment run's task was skipped before it started because its Agent is not
-    active in the Agent Registry (Story 7.1): when the run was queued, or when its job
-    started. Subject: the run (`assessments.assessment_run`). Actor: whoever queued the run,
-    or the system when the job skipped it. Ids and the reason only; nobody is notified."""
+    active in the Agent Registry (Story 7.1): since Story 5.5, once a person chose
+    **Continue without** it and the run resumed. Subject: the run
+    (`assessments.assessment_run`). Actor: the system (`workflows.execute`). Ids and the
+    reason only."""
 
     event_type: ClassVar[str] = "assessments.task.skipped"
 
@@ -750,7 +757,9 @@ class AssessmentsTaskSkipped(TracePayload):
 @register
 class AssessmentsAssessmentRunCompleted(TracePayload):
     """Every task of an assessment run has finished. Subject: the run
-    (`assessments.assessment_run`). Actor: the system (`workflows.execute`)."""
+    (`assessments.assessment_run`). Actor: the system (`workflows.execute`).
+    `failed_count`: the tasks that neither succeeded nor were skipped by a person's choice
+    to continue without their disabled Agent (Story 5.5), so `succeeded` has none."""
 
     event_type: ClassVar[str] = "assessments.assessment_run.completed"
 
@@ -758,6 +767,42 @@ class AssessmentsAssessmentRunCompleted(TracePayload):
     task_count: int
     succeeded_count: int
     failed_count: int
+
+
+# --- workflows ----------------------------------------------------------------------------
+# Story 5.5 (pause and resume). Ids and codes only.
+
+
+@register
+class WorkflowsRunWaitingForHuman(TracePayload):
+    """An assessment run paused on an open decision: a queued task's Agent is not active, so
+    a person decides whether the run goes on without it. Appended once per decision. Subject:
+    the run (`assessments.assessment_run`). Actor: the system (`workflows.execute`)."""
+
+    event_type: ClassVar[str] = "workflows.run.waiting_for_human"
+
+    decision_id: str
+    task_id: str
+    agent: str
+    kind: Literal["plan_escalation"]
+
+
+@register
+class WorkflowsDecisionResolved(TracePayload):
+    """A person resolved a run's decision: **Continue without** the Agent, or **Re-plan**
+    (the task re-pinned to the Agent's current config version, a new plan version). The run
+    is queued to resume. Subject: the run (`assessments.assessment_run`). Actor: that
+    person. `config_version_id`: the task's pin after the decision."""
+
+    event_type: ClassVar[str] = "workflows.decision.resolved"
+
+    decision_id: str
+    task_id: str
+    agent: str
+    kind: Literal["plan_escalation"]
+    choice: Literal["continue_without", "replan"]
+    plan_version: int
+    config_version_id: str
 
 
 # --- knowledge ----------------------------------------------------------------------------

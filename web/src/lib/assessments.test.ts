@@ -24,6 +24,12 @@ import {
   skipNote,
   taskElapsed,
   taskStatusLabel,
+  decisionSentence,
+  isRunActive,
+  isWaiting,
+  openDecision,
+  planVersionAgents,
+  planVersionLabel,
 } from "@/lib/assessments";
 
 describe("assessment labels", () => {
@@ -80,6 +86,9 @@ describe("assessment labels", () => {
       queued_at: "2026-10-05T09:00:00Z",
       finished_at: null,
       tasks: [],
+      plan_version: 1,
+      decisions: [],
+      plan_versions: [],
     });
     expect(isAssessing(run("queued"))).toBe(true);
     expect(isAssessing(run("running"))).toBe(true);
@@ -343,5 +352,38 @@ describe("merged Findings", () => {
         [{ requirement: req("c", "R3") }, { requirement: req("d", "R4") }],
       ).map((r) => r.label),
     ).toEqual(["R1", "R2", "R3"]);
+  });
+});
+
+describe("waiting for a person (Story 5.5)", () => {
+  it("names the decision and the plan", () => {
+    expect(decisionSentence({ agent: "security_agent", agent_name: "Security Agent" })).toBe(
+      "Security assessment not planned: Security Agent is disabled",
+    );
+    expect(planVersionLabel(2)).toBe("Plan v2");
+    expect(
+      planVersionAgents({
+        tasks: [
+          { agent: "engineering_agent", config_version_id: "a", config_version: 1 },
+          { agent: "security_agent", config_version_id: "b", config_version: null },
+        ],
+      }),
+    ).toBe("Engineering Agent v1 · Security Agent");
+  });
+
+  it("finds the open decision and treats a waiting run as active, not assessing", () => {
+    const run = {
+      status: "waiting_for_human" as const,
+      decisions: [
+        { agent: "pm_agent" as const, status: "resolved" as const },
+        { agent: "security_agent" as const, status: "open" as const },
+      ],
+    };
+    expect(openDecision(run as never, "security_agent")?.status).toBe("open");
+    expect(openDecision(run as never, "pm_agent")).toBeNull();
+    expect(isWaiting(run as never)).toBe(true);
+    expect(isRunActive(run as never)).toBe(true);
+    expect(isAssessing(run as never)).toBe(false);
+    expect(isRunActive({ status: "cancelled" } as never)).toBe(false);
   });
 });

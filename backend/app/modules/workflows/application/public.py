@@ -4,7 +4,8 @@ use workflows only from here.
 - Other modules: `enqueue_run` (gaps, after a Gap detection), `run_in_progress` and
   `run_number` (estimates).
 - The graph's nodes (`app.orchestration`): `node_task`, `begin_task`, `lock_running_task`,
-  `complete_task`, `fail_task`, `skip_blocked_task`, `plan_of`, `error_code`.
+  `complete_task`, `fail_task`, `skip_blocked_task`, `plan_of`, `error_code`; for pausing
+  (Story 5.5) `escalation`, `skip_disabled_task` and, for the runner, `decision_choices`.
 - The worker: `install_runner` (the graph runner hook) and the job type names.
 """
 
@@ -17,6 +18,7 @@ from app.modules.workflows.application.assessment_runs import (
     cancel_run,
     get_assessments,
     latest_run_view,
+    resolve_decision,
     retry_task,
     start_run,
 )
@@ -24,11 +26,16 @@ from app.modules.workflows.application.models import (
     AssessmentRun,
     AssessmentsView,
     AssessmentTask,
+    DecisionResolution,
+    PlanVersion,
+    PlanVersionTask,
     ProgressEventData,
+    RunDecision,
     TraceEventData,
 )
 from app.modules.workflows.application.runs import (
     EXECUTE,
+    RESUME,
     GraphRun,
     GraphRunner,
     NoGraphRunnerError,
@@ -36,15 +43,24 @@ from app.modules.workflows.application.runs import (
     install_runner,
 )
 from app.modules.workflows.application.tasks import (
+    Escalation,
     NodeTask,
     begin_task,
     complete_task,
+    decision_choices,
+    escalation,
     fail_task,
     lock_running_task,
     node_task,
     skip_blocked_task,
+    skip_disabled_task,
 )
-from app.modules.workflows.domain.runs import AssessmentRunStatus, AssessmentTaskStatus
+from app.modules.workflows.domain.runs import (
+    AssessmentRunStatus,
+    AssessmentTaskStatus,
+    DecisionChoice,
+    DecisionStatus,
+)
 from app.platform.uow import UnitOfWork
 
 PRUNE_PROGRESS = _progress.PRUNE_PROGRESS
@@ -52,7 +68,8 @@ PRUNE_PROGRESS = _progress.PRUNE_PROGRESS
 
 async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     """Queue an assessment run of the Opportunity in the caller's Unit of Work (Story 5.1:
-    after every successful Gap detection). Coalesces with a run that is queued or running;
+    after every successful Gap detection). Coalesces with a run that is queued, running or
+    waiting for a person;
     returns the run's id. Never refuses with a conflict; any other error (e.g. the
     database) fails the caller's Unit of Work."""
     return await _runs.enqueue_run(uow, opportunity_id)
@@ -60,7 +77,8 @@ async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 async def run_in_progress(uow: UnitOfWork, opportunity_id: UUID) -> bool:
     """Whether one of the Opportunity's runs is queued or running (Story 8.3: the Estimate
-    tab's waiting state). No authorization; for other modules."""
+    tab's waiting state; a run waiting for a person is not). No authorization; for other
+    modules."""
     return await _repo.run_in_progress(uow, opportunity_id) is not None
 
 
@@ -79,22 +97,32 @@ async def plan_of(uow: UnitOfWork, run_id: UUID) -> list[tuple[UUID, tuple[UUID,
 __all__ = [
     "EXECUTE",
     "PRUNE_PROGRESS",
+    "RESUME",
     "AssessmentRun",
     "AssessmentRunStatus",
     "AssessmentTask",
     "AssessmentTaskStatus",
     "AssessmentsView",
+    "DecisionChoice",
+    "DecisionResolution",
+    "DecisionStatus",
+    "Escalation",
     "GraphRun",
     "GraphRunner",
     "NoGraphRunnerError",
     "NodeTask",
+    "PlanVersion",
+    "PlanVersionTask",
     "ProgressEventData",
+    "RunDecision",
     "TraceEventData",
     "begin_task",
     "cancel_run",
     "complete_task",
+    "decision_choices",
     "enqueue_run",
     "error_code",
+    "escalation",
     "fail_task",
     "get_assessments",
     "install_runner",
@@ -102,9 +130,11 @@ __all__ = [
     "lock_running_task",
     "node_task",
     "plan_of",
+    "resolve_decision",
     "retry_task",
     "run_in_progress",
     "run_number",
     "skip_blocked_task",
+    "skip_disabled_task",
     "start_run",
 ]

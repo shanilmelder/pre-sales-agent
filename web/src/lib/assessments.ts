@@ -30,6 +30,8 @@ export type AssessmentAgent = components["schemas"]["AssessmentAgent"];
 export type Recommendation = components["schemas"]["Recommendation"];
 export type Confidence = components["schemas"]["Confidence"];
 export type FindingKind = components["schemas"]["FindingKind"];
+export type RunDecision = components["schemas"]["RunDecision"];
+export type PlanVersion = components["schemas"]["PlanVersion"];
 
 /** The specialist agents by role, in the order the tab lists them. */
 export const AGENTS: readonly { value: AssessmentAgent; label: string }[] = [
@@ -126,6 +128,17 @@ export function isAssessing(run: AssessmentRun | null | undefined): boolean {
   return run?.status === "queued" || run?.status === "running";
 }
 
+/** True while the run waits for a person's decision (Story 5.5). */
+export function isWaiting(run: AssessmentRun | null | undefined): boolean {
+  return run?.status === "waiting_for_human";
+}
+
+/** True while the run is not over: queued, running or waiting for a person (it can be
+ * cancelled, and no new run can start). */
+export function isRunActive(run: AssessmentRun | null | undefined): boolean {
+  return isAssessing(run) || isWaiting(run);
+}
+
 /** The latest run's status in words. */
 export const RUN_STATUS_LABELS: Record<AssessmentRun["status"], string> = {
   queued: "Assessment queued",
@@ -134,6 +147,7 @@ export const RUN_STATUS_LABELS: Record<AssessmentRun["status"], string> = {
   partially_failed: "Assessment partly failed",
   failed: "Assessment failed",
   cancelled: "Cancelled — completed results kept",
+  waiting_for_human: "Waiting for you",
 };
 
 export function runStatusLabel(run: AssessmentRun): string {
@@ -409,6 +423,7 @@ export function runStatusTone(status: AssessmentRun["status"]): string {
     case "running":
       return "text-agent";
     case "partially_failed":
+    case "waiting_for_human":
       return "text-gap";
     case "failed":
       return "text-blocker";
@@ -423,3 +438,50 @@ export const CANCEL_RUN_TITLE = "Cancel this run?";
 export const CANCEL_RUN_DESCRIPTION = "Completed results are kept.";
 export const CANCEL_RUN_CONFIRM = "Confirm";
 export const CANCEL_RUN_KEEP = "Keep running";
+
+// --- Waiting for a person (Story 5.5) ----------------------------------------------------------
+
+export const WAITING_FOR_YOU = "Waiting for you";
+export const CONTINUE_WITHOUT = "Continue without";
+export const REPLAN = "Re-plan";
+export const ENABLE_AGENT_FIRST = "Enable the agent first";
+export const RESOLVE = "Resolve";
+export const RESOLVE_FAILED = "The decision could not be saved. Try again.";
+
+/** The run's open decision about an agent's task, if it waits on one. */
+export function openDecision(
+  run: Pick<AssessmentRun, "decisions"> | null | undefined,
+  agent: AssessmentAgent,
+): RunDecision | null {
+  return run?.decisions?.find((d) => d.status === "open" && d.agent === agent) ?? null;
+}
+
+/** The run's open decisions. */
+export function openDecisions(
+  run: Pick<AssessmentRun, "decisions"> | null | undefined,
+): RunDecision[] {
+  return (run?.decisions ?? []).filter((d) => d.status === "open");
+}
+
+/** "Security assessment not planned: Security Agent is disabled". */
+export function decisionSentence(decision: Pick<RunDecision, "agent" | "agent_name">): string {
+  const name = decision.agent_name || agentLabel(decision.agent);
+  const area = name.replace(/ Agent$/, "");
+  return `${area} assessment not planned: ${name} is disabled`;
+}
+
+/** "Plan v2". */
+export function planVersionLabel(version: number): string {
+  return `Plan v${version}`;
+}
+
+/** One plan version's Agents and their config versions: "Engineering Agent v1 · PM Agent v1". */
+export function planVersionAgents(plan: Pick<PlanVersion, "tasks">): string {
+  return plan.tasks
+    .map((t) =>
+      t.config_version === null
+        ? agentLabel(t.agent)
+        : `${agentLabel(t.agent)} v${t.config_version}`,
+    )
+    .join(" · ");
+}

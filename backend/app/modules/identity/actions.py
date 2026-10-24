@@ -54,3 +54,4 @@ class Action(StrEnum):
     REGISTRY_AGENT_REGISTER = "registry.agent.register"
     REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
     REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"
+    DECISION_RESOLVE = "workflows.decision.resolve"

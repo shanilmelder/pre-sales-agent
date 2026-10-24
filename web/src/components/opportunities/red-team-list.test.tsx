@@ -111,6 +111,7 @@ const NO_ASSESSMENTS: AssessmentsView = {
     { agent: "security_agent", assessment: null },
   ],
   can_start: false,
+  can_resolve: false,
 };
 
 /** The Assessments tab body with the given Red Team view (the `useRedTeam` hook's behaviour

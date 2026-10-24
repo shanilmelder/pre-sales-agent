@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  ResolveRunDecisionInput,
+  RunDecisionResult,
   StartAssessmentResult,
   StartRedTeamReviewResult,
 } from "@/app/opportunities/actions";
@@ -17,6 +19,7 @@ import type {
   AssessmentRun,
   AssessmentsView,
   AssessmentTask,
+  RunDecision,
 } from "@/lib/assessments";
 import type { RedTeamView, Severity } from "@/lib/red-team";
 import { axeViolations } from "@/test/axe";
@@ -38,6 +41,9 @@ const cancelAssessmentRun = vi.hoisted(() =>
     (opportunityId: string, runId: unknown) => Promise<StartAssessmentResult>
   >(),
 );
+const resolveRunDecision = vi.hoisted(() =>
+  vi.fn<(input: ResolveRunDecisionInput) => Promise<RunDecisionResult>>(),
+);
 const loadAssessments = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<AssessmentsResult>>(),
 );
@@ -51,6 +57,7 @@ vi.mock("@/app/opportunities/actions", () => ({
   startAssessmentRun,
   retryAssessmentTask,
   cancelAssessmentRun,
+  resolveRunDecision,
   loadAssessments,
   startRedTeamReview,
   loadRedTeam,
@@ -204,6 +211,9 @@ function run(
     queued_at: at(0),
     finished_at: finished,
     tasks,
+    plan_version: 1,
+    decisions: [],
+    plan_versions: [],
   };
 }
 
@@ -278,6 +288,7 @@ function view(
       assessment: current[agent] ?? null,
     })),
     can_start: canStart,
+    can_resolve: canStart,
   };
 }
 
@@ -300,6 +311,7 @@ beforeEach(() => {
   startAssessmentRun.mockReset();
   retryAssessmentTask.mockReset();
   cancelAssessmentRun.mockReset();
+  resolveRunDecision.mockReset();
   loadAssessments.mockReset();
   startRedTeamReview.mockReset();
   loadRedTeam.mockReset();
@@ -774,6 +786,48 @@ function progress(event_type: string, summary: string) {
   };
 }
 
+/** A run waiting on a decision about the Security Agent (Story 5.5). */
+const DECISION_ID = "00000000-0000-7000-8000-0000000000d1";
+function decision(overrides: Partial<RunDecision> = {}): RunDecision {
+  return {
+    id: DECISION_ID,
+    kind: "plan_escalation",
+    agent: "security_agent",
+    agent_name: "Security Agent",
+    agent_active: false,
+    status: "open",
+    choice: null,
+    row_version: 1,
+    created_at: at(60),
+    resolved_by: null,
+    resolved_at: null,
+    ...overrides,
+  };
+}
+function waitingRun(open: RunDecision = decision()): AssessmentRun {
+  return {
+    ...run("waiting_for_human", [
+      task("engineering_agent", "succeeded"),
+      task("pm_agent", "succeeded"),
+      task("security_agent", "queued", null, { started_at: null }),
+    ]),
+    finished_at: null,
+    decisions: [open],
+    plan_versions: [
+      {
+        version: 1,
+        created_by: "Owner Person",
+        created_at: at(0),
+        tasks: [
+          { agent: "engineering_agent", config_version_id: "c1", config_version: 1 },
+          { agent: "pm_agent", config_version_id: "c2", config_version: 1 },
+          { agent: "security_agent", config_version_id: "c3", config_version: 2 },
+        ],
+      },
+    ],
+  };
+}
+
 describe("live updates over the event stream (Story 5.2)", () => {
   beforeEach(() => {
     FakeEventSource.instances = [];
@@ -786,6 +840,30 @@ describe("live updates over the event stream (Story 5.2)", () => {
   });
 
   const source = () => FakeEventSource.instances[0];
+
+  it("a run that starts waiting for a person re-reads, shows Waiting for you and refreshes", async () => {
+    loadAssessments.mockResolvedValue({ kind: "ok", assessments: view(running, FULL) });
+    renderSection(view(running, FULL));
+    await act(async () => {
+      source().emit("open");
+    });
+    expect(screen.queryByText("Waiting for you")).toBeNull();
+
+    loadAssessments.mockResolvedValue({ kind: "ok", assessments: view(waitingRun(), FULL) });
+    await act(async () => {
+      source().emit(
+        "workflows.run.waiting_for_human",
+        progress("workflows.run.waiting_for_human", "security_agent waiting_for_human"),
+      );
+    });
+
+    expect(loadAssessments).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByText("Waiting for you").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Security assessment not planned: Security Agent is disabled"),
+    ).toBeTruthy();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
 
   it("follows the same-origin stream: each task event re-reads the section, with no polling", async () => {
     vi.useFakeTimers();
@@ -1158,7 +1236,8 @@ describe("one Finding selected across the tab", () => {
 
 describe("a disabled Agent (Story 7.1)", () => {
   it("shows its skipped task as 'Agent disabled — assess manually', with no Retry", async () => {
-    const skipped = run("partially_failed", [
+    // Story 5.5: a person chose Continue without, so the run itself succeeded.
+    const skipped = run("succeeded", [
       task("engineering_agent", "succeeded"),
       task("pm_agent", "succeeded"),
       {
@@ -1173,6 +1252,122 @@ describe("a disabled Agent (Story 7.1)", () => {
       ["Security Agent", "Skipped", "Agent disabled — assess manually"],
     ]);
     expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+    expect(screen.getByText("Assessment complete")).toBeTruthy();
+    expect(screen.queryByTestId("run-alert")).toBeNull(); // no "partly failed" alert
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("a run waiting for a person (Story 5.5)", () => {
+  const securityCard = () =>
+    screen
+      .getAllByRole("listitem")
+      .find((li) => li.textContent?.includes("Security Agent") && li.dataset.taskStatus)!;
+
+  it("shows Waiting for you, why, and the two choices; Re-plan waits for the agent", async () => {
+    const { container } = renderSection(view(waitingRun(), FULL));
+
+    const card = securityCard();
+    expect(within(card).getByText("Waiting for you")).toBeTruthy();
+    expect(
+      within(card).getByText(
+        "Security assessment not planned: Security Agent is disabled",
+      ),
+    ).toBeTruthy();
+    expect(within(card).getByRole("button", { name: "Continue without Security Agent" }))
+      .toBeTruthy();
+    const replan = within(card).getByRole("button", { name: "Re-plan Security Agent" });
+    expect((replan as HTMLButtonElement).disabled).toBe(true);
+    const hint = document.getElementById(replan.getAttribute("aria-describedby")!);
+    expect(hint?.textContent).toBe("Enable the agent first");
+    expect(screen.getAllByText("Waiting for you").length).toBeGreaterThan(1); // header too
+    expect(screen.getByRole("button", { name: "Cancel run" })).toBeTruthy();
+    const start = screen.getByRole("button", { name: "Start new run" });
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId("plan-versions").textContent).toContain("Plan v1");
+    expect(screen.getByTestId("plan-versions").textContent).toContain("Security Agent v2");
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Continue without sends the decision's version and shows the queued run", async () => {
+    const user = userEvent.setup();
+    const queuedAgain: AssessmentRun = {
+      ...waitingRun(decision({ status: "resolved", choice: "continue_without", row_version: 2 })),
+      status: "queued",
+    };
+    resolveRunDecision.mockResolvedValue({ kind: "ok", run: queuedAgain });
+    renderSection(view(waitingRun(), FULL));
+
+    await user.click(screen.getByRole("button", { name: "Continue without Security Agent" }));
+
+    expect(resolveRunDecision).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      runId: RUN_ID,
+      decisionId: DECISION_ID,
+      rowVersion: 1,
+      choice: "continue_without",
+    });
+    expect(await screen.findByText("Assessment queued")).toBeTruthy();
+    expect(screen.queryByText("Waiting for you")).toBeNull();
+  });
+
+  it("Re-plan is enabled once the agent is active again", async () => {
+    const user = userEvent.setup();
+    resolveRunDecision.mockResolvedValue({ kind: "error" });
+    renderSection(view(waitingRun(decision({ agent_active: true })), FULL));
+
+    const replan = screen.getByRole("button", { name: "Re-plan Security Agent" });
+    expect((replan as HTMLButtonElement).disabled).toBe(false);
+    expect(replan.getAttribute("aria-describedby")).toBeNull();
+    await user.click(replan);
+    expect(resolveRunDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ choice: "replan" }),
+    );
+    expect(
+      await screen.findByText("The decision could not be saved. Try again."),
+    ).toBeTruthy();
+  });
+
+  it("a decision someone resolved first says who, and re-reads", async () => {
+    const user = userEvent.setup();
+    resolveRunDecision.mockResolvedValue({
+      kind: "stale",
+      message: "Already resolved by Sam Person.",
+    });
+    loadAssessments.mockResolvedValue({
+      kind: "ok",
+      assessments: view(
+        {
+          ...waitingRun(decision({ status: "resolved", choice: "replan", row_version: 2 })),
+          status: "running",
+        },
+        FULL,
+      ),
+    });
+    renderSection(view(waitingRun(), FULL));
+
+    await user.click(screen.getByRole("button", { name: "Continue without Security Agent" }));
+
+    expect(await screen.findByText("Already resolved by Sam Person.")).toBeTruthy();
+    expect(loadAssessments).toHaveBeenCalledWith(OPP_ID);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Re-plan/ })).toBeNull());
+  });
+
+  it("shows no decision while the run is queued again, even with another still open", async () => {
+    const queuedAgain: AssessmentRun = { ...waitingRun(), status: "queued" };
+    renderSection(view(queuedAgain, FULL));
+    expect(screen.queryByText("Waiting for you")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Continue without/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Re-plan/ })).toBeNull();
+    expect(panelRows()[2]).toEqual(["Security Agent", "Queued", "Waiting for the worker"]);
+  });
+
+  it("is read-only for those who may not resolve (sales representatives)", async () => {
+    const { container } = renderSection(view(waitingRun(), FULL, false));
+    expect(within(securityCard()).getByText("Waiting for you")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Continue without/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Re-plan/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 });

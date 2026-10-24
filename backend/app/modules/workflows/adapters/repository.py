@@ -1,5 +1,6 @@
 """Persistence for Workflow Runs, their tasks and progress rows (Story 5.2; the run and task
-code moved from `assessments`). Runs inside the caller's Unit of Work."""
+code moved from `assessments`), and the decisions and plan versions of a run (Story 5.5).
+Runs inside the caller's Unit of Work."""
 
 import json
 from collections.abc import Sequence
@@ -9,18 +10,23 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, func, insert, select, text, tuple_, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.modules.workflows.adapters.models import (
+    WorkflowDecisionRow,
+    WorkflowPlanVersionRow,
     WorkflowProgressRow,
     WorkflowRunRow,
     WorkflowTaskRow,
 )
+from app.platform.actor import Actor
 from app.platform.events import EVENTS_CHANNEL
 from app.platform.ids import new_id
 from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork
 
 _IN_PROGRESS = ("queued", "running")
+_ACTIVE = (*_IN_PROGRESS, "waiting_for_human")
 PROGRESS_SOURCE = "workflows_progress"
 
 
@@ -51,14 +57,47 @@ class TaskRecord:
 
 @dataclass(frozen=True, slots=True)
 class NewTask:
-    """A task of a new run: `queued`, or `skipped` with a `skip_reason` when its Agent was
-    not active. `config_version_id`: the registry config version it pins."""
+    """A task of a new run, inserted `queued`. `config_version_id`: the registry config
+    version it pins."""
 
     id: UUID
     agent: str
     config_version_id: UUID
-    skip_reason: str | None = None
     requires: tuple[UUID, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionRecord:
+    id: UUID
+    run_id: UUID
+    task_id: UUID
+    kind: str
+    status: str
+    choice: str | None
+    payload: dict[str, Any]
+    created_at: datetime
+    resolved_by: UUID | None
+    resolved_at: datetime | None
+    row_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class PlanTask:
+    """One task of a plan version: its id, Agent and pinned config version."""
+
+    task_id: UUID
+    agent: str
+    config_version_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class PlanVersionRecord:
+    run_id: UUID
+    version: int
+    tasks: tuple[PlanTask, ...]
+    created_by_type: str
+    created_by: str
+    created_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,7 +178,7 @@ async def insert_run(
     tasks: Sequence[NewTask],
     plan_version: int,
 ) -> None:
-    """A `queued` run with its tasks: `queued`, or `skipped` when they have a skip reason."""
+    """A `queued` run with its `queued` tasks."""
     await uow.session.execute(
         insert(WorkflowRunRow).values(
             id=run_id, opportunity_id=opportunity_id, status="queued", plan_version=plan_version
@@ -152,9 +191,8 @@ async def insert_run(
                 "id": t.id,
                 "run_id": run_id,
                 "agent": t.agent,
-                "status": "queued" if t.skip_reason is None else "skipped",
+                "status": "queued",
                 "config_version_id": t.config_version_id,
-                "skip_reason": t.skip_reason,
                 "requires": list(t.requires),
             }
             for t in tasks
@@ -202,6 +240,22 @@ async def run_in_progress(uow: UnitOfWork, opportunity_id: UUID) -> UUID | None:
     ).scalar_one_or_none()
 
 
+async def run_active(uow: UnitOfWork, opportunity_id: UUID) -> UUID | None:
+    """A run of the Opportunity still `queued`, `running` or `waiting_for_human` (the
+    oldest), if any (Story 5.5)."""
+    return (
+        await uow.session.execute(
+            select(WorkflowRunRow.id)
+            .where(
+                WorkflowRunRow.opportunity_id == opportunity_id,
+                WorkflowRunRow.status.in_(_ACTIVE),
+            )
+            .order_by(WorkflowRunRow.created_at, WorkflowRunRow.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 async def run_number(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> int | None:
     """The run's position among the Opportunity's runs, oldest first (1-based); None if it
     isn't one of them (Story 8.3)."""
@@ -227,7 +281,7 @@ async def run_number(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> int
 
 async def stale_runs(uow: UnitOfWork, opportunity_id: UUID, *, older_than: timedelta) -> list[UUID]:
     """The Opportunity's runs still `queued` or `running` more than `older_than` after they
-    were last queued."""
+    were last queued. A run `waiting_for_human` is never stale: it may wait for days."""
     rows = await uow.session.execute(
         select(WorkflowRunRow.id).where(
             WorkflowRunRow.opportunity_id == opportunity_id,
@@ -356,6 +410,236 @@ async def update_tasks(
         .execution_options(synchronize_session=False)
     )
     return [ChangedTask(id=row.id, agent=row.agent) for row in result.all()]
+
+
+async def repin_task(uow: UnitOfWork, task_id: UUID, config_version_id: UUID) -> None:
+    """Pin the task to another config version (a Re-plan, Story 5.5)."""
+    await uow.session.execute(
+        update(WorkflowTaskRow)
+        .where(WorkflowTaskRow.id == task_id)
+        .values(config_version_id=config_version_id)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def set_plan_version(uow: UnitOfWork, run_id: UUID, version: int) -> None:
+    await uow.session.execute(
+        update(WorkflowRunRow)
+        .where(WorkflowRunRow.id == run_id)
+        .values(plan_version=version)
+        .execution_options(synchronize_session=False)
+    )
+
+
+# --- decisions (Story 5.5) --------------------------------------------------------------------
+
+
+def _decision(row: WorkflowDecisionRow) -> DecisionRecord:
+    return DecisionRecord(
+        id=row.id,
+        run_id=row.run_id,
+        task_id=row.task_id,
+        kind=row.kind,
+        status=row.status,
+        choice=row.choice,
+        payload=dict(row.payload or {}),
+        created_at=row.created_at,
+        resolved_by=row.resolved_by,
+        resolved_at=row.resolved_at,
+        row_version=row.row_version,
+    )
+
+
+async def record_decision(
+    uow: UnitOfWork,
+    *,
+    decision_id: UUID,
+    run_id: UUID,
+    task_id: UUID,
+    kind: str,
+    payload: dict[str, Any],
+) -> DecisionRecord:
+    """Insert an `open` decision unless the (run, task, kind) one exists (insert on conflict
+    do nothing); returns the one stored, new or not."""
+    await uow.session.execute(
+        pg_insert(WorkflowDecisionRow)
+        .values(id=decision_id, run_id=run_id, task_id=task_id, kind=kind, payload=payload)
+        .on_conflict_do_nothing(index_elements=["run_id", "task_id", "kind"])
+    )
+    row = (
+        await uow.session.execute(
+            select(WorkflowDecisionRow)
+            .where(
+                WorkflowDecisionRow.run_id == run_id,
+                WorkflowDecisionRow.task_id == task_id,
+                WorkflowDecisionRow.kind == kind,
+            )
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    return _decision(row)
+
+
+async def get_decision(
+    uow: UnitOfWork, decision_id: UUID, *, for_update: bool = False
+) -> DecisionRecord | None:
+    statement = (
+        select(WorkflowDecisionRow)
+        .where(WorkflowDecisionRow.id == decision_id)
+        .execution_options(populate_existing=True)
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    row = (await uow.session.execute(statement)).scalar_one_or_none()
+    return None if row is None else _decision(row)
+
+
+async def task_decision(uow: UnitOfWork, task_id: UUID, kind: str) -> DecisionRecord | None:
+    row = (
+        await uow.session.execute(
+            select(WorkflowDecisionRow)
+            .where(WorkflowDecisionRow.task_id == task_id, WorkflowDecisionRow.kind == kind)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _decision(row)
+
+
+async def decisions_of(uow: UnitOfWork, run_id: UUID) -> list[DecisionRecord]:
+    """The run's decisions, oldest first."""
+    rows = await uow.session.execute(
+        select(WorkflowDecisionRow)
+        .where(WorkflowDecisionRow.run_id == run_id)
+        .order_by(WorkflowDecisionRow.created_at, WorkflowDecisionRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return [_decision(row) for row in rows.scalars()]
+
+
+async def decisions_by_id(uow: UnitOfWork, ids: Sequence[UUID]) -> dict[UUID, DecisionRecord]:
+    if not ids:
+        return {}
+    rows = await uow.session.execute(
+        select(WorkflowDecisionRow)
+        .where(WorkflowDecisionRow.id.in_(list(ids)))
+        .execution_options(populate_existing=True)
+    )
+    return {row.id: _decision(row) for row in rows.scalars()}
+
+
+async def resolve_decision(
+    uow: UnitOfWork,
+    decision_id: UUID,
+    *,
+    expected_row_version: int,
+    choice: str,
+    user_id: UUID,
+) -> int | None:
+    """`open` → `resolved` with the choice, who and when, if still at `expected_row_version`.
+    Returns the new row version; None (and no change) otherwise."""
+    result = await uow.session.execute(
+        update(WorkflowDecisionRow)
+        .where(
+            WorkflowDecisionRow.id == decision_id,
+            WorkflowDecisionRow.status == "open",
+            WorkflowDecisionRow.row_version == expected_row_version,
+        )
+        .values(
+            status="resolved",
+            choice=choice,
+            resolved_by=user_id,
+            resolved_at=func.now(),
+            row_version=WorkflowDecisionRow.row_version + 1,
+        )
+        .returning(WorkflowDecisionRow.row_version)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none()
+
+
+async def close_decisions(uow: UnitOfWork, run_id: UUID) -> list[UUID]:
+    """The run's `open` decisions → `cancelled` (its run was cancelled or ended first).
+    Returns their ids."""
+    result = await uow.session.execute(
+        update(WorkflowDecisionRow)
+        .where(WorkflowDecisionRow.run_id == run_id, WorkflowDecisionRow.status == "open")
+        .values(status="cancelled", row_version=WorkflowDecisionRow.row_version + 1)
+        .returning(WorkflowDecisionRow.id)
+        .execution_options(synchronize_session=False)
+    )
+    return list(result.scalars())
+
+
+async def waiting_traced(uow: UnitOfWork, run_id: UUID, decision_id: UUID) -> bool:
+    """Whether the run's `workflows.run.waiting_for_human` event for the decision was
+    already appended (it is appended once per decision)."""
+    found = await uow.session.execute(
+        select(TraceEvent.id)
+        .where(
+            TraceEvent.subject_id == run_id,
+            TraceEvent.event_type == "workflows.run.waiting_for_human",
+            TraceEvent.payload["decision_id"].astext == str(decision_id),
+        )
+        .limit(1)
+    )
+    return found.scalar_one_or_none() is not None
+
+
+# --- plan versions (FR-15, Story 5.5) ---------------------------------------------------------
+
+
+async def insert_plan_version(
+    uow: UnitOfWork,
+    *,
+    run_id: UUID,
+    version: int,
+    tasks: Sequence[PlanTask],
+    actor: Actor,
+) -> None:
+    await uow.session.execute(
+        insert(WorkflowPlanVersionRow).values(
+            id=new_id(),
+            run_id=run_id,
+            version=version,
+            tasks=[
+                {
+                    "task_id": str(t.task_id),
+                    "agent": t.agent,
+                    "config_version_id": str(t.config_version_id),
+                }
+                for t in tasks
+            ],
+            created_by_type=actor.type,
+            created_by=actor.id,
+        )
+    )
+
+
+async def plan_versions_of(uow: UnitOfWork, run_id: UUID) -> list[PlanVersionRecord]:
+    """Every version of the run's plan, oldest first."""
+    rows = await uow.session.execute(
+        select(WorkflowPlanVersionRow)
+        .where(WorkflowPlanVersionRow.run_id == run_id)
+        .order_by(WorkflowPlanVersionRow.version)
+    )
+    return [
+        PlanVersionRecord(
+            run_id=row.run_id,
+            version=row.version,
+            tasks=tuple(
+                PlanTask(
+                    task_id=UUID(t["task_id"]),
+                    agent=t["agent"],
+                    config_version_id=UUID(t["config_version_id"]),
+                )
+                for t in row.tasks
+            ),
+            created_by_type=row.created_by_type,
+            created_by=row.created_by,
+            created_at=row.created_at,
+        )
+        for row in rows.scalars()
+    ]
 
 
 # --- progress (AD-24, AD-30) ----------------------------------------------------------------
