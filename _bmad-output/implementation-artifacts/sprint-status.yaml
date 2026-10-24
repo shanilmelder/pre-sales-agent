@@ -126,7 +126,7 @@ development_status:
   epic-8-retrospective: optional
 
   epic-9: in-progress
-  9-1-send-review-requests-to-named-reviewers: backlog
+  9-1-send-review-requests-to-named-reviewers: ready-for-dev
   9-2-inbox-with-in-app-notifications-and-review-reminders: backlog
   9-3-reviewers-record-decisions-in-the-review-panel: backlog
   9-4-author-side-review-outcomes-and-superseded-requests: backlog
