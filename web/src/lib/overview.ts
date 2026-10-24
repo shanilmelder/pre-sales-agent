@@ -24,6 +24,7 @@ import type { Gap, GapList } from "@/lib/gaps";
 import type { RedTeamView, Severity } from "@/lib/red-team";
 import { unconfirmed, type RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
+import type { SubmissionBlockersView } from "@/lib/submission";
 import type { TraceEvent } from "@/lib/trace";
 import type { WorkspaceTabSlug } from "@/lib/workspace";
 
@@ -38,6 +39,9 @@ export type OverviewReads = {
   trace: TraceEvent[] | null;
   /** Story 6.3: for the escalated Conflicts (left out by older callers). */
   conflicts?: ConflictsView | null;
+  /** Story 8.6: the submission blockers (the API's one check), for the card when no
+   * workspace provider is above (left out by older callers). */
+  blockers?: SubmissionBlockersView | null;
 };
 
 /** How many Needs you rows the Overview shows before "+N more". */
@@ -47,7 +51,6 @@ export const NOTHING_NEEDS_ATTENTION = "Nothing needs attention.";
 export const ATTENTION_INCOMPLETE = "Some items could not be loaded, so this list may be incomplete.";
 export const NO_ESTIMATE_YET = "No Estimate yet.";
 export const NOT_RUN = "—";
-export const READY_TO_SUBMIT = "0 blockers · ready to submit";
 
 /** A card whose read failed. */
 export function couldNotLoad(what: string): string {
@@ -468,90 +471,8 @@ export function dueLabel(days: number): { text: string; overdue: boolean } | nul
 }
 
 // --- Submission blockers ---------------------------------------------------------------------
-
-export type Blocker = {
-  key: string;
-  count: number;
-  title: string;
-  meta: string;
-  tab: WorkspaceTabSlug;
-  action: string;
-};
-
-/** What stands between the Opportunity and a submission, derived from the reads: open Gaps,
- * unresolved Conflicts, Requirements without an Estimate line and unaccepted Assumptions (each
- * only when above zero), their total, and the reads that failed (so "ready" is never claimed
- * on missing data). Read-only; it blocks nothing. */
-export function blockers(data: OverviewReads): {
-  items: Blocker[];
-  total: number;
-  failed: string[];
-} {
-  const items: Blocker[] = [];
-  const failed: string[] = [];
-
-  if (data.gaps === null) failed.push(couldNotLoad("The Gaps"));
-  else {
-    const counts = gapCounts(data.gaps);
-    if (counts && !isStepStatus(counts) && counts.open > 0)
-      items.push({
-        key: "gaps",
-        count: counts.open,
-        title: `${counts.open} open ${counts.open === 1 ? "Gap" : "Gaps"}`,
-        meta: `${impactLabel(counts)}. Answer, convert to an Assumption or dismiss.`,
-        tab: "gaps",
-        action: "Open Gaps",
-      });
-  }
-
-  if (!data.conflicts) failed.push(couldNotLoad("The Conflicts"));
-  else {
-    const { unresolved, escalated } = conflictCounts(data.conflicts);
-    if (unresolved > 0)
-      items.push({
-        key: "conflicts",
-        count: unresolved,
-        title: `${unresolved} open ${unresolved === 1 ? "Conflict" : "Conflicts"}`,
-        meta:
-          escalated > 0
-            ? `Each needs a decision; ${escalated} escalated.`
-            : "Each needs a decision.",
-        tab: "conflicts",
-        action: "Open Conflicts",
-      });
-  }
-
-  if (data.estimate === null) failed.push(couldNotLoad("The Estimate"));
-  else if (data.estimate.version) {
-    const version = data.estimate.version;
-    if (version.uncovered_count > 0)
-      items.push({
-        key: "uncovered",
-        count: version.uncovered_count,
-        title: `${plural(version.uncovered_count, "Requirement")} not covered`,
-        meta: `No line in Estimate v${version.version} covers ${version.uncovered_count === 1 ? "it" : "them"}.`,
-        tab: "estimate",
-        action: "Open Estimate",
-      });
-    const waiting = version.counts.not_accepted;
-    if (waiting > 0)
-      items.push({
-        key: "assumptions",
-        count: waiting,
-        title: `${plural(waiting, "Assumption")} not accepted`,
-        meta: "Each needs a named accepting person.",
-        tab: "estimate",
-        action: "Open Estimate",
-      });
-  }
-
-  return { items, total: items.reduce((sum, b) => sum + b.count, 0), failed };
-}
-
-/** "3 blockers", "1 blocker". */
-export function blockerCountLabel(n: number): string {
-  return plural(n, "blocker");
-}
+// Story 8.6: the Submission blockers card reads the API's one check (`lib/submission.ts`);
+// nothing here derives a blocker.
 
 // --- Latest agent decision -------------------------------------------------------------------
 

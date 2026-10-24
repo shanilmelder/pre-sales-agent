@@ -10,8 +10,8 @@
 The table stays insert-only; `psa_app` already has SELECT and INSERT on it, so the grants
 are unchanged. Downgrade drops both columns (and their checks).
 
-Revision ID: 0044_registry_config_reason
-Revises: 0043_estimates_risks
+Revision ID: 0045_registry_config_reason
+Revises: 0044_submitted_status
 Create Date: 2026-10-24
 """
 
@@ -20,8 +20,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0044_registry_config_reason"
-down_revision: str | None = "0043_estimates_risks"
+revision: str = "0045_registry_config_reason"
+down_revision: str | None = "0044_submitted_status"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

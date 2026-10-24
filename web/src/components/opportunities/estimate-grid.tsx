@@ -32,6 +32,7 @@ import {
 import { RiskInspector, type RiskFields } from "@/components/opportunities/risk-inspector";
 import { RisksCard } from "@/components/opportunities/risks-card";
 import { Card } from "@/components/ui/card";
+import { submittedBanner } from "@/lib/submission";
 import { Chip } from "@/components/ui/chip";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { Pill, pillVariants } from "@/components/ui/pill";
@@ -967,6 +968,20 @@ export function EstimateSection({
       />
       {version ? (
         <>
+          {version.status === "submitted" ? (
+            <p
+              data-submitted-banner=""
+              className="flex items-center gap-2 rounded-lg border border-resolved/30 bg-resolved-tint px-4 py-2.5 text-resolved"
+            >
+              <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+              <span className="text-body-strong">
+                {submittedBanner(version.version, version.submitted_at)}
+              </span>
+              <span className="text-meta text-muted-foreground">
+                Submitted versions can&apos;t be edited.
+              </span>
+            </p>
+          ) : null}
           <VersionLifecycle version={version} />
           <UncoveredBanner count={version.uncovered_count} />
           {replaced ? (

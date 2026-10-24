@@ -3,9 +3,10 @@
 (`POST …/assumptions/{assumption_id}/accept`, `POST …/assumptions/accept-all`), editing a
 line's hours and role mix (Story 8.2, `PATCH …/estimate-lines/{line_id}`), editing an
 Assumption (Story 8.5, `PATCH …/assumptions/{assumption_id}`), converting a Gap to a Risk and
-editing a Risk (Story 8.5, `POST …/risks`, `PATCH …/risks/{risk_id}`), and exporting the
-Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`). No endpoint accepts a
-total."""
+editing a Risk (Story 8.5, `POST …/risks`, `PATCH …/risks/{risk_id}`), exporting the
+Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`), and the submission blockers
+and submitting a version (Story 8.6, `GET …/submission-blockers`,
+`POST …/estimate/versions/{version_id}/submit`). No endpoint accepts a total."""
 
 from typing import Annotated, Any
 from uuid import UUID
@@ -25,6 +26,9 @@ from app.modules.estimates.application.public import (
     Risk,
     RiskChanges,
     RiskCreate,
+    SubmissionBlockers,
+    SubmissionBlockersView,
+    SubmittedVersion,
 )
 from app.modules.identity.application.public import CurrentPrincipal
 from app.platform.concurrency import etag
@@ -58,10 +62,11 @@ router = APIRouter(prefix="/opportunities/{opportunity_id}", tags=["estimates"])
 
 @router.get("/estimate", operation_id="get_estimate", responses=_responses(404, 422))
 async def get_estimate(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) -> EstimateView:
-    """The Opportunity's current draft Estimate Version (null before the first) with its
-    sections, lines, covered Requirements and server-calculated per-role hours, subtotals and
-    totals; and its latest Estimate draft run (null before the first). Anyone who can read
-    the Opportunity."""
+    """The Opportunity's current Estimate Version (its draft, else its latest submitted one;
+    null before the first) with its sections, lines, covered Requirements and
+    server-calculated per-role hours, subtotals and totals, and its submission blockers; and
+    its latest Estimate draft run (null before the first). Anyone who can read the
+    Opportunity."""
     return await estimates.get_estimate(uow, actor, opportunity_id)
 
 
@@ -109,7 +114,11 @@ def _accept_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
         "Assumption with this id in its current draft Estimate (`not_found`)",
         "content": PROBLEM_CONTENT,
     }
-    responses[409] = {"description": _GAP_NOT_OPEN, "content": PROBLEM_CONTENT}
+    responses[409] = {
+        "description": _GAP_NOT_OPEN + "; or the current Estimate Version was submitted "
+        "(`estimate_version_not_draft`)",
+        "content": PROBLEM_CONTENT,
+    }
     return responses
 
 
@@ -325,7 +334,7 @@ def _edit_line_responses() -> dict[int | str, dict[str, Any]]:
     }
     responses[409] = {
         "description": "The line's Estimate Version is no longer the draft: a re-draft "
-        "replaced it (`estimate_version_not_draft`); nothing changed",
+        "replaced it, or it was submitted (`estimate_version_not_draft`); nothing changed",
         "content": PROBLEM_CONTENT,
     }
     responses[412] = {
@@ -422,3 +431,102 @@ async def export_estimate(
             "Cache-Control": "no-store",
         },
     )
+
+
+# --- Submission blockers and submit (Story 8.6) ---------------------------------------------
+
+
+class SubmissionBlockedProblem(Problem):
+    """The submit 409 body: for `estimate_version_blocked`, the problem with the blockers
+    found at the time of the request in its `blockers` extension member; absent for
+    `estimate_version_not_draft`."""
+
+    blockers: SubmissionBlockers | None = None
+
+
+# Inline, with refs to the components the read models already publish (`SubmissionBlockers`
+# is in `EstimateView`).
+_BLOCKED_SCHEMA = {
+    k: v
+    for k, v in SubmissionBlockedProblem.model_json_schema(
+        ref_template="#/components/schemas/{model}"
+    ).items()
+    if k != "$defs"
+}
+
+_VERSION_IF_MATCH = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description="The ETag of the Estimate Version as last read (its `row_version`), "
+        'e.g. `"1"`.',
+    ),
+]
+
+
+@router.get(
+    "/submission-blockers",
+    operation_id="get_submission_blockers",
+    responses=_responses(404, 422),
+)
+async def get_submission_blockers(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> SubmissionBlockersView:
+    """What stands between the Opportunity's current Estimate Version and its submission
+    (the one check, AD-27): open Gaps and Unknowns, unaccepted Assumptions, open Conflicts,
+    open critical Findings and uncovered Requirements, each with a link to its subject;
+    `to_baseline` stays empty until Review Requests exist. With the current version and
+    whether the caller may submit it. Anyone who can read the Opportunity."""
+    return await estimates.submission_blockers_view(uow, actor, opportunity_id)
+
+
+def _submit_responses() -> dict[int | str, dict[str, Any]]:
+    responses = _responses(422, 428)
+    responses[403] = {"description": _ACCEPT_403, "content": PROBLEM_CONTENT}
+    responses[404] = {
+        "description": "No Opportunity with this id, or the caller may not see it, or no "
+        "Estimate Version with this id in it (`not_found`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[409] = {
+        "description": "The version still has submission blockers "
+        "(`estimate_version_blocked`, listed in `blockers`), or it is not the draft "
+        "(`estimate_version_not_draft`); nothing changed",
+        "content": {PROBLEM_JSON: {"schema": _BLOCKED_SCHEMA}},
+    }
+    responses[412] = {
+        "description": "The version changed since the caller read it (`row_version_mismatch`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[200] = {
+        "description": "The submitted version",
+        "headers": {
+            "ETag": {
+                "description": "The version's new row version.",
+                "schema": {"type": "string"},
+            }
+        },
+    }
+    return responses
+
+
+@router.post(
+    "/estimate/versions/{version_id}/submit",
+    operation_id="submit_estimate_version",
+    responses=_submit_responses(),
+)
+async def submit_estimate_version(
+    opportunity_id: UUID,
+    version_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _VERSION_IF_MATCH = None,
+) -> SubmittedVersion:
+    """Submit the draft Estimate Version. The submission blockers are checked again under
+    the Opportunity's lock: any left is 409 `estimate_version_blocked` and the version stays
+    a draft. Earlier submitted versions become superseded. Submitted versions can't be
+    edited. The owner and collaborators, except sales representatives."""
+    submitted = await estimates.submit_version(uow, actor, opportunity_id, version_id, if_match)
+    response.headers["ETag"] = etag(submitted.row_version)
+    return submitted

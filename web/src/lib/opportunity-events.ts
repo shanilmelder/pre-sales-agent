@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { paths } from "@/lib/api/client";
 import { FINDING_EVENTS } from "@/lib/findings";
+import { BLOCKER_TRACE_EVENTS } from "@/lib/submission";
 
 type StreamContent =
   paths["/api/v1/opportunities/{opportunity_id}/events"]["get"]["responses"][200]["content"]["text/event-stream"];
@@ -322,6 +323,27 @@ export function useFindingsEvents(
   enabled = true,
 ): boolean {
   const status = useStream(opportunityId, FINDING_EVENTS, () => onChange(), onChange, enabled);
+  return status === "open";
+}
+
+/** Story 8.6: the frames after which the submission blockers are read again. */
+export const BLOCKER_EVENTS: readonly string[] = [
+  GAPS_CHANGED,
+  CONFLICTS_CHANGED,
+  ...BLOCKER_TRACE_EVENTS,
+  ...FINDING_EVENTS.filter((type) => !BLOCKER_TRACE_EVENTS.includes(type)),
+];
+
+/** Story 8.6: subscribe to the frames that can change the submission blockers
+ * (`BLOCKER_EVENTS`: `gaps.changed`, `conflicts.changed`, and the `estimates.*`,
+ * `assessments.*` and Requirement trace frames) while `enabled`. `onChange` runs for each and
+ * whenever the stream (re)connects. Returns whether the stream is connected. */
+export function useBlockersEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  const status = useStream(opportunityId, BLOCKER_EVENTS, () => onChange(), onChange, enabled);
   return status === "open";
 }
 

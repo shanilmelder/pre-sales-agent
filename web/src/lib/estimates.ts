@@ -54,9 +54,9 @@ export function roleMixLabel(mix: RoleMix): string {
   return ROLES.map((role) => `${role.short} ${mix[role.value]}`).join(" · ");
 }
 
-/** "Draft" or "Superseded". */
+/** "Draft", "Submitted" (Story 8.6) or "Superseded". */
 export function versionStatusLabel(status: EstimateVersion["status"]): string {
-  return status === "draft" ? "Draft" : "Superseded";
+  return status === "draft" ? "Draft" : status === "submitted" ? "Submitted" : "Superseded";
 }
 
 /** "Draft v2". */
@@ -96,12 +96,14 @@ export function sourceLabel(version: Pick<EstimateVersion, "source" | "source_ru
 export type LifecycleState = "passed" | "current" | "upcoming";
 
 /** The Version lifecycle stepper: Draft → Baseline → Superseded, the version's status current,
- * Draft passed once superseded. The API has no Baseline status, so Baseline is never current
- * or passed. */
+ * Draft passed once submitted (Story 8.6: nothing is current until Baseline) or superseded.
+ * The API has no Baseline status, so Baseline is never current or passed. */
 export function lifecycleSteps(
   status: EstimateVersion["status"],
 ): { label: string; state: LifecycleState }[] {
   const labels = ["Draft", "Baseline", "Superseded"];
+  if (status === "submitted")
+    return labels.map((label, i) => ({ label, state: i === 0 ? "passed" : "upcoming" }));
   const at = status === "draft" ? 0 : 2;
   return labels.map((label, i) => ({
     label,
@@ -113,6 +115,8 @@ export function lifecycleSteps(
 export function versionNote(
   version: Pick<EstimateVersion, "status" | "version" | "source" | "source_run">,
 ): string {
+  if (version.status === "submitted")
+    return `v${version.version} was submitted and is read only.`;
   return version.status === "draft"
     ? `v${version.version} is a draft built from ${sourceLabel(version)}. Each edit needs a reason and is traced.`
     : `v${version.version} is superseded and read only.`;

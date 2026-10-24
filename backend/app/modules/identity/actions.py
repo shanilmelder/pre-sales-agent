@@ -52,6 +52,7 @@ class Action(StrEnum):
     KNOWLEDGE_CHECKLIST_PUBLISH = "knowledge.checklist.publish"
     KNOWLEDGE_CHECKLIST_RETIRE = "knowledge.checklist.retire"
     ESTIMATE_LINE_EDIT = "estimates.estimate_line.edit"
+    ESTIMATE_VERSION_SUBMIT = "estimates.estimate_version.submit"
     CONFLICT_RESOLVE = "conflicts.conflict.resolve"
     CONFLICT_ESCALATE = "conflicts.conflict.escalate"
     FINDING_RESOLVE = "assessments.finding.resolve"

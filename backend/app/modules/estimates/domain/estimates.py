@@ -81,7 +81,11 @@ def section_rank(section: str) -> int:
 
 
 class VersionStatus(StrEnum):
+    """Story 8.6 adds `submitted`: a draft whose submission blockers were clear when it was
+    submitted. Only a `draft` is editable."""
+
     DRAFT = "draft"
+    SUBMITTED = "submitted"
     SUPERSEDED = "superseded"
 
 

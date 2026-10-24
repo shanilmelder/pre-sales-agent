@@ -1,5 +1,6 @@
 "use client";
 
+import { anchorId } from "@/lib/submission";
 import {
   CalendarRangeIcon,
   ChevronDownIcon,
@@ -295,6 +296,7 @@ export function FindingsTable({
           return (
             <div
               key={key}
+              id={row.source === "specialist" ? undefined : anchorId("finding", row.id)}
               role="row"
               aria-selected={selected}
               data-severity-row={row.severity}

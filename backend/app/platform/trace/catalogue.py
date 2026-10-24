@@ -726,6 +726,38 @@ class EstimatesEstimateVersionExported(TracePayload):
     format: Literal["xlsx", "docx"]
 
 
+# Story 8.6. Ids, version numbers and counts only, never line or Assumption text.
+
+
+@register
+class EstimatesEstimateVersionSubmitted(TracePayload):
+    """A draft Estimate Version was submitted with its submission blockers clear. Subject:
+    the version (`estimates.estimate_version`). Actor: the person who submitted it. Counts:
+    its lines and Assumptions, and earlier submitted versions it superseded."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.submitted"
+
+    version_id: str
+    version: int
+    line_count: int
+    assumption_count: int
+    superseded_count: int
+
+
+@register
+class EstimatesEstimateVersionSuperseded(TracePayload):
+    """A submitted Estimate Version was superseded by the submission of a newer one. Subject:
+    the superseded version (`estimates.estimate_version`). Actor: the person who submitted
+    the newer one."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.superseded"
+
+    version_id: str
+    version: int
+    superseded_by_version_id: str
+    superseded_by_version: int
+
+
 # Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.
 
 

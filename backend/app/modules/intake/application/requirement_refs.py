@@ -50,6 +50,14 @@ async def active_requirement_snapshots(
     ]
 
 
+async def active_requirement_ids(
+    uow: UnitOfWork, opportunity_ids: list[UUID]
+) -> dict[UUID, set[UUID]]:
+    """The ids of each of these Opportunities' active Requirements, in one query (Story 8.6:
+    the Opportunity list's blocker count)."""
+    return await repo.active_ids_in(uow, opportunity_ids)
+
+
 async def requirement_version_texts(
     uow: UnitOfWork, opportunity_id: UUID, refs: list[tuple[UUID, int]]
 ) -> dict[tuple[UUID, int], RequirementVersionText]:

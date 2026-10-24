@@ -24,7 +24,8 @@ function item(n: number): OpportunitySummary {
     created_at: "2026-10-04T10:00:00Z",
     open_gaps: 3,
     open_conflicts: 2,
-    estimate: { version: 3, total_hours: 278 },
+    blocker_count: 0,
+    estimate: { version: 3, status: "draft", total_hours: 278 },
   };
 }
 
@@ -124,17 +125,27 @@ describe("OpportunitiesTable", () => {
     expect(screen.getByText("1 conflict").className).toContain("text-blocker");
   });
 
+  it("open items: submission blockers as 'N to submit', blocker toned (Story 8.6)", async () => {
+    vi.useFakeTimers();
+    renderTable({ items: [{ ...item(1), blocker_count: 6 }, item(2)] });
+    await pastSkeleton();
+    const [, first, second] = screen.getAllByRole("row");
+    expect(first.querySelectorAll("td")[4].textContent).toBe("3 gaps · 2 conflicts · 6 to submit");
+    expect(screen.getByText("6 to submit").className).toContain("text-blocker");
+    expect(second.querySelectorAll("td")[4].textContent).toBe("3 gaps · 2 conflicts");
+  });
+
   it("Estimate: one decimal with thousands separators; a dash with no draft", async () => {
     vi.useFakeTimers();
     renderTable({
       items: [
-        { ...item(1), estimate: { version: 2, total_hours: 6644 } },
+        { ...item(1), estimate: { version: 2, status: "submitted", total_hours: 6644 } },
         { ...item(2), estimate: null },
       ],
     });
     await pastSkeleton();
     const [, first, second] = screen.getAllByRole("row");
-    expect(first.querySelectorAll("td")[5].textContent).toBe("6,644.0 hDraft v2");
+    expect(first.querySelectorAll("td")[5].textContent).toBe("6,644.0 hSubmitted v2");
     expect(second.querySelectorAll("td")[5].textContent).toBe("—No estimate");
   });
 

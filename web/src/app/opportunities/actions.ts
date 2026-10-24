@@ -7,6 +7,7 @@ import {
   getEstimate,
   getOpportunity,
   getRedTeam,
+  getSubmissionBlockers,
   listGaps,
   listOutdatedAssessments,
   listRequirements,
@@ -42,6 +43,11 @@ import {
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
+import type {
+  SubmissionBlockers,
+  SubmissionBlockersView,
+  SubmittedVersion,
+} from "@/lib/submission";
 import {
   codePointLength,
   sliceCodePoints,
@@ -3162,4 +3168,82 @@ export async function countBlockingFindings(opportunityId: unknown): Promise<num
     redTeam.kind === "ok" ? redTeam.redTeam : null,
     critic.kind === "ok" ? critic.critic : null,
   );
+}
+
+// --- submission (Story 8.6) -----------------------------------------------------------------
+
+/** The current Estimate Version's submission blockers, read again (after a blocker's
+ * event); null when they can't be read. */
+export async function loadSubmissionBlockers(
+  opportunityId: unknown,
+): Promise<SubmissionBlockersView | null> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return null;
+  const loaded = await getSubmissionBlockers(opportunityId);
+  return loaded.kind === "ok" ? loaded.blockers : null;
+}
+
+export type SubmitVersionResult =
+  | { kind: "ok"; version: SubmittedVersion }
+  | { kind: "blocked"; blockers: SubmissionBlockers | null; detail: string | null }
+  | { kind: "stale" }
+  | { kind: "not-draft" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function blockersOf(error: unknown): SubmissionBlockers | null {
+  const found = (error ?? {}) as { blockers?: unknown };
+  const blockers = found.blockers as Partial<SubmissionBlockers> | undefined;
+  return blockers && Array.isArray(blockers.to_submit) && Array.isArray(blockers.to_baseline)
+    ? (blockers as SubmissionBlockers)
+    : null;
+}
+
+/** `POST /api/v1/opportunities/{id}/estimate/versions/{vid}/submit` with `If-Match`. The API
+ * checks the blockers again under the Opportunity's lock; a 409 carries them. Logs ids and
+ * statuses only. */
+export async function submitEstimateVersion(input: unknown): Promise<SubmitVersionResult> {
+  const { opportunityId, versionId, rowVersion } = (input ?? {}) as Record<string, unknown>;
+  if (
+    typeof opportunityId !== "string" ||
+    !UUID_RE.test(opportunityId) ||
+    typeof versionId !== "string" ||
+    !UUID_RE.test(versionId) ||
+    typeof rowVersion !== "number" ||
+    !Number.isSafeInteger(rowVersion) ||
+    rowVersion < 0
+  )
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/estimate/versions/{version_id}/submit",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, version_id: versionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+      },
+    );
+    if (data) return { kind: "ok", version: data };
+    const { code, detail } = problem(error);
+    switch (response.status) {
+      case 409:
+        return code === "estimate_version_blocked"
+          ? { kind: "blocked", blockers: blockersOf(error), detail: detail ?? null }
+          : { kind: "not-draft" };
+      case 412:
+        return { kind: "stale" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(`submit estimate failed: status=${response.status} code=${String(code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`submit estimate failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
 }

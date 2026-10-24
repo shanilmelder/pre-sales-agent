@@ -1,5 +1,6 @@
 "use client";
 
+import { anchorId } from "@/lib/submission";
 import {
   CircleAlertIcon,
   CircleCheckIcon,
@@ -106,6 +107,7 @@ function AssumptionRow({
   const carried = carriedLabel(assumption);
   return (
     <li
+      id={anchorId("assumption", assumption.id)}
       data-assumption-id={assumption.id}
       data-blocker={accepted ? undefined : ""}
       data-selected={selected ? "" : undefined}

@@ -96,7 +96,7 @@ async def create_risk(
     # The draft lock first, then the Assumption lock: the order accepting takes them.
     await repo.lock_opportunity(uow, opportunity_id)
     await repo.lock_assumptions(uow, opportunity_id)
-    version = await repo.current_version(uow, opportunity_id)
+    version = await repo.draft_version(uow, opportunity_id)  # never a submitted one (Story 8.6)
     if version is None:
         raise NoDraftEstimateError(NO_DRAFT_DETAIL)
     gap = (await gaps.gap_summaries(uow, opportunity_id, [body.gap_id])).get(body.gap_id)

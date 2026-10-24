@@ -266,7 +266,10 @@ session and the Auth0 session.
    `knowledge.checklist.create`, `knowledge.checklist.edit`, `knowledge.checklist.publish`,
    `knowledge.checklist.retire`, `registry.agent.register`,
    `registry.agent_config.create`, `registry.agent.set_status`,
-   `assessments.finding.override`.
+   `assessments.finding.override`. Actions that come only from being an Opportunity's owner
+   or collaborator need no permission here (e.g. `estimates.assumption.accept` and
+   `estimates.estimate_version.submit`, Story 8.6: owner and collaborators except sales
+   representatives); add one only to grant it to a role outright.
 6. **User Management > Roles.** Create the nine roles with these exact names (the API
    ignores any other name): `presales_engineer`, `sales_representative`,
    `engineering_reviewer`, `pm_reviewer`, `security_reviewer`, `commercial`,

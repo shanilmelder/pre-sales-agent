@@ -1048,10 +1048,11 @@ export interface paths {
         };
         /**
          * Get Estimate
-         * @description The Opportunity's current draft Estimate Version (null before the first) with its
-         *     sections, lines, covered Requirements and server-calculated per-role hours, subtotals and
-         *     totals; and its latest Estimate draft run (null before the first). Anyone who can read
-         *     the Opportunity.
+         * @description The Opportunity's current Estimate Version (its draft, else its latest submitted one;
+         *     null before the first) with its sections, lines, covered Requirements and
+         *     server-calculated per-role hours, subtotals and totals, and its submission blockers; and
+         *     its latest Estimate draft run (null before the first). Anyone who can read the
+         *     Opportunity.
          */
         get: operations["get_estimate"];
         put?: never;
@@ -1242,6 +1243,53 @@ export interface paths {
         get: operations["export_estimate"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/submission-blockers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Submission Blockers
+         * @description What stands between the Opportunity's current Estimate Version and its submission
+         *     (the one check, AD-27): open Gaps and Unknowns, unaccepted Assumptions, open Conflicts,
+         *     open critical Findings and uncovered Requirements, each with a link to its subject;
+         *     `to_baseline` stays empty until Review Requests exist. With the current version and
+         *     whether the caller may submit it. Anyone who can read the Opportunity.
+         */
+        get: operations["get_submission_blockers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/estimate/versions/{version_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Estimate Version
+         * @description Submit the draft Estimate Version. The submission blockers are checked again under
+         *     the Opportunity's lock: any left is 409 `estimate_version_blocked` and the version stays
+         *     a draft. Earlier submitted versions become superseded. Submitted versions can't be
+         *     edited. The owner and collaborators, except sales representatives.
+         */
+        post: operations["submit_estimate_version"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2842,6 +2890,27 @@ export interface components {
             title: string;
         };
         /**
+         * Blocker
+         * @description One thing that stands between an Estimate Version and its submission (Story 8.6):
+         *     its `kind`, the id of its subject (a Gap, Assumption, Conflict, Finding or Requirement),
+         *     a short `title` and `detail` to show, and `href`, the web path that opens it.
+         */
+        Blocker: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "gap" | "assumption" | "conflict" | "finding" | "uncovered_requirement" | "review_request";
+            /** Subject Id */
+            subject_id: string;
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /** Href */
+            href: string;
+        };
+        /**
          * CatalogueEntry
          * @description A catalogue entry at one version. `version` is the version shown (the current one
          *     unless another was asked for); `current_version` the latest. `retired` is true for a
@@ -3726,12 +3795,17 @@ export interface components {
         };
         /**
          * EstimateSummary
-         * @description A list row's current (draft) Estimate Version: its number and total hours,
-         *     Contingency included.
+         * @description A list row's current Estimate Version (its draft, else its latest submitted one): its
+         *     number, its status (`draft` or `submitted`) and total hours, Contingency included.
          */
         EstimateSummary: {
             /** Version */
             version: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "draft" | "submitted";
             /** Total Hours */
             total_hours: number;
         };
@@ -3801,10 +3875,16 @@ export interface components {
              * @description Story 8.3: for a version from the Assessments, the number of the assessment run it was built for (the Opportunity's runs, oldest first).
              */
             source_run: number | null;
+            /**
+             * Submitted At
+             * @description Story 8.6: when it was submitted; null for a version never submitted.
+             */
+            submitted_at?: string | null;
         };
         /**
          * EstimateView
-         * @description The Opportunity's current (draft) Estimate Version, null before the first, and its
+         * @description The Opportunity's current Estimate Version (its draft, else its latest submitted one:
+         *     Story 8.6), null before the first, and its
          *     latest draft run, null before the first. `can_start_draft`: whether the caller may start
          *     (retry) a draft; `can_accept_assumptions`: whether the caller may accept Assumptions;
          *     `can_export`: whether the caller may export the Estimate (Story 8.8); `can_edit_lines`:
@@ -3836,6 +3916,13 @@ export interface components {
              * @description Story 8.3: whether an assessment run of the Opportunity is queued or running (the Estimate is built when it finishes).
              */
             assessment_running: boolean;
+            /** @description Story 8.6: the current version's submission blockers. */
+            blockers: components["schemas"]["SubmissionBlockers"];
+            /**
+             * Can Submit
+             * @description Story 8.6: whether the caller may submit and the current version is a draft. Submit is offered only while `blockers.to_submit` is empty; the API re-checks.
+             */
+            can_submit: boolean;
         };
         /**
          * EvalBar
@@ -5077,8 +5164,10 @@ export interface components {
         /**
          * OpportunitySummary
          * @description A list row. `open_gaps`: its `open` Gaps; `open_conflicts`: its open and escalated
-         *     Conflicts (the Conflicts tab badge); `estimate`: its current draft Estimate Version,
-         *     null when it has none.
+         *     Conflicts (the Conflicts tab badge); `blocker_count` (Story 8.6): how many submission
+         *     blockers its current Estimate Version has (`len(to_submit)` of
+         *     `estimates.get_submission_blockers`); `estimate`: its current Estimate Version, null
+         *     when it has none.
          */
         OpportunitySummary: {
             /** Id */
@@ -5103,6 +5192,8 @@ export interface components {
             open_gaps: number;
             /** Open Conflicts */
             open_conflicts: number;
+            /** Blocker Count */
+            blocker_count: number;
             estimate: components["schemas"]["EstimateSummary"] | null;
         };
         /**
@@ -5983,6 +6074,73 @@ export interface components {
          */
         Status: "active" | "retired";
         /**
+         * SubmissionBlockers
+         * @description `estimates.get_submission_blockers`, the only check of submittability (AD-27).
+         *     `to_submit`: open Gaps (and Unknowns), unaccepted Assumptions, open and escalated
+         *     Conflicts, open critical Findings of the current Critic and Red Team Reviews, and active
+         *     Requirements no line covers, in that order; the version can be submitted when it is
+         *     empty. `to_baseline`: pending Review Requests, always empty until Epic 9.
+         */
+        SubmissionBlockers: {
+            /** To Submit */
+            to_submit: components["schemas"]["Blocker"][];
+            /** To Baseline */
+            to_baseline: components["schemas"]["Blocker"][];
+        };
+        /**
+         * SubmissionBlockersView
+         * @description The Opportunity's submission blockers (`GET …/submission-blockers`) for the Overview
+         *     card and the header: the blockers, the current version (the draft, else the latest
+         *     submitted; null before the first) and `can_submit`: whether the caller may submit and
+         *     that version is a draft (the blockers still decide; the API re-checks them).
+         */
+        SubmissionBlockersView: {
+            /** To Submit */
+            to_submit: components["schemas"]["Blocker"][];
+            /** To Baseline */
+            to_baseline: components["schemas"]["Blocker"][];
+            version: components["schemas"]["SubmissionVersion"] | null;
+            /** Can Submit */
+            can_submit: boolean;
+        };
+        /**
+         * SubmissionVersion
+         * @description The current Estimate Version the blockers are for: its id, number, status and
+         *     `row_version` (the `If-Match` of a submission).
+         */
+        SubmissionVersion: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["VersionStatus"];
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Submitted At */
+            submitted_at: string | null;
+        };
+        /**
+         * SubmittedVersion
+         * @description A submitted Estimate Version (Story 8.6): its id, number, `submitted` status and new
+         *     `row_version`, and how many earlier submitted versions it superseded.
+         */
+        SubmittedVersion: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["VersionStatus"];
+            /** Row Version */
+            row_version: number;
+            /** Superseded Count */
+            superseded_count: number;
+        };
+        /**
          * SuggestedValue
          * @description A suggested field value and the short quote of the file it came from.
          */
@@ -6189,9 +6347,11 @@ export interface components {
         VersionSource: "model" | "assessments";
         /**
          * VersionStatus
+         * @description Story 8.6 adds `submitted`: a draft whose submission blockers were clear when it was
+         *     submitted. Only a `draft` is editable.
          * @enum {string}
          */
-        VersionStatus: "draft" | "superseded";
+        VersionStatus: "draft" | "submitted" | "superseded";
     };
     responses: never;
     parameters: never;
@@ -14316,7 +14476,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Assumption's Gap is no longer open (`gap_not_open`): it was converted or superseded; nothing changed */
+            /** @description The Assumption's Gap is no longer open (`gap_not_open`): it was converted or superseded; nothing changed; or the current Estimate Version was submitted (`estimate_version_not_draft`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14476,7 +14636,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The Assumption's Gap is no longer open (`gap_not_open`): it was converted or superseded; nothing changed */
+            /** @description The Assumption's Gap is no longer open (`gap_not_open`): it was converted or superseded; nothing changed; or the current Estimate Version was submitted (`estimate_version_not_draft`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15254,7 +15414,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The line's Estimate Version is no longer the draft: a re-draft replaced it (`estimate_version_not_draft`); nothing changed */
+            /** @description The line's Estimate Version is no longer the draft: a re-draft replaced it, or it was submitted (`estimate_version_not_draft`); nothing changed */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15482,6 +15642,321 @@ export interface operations {
             };
             /** @description The Opportunity id is not a UUID, or `format` is missing or not `xlsx` or `docx` (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_submission_blockers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionBlockersView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    submit_estimate_version: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Estimate Version as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The submitted version */
+            200: {
+                headers: {
+                    /** @description The version's new row version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmittedVersion"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, or is a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The version still has submission blockers (`estimate_version_blocked`, listed in `blockers`), or it is not the draft (`estimate_version_not_draft`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                        blockers?: components["schemas"]["SubmissionBlockers"] | null;
+                    };
+                };
+            };
+            /** @description The version changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

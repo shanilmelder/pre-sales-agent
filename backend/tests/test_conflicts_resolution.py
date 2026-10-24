@@ -306,6 +306,28 @@ def test_no_draft_estimate_line_is_not_applied(
     assert _estimate_lines(sync_engine, opp["id"]) == before
 
 
+def test_a_submitted_versions_line_is_not_changed_by_a_decision(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    """Story 8.6: once the current version is submitted, a decision leaves its lines alone."""
+    headers, opp, view = effort_conflict(client, sync_engine, db_url, gateway)
+    with sync_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "UPDATE estimates_estimate_versions SET status = 'submitted', "
+                "submitted_at = now() WHERE opportunity_id = :o AND status = 'draft'"
+            ),
+            {"o": opp["id"]},
+        )
+    before = _estimate_lines(sync_engine, opp["id"])
+
+    answer = resolve(client, headers, opp["id"], view, 1)
+
+    assert answer.status_code == 200, answer.text
+    assert (answer.json()["applied_hours"], answer.json()["not_applied"]) == (None, "no_line")
+    assert _estimate_lines(sync_engine, opp["id"]) == before
+
+
 def test_a_long_reason_is_cut_to_300_characters_on_the_line(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:

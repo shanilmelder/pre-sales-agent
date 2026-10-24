@@ -435,6 +435,22 @@ async def requirements_in(
     return [_requirement(row) for row in rows.scalars()]
 
 
+async def active_ids_in(uow: UnitOfWork, opportunity_ids: list[UUID]) -> dict[UUID, set[UUID]]:
+    """The ids of each of these Opportunities' `active` Requirements, in one query; one with
+    none maps to an empty set."""
+    found: dict[UUID, set[UUID]] = {o: set() for o in opportunity_ids}
+    if not opportunity_ids:
+        return found
+    rows = await uow.session.execute(
+        select(RequirementRow.opportunity_id, RequirementRow.id).where(
+            RequirementRow.opportunity_id.in_(opportunity_ids), RequirementRow.status == "active"
+        )
+    )
+    for opportunity_id, requirement_id in rows.all():
+        found[opportunity_id].add(requirement_id)
+    return found
+
+
 async def removed_requirements(uow: UnitOfWork, opportunity_id: UUID) -> list[RequirementRecord]:
     """The Requirements a person removed (Story 2.6): `deleted` ones, and `superseded` ones
     that are locked (split or merged away; extraction before Story 2.7 only superseded

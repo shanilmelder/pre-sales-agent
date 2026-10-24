@@ -15,10 +15,11 @@ from enum import StrEnum
 from typing import Literal
 
 from app.modules.estimates.application.models import Assumption, EstimateVersion, Totals
-from app.modules.estimates.domain.estimates import Section
+from app.modules.estimates.domain.estimates import Section, VersionStatus
 from app.modules.gaps.application.public import Gap
 
 DRAFT_LABEL = "Draft — not submitted"
+SUBMITTED_LABEL = "Submitted"
 NOT_ACCEPTED = "Not accepted"
 UNALLOCATED = "Unallocated contingency"
 NONE_ROW = "None"
@@ -261,12 +262,13 @@ def build_export(
     gaps: Sequence[Gap],
     exported_at: datetime,
 ) -> ExportDocument:
-    """The export of a draft Estimate Version: header, Estimate, Assumptions Register and
-    Clarification Questions."""
+    """The export of the current Estimate Version (a draft, or submitted: Story 8.6): header,
+    Estimate, Assumptions Register and Clarification Questions."""
+    label = SUBMITTED_LABEL if version.status is VersionStatus.SUBMITTED else DRAFT_LABEL
     return ExportDocument(
         header=(
             opportunity_title,
-            f"Estimate v{version.version} · {DRAFT_LABEL}",
+            f"Estimate v{version.version} · {label}",
             f"Exported {export_time(exported_at)}",
         ),
         tables=(
