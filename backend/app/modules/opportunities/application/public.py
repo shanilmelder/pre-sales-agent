@@ -28,11 +28,13 @@ from app.modules.opportunities.application.opportunities import (
     create,
     facets,
     get,
+    grant_reviewer_access,
     list_all,
     list_mine,
     opportunity_scope,
     readable_resource,
     remove_collaborator,
+    revoke_reviewer_access,
     update,
 )
 from app.modules.opportunities.application.trace import (
@@ -72,11 +74,13 @@ __all__ = [
     "derived_status",
     "facets",
     "get",
+    "grant_reviewer_access",
     "list_all",
     "list_mine",
     "opportunity_scope",
     "readable_resource",
     "remove_collaborator",
+    "revoke_reviewer_access",
     "trace_page",
     "update",
 ]

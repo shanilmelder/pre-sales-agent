@@ -2381,6 +2381,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/review-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Review Requests
+         * @description The Review Requests of an Estimate Version (default: the current one), oldest first,
+         *     with reviewer and sender names and statuses; the current Assessments a new request may
+         *     target; and whether the caller may send requests now. Anyone who can read the
+         *     Opportunity.
+         */
+        get: operations["list_review_requests"];
+        put?: never;
+        /**
+         * Create Review Requests
+         * @description Send Review Requests for a submitted (or in-review) Estimate Version: one per reviewer
+         *     and picked Assessment, or one per reviewer for the whole version. The version becomes
+         *     `in_review` and each reviewer can read the Opportunity. The owner and collaborators,
+         *     except sales representatives.
+         */
+        post: operations["create_review_requests"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/review-requests/reviewer-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reviewer Candidates
+         * @description Users who hold the review type's role (engineering, PM or security reviewer), except
+         *     the Estimate Version's author, whose name or email contains `q` (all of them for a blank
+         *     `q`), by name. Only those who may send Review Requests on the Opportunity.
+         */
+        get: operations["list_reviewer_candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Review Request
+         * @description Cancel a pending Review Request with a reason. The reviewer loses read access once
+         *     they have no pending request left on the Opportunity; the version goes back to
+         *     `submitted` once none is left for it.
+         */
+        post: operations["cancel_review_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2666,6 +2740,33 @@ export interface components {
             requirements: components["schemas"]["FindingRequirement"][];
             /** Injection Suspected */
             injection_suspected: boolean;
+        };
+        /**
+         * AssessmentOption
+         * @description A current Assessment that a request may target.
+         */
+        AssessmentOption: {
+            /** Id */
+            id: string;
+            /** Agent */
+            agent: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+        };
+        /**
+         * AssessmentRef
+         * @description One of the Opportunity's current Assessments, at the version the caller saw.
+         */
+        AssessmentRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
         };
         /**
          * AssessmentRun
@@ -3496,6 +3597,18 @@ export interface components {
          */
         CoverageStatus: "ready" | "partial" | "missing";
         /**
+         * CreatedReviewRequests
+         * @description The requests just sent, and the Estimate Version's status and `row_version` now.
+         */
+        CreatedReviewRequests: {
+            /** Items */
+            items: components["schemas"]["ReviewRequestView"][];
+            /** Version Status */
+            version_status: string;
+            /** Version Row Version */
+            version_row_version: number;
+        };
+        /**
          * CriticCategory
          * @enum {string}
          */
@@ -3818,8 +3931,9 @@ export interface components {
         };
         /**
          * EstimateSummary
-         * @description A list row's current Estimate Version (its draft, else its latest submitted one): its
-         *     number, its status (`draft` or `submitted`) and total hours, Contingency included.
+         * @description A list row's current Estimate Version (its draft, else its latest submitted or
+         *     in-review one): its number, its status (`draft`, `submitted` or `in_review`) and total
+         *     hours, Contingency included.
          */
         EstimateSummary: {
             /** Version */
@@ -3828,7 +3942,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "draft" | "submitted";
+            status: "draft" | "submitted" | "in_review";
             /** Total Hours */
             total_hours: number;
         };
@@ -3946,6 +4060,12 @@ export interface components {
              * @description Story 8.6: whether the caller may submit and the current version is a draft. Submit is offered only while `blockers.to_submit` is empty; the API re-checks.
              */
             can_submit: boolean;
+            /**
+             * Can Request Review
+             * @description Story 9.1: whether the caller may send Review Requests and the current version is submitted or in review.
+             * @default false
+             */
+            can_request_review: boolean;
         };
         /**
          * EvalBar
@@ -5069,6 +5189,11 @@ export interface components {
             owner: components["schemas"]["UserRef"];
             /** Collaborators */
             collaborators: components["schemas"]["UserRef"][];
+            /**
+             * Reviewers
+             * @description Story 9.1: users the Opportunity is shared with read only while one of their Review Requests is pending, by name. The owner can't remove them.
+             */
+            reviewers?: components["schemas"]["UserRef"][];
             /** Row Version */
             row_version: number;
             /**
@@ -5602,6 +5727,11 @@ export interface components {
             version: number;
         };
         /**
+         * RequestStatus
+         * @enum {string}
+         */
+        RequestStatus: "pending" | "approved" | "rejected" | "challenged" | "superseded" | "cancelled";
+        /**
          * Requirement
          * @description An active Requirement of the Opportunity with the passages it cites. `origin` is
          *     `human` once a person edited it (Story 2.6); `confirmed_at` and `confirmed_by` are set
@@ -5835,11 +5965,131 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ReviewPerson */
+        ReviewPerson: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * ReviewRequestCancel
+         * @description Cancel a pending Review Request, with a reason.
+         */
+        ReviewRequestCancel: {
+            /**
+             * Reason
+             * @description Why. Trimmed, 1 to 1,000 characters.
+             */
+            reason: string;
+        };
+        /**
+         * ReviewRequestCreate
+         * @description Send Review Requests for an Estimate Version: one per reviewer and per picked
+         *     Assessment, or one per reviewer for the whole version when no Assessment is picked.
+         */
+        ReviewRequestCreate: {
+            /**
+             * Version Id
+             * Format: uuid
+             * @description The submitted or in-review Estimate Version.
+             */
+            version_id: string;
+            review_type: components["schemas"]["ReviewType"];
+            /**
+             * Reviewer Ids
+             * @description The reviewers, each holding the review type's role; not the version's author.
+             */
+            reviewer_ids: string[];
+            /**
+             * Assessment Refs
+             * @description Assessments to review; leave empty to review the whole Estimate Version.
+             */
+            assessment_refs?: components["schemas"]["AssessmentRef"][];
+            /**
+             * Message
+             * @description Optional; trimmed, at most 2,000 characters.
+             */
+            message?: string | null;
+        };
+        /**
+         * ReviewRequestView
+         * @description A Review Request as the Estimate tab lists it. `row_version` is also the `ETag`
+         *     (`If-Match` of a cancel); `can_cancel`: whether the caller may cancel it now.
+         */
+        ReviewRequestView: {
+            /** Id */
+            id: string;
+            review_type: components["schemas"]["ReviewType"];
+            target: components["schemas"]["ReviewTarget"];
+            /** Estimate Version Id */
+            estimate_version_id: string;
+            /** Estimate Version */
+            estimate_version: number;
+            reviewer: components["schemas"]["ReviewPerson"];
+            requested_by: components["schemas"]["ReviewPerson"];
+            /** Message */
+            message: string | null;
+            status: components["schemas"]["RequestStatus"];
+            /** Cancel Reason */
+            cancel_reason: string | null;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Can Cancel */
+            can_cancel: boolean;
+        };
+        /**
+         * ReviewRequestsView
+         * @description The Review Requests of an Estimate Version, oldest first, the version they are for
+         *     (null before the first version), the current Assessments a new request may target, and
+         *     `can_create`: whether the caller may send requests for this version now.
+         */
+        ReviewRequestsView: {
+            /** Version Id */
+            version_id: string | null;
+            /** Version */
+            version: number | null;
+            /** Items */
+            items: components["schemas"]["ReviewRequestView"][];
+            /** Assessments */
+            assessments: components["schemas"]["AssessmentOption"][];
+            /** Can Create */
+            can_create: boolean;
+        };
         /**
          * ReviewStatus
          * @enum {string}
          */
         ReviewStatus: "current" | "superseded";
+        /**
+         * ReviewTarget
+         * @description What a request asks to review: `kind`, `id`, `version`, and a `label` such as
+         *     "Estimate v3" or "Security Assessment v2".
+         */
+        ReviewTarget: {
+            kind: components["schemas"]["TargetKind"];
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+        };
+        /**
+         * ReviewType
+         * @enum {string}
+         */
+        ReviewType: "engineering" | "pm" | "security";
         /**
          * Risk
          * @description A Risk of the version (Story 8.5), made from one Gap (`origin`, with
@@ -6102,7 +6352,8 @@ export interface components {
          *     `to_submit`: open Gaps (and Unknowns), unaccepted Assumptions, open and escalated
          *     Conflicts, open critical Findings of the current Critic and Red Team Reviews, and active
          *     Requirements no line covers, in that order; the version can be submitted when it is
-         *     empty. `to_baseline`: pending Review Requests, always empty until Epic 9.
+         *     empty. `to_baseline` (Story 9.1): the version's pending, rejected and challenged Review
+         *     Requests.
          */
         SubmissionBlockers: {
             /** To Submit */
@@ -6173,6 +6424,11 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /**
+         * TargetKind
+         * @enum {string}
+         */
+        TargetKind: "estimate_version" | "assessment";
         /**
          * TaskAgent
          * @description The Agents a run plans a task for, in the order they are listed: the specialists, then
@@ -6437,10 +6693,12 @@ export interface components {
         /**
          * VersionStatus
          * @description Story 8.6 adds `submitted`: a draft whose submission blockers were clear when it was
-         *     submitted. Only a `draft` is editable.
+         *     submitted. Story 9.1 adds `in_review`: a submitted version with a pending Review Request
+         *     (back to `submitted` when its last pending request is cancelled). Only a `draft` is
+         *     editable.
          * @enum {string}
          */
-        VersionStatus: "draft" | "submitted" | "superseded";
+        VersionStatus: "draft" | "submitted" | "in_review" | "superseded";
     };
     responses: never;
     parameters: never;
@@ -24850,6 +25108,669 @@ export interface operations {
             };
             /** @description A query parameter is invalid: a date that is not `YYYY-MM-DD`, `from` after `to`, or a page out of range (`validation_error`) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_review_requests: {
+        parameters: {
+            query?: {
+                version_id?: string | null;
+            };
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequestsView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_review_requests: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Estimate Version as last read (its `row_version`), e.g. `"2"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description The requests sent, and the version's new status */
+            201: {
+                headers: {
+                    /** @description The Estimate Version's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedReviewRequests"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, is a sales representative or a reviewer collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The version is a draft (`estimate_version_not_submitted`), superseded (`estimate_version_superseded`) or rejected (`estimate_version_rejected`), or a reviewer already has a pending request of that type on the same target (`review_request_duplicate`); nothing was written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Estimate Version or Review Request changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `reviewer_not_authorized_for_type`: a reviewer lacks the review type's role; `author_cannot_review`: the version's author was named; `validation_error`: no reviewer, a reviewer named twice, a message over 2,000 characters, or an Assessment that is not current at that version. The `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_reviewer_candidates: {
+        parameters: {
+            query: {
+                review_type: components["schemas"]["ReviewType"];
+                q?: string;
+                version_id?: string | null;
+            };
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSearchResult"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, is a sales representative or a reviewer collaborator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    cancel_review_request: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Review Request as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequestCancel"];
+            };
+        };
+        responses: {
+            /** @description The cancelled request */
+            200: {
+                headers: {
+                    /** @description The request's row version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRequestView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only the request's sender or the Opportunity's owner, never a sales representative */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The request is no longer pending (`review_request_not_pending`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Estimate Version or Review Request changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason; the `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

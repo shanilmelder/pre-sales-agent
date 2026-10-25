@@ -107,10 +107,16 @@ def draft_settings() -> Settings:
 # --- queueing -------------------------------------------------------------------------------
 
 
-async def queue_draft(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
-    """Insert a `queued` draft and its job. The caller holds the Opportunity's draft lock."""
+async def queue_draft(
+    uow: UnitOfWork, opportunity_id: UUID, *, requested_by: UUID | None = None
+) -> UUID:
+    """Insert a `queued` draft and its job. The caller holds the Opportunity's draft lock.
+    `requested_by` (Story 9.1): the person who started it, null when the platform queued
+    it; the version it stores records them as its author (`created_by`)."""
     draft_id = new_id()
-    await repo.insert_draft(uow, draft_id=draft_id, opportunity_id=opportunity_id)
+    await repo.insert_draft(
+        uow, draft_id=draft_id, opportunity_id=opportunity_id, requested_by=requested_by
+    )
     await enqueue(uow, DraftEstimate(draft_id=draft_id), opportunity_id=opportunity_id)
     return draft_id
 
@@ -255,6 +261,7 @@ async def accept_draft(
         dropped=validation.dropped,
         requirement_count=len(requirements),
         actor=actor,
+        created_by=record.requested_by,
     )
     await _succeed(uow, record.id)
     _log.info(
@@ -282,6 +289,7 @@ async def store_version(
     uncovered_count: int | None = None,
     source: VersionSource = VersionSource.MODEL,
     source_run_id: UUID | None = None,
+    created_by: UUID | None = None,
 ) -> StoredVersion:
     """Store `lines` as the Opportunity's new `draft` Estimate Version, superseding its
     current draft, and do what follows every new version: carry the superseded draft's
@@ -291,7 +299,8 @@ async def store_version(
     Opportunity's draft lock (`repo.lock_opportunity`).
 
     `active`: the active Requirements (id, current version) the lines were checked against;
-    `uncovered_count` defaults to how many of them no line covers."""
+    `uncovered_count` defaults to how many of them no line covers. `created_by` (Story 9.1):
+    the person who triggered the version (its author for the review rules), if known."""
     # Story 8.7: the draft version being superseded, whose accepted Assumptions are carried.
     previous = await repo.current_version(uow, opportunity_id)
     superseded = await repo.supersede_drafts(uow, opportunity_id)
@@ -309,6 +318,7 @@ async def store_version(
         proposal_status=ProposalStatus.QUEUED.value,
         source=source.value,
         source_run_id=source_run_id,
+        created_by=created_by,
         lines=[
             repo.NewLine(
                 line_id=new_id(),

@@ -7,6 +7,7 @@ import {
   getEstimate,
   getOpportunity,
   getRedTeam,
+  getReviewRequests,
   getSubmissionBlockers,
   listGaps,
   listOutdatedAssessments,
@@ -19,6 +20,7 @@ import {
   type OutdatedAssessmentsResult,
   type RedTeamResult,
   type RequirementsResult,
+  type ReviewRequestsResult,
   type SourcesResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
@@ -43,6 +45,7 @@ import {
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
+import type { CreatedReviewRequests, ReviewRequest, ReviewType } from "@/lib/reviews";
 import type {
   SubmissionBlockers,
   SubmissionBlockersView,
@@ -3244,6 +3247,180 @@ export async function submitEstimateVersion(input: unknown): Promise<SubmitVersi
     }
   } catch (thrown) {
     console.error(`submit estimate failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+// --- Review Requests (Story 9.1) ---------------------------------------------------------------
+
+/** The current Estimate Version's Review Requests, read again by the Estimate tab. */
+export async function loadReviewRequests(opportunityId: unknown): Promise<ReviewRequestsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return getReviewRequests(opportunityId);
+}
+
+const REVIEW_TYPE_VALUES: readonly ReviewType[] = ["engineering", "pm", "security"];
+
+function isReviewType(value: unknown): value is ReviewType {
+  return typeof value === "string" && (REVIEW_TYPE_VALUES as readonly string[]).includes(value);
+}
+
+/** `GET …/review-requests/reviewer-candidates`: people holding the review type's role, minus
+ * the version's author (the API decides both). A blank `q` lists the first of them. */
+export async function searchReviewerCandidates(input: unknown): Promise<SearchResult> {
+  const { opportunityId, reviewType, q } = (input ?? {}) as Record<string, unknown>;
+  if (
+    typeof opportunityId !== "string" ||
+    !UUID_RE.test(opportunityId) ||
+    !isReviewType(reviewType) ||
+    typeof q !== "string"
+  )
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/review-requests/reviewer-candidates",
+      {
+        params: {
+          path: { opportunity_id: opportunityId },
+          query: { review_type: reviewType, q: sliceCodePoints(q.trim(), SEARCH_MAX) },
+        },
+      },
+    );
+    if (data) return { kind: "ok", users: data.items };
+    console.error(`search reviewer candidates failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `search reviewer candidates failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+export type RequestReviewInput = {
+  opportunityId: string;
+  versionId: string;
+  /** The Estimate Version's `row_version`, sent as `If-Match`. */
+  rowVersion: number;
+  reviewType: ReviewType;
+  reviewerIds: string[];
+  assessmentRefs: { id: string; version: number }[];
+  message: string;
+};
+
+export type ReviewActionResult<T> =
+  | { kind: "ok"; value: T }
+  /** 412: the version or request changed first. */
+  | { kind: "stale" }
+  /** 409 or 422: the API's sentence. */
+  | { kind: "invalid"; detail: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isAssessmentRef(value: unknown): boolean {
+  const ref = (value ?? {}) as Record<string, unknown>;
+  return isId(ref.id) && isRowVersion(ref.version) && ref.version >= 1;
+}
+
+function isRequestReviewInput(input: unknown): input is RequestReviewInput {
+  if (typeof input !== "object" || input === null) return false;
+  const r = input as Record<string, unknown>;
+  return (
+    isId(r.opportunityId) &&
+    isId(r.versionId) &&
+    isRowVersion(r.rowVersion) &&
+    isReviewType(r.reviewType) &&
+    Array.isArray(r.reviewerIds) &&
+    r.reviewerIds.length > 0 &&
+    r.reviewerIds.every(isId) &&
+    Array.isArray(r.assessmentRefs) &&
+    r.assessmentRefs.every(isAssessmentRef) &&
+    typeof r.message === "string"
+  );
+}
+
+function reviewFailure<T>(label: string, status: number, error: unknown): ReviewActionResult<T> {
+  const { code, detail } = problem(error);
+  switch (status) {
+    case 409:
+    case 422:
+      return { kind: "invalid", detail: detail ?? "The request was not accepted." };
+    case 412:
+      return { kind: "stale" };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${status} code=${String(code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `POST …/review-requests` with `If-Match` the version's ETag. Logs ids and statuses only. */
+export async function requestReview(
+  input: unknown,
+): Promise<ReviewActionResult<CreatedReviewRequests>> {
+  if (!isRequestReviewInput(input)) return { kind: "error" };
+  const message = input.message.trim();
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/review-requests",
+      {
+        params: {
+          path: { opportunity_id: input.opportunityId },
+          header: { "If-Match": `"${input.rowVersion}"` },
+        },
+        body: {
+          version_id: input.versionId,
+          review_type: input.reviewType,
+          reviewer_ids: input.reviewerIds,
+          assessment_refs: input.assessmentRefs,
+          message: message ? message : null,
+        },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    return reviewFailure("request review", response.status, error);
+  } catch (thrown) {
+    console.error(`request review failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST …/review-requests/{rid}/cancel` with `If-Match` the request's ETag and a reason. */
+export async function cancelReviewRequest(
+  input: unknown,
+): Promise<ReviewActionResult<ReviewRequest>> {
+  const { opportunityId, requestId, rowVersion, reason } = (input ?? {}) as Record<
+    string,
+    unknown
+  >;
+  if (!isId(opportunityId) || !isId(requestId) || !isRowVersion(rowVersion)) {
+    return { kind: "error" };
+  }
+  if (typeof reason !== "string") return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/cancel",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, request_id: requestId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { reason: reason.trim() },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    return reviewFailure("cancel review request", response.status, error);
+  } catch (thrown) {
+    console.error(
+      `cancel review request failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }

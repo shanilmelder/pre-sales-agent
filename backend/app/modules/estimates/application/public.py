@@ -59,7 +59,18 @@ from app.modules.estimates.application.models import (
     Totals,
     UnconvertedGap,
 )
+from app.modules.estimates.application.review_status import (
+    ReviewableVersion,
+    current_reviewable_version,
+    mark_in_review,
+    mark_submitted_from_review,
+    reviewable_version,
+)
+from app.modules.estimates.application.review_status import (
+    lock_opportunity as lock_for_review,
+)
 from app.modules.estimates.application.submit import submit_version
+from app.modules.estimates.domain.estimates import REVIEWABLE, VersionStatus
 from app.modules.estimates.domain.from_assessments import AgentSizing, SizingRow
 from app.platform.uow import UnitOfWork
 
@@ -73,6 +84,7 @@ async def enqueue_draft(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 
 __all__ = [
+    "REVIEWABLE",
     "AcceptAllResult",
     "AgentSizing",
     "Assumption",
@@ -94,6 +106,7 @@ __all__ = [
     "LineRef",
     "LineRequirement",
     "OriginGap",
+    "ReviewableVersion",
     "Risk",
     "RiskChanges",
     "RiskCreate",
@@ -107,12 +120,14 @@ __all__ = [
     "Totals",
     "UnconvertedGap",
     "VersionLines",
+    "VersionStatus",
     "accept_all_assumptions",
     "accept_assumption",
     "apply_decision",
     "build_from_assessments",
     "create_risk",
     "current_estimates",
+    "current_reviewable_version",
     "current_version_lines",
     "edit_assumption",
     "edit_line",
@@ -122,6 +137,10 @@ __all__ = [
     "get_estimate",
     "get_submission_blockers",
     "lock_for_decision",
+    "lock_for_review",
+    "mark_in_review",
+    "mark_submitted_from_review",
+    "reviewable_version",
     "start_draft",
     "submission_blocker_counts",
     "submission_blockers_view",

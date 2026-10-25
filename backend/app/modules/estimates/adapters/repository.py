@@ -29,6 +29,7 @@ class DraftRecord:
     error_code: str | None
     created_at: datetime
     finished_at: datetime | None
+    requested_by: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,7 @@ class VersionRecord:
     source: str = "model"
     source_run_id: UUID | None = None
     submitted_at: datetime | None = None
+    created_by: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,12 +107,17 @@ def _draft(row: DraftRow) -> DraftRecord:
         error_code=row.error_code,
         created_at=row.created_at,
         finished_at=row.finished_at,
+        requested_by=row.requested_by,
     )
 
 
-async def insert_draft(uow: UnitOfWork, *, draft_id: UUID, opportunity_id: UUID) -> None:
+async def insert_draft(
+    uow: UnitOfWork, *, draft_id: UUID, opportunity_id: UUID, requested_by: UUID | None = None
+) -> None:
     await uow.session.execute(
-        insert(DraftRow).values(id=draft_id, opportunity_id=opportunity_id, status="queued")
+        insert(DraftRow).values(
+            id=draft_id, opportunity_id=opportunity_id, status="queued", requested_by=requested_by
+        )
     )
 
 
@@ -224,6 +231,7 @@ def _version(row: EstimateVersionRow) -> VersionRecord:
         source=row.source,
         source_run_id=row.source_run_id,
         submitted_at=row.submitted_at,
+        created_by=row.created_by,
     )
 
 
@@ -267,8 +275,10 @@ async def insert_version(
     proposal_status: str | None = None,
     source: str = "model",
     source_run_id: UUID | None = None,
+    created_by: UUID | None = None,
 ) -> None:
-    """A `draft` Estimate Version with its lines and their Requirement links."""
+    """A `draft` Estimate Version with its lines and their Requirement links. `created_by`
+    (Story 9.1): the person who triggered it, if known."""
     await uow.session.execute(
         insert(EstimateVersionRow).values(
             id=version_id,
@@ -281,6 +291,7 @@ async def insert_version(
             proposal_status=proposal_status,
             source=source,
             source_run_id=source_run_id,
+            created_by=created_by,
             row_version=1,
         )
     )
@@ -326,19 +337,22 @@ async def has_version_from(uow: UnitOfWork, opportunity_id: UUID, source: str) -
     return found.first() is not None
 
 
-_CURRENT_STATUSES = ("draft", "submitted")
+_SENT_STATUSES = ("submitted", "in_review")
+_CURRENT_STATUSES = ("draft", *_SENT_STATUSES)
 
 
 def _current_first(rows: list[EstimateVersionRow]) -> EstimateVersionRow | None:
-    """The draft among these versions of one Opportunity, else the latest `submitted`."""
+    """The draft among these versions of one Opportunity, else the latest `submitted` or
+    `in_review` (Story 9.1) one."""
     drafts = [r for r in rows if r.status == "draft"]
-    pool = drafts or [r for r in rows if r.status == "submitted"]
+    pool = drafts or [r for r in rows if r.status in _SENT_STATUSES]
     return max(pool, key=lambda r: r.version, default=None)
 
 
 async def current_version(uow: UnitOfWork, opportunity_id: UUID) -> VersionRecord | None:
     """The Opportunity's current Estimate Version: its `draft` if it has one, otherwise its
-    latest `submitted` version (Story 8.6); superseded versions never are."""
+    latest `submitted` (Story 8.6) or `in_review` (Story 9.1) version; superseded versions
+    never are."""
     rows = await uow.session.execute(
         select(EstimateVersionRow)
         .where(
@@ -406,16 +420,35 @@ async def submit_version(
     return None if changed is None else await get_version(uow, version_id)
 
 
+async def move_status(
+    uow: UnitOfWork, version_id: UUID, *, from_status: str, to_status: str
+) -> VersionRecord | None:
+    """Story 9.1: move the version from `from_status` to `to_status` (`submitted` and
+    `in_review`), bumping its `row_version`; None (and no change) when it is not in
+    `from_status`."""
+    changed = (
+        await uow.session.execute(
+            update(EstimateVersionRow)
+            .where(EstimateVersionRow.id == version_id, EstimateVersionRow.status == from_status)
+            .values(status=to_status, row_version=EstimateVersionRow.row_version + 1)
+            .returning(EstimateVersionRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_version(uow, version_id)
+
+
 async def supersede_submitted(
     uow: UnitOfWork, opportunity_id: UUID, *, keep: UUID
 ) -> list[VersionRecord]:
-    """Mark the Opportunity's `submitted` versions other than `keep` `superseded` (bumping
-    their `row_version`); the versions as they are now, oldest first."""
+    """Mark the Opportunity's `submitted` and `in_review` (Story 9.1) versions other than
+    `keep` `superseded` (bumping their `row_version`); the versions as they are now, oldest
+    first."""
     result = await uow.session.execute(
         update(EstimateVersionRow)
         .where(
             EstimateVersionRow.opportunity_id == opportunity_id,
-            EstimateVersionRow.status == "submitted",
+            EstimateVersionRow.status.in_(_SENT_STATUSES),
             EstimateVersionRow.id != keep,
         )
         .values(status="superseded", row_version=EstimateVersionRow.row_version + 1)

@@ -18,6 +18,7 @@ import {
   initials,
   type OpportunitySummary,
 } from "@/lib/opportunities";
+import { versionStatusLabel } from "@/lib/estimates";
 import { NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
 import { useSkeletonDone } from "@/lib/use-skeleton-done";
 import { cn } from "@/lib/utils";
@@ -121,7 +122,7 @@ function Estimate({ estimate }: { estimate: OpportunitySummary["estimate"] }) {
       </span>
       <span className="block text-meta text-text-secondary">
         {estimate
-          ? `${estimate.status === "submitted" ? "Submitted" : "Draft"} v${estimate.version}`
+          ? `${versionStatusLabel(estimate.status)} v${estimate.version}`
           : "No estimate"}
       </span>
     </span>

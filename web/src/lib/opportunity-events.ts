@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { paths } from "@/lib/api/client";
 import { FINDING_EVENTS } from "@/lib/findings";
+import { REVIEW_TRACE_EVENTS } from "@/lib/reviews";
 import { BLOCKER_TRACE_EVENTS } from "@/lib/submission";
 
 type StreamContent =
@@ -344,6 +345,18 @@ export function useBlockersEvents(
   enabled = true,
 ): boolean {
   const status = useStream(opportunityId, BLOCKER_EVENTS, () => onChange(), onChange, enabled);
+  return status === "open";
+}
+
+/** Story 9.1: subscribe to the Review Request trace frames (`REVIEW_TRACE_EVENTS`) while
+ * `enabled` (the Estimate tab's Review requests card). `onChange` runs for each and whenever
+ * the stream (re)connects. Returns whether the stream is connected. */
+export function useReviewEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  const status = useStream(opportunityId, REVIEW_TRACE_EVENTS, () => onChange(), onChange, enabled);
   return status === "open";
 }
 

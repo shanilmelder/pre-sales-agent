@@ -50,6 +50,9 @@ class DraftRow(Base):
     error_code: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    requested_by: Mapped[UUID | None] = mapped_column(Uuid)
+    """Story 9.1: the person who started it (`start_draft`); null when the platform queued
+    it. The version it stores records them as its `created_by`."""
 
 
 class EstimateVersionRow(RowVersioned, Base):
@@ -59,7 +62,8 @@ class EstimateVersionRow(RowVersioned, Base):
     (`source` `assessments`, `source_run_id` the run). `proposal_status` is the state of its
     Assumption proposals (Story 8.4); null for a version that never had them queued. Story
     8.6: submitting moves the draft to `submitted` and marks earlier `submitted` versions
-    `superseded`."""
+    `superseded`. Story 9.1: a Review Request moves a submitted version to `in_review`, and
+    cancelling its last pending request moves it back."""
 
     __tablename__ = "estimates_estimate_versions"
     __table_args__ = (
@@ -70,7 +74,9 @@ class EstimateVersionRow(RowVersioned, Base):
             unique=True,
             postgresql_where=text("status = 'draft'"),
         ),
-        CheckConstraint("status IN ('draft', 'submitted', 'superseded')", name="status"),
+        CheckConstraint(
+            "status IN ('draft', 'submitted', 'in_review', 'superseded')", name="status"
+        ),
         CheckConstraint(
             "status <> 'submitted' OR submitted_at IS NOT NULL", name="submitted_has_at"
         ),
@@ -107,6 +113,10 @@ class EstimateVersionRow(RowVersioned, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """Story 8.6: when it was submitted; null for a version never submitted."""
+    created_by: Mapped[UUID | None] = mapped_column(Uuid)
+    """Story 9.1: the person (an identity user id) who triggered the version (for one from the
+    Assessments, the user who started the run); null when unknown, and then no author check
+    applies to its reviews."""
 
 
 class EstimateLineRow(Base):

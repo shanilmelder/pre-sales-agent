@@ -14,6 +14,7 @@ import type {
   EstimateView,
   SectionName,
 } from "@/lib/estimates";
+import type { ReviewRequestsView } from "@/lib/reviews";
 import { axeViolations } from "@/test/axe";
 
 const loadEstimate = vi.hoisted(() =>
@@ -22,9 +23,11 @@ const loadEstimate = vi.hoisted(() =>
 const editEstimateLine = vi.hoisted(() =>
   vi.fn<(input: EstimateLineEditInput) => Promise<EstimateLineEditResult>>(),
 );
+const loadReviewRequests = vi.hoisted(() => vi.fn());
 vi.mock("@/app/opportunities/actions", () => ({
   loadEstimate,
   editEstimateLine,
+  loadReviewRequests,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -161,6 +164,7 @@ function view(
     assessment_running: assessmentRunning,
     blockers: { to_submit: [], to_baseline: [] },
     can_submit: false,
+    can_request_review: false,
   } satisfies EstimateView;
 }
 
@@ -169,10 +173,18 @@ function building(v: EstimateVersion | null = null) {
   return view(v, null, true, true);
 }
 
-function renderSection(initial: EstimateView, singleKeyShortcuts = true) {
+function renderSection(
+  initial: EstimateView,
+  singleKeyShortcuts = true,
+  initialReviews: ReviewRequestsView | null = null,
+) {
   return render(
     <ShellProviders singleKeyShortcuts={singleKeyShortcuts}>
-      <EstimateSection opportunityId={OPP_ID} initial={initial} />
+      <EstimateSection
+        opportunityId={OPP_ID}
+        initial={initial}
+        initialReviews={initialReviews}
+      />
       <RightPane />
     </ShellProviders>,
   );
@@ -1135,7 +1147,7 @@ describe("the Estimate tab states", () => {
       within(lifecycle)
         .getAllByRole("listitem")
         .map((li) => li.getAttribute("data-step-state")),
-    ).toEqual(["current", "upcoming", "upcoming"]);
+    ).toEqual(["current", "upcoming", "upcoming", "upcoming"]);
     expect(within(lifecycle).getByText("Draft").closest("li")?.getAttribute("aria-current")).toBe(
       "step",
     );
@@ -1184,7 +1196,7 @@ describe("the Estimate tab states", () => {
       within(lifecycle)
         .getAllByRole("listitem")
         .map((li) => li.getAttribute("data-step-state")),
-    ).toEqual(["passed", "upcoming", "current"]);
+    ).toEqual(["passed", "upcoming", "upcoming", "upcoming"]);
     expect(within(lifecycle).getByText("v2 is superseded and read only.")).toBeTruthy();
     await user.click(lineButton(1));
     expect(within(pane()).queryByRole("region", { name: "Edit line" })).toBeNull();
@@ -1209,6 +1221,7 @@ describe("Submit and the submitted banner (Story 8.6)", () => {
       can_edit_lines: true,
       can_accept_assumptions: true,
       can_submit: false,
+    can_request_review: false,
     });
     expect(document.querySelector("[data-submitted-banner]")?.textContent).toContain(
       "Submitted v3, 14 Oct",
@@ -1217,5 +1230,112 @@ describe("Submit and the submitted banner (Story 8.6)", () => {
     expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Accept/ })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("Review requests on the Estimate tab (Story 9.1)", () => {
+  const inReview: EstimateVersion = {
+    ...version(3),
+    status: "in_review",
+    submitted_at: "2026-10-14T09:00:00Z",
+  };
+  const reviews = (versionId: string): ReviewRequestsView => ({
+    version_id: versionId,
+    version: 3,
+    can_create: true,
+    assessments: [],
+    items: [
+      {
+        id: "00000000-0000-7000-8000-0000000000d1",
+        review_type: "engineering",
+        target: { kind: "estimate_version", id: versionId, version: 3, label: "Estimate v3" },
+        estimate_version_id: versionId,
+        estimate_version: 3,
+        reviewer: { id: "00000000-0000-7000-8000-0000000000a1", name: "Ana Ruiz" },
+        requested_by: { id: "00000000-0000-7000-8000-0000000000f1", name: "Owner Person" },
+        message: null,
+        status: "pending",
+        cancel_reason: null,
+        row_version: 1,
+        created_at: "2026-10-24T09:00:00Z",
+        updated_at: "2026-10-24T09:00:00Z",
+        can_cancel: true,
+      },
+    ],
+  });
+
+  it("in review: the gap pill, In review current, Request review, the card", async () => {
+    const { container } = renderSection(
+      { ...view(inReview, succeeded), can_export: true, can_request_review: true },
+      true,
+      reviews(inReview.id),
+    );
+
+    expect(screen.getByText("v3 · In review").getAttribute("data-tone")).toBe("gap");
+    const lifecycle = container.querySelector("[data-lifecycle]") as HTMLElement;
+    const step = within(lifecycle).getByText("In review").closest("li");
+    expect(step?.getAttribute("aria-current")).toBe("step");
+    const toolbar = container.querySelector<HTMLElement>("[data-estimate-toolbar]")!;
+    const buttons = within(toolbar).getAllByRole("button").map((b) => b.textContent);
+    expect(buttons.at(-1)).toBe("Request review");
+    const card = screen.getByRole("region", { name: "Review requests" });
+    expect(within(card).getByText("Ana Ruiz")).toBeTruthy();
+    expect(document.querySelector("[data-submitted-banner]")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a submitted version shows Request review only with the API's flag", () => {
+    const submitted: EstimateVersion = { ...inReview, status: "submitted" };
+    const first = renderSection({ ...view(submitted, succeeded), can_request_review: false });
+    expect(screen.queryByRole("button", { name: "Request review" })).toBeNull();
+    first.unmount();
+    renderSection({ ...view(submitted, succeeded), can_request_review: true });
+    expect(screen.getByRole("button", { name: "Request review" })).toBeTruthy();
+    expect(screen.getByText("v3 · Submitted").getAttribute("data-tone")).toBe("neutral");
+  });
+
+  it("a Review Request frame reads the Estimate and the requests again", async () => {
+    class FakeSource {
+      static last: FakeSource | null = null;
+      readonly listeners = new Map<string, (() => void)[]>();
+      constructor(readonly url: string) {
+        FakeSource.last = this;
+      }
+      addEventListener(type: string, listener: () => void) {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+      }
+      close() {}
+      emit(type: string) {
+        for (const listener of this.listeners.get(type) ?? []) listener();
+      }
+    }
+    vi.stubGlobal("EventSource", FakeSource);
+    try {
+      const estimate = { ...view(inReview, succeeded), can_request_review: true };
+      const cancelled = reviews(inReview.id);
+      cancelled.items[0] = { ...cancelled.items[0]!, status: "cancelled", can_cancel: false };
+      loadEstimate.mockResolvedValue({ kind: "ok", estimate });
+      loadReviewRequests.mockResolvedValue({ kind: "ok", reviews: cancelled });
+      renderSection(estimate, true, reviews(inReview.id));
+      expect(screen.getByText("Pending")).toBeTruthy();
+
+      await act(async () => FakeSource.last!.emit("reviews.review_request.created"));
+
+      await waitFor(() => expect(loadReviewRequests).toHaveBeenCalledWith(OPP_ID));
+      expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
+      await waitFor(() => expect(screen.getByText("Cancelled")).toBeTruthy());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a draft never offers Request review or the card", () => {
+    renderSection(
+      { ...view(version(3), succeeded), can_request_review: true },
+      true,
+      reviews(version(3).id),
+    );
+    expect(screen.queryByRole("button", { name: "Request review" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Review requests" })).toBeNull();
   });
 });

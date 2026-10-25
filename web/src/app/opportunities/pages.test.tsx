@@ -1029,7 +1029,7 @@ describe("/opportunities/[id] workspace", () => {
       expect(blockerRows[1].textContent).toContain("2 Assumptions not accepted");
       expect(blockerRows[2].textContent).toContain("2 open Conflicts");
       expect(blockerRows[3].textContent).toContain("1 Requirement not covered");
-      expect(within(blockersCard).getByText("No Review Requests yet")).toBeTruthy();
+      expect(within(blockersCard).getByText("No Review Request sent yet")).toBeTruthy();
       expect(within(blockersCard).queryByText(/ready to submit/)).toBeNull();
       // The header: an aria-disabled Submit with its reason, and Resolve 8 blockers.
       const submit = screen.getByRole("button", { name: "Submit" });

@@ -15,6 +15,7 @@ from app.modules.identity.application.public import (
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
     RELATION_EXCLUDED_ROLES,
+    REVIEWER_GRANTS,
     Action,
     OverrideBasis,
     Principal,
@@ -60,6 +61,7 @@ MODULES = {
     "knowledge",
     "registry",
     "workflows",
+    "reviews",
 }
 
 
@@ -189,6 +191,8 @@ def test_resource_scoped_grants() -> None:
         Action.DECISION_RESOLVE,
         Action.FINDING_RESOLVE,
         Action.FINDING_OVERRIDE,
+        Action.REVIEW_REQUEST_CREATE,
+        Action.REVIEW_REQUEST_CANCEL,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -213,7 +217,10 @@ def test_resource_scoped_grants() -> None:
         Action.CONFLICT_ESCALATE,
         Action.DECISION_RESOLVE,
         Action.FINDING_RESOLVE,
+        Action.REVIEW_REQUEST_CREATE,
+        Action.REVIEW_REQUEST_CANCEL,
     }
+    assert REVIEWER_GRANTS == {Action.OPPORTUNITY_READ}
     assert RELATION_EXCLUDED_ROLES == {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -234,6 +241,8 @@ def test_resource_scoped_grants() -> None:
         Action.DECISION_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.FINDING_RESOLVE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.FINDING_OVERRIDE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_CANCEL: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -523,3 +532,32 @@ def test_collaborators_except_sales_reps_resolve_findings() -> None:
     assert can(colleague, Action.FINDING_RESOLVE, opportunity)
     assert not can(rep, Action.FINDING_RESOLVE, opportunity)
     assert not can(colleague, Action.FINDING_OVERRIDE, opportunity)
+
+
+# --- Review Requests (Story 9.1) ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_review_requests_for_owner_and_members_except_sales_reps(role: Role) -> None:
+    owner, owner_id = _user({role})
+    member, member_id = _user({role})
+    opportunity = _opportunity(owner_id, member_id)
+    allowed = role is not Role.SALES_REPRESENTATIVE
+    for action in (Action.REVIEW_REQUEST_CREATE, Action.REVIEW_REQUEST_CANCEL):
+        assert can(owner, action, opportunity) is allowed
+        assert can(member, action, opportunity) is allowed
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_a_reviewer_collaborator_may_only_read(role: Role) -> None:
+    _, owner_id = _user({Role.PRESALES_ENGINEER})
+    reviewer, reviewer_id = _user({role}, permissions=set())
+    opportunity = Resource(
+        type=OPPORTUNITY_RESOURCE,
+        id=uuid4(),
+        owner_id=owner_id,
+        reviewer_ids=frozenset({reviewer_id}),
+    )
+    assert can(reviewer, Action.OPPORTUNITY_READ, opportunity)
+    for action in (OWNER_GRANTS | MEMBER_GRANTS) - {Action.OPPORTUNITY_READ}:
+        assert not can(reviewer, action, opportunity), action

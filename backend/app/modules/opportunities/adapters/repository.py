@@ -117,18 +117,26 @@ async def get(uow: UnitOfWork, opportunity_id: UUID) -> OpportunityRecord | None
     return None if row is None else _record(row)
 
 
-async def collaborator_ids(uow: UnitOfWork, opportunity_id: UUID) -> list[UUID]:
-    """Collaborators in the order they were added."""
+COLLABORATOR = "collaborator"
+REVIEWER = "reviewer"
+
+
+async def collaborator_ids(
+    uow: UnitOfWork, opportunity_id: UUID, *, role: str = COLLABORATOR
+) -> list[UUID]:
+    """Collaborators with this `role` (Story 9.1: `collaborator`, or `reviewer`) in the
+    order they were added."""
     rows = await uow.session.execute(
         select(CollaboratorRow.user_id)
-        .where(CollaboratorRow.opportunity_id == opportunity_id)
+        .where(CollaboratorRow.opportunity_id == opportunity_id, CollaboratorRow.role == role)
         .order_by(CollaboratorRow.added_at, CollaboratorRow.user_id)
     )
     return list(rows.scalars())
 
 
 def involving(user_id: UUID) -> ColumnElement[bool]:
-    """Filter: Opportunities the user owns or collaborates on."""
+    """Filter: Opportunities the user owns or collaborates on (Story 9.1: as a reviewer
+    too)."""
     member = (
         select(CollaboratorRow.opportunity_id)
         .where(
@@ -275,11 +283,50 @@ async def update_fields(
 
 
 async def add_collaborator(uow: UnitOfWork, opportunity_id: UUID, user_id: UUID) -> bool:
-    """True if this call added the collaborator (False if they already were one)."""
+    """True if this call added the collaborator (False if they already were one). A reviewer
+    (Story 9.1) becomes a full collaborator."""
+    statement = pg_insert(CollaboratorRow).values(
+        opportunity_id=opportunity_id, user_id=user_id, role=COLLABORATOR
+    )
+    inserted = (
+        await uow.session.execute(
+            statement.on_conflict_do_update(
+                index_elements=[CollaboratorRow.opportunity_id, CollaboratorRow.user_id],
+                set_={"role": COLLABORATOR},
+                where=CollaboratorRow.role == REVIEWER,
+            ).returning(CollaboratorRow.user_id)
+        )
+    ).scalar_one_or_none()
+    return inserted is not None
+
+
+async def remove_collaborator(
+    uow: UnitOfWork, opportunity_id: UUID, user_id: UUID, *, role: str = COLLABORATOR
+) -> bool:
+    """True if this call removed the collaborator with this `role` (False if they were not
+    one)."""
+    deleted = (
+        await uow.session.execute(
+            delete(CollaboratorRow)
+            .where(
+                CollaboratorRow.opportunity_id == opportunity_id,
+                CollaboratorRow.user_id == user_id,
+                CollaboratorRow.role == role,
+            )
+            .returning(CollaboratorRow.user_id)
+            .execution_options(synchronize_session=False)
+        )
+    ).scalar_one_or_none()
+    return deleted is not None
+
+
+async def add_reviewer(uow: UnitOfWork, opportunity_id: UUID, user_id: UUID) -> bool:
+    """Story 9.1: share the Opportunity read only with `user_id` as a reviewer. True if this
+    call added them (False if they already were a collaborator or reviewer)."""
     inserted = (
         await uow.session.execute(
             pg_insert(CollaboratorRow)
-            .values(opportunity_id=opportunity_id, user_id=user_id)
+            .values(opportunity_id=opportunity_id, user_id=user_id, role=REVIEWER)
             .on_conflict_do_nothing(
                 index_elements=[CollaboratorRow.opportunity_id, CollaboratorRow.user_id]
             )
@@ -287,22 +334,6 @@ async def add_collaborator(uow: UnitOfWork, opportunity_id: UUID, user_id: UUID)
         )
     ).scalar_one_or_none()
     return inserted is not None
-
-
-async def remove_collaborator(uow: UnitOfWork, opportunity_id: UUID, user_id: UUID) -> bool:
-    """True if this call removed the collaborator (False if they were not one)."""
-    deleted = (
-        await uow.session.execute(
-            delete(CollaboratorRow)
-            .where(
-                CollaboratorRow.opportunity_id == opportunity_id,
-                CollaboratorRow.user_id == user_id,
-            )
-            .returning(CollaboratorRow.user_id)
-            .execution_options(synchronize_session=False)
-        )
-    ).scalar_one_or_none()
-    return deleted is not None
 
 
 async def last_changer_id(uow: UnitOfWork, opportunity_id: UUID) -> UUID | None:

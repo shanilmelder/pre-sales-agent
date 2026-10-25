@@ -34,6 +34,7 @@ from app.modules.opportunities.api.routes import router as opportunities_router
 from app.modules.registry.api.routes import denials_router as registry_denials_router
 from app.modules.registry.api.routes import evals_router as registry_evals_router
 from app.modules.registry.api.routes import router as registry_router
+from app.modules.reviews.api.routes import router as reviews_router
 from app.modules.workflows.api.routes import router as workflows_router
 from app.platform.config import Settings, get_settings
 from app.platform.db import create_engine, ping
@@ -151,6 +152,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(registry_router, prefix=API_PREFIX)
     app.include_router(registry_evals_router, prefix=API_PREFIX)
     app.include_router(registry_denials_router, prefix=API_PREFIX)
+    app.include_router(reviews_router, prefix=API_PREFIX)
     return app
 
 

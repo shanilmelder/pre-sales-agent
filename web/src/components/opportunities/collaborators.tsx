@@ -9,6 +9,7 @@ import {
   searchUsers,
 } from "@/app/opportunities/actions";
 import { useAnnounce } from "@/components/shell/live-region";
+import { Pill } from "@/components/ui/pill";
 import {
   codePointLength,
   NO_ACCESS_TO_OPPORTUNITY,
@@ -206,8 +207,22 @@ export function Collaborators({ initial }: { initial: Opportunity }) {
             ) : null}
           </li>
         ))}
+        {(opportunity.reviewers ?? []).map((reviewer) => (
+          // Story 9.1: read-only while one of their Review Requests is pending; the owner
+          // can't remove them (cancelling the request does).
+          <li
+            key={reviewer.id}
+            data-reviewer={reviewer.id}
+            className="flex h-row items-center justify-between gap-2"
+          >
+            <span className="flex items-center gap-2">
+              <span className="text-body">{reviewer.name}</span>
+              <Pill tone="agent">Reviewer</Pill>
+            </span>
+          </li>
+        ))}
       </ul>
-      {opportunity.collaborators.length === 0 ? (
+      {opportunity.collaborators.length === 0 && !opportunity.reviewers?.length ? (
         <p className="text-meta text-muted-foreground">No collaborators yet.</p>
       ) : null}
 

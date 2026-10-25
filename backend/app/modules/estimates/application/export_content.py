@@ -20,6 +20,7 @@ from app.modules.gaps.application.public import Gap
 
 DRAFT_LABEL = "Draft — not submitted"
 SUBMITTED_LABEL = "Submitted"
+IN_REVIEW_LABEL = "In review"
 NOT_ACCEPTED = "Not accepted"
 UNALLOCATED = "Unallocated contingency"
 NONE_ROW = "None"
@@ -262,9 +263,16 @@ def build_export(
     gaps: Sequence[Gap],
     exported_at: datetime,
 ) -> ExportDocument:
-    """The export of the current Estimate Version (a draft, or submitted: Story 8.6): header,
+    """The export of the current Estimate Version (a draft, or submitted: Story 8.6, or in
+    review: Story 9.1): header,
     Estimate, Assumptions Register and Clarification Questions."""
-    label = SUBMITTED_LABEL if version.status is VersionStatus.SUBMITTED else DRAFT_LABEL
+    label = (
+        IN_REVIEW_LABEL
+        if version.status is VersionStatus.IN_REVIEW
+        else SUBMITTED_LABEL
+        if version.status is VersionStatus.SUBMITTED
+        else DRAFT_LABEL
+    )
     return ExportDocument(
         header=(
             opportunity_title,

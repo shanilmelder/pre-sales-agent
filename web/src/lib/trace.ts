@@ -72,6 +72,10 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "estimates.estimate_line.edited": "Estimate line edited",
   "estimates.estimate_version.submitted": "Estimate submitted",
   "estimates.estimate_version.superseded": "Estimate Version superseded",
+  "estimates.estimate_version.review_started": "Estimate review started",
+  "estimates.estimate_version.review_ended": "Estimate review ended",
+  "reviews.review_request.created": "Review requested",
+  "reviews.review_request.cancelled": "Review Request cancelled",
   "assessments.red_team_review.completed": "Red Team Review completed",
   "assessments.critic_review.completed": "Critic Review completed",
   "assessments.finding.resolved": "Finding resolved",
@@ -124,6 +128,7 @@ export const SUBJECTS: Readonly<
   "knowledge.catalogue_entry": { label: "Catalogue entry", tab: null },
   "knowledge.checklist": { label: "Checklist", tab: null },
   "conflicts.conflict": { label: "Conflict", tab: "conflicts" },
+  "reviews.review_request": { label: "Review Request", tab: "estimate" },
 };
 
 export function subjectLabel(subjectType: string): string {

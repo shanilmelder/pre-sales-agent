@@ -76,6 +76,7 @@ from app.modules.estimates.domain.assumptions import (
 from app.modules.estimates.domain.estimates import (
     ESTIMATING_AGENT,
     IN_PROGRESS,
+    REVIEWABLE,
     ROLES,
     DraftErrorCode,
     DraftStatus,
@@ -540,6 +541,9 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         assessment_running=await _assessment_running(uow, opportunity_id),
         blockers=blockers,
         can_submit=_may_submit(actor, resource, record),
+        can_request_review=record is not None
+        and VersionStatus(record.status) in REVIEWABLE
+        and identity.can(actor, Action.REVIEW_REQUEST_CREATE, resource),
     )
 
 
@@ -577,7 +581,7 @@ async def start_draft(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -
     busy = await repo.draft_in(uow, opportunity_id, tuple(s.value for s in IN_PROGRESS))
     if busy is not None:
         raise EstimateDraftInProgressError(IN_PROGRESS_DETAIL)
-    draft_id = await queue_draft(uow, opportunity_id)
+    draft_id = await queue_draft(uow, opportunity_id, requested_by=actor.user_id)
     _log.info(
         "estimates.draft_started",
         extra={

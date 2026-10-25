@@ -18,6 +18,7 @@ import {
   acceptRequirementChange,
   addSource,
   addTextSource,
+  cancelReviewRequest,
   approveAllClarificationQuestions,
   cancelAssessmentRun,
   resolveRunDecision,
@@ -67,6 +68,8 @@ import {
   resolveConflict,
   retryAssessmentTask,
   retryParse,
+  requestReview,
+  searchReviewerCandidates,
   searchUsers,
   startAssessmentRun,
   startEstimateDraft,
@@ -2649,5 +2652,112 @@ describe("submitEstimateVersion (Story 8.6)", () => {
     expect(await submitEstimateVersion({ ...INPUT, rowVersion: "2" })).toEqual({ kind: "error" });
     expect(await submitEstimateVersion({ ...INPUT, versionId: "x" })).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("Review Requests (Story 9.1)", () => {
+  const VID = "00000000-0000-7000-8000-0000000000e3";
+  const RID = "00000000-0000-7000-8000-0000000000d1";
+  const ANA = "00000000-0000-7000-8000-0000000000a1";
+  const A1 = "00000000-0000-7000-8000-0000000000b1";
+  const INPUT = {
+    opportunityId: OPP_ID,
+    versionId: VID,
+    rowVersion: 4,
+    reviewType: "engineering",
+    reviewerIds: [ANA],
+    assessmentRefs: [{ id: A1, version: 2 }],
+    message: "  ",
+  };
+
+  it("requestReview posts with If-Match and a null message for a blank one", async () => {
+    const CREATED = { items: [], version_status: "in_review", version_row_version: 5 };
+    api.POST.mockResolvedValue({ data: CREATED, response: status(201) });
+    expect(await requestReview(INPUT)).toEqual({ kind: "ok", value: CREATED });
+    const PATH = "/api/v1/opportunities/{opportunity_id}/review-requests";
+    expect(api.POST).toHaveBeenCalledWith(PATH, {
+      params: { path: { opportunity_id: OPP_ID }, header: { "If-Match": '"4"' } },
+      body: {
+        version_id: VID,
+        review_type: "engineering",
+        reviewer_ids: [ANA],
+        assessment_refs: [{ id: A1, version: 2 }],
+        message: null,
+      },
+    });
+    await requestReview({ ...INPUT, message: "  Check L3  " });
+    expect(api.POST.mock.calls[1]![1].body.message).toBe("Check L3");
+  });
+
+  it.each([
+    [409, { code: "review_request_duplicate", detail: "Ana already has one." }, "invalid"],
+    [422, { code: "author_cannot_review", detail: "The author of v3 can't review it" }, "invalid"],
+    [412, { code: "row_version_mismatch" }, "stale"],
+    [403, { code: "forbidden" }, "forbidden"],
+    [404, { code: "not_found" }, "not-found"],
+    [500, { code: "internal_error" }, "error"],
+  ])("requestReview maps %i", async (code, error, kind) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    const expected =
+      kind === "invalid" ? { kind, detail: (error as { detail: string }).detail } : { kind };
+    expect(await requestReview(INPUT)).toEqual(expected);
+  });
+
+  it("requestReview refuses bad input without calling the API", async () => {
+    expect(await requestReview({ ...INPUT, reviewerIds: [] })).toEqual({ kind: "error" });
+    expect(await requestReview({ ...INPUT, reviewType: "legal" })).toEqual({ kind: "error" });
+    expect(await requestReview({ ...INPUT, rowVersion: "4" })).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+
+  it("cancelReviewRequest posts the trimmed reason with If-Match", async () => {
+    const CANCELLED = { id: RID, status: "cancelled", row_version: 2 };
+    api.POST.mockResolvedValue({ data: CANCELLED, response: status(200) });
+    const input = { opportunityId: OPP_ID, requestId: RID, rowVersion: 1, reason: "  Wrong one  " };
+    expect(await cancelReviewRequest(input)).toEqual({ kind: "ok", value: CANCELLED });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/cancel",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, request_id: RID },
+          header: { "If-Match": '"1"' },
+        },
+        body: { reason: "Wrong one" },
+      },
+    );
+  });
+
+  it.each([
+    [409, { code: "review_request_not_pending", detail: "Only a pending one." }, "invalid"],
+    [422, { code: "validation_error", detail: "Give a reason." }, "invalid"],
+    [412, { code: "row_version_mismatch" }, "stale"],
+    [403, { code: "forbidden" }, "forbidden"],
+    [404, { code: "not_found" }, "not-found"],
+  ])("cancelReviewRequest maps %i", async (code, error, kind) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    const input = { opportunityId: OPP_ID, requestId: RID, rowVersion: 1, reason: "Why" };
+    const expected =
+      kind === "invalid" ? { kind, detail: (error as { detail: string }).detail } : { kind };
+    expect(await cancelReviewRequest(input)).toEqual(expected);
+  });
+
+  it("searchReviewerCandidates sends the type and the trimmed query", async () => {
+    const USERS = [{ id: ANA, name: "Ana", email: "ana@ex.test" }];
+    api.GET.mockResolvedValue({ data: { items: USERS }, response: status(200) });
+    expect(
+      await searchReviewerCandidates({ opportunityId: OPP_ID, reviewType: "pm", q: "  an " }),
+    ).toEqual({ kind: "ok", users: USERS });
+    expect(api.GET).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/review-requests/reviewer-candidates",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID },
+          query: { review_type: "pm", q: "an" },
+        },
+      },
+    );
+    expect(
+      await searchReviewerCandidates({ opportunityId: OPP_ID, reviewType: "legal", q: "" }),
+    ).toEqual({ kind: "error" });
   });
 });

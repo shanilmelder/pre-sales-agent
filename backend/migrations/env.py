@@ -20,6 +20,7 @@ import app.modules.intake.adapters.models
 import app.modules.knowledge.adapters.models
 import app.modules.opportunities.adapters.models
 import app.modules.registry.adapters.models
+import app.modules.reviews.adapters.models
 import app.modules.workflows.adapters.models
 import app.platform.files
 import app.platform.jobs.models

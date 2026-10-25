@@ -233,6 +233,44 @@ class EstimateVersionBlockedError(ConflictError):
         self.extensions = {"blockers": blockers}
 
 
+class EstimateVersionNotSubmittedError(ConflictError):
+    """A Review Request was asked for an Estimate Version that is still a draft (Story 9.1)."""
+
+    code = "estimate_version_not_submitted"
+    title = "Estimate Version not submitted"
+
+
+class EstimateVersionSupersededError(ConflictError):
+    """A Review Request was asked for an Estimate Version a newer one superseded (Story
+    9.1)."""
+
+    code = "estimate_version_superseded"
+    title = "Estimate Version superseded"
+
+
+class EstimateVersionRejectedError(ConflictError):
+    """A Review Request was asked for a rejected Estimate Version (Story 9.1; the status
+    arrives with Story 9.3)."""
+
+    code = "estimate_version_rejected"
+    title = "Estimate Version rejected"
+
+
+class ReviewRequestDuplicateError(ConflictError):
+    """A reviewer already has a pending Review Request of that type on the same target
+    (Story 9.1); nothing was written."""
+
+    code = "review_request_duplicate"
+    title = "Review Request already pending"
+
+
+class ReviewRequestNotPendingError(ConflictError):
+    """A Review Request that is no longer `pending` was cancelled (Story 9.1)."""
+
+    code = "review_request_not_pending"
+    title = "Review Request not pending"
+
+
 class NoDraftEstimateError(ConflictError):
     """A Gap was converted to a Risk while the Opportunity has no draft Estimate Version
     (Story 8.5)."""
@@ -475,6 +513,20 @@ class FindingNotOverridableError(UnprocessableError):
 
     code = "finding_not_overridable"
     title = "Finding not overridable"
+
+
+class ReviewerNotAuthorizedForTypeError(UnprocessableError):
+    """A named reviewer doesn't hold the role the review type needs (Story 9.1)."""
+
+    code = "reviewer_not_authorized_for_type"
+    title = "Reviewer not authorized for type"
+
+
+class AuthorCannotReviewError(UnprocessableError):
+    """The author of the Estimate Version was named as one of its reviewers (Story 9.1)."""
+
+    code = "author_cannot_review"
+    title = "Author can't review"
 
 
 class ModelUnavailableProblem(ProblemError):

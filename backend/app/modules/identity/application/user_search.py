@@ -14,6 +14,7 @@ from app.modules.identity.actions import Action
 from app.modules.identity.adapters import repository
 from app.modules.identity.application.authorize import authorize
 from app.modules.identity.domain.policy import Principal
+from app.modules.identity.domain.roles import Role
 from app.platform.uow import UnitOfWork
 
 SEARCH_DEFAULT_LIMIT = 20
@@ -62,6 +63,34 @@ async def search_owner_candidates(
     owner other than themselves)."""
     authorize(actor, Action.KNOWLEDGE_SOURCE_RETAG)
     return await _search(uow, q, limit)
+
+
+async def search_users_with_role(
+    uow: UnitOfWork,
+    role: Role,
+    q: str = "",
+    *,
+    limit: int = SEARCH_DEFAULT_LIMIT,
+    exclude: list[UUID] | set[UUID] | frozenset[UUID] = frozenset(),
+) -> UserSearchResult:
+    """Story 9.1: users holding `role` (as of their last sign-in) whose name or email
+    contains `q` (all of them, by name, for a blank `q`), except `exclude`; at most `limit`.
+    No authorization: callers check their own action (e.g. `reviews.review_request.create`)."""
+    limit = max(1, min(limit, SEARCH_MAX_LIMIT))
+    records = await repository.search_users_with_role(
+        uow, role.value, q.strip()[:SEARCH_MAX_QUERY], limit=limit, exclude=sorted(set(exclude))
+    )
+    return UserSearchResult(
+        items=[UserSummary(id=str(r.id), name=r.name, email=r.email) for r in records]
+    )
+
+
+async def users_with_role(
+    uow: UnitOfWork, ids: list[UUID] | set[UUID] | frozenset[UUID], role: Role
+) -> set[UUID]:
+    """Story 9.1: which of these users hold `role` (as of their last sign-in). No
+    authorization."""
+    return await repository.users_with_role(uow, sorted(set(ids)), role.value)
 
 
 async def user_names(

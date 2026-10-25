@@ -324,7 +324,7 @@ def test_add_collaborator_applies_on_next_request_and_traces(
         "opportunities.collaborator.added",
     ]
     added = events[1]
-    assert added["payload"] == {"user_id": str(member_id)}
+    assert added["payload"] == {"user_id": str(member_id), "role": "collaborator"}
     assert added["actor_id"] == str(owner_id)
     assert added["subject_version"] == 2
     assert str(added["subject_id"]) == str(added["opportunity_id"]) == opp["id"]
@@ -353,7 +353,7 @@ def test_remove_collaborator_hides_it_on_next_request(
     assert opp["id"] not in _collect(client, member_headers, "mine")
     removed = _events(sync_engine, opp["id"])[-1]
     assert removed["event_type"] == "opportunities.collaborator.removed"
-    assert removed["payload"] == {"user_id": str(member_id)}
+    assert removed["payload"] == {"user_id": str(member_id), "role": "collaborator"}
 
 
 def test_add_existing_and_remove_missing_are_noops(client: TestClient, sync_engine: Engine) -> None:

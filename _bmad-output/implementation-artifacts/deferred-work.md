@@ -273,6 +273,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-5-assumptions-register-and-risks.md`
   summary: Narrow the table-wide DELETE grant on `estimates_assumptions` (e.g. a trigger allowing only unaccepted rows of a draft version).
   evidence: Migration 0043 grants psa_app DELETE on the whole table; only `delete_unaccepted_for_gap` narrows it in app code.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-1-review-requests.md`
+  summary: While a newer draft exists, the pending Review Requests of the older sent version are hidden on the Estimate tab and can't be cancelled from the UI.
+  evidence: `reviews.list_review_requests` defaults to the current version (the draft). Story 9.4 (superseded requests, author-side outcomes) should list them or supersede them.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-1-review-requests.md`
+  summary: Add tests for the `in_review` line-edit detail ("This Estimate Version was submitted…") and the export header label "In review".
+  evidence: `line_edits.not_draft_detail` and `export_content.build_export` branch on `in_review`, but only the submitted/draft variants are tested.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-3-admin-agents-view.md`
   summary: Story 7.3/7.8 "Not evaluated" badge on Agent config versions and the explicit save confirmation for an unevaluated config.

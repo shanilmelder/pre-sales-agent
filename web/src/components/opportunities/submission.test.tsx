@@ -130,7 +130,7 @@ describe("Submission blockers (Story 8.6)", () => {
     expect(within(rows[3]!).getByRole("link", { name: "Resolve" })).toBeTruthy();
     expect(within(card()).getByText("Blockers to submit · 6")).toBeTruthy();
     expect(within(card()).getByText("Blockers to Baseline · 0")).toBeTruthy();
-    expect(within(card()).getByText("No Review Requests yet")).toBeTruthy();
+    expect(within(card()).getByText("No Review Request sent yet")).toBeTruthy();
 
     const submit = screen.getByRole("button", { name: "Submit" });
     expect(submit.getAttribute("aria-disabled")).toBe("true");
@@ -214,6 +214,14 @@ describe("Submission blockers (Story 8.6)", () => {
     );
   });
 
+  it("a Review Request frame reads the blockers again (Story 9.1)", async () => {
+    const id = oppId();
+    const load = vi.fn(async () => view([]));
+    renderAll(id, view([]), load);
+    await act(async () => FakeSource.last!.emit("reviews.review_request.created"));
+    await waitFor(() => expect(load).toHaveBeenCalledWith(id));
+  });
+
   it("a new blocker is announced with the count", async () => {
     const load = vi.fn(async () => view(MIXED.slice(0, 3)));
     renderAll(oppId(), view([]), load);
@@ -275,5 +283,40 @@ describe("Submission blockers (Story 8.6)", () => {
     expect(within(alert).getByRole("link", { name: "[REOPENED GAP]" })).toBeTruthy();
     expect(load).toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe("Blockers to Baseline (Story 9.1)", () => {
+  beforeEach(() => vi.stubGlobal("EventSource", FakeSource));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("in review: each open Review Request is a row linking to it", async () => {
+    const id = oppId();
+    const base = view([], { status: "submitted" });
+    const request: Blocker = {
+      kind: "review_request",
+      subject_id: "00000000-0000-7000-8000-0000000000d1",
+      title: "Engineering review · Ana Ruiz · Pending",
+      detail: "Sent 24 Oct · Please check the L3 hours.",
+      href: `/opportunities/${id}/estimate?review=00000000-0000-7000-8000-0000000000d1`,
+    };
+    const { container } = renderAll(id, {
+      ...base,
+      version: { ...base.version!, status: "in_review" },
+      to_baseline: [request],
+    });
+
+    expect(within(card()).getByText("0 to submit · 1 to Baseline")).toBeTruthy();
+    expect(within(card()).getByText("Blockers to Baseline · 1")).toBeTruthy();
+    const link = within(card()).getByRole("link", { name: request.title });
+    expect(link.getAttribute("href")).toBe(request.href);
+    expect(within(card()).getByText(request.detail)).toBeTruthy();
+    expect(within(card()).queryByText(/Blockers to submit/)).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("submitted with no request: No Review Request sent yet", () => {
+    renderAll(oppId(), view([], { status: "submitted" }));
+    expect(within(card()).getByText("No Review Request sent yet")).toBeTruthy();
   });
 });

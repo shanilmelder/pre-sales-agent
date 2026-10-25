@@ -121,20 +121,26 @@ class OpportunitiesOpportunityUpdated(TracePayload):
 
 @register
 class OpportunitiesCollaboratorAdded(TracePayload):
-    """The owner added a collaborator. `user_id`: the collaborator."""
+    """The owner added a collaborator. `user_id`: the collaborator. Story 9.1: `role`
+    `reviewer` when a Review Request shared the Opportunity read only with its reviewer
+    (actor: the request's sender)."""
 
     event_type: ClassVar[str] = "opportunities.collaborator.added"
 
     user_id: str
+    role: Literal["collaborator", "reviewer"] = "collaborator"
 
 
 @register
 class OpportunitiesCollaboratorRemoved(TracePayload):
-    """The owner removed a collaborator. `user_id`: the former collaborator."""
+    """The owner removed a collaborator. `user_id`: the former collaborator. Story 9.1:
+    `role` `reviewer` when a reviewer's access ended with their last pending Review Request
+    (actor: who cancelled it)."""
 
     event_type: ClassVar[str] = "opportunities.collaborator.removed"
 
     user_id: str
+    role: Literal["collaborator", "reviewer"] = "collaborator"
 
 
 # --- intake -------------------------------------------------------------------------------
@@ -758,6 +764,32 @@ class EstimatesEstimateVersionSuperseded(TracePayload):
     superseded_by_version: int
 
 
+# Story 9.1. Ids and version numbers only.
+
+
+@register
+class EstimatesEstimateVersionReviewStarted(TracePayload):
+    """A submitted Estimate Version went `in_review`: its first Review Request was sent.
+    Subject: the version (`estimates.estimate_version`). Actor: the request's sender."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.review_started"
+
+    version_id: str
+    version: int
+
+
+@register
+class EstimatesEstimateVersionReviewEnded(TracePayload):
+    """An `in_review` Estimate Version went back to `submitted`: its last pending Review
+    Request was cancelled. Subject: the version (`estimates.estimate_version`). Actor: who
+    cancelled it."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.review_ended"
+
+    version_id: str
+    version: int
+
+
 # Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.
 
 
@@ -1270,6 +1302,45 @@ class ConflictsConflictEscalated(TracePayload):
     run_id: str | None = None
     reviewer_id: str
     reason: str
+
+
+# --- reviews ------------------------------------------------------------------------------
+# Story 9.1. Subject: the Review Request (`reviews.review_request`). Ids, types, versions and
+# lengths only, never the message or the reason.
+
+
+@register
+class ReviewsReviewRequestCreated(TracePayload):
+    """A person asked a named reviewer to review a target: an Estimate Version, or one of its
+    Assessments at a version. Actor: the sender."""
+
+    event_type: ClassVar[str] = "reviews.review_request.created"
+
+    request_id: str
+    review_type: Literal["engineering", "pm", "security"]
+    target_kind: Literal["estimate_version", "assessment"]
+    target_id: str
+    target_version: int
+    estimate_version_id: str
+    reviewer_id: str
+    message_length: int = 0
+
+
+@register
+class ReviewsReviewRequestCancelled(TracePayload):
+    """A person cancelled a pending Review Request with a reason. Actor: the sender or the
+    Opportunity's owner."""
+
+    event_type: ClassVar[str] = "reviews.review_request.cancelled"
+
+    request_id: str
+    review_type: Literal["engineering", "pm", "security"]
+    target_kind: Literal["estimate_version", "assessment"]
+    target_id: str
+    target_version: int
+    estimate_version_id: str
+    reviewer_id: str
+    reason_length: int
 
 
 # --- registry -----------------------------------------------------------------------------
