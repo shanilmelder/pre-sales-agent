@@ -119,9 +119,7 @@ export function AgentsTable({
                     <div className="truncate" title={running.model}>
                       {running.model}
                     </div>
-                    <div className="truncate text-text-secondary" title={running.profile}>
-                      {running.profile}
-                    </div>
+                    <div className="break-words text-text-secondary">{running.profile}</div>
                   </div>
                   <div role="cell">
                     <AgentStatusPill status={agent.status} />
