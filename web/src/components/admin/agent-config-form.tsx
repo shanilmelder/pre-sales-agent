@@ -1,5 +1,6 @@
 "use client";
 
+import { EyeIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent } from "react";
 
 import {
@@ -8,15 +9,19 @@ import {
   type AgentResult,
 } from "@/app/admin/agents/actions";
 import { Button } from "@/components/ui/button";
+import { Pill } from "@/components/ui/pill";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AGENT_REASON_MAX,
   budgetsText,
+  categoryLabel,
+  grantableTools,
   nextPatch,
   parseBudgets,
   reasonError,
   type AgentConfigOptions,
   type AgentConfigVersion,
+  type PermissionCategory,
   type RegistryAgent,
 } from "@/lib/admin";
 
@@ -38,7 +43,8 @@ function withValue<T extends string | number>(choices: readonly T[], value: T): 
 /** A new config version of the Agent (Story 7.3), prefilled from `initial` (the current
  * version, or the version being restored) with the next patch semver. The pickers offer only
  * what the deployed manifest holds: model profiles, this Agent's prompt and schema versions
- * and the read-only tools. Budgets are a JSON object. A reason is required; Save stays
+ * and the grantable tools, each with its category (only `read` actions are offered, Story
+ * 7.4). Budgets are a JSON object. A reason is required; Save stays
  * disabled without one. A 412 is reported to the parent (`onStale`) and the form keeps its
  * input; a 409 or 422 shows the API's sentence. */
 export function AgentConfigForm({
@@ -179,8 +185,12 @@ export function AgentConfigForm({
   }
 
   const title = restoredFrom === null ? "New version" : `Restore version ${restoredFrom}`;
+  const offered = options ? grantableTools(options.tool_permissions) : [];
+  const categories = new Map<string, PermissionCategory>(
+    offered.map((option) => [option.action, option.category]),
+  );
   const tools = options
-    ? [...new Set([...options.tool_permissions, ...initial.tool_permissions])].sort()
+    ? [...new Set([...offered.map((option) => option.action), ...initial.tool_permissions])].sort()
     : [];
 
   return (
@@ -274,25 +284,38 @@ export function AgentConfigForm({
         </div>
       ))}
       <fieldset className="flex flex-col gap-1">
-        <legend className="text-label text-muted-foreground">Tool permissions (read only)</legend>
+        <legend className="text-label text-muted-foreground">Tool permissions (read actions only)</legend>
         {tools.length === 0 && options !== null ? (
           <p className="text-meta text-muted-foreground">No read tools are deployed.</p>
         ) : null}
-        {tools.map((tool) => (
-          <label key={tool} className="flex items-center gap-2 text-meta">
-            <input
-              type="checkbox"
-              checked={permissions.includes(tool)}
-              disabled={readOnly}
-              onChange={(event) =>
-                setPermissions((current) =>
-                  event.target.checked ? [...current, tool] : current.filter((p) => p !== tool),
-                )
-              }
-            />
-            <span className="font-mono">{tool}</span>
-          </label>
-        ))}
+        {tools.map((tool, index) => {
+          const category = categories.get(tool);
+          const categoryId = `${id}-tool-${index}-category`;
+          return (
+            <div key={tool} className="flex items-center gap-2 text-meta">
+              <input
+                id={`${id}-tool-${index}`}
+                type="checkbox"
+                checked={permissions.includes(tool)}
+                disabled={readOnly}
+                aria-describedby={category ? categoryId : undefined}
+                onChange={(event) =>
+                  setPermissions((current) =>
+                    event.target.checked ? [...current, tool] : current.filter((p) => p !== tool),
+                  )
+                }
+              />
+              <label htmlFor={`${id}-tool-${index}`} className="font-mono">
+                {tool}
+              </label>
+              {category ? (
+                <Pill id={categoryId} data-category={category} icon={<EyeIcon />}>
+                  {categoryLabel(category)}
+                </Pill>
+              ) : null}
+            </div>
+          );
+        })}
       </fieldset>
       <div className="flex flex-col gap-1">
         <label htmlFor={`${id}-budgets`} className="text-label text-muted-foreground">

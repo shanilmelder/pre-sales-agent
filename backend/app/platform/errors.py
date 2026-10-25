@@ -494,12 +494,13 @@ class RegistryConfigNotDeployedError(UnprocessableError):
     title = "Config not deployed"
 
 
-class ToolPermissionNotReadOnlyError(UnprocessableError):
-    """A config version grants a tool permission that is not one of the ToolGateway's READ
-    tools (Story 5.4): Agents can never be granted a write, delete, send or approve."""
+class RegistryPermissionForbiddenForAgentsError(UnprocessableError):
+    """A config version grants a tool permission that is not a `read` action that is also a
+    ToolGateway tool (Story 7.4; replaces Story 5.4's `tool_permission_not_read_only`):
+    Agents can never be granted a write, delete, send or approve."""
 
-    code = "tool_permission_not_read_only"
-    title = "Tool permission not read-only"
+    code = "registry_permission_forbidden_for_agents"
+    title = "Permission forbidden for Agents"
 
 
 class RegistryConfigIncompatibleContractError(UnprocessableError):

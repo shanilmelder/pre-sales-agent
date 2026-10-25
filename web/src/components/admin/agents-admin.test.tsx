@@ -141,7 +141,7 @@ describe("AgentsAdmin", () => {
     expect(prompt.textContent).toBe("Prompt version−Before: v1+After: v2");
     const tools = diff.querySelector('[data-changed="tool_permissions"]') as HTMLElement;
     expect(tools.textContent).toBe(
-      "Tool permissions−Removed: gaps.gap.list+Granted: intake.requirement.list",
+      "Tool permissions−Removed: gaps.gap.list (read)+Granted: intake.requirement.list (read)",
     );
     for (const line of diff.querySelectorAll("p")) {
       expect(line.className).toContain("bg-diff-tint");
@@ -208,6 +208,45 @@ describe("AgentsAdmin", () => {
     await waitFor(() => expect(historyItems()).toHaveLength(3));
     expect(historyItems()[0].textContent).toContain("v3 · 0.2.1 (current)");
     expect(within(pane()).queryByRole("form")).toBeNull();
+  });
+
+  it("the permission picker offers only read tools, each labelled Read", async () => {
+    actions.loadConfigOptions.mockResolvedValue({
+      kind: "ok",
+      options: {
+        ...OPTIONS,
+        tool_permissions: [
+          ...OPTIONS.tool_permissions,
+          { action: "knowledge.chunk.read", category: "read" },
+          // Never sent by the API (it lists read tools only); the picker drops it anyway.
+          { action: "gaps.clarification_question.send", category: "send" },
+        ],
+      },
+    });
+    const u = userEvent.setup();
+    const { container } = render(ui());
+    await openPm(u);
+    await u.click(within(pane()).getByRole("button", { name: "New version" }));
+    const form = within(pane()).getByRole("form", { name: "New version" });
+    const group = within(form).getByRole("group", { name: "Tool permissions (read actions only)" });
+    await waitFor(() => expect(within(group).getAllByRole("checkbox")).toHaveLength(3));
+    const boxes = within(group).getAllByRole("checkbox");
+    expect(boxes.map((box) => box.closest("div")?.querySelector("label")?.textContent)).toEqual([
+      "gaps.gap.list",
+      "intake.requirement.list",
+      "knowledge.chunk.read",
+    ]);
+    for (const box of boxes) {
+      const described = document.getElementById(box.getAttribute("aria-describedby") ?? "");
+      expect(described?.textContent).toBe("Read");
+      expect(described?.getAttribute("data-category")).toBe("read");
+      expect(described?.querySelector("svg")).toBeTruthy(); // an icon and a label
+    }
+    expect(within(group).queryByText("gaps.clarification_question.send")).toBeNull();
+    for (const label of ["Write", "Delete", "Send", "Approve"]) {
+      expect(within(group).queryByText(label)).toBeNull();
+    }
+    expect(await axeViolations(container)).toEqual([]);
   });
 
   it("a 412 shows the concurrent-edit message with Reload and keeps the form's input", async () => {

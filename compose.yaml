@@ -128,6 +128,13 @@ services:
       PSA_RESEARCH_ALLOWLIST_PATH: /etc/psa/research-allowlist.yaml
       PSA_RESEARCH_FETCH_TIMEOUT_S: ${PSA_RESEARCH_FETCH_TIMEOUT_S:-10}
       PSA_RESEARCH_MAX_BYTES: ${PSA_RESEARCH_MAX_BYTES:-2097152}
+      # Denied tool call alerts through Resend (Story 7.4); blank key/sender/recipients:
+      # the alert job logs a warning and sends nothing.
+      PSA_TOOL_DENIAL_ALERT_THRESHOLD: ${PSA_TOOL_DENIAL_ALERT_THRESHOLD:-3}
+      PSA_RESEND_API_KEY: ${PSA_RESEND_API_KEY:-}
+      PSA_ALERT_EMAIL_FROM: ${PSA_ALERT_EMAIL_FROM:-}
+      PSA_ALERT_EMAIL_TO: ${PSA_ALERT_EMAIL_TO:-}
+      PSA_WEB_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

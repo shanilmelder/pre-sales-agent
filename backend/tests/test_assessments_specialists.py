@@ -516,7 +516,15 @@ def test_a_run_stores_three_assessments_with_findings_effort_and_trace(
         task = tasks[call["agent_id"]]
         assert (call["run_id"], call["task_id"]) == (run["id"], task["id"])
         assert call["config_version_id"] == task["config_version_id"]
-        assert call["config_version_id"] == tool_gateway_version_id(call["agent_id"])
+        # The pinned version grants exactly the two reads. (Not compared by id with the
+        # migration's `tool_gateway_version_id`: another test may have added an equal newer
+        # version of the Agent in the shared database.)
+        (pinned,) = rows(
+            sync_engine,
+            "SELECT tool_permissions FROM registry_agent_config_versions WHERE id = :v",
+            v=call["config_version_id"],
+        )
+        assert sorted(pinned["tool_permissions"]) == ["gaps.gap.list", "intake.requirement.list"]
         assert (call["reason"], call["http_status"]) == (None, None)
 
     # Privacy: no Requirement, Gap or Finding text in logs, the trace or the tool calls.
