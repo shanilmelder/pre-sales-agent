@@ -159,6 +159,8 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.REGISTRY_AGENT_CONFIG_CREATE: _W,
         Action.REGISTRY_AGENT_SET_STATUS: _W,
         Action.DECISION_RESOLVE: _A,
+        Action.REVIEW_REQUEST_CREATE: _S,
+        Action.REVIEW_REQUEST_CANCEL: _D,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,

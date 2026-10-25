@@ -16,6 +16,7 @@ import {
   authorLabel,
   changedSummary,
   configValue,
+  effectiveModelLines,
   EVAL_ONLY_NOTE,
   NO_REASON,
   SAME_VERSION,
@@ -125,6 +126,7 @@ export function AgentInspector({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const reloadRef = useRef<HTMLButtonElement>(null);
   const config = agent.current_config;
+  const running = effectiveModelLines(agent);
   const enabled = agent.status === "active";
 
   // The history of the Agent shown; it is loaded again after every change.
@@ -266,6 +268,9 @@ export function AgentInspector({
         </Detail>
         <Detail term="Model profile">
           <span className="font-mono">{config.model_profile}</span>
+        </Detail>
+        <Detail term="Runs with">
+          <span className="font-mono">{`${running.model} · ${running.profile}`}</span>
         </Detail>
         <Detail term="Prompt version">{configValue("prompt_version", config)}</Detail>
         <Detail term="Input schema version">{configValue("input_schema_version", config)}</Detail>

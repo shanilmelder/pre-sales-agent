@@ -40,9 +40,23 @@ class AgentConfigVersionList(BaseModel):
     items: list[AgentConfigVersion]
 
 
+class EffectiveModel(BaseModel):
+    """The model profile and model an Agent's current config version actually calls in this
+    deployment. `profile` is `PSA_MODEL_PROFILE_CHAT` when that local-dev override is set
+    (`overridden`), else the version's pinned `model_profile`. `model` is the profile's
+    model, after `PSA_OPENAI_MODEL` for an `openai` provider profile; null when the profile
+    is not defined in this deployment."""
+
+    profile: str
+    model: str | None
+    overridden: bool
+
+
 class RegistryAgent(BaseModel):
     """An Agent with its status and current (newest) config version. Only an `active` Agent
-    gets new tasks; `disabled` and `eval_only` don't."""
+    gets new tasks; `disabled` and `eval_only` don't. `effective_model`: what the current
+    config version calls here, which a local-dev override can make differ from its pinned
+    profile."""
 
     id: str
     agent_id: str
@@ -51,6 +65,7 @@ class RegistryAgent(BaseModel):
     row_version: int
     created_at: datetime
     current_config: AgentConfigVersion
+    effective_model: EffectiveModel
 
 
 class RegistryAgentList(BaseModel):

@@ -60,6 +60,12 @@ services:
       PSA_DOWNLOAD_SIGNING_KEY: ${PSA_DOWNLOAD_SIGNING_KEY:-local-dev-download-signing-key-change-me}
       # Host Ollama (ModelGateway, Story 2.4). The api never calls a model itself.
       PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
+      # The chat model settings the worker runs with, so the Admin Agents view shows the profile
+      # and model agents actually call (no key: the api never makes a chat call). Keep these
+      # equal to the worker's.
+      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
+      PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
+      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
       # ToolGateway research fetch allowlist and limits (Story 5.4).
       PSA_RESEARCH_ALLOWLIST_PATH: /etc/psa/research-allowlist.yaml
       PSA_RESEARCH_FETCH_TIMEOUT_S: ${PSA_RESEARCH_FETCH_TIMEOUT_S:-10}

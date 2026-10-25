@@ -10,13 +10,14 @@ import { Pill, type PillTone } from "@/components/ui/pill";
 import {
   AGENTS_FOOTNOTE,
   agentStatusLabel,
+  effectiveModelLines,
   NO_AGENTS,
   toolPermissionsLabel,
   type AgentStatus,
   type RegistryAgent,
 } from "@/lib/admin";
 
-const GRID = "grid-cols-[minmax(0,1fr)_90px_170px_120px_minmax(0,1.2fr)]";
+const GRID = "grid-cols-[minmax(0,1fr)_90px_minmax(0,1fr)_120px_minmax(0,1.2fr)]";
 
 const STATUS_STYLE: Record<AgentStatus, { tone: PillTone; Icon: typeof CheckIcon }> = {
   active: { tone: "resolved", Icon: CheckIcon },
@@ -35,7 +36,7 @@ export function AgentStatusPill({ status }: { status: AgentStatus }) {
 }
 
 /** Admin → Agents: every registered Agent with its current config version, model, status
- * and tool permissions as a card table, then the footnote. Each row's name is a button whose
+ * (what it calls here, after any local profile override) and tool permissions as a card table, then the footnote. Each row's name is a button whose
  * hit area covers the row. The rows are one Tab stop (roving tabindex: the last focused, else
  * the selected, else the first row); j/k (or the arrow keys) move between rows and Enter
  * opens the Agent's inspector (Story 7.3). */
@@ -86,6 +87,7 @@ export function AgentsTable({
           >
             {agents.map((agent) => {
               const selected = agent.agent_id === selectedId;
+              const running = effectiveModelLines(agent);
               return (
                 <div
                   key={agent.id}
@@ -113,8 +115,11 @@ export function AgentsTable({
                   <div role="cell" className="text-numeric">
                     {agent.current_config.semver}
                   </div>
-                  <div role="cell" className="min-w-0 truncate font-mono text-meta">
-                    {agent.current_config.model_profile}
+                  <div role="cell" className="min-w-0 font-mono text-meta">
+                    <div className="truncate" title={running.model}>
+                      {running.model}
+                    </div>
+                    <div className="break-words text-text-secondary">{running.profile}</div>
                   </div>
                   <div role="cell">
                     <AgentStatusPill status={agent.status} />

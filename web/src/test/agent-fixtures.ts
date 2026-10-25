@@ -46,6 +46,11 @@ export function registryAgent(
     row_version: 1,
     created_at: "2026-10-01T09:00:00Z",
     current_config: current,
+    effective_model: {
+      profile: current.model_profile,
+      model: "gpt-oss:120b-cloud",
+      overridden: false,
+    },
     ...over,
   };
 }

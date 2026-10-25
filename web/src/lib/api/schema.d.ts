@@ -3803,6 +3803,22 @@ export interface components {
          */
         DraftStatus: "queued" | "running" | "succeeded" | "failed";
         /**
+         * EffectiveModel
+         * @description The model profile and model an Agent's current config version actually calls in this
+         *     deployment. `profile` is `PSA_MODEL_PROFILE_CHAT` when that local-dev override is set
+         *     (`overridden`), else the version's pinned `model_profile`. `model` is the profile's
+         *     model, after `PSA_OPENAI_MODEL` for an `openai` provider profile; null when the profile
+         *     is not defined in this deployment.
+         */
+        EffectiveModel: {
+            /** Profile */
+            profile: string;
+            /** Model */
+            model: string | null;
+            /** Overridden */
+            overridden: boolean;
+        };
+        /**
          * EmbedErrorCode
          * @description Why embedding a version failed, once its retries ran out.
          * @enum {string}
@@ -5691,7 +5707,9 @@ export interface components {
         /**
          * RegistryAgent
          * @description An Agent with its status and current (newest) config version. Only an `active` Agent
-         *     gets new tasks; `disabled` and `eval_only` don't.
+         *     gets new tasks; `disabled` and `eval_only` don't. `effective_model`: what the current
+         *     config version calls here, which a local-dev override can make differ from its pinned
+         *     profile.
          */
         RegistryAgent: {
             /** Id */
@@ -5709,6 +5727,7 @@ export interface components {
              */
             created_at: string;
             current_config: components["schemas"]["AgentConfigVersion"];
+            effective_model: components["schemas"]["EffectiveModel"];
         };
         /** RegistryAgentList */
         RegistryAgentList: {
