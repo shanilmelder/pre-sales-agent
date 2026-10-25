@@ -52,6 +52,7 @@ ADMIN_ONLY = (
 )
 MODULES = {
     "identity",
+    "notifications",
     "opportunities",
     "intake",
     "gaps",
@@ -133,11 +134,12 @@ def test_a_role_without_permissions_grants_nothing_on_its_own(role: Role) -> Non
 
 
 def test_any_role_grants_need_a_role() -> None:
-    assert ANY_ROLE_GRANTS == {Action.KNOWLEDGE_CHUNK_SEARCH}
+    assert ANY_ROLE_GRANTS == {Action.KNOWLEDGE_CHUNK_SEARCH, Action.NOTIFICATION_READ}
     nobody, _ = _user(set(), permissions=set())
-    assert not can(nobody, Action.KNOWLEDGE_CHUNK_SEARCH)
     commercial, _ = _user({Role.COMMERCIAL}, permissions=set())
-    assert can(commercial, Action.KNOWLEDGE_CHUNK_SEARCH)
+    for action in ANY_ROLE_GRANTS:
+        assert not can(nobody, action)
+        assert can(commercial, action)
 
 
 def test_role_without_create_permission_keeps_owner_and_member_access() -> None:

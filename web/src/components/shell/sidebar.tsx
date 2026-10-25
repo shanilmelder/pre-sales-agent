@@ -16,7 +16,9 @@ import { useModKeyLabel } from "@/components/shell/keyboard-shortcuts";
 import { useShell } from "@/components/shell/shell-context";
 import { UserCard } from "@/components/shell/user-card";
 import type { Me } from "@/lib/api/server";
+import { badgeText, inboxLinkName, opportunityIdOf } from "@/lib/inbox";
 import { visibleNav } from "@/lib/navigation";
+import { useInboxUnread } from "@/lib/use-inbox-count";
 
 /** A shortcut hint at the end of a row: plain 12px text, as in the mockup. */
 function Kbd({ children }: { children: ReactNode }) {
@@ -29,11 +31,29 @@ const navClass = `flex w-full items-center gap-2.5 rounded-md px-2 py-[7px] ${fo
 // Footer buttons (Keyboard shortcuts, Collapse sidebar): 13px secondary text.
 const footerClass = `flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-text-secondary hover:bg-surface-alt hover:text-foreground ${focusRing}`;
 
+/** The Inbox unread count on its nav item (Story 9.2): hidden at 0, capped at "99+". Over
+ * the icon when only icons show. The link's accessible name carries the count. */
+function UnreadBadge({ count, collapsed }: { count: number; collapsed: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="inbox-badge"
+      className={cn(
+        "absolute top-0.5 right-0.5 min-w-[18px] rounded-full bg-primary px-1 text-center text-[11px] leading-[18px] font-semibold text-primary-foreground text-numeric",
+        !collapsed && "min-[1280px]:static min-[1280px]:ml-auto",
+      )}
+    >
+      {badgeText(count)}
+    </span>
+  );
+}
+
 /** Primary navigation. Below 1280px, or when collapsed with `[`, only icons show. */
 export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "roles" | "permissions"> }) {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar, openDialog } = useShell();
   const modKey = useModKeyLabel();
+  const unread = useInboxUnread(opportunityIdOf(pathname));
   // Labels stay in the accessibility tree when only icons show.
   const label = sidebarCollapsed ? "sr-only" : "sr-only min-[1280px]:not-sr-only";
   const hint = sidebarCollapsed ? "hidden" : "hidden min-[1280px]:inline-flex";
@@ -82,14 +102,17 @@ export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "roles" | "per
         {visibleNav(me.permissions).map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           const Icon = item.icon;
+          const count = item.badge === "inbox-unread" ? (unread ?? 0) : 0;
           return (
             <li key={item.id}>
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                title={item.label}
+                aria-label={count > 0 ? inboxLinkName(count) : undefined}
+                title={count > 0 ? inboxLinkName(count) : item.label}
                 className={cn(
                   navClass,
+                  "relative",
                   active
                     ? "bg-primary-tint text-primary-text"
                     : "text-text-secondary hover:bg-surface-alt hover:text-foreground",
@@ -101,6 +124,7 @@ export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "roles" | "per
                 >
                   {item.label}
                 </span>
+                {count > 0 ? <UnreadBadge count={count} collapsed={sidebarCollapsed} /> : null}
               </Link>
             </li>
           );

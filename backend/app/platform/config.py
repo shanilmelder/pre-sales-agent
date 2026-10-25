@@ -221,6 +221,16 @@ class Settings(BaseSettings):
         gt=0,
         description="Largest research page body in bytes (2 MiB), counted while streaming.",
     )
+    review_reminder_days: int = Field(
+        default=3,
+        ge=1,
+        le=365,
+        description=(
+            "Days between reminders about a pending Review Request (Story 9.2): the daily "
+            "`reviews.send_reminders` job gives the reviewer an Inbox reminder once the "
+            "request is 1, 2, 3, … intervals old."
+        ),
+    )
     tool_denial_alert_threshold: int = Field(
         default=3,
         ge=0,

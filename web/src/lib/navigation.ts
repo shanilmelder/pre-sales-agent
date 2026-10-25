@@ -28,10 +28,19 @@ export type NavItem = {
   gKey?: string;
   /** Shown only to users holding `identity.user.list`. */
   adminOnly?: boolean;
+  /** Story 9.2: the item shows the Inbox unread count. */
+  badge?: "inbox-unread";
 };
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { id: "inbox", label: "Inbox", href: "/inbox", icon: InboxIcon, gKey: "i" },
+  {
+    id: "inbox",
+    label: "Inbox",
+    href: "/inbox",
+    icon: InboxIcon,
+    gKey: "i",
+    badge: "inbox-unread",
+  },
   {
     id: "opportunities",
     label: "Opportunities",

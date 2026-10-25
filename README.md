@@ -266,17 +266,20 @@ session and the Auth0 session.
    `knowledge.checklist.create`, `knowledge.checklist.edit`, `knowledge.checklist.publish`,
    `knowledge.checklist.retire`, `registry.agent.register`,
    `registry.agent_config.create`, `registry.agent.set_status`,
-   `assessments.finding.override`. Actions that come only from being an Opportunity's owner
-   or collaborator need no permission here (e.g. `estimates.assumption.accept` and
-   `estimates.estimate_version.submit`, Story 8.6, and `reviews.review_request.create` /
-   `reviews.review_request.cancel`, Story 9.1: owner and collaborators except sales
-   representatives); add one only to grant it to a role outright.
+   `assessments.finding.override`, `notifications.notification.read`. Actions that come
+   only from being an Opportunity's owner or collaborator need no permission here (e.g.
+   `estimates.assumption.accept` and `estimates.estimate_version.submit`, Story 8.6, and
+   `reviews.review_request.create` / `reviews.review_request.cancel`, Story 9.1: owner and
+   collaborators except sales representatives); add one only to grant it to a role
+   outright.
 6. **User Management > Roles.** Create the nine roles with these exact names (the API
    ignores any other name): `presales_engineer`, `sales_representative`,
    `engineering_reviewer`, `pm_reviewer`, `security_reviewer`, `commercial`,
    `delivery_manager`, `head_of_delivery`, `platform_administrator`. Give them the API's
-   permissions as follows; the other roles get none (their access comes from being an
-   Opportunity's owner or collaborator):
+   permissions as follows; every role also gets `notifications.notification.read` (Story
+   9.2: one's own Inbox; the API grants it to anyone holding a role anyway), and the other
+   roles get nothing else (their access comes from being an Opportunity's owner or
+   collaborator):
 
    | Role | Permissions |
    | --- | --- |

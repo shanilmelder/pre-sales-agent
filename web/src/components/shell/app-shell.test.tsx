@@ -7,12 +7,17 @@ import { permissionsFor } from "@/test/permissions";
 import type { Me } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
 import { SEQUENCE_TIMEOUT_MS, SHORTCUTS, type Shortcut } from "@/lib/shortcuts";
+import { resetInboxUnread } from "@/lib/use-inbox-count";
 import { axeViolations } from "@/test/axe";
 
 const push = vi.hoisted(() => vi.fn());
 const pathname = vi.hoisted(() => ({ current: "/inbox" }));
 const savePreferences = vi.hoisted(() => vi.fn());
 vi.mock("@/app/settings/actions", () => ({ savePreferences }));
+const getInboxUnreadCount = vi.hoisted(() =>
+  vi.fn(async () => ({ kind: "ok" as const, unread: 0 })),
+);
+vi.mock("@/app/inbox/actions", () => ({ getInboxUnreadCount }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => pathname.current,
@@ -55,7 +60,7 @@ function renderShell({
   singleKeyShortcuts = true,
   firstRun = false,
   density = "comfortable" as "comfortable" | "compact",
-  children = <PlaceholderPage title="Inbox" message="Nothing waiting for you." />,
+  children = <PlaceholderPage title="Inbox" message="Placeholder content." />,
 }: {
   roles?: Role[];
   singleKeyShortcuts?: boolean;
@@ -81,6 +86,9 @@ const sidebar = () => screen.getByRole("navigation", { name: "Primary" });
 beforeEach(() => {
   push.mockReset();
   pathname.current = "/inbox";
+  resetInboxUnread();
+  getInboxUnreadCount.mockReset();
+  getInboxUnreadCount.mockResolvedValue({ kind: "ok", unread: 0 });
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -1122,5 +1130,47 @@ describe("cheat sheet Mod key", () => {
     const { user } = renderShell();
     await user.keyboard("?");
     expect(modKey()).toBe("⌘");
+  });
+});
+
+describe("Inbox badge (Story 9.2)", () => {
+  const inboxLink = () =>
+    within(sidebar())
+      .getAllByRole("link")
+      .find((a) => a.getAttribute("href") === "/inbox")!;
+
+  it("is hidden at 0 and the link is just Inbox", async () => {
+    renderShell();
+    await waitFor(() => expect(getInboxUnreadCount).toHaveBeenCalled());
+    expect(screen.queryByTestId("inbox-badge")).toBeNull();
+    expect(within(sidebar()).getByRole("link", { name: "Inbox" })).toBeTruthy();
+  });
+
+  it("shows the count and names the link with it", async () => {
+    getInboxUnreadCount.mockResolvedValue({ kind: "ok", unread: 3 });
+    const { container } = renderShell();
+    expect(await within(sidebar()).findByRole("link", { name: "Inbox, 3 unread" })).toBe(
+      inboxLink(),
+    );
+    expect(screen.getByTestId("inbox-badge").textContent).toBe("3");
+    expect(screen.getByTestId("inbox-badge").getAttribute("aria-hidden")).toBe("true");
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("caps the count at 99+", async () => {
+    getInboxUnreadCount.mockResolvedValue({ kind: "ok", unread: 140 });
+    renderShell();
+    expect((await screen.findByTestId("inbox-badge")).textContent).toBe("99+");
+    expect(inboxLink().getAttribute("aria-label")).toBe("Inbox, 140 unread");
+  });
+
+  it("reads the count again when the window regains focus", async () => {
+    renderShell();
+    await waitFor(() => expect(getInboxUnreadCount).toHaveBeenCalledTimes(1));
+    getInboxUnreadCount.mockResolvedValue({ kind: "ok", unread: 2 });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(await within(sidebar()).findByRole("link", { name: "Inbox, 2 unread" })).toBeTruthy();
   });
 });

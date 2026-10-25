@@ -49,12 +49,7 @@ export type GetResult =
   | { kind: "not-found" }
   | { kind: "error" };
 
-/** `?page=` as a positive integer (1 for anything else). */
-export function parsePage(value: string | string[] | undefined): number {
-  const raw = Array.isArray(value) ? value[0] : value;
-  if (!raw || !/^[1-9]\d{0,5}$/.test(raw)) return 1;
-  return Number(raw);
-}
+export { parsePage } from "@/lib/pagination";
 
 /** `GET /api/v1/opportunities?scope=`. Filters apply to `scope=all` only (the API ignores
  * them for `mine`, so they aren't sent). */

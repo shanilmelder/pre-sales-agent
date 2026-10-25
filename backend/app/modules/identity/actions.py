@@ -78,6 +78,8 @@ class Action(StrEnum):
     never a reviewer collaborator)."""
     REVIEW_REQUEST_CANCEL = "reviews.review_request.cancel"
     """Story 9.1: cancel a pending Review Request (its sender or the Opportunity's owner)."""
+    NOTIFICATION_READ = "notifications.notification.read"
+    """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
     # hold them through their registry `tool_permissions`; no human role is granted them
     # (`KNOWLEDGE_CHUNK_SEARCH` above is also the human Knowledge search, open to all roles).
@@ -145,6 +147,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.KNOWLEDGE_SOURCE_RETRY_PARSE: _W,
         Action.KNOWLEDGE_SOURCE_RETRY_EMBED: _W,
         Action.KNOWLEDGE_CHUNK_SEARCH: _R,
+        Action.NOTIFICATION_READ: _R,
         Action.KNOWLEDGE_CHECKLIST_CREATE: _W,
         Action.KNOWLEDGE_CHECKLIST_EDIT: _W,
         Action.KNOWLEDGE_CHECKLIST_PUBLISH: _A,

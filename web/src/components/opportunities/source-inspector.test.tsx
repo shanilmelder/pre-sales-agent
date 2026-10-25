@@ -12,6 +12,10 @@ const loadSourceText = vi.hoisted(() =>
   vi.fn<(o: string, s: string, v: number) => Promise<SourceTextResult>>(),
 );
 const loadSources = vi.hoisted(() => vi.fn<(o: string) => Promise<SourcesResult>>());
+// The sidebar's Inbox badge reads the unread count through a server action (Story 9.2).
+vi.mock("@/app/inbox/actions", () => ({
+  getInboxUnreadCount: async () => ({ kind: "ok", unread: 0 }),
+}));
 vi.mock("@/app/opportunities/actions", () => ({
   addSource: vi.fn(),
   addTextSource: vi.fn(),

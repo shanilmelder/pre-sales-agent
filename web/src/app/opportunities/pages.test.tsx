@@ -19,6 +19,10 @@ vi.mock("@/lib/api/server", () => ({
   createServerApiClient: async () => ({ GET: apiGet }),
 }));
 vi.mock("server-only", () => ({}));
+// The sidebar's Inbox badge (Story 9.2) reads its count through its own server action.
+vi.mock("@/app/inbox/actions", () => ({
+  getInboxUnreadCount: async () => ({ kind: "ok", unread: 0 }),
+}));
 vi.mock("@/app/opportunities/actions", () => ({
   createOpportunity: vi.fn(),
   changeCollaborator: vi.fn(),

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -127,7 +127,7 @@ development_status:
 
   epic-9: in-progress
   9-1-send-review-requests-to-named-reviewers: review
-  9-2-inbox-with-in-app-notifications-and-review-reminders: backlog
+  9-2-inbox-with-in-app-notifications-and-review-reminders: review
   9-3-reviewers-record-decisions-in-the-review-panel: backlog
   9-4-author-side-review-outcomes-and-superseded-requests: backlog
   9-5-raise-a-challenge-and-confirm-reassessment: backlog

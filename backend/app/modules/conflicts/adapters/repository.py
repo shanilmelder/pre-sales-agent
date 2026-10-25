@@ -343,6 +343,20 @@ async def get(uow: UnitOfWork, conflict_id: UUID) -> ConflictRecord | None:
     return None if row is None else _conflict(row)
 
 
+async def successor_of(uow: UnitOfWork, conflict_id: UUID) -> ConflictRecord | None:
+    """The newest Conflict that re-raised this one (`previous_conflict_id`), if any."""
+    row = (
+        await uow.session.execute(
+            select(ConflictRow)
+            .where(ConflictRow.previous_conflict_id == conflict_id)
+            .order_by(ConflictRow.created_at.desc(), ConflictRow.id.desc())
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _conflict(row)
+
+
 async def latest_with_fingerprint(
     uow: UnitOfWork, opportunity_id: UUID, fingerprint: str, *, besides: tuple[UUID, int]
 ) -> ConflictRecord | None:

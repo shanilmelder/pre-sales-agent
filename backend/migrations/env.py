@@ -18,6 +18,7 @@ import app.modules.gaps.adapters.models
 import app.modules.identity.adapters.models
 import app.modules.intake.adapters.models
 import app.modules.knowledge.adapters.models
+import app.modules.notifications.adapters.models
 import app.modules.opportunities.adapters.models
 import app.modules.registry.adapters.models
 import app.modules.reviews.adapters.models

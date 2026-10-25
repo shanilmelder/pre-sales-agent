@@ -491,6 +491,20 @@ async def _change_member(
     return await get(uow, actor, opportunity_id)
 
 
+async def opportunity_titles(
+    uow: UnitOfWork, opportunity_ids: set[UUID] | frozenset[UUID] | list[UUID]
+) -> dict[UUID, str]:
+    """Story 9.2: `{id: title}` for the Opportunities that exist, for Inbox summaries and
+    rows. No authorization: callers decide what they may show."""
+    return await repository.titles(uow, sorted(set(opportunity_ids)))
+
+
+async def opportunity_owner(uow: UnitOfWork, opportunity_id: UUID) -> UUID | None:
+    """Story 9.2: the Opportunity's owner (the recipient of a system-queued run's Inbox
+    items), or None when unknown. No authorization."""
+    return (await repository.owners(uow, [opportunity_id])).get(opportunity_id)
+
+
 # --- reviewer collaboration (Story 9.1) -----------------------------------------------------
 
 
