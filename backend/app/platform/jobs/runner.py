@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.platform.jobs import queue
 from app.platform.jobs.queue import ClaimedJob
-from app.platform.jobs.registry import JobContext, UnknownJobTypeError, get
+from app.platform.jobs.registry import JobContext, PermanentJobError, UnknownJobTypeError, get
 from app.platform.logging import get_logger
 
 _log = get_logger("app.jobs")
@@ -94,10 +94,11 @@ async def run_job(engine: AsyncEngine, job: ClaimedJob, lease: LeaseSettings) ->
     """Run a claimed job's handler under its timeout with a heartbeat, then record the result.
 
     An exception or timeout becomes `failed_retrying` (with the job type's backoff) or, once
-    attempts are exhausted, `dead`. If this task is cancelled (the worker is stopping) while
-    the handler runs, the handler is cancelled and the claim released back to the queue, then
-    CancelledError is re-raised. Once the handler has returned or failed, the finish write is
-    shielded: a cancellation waits for it to land, then re-raises."""
+    attempts are exhausted or on a `PermanentJobError`, `dead`. If this task is cancelled (the
+    worker is stopping) while the handler runs, the handler is cancelled and the claim
+    released back to the queue, then CancelledError is re-raised. Once the handler has
+    returned or failed, the finish write is shielded: a cancellation waits for it to land,
+    then re-raises."""
     ids = {"job_id": str(job.id), "job_type": job.job_type, "attempts": job.attempts}
     try:
         spec = get(job.job_type)
@@ -175,7 +176,8 @@ async def run_job(engine: AsyncEngine, job: ClaimedJob, lease: LeaseSettings) ->
         message = f"TimeoutError: exceeded {spec.timeout_s:g}s"
     else:
         message = short_error(error)
-    retry_in_s = None if job.attempts >= spec.max_attempts else spec.backoff_s(job.attempts)
+    final = job.attempts >= spec.max_attempts or isinstance(error, PermanentJobError)
+    retry_in_s = None if final else spec.backoff_s(job.attempts)
     return await _shielded(
         _finish_failed(
             engine, job, error=message, retry_in_s=retry_in_s, exc_type=type(error).__name__

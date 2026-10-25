@@ -106,7 +106,7 @@ development_status:
   7-1-db-owned-agent-registry-with-immutable-config-versions: done
   7-2-model-profiles-pinned-by-digest-and-sized-to-the-gpu: backlog
   7-3-admin-agents-view-with-config-history: review
-  7-4-tool-permissions-administration-and-denial-audit: backlog
+  7-4-tool-permissions-administration-and-denial-audit: review
   7-5-cost-and-observability-per-run-agent-and-opportunity: backlog
   7-6-evaluation-harness-and-reference-set: done
   7-7-single-agent-baseline-comparison-and-decision-rule: backlog

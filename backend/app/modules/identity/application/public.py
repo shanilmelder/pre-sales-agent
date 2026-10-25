@@ -1,6 +1,12 @@
 """identity's public API. Other modules import identity only from here."""
 
-from app.modules.identity.actions import ACTION_NAME_RE, Action
+from app.modules.identity.actions import (
+    ACTION_CATEGORIES,
+    ACTION_NAME_RE,
+    Action,
+    PermissionCategory,
+    action_category,
+)
 from app.modules.identity.application.authentication import TokenIdentity, TokenValidator
 from app.modules.identity.application.authorize import authorize, can, finding_override_basis
 from app.modules.identity.application.profile import UserProfile
@@ -46,6 +52,7 @@ from app.modules.identity.domain.policy import (
 from app.modules.identity.domain.roles import Role
 
 __all__ = [
+    "ACTION_CATEGORIES",
     "ACTION_NAME_RE",
     "ANY_ROLE_GRANTS",
     "DEFAULT_PAGE_SIZE",
@@ -68,6 +75,7 @@ __all__ = [
     "CurrentUser",
     "CurrentUserDep",
     "OverrideBasis",
+    "PermissionCategory",
     "Principal",
     "Resource",
     "Role",
@@ -76,6 +84,7 @@ __all__ = [
     "UserProfile",
     "UserSearchResult",
     "UserSummary",
+    "action_category",
     "authorize",
     "can",
     "finding_override_basis",

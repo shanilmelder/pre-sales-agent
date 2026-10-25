@@ -114,6 +114,14 @@ describe("/admin/agents", () => {
     expect(within(sections).getByRole("link", { name: "Evals" }).getAttribute("aria-current")).toBe(
       null,
     );
+    // Story 7.4: the Registry | Denied tool calls toggle.
+    const views = screen.getByRole("navigation", { name: "Agents views" });
+    expect(within(views).getByRole("link", { name: "Registry" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(
+      within(views).getByRole("link", { name: "Denied tool calls" }).getAttribute("href"),
+    ).toBe("/admin/agents/denials");
 
     const table = screen.getByRole("table", { name: "Agents" });
     expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([

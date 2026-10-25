@@ -52,6 +52,12 @@ class UnknownJobTypeError(LookupError):
     `ProblemError` (it surfaces as a 500)."""
 
 
+class PermanentJobError(Exception):
+    """Raised by a handler whose job can never succeed on retry (e.g. a 4xx from an API):
+    the job goes straight to `dead`, whatever attempts are left. Any other exception is
+    retried with the job type's backoff."""
+
+
 class JobPayload(BaseModel):
     """Base for job payloads: frozen, and unknown fields are rejected."""
 

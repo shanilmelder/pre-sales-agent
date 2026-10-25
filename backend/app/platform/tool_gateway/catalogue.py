@@ -1,9 +1,10 @@
 """The ToolGateway's tool catalogue (Story 5.4, AD-9): every tool an Agent may call.
 
 Each tool is a READ, named by an `identity` action (`<module>.<entity>.<verb>`; the names
-are repeated in `app.modules.identity.actions.Action`, a test keeps the two in step). There
-is no write, delete, send or approve tool. An Agent's registry config grants tools through
-`tool_permissions`, which accepts only these names.
+are repeated in `app.modules.identity.actions.Action`, a test keeps the two in step, and
+since Story 7.4 every tool's action has the category `read` in `ACTION_CATEGORIES`, checked by
+the same test). There is no write, delete, send or approve tool. An Agent's registry config
+grants tools through `tool_permissions`, which accepts only these names.
 """
 
 from collections.abc import Mapping

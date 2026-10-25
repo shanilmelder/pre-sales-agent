@@ -2359,6 +2359,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registry/tool-denials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tool Denials
+         * @description Denied ToolGateway calls, newest first, one page at a time: time, Agent and version,
+         *     tool action, reason, and the Opportunity, run and task ids. Ids and codes only; never
+         *     an Opportunity name, a prompt or Source text.
+         */
+        get: operations["list_tool_denials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/review-requests": {
         parameters: {
             query?: never;
@@ -2517,7 +2539,8 @@ export interface components {
          * @description What a new config version of this Agent may reference, from the deployed manifest
          *     (Story 7.3): the model profiles, the Agent's deployed prompt versions, its input schema
          *     versions and its output schema versions written for the deployed contract version, and
-         *     the ToolGateway's read-only tools. Each list is sorted.
+         *     the grantable tool permissions (`read` actions that are ToolGateway tools, Story 7.4).
+         *     Each list is sorted.
          */
         AgentConfigOptions: {
             /** Model Profiles */
@@ -2529,7 +2552,7 @@ export interface components {
             /** Output Schema Versions */
             output_schema_versions: number[];
             /** Tool Permissions */
-            tool_permissions: string[];
+            tool_permissions: components["schemas"]["ToolPermissionOption"][];
         };
         /**
          * AgentConfigVersion
@@ -3908,8 +3931,9 @@ export interface components {
         };
         /**
          * EstimateSummary
-         * @description A list row's current Estimate Version (its draft, else its latest submitted one): its
-         *     number, its status (`draft` or `submitted`) and total hours, Contingency included.
+         * @description A list row's current Estimate Version (its draft, else its latest submitted or
+         *     in-review one): its number, its status (`draft`, `submitted` or `in_review`) and total
+         *     hours, Contingency included.
          */
         EstimateSummary: {
             /** Version */
@@ -6418,6 +6442,72 @@ export interface components {
          * @enum {string}
          */
         TaskSkipReason: "agent_disabled";
+        /**
+         * ToolDenial
+         * @description One denied ToolGateway call (Story 7.4), from `platform_tool_calls`. Ids, codes and
+         *     the time only: never an Opportunity name, a prompt or Source text. `semver` is the
+         *     calling config version's (null if that version is unknown); `run_id` and `task_id` are
+         *     null for a call made outside a run. `threshold_exceeded`: the call's run passed the
+         *     denial alert threshold.
+         */
+        ToolDenial: {
+            /** Id */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Agent Id */
+            agent_id: string;
+            /** Semver */
+            semver: string | null;
+            /** Config Version Id */
+            config_version_id: string;
+            /** Tool */
+            tool: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "tool_not_permitted" | "out_of_scope" | "unknown_tool" | "not_allowlisted";
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Run Id */
+            run_id: string | null;
+            /** Task Id */
+            task_id: string | null;
+            /** Threshold Exceeded */
+            threshold_exceeded: boolean;
+        };
+        /**
+         * ToolDenialPage
+         * @description One page of denied tool calls, newest first.
+         */
+        ToolDenialPage: {
+            /** Items */
+            items: components["schemas"]["ToolDenial"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ToolPermissionOption
+         * @description A tool permission an Agent may be granted, with its action's category (Story 7.4;
+         *     always `read`).
+         */
+        ToolPermissionOption: {
+            /** Action */
+            action: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "read" | "write" | "delete" | "send" | "approve";
+        };
         /**
          * Totals
          * @description Effort, Contingency and total hours, and the effort per role.
@@ -23907,7 +23997,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24042,7 +24132,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24175,7 +24265,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24339,7 +24429,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24494,7 +24584,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24658,7 +24748,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), or its output schema is for another contract version (`registry_config_incompatible_contract`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -24900,6 +24990,123 @@ export interface operations {
                 };
             };
             /** @description The id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_tool_denials: {
+        parameters: {
+            query?: {
+                /** @description Only this Agent's denied calls, e.g. `pm_agent`. */
+                agent_id?: string | null;
+                /** @description Denied on or after this UTC calendar date (`YYYY-MM-DD`). */
+                from?: string | null;
+                /** @description Denied on or before this UTC calendar date (`YYYY-MM-DD`, not before `from`). */
+                to?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolDenialPage"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller is not a platform administrator (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A query parameter is invalid: a date that is not `YYYY-MM-DD`, `from` after `to`, or a page out of range (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;

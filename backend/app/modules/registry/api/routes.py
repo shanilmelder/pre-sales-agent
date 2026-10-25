@@ -1,11 +1,15 @@
-"""Agent Registry routes (Story 7.1) under `/api/v1/registry/agents`, and the read-only
-evaluation results (Story 7.6) under `/api/v1/registry/evals`. Platform administrators
-only: anyone else gets 403. Writes to an existing Agent take its `ETag` back in `If-Match`."""
+"""Agent Registry routes (Story 7.1) under `/api/v1/registry/agents`, the read-only
+evaluation results (Story 7.6) under `/api/v1/registry/evals`, and the denied tool calls
+(Story 7.4) under `/api/v1/registry/tool-denials`. Platform administrators only: anyone else
+gets 403. Writes to an existing Agent take its `ETag` back in `If-Match`."""
 
+import re
+from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Path, Response
+from fastapi import APIRouter, Header, Path, Query, Response
+from fastapi.exceptions import RequestValidationError
 
 from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.registry.application import public as registry
@@ -19,6 +23,7 @@ from app.modules.registry.application.public import (
     NewAgentConfigVersion,
     RegistryAgent,
     RegistryAgentList,
+    ToolDenialPage,
 )
 from app.platform.concurrency import etag
 from app.platform.errors import PROBLEM_JSON, Problem
@@ -33,8 +38,9 @@ _DESCRIBED: dict[int, str] = {
     412: "The Agent changed since the caller read it (`row_version_mismatch`)",
     422: "A field is invalid (the `detail` is the sentence to show; `validation_error`), the "
     "config references a prompt, schema or profile that is not deployed "
-    "(`registry_config_not_deployed`), or its output schema is for another contract version "
-    "(`registry_config_incompatible_contract`)",
+    "(`registry_config_not_deployed`), its output schema is for another contract version "
+    "(`registry_config_incompatible_contract`), or it grants a permission that is not a read "
+    "tool (`registry_permission_forbidden_for_agents`)",
     428: "The write has no `If-Match` header (`if_match_required`)",
     503: "Sign-in service unavailable (`auth_unavailable`)",
 }
@@ -208,3 +214,85 @@ async def list_eval_results(actor: CurrentPrincipal, uow: UoW) -> EvalResultList
 async def get_eval_result(result_id: _RESULT_ID, actor: CurrentPrincipal, uow: UoW) -> EvalResult:
     """One evaluation result."""
     return await registry.read_eval(uow, actor, result_id)
+
+
+# --- denied tool calls (Story 7.4): read-only ----------------------------------------------
+
+denials_router = APIRouter(prefix="/registry/tool-denials", tags=["registry"])
+_DENIALS_DESCRIBED = {
+    **_DESCRIBED,
+    422: "A query parameter is invalid: a date that is not `YYYY-MM-DD`, `from` after `to`, "
+    "or a page out of range (`validation_error`)",
+}
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_dates(date_from: str | None, date_to: str | None) -> tuple[date | None, date | None]:
+    """Both bounds as calendar dates; a 422 names each invalid one (both for a reversed
+    range)."""
+    parsed: dict[str, date | None] = {"from": None, "to": None}
+    invalid: list[str] = []
+    for name, raw in (("from", date_from), ("to", date_to)):
+        if raw is None or not raw.strip():
+            continue
+        try:
+            if not _DATE_RE.match(raw.strip()):
+                raise ValueError(raw)
+            parsed[name] = date.fromisoformat(raw.strip())
+        except ValueError:
+            invalid.append(name)
+    start, end = parsed["from"], parsed["to"]
+    if start is not None and end is not None and start > end:
+        invalid.extend(("from", "to"))
+    if invalid:
+        raise RequestValidationError(
+            [{"loc": ("query", name), "msg": "invalid", "type": "value_error"} for name in invalid]
+        )
+    return start, end
+
+
+@denials_router.get(
+    "",
+    operation_id="list_tool_denials",
+    responses={
+        code: {"description": _DENIALS_DESCRIBED[code], "content": PROBLEM_CONTENT}
+        for code in (401, 403, 422, 503)
+    },
+)
+async def list_tool_denials(
+    actor: CurrentPrincipal,
+    uow: UoW,
+    agent_id: Annotated[
+        str | None,
+        Query(max_length=64, description="Only this Agent's denied calls, e.g. `pm_agent`."),
+    ] = None,
+    date_from: Annotated[
+        str | None,
+        Query(
+            alias="from",
+            description="Denied on or after this UTC calendar date (`YYYY-MM-DD`).",
+            json_schema_extra={"format": "date"},
+        ),
+    ] = None,
+    date_to: Annotated[
+        str | None,
+        Query(
+            alias="to",
+            description="Denied on or before this UTC calendar date (`YYYY-MM-DD`, not "
+            "before `from`).",
+            json_schema_extra={"format": "date"},
+        ),
+    ] = None,
+    page: Annotated[int, Query(ge=1, le=registry.DENIALS_MAX_PAGE)] = 1,
+    page_size: Annotated[
+        int, Query(ge=1, le=registry.DENIALS_MAX_PAGE_SIZE)
+    ] = registry.DENIALS_DEFAULT_PAGE_SIZE,
+) -> ToolDenialPage:
+    """Denied ToolGateway calls, newest first, one page at a time: time, Agent and version,
+    tool action, reason, and the Opportunity, run and task ids. Ids and codes only; never
+    an Opportunity name, a prompt or Source text."""
+    start, end = _parse_dates(date_from, date_to)
+    agent = agent_id.strip() if agent_id is not None and agent_id.strip() else None
+    return await registry.read_tool_denials(
+        uow, actor, agent_id=agent, date_from=start, date_to=end, page=page, page_size=page_size
+    )

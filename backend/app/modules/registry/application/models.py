@@ -85,17 +85,59 @@ class NewAgentConfigVersion(NewAgentConfig):
     restored_from_version: int | None = Field(default=None, ge=1, le=1_000_000)
 
 
+PermissionCategoryName = Literal["read", "write", "delete", "send", "approve"]
+"""An action's permission category (`identity.actions.PermissionCategory`, Story 7.4)."""
+
+
+class ToolPermissionOption(BaseModel):
+    """A tool permission an Agent may be granted, with its action's category (Story 7.4;
+    always `read`)."""
+
+    action: str
+    category: PermissionCategoryName
+
+
 class AgentConfigOptions(BaseModel):
     """What a new config version of this Agent may reference, from the deployed manifest
     (Story 7.3): the model profiles, the Agent's deployed prompt versions, its input schema
     versions and its output schema versions written for the deployed contract version, and
-    the ToolGateway's read-only tools. Each list is sorted."""
+    the grantable tool permissions (`read` actions that are ToolGateway tools, Story 7.4).
+    Each list is sorted."""
 
     model_profiles: list[str]
     prompt_versions: list[int]
     input_schema_versions: list[int]
     output_schema_versions: list[int]
-    tool_permissions: list[str]
+    tool_permissions: list[ToolPermissionOption]
+
+
+class ToolDenial(BaseModel):
+    """One denied ToolGateway call (Story 7.4), from `platform_tool_calls`. Ids, codes and
+    the time only: never an Opportunity name, a prompt or Source text. `semver` is the
+    calling config version's (null if that version is unknown); `run_id` and `task_id` are
+    null for a call made outside a run. `threshold_exceeded`: the call's run passed the
+    denial alert threshold."""
+
+    id: str
+    created_at: datetime
+    agent_id: str
+    semver: str | None
+    config_version_id: str
+    tool: str
+    reason: Literal["tool_not_permitted", "out_of_scope", "unknown_tool", "not_allowlisted"]
+    opportunity_id: str
+    run_id: str | None
+    task_id: str | None
+    threshold_exceeded: bool
+
+
+class ToolDenialPage(BaseModel):
+    """One page of denied tool calls, newest first."""
+
+    items: list[ToolDenial]
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1)
+    total: int = Field(ge=0)
 
 
 class NewAgent(BaseModel):

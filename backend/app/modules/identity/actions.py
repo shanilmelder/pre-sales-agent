@@ -3,10 +3,17 @@
 Names follow `<module>.<entity>.<verb>` and match the command that performs them. The
 Agent Registry reuses these names later. Auth0 RBAC permissions use the same names: a token
 whose `permissions` claim holds an action's value is granted that action.
+
+Story 7.4: every action has exactly one permission category (`ACTION_CATEGORIES`): `read`,
+`write`, `delete`, `send` or `approve`. An Agent may be granted only `read` actions that are
+also ToolGateway tools (the registry rejects anything else with
+`registry_permission_forbidden_for_agents`).
 """
 
 import re
+from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 
 _SEGMENT = r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*"
 ACTION_NAME_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
@@ -82,3 +89,91 @@ class Action(StrEnum):
     TOOL_RESEARCH_PAGE_FETCH = "knowledge.research_page.fetch"
     TOOL_RUN_ASSESSMENT_READ = "assessments.run.read"
     """Story 6.4: the Critic reads its run's accepted Assessments and Findings."""
+
+
+class PermissionCategory(StrEnum):
+    """What an action does (Story 7.4). Agents may only ever hold `read`."""
+
+    READ = "read"
+    WRITE = "write"
+    DELETE = "delete"
+    SEND = "send"
+    APPROVE = "approve"
+
+
+_R, _W, _D, _S, _A = (
+    PermissionCategory.READ,
+    PermissionCategory.WRITE,
+    PermissionCategory.DELETE,
+    PermissionCategory.SEND,
+    PermissionCategory.APPROVE,
+)
+
+ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
+    {
+        Action.USER_LIST: _R,
+        Action.USER_SEARCH: _R,
+        Action.OPPORTUNITY_CREATE: _W,
+        Action.OPPORTUNITY_READ: _R,
+        Action.OPPORTUNITY_UPDATE: _W,
+        Action.COLLABORATOR_ADD: _W,
+        Action.COLLABORATOR_REMOVE: _D,
+        Action.SOURCE_ADD: _W,
+        Action.EXTRACTION_START: _W,
+        Action.REQUIREMENT_EDIT: _W,
+        Action.GAP_DETECTION_START: _W,
+        Action.GAP_QUESTION_EDIT: _W,
+        Action.GAP_EDIT: _W,
+        Action.GAP_QUESTION_SEND: _S,
+        Action.ESTIMATE_DRAFT_START: _W,
+        Action.ASSUMPTION_ACCEPT: _A,
+        Action.ASSUMPTION_EDIT: _W,
+        Action.RISK_CREATE: _W,
+        Action.RISK_EDIT: _W,
+        Action.RED_TEAM_START: _W,
+        Action.ASSESSMENT_START: _W,
+        Action.ESTIMATE_EXPORT: _R,
+        Action.CATALOGUE_ENTRY_CREATE: _W,
+        Action.CATALOGUE_ENTRY_EDIT: _W,
+        Action.CATALOGUE_ENTRY_RETIRE: _D,
+        Action.CATALOGUE_ENTRY_REACTIVATE: _W,
+        Action.KNOWLEDGE_SOURCE_REGISTER: _W,
+        Action.KNOWLEDGE_SOURCE_ADD_VERSION: _W,
+        Action.KNOWLEDGE_SOURCE_RETAG: _W,
+        Action.KNOWLEDGE_SOURCE_REVIEW: _A,
+        Action.KNOWLEDGE_SOURCE_RETIRE: _D,
+        Action.KNOWLEDGE_SOURCE_RETRY_PARSE: _W,
+        Action.KNOWLEDGE_SOURCE_RETRY_EMBED: _W,
+        Action.KNOWLEDGE_CHUNK_SEARCH: _R,
+        Action.KNOWLEDGE_CHECKLIST_CREATE: _W,
+        Action.KNOWLEDGE_CHECKLIST_EDIT: _W,
+        Action.KNOWLEDGE_CHECKLIST_PUBLISH: _A,
+        Action.KNOWLEDGE_CHECKLIST_RETIRE: _D,
+        Action.ESTIMATE_LINE_EDIT: _W,
+        Action.ESTIMATE_VERSION_SUBMIT: _A,
+        Action.CONFLICT_RESOLVE: _W,
+        Action.CONFLICT_ESCALATE: _S,
+        Action.FINDING_RESOLVE: _W,
+        Action.FINDING_OVERRIDE: _A,
+        Action.REGISTRY_AGENT_REGISTER: _W,
+        Action.REGISTRY_AGENT_CONFIG_CREATE: _W,
+        Action.REGISTRY_AGENT_SET_STATUS: _W,
+        Action.DECISION_RESOLVE: _A,
+        Action.TOOL_REQUIREMENT_LIST: _R,
+        Action.TOOL_PASSAGE_READ: _R,
+        Action.TOOL_CHUNK_READ: _R,
+        Action.TOOL_CATALOGUE_ENTRY_LIST: _R,
+        Action.TOOL_GAP_LIST: _R,
+        Action.TOOL_RESEARCH_PAGE_FETCH: _R,
+        Action.TOOL_RUN_ASSESSMENT_READ: _R,
+    }
+)
+"""One category per action; a test fails when an `Action` has none."""
+
+
+def action_category(name: str) -> PermissionCategory | None:
+    """The category of the action named `name`; None when no action has that name."""
+    try:
+        return ACTION_CATEGORIES.get(Action(name))
+    except ValueError:
+        return None

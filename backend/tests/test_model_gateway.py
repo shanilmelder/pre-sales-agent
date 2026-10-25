@@ -750,6 +750,14 @@ def test_blank_openai_settings_mean_unset(monkeypatch: pytest.MonkeyPatch) -> No
     assert (settings.openai_model, settings.openai_reasoning_effort) == ("gpt-4.1", "low")
 
 
+def test_alert_email_recipients_are_a_comma_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Story 7.4: `PSA_ALERT_EMAIL_TO` is comma-separated; blanks are dropped."""
+    monkeypatch.setenv("PSA_ALERT_EMAIL_TO", " a@x.test, ,b@x.test ")
+    assert Settings().alert_email_to == ["a@x.test", "b@x.test"]
+    monkeypatch.setenv("PSA_ALERT_EMAIL_TO", "")
+    assert Settings().alert_email_to == []
+
+
 def test_reasoning_effort_replaces_temperature_for_an_openai_reasoning_model(
     db_url: str, sync_engine: Engine
 ) -> None:

@@ -3,6 +3,7 @@ import {
   configValue,
   fieldLabel,
   permissionChanges,
+  permissionWithCategory,
   type AgentConfigVersion,
 } from "@/lib/admin";
 
@@ -20,7 +21,8 @@ function Line({ sign, label, children }: { sign: "−" | "+"; label: string; chi
 
 /** The fields that differ between two config versions (Story 7.3): each as a `−` line (the
  * `before` value) and a `+` line (the `after` value) on the diff tint, never green or red.
- * Tool permissions are shown as removed (`−`) and granted (`+`). */
+ * Tool permissions are shown as removed (`−`) and granted (`+`), each with its category
+ * ("knowledge.chunk.read (read)", Story 7.4). */
 export function AgentConfigDiff({
   before,
   after,
@@ -46,12 +48,12 @@ export function AgentConfigDiff({
               <dd className="flex flex-col gap-0.5">
                 {removed.map((p) => (
                   <Line key={`-${p}`} sign="−" label="Removed">
-                    {p}
+                    {permissionWithCategory(p)}
                   </Line>
                 ))}
                 {granted.map((p) => (
                   <Line key={`+${p}`} sign="+" label="Granted">
-                    {p}
+                    {permissionWithCategory(p)}
                   </Line>
                 ))}
               </dd>

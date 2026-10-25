@@ -307,7 +307,7 @@ def test_agent_id_rules() -> None:
         rules.tool_permissions(["Not An Action"])
     assert rules.tool_permissions(["gaps.gap.list", "gaps.gap.list"]) == ("gaps.gap.list",)
     for write in ("intake.requirement.edit", "a.b.read", "gaps.clarification_question.send"):
-        with pytest.raises(rules.ToolPermissionNotReadOnly):
+        with pytest.raises(rules.PermissionForbiddenForAgents):
             rules.tool_permissions([write])
 
 
@@ -614,16 +614,29 @@ def test_invalid_config_fields_are_422(client: TestClient, test_manifest: str) -
 def test_a_non_read_tool_permission_is_422_and_stores_nothing(
     client: TestClient, sync_engine: Engine, test_manifest: str
 ) -> None:
-    """Story 5.4: only the ToolGateway's READ tools can be granted."""
+    """Story 7.4: only `read` actions that are ToolGateway tools can be granted; every other
+    category, a read that is no tool and a name no action has are 422
+    `registry_permission_forbidden_for_agents`, and nothing is stored."""
     admin, _ = _admin(client)
     _register(client, admin, test_manifest)
     url = f"{URL}/{test_manifest}/config-versions"
-    for grant in (["intake.requirement.edit"], ["gaps.gap.list", "estimates.estimate.export"]):
-        resp = client.post(
-            url, headers={**admin, **_if_match(1)}, json=_version(tool_permissions=grant)
-        )
-        _problem(resp, 422, "tool_permission_not_read_only")
+    forbidden = {
+        "write": "intake.requirement.edit",
+        "send": "gaps.clarification_question.send",
+        "delete": "knowledge.source.retire",
+        "approve": "estimates.assumption.accept",
+        "read, not a tool": "opportunities.opportunity.read",
+        "no action": "gaps.question.send",
+    }
+    for kind, name in forbidden.items():
+        for grant in ([name], ["gaps.gap.list", name]):
+            resp = client.post(
+                url, headers={**admin, **_if_match(1)}, json=_version(tool_permissions=grant)
+            )
+            body = _problem(resp, 422, "registry_permission_forbidden_for_agents")
+            assert name in body["detail"], kind
     assert len(_version_rows(sync_engine, test_manifest)) == 1
+    assert _agent_rows(sync_engine, test_manifest)["row_version"] == 1
     resp = client.post(
         URL,
         headers=admin,
@@ -633,7 +646,29 @@ def test_a_non_read_tool_permission_is_422_and_stores_nothing(
             "config": _config(tool_permissions=["knowledge.source.retire"]),
         },
     )
-    _problem(resp, 422, "tool_permission_not_read_only")
+    _problem(resp, 422, "registry_permission_forbidden_for_agents")
+    assert _version_rows(sync_engine, f"{test_manifest[:-6]}_two_agent") == []
+
+
+def test_a_read_tool_permission_is_granted(
+    client: TestClient, sync_engine: Engine, test_manifest: str
+) -> None:
+    admin, _ = _admin(client)
+    _register(client, admin, test_manifest)
+    resp = client.post(
+        f"{URL}/{test_manifest}/config-versions",
+        headers={**admin, **_if_match(1)},
+        json=_version(tool_permissions=["intake.requirement.list", "knowledge.chunk.read"]),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["current_config"]["tool_permissions"] == [
+        "intake.requirement.list",
+        "knowledge.chunk.read",
+    ]
+    assert _version_rows(sync_engine, test_manifest)[-1]["tool_permissions"] == [
+        "intake.requirement.list",
+        "knowledge.chunk.read",
+    ]
 
 
 def test_disable_eval_only_and_enable_with_if_match_and_trace(
@@ -832,7 +867,7 @@ def test_admins_read_the_deployed_config_options(client: TestClient, test_manife
         "prompt_versions": [1, 2],
         "input_schema_versions": [1],
         "output_schema_versions": [1],  # v2 is written for another contract version
-        "tool_permissions": sorted(READ_TOOLS),
+        "tool_permissions": [{"action": name, "category": "read"} for name in sorted(READ_TOOLS)],
     }
     estimating = client.get(f"{URL}/estimating_agent/config-options", headers=admin).json()
     assert estimating["prompt_versions"] == [1]

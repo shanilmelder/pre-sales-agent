@@ -55,5 +55,8 @@ export const OPTIONS: AgentConfigOptions = {
   prompt_versions: [1, 2],
   input_schema_versions: [1],
   output_schema_versions: [1],
-  tool_permissions: ["gaps.gap.list", "intake.requirement.list"],
+  tool_permissions: [
+    { action: "gaps.gap.list", category: "read" },
+    { action: "intake.requirement.list", category: "read" },
+  ],
 };
