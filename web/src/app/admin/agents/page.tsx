@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { AccessGate, hasAccess } from "@/components/access-gate";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminNav } from "@/components/admin/admin-nav";
-import { AgentsTable } from "@/components/admin/agents-table";
+import { AgentsAdmin } from "@/components/admin/agents-admin";
 import { AppShell } from "@/components/shell/app-shell";
 import { PageContent, PageHeader } from "@/components/shell/page-header";
 import type { RegistryAgent } from "@/lib/admin";
@@ -47,7 +47,8 @@ function NoAccessPage() {
   );
 }
 
-/** Admin → Agents: the Agent registry, read-only (status changes stay with the API). */
+/** Admin → Agents: the Agent registry. Selecting a row opens its inspector: config history,
+ * a two-version diff, new and restored versions, and Enable/Disable (Story 7.3). */
 export default async function AdminAgentsPage() {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
@@ -69,7 +70,7 @@ export default async function AdminAgentsPage() {
         {list.kind === "error" ? (
           <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : null}
-        {list.kind === "ok" ? <AgentsTable agents={list.agents} /> : null}
+        {list.kind === "ok" ? <AgentsAdmin initialAgents={list.agents} /> : null}
       </PageContent>
     </AppShell>
   );

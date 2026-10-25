@@ -72,6 +72,9 @@ function agent(
       tool_permissions: toolPermissions,
       budgets: {},
       created_by_id: null,
+      created_by_name: null,
+      reason: null,
+      restored_from_version: null,
       created_at: "2026-10-01T09:00:00Z",
     },
   };

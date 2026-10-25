@@ -279,3 +279,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-1-review-requests.md`
   summary: Add tests for the `in_review` line-edit detail ("This Estimate Version was submitted…") and the export header label "In review".
   evidence: `line_edits.not_draft_detail` and `export_content.build_export` branch on `in_review`, but only the submitted/draft variants are tested.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-admin-agents-view.md`
+  summary: Story 7.3/7.8 "Not evaluated" badge on Agent config versions and the explicit save confirmation for an unevaluated config.
+  evidence: Deferred by the user on 2026-10-24 while planning the Story 7.3 remainder; it belongs with the 7.8 eval gate.
