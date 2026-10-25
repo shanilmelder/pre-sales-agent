@@ -155,7 +155,13 @@ describe("AgentsAdmin", () => {
 
   it("saves a new version with a reason; the row and history show it", async () => {
     const v3 = configVersion(3, { semver: "0.2.1", prompt_version: 1, reason: "Back to v1" });
-    const saved = { ...PM, row_version: 3, current_config: v3 };
+    // The API returns the effective model of the new current version.
+    const saved = {
+      ...PM,
+      row_version: 3,
+      current_config: v3,
+      effective_model: { ...PM.effective_model, profile: v3.model_profile },
+    };
     actions.createConfigVersion.mockImplementation(async () => {
       stored.pm_agent = { agent: saved, versions: [v3, V2, V1] };
       return { kind: "ok", agent: saved };

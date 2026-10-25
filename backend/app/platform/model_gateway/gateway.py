@@ -23,7 +23,7 @@ makes embedding calls only (Knowledge search queries, Story 3.3) and never a cha
 
 import re
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
 from uuid import UUID
@@ -55,6 +55,7 @@ from app.platform.model_gateway.profiles import (
     Provider,
     get_embed_profile,
     get_profile,
+    resolve_profile,
 )
 from app.platform.model_gateway.semaphore import PrioritySemaphore
 from app.platform.uow import unit_of_work
@@ -136,16 +137,12 @@ class ModelGateway:
         self._semaphore = PrioritySemaphore(settings.model_slots)
 
     def _profile(self, name: str) -> ModelProfile:
-        """The named profile. For an `openai` provider profile, `PSA_OPENAI_MODEL` and
-        `PSA_OPENAI_REASONING_EFFORT` (when set) replace its model and reasoning effort, so
-        the request, the call record and the logs all name the model actually called."""
-        profile = get_profile(name)
-        if profile.provider != "openai":
-            return profile
-        return replace(
-            profile,
-            model=self._settings.openai_model or profile.model,
-            reasoning_effort=self._settings.openai_reasoning_effort or profile.reasoning_effort,
+        """The named profile as called (`resolve_profile`), so the request, the call record
+        and the logs all name the model actually called."""
+        return resolve_profile(
+            name,
+            openai_model=self._settings.openai_model,
+            openai_reasoning_effort=self._settings.openai_reasoning_effort,
         )
 
     @property
