@@ -95,6 +95,10 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "conflicts.conflict.detected": "Conflict detected",
   "conflicts.conflict.resolved": "Conflict resolved",
   "conflicts.conflict.escalated": "Conflict escalated",
+  // Story 9.5
+  "reviews.challenge.raised": "Challenge raised",
+  "reviews.challenge.confirmed": "Reassessment confirmed",
+  "reviews.challenge.declined": "Challenge declined",
 };
 
 /** An event type in plain words, or the raw type for one this build doesn't know. */
@@ -129,6 +133,7 @@ export const SUBJECTS: Readonly<
   "knowledge.checklist": { label: "Checklist", tab: null },
   "conflicts.conflict": { label: "Conflict", tab: "conflicts" },
   "reviews.review_request": { label: "Review Request", tab: "estimate" },
+  "reviews.challenge": { label: "Challenge", tab: "assessments" },
 };
 
 export function subjectLabel(subjectType: string): string {

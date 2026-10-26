@@ -2547,6 +2547,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/challenges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Raise Challenge
+         * @description Raise a Challenge of the Estimate Version in context, a current Assessment or one of
+         *     its Findings, with a reason. The platform stores the Assessments it suggests rerunning.
+         *     From a Review Request, that request becomes `challenged`. A reviewer's Challenge goes
+         *     to the Opportunity's owner to confirm; the owner may raise and confirm at once with
+         *     `confirmed`, which starts the reassessment run.
+         */
+        post: operations["raise_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/challenges/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Challenge Suggestions
+         * @description What the Challenge dialog shows before raising: its title, the version in context,
+         *     the Assessments suggested for a rerun and whether the caller may raise (and confirm).
+         *     Anyone who can read the Opportunity.
+         */
+        get: operations["get_challenge_suggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Challenge
+         * @description A Challenge: its target, reason, suggestions, status, run and what the caller may do.
+         *     Anyone who can read the Opportunity.
+         */
+        get: operations["get_challenge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Challenge
+         * @description Confirm the reassessment: the ticked Assessments rerun, then the Critic, in a
+         *     `challenge` Workflow Run. Confirming again returns the same run. The Opportunity's owner
+         *     only.
+         */
+        post: operations["confirm_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline Challenge
+         * @description Decline a Challenge with a reason: a challenged Review Request is pending again and
+         *     the challenger gets an Inbox item. The Opportunity's owner only.
+         */
+        post: operations["decline_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inbox": {
         parameters: {
             query?: never;
@@ -3062,8 +3172,10 @@ export interface components {
          * @description The Opportunity's latest assessment run (null before the first) with its tasks, and
          *     one entry per agent (Engineering, PM, Security) with its current Assessment or null.
          *     `can_start`: whether the caller may start a run or retry a task; `can_resolve`: whether
-         *     they may resolve the run's decisions (Story 5.5). The UI only uses them to hide
-         *     controls; the API decides.
+         *     they may resolve the run's decisions (Story 5.5); `can_challenge` (Story 9.5): whether
+         *     they may raise a Challenge of an Assessment or one of its Findings (the owner, or a
+         *     reviewer with a pending Review Request). The UI only uses them to hide controls; the API
+         *     decides.
          */
         AssessmentsView: {
             run: components["schemas"]["AssessmentRun"] | null;
@@ -3076,6 +3188,11 @@ export interface components {
              * @default false
              */
             can_resolve: boolean;
+            /**
+             * Can Challenge
+             * @default false
+             */
+            can_challenge: boolean;
         };
         /**
          * Assumption
@@ -3275,6 +3392,188 @@ export interface components {
         CatalogueVersionList: {
             /** Items */
             items: components["schemas"]["CatalogueVersion"][];
+        };
+        /**
+         * ChallengeConfirm
+         * @description Confirm the reassessment of these suggested agents' Assessments (at least one).
+         */
+        ChallengeConfirm: {
+            /** Confirmed */
+            confirmed: string[];
+        };
+        /**
+         * ChallengeCreate
+         * @description Raise a Challenge of an Estimate Version (the one in context), a current Assessment or
+         *     one of its Findings. `review_request_id`: the caller's pending Review Request it is
+         *     raised from (that request becomes `challenged`). `confirmed`: only the Opportunity's
+         *     owner, who then raises and confirms in one step (at least one suggested agent).
+         */
+        ChallengeCreate: {
+            target_kind: components["schemas"]["ChallengeTargetKind"];
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+            /**
+             * Reason
+             * @description What looks wrong and why. Trimmed, 1 to 1,000 characters.
+             */
+            reason: string;
+            /** Review Request Id */
+            review_request_id?: string | null;
+            /**
+             * Confirmed
+             * @description Owner only: the agents whose Assessments rerun now.
+             */
+            confirmed?: string[] | null;
+        };
+        /**
+         * ChallengeDecline
+         * @description Decline a Challenge, with a reason the challenger sees.
+         */
+        ChallengeDecline: {
+            /**
+             * Reason
+             * @description Why. Trimmed, 1 to 1,000 characters.
+             */
+            reason: string;
+        };
+        /**
+         * ChallengeStatus
+         * @enum {string}
+         */
+        ChallengeStatus: "awaiting_confirmation" | "reassessing" | "completed" | "declined" | "failed";
+        /**
+         * ChallengeSuggestionView
+         * @description One Assessment the platform suggests rerunning: the `agent` (`label` in words, e.g.
+         *     "Engineering Agent"), `why` it is affected ("Holds the challenged Finding", "Cites R12",
+         *     "Shares the ERP integration type") and its `tag`: `suggested` (pre-ticked) or `optional`
+         *     (unticked).
+         */
+        ChallengeSuggestionView: {
+            /** Agent */
+            agent: string;
+            /** Label */
+            label: string;
+            /** Why */
+            why: string;
+            tag: components["schemas"]["SuggestionTag"];
+            /** Preselected */
+            preselected: boolean;
+        };
+        /**
+         * ChallengeSuggestions
+         * @description What the Challenge dialog shows before anything is raised: its `title`, the `target`,
+         *     the version in context (`estimate_version`, with `superseded_by` when replaced), the
+         *     `suggested` Assessments, `always_rerun`, and the caller's flags: `can_raise` (the owner,
+         *     or a reviewer with a pending request) and `can_confirm` (the owner: the cards are
+         *     editable and raising also confirms).
+         */
+        ChallengeSuggestions: {
+            /** Title */
+            title: string;
+            target: components["schemas"]["ChallengeTargetView"];
+            /** Estimate Version */
+            estimate_version: number;
+            /** Superseded By */
+            superseded_by: number | null;
+            /** Suggested */
+            suggested: components["schemas"]["ChallengeSuggestionView"][];
+            /** Always Rerun */
+            always_rerun: string[];
+            /** Can Raise */
+            can_raise: boolean;
+            /** Can Confirm */
+            can_confirm: boolean;
+        };
+        /**
+         * ChallengeTargetKind
+         * @enum {string}
+         */
+        ChallengeTargetKind: "estimate_version" | "assessment" | "finding";
+        /**
+         * ChallengeTargetView
+         * @description What a Challenge disputes: `kind`, `id`, `version` (an Assessment's, or for a Finding
+         *     its Assessment's) and a `label` such as "Estimate v3", "Engineering Assessment v2" or
+         *     "Finding: {title}".
+         */
+        ChallengeTargetView: {
+            kind: components["schemas"]["ChallengeTargetKind"];
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Label */
+            label: string;
+        };
+        /**
+         * ChallengeView
+         * @description A Challenge (Story 9.5).
+         *
+         *     - `title`: the dialog's, e.g. "Challenge Estimate v3"; `target`; `estimate_version_id`
+         *       and `estimate_version`: the version in context; `superseded_by` (and
+         *       `superseded_by_id`): the version that replaced it, null unless superseded (the dialog's
+         *       **Raise on v4**).
+         *     - `challenger`, `reason`, `review_request_id` (raised from a review), `status` with its
+         *       `status_label`; `suggested` (stored at raise), `confirmed` (null until confirmed),
+         *       `always_rerun` (never toggleable), `decline_reason`.
+         *     - `workflow_run_id` and `run_number` (its position among the Opportunity's runs, for
+         *       "Reassessment started (run 4)") once confirmed.
+         *     - `row_version` is also the `ETag` (`If-Match` of a confirm or decline);
+         *       `can_confirm` / `can_decline`: whether the caller may now. The UI only uses them to
+         *       show or hide controls; the API decides.
+         */
+        ChallengeView: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            target: components["schemas"]["ChallengeTargetView"];
+            /** Estimate Version Id */
+            estimate_version_id: string;
+            /** Estimate Version */
+            estimate_version: number;
+            /** Superseded By */
+            superseded_by: number | null;
+            /** Superseded By Id */
+            superseded_by_id: string | null;
+            /** Review Request Id */
+            review_request_id: string | null;
+            challenger: components["schemas"]["ReviewPerson"];
+            /** Reason */
+            reason: string;
+            status: components["schemas"]["ChallengeStatus"];
+            /** Status Label */
+            status_label: string;
+            /** Suggested */
+            suggested: components["schemas"]["ChallengeSuggestionView"][];
+            /** Confirmed */
+            confirmed: string[] | null;
+            /** Always Rerun */
+            always_rerun: string[];
+            /** Decline Reason */
+            decline_reason: string | null;
+            /** Workflow Run Id */
+            workflow_run_id: string | null;
+            /** Run Number */
+            run_number: number | null;
+            /** Row Version */
+            row_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Can Confirm */
+            can_confirm: boolean;
+            /** Can Decline */
+            can_decline: boolean;
         };
         /**
          * Checklist
@@ -5503,7 +5802,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "review_requested" | "review_reminder" | "review_cancelled" | "run_waiting" | "conflict_escalated" | "review_outcome" | "review_replied";
+        NotificationKind: "review_requested" | "review_reminder" | "review_cancelled" | "run_waiting" | "conflict_escalated" | "review_outcome" | "review_replied" | "challenge_raised" | "challenge_declined";
         /**
          * Opportunity
          * @description One Opportunity as a reader sees it. `row_version` is also the `ETag`.
@@ -6356,7 +6655,7 @@ export interface components {
          * ReviewDecisionCreate
          * @description Record a Review Decision. Every decision but `approved` needs a reason (1 to 1,000
          *     characters, trimmed); `escalated_to` (the user who then holds the request) is required
-         *     for, and only for, `escalated`. `challenged` arrives with Story 9.5.
+         *     for, and only for, `escalated`. `challenged` is recorded by raising a Challenge.
          */
         ReviewDecisionCreate: {
             decision: components["schemas"]["Decision"];
@@ -6982,6 +7281,11 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /**
+         * SuggestionTag
+         * @enum {string}
+         */
+        SuggestionTag: "suggested" | "optional";
         /**
          * TargetKind
          * @enum {string}
@@ -26714,7 +27018,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description `validation_error`: a missing or over-1,000-character reason (only Approve may have none), a Challenge (Story 9.5), or a missing or misplaced `escalated_to`; `reviewer_not_authorized_for_type` / `author_cannot_review`: the escalation's reviewer lacks the role or authored the version. The `detail` is the sentence to show */
+            /** @description `validation_error`: a missing or over-1,000-character reason (only Approve may have none), `challenged` (raise a Challenge instead), or a missing or misplaced `escalated_to`; `reviewer_not_authorized_for_type` / `author_cannot_review`: the escalation's reviewer lacks the role or authored the version. The `detail` is the sentence to show */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -27036,6 +27340,830 @@ export interface operations {
                 };
             };
             /** @description `validation_error`: a blank or over-2,000-character message, an alternative after anything but a request for one, or one that is not this Opportunity's newer draft; `evidence_unresolvable`: an Evidence reference that doesn't resolve or is another Opportunity's. The `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    raise_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeCreate"];
+            };
+        };
+        responses: {
+            /** @description The Challenge raised */
+            201: {
+                headers: {
+                    /** @description The Challenge's row version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed: a sales representative, a collaborator, or a reviewer without a pending Review Request here (`forbidden`); someone else's Review Request (`reviewer_not_authorized`); `confirmed` from anyone but the owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Estimate Version yet (`challenge_needs_estimate`); the version in context is superseded (`challenge_version_superseded`); the Review Request is no longer pending (`review_request_not_pending`); the owner's confirmation while another run is active (`assessment_in_progress`); nothing was written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason, a target that is not the version in context, a current Assessment or one of its specialist Findings, or `confirmed` empty or outside the suggestions. The `detail` is the sentence to show */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_challenge_suggestions: {
+        parameters: {
+            query: {
+                target_kind: components["schemas"]["ChallengeTargetKind"];
+                target_id: string;
+            };
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeSuggestions"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Estimate Version yet (`challenge_needs_estimate`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed query, or a target that can't be challenged */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Challenge */
+            200: {
+                headers: {
+                    /** @description The Challenge's row version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    confirm_challenge: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Challenge as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeConfirm"];
+            };
+        };
+        responses: {
+            /** @description The Challenge, `reassessing` with its run (a repeat returns the same run) */
+            200: {
+                headers: {
+                    /** @description The Challenge's row version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only the Opportunity's owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not awaiting confirmation (`challenge_not_awaiting_confirmation`); the version in context is superseded (`challenge_version_superseded`); another run is active (`assessment_in_progress`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Estimate Version or Review Request changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: no Assessment ticked, or one outside the suggestions */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    decline_challenge: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Challenge as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeDecline"];
+            };
+        };
+        responses: {
+            /** @description The declined Challenge */
+            200: {
+                headers: {
+                    /** @description The Challenge's row version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only the Opportunity's owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version or Review Request with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not awaiting confirmation (`challenge_not_awaiting_confirmation`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Estimate Version or Review Request changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a blank or over-1,000-character reason */
             422: {
                 headers: {
                     [name: string]: unknown;

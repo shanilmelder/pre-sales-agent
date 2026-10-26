@@ -114,6 +114,7 @@ const NO_ASSESSMENTS: AssessmentsView = {
   ],
   can_start: false,
   can_resolve: false,
+  can_challenge: false,
 };
 
 /** The Assessments tab body with the given Red Team view (the `useRedTeam` hook's behaviour

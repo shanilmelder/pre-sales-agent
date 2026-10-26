@@ -12,7 +12,8 @@ from app.platform.db import Base
 _NOW = text("now()")
 KINDS = (
     "('review_requested', 'review_reminder', 'review_cancelled', 'run_waiting', "
-    "'conflict_escalated', 'review_outcome', 'review_replied')"
+    "'conflict_escalated', 'review_outcome', 'review_replied', 'challenge_raised', "
+    "'challenge_declined')"
 )
 
 

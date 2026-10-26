@@ -58,7 +58,11 @@ const loadRedTeam = vi.hoisted(() =>
 const loadCritic = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<CriticResult>>(),
 );
+const loadChallengeSuggestions = vi.hoisted(() => vi.fn());
+const loadChallenge = vi.hoisted(() => vi.fn());
 vi.mock("@/app/opportunities/actions", () => ({
+  loadChallenge,
+  loadChallengeSuggestions,
   loadCritic,
   startAssessmentRun,
   retryAssessmentTask,
@@ -298,6 +302,7 @@ function view(
     })),
     can_start: canStart,
     can_resolve: canStart,
+    can_challenge: false,
   };
 }
 
@@ -424,6 +429,65 @@ describe("SpecialistAssessmentsSection", () => {
         .map((h) => h.textContent),
     ).toEqual(["Agent tasks", "Results so far", "Findings"]);
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  describe("Story 9.5: ?challenge= opens that Challenge once", () => {
+    const CID = "00000000-0000-7000-8000-0000000000b1";
+    const TAB = `/opportunities/${OPP_ID}/assessments`;
+    afterEach(() => window.history.replaceState(null, "", "/"));
+
+    it("a valid id loads it in the dialog, and closing drops it from the URL", async () => {
+      loadChallenge.mockResolvedValue({ kind: "not-found" });
+      window.history.replaceState(null, "", `${TAB}?challenge=${CID}`);
+      const user = userEvent.setup();
+      renderSection(view(succeeded, FULL));
+
+      expect(await screen.findByRole("dialog")).toBeTruthy();
+      expect(loadChallenge).toHaveBeenCalledWith({ opportunityId: OPP_ID, challengeId: CID });
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(window.location.search).toBe("");
+    });
+
+    it("a malformed id opens nothing", async () => {
+      loadChallenge.mockReset();
+      window.history.replaceState(null, "", `${TAB}?challenge=nope`);
+      renderSection(view(succeeded, FULL));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(loadChallenge).not.toHaveBeenCalled();
+    });
+  });
+
+  it("Story 9.5: with can_challenge, the cards and the Finding inspector offer Challenge", async () => {
+    loadChallengeSuggestions.mockResolvedValue({ kind: "error" });
+    const user = userEvent.setup();
+    const { container } = renderSection({ ...view(succeeded, FULL), can_challenge: true });
+
+    const engineering = screen.getByRole("article", { name: "Engineering Agent" });
+    await user.click(within(engineering).getByRole("button", { name: "Challenge" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(loadChallengeSuggestions).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      targetKind: "assessment",
+      targetId: ENGINEERING.id,
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await user.click(row(1));
+    const inspector = pane();
+    await user.click(within(inspector).getByRole("button", { name: "Challenge" }));
+    await waitFor(() =>
+      expect(loadChallengeSuggestions).toHaveBeenLastCalledWith({
+        opportunityId: OPP_ID,
+        targetKind: "finding",
+        targetId: expect.any(String),
+      }),
+    );
+    expect(container.querySelector("[data-challenge-button]")).not.toBeNull();
   });
 
   it("Enter opens a Finding in the right pane, read-only, with focus on its title", async () => {

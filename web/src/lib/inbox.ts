@@ -14,7 +14,12 @@ import {
 
 import type { PillTone } from "@/components/ui/pill";
 import type { components } from "@/lib/api/client";
-import { REQUEST_STATUSES, type RequestStatus } from "@/lib/reviews";
+import {
+  CHALLENGE_STATUSES,
+  REQUEST_STATUSES,
+  type ChallengeStatus,
+  type RequestStatus,
+} from "@/lib/reviews";
 
 export type InboxItem = components["schemas"]["InboxItem"];
 export type InboxPage = components["schemas"]["InboxPage"];
@@ -31,6 +36,8 @@ export const NO_SELECTION = "Select an item to see it here.";
 export const LIST_LABEL = "Inbox items";
 /** A Review Request item's subject type (Story 9.3: its detail is the review panel). */
 export const REVIEW_SUBJECT = "reviews.review_request";
+/** A Challenge item's subject type (Story 9.5: its detail is the Challenge form). */
+export const CHALLENGE_SUBJECT = "reviews.challenge";
 
 /** How often the badge and the Inbox read again while the window is open. */
 export const INBOX_POLL_MS = 30_000;
@@ -60,8 +67,11 @@ export function isReviewKind(kind: NotificationKind): boolean {
   return REVIEW_KINDS.includes(kind);
 }
 
-/** The label at the right of a row and in the detail's header. */
-export function kindLabel(kind: NotificationKind): "Review" | "Update" {
+const CHALLENGE_KINDS: readonly NotificationKind[] = ["challenge_raised", "challenge_declined"];
+
+/** The label at the right of a row and in the detail's header (Story 9.5: "Challenge"). */
+export function kindLabel(kind: NotificationKind): "Review" | "Challenge" | "Update" {
+  if (CHALLENGE_KINDS.includes(kind)) return "Challenge";
   return isReviewKind(kind) ? "Review" : "Update";
 }
 
@@ -122,6 +132,10 @@ export function itemBody(item: InboxItem): string {
       return `A reviewer decided on a Review Request${where}.`;
     case "review_replied":
       return `The author replied on a Review Request${where}.`;
+    case "challenge_raised":
+      return `${who} challenged this${where}. Confirm which Assessments rerun, or decline.`;
+    case "challenge_declined":
+      return `Your Challenge${where} was declined. The reason is below.`;
   }
 }
 
@@ -156,7 +170,9 @@ export function closedStatus(item: InboxItem): StatusStyle | null {
   const style =
     item.subject_type === REVIEW_SUBJECT && status in REQUEST_STATUSES
       ? REQUEST_STATUSES[status as RequestStatus]
-      : OTHER_STATUSES[status];
+      : item.subject_type === CHALLENGE_SUBJECT && status in CHALLENGE_STATUSES
+        ? CHALLENGE_STATUSES[status as ChallengeStatus]
+        : OTHER_STATUSES[status];
   if (!style) return { label: item.subject_status_label ?? status, tone: "neutral", icon: BanIcon };
   return { ...style, label: item.subject_status_label ?? style.label };
 }
@@ -179,6 +195,9 @@ export const INBOX_TRACE_EVENTS: readonly string[] = [
   "reviews.review_decision.recorded",
   "reviews.review_request.replied",
   "reviews.review_request.superseded",
+  "reviews.challenge.raised",
+  "reviews.challenge.confirmed",
+  "reviews.challenge.declined",
   "conflicts.conflict.escalated",
   "workflows.run.waiting_for_human",
 ];

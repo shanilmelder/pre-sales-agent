@@ -31,6 +31,10 @@ class NotificationKind(StrEnum):
     REVIEW_REPLIED = "review_replied"
     """Story 9.4: the author replied to a request for evidence or an alternative; to the
     reviewer."""
+    CHALLENGE_RAISED = "challenge_raised"
+    """Story 9.5: a reviewer raised a Challenge; the Opportunity's owner confirms or declines."""
+    CHALLENGE_DECLINED = "challenge_declined"
+    """Story 9.5: the owner declined the challenger's Challenge, with a reason."""
 
 
 class ChannelName(StrEnum):
@@ -50,7 +54,7 @@ GROUP_ORDER: tuple[InboxGroup, ...] = (
     InboxGroup.WAITING,
     InboxGroup.UPDATES,
 )
-"""The Inbox lists its groups in this order. `challenges` has no producer before Story 9.5."""
+"""The Inbox lists its groups in this order. `challenges`: Story 9.5."""
 
 KIND_GROUP: dict[NotificationKind, InboxGroup] = {
     NotificationKind.REVIEW_REQUESTED: InboxGroup.REVIEWS,
@@ -60,6 +64,8 @@ KIND_GROUP: dict[NotificationKind, InboxGroup] = {
     NotificationKind.REVIEW_CANCELLED: InboxGroup.UPDATES,
     NotificationKind.REVIEW_OUTCOME: InboxGroup.REVIEWS,
     NotificationKind.REVIEW_REPLIED: InboxGroup.REVIEWS,
+    NotificationKind.CHALLENGE_RAISED: InboxGroup.CHALLENGES,
+    NotificationKind.CHALLENGE_DECLINED: InboxGroup.CHALLENGES,
 }
 
 

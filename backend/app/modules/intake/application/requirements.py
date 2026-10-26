@@ -101,6 +101,21 @@ async def integration_type_views(
     return views
 
 
+async def integration_types_by_requirement(
+    uow: UnitOfWork, requirement_ids: list[UUID]
+) -> dict[UUID, list[RequirementIntegrationType]]:
+    """`intake.integration_types_by_requirement` (Story 9.5, for a Challenge's suggestions):
+    the Integration Types each of these Requirements is tagged with, in tag order; untagged
+    ones are left out. No authorization: the caller decides what it may show."""
+    tags = await repo.integration_type_ids(uow, list(dict.fromkeys(requirement_ids)))
+    views = await integration_type_views(uow, [e for ids in tags.values() for e in ids])
+    return {
+        rid: [views[e] for e in ids if e in views]
+        for rid, ids in tags.items()
+        if any(e in views for e in ids)
+    }
+
+
 async def requirement_views(
     uow: UnitOfWork, opportunity_id: UUID, records: list[RequirementRecord]
 ) -> list[Requirement]:

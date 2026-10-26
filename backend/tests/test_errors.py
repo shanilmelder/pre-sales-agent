@@ -9,6 +9,9 @@ from app.platform.config import Settings
 from app.platform.errors import (
     _HTTP_CODES,
     AuthorCannotReviewError,
+    ChallengeNeedsEstimateError,
+    ChallengeNotAwaitingConfirmationError,
+    ChallengeVersionSupersededError,
     EstimateDraftExistsError,
     EstimateVersionNotDecidedError,
     EstimateVersionNotSubmittedError,
@@ -61,6 +64,14 @@ def _app_raising(exc: Exception) -> FastAPI:
         (ReviewReplyNotExpectedError("x"), 409, "review_reply_not_expected"),
         (EstimateVersionNotDecidedError("x"), 409, "estimate_version_not_decided"),
         (EstimateDraftExistsError("x"), 409, "estimate_draft_exists"),
+        # Story 9.5
+        (ChallengeNeedsEstimateError("x"), 409, "challenge_needs_estimate"),
+        (ChallengeVersionSupersededError("x"), 409, "challenge_version_superseded"),
+        (
+            ChallengeNotAwaitingConfirmationError("x"),
+            409,
+            "challenge_not_awaiting_confirmation",
+        ),
     ],
 )
 def test_errors_map_to_problem_json(exc: Exception, status: int, code: str) -> None:

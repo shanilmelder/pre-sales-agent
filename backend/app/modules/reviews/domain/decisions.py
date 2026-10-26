@@ -4,7 +4,8 @@ status each decision leaves the request in, and the reason rule. Pure, no I/O.
 Decisions are append-only. A request's status follows from its latest decision through the
 request state machine (`requests.transition`): Approve and Reject close it, Request evidence,
 Request alternative and Escalate leave it `pending` (an escalation hands it to another
-reviewer). `challenged` is defined here, but only Story 9.5 records it.
+reviewer). `challenged` is recorded only by raising a Challenge (Story 9.5), never through
+`reviews.decide`.
 """
 
 from enum import StrEnum
@@ -49,7 +50,7 @@ def outcome_summary(reviewer: str, decision: Decision, target: str, reason: str 
 
 
 RECORDABLE = frozenset(Decision) - {Decision.CHALLENGED}
-"""What `reviews.decide` records; a Challenge arrives with Story 9.5."""
+"""What `reviews.decide` records; `challenged` is recorded by `reviews.raise_challenge`."""
 
 _STATUS_AFTER: dict[Decision, RequestStatus | None] = {
     Decision.APPROVED: RequestStatus.APPROVED,

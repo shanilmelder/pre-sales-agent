@@ -10,12 +10,33 @@
 - Story 9.4: `reply` (the author's reply to a request for evidence or an alternative), and
   for `estimates.submit_version` (read lazily) `supersede_open_requests`, and for **New
   version** (read lazily) `alternative_requested`.
+- Story 9.5: `raise_challenge`, `confirm_reassessment`, `decline_challenge`, `get_challenge`
+  and `challenge_suggestions` (the routes); `challenge_status` (notifications, an Inbox
+  item's subject, read lazily); `may_raise_challenge` (workflows: the Assessments tab's
+  `can_challenge`, read lazily).
 """
 
+from app.modules.reviews.application.challenges import (
+    challenge_status,
+    challenge_suggestions,
+    confirm_reassessment,
+    decline_challenge,
+    get_challenge,
+    may_raise_challenge,
+    raise_challenge,
+)
 from app.modules.reviews.application.decisions import decide, review_panel
 from app.modules.reviews.application.models import (
     AssessmentOption,
     AssessmentRef,
+    ChallengeConfirm,
+    ChallengeCreate,
+    ChallengeDecline,
+    ChallengeState,
+    ChallengeSuggestions,
+    ChallengeSuggestionView,
+    ChallengeTargetView,
+    ChallengeView,
     CreatedReviewRequests,
     LinkedRequest,
     OpenReviewRequest,
@@ -51,6 +72,11 @@ from app.modules.reviews.application.requests import (
     reviewer_candidates,
 )
 from app.modules.reviews.application.supersede import supersede_open_requests
+from app.modules.reviews.domain.challenges import (
+    CHALLENGE_STATUS_LABELS,
+    ChallengeStatus,
+    ChallengeTargetKind,
+)
 from app.modules.reviews.domain.decisions import DECISION_LABELS, Decision
 from app.modules.reviews.domain.requests import (
     REVIEW_TYPE_LABELS,
@@ -61,12 +87,23 @@ from app.modules.reviews.domain.requests import (
 )
 
 __all__ = [
+    "CHALLENGE_STATUS_LABELS",
     "DECISION_LABELS",
     "REVIEW_TYPE_LABELS",
     "SEND_REMINDERS",
     "STATUS_LABELS",
     "AssessmentOption",
     "AssessmentRef",
+    "ChallengeConfirm",
+    "ChallengeCreate",
+    "ChallengeDecline",
+    "ChallengeState",
+    "ChallengeStatus",
+    "ChallengeSuggestionView",
+    "ChallengeSuggestions",
+    "ChallengeTargetKind",
+    "ChallengeTargetView",
+    "ChallengeView",
     "CreatedReviewRequests",
     "Decision",
     "LinkedRequest",
@@ -93,12 +130,19 @@ __all__ = [
     "VersionRef",
     "alternative_requested",
     "cancel_review_request",
+    "challenge_status",
+    "challenge_suggestions",
+    "confirm_reassessment",
     "create_from_body",
     "create_review_request",
     "decide",
+    "decline_challenge",
+    "get_challenge",
     "list_open_requests",
     "list_review_requests",
+    "may_raise_challenge",
     "may_request_review",
+    "raise_challenge",
     "reply",
     "request_status",
     "review_panel",

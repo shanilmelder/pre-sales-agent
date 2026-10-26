@@ -8,6 +8,9 @@ tab's view (Story 5.2), behind the Opportunity's read check.
 
 `assessment_at` (Story 9.3): one Assessment at a version, for a Review Request's target.
 
+`current_citations` (Story 9.5): per current Assessment, its Findings and the Requirements
+each cites, for a Challenge's suggestions.
+
 `outdated_assessments` (Story 2.7): the current Assessments that used a Requirement version
 that has changed since, for the Requirements tab's notice (anyone who can read the
 Opportunity).
@@ -15,6 +18,7 @@ Opportunity).
 
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import UUID
 
@@ -172,6 +176,65 @@ async def assessment_at(
         return None
     record = found[0]
     return (await _views(uow, record.opportunity_id, [record]))[record.agent]
+
+
+@dataclass(frozen=True, slots=True)
+class FindingCitations:
+    """Story 9.5: a specialist Finding's id, title and the Requirements it cites."""
+
+    id: UUID
+    title: str = field(repr=False)
+    requirement_ids: frozenset[UUID] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class AssessmentCitations:
+    """Story 9.5: a current Assessment, its Findings and the Requirements they cite (with
+    each active Requirement's number, for "Cites R12")."""
+
+    assessment_id: UUID
+    agent: str
+    version: int
+    findings: tuple[FindingCitations, ...] = ()
+    requirement_numbers: dict[UUID, int] = field(default_factory=dict)
+
+    @property
+    def requirement_ids(self) -> frozenset[UUID]:
+        return frozenset().union(*(f.requirement_ids for f in self.findings))
+
+
+async def current_citations(uow: UnitOfWork, opportunity_id: UUID) -> list[AssessmentCitations]:
+    """Story 9.5: each agent's current Assessment of the Opportunity with its Findings and the
+    Requirements each Finding cites, in agent order. No authorization: `reviews` reads it
+    for a Challenge the caller may raise or see."""
+    records = sorted(
+        await repo.current_assessments(uow, opportunity_id),
+        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
+    )
+    findings = await repo.findings_of(uow, [r.id for r in records])
+    cited: dict[UUID, set[UUID]] = defaultdict(set)
+    for link in await repo.requirement_links_for(uow, [f.id for f in findings]):
+        cited[link.finding_id].add(link.requirement_id)
+    numbers = {
+        s.id: s.number for s in await intake.active_requirement_snapshots(uow, opportunity_id)
+    }
+    own: dict[UUID, list[FindingCitations]] = defaultdict(list)
+    for f in findings:
+        own[f.assessment_id].append(
+            FindingCitations(id=f.id, title=f.title, requirement_ids=frozenset(cited[f.id]))
+        )
+    return [
+        AssessmentCitations(
+            assessment_id=r.id,
+            agent=r.agent,
+            version=r.version,
+            findings=tuple(own[r.id]),
+            requirement_numbers={
+                rid: numbers[rid] for f in own[r.id] for rid in f.requirement_ids if rid in numbers
+            },
+        )
+        for r in records
+    ]
 
 
 async def outdated_assessments(

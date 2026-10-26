@@ -198,6 +198,9 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_DECIDE,
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
+        Action.CHALLENGE_RAISE,
+        Action.CHALLENGE_CONFIRM,
+        Action.CHALLENGE_DECLINE,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -228,7 +231,11 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
     }
-    assert REVIEWER_GRANTS == {Action.OPPORTUNITY_READ, Action.REVIEW_REQUEST_DECIDE}
+    assert REVIEWER_GRANTS == {
+        Action.OPPORTUNITY_READ,
+        Action.REVIEW_REQUEST_DECIDE,
+        Action.CHALLENGE_RAISE,
+    }
     assert RELATION_EXCLUDED_ROLES == {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -254,6 +261,9 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_DECIDE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_REPLY: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_VERSION_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CHALLENGE_RAISE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CHALLENGE_CONFIRM: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CHALLENGE_DECLINE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -566,6 +576,19 @@ def test_review_requests_for_owner_and_members_except_sales_reps(role: Role) -> 
 
 
 @pytest.mark.parametrize("role", list(Role))
+def test_challenges_are_the_owners_to_confirm(role: Role) -> None:
+    """Story 9.5: the owner raises, confirms and declines; a collaborator does none of it;
+    a sales representative never."""
+    owner, owner_id = _user({role})
+    member, member_id = _user({role})
+    opportunity = _opportunity(owner_id, member_id)
+    allowed = role is not Role.SALES_REPRESENTATIVE
+    for action in (Action.CHALLENGE_RAISE, Action.CHALLENGE_CONFIRM, Action.CHALLENGE_DECLINE):
+        assert can(owner, action, opportunity) is allowed
+        assert not can(member, action, opportunity)
+
+
+@pytest.mark.parametrize("role", list(Role))
 def test_a_reviewer_collaborator_may_only_read_and_decide(role: Role) -> None:
     """Story 9.3: reading, and deciding (their own request, checked by `reviews`), except as a
     sales representative."""
@@ -579,6 +602,10 @@ def test_a_reviewer_collaborator_may_only_read_and_decide(role: Role) -> None:
     )
     assert can(reviewer, Action.OPPORTUNITY_READ, opportunity)
     assert can(reviewer, Action.REVIEW_REQUEST_DECIDE, opportunity) is (
+        role is not Role.SALES_REPRESENTATIVE
+    )
+    # Story 9.5: raising a Challenge (while a request is pending, checked by `reviews`).
+    assert can(reviewer, Action.CHALLENGE_RAISE, opportunity) is (
         role is not Role.SALES_REPRESENTATIVE
     )
     for action in (OWNER_GRANTS | MEMBER_GRANTS) - REVIEWER_GRANTS:

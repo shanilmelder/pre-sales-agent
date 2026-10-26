@@ -10,6 +10,7 @@ import {
   ClockIcon,
   FileSearchIcon,
   GitCompareArrowsIcon,
+  LoaderIcon,
   MessageSquareWarningIcon,
   RedoIcon,
   ReplyIcon,
@@ -38,6 +39,12 @@ export type ReviewReply = components["schemas"]["ReviewReplyView"];
 export type RecordedReply = components["schemas"]["RecordedReply"];
 export type ReviewEvidence = components["schemas"]["ReviewEvidence"];
 export type CreatedVersion = components["schemas"]["CreatedVersion"];
+// Story 9.5
+export type ChallengeStatus = components["schemas"]["ChallengeStatus"];
+export type ChallengeTargetKind = components["schemas"]["ChallengeTargetKind"];
+export type ChallengeView = components["schemas"]["ChallengeView"];
+export type ChallengeSuggestions = components["schemas"]["ChallengeSuggestions"];
+export type ChallengeSuggestion = components["schemas"]["ChallengeSuggestionView"];
 
 /** The review types, in the segmented control's order. */
 export const REVIEW_TYPES: readonly { value: ReviewType; label: string }[] = [
@@ -137,6 +144,9 @@ export const REVIEW_TRACE_EVENTS: readonly string[] = [
   "reviews.review_request.created",
   "reviews.review_request.cancelled",
   "reviews.review_decision.recorded",
+  "reviews.challenge.raised",
+  "reviews.challenge.confirmed",
+  "reviews.challenge.declined",
   "estimates.estimate_version.review_started",
   "estimates.estimate_version.review_ended",
   "estimates.estimate_version.approved",
@@ -167,7 +177,7 @@ export const DECISION_STYLES: Record<Decision, DecisionStyle> = {
 };
 
 /** A decision the panel's reason form records: every one but Approve, and not Challenge
- * (Story 9.5 builds its dialog). */
+ * (raised through the Challenge dialog, Story 9.5). */
 export type ReasonedDecision =
   | "rejected"
   | "evidence_requested"
@@ -181,7 +191,6 @@ export const CHALLENGE = "Challenge";
 export const REQUEST_EVIDENCE = "Request evidence";
 export const REQUEST_ALTERNATIVE = "Request alternative";
 export const ESCALATE = "Escalate";
-export const CHALLENGE_LATER = "Challenge arrives with Story 9.5";
 export const CHOOSE_REVIEWER = "Choose a reviewer";
 export const OPEN_IN_TAB = "Open in tab";
 export const FIRST_VERSION = "First version";
@@ -421,5 +430,77 @@ export function outcomeRows(
   }));
   return [...decided, ...replied].sort(
     (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+  );
+}
+
+// --- Challenges (Story 9.5) -----------------------------------------------------------------
+
+type ChallengeStyle = { label: string; tone: PillTone; icon: LucideIcon };
+
+/** Each Challenge status's label, tone and icon: never colour alone. */
+export const CHALLENGE_STATUSES: Record<ChallengeStatus, ChallengeStyle> = {
+  awaiting_confirmation: {
+    label: "Awaiting confirmation",
+    tone: "gap",
+    icon: MessageSquareWarningIcon,
+  },
+  reassessing: { label: "Reassessing", tone: "agent", icon: LoaderIcon },
+  completed: { label: "Completed", tone: "resolved", icon: CircleCheckIcon },
+  declined: { label: "Declined", tone: "neutral", icon: BanIcon },
+  failed: { label: "Failed", tone: "blocker", icon: TriangleAlertIcon },
+};
+
+export const CHALLENGE_REASON_LABEL = "Reason (required)";
+export const CHALLENGE_REASON_PLACEHOLDER = "State what looks wrong and why.";
+export const CHALLENGE_REASON_MAX = 1000;
+export const ASSESSMENTS_TO_RERUN = "Assessments to rerun";
+export const ALWAYS_RERUN_LINE = "Critic and Red Team always rerun";
+export const CHALLENGE_HELPER =
+  "A rerun creates a new Estimate Version and shows the delta. Conflict detection, Critic and " +
+  "Red Team run again.";
+export const RAISE_CHALLENGE = "Raise Challenge";
+export const DECLINE = "Decline";
+export const CONFIRM_DECLINE = "Confirm decline";
+export const DECLINE_REASON_LABEL = "Reason for declining (required)";
+export const CLOSE = "Close";
+export const CHALLENGE_RAISED = "Challenge raised";
+export const REASSESSMENT_STARTED = "Reassessment started";
+export const CHALLENGE_DECLINED = "Challenge declined";
+export const CHALLENGE_FAILED = "Not saved: the platform is not reachable. Try again.";
+export const CHALLENGE_FORBIDDEN = "You can't act on this Challenge.";
+export const CHALLENGE_STALE = "Changed since you opened it. Reload to see the latest.";
+export const CHALLENGE_NOT_LOADED = "The Challenge could not be loaded. Try again in a moment.";
+export const LOADING_CHALLENGE = "Loading the Challenge…";
+export const SUGGESTION_TAGS: Record<ChallengeSuggestion["tag"], string> = {
+  suggested: "Suggested",
+  optional: "Optional",
+};
+
+/** "Rerun 1 Assessment" / "Rerun 2 Assessments" (the mockup's `chalLabel`). */
+export function rerunLabel(count: number): string {
+  return `Rerun ${count} Assessment${count === 1 ? "" : "s"}`;
+}
+
+/** "Reassessment started (run 4)", or without the number when it is unknown. */
+export function reassessmentLabel(runNumber: number | null | undefined): string {
+  return runNumber == null ? REASSESSMENT_STARTED : `${REASSESSMENT_STARTED} (run ${runNumber})`;
+}
+
+/** "Raise on v4". */
+export function raiseOnLabel(version: number): string {
+  return `Raise on v${version}`;
+}
+
+/** "Reason from Ana Ruiz". */
+export function challengerReasonLabel(name: string): string {
+  return `Reason from ${name}`;
+}
+
+/** The blocked message of a Challenge whose version was superseded: "v3 is superseded by v4.
+ * Raise the Challenge again on v4 if it still applies." (the API's 409 sentence). */
+export function challengeSupersededDetail(version: number, supersededBy: number): string {
+  return (
+    `v${version} is superseded by v${supersededBy}. Raise the Challenge again on ` +
+    `v${supersededBy} if it still applies.`
   );
 }

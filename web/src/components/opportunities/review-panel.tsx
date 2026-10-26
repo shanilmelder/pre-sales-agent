@@ -10,6 +10,7 @@ import {
   type DecideResult,
 } from "@/app/opportunities/actions";
 import type { ReviewPanelResult } from "@/app/opportunities/data";
+import { ChallengeDialog } from "@/components/opportunities/challenge-dialog";
 import { ReasonInput } from "@/components/opportunities/reason-input";
 import { ReviewOutcomes } from "@/components/opportunities/review-outcomes";
 import {
@@ -42,7 +43,6 @@ import {
   APPROVE,
   CANCEL,
   CHALLENGE,
-  CHALLENGE_LATER,
   CHOOSE_REVIEWER,
   DECISION_FAILED,
   DECISION_FORBIDDEN,
@@ -284,18 +284,20 @@ function problemOf(result: Exclude<DecideResult, { kind: "ok" }>): Problem {
 
 /** The two action rows, the inline reason (and, to escalate, the reviewer select) with
  * **Confirm {action}** and **Cancel**. Approve records at once; it is `aria-disabled` with the
- * author's hint when `can_approve` is false. Challenge is `aria-disabled` until Story 9.5. */
+ * author's hint when `can_approve` is false. Challenge (Story 9.5) opens the Challenge
+ * dialog. */
 function DecisionActions({
   panel,
   busy,
   onDecide,
+  onChallenge,
 }: {
   panel: ReviewPanel;
   busy: boolean;
   onDecide: (decision: Decision, reason: string, escalatedTo?: string) => Promise<boolean>;
+  onChallenge: () => void;
 }) {
   const hintId = useId();
-  const challengeHintId = useId();
   const selectId = useId();
   const [action, setAction] = useState<ReasonedDecision | null>(null);
   const [reason, setReason] = useState("");
@@ -375,9 +377,10 @@ function DecisionActions({
         <Button
           type="button"
           variant="outline"
-          className={cn(outlineClass, "cursor-not-allowed opacity-60")}
-          aria-disabled="true"
-          aria-describedby={challengeHintId}
+          className={outlineClass}
+          disabled={busy}
+          data-review-challenge=""
+          onClick={onChallenge}
         >
           {CHALLENGE}
         </Button>
@@ -386,9 +389,6 @@ function DecisionActions({
             {panel.approve_blocked_reason}
           </span>
         )}
-        <span id={challengeHintId} className="text-meta text-text-secondary">
-          {CHALLENGE_LATER}
-        </span>
       </div>
       {action ? (
         <div className="flex flex-col gap-2" data-reason-form={action}>
@@ -460,8 +460,8 @@ function afterDecision(panel: ReviewPanel, recorded: RecordedDecision): ReviewPa
  * review · From {sender} · {date}", the title and the author's message), the request's status
  * with its latest decision, the target (an Estimate Version's lines, totals, Assumptions,
  * Risks and its diff; or an Assessment's Findings with their Evidence chips) and, only when
- * `can_decide`, the two action rows. Story 9.4: for the author (`is_author`, not deciding) the
- * reviewer's actions stay hidden; "Escalated to {name}" after an escalation, the Reply composer
+ * `can_decide`, the two action rows (Challenge opens the Challenge dialog, Story 9.5).
+ * Story 9.4: for the author (`is_author`, not deciding) the reviewer's actions stay hidden; "Escalated to {name}" after an escalation, the Reply composer
  * (`can_reply`), "All requested reviews approved. Baseline can be set." on an approved version
  * and **New version** (`can_create_version`); for both sides "Alternative to the v{n} request"
  * on a linked request and, under the actions, the Review outcomes list. Greyed with a
@@ -493,6 +493,7 @@ export function ReviewPanelView({
   const [problem, setProblem] = useState<Problem | null>(null);
   const [diffOpen, setDiffOpen] = useState(false);
   const [reloading, setReloading] = useState(false);
+  const [challenging, setChallenging] = useState(false);
   const { request } = panel;
   const superseded = isSupersededPanel(panel);
   const greyed = superseded || dimmed;
@@ -655,7 +656,25 @@ export function ReviewPanelView({
         </p>
       ) : null}
       {actionable ? (
-        <DecisionActions panel={panel} busy={busy} onDecide={decide} />
+        <DecisionActions
+          panel={panel}
+          busy={busy}
+          onDecide={decide}
+          onChallenge={() => setChallenging(true)}
+        />
+      ) : null}
+      {actionable || challenging ? (
+        <ChallengeDialog
+          opportunityId={opportunityId}
+          mode={{
+            kind: "raise",
+            target: { kind: request.target.kind, id: request.target.id },
+            reviewRequestId: request.id,
+          }}
+          open={challenging}
+          onOpenChange={setChallenging}
+          onDone={() => void onReload()}
+        />
       ) : null}
       {authorView && panel.can_reply ? (
         <ReplyComposer

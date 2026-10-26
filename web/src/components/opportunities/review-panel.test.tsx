@@ -8,6 +8,8 @@ import {
   ANA,
   CY,
   OWNER,
+  challengeSuggestions,
+  challengeView,
   REVIEW_ID,
   REVIEW_OPP,
   recorded,
@@ -25,6 +27,8 @@ const actions = vi.hoisted(() => ({
   loadEvidenceOptions: vi.fn(),
   addSource: vi.fn(),
   addTextSource: vi.fn(),
+  loadChallengeSuggestions: vi.fn(),
+  raiseChallenge: vi.fn(),
 }));
 vi.mock("@/app/opportunities/actions", () => actions);
 vi.mock("next/navigation", () => ({
@@ -64,6 +68,8 @@ beforeEach(() => {
   actions.createEstimateVersion.mockReset();
   actions.loadEvidenceOptions.mockReset();
   actions.loadEvidenceOptions.mockResolvedValue({ kind: "ok", items: [] });
+  actions.loadChallengeSuggestions.mockReset();
+  actions.raiseChallenge.mockReset();
 });
 
 describe("ReviewPanelView", () => {
@@ -99,15 +105,47 @@ describe("ReviewPanelView", () => {
       "Request alternative",
       "Escalate",
     ]);
-    const challenge = button("Challenge");
-    expect(challenge.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByText("Challenge arrives with Story 9.5")).toBeTruthy();
+    // Story 9.5: Challenge opens the Challenge dialog.
+    expect(button("Challenge").getAttribute("aria-disabled")).toBeNull();
     expect(button("Approve").getAttribute("aria-disabled")).toBeNull();
     for (const pill of container.querySelectorAll("[data-slot=pill]")) {
       expect(pill.querySelector("svg")).not.toBeNull();
       expect(pill.textContent).not.toBe("");
     }
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Challenge opens the dialog: display-only cards, Raise Challenge after a reason", async () => {
+    actions.loadChallengeSuggestions.mockResolvedValue({
+      kind: "ok",
+      value: challengeSuggestions(),
+    });
+    actions.raiseChallenge.mockResolvedValue({ kind: "ok", value: challengeView() });
+    const { user, onReload } = renderPanel();
+
+    await user.click(button("Challenge"));
+    const dialog = await screen.findByRole("dialog", { name: "Challenge Estimate v3" });
+    expect(actions.loadChallengeSuggestions).toHaveBeenCalledWith({
+      opportunityId: REVIEW_OPP,
+      targetKind: "estimate_version",
+      targetId: "00000000-0000-7000-8000-0000000000e3",
+    });
+    const card = within(dialog).getByRole("button", { name: /Engineering Agent/ });
+    expect(card.getAttribute("aria-pressed")).toBe("true");
+    expect(card.getAttribute("aria-disabled")).toBe("true");
+    const raise = within(dialog).getByRole("button", { name: "Raise Challenge" });
+    expect(raise.hasAttribute("disabled")).toBe(true);
+    await user.type(within(dialog).getByLabelText("Reason (required)"), "L3 is too low");
+    expect(raise.hasAttribute("disabled")).toBe(false);
+    await user.click(raise);
+    expect(actions.raiseChallenge).toHaveBeenCalledWith({
+      opportunityId: REVIEW_OPP,
+      targetKind: "estimate_version",
+      targetId: "00000000-0000-7000-8000-0000000000e3",
+      reason: "L3 is too low",
+      reviewRequestId: REVIEW_ID,
+    });
+    await waitFor(() => expect(onReload).toHaveBeenCalled());
   });
 
   it("View diff lists the changed lines and the total delta", async () => {

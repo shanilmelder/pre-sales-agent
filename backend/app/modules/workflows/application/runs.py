@@ -87,6 +87,7 @@ from app.modules.workflows.domain.runs import (
     AssessmentTaskStatus,
     DecisionKind,
     DecisionStatus,
+    RunType,
     chosen_skip,
     decision_summary,
     run_status,
@@ -181,15 +182,29 @@ def stale_after() -> timedelta:
     return timedelta(seconds=(spec.timeout_s + spec.backoff_cap_s) * spec.max_attempts + 300)
 
 
-async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID:
+async def queue_run(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    actor: Actor,
+    *,
+    run_type: RunType = RunType.ASSESSMENT,
+    trigger_ref: UUID | None = None,
+    idempotency_key: str | None = None,
+    agents: Sequence[str] | None = None,
+) -> UUID:
     """Insert a `queued` run with one `queued` task per specialist Agent and the Critic's task
     after them (Story 6.4), its plan v1, its job, the trace event and a progress row. Each
     task pins its Agent's current config version, whatever the Agent's status: a task whose
-    Agent is not active asks a person when its node starts (Story 5.5). The caller holds the
-    Opportunity's run lock."""
+    Agent is not active asks a person when its node starts (Story 5.5). Story 9.5: with
+    `agents`, only those specialists are planned (a Challenge's confirmed Assessments), still
+    followed by the Critic; `run_type`, `trigger_ref` and `idempotency_key` are stored on the
+    run. The caller holds the Opportunity's run lock."""
     run_id = new_id()
     tasks: list[NewTask] = []
+    planned = set(agents) if agents is not None else None
     for agent in assessments.AGENTS:
+        if planned is not None and agent.value not in planned:
+            continue
         current = await registry.current_config(uow, agent.value)
         tasks.append(NewTask(id=new_id(), agent=agent.value, config_version_id=current.current.id))
     critic = await registry.current_config(uow, assessments.CRITIC_AGENT)
@@ -202,7 +217,14 @@ async def queue_run(uow: UnitOfWork, opportunity_id: UUID, actor: Actor) -> UUID
         )
     )
     await repo.insert_run(
-        uow, run_id=run_id, opportunity_id=opportunity_id, tasks=tasks, plan_version=PLAN_VERSION
+        uow,
+        run_id=run_id,
+        opportunity_id=opportunity_id,
+        tasks=tasks,
+        plan_version=PLAN_VERSION,
+        run_type=run_type.value,
+        trigger_ref=trigger_ref,
+        idempotency_key=idempotency_key,
     )
     await repo.insert_plan_version(
         uow,
