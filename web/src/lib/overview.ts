@@ -19,12 +19,19 @@ import {
   type Assumption,
   type EstimateView,
   type RoleHours,
+  type EstimateVersion,
 } from "@/lib/estimates";
 import type { Gap, GapList } from "@/lib/gaps";
 import type { RedTeamView, Severity } from "@/lib/red-team";
 import { unconfirmed, type RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
-import type { SubmissionBlockersView } from "@/lib/submission";
+import {
+  BLOCKERS_LOAD_FAILED,
+  NO_REVIEW_REQUESTS,
+  type Blocker,
+  type BlockerKind,
+  type SubmissionBlockersView,
+} from "@/lib/submission";
 import type { TraceEvent } from "@/lib/trace";
 import type { WorkspaceTabSlug } from "@/lib/workspace";
 
@@ -312,9 +319,26 @@ export function sourceRunLabel(run: number): string {
   return `From Assessments run ${run}`;
 }
 
-/** "Estimate · v3", or "Estimate" before there is one. */
-export function estimateKpiLabel(version: number | null): string {
-  return version === null ? "Estimate" : `Estimate · v${version}`;
+type VersionStatus = EstimateVersion["status"];
+
+const VERSION_WORDS: Record<VersionStatus, string> = {
+  draft: "draft",
+  submitted: "submitted",
+  in_review: "in review",
+  superseded: "superseded",
+};
+
+/** "Estimate · v3 draft", "Estimate · v3 submitted", or "Estimate" before there is one. */
+export function estimateKpiLabel(
+  version: { version: number; status: VersionStatus } | null,
+): string {
+  if (version === null) return "Estimate";
+  return `Estimate · v${version.version} ${VERSION_WORDS[version.status]}`;
+}
+
+/** True when the blockers view has Conflict items (the Conflicts KPI's "Blocks submit"). */
+export function conflictsBlockSubmit(view: SubmissionBlockersView | null | undefined): boolean {
+  return (view?.to_submit ?? []).some((b) => b.kind === "conflict");
 }
 
 /** The Estimate's status before a version exists: drafting, or none yet. */
@@ -323,126 +347,211 @@ export function estimatePending(estimate: EstimateView): string {
 }
 
 // --- Submission pipeline ---------------------------------------------------------------------
+// Story 8.9: eight steps, each linking to its tab. A step is Blocked only when the API's
+// submission blockers view (AD-27, the one check the card, badge and header read) has items
+// for it; the tabs' reads only say whether a step is Complete, In progress or Pending.
 
-export type PipelineState = "complete" | "in-progress" | "blocked" | "not-started" | "unknown";
+export type PipelineState = "complete" | "in-progress" | "blocked" | "pending";
 
 export type PipelineStep = {
   key: string;
   title: string;
   sub: string;
   state: PipelineState;
+  /** The tab the step's title links to. */
+  tab: WorkspaceTabSlug;
 };
+
+type StepBody = Pick<PipelineStep, "sub" | "state">;
+
+export const REVIEW_WAITS_FOR_BLOCKERS = "Starts when blockers clear";
+export const REVIEW_WAITS_FOR_SUBMIT = "Starts after you submit";
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-function sourcesStep(sources: Source[] | null): Omit<PipelineStep, "key" | "title"> {
-  if (sources === null) return { sub: couldNotLoad("Sources"), state: "unknown" };
-  const counts = sourceCounts(sources);
-  if (counts === null) return { sub: "No Sources yet", state: "not-started" };
-  const state: PipelineState =
-    counts.failed > 0 ? "blocked" : counts.parsed < counts.total ? "in-progress" : "complete";
-  return { sub: parsedLabel(counts), state };
+/** The to-submit blockers of one kind, or null when the view could not be read. */
+function blockersOf(
+  view: SubmissionBlockersView | null,
+  kind: BlockerKind,
+): readonly Blocker[] | null {
+  return view === null ? null : view.to_submit.filter((b) => b.kind === kind);
 }
 
-function extractedStep(list: RequirementList | null): Omit<PipelineStep, "key" | "title"> {
-  if (list === null) return { sub: couldNotLoad("Requirements"), state: "unknown" };
+const BLOCKERS_FAILED: StepBody = { sub: BLOCKERS_LOAD_FAILED, state: "pending" };
+
+function sourcesStep(sources: Source[] | null): StepBody {
+  if (sources === null) return { sub: couldNotLoad("Sources"), state: "pending" };
+  const counts = sourceCounts(sources);
+  if (counts === null) return { sub: "No Sources yet", state: "pending" };
+  // A failed parse is still in progress: someone retries or removes it.
+  const done = counts.failed === 0 && counts.parsed === counts.total;
+  return { sub: parsedLabel(counts), state: done ? "complete" : "in-progress" };
+}
+
+function extractedStep(list: RequirementList | null): StepBody {
+  if (list === null) return { sub: couldNotLoad("Requirements"), state: "pending" };
   const counts = requirementCounts(list);
-  if (counts === null) return { sub: "Not extracted yet", state: "not-started" };
+  if (counts === null) return { sub: "Not extracted yet", state: "pending" };
   if (isStepStatus(counts))
-    return { sub: counts.status, state: counts.status === "Failed" ? "blocked" : "in-progress" };
+    return {
+      sub: counts.status === "Failed" ? "Extraction failed" : counts.status,
+      state: "in-progress",
+    };
   const running = list.extraction?.status === "queued" || list.extraction?.status === "running";
   return { sub: plural(counts.active, "Requirement"), state: running ? "in-progress" : "complete" };
 }
 
-function confirmedStep(list: RequirementList | null): Omit<PipelineStep, "key" | "title"> {
-  if (list === null) return { sub: couldNotLoad("Requirements"), state: "unknown" };
+/** Never Blocked: confirming Requirements doesn't gate submission. */
+function confirmedStep(list: RequirementList | null): StepBody {
+  if (list === null) return { sub: couldNotLoad("Requirements"), state: "pending" };
   const counts = requirementCounts(list);
   if (counts === null || isStepStatus(counts) || counts.active === 0)
-    return { sub: "Nothing to confirm yet", state: "not-started" };
+    return { sub: "Nothing to confirm yet", state: "pending" };
   const sub = `${counts.confirmed} of ${counts.active}`;
   if (counts.unconfirmed === 0) return { sub, state: "complete" };
-  return { sub, state: counts.confirmed > 0 ? "in-progress" : "not-started" };
+  return { sub, state: counts.confirmed > 0 ? "in-progress" : "pending" };
 }
 
-function gapsStep(list: GapList | null): Omit<PipelineStep, "key" | "title"> {
-  if (list === null) return { sub: couldNotLoad("Open Gaps"), state: "unknown" };
-  const counts = gapCounts(list);
-  if (counts === null) return { sub: "Gaps not detected yet", state: "not-started" };
+function gapsStep(list: GapList | null, view: SubmissionBlockersView | null): StepBody {
+  const blocking = blockersOf(view, "gap");
+  if (blocking === null) return BLOCKERS_FAILED;
+  const counts = list === null ? null : gapCounts(list);
+  if (blocking.length > 0) {
+    const sub =
+      counts !== null && !isStepStatus(counts) && counts.open > 0
+        ? `${counts.open} open, ${counts.high} High`
+        : `${blocking.length} open`;
+    return { sub, state: "blocked" };
+  }
+  if (list === null) return { sub: couldNotLoad("Open Gaps"), state: "pending" };
+  if (counts === null) return { sub: "Gaps not detected yet", state: "pending" };
   if (isStepStatus(counts))
-    return { sub: counts.status, state: counts.status === "Failed" ? "blocked" : "in-progress" };
-  if (counts.open === 0) return { sub: "No open Gaps", state: "complete" };
-  return { sub: `${counts.open} open, ${counts.high} High`, state: "blocked" };
+    return {
+      sub: counts.status === "Failed" ? "Gap detection failed" : counts.status,
+      state: "in-progress",
+    };
+  const sub = counts.open === 0 ? "No open Gaps" : "No Gaps block submission";
+  return { sub, state: "complete" };
 }
 
-function assessmentsStep(view: AssessmentsView | null): Omit<PipelineStep, "key" | "title"> {
-  if (view === null) return { sub: couldNotLoad("The Assessments"), state: "unknown" };
-  const run = view.run;
+function assessmentsStep(
+  assessments: AssessmentsView | null,
+  view: SubmissionBlockersView | null,
+): StepBody {
+  const blocking = blockersOf(view, "finding");
+  if (blocking === null) return BLOCKERS_FAILED;
+  if (blocking.length > 0)
+    return { sub: plural(blocking.length, "critical Finding"), state: "blocked" };
+  if (assessments === null) return { sub: couldNotLoad("The Assessments"), state: "pending" };
+  const run = assessments.run;
   if (run === null) {
-    const done = view.assessments.filter((s) => s.assessment !== null).length;
+    const done = assessments.assessments.filter((s) => s.assessment !== null).length;
     return done > 0
       ? { sub: plural(done, "Assessment"), state: "complete" }
-      : { sub: "Not run yet", state: "not-started" };
+      : { sub: "Not run yet", state: "pending" };
   }
-  const sub = runStatusLabel(run);
-  if (run.status === "succeeded") return { sub, state: "complete" };
-  if (run.status === "queued" || run.status === "running") return { sub, state: "in-progress" };
-  // Failed, cancelled, or waiting for a person's decision (Story 5.5): someone has to act.
-  return { sub, state: "blocked" };
+  // Queued, running, failed, cancelled or waiting for a person: still in progress.
+  const state: PipelineState = run.status === "succeeded" ? "complete" : "in-progress";
+  return { sub: runStatusLabel(run), state };
 }
 
 function conflictsStep(
   conflicts: ConflictsView | null | undefined,
   assessments: AssessmentsView | null,
-): Omit<PipelineStep, "key" | "title"> {
-  if (!conflicts) return { sub: couldNotLoad("The Conflicts"), state: "unknown" };
-  const { unresolved, escalated } = conflictCounts(conflicts);
-  if (unresolved > 0)
-    return {
-      sub: escalated > 0 ? `${unresolved} open, ${escalated} escalated` : `${unresolved} open`,
-      state: "blocked",
-    };
+  view: SubmissionBlockersView | null,
+): StepBody {
+  const blocking = blockersOf(view, "conflict");
+  if (blocking === null) return BLOCKERS_FAILED;
+  if (blocking.length > 0) return { sub: `${blocking.length} open`, state: "blocked" };
+  if (!conflicts) return { sub: couldNotLoad("The Conflicts"), state: "pending" };
   if (conflicts.conflicts.length === 0 && !assessmentsStarted(assessments))
-    return { sub: "Appear after the Assessments", state: "not-started" };
+    return { sub: "Appear after the Assessments", state: "pending" };
   if (conflicts.conflicts.length === 0 && isAssessing(assessments?.run))
     return { sub: "Waiting for the Assessments", state: "in-progress" };
-  return { sub: "No open Conflicts", state: "complete" };
+  const open = conflictCounts(conflicts).unresolved;
+  const sub = open === 0 ? "No open Conflicts" : "No Conflicts block submission";
+  return { sub, state: "complete" };
 }
 
-function estimateStep(estimate: EstimateView | null): Omit<PipelineStep, "key" | "title"> {
-  if (estimate === null) return { sub: couldNotLoad("The Estimate"), state: "unknown" };
+function estimateStep(
+  estimate: EstimateView | null,
+  view: SubmissionBlockersView | null,
+): StepBody {
+  const assumptions = blockersOf(view, "assumption");
+  const uncovered = blockersOf(view, "uncovered_requirement");
+  if (assumptions === null || uncovered === null) return BLOCKERS_FAILED;
+  if (assumptions.length > 0)
+    return { sub: `${plural(assumptions.length, "Assumption")} not accepted`, state: "blocked" };
+  if (uncovered.length > 0)
+    return { sub: `${plural(uncovered.length, "Requirement")} not covered`, state: "blocked" };
+  if (estimate === null) return { sub: couldNotLoad("The Estimate"), state: "pending" };
   const version = estimate.version;
   if (version === null) {
     if (isDrafting(estimate.draft)) return { sub: DRAFTING, state: "in-progress" };
-    if (estimate.draft?.status === "failed") return { sub: "Drafting failed", state: "blocked" };
-    return { sub: NO_ESTIMATE_YET, state: "not-started" };
+    if (estimate.draft?.status === "failed")
+      return { sub: "Drafting failed", state: "in-progress" };
+    return { sub: NO_ESTIMATE_YET, state: "pending" };
   }
-  const waiting = version.counts.not_accepted;
-  if (waiting > 0)
-    return { sub: `${plural(waiting, "Assumption")} not accepted`, state: "blocked" };
-  if (version.uncovered_count > 0)
-    return {
-      sub: `${plural(version.uncovered_count, "Requirement")} not covered`,
-      state: "blocked",
-    };
   return { sub: `Estimate v${version.version}, every Assumption accepted`, state: "complete" };
 }
 
-/** The seven submission steps, each with a sub-line and a state, from the reads alone. */
-export function pipelineSteps(data: OverviewReads): PipelineStep[] {
+/** Review and Baseline: never Complete before Baseline exists (Story 9.7). */
+function reviewStep(view: SubmissionBlockersView | null): StepBody {
+  if (view === null) return BLOCKERS_FAILED;
+  const version = view.version;
+  if (version?.status === "in_review" || view.to_baseline.length > 0) {
+    const requests = view.to_baseline.filter((b) => b.kind === "review_request").length;
+    const sub = requests === 0 ? "In review" : `${plural(requests, "Review Request")} pending`;
+    return { sub, state: "in-progress" };
+  }
+  if (version === null || (version.status === "draft" && view.to_submit.length > 0))
+    return { sub: REVIEW_WAITS_FOR_BLOCKERS, state: "pending" };
+  if (version.status === "draft") return { sub: REVIEW_WAITS_FOR_SUBMIT, state: "pending" };
+  return { sub: NO_REVIEW_REQUESTS, state: "pending" };
+}
+
+/** The eight submission steps, each with a sub-line, a state and its tab. `blockers` is the
+ * API's submission blockers view (null when it could not be read): it alone decides Blocked. */
+export function pipelineSteps(
+  data: OverviewReads,
+  blockers: SubmissionBlockersView | null,
+): PipelineStep[] {
   return [
-    { key: "sources", title: "Sources added", ...sourcesStep(data.sources) },
-    { key: "extracted", title: "Requirements extracted", ...extractedStep(data.requirements) },
-    { key: "confirmed", title: "Requirements confirmed", ...confirmedStep(data.requirements) },
-    { key: "gaps", title: "Gaps answered", ...gapsStep(data.gaps) },
-    { key: "assessments", title: "Assessments run", ...assessmentsStep(data.assessments) },
+    { key: "sources", title: "Sources added", tab: "sources", ...sourcesStep(data.sources) },
+    {
+      key: "extracted",
+      title: "Requirements extracted",
+      tab: "requirements",
+      ...extractedStep(data.requirements),
+    },
+    {
+      key: "confirmed",
+      title: "Requirements confirmed",
+      tab: "requirements",
+      ...confirmedStep(data.requirements),
+    },
+    { key: "gaps", title: "Gaps answered", tab: "gaps", ...gapsStep(data.gaps, blockers) },
+    {
+      key: "assessments",
+      title: "Assessments run",
+      tab: "assessments",
+      ...assessmentsStep(data.assessments, blockers),
+    },
     {
       key: "conflicts",
       title: "Conflicts resolved",
-      ...conflictsStep(data.conflicts, data.assessments),
+      tab: "conflicts",
+      ...conflictsStep(data.conflicts, data.assessments, blockers),
     },
-    { key: "estimate", title: "Estimate accepted", ...estimateStep(data.estimate) },
+    {
+      key: "estimate",
+      title: "Estimate accepted",
+      tab: "estimate",
+      ...estimateStep(data.estimate, blockers),
+    },
+    { key: "review", title: "Review and Baseline", tab: "estimate", ...reviewStep(blockers) },
   ];
 }
 
@@ -462,6 +571,16 @@ export function pipelineProgress(steps: readonly PipelineStep[]): {
   };
 }
 
+/** "2 of 8 steps complete". */
+export function stepsCompleteLabel(done: number, total: number): string {
+  return `${done} of ${plural(total, "step")} complete`;
+}
+
+/** "3 steps blocked". */
+export function stepsBlockedLabel(n: number): string {
+  return `${plural(n, "step")} blocked`;
+}
+
 /** "Proposal due in 11 days", "Proposal due today", "Overdue by 3 days"; `null` for a bad date. */
 export function dueLabel(days: number): { text: string; overdue: boolean } | null {
   if (Number.isNaN(days)) return null;
@@ -476,7 +595,7 @@ export function dueLabel(days: number): { text: string; overdue: boolean } | nul
 
 // --- Latest agent decision -------------------------------------------------------------------
 
-const SEVERITY_RANK: Record<Severity, number> ={ critical: 0, high: 1, medium: 2, low: 3 };
+const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 /** The newest specialist Assessment and its most severe Finding (`null` when it has none);
  * `null` when there is no Assessment. */

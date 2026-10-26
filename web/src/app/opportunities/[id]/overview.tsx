@@ -12,7 +12,7 @@ import {
 } from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { Collaborators } from "@/components/opportunities/collaborators";
-import { GapsLiveRefresh } from "@/components/opportunities/gaps-live-refresh";
+import { OverviewLiveRefresh } from "@/components/opportunities/overview-live-refresh";
 import { OverviewSummary, type OverviewData } from "@/components/opportunities/overview-summary";
 import { StatusPill } from "@/components/opportunities/status-pill";
 import { getMe } from "@/lib/api/server";
@@ -83,7 +83,7 @@ export async function OverviewTab({ id }: { id: string }) {
   return (
     <div className={`flex flex-col gap-6 ${PAGE_PADDING}`}>
       <h2 className="sr-only">Overview</h2>
-      <GapsLiveRefresh opportunityId={opportunity.id} />
+      <OverviewLiveRefresh opportunityId={opportunity.id} />
       <OverviewSummary
         opportunityId={opportunity.id}
         data={summary}

@@ -287,3 +287,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-4-tool-permissions-and-denial-audit.md`
   summary: The ToolGateway's per-run denial advisory lock (`_denial_threshold`) is taken partway through the specialist node's Unit of Work, which could invert lock order with row locks that run tasks share (unverified, medium if real).
   evidence: maybe-false in 7.4 review; settle by tracing the node UoW around `SpecialistExecutor.prepare` (`orchestration/executors.py:78-99`) for row locks on run-shared rows taken before or after the gateway calls.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-8-9-overview-recomposition.md`
+  summary: No page-level test checks that the Overview tab mounts `OverviewLiveRefresh` (a frame on the real page calls `router.refresh`).
+  evidence: `pages.test.tsx` has no `EventSource` stub, so stream hooks return early; removing the mount in `app/opportunities/[id]/overview.tsx` passes every test.

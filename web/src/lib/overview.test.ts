@@ -10,6 +10,7 @@ import {
   attentionItems,
   awaitingLabel,
   conflictCounts,
+  conflictsBlockSubmit,
   couldNotLoad,
   cutAttention,
   dueLabel,
@@ -28,6 +29,8 @@ import {
   roleHoursLabel,
   sourceCounts,
   sourceRunLabel,
+  stepsBlockedLabel,
+  stepsCompleteLabel,
   tasksCompleteLabel,
   unacceptedAssumptions,
   waitingRunItems,
@@ -36,6 +39,7 @@ import {
 import type { RedTeamView } from "./red-team";
 import type { Requirement, RequirementList } from "./requirements";
 import type { Source } from "./sources";
+import type { Blocker, SubmissionBlockersView } from "./submission";
 
 let n = 0;
 const uid = () => `00000000-0000-7000-8000-${String(++n).padStart(12, "0")}`;
@@ -412,7 +416,12 @@ describe("labels", () => {
       "Engineer 10.0 h · PM 5.0 h · QA 2.0 h",
     );
     expect(sourceRunLabel(2)).toBe("From Assessments run 2");
-    expect(estimateKpiLabel(3)).toBe("Estimate · v3");
+    expect(estimateKpiLabel({ version: 3, status: "draft" })).toBe("Estimate · v3 draft");
+    expect(estimateKpiLabel({ version: 3, status: "submitted" })).toBe("Estimate · v3 submitted");
+    expect(estimateKpiLabel({ version: 3, status: "in_review" })).toBe("Estimate · v3 in review");
+    expect(estimateKpiLabel({ version: 2, status: "superseded" })).toBe(
+      "Estimate · v2 superseded",
+    );
     expect(estimateKpiLabel(null)).toBe("Estimate");
     expect(
       estimatePending({ version: null, draft: { status: "running" } } as unknown as EstimateView),
@@ -496,85 +505,253 @@ function midWay(): OverviewReads {
   };
 }
 
-describe("pipelineSteps", () => {
-  it("a new Opportunity has every step not started", () => {
-    const steps = pipelineSteps(EMPTY);
-    expect(steps.map((s) => s.title)).toEqual([
-      "Sources added",
-      "Requirements extracted",
-      "Requirements confirmed",
-      "Gaps answered",
-      "Assessments run",
-      "Conflicts resolved",
-      "Estimate accepted",
+type Kind = Blocker["kind"];
+
+function blocker(kind: Kind): Blocker {
+  const id = uid();
+  return { kind, subject_id: id, title: `${kind} ${id}`, detail: "", href: `/x#${kind}-${id}` };
+}
+
+function blockersView(
+  kinds: Kind[],
+  {
+    status = "draft",
+    noVersion = false,
+    toBaseline = [],
+  }: {
+    status?: "draft" | "submitted" | "in_review" | "superseded";
+    noVersion?: boolean;
+    toBaseline?: Blocker[];
+  } = {},
+): SubmissionBlockersView {
+  return {
+    to_submit: kinds.map(blocker),
+    to_baseline: toBaseline,
+    version: noVersion
+      ? null
+      : {
+          id: uid(),
+          version: 3,
+          status,
+          row_version: 1,
+          created_at: "2026-10-04T10:00:00Z",
+          submitted_at: status === "draft" ? null : "2026-10-14T09:00:00Z",
+        },
+    can_submit: true,
+  };
+}
+
+/** The mockup: 3 Gap, 2 Conflict and 2 Assumption blockers, a cancelled run, a draft. */
+const MOCKUP_BLOCKERS: Kind[] = [
+  "gap",
+  "gap",
+  "gap",
+  "conflict",
+  "conflict",
+  "assumption",
+  "assumption",
+];
+
+function mockup(): OverviewReads {
+  return {
+    ...midWay(),
+    assessments: {
+      ...EMPTY.assessments,
+      run: { status: "cancelled", tasks: [] },
+    } as unknown as AssessmentsView,
+  };
+}
+
+const acceptedEstimate = {
+  version: {
+    version: 3,
+    uncovered_count: 0,
+    counts: { total: 1, accepted: 1, not_accepted: 0 },
+  },
+  draft: null,
+} as unknown as EstimateView;
+
+describe("pipelineSteps (Story 8.9)", () => {
+  it("a new Opportunity has eight pending steps, each with its tab", () => {
+    const steps = pipelineSteps(EMPTY, blockersView([], { noVersion: true }));
+    expect(steps.map((s) => [s.title, s.tab])).toEqual([
+      ["Sources added", "sources"],
+      ["Requirements extracted", "requirements"],
+      ["Requirements confirmed", "requirements"],
+      ["Gaps answered", "gaps"],
+      ["Assessments run", "assessments"],
+      ["Conflicts resolved", "conflicts"],
+      ["Estimate accepted", "estimate"],
+      ["Review and Baseline", "estimate"],
     ]);
-    expect(steps.every((s) => s.state === "not-started")).toBe(true);
-    expect(pipelineProgress(steps)).toEqual({ done: 0, inProgress: 0, blocked: 0, total: 7 });
+    expect(steps.every((s) => s.state === "pending")).toBe(true);
+    expect(steps[7].sub).toBe("Starts when blockers clear");
+    expect(pipelineProgress(steps)).toEqual({ done: 0, inProgress: 0, blocked: 0, total: 8 });
   });
 
-  it("mid-way: 1–2 complete, 3 and 5 in progress, 4, 6 and 7 blocked", () => {
-    const steps = pipelineSteps(midWay());
+  it("the mockup: Blocked exactly where the view has items, a cancelled run in progress", () => {
+    const steps = pipelineSteps(mockup(), blockersView(MOCKUP_BLOCKERS));
     expect(steps.map((s) => [s.state, s.sub])).toEqual([
       ["complete", "6 of 6 parsed"],
       ["complete", "12 Requirements"],
       ["in-progress", "9 of 12"],
       ["blocked", "3 open, 2 High"],
-      ["in-progress", "Assessing"],
-      ["blocked", "2 open, 1 escalated"],
+      ["in-progress", "Cancelled — completed results kept"],
+      ["blocked", "2 open"],
       ["blocked", "2 Assumptions not accepted"],
+      ["pending", "Starts when blockers clear"],
     ]);
-    expect(pipelineProgress(steps)).toEqual({ done: 2, inProgress: 2, blocked: 3, total: 7 });
+    const progress = pipelineProgress(steps);
+    expect(progress).toEqual({ done: 2, inProgress: 2, blocked: 3, total: 8 });
+    expect(stepsCompleteLabel(progress.done, progress.total)).toBe("2 of 8 steps complete");
+    expect(stepsBlockedLabel(progress.blocked)).toBe("3 steps blocked");
+    expect(stepsBlockedLabel(1)).toBe("1 step blocked");
   });
 
-  it("a failed read makes its step unknown and says so", () => {
-    const steps = pipelineSteps({ ...midWay(), gaps: null, conflicts: null });
+  it("open Gaps without gap blocker items are not Blocked (the view decides)", () => {
+    const steps = pipelineSteps(mockup(), blockersView(["conflict"]));
+    expect(steps[3]).toMatchObject({ state: "complete", sub: "No Gaps block submission" });
+    expect(steps.filter((s) => s.state === "blocked").map((s) => s.key)).toEqual(["conflicts"]);
+  });
+
+  it("live clear: no conflict items completes the step even while the read is stale", () => {
+    const data = { ...mockup(), conflicts: conflictsOf("open") };
+    expect(pipelineSteps(data, blockersView(["conflict"]))[5].state).toBe("blocked");
+    expect(pipelineSteps(data, blockersView([]))[5]).toMatchObject({
+      state: "complete",
+      sub: "No Conflicts block submission",
+    });
+  });
+
+  it("critical Findings block Assessments run; uncovered Requirements block the Estimate", () => {
+    const steps = pipelineSteps(
+      { ...mockup(), estimate: acceptedEstimate },
+      blockersView(["finding", "finding", "uncovered_requirement"]),
+    );
+    expect(steps[4]).toMatchObject({ state: "blocked", sub: "2 critical Findings" });
+    expect(steps[6]).toMatchObject({ state: "blocked", sub: "1 Requirement not covered" });
+    // Assumptions come first in the Estimate step's sub-line.
+    const both = pipelineSteps(mockup(), blockersView(["uncovered_requirement", "assumption"]));
+    expect(both[6]).toMatchObject({ state: "blocked", sub: "1 Assumption not accepted" });
+  });
+
+  it("Requirements confirmed is never Blocked", () => {
+    const kinds: Kind[] = ["gap", "assumption", "conflict", "finding", "uncovered_requirement"];
+    const steps = pipelineSteps(mockup(), blockersView(kinds));
+    expect(steps[2].state).toBe("in-progress");
+  });
+
+  it("ready: steps 4–7 Complete and Review waits for the submission", () => {
+    const data: OverviewReads = {
+      ...mockup(),
+      gaps: gaps([gap("a", "high", "converted")]),
+      assessments: {
+        ...EMPTY.assessments,
+        run: { status: "succeeded", tasks: [] },
+      } as unknown as AssessmentsView,
+      conflicts: conflictsOf("resolved"),
+      estimate: acceptedEstimate,
+    };
+    const steps = pipelineSteps(data, blockersView([]));
+    expect(steps.slice(3, 7).map((s) => s.state)).toEqual([
+      "complete",
+      "complete",
+      "complete",
+      "complete",
+    ]);
+    expect(steps[3].sub).toBe("No open Gaps");
+    expect(steps[5].sub).toBe("No open Conflicts");
+    expect(steps[6].sub).toBe("Estimate v3, every Assumption accepted");
+    expect(steps[7]).toMatchObject({ state: "pending", sub: "Starts after you submit" });
+  });
+
+  it("Review and Baseline: submitted, in review, and never Complete", () => {
+    const submitted = pipelineSteps(mockup(), blockersView([], { status: "submitted" }));
+    expect(submitted[7]).toMatchObject({ state: "pending", sub: "No Review Request sent yet" });
+    const requests = [blocker("review_request"), blocker("review_request")];
+    const inReview = pipelineSteps(
+      mockup(),
+      blockersView([], { status: "in_review", toBaseline: requests }),
+    );
+    expect(inReview[7]).toMatchObject({ state: "in-progress", sub: "2 Review Requests pending" });
+    const pendingOnly = pipelineSteps(
+      mockup(),
+      blockersView([], { status: "submitted", toBaseline: [requests[0]!] }),
+    );
+    expect(pendingOnly[7]).toMatchObject({ state: "in-progress", sub: "1 Review Request pending" });
+    const noRequests = pipelineSteps(mockup(), blockersView([], { status: "in_review" }));
+    expect(noRequests[7]).toMatchObject({ state: "in-progress", sub: "In review" });
+    const all = [submitted, inReview, pendingOnly, noRequests].map((s) => s[7].state);
+    expect(all).not.toContain("complete");
+  });
+
+  it("a failed blockers read makes steps 4–8 Pending and says so", () => {
+    const steps = pipelineSteps(mockup(), null);
+    const message = "The submission blockers could not be loaded. Try again in a moment.";
+    expect(steps.slice(3).map((s) => [s.state, s.sub])).toEqual(
+      Array.from({ length: 5 }, () => ["pending", message]),
+    );
+    expect(steps.slice(0, 3).map((s) => s.state)).toEqual(["complete", "complete", "in-progress"]);
+    expect(steps.some((s) => s.state === "blocked")).toBe(false);
+  });
+
+  it("a failed read makes its step Pending and says so", () => {
+    const view = blockersView([]);
+    const steps = pipelineSteps({ ...mockup(), gaps: null, conflicts: null }, view);
     expect(steps[3]).toMatchObject({
-      state: "unknown",
+      state: "pending",
       sub: "Open Gaps could not be loaded. Try again in a moment.",
     });
-    expect(steps[5].state).toBe("unknown");
-    expect(steps[0].state).toBe("complete");
-    const noReads = pipelineSteps({ ...midWay(), sources: null, requirements: null });
-    expect(noReads.slice(0, 3).map((s) => s.state)).toEqual(["unknown", "unknown", "unknown"]);
+    expect(steps[5]).toMatchObject({
+      state: "pending",
+      sub: "The Conflicts could not be loaded. Try again in a moment.",
+    });
+    const noReads = pipelineSteps({ ...mockup(), sources: null, requirements: null }, view);
+    expect(noReads.slice(0, 3).map((s) => s.state)).toEqual(["pending", "pending", "pending"]);
     expect(noReads[0].sub).toBe("Sources could not be loaded. Try again in a moment.");
     expect(noReads[1].sub).toBe("Requirements could not be loaded. Try again in a moment.");
   });
 
-  it("blocks the Estimate while a Requirement has no line", () => {
-    const steps = pipelineSteps({
-      ...midWay(),
-      estimate: {
-        version: {
-          version: 3,
-          uncovered_count: 1,
-          counts: { total: 1, accepted: 1, not_accepted: 0 },
-        },
-        draft: null,
-      } as unknown as EstimateView,
-    });
-    expect(steps[6]).toMatchObject({ state: "blocked", sub: "1 Requirement not covered" });
+  it("failures are In progress with the failure as the sub-line, never Blocked", () => {
+    const failedSource = {
+      id: uid(),
+      parse: { status: "failed", error_code: "x" },
+    } as unknown as Source;
+    const data: OverviewReads = {
+      ...mockup(),
+      sources: [...(mockup().sources ?? []), failedSource],
+      requirements: {
+        items: [],
+        extraction: { status: "failed", error_code: "x", source_count: 1 },
+      } as unknown as RequirementList,
+      gaps: gaps([], { status: "failed", error_code: null }),
+      assessments: {
+        ...EMPTY.assessments,
+        run: { status: "waiting_for_human", tasks: [] },
+      } as unknown as AssessmentsView,
+      estimate: { version: null, draft: { status: "failed" } } as unknown as EstimateView,
+    };
+    const steps = pipelineSteps(data, blockersView([], { noVersion: true }));
+    expect(steps.map((s) => [s.state, s.sub]).slice(0, 7)).toEqual([
+      ["in-progress", "6 of 7 parsed, 1 failed"],
+      ["in-progress", "Extraction failed"],
+      ["pending", "Nothing to confirm yet"],
+      ["in-progress", "Gap detection failed"],
+      ["in-progress", "Waiting for you"],
+      ["complete", "No Conflicts block submission"],
+      ["in-progress", "Drafting failed"],
+    ]);
   });
 
   it("waits on Conflicts while the Assessment run is still running and none exist", () => {
-    const steps = pipelineSteps({ ...midWay(), conflicts: conflictsOf() });
+    const steps = pipelineSteps({ ...midWay(), conflicts: conflictsOf() }, blockersView([]));
     expect(steps[5]).toMatchObject({ state: "in-progress", sub: "Waiting for the Assessments" });
   });
 
-  it("completes Conflicts once Assessments ran with none open, and the Estimate once accepted", () => {
-    const steps = pipelineSteps({
-      ...midWay(),
-      conflicts: conflictsOf("resolved"),
-      estimate: {
-        version: {
-          version: 3,
-          uncovered_count: 0,
-          counts: { total: 1, accepted: 1, not_accepted: 0 },
-        },
-        draft: null,
-      } as unknown as EstimateView,
-    });
-    expect(steps[5]).toMatchObject({ state: "complete", sub: "No open Conflicts" });
-    expect(steps[6].state).toBe("complete");
+  it("the Conflicts KPI blocks submit only with conflict items", () => {
+    expect(conflictsBlockSubmit(blockersView(["conflict"]))).toBe(true);
+    expect(conflictsBlockSubmit(blockersView(["gap"]))).toBe(false);
+    expect(conflictsBlockSubmit(null)).toBe(false);
   });
 });
 

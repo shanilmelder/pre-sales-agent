@@ -1,12 +1,9 @@
 import {
   ArrowUpIcon,
-  CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
-  CircleHelpIcon,
   ClipboardListIcon,
   ClockIcon,
-  LoaderCircleIcon,
   OctagonAlertIcon,
   QuoteIcon,
   SparklesIcon,
@@ -21,6 +18,7 @@ import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { Pill, type PillTone } from "@/components/ui/pill";
 import { ActorTile } from "@/components/opportunities/actor-tile";
+import { ConflictsKpiPill, SubmissionPipeline } from "@/components/opportunities/overview-pipeline";
 import { SubmissionBlockersCard } from "@/components/opportunities/submission";
 import {
   RecommendationPill,
@@ -41,7 +39,6 @@ import {
   type Confidence,
 } from "@/lib/assessments";
 import { hours, type EstimateView } from "@/lib/estimates";
-import { daysUntil } from "@/lib/opportunities";
 import {
   assessmentsStarted,
   ATTENTION_INCOMPLETE,
@@ -51,7 +48,6 @@ import {
   conflictCounts,
   couldNotLoad,
   cutAttention,
-  dueLabel,
   estimateKpiLabel,
   estimatePending,
   gapCounts,
@@ -61,15 +57,12 @@ import {
   moreLabel,
   NOT_RUN,
   NOTHING_NEEDS_ATTENTION,
-  pipelineProgress,
-  pipelineSteps,
   requirementCounts,
   roleHoursLabel,
   sourceRunLabel,
   tasksCompleteLabel,
   type AttentionKind,
   type OverviewReads,
-  type PipelineState,
 } from "@/lib/overview";
 import { formatDateTime } from "@/lib/sources";
 import { absoluteTime, eventLabel, NO_EVENTS, relativeTime, type TraceEvent } from "@/lib/trace";
@@ -235,13 +228,7 @@ function ConflictsKpi({ id, data }: { id: string; data: OverviewData }) {
   const { unresolved, escalated } = conflictCounts(data.conflicts);
   return (
     <KpiTile label={label} href={href} value={unresolved}>
-      {unresolved > 0 ? (
-        <span className="mt-2 flex">
-          <Pill tone="blocker" icon={<CircleAlertIcon />}>
-            Needs a decision
-          </Pill>
-        </span>
-      ) : null}
+      {unresolved > 0 ? <ConflictsKpiPill fallback={data.blockers} /> : null}
       {escalated > 0 ? <KpiNote>{escalated} escalated</KpiNote> : null}
     </KpiTile>
   );
@@ -250,7 +237,7 @@ function ConflictsKpi({ id, data }: { id: string; data: OverviewData }) {
 function EstimateKpi({ id, estimate }: { id: string; estimate: EstimateView | null }) {
   const href = tabHref(id, "estimate");
   const version = estimate?.version ?? null;
-  const label = estimateKpiLabel(version?.version ?? null);
+  const label = estimateKpiLabel(version);
   if (estimate === null)
     return (
       <KpiTile label={label} href={href} value={NOT_RUN}>
@@ -281,145 +268,6 @@ function KpiRow({ id, data }: { id: string; data: OverviewData }) {
       <ConflictsKpi id={id} data={data} />
       <EstimateKpi id={id} estimate={data.estimate} />
     </div>
-  );
-}
-
-// --- Submission pipeline ---------------------------------------------------------------------
-
-const STEP_DISPLAY: Record<
-  PipelineState,
-  { label: string; tone: PillTone; icon: LucideIcon; circle: string }
-> = {
-  complete: {
-    label: "Complete",
-    tone: "resolved",
-    icon: CircleCheckIcon,
-    circle: "border-resolved bg-resolved text-resolved-foreground",
-  },
-  "in-progress": {
-    label: "In progress",
-    tone: "agent",
-    icon: LoaderCircleIcon,
-    circle: "border-primary bg-primary-tint text-primary-text",
-  },
-  blocked: {
-    label: "Blocked",
-    tone: "blocker",
-    icon: CircleAlertIcon,
-    circle: "border-blocker bg-blocker-tint text-blocker",
-  },
-  "not-started": {
-    label: "Not started",
-    tone: "neutral",
-    icon: ClockIcon,
-    circle: "border-border-strong bg-surface text-muted-foreground",
-  },
-  unknown: {
-    label: "Unknown",
-    tone: "neutral",
-    icon: CircleHelpIcon,
-    circle: "border-border-strong bg-surface text-muted-foreground",
-  },
-};
-
-function SubmissionPipeline({
-  data,
-  proposalDate,
-  today,
-}: {
-  data: OverviewData;
-  proposalDate: string;
-  today: string;
-}) {
-  const steps = pipelineSteps(data);
-  const progress = pipelineProgress(steps);
-  const due = dueLabel(daysUntil(proposalDate, today));
-  const pct = (n: number) => `${(n / progress.total) * 100}%`;
-  return (
-    <SummaryCard
-      id="overview-pipeline"
-      title="Submission pipeline"
-      extra={
-        due ? (
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 text-control",
-              due.overdue ? "text-blocker" : "text-muted-foreground",
-            )}
-          >
-            {due.overdue ? <TriangleAlertIcon aria-hidden="true" className="size-3.5" /> : null}
-            {due.text}
-          </span>
-        ) : null
-      }
-      footer={
-        <div className="flex flex-col gap-1.5 pt-0.5 pb-1.5">
-          <div className="flex justify-between gap-2 text-control">
-            <span className="text-body-strong">
-              {progress.done} of {progress.total} steps complete
-            </span>
-            <span className="text-muted-foreground">{progress.blocked} blocked</span>
-          </div>
-          <div aria-hidden="true" className="flex h-2 overflow-hidden rounded-full bg-surface-alt">
-            <div className="bg-resolved" style={{ width: pct(progress.done) }} />
-            <div className="bg-primary" style={{ width: pct(progress.inProgress) }} />
-            <div className="bg-blocker" style={{ width: pct(progress.blocked) }} />
-          </div>
-        </div>
-      }
-    >
-      <ol className="px-5 py-2">
-        {steps.map((step, i) => {
-          const display = STEP_DISPLAY[step.state];
-          const Icon = display.icon;
-          const last = i === steps.length - 1;
-          return (
-            <li key={step.key} data-step-state={step.state} className="flex items-stretch gap-3.5">
-              <div aria-hidden="true" className="flex flex-col items-center">
-                <span
-                  className={cn(
-                    "mt-2 flex size-7 shrink-0 items-center justify-center rounded-full border-2 text-label",
-                    display.circle,
-                  )}
-                >
-                  {step.state === "complete" ? <CheckIcon className="size-3.5" /> : i + 1}
-                </span>
-                {last ? null : (
-                  <span
-                    className={cn(
-                      "min-h-2 w-0.5 flex-1",
-                      step.state === "complete" ? "bg-resolved" : "bg-border",
-                    )}
-                  />
-                )}
-              </div>
-              <div
-                className={cn(
-                  "flex min-w-0 flex-1 items-center gap-3 py-2.5",
-                  last ? null : "border-b border-border",
-                )}
-              >
-                <div className="min-w-0 flex-1">
-                  <div
-                    className={
-                      step.state === "not-started" || step.state === "unknown"
-                        ? "text-body"
-                        : "text-body-strong"
-                    }
-                  >
-                    {step.title}
-                  </div>
-                  <div className="text-meta text-muted-foreground">{step.sub}</div>
-                </div>
-                <Pill tone={display.tone} icon={<Icon />}>
-                  {display.label}
-                </Pill>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </SummaryCard>
   );
 }
 
@@ -686,7 +534,7 @@ function AgentRun({ id, assessments }: { id: string; assessments: AssessmentsVie
       }
     >
       {run.tasks.length > 0 ? (
-        <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-4">
+        <ul aria-label="Agent tasks" className="grid grid-cols-1 gap-3 p-5 lg:grid-cols-3">
           {run.tasks.map((task) => {
             const decision = isWaiting(run) ? openDecision(run, task.agent) : null;
             const note = decision ? decisionSentence(decision) : taskNote(task);
@@ -739,8 +587,9 @@ const ROW = "grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_mi
 /** The Overview's read-only summary (Story 1.8, redesigned to the new mockups): the KPI row,
  * the Submission pipeline beside Needs you, the Submission blockers beside Recent activity,
  * then the Latest agent decision and the Agent run. Each card stands alone: a failed read only
- * affects its own card. Same for every role that can read the Opportunity. Rendered on
- * navigation; no polling. */
+ * affects its own card. Same for every role that can read the Opportunity. The pipeline and
+ * the blockers card follow the workspace's live blockers; `OverviewLiveRefresh` re-renders
+ * the rest over the event stream. */
 export function OverviewSummary({
   opportunityId,
   data,
@@ -758,7 +607,12 @@ export function OverviewSummary({
     <>
       <KpiRow id={opportunityId} data={data} />
       <div className={ROW}>
-        <SubmissionPipeline data={data} proposalDate={proposalDate} today={today} />
+        <SubmissionPipeline
+          opportunityId={opportunityId}
+          data={data}
+          proposalDate={proposalDate}
+          today={today}
+        />
         <NeedsYou id={opportunityId} data={data} />
       </div>
       <div className={ROW}>
