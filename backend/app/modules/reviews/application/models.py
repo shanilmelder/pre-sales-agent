@@ -1,10 +1,13 @@
-"""reviews' API models (Story 9.1)."""
+"""reviews' API models (Stories 9.1 and 9.3)."""
 
 from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
+from app.modules.assessments.application.public import AssessmentView
+from app.modules.estimates.application.public import EstimateVersion, VersionDiff
+from app.modules.reviews.domain.decisions import Decision
 from app.modules.reviews.domain.requests import (
     MESSAGE_MAX,
     REASON_MAX,
@@ -70,9 +73,47 @@ class ReviewTarget(BaseModel):
     label: str
 
 
+REASON_BACKSTOP = 4000
+"""A request-size backstop on a decision's reason; the 1,000 rule is checked after (422)."""
+
+
+class ReviewDecisionCreate(BaseModel):
+    """Record a Review Decision. Every decision but `approved` needs a reason (1 to 1,000
+    characters, trimmed); `escalated_to` (the user who then holds the request) is required
+    for, and only for, `escalated`. `challenged` arrives with Story 9.5."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Decision
+    reason: StrictStr | None = Field(
+        default=None,
+        max_length=REASON_BACKSTOP,
+        description=f"Why. Trimmed, at most {REASON_MAX:,} characters; optional to approve.",
+    )
+    escalated_to: UUID | None = Field(
+        default=None, description="Escalate only: the reviewer to hand the request to."
+    )
+
+
+class ReviewDecisionView(BaseModel):
+    """A Review Decision: what was decided (`label` in words), why, by whom, when, on which
+    version of the target, and for an escalation who the request went to."""
+
+    id: str
+    decision: Decision
+    label: str
+    reason: str | None
+    decided_by: ReviewPerson
+    escalated_to: ReviewPerson | None
+    target_version: int
+    decided_at: datetime
+
+
 class ReviewRequestView(BaseModel):
     """A Review Request as the Estimate tab lists it. `row_version` is also the `ETag`
-    (`If-Match` of a cancel); `can_cancel`: whether the caller may cancel it now."""
+    (`If-Match` of a cancel or a decision); `can_cancel`: whether the caller may cancel it
+    now; `latest_decision` (Story 9.3): its most recent Review Decision, null before the
+    first."""
 
     id: str
     review_type: ReviewType
@@ -88,6 +129,7 @@ class ReviewRequestView(BaseModel):
     created_at: datetime
     updated_at: datetime
     can_cancel: bool
+    latest_decision: ReviewDecisionView | None = None
 
 
 class AssessmentOption(BaseModel):
@@ -142,3 +184,44 @@ class ReviewRequestState(BaseModel):
     status: RequestStatus
     requested_by: UUID
     reviewer_id: UUID
+
+
+class RecordedDecision(BaseModel):
+    """Story 9.3: the decision just recorded, the request as it is now (its new `row_version`
+    is also the `ETag`), and the status of the Estimate Version it counts towards."""
+
+    decision: ReviewDecisionView
+    request: ReviewRequestView
+    version_status: str
+
+
+class ReviewPanel(BaseModel):
+    """Story 9.3: the review panel of one Review Request.
+
+    - `request` (with its message, sender, status and `row_version`), the Opportunity's
+      title, and its `decisions`, newest first.
+    - `version_status`: the status of the Estimate Version the request counts towards;
+      `superseded_by`: the number of the version that replaced it, null unless superseded.
+    - `can_decide`: whether the caller may record a decision now (the request's current
+      reviewer, holding the review type's role, on a pending request); `can_approve`:
+      whether Approve is among them, else `approve_blocked_reason` says why (the author).
+    - `escalation_candidates`: who an escalation may go to (holding the type's role, minus
+      the author and the current reviewer); empty unless `can_decide`.
+    - The target: an Estimate Version's lines, totals, Assumptions Register and Risks
+      (`estimate`) with its `diff` against the version before; or an Assessment at that
+      version (`assessment`) with its Findings and their Evidence. The other side is null.
+
+    The UI only uses the flags to show or hide controls; the API decides."""
+
+    request: ReviewRequestView
+    opportunity_title: str | None
+    decisions: list[ReviewDecisionView]
+    version_status: str
+    superseded_by: int | None
+    can_decide: bool
+    can_approve: bool
+    approve_blocked_reason: str | None
+    escalation_candidates: list[ReviewPerson]
+    estimate: EstimateVersion | None
+    diff: VersionDiff | None
+    assessment: AssessmentView | None

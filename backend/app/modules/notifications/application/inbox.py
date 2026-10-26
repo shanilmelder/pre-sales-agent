@@ -7,7 +7,8 @@ unknown one. Only signed-in users have an Inbox (403 for agents and systems).
 Each item's subject status is read live from the module that owns it (`reviews`,
 `workflows`, `conflicts`), and Opportunity titles from `opportunities`, all imported lazily:
 those modules import `notifications.public` to create items. When the subject is no longer
-open the item has no `href` and shows its status.
+open the item has no `href` and shows its status. Story 9.3: a Review Request item is
+closed for a reader who is no longer the request's reviewer (it was escalated).
 """
 
 from dataclasses import dataclass
@@ -45,6 +46,10 @@ CONFLICT_LABELS = {
     "resolved": "Resolved",
 }
 CONFLICT_OPEN = frozenset({"open", "negotiating", "escalated"})
+ESCALATED = "escalated"
+ESCALATED_LABEL = "Escalated"
+"""Story 9.3: a pending Review Request handed to another reviewer, as its earlier reviewer's
+item shows it (closed: no `href`)."""
 _log = get_logger(__name__)
 
 
@@ -79,6 +84,9 @@ async def _subject(uow: UnitOfWork, record: NotificationRecord) -> _Subject:
             return _Subject(None, None, False, None)
         is_open = state.status == reviews.RequestStatus.PENDING
         href = _tab(record.opportunity_id, "estimate", f"?review={record.subject_id}")
+        if is_open and state.reviewer_id != record.recipient_id:
+            # Story 9.3: escalated to someone else, so it is no longer this reader's to decide.
+            return _Subject(ESCALATED, ESCALATED_LABEL, False, None, state.requested_by)
         return _Subject(
             state.status.value,
             reviews.STATUS_LABELS[state.status],

@@ -58,17 +58,26 @@ const VERSION_STATUS_LABELS: Record<EstimateVersion["status"], string> = {
   draft: "Draft",
   submitted: "Submitted",
   in_review: "In review",
+  approved: "Approved",
+  rejected: "Rejected",
   superseded: "Superseded",
 };
 
-/** "Draft", "Submitted" (Story 8.6), "In review" (Story 9.1) or "Superseded". */
+/** "Draft", "Submitted" (Story 8.6), "In review" (Story 9.1), "Approved", "Rejected" (Story
+ * 9.3) or "Superseded". */
 export function versionStatusLabel(status: EstimateVersion["status"]): string {
   return VERSION_STATUS_LABELS[status] ?? status;
 }
 
-/** Whether the version was submitted (and so is read only): `submitted` or `in_review`. */
+/** Whether the version was submitted (and so is read only): `submitted`, `in_review`, or
+ * reviewed (`approved`, `rejected`). */
 export function isSent(status: EstimateVersion["status"]): boolean {
-  return status === "submitted" || status === "in_review";
+  return (
+    status === "submitted" ||
+    status === "in_review" ||
+    status === "approved" ||
+    status === "rejected"
+  );
 }
 
 /** "Draft v2". */
@@ -110,15 +119,17 @@ export type LifecycleState = "passed" | "current" | "upcoming";
 /** The Version lifecycle stepper (the mockup's four steps): Draft → In review → Approved →
  * Baseline. Draft is current for a draft and passed once the version is submitted or
  * superseded (the version pill says Superseded); In review is current while a Review Request
- * is pending (Story 9.1). Approved and Baseline are never current yet (Stories 9.3, 9.7). */
+ * is pending (Story 9.1); Approved is current, with In review passed, once every Review
+ * Request is approved (Story 9.3). Baseline is never current yet (Story 9.7). */
 export function lifecycleSteps(
   status: EstimateVersion["status"],
 ): { label: string; state: LifecycleState }[] {
   const labels = ["Draft", "In review", "Approved", "Baseline"];
-  const current = status === "draft" ? 0 : status === "in_review" ? 1 : -1;
+  const current = ["draft", "in_review", "approved"].indexOf(status);
   return labels.map((label, i) => ({
     label,
-    state: i === current ? "current" : i === 0 ? "passed" : "upcoming",
+    state:
+      i === current ? "current" : i === 0 || (current > 0 && i < current) ? "passed" : "upcoming",
   }));
 }
 
@@ -130,6 +141,10 @@ export function versionNote(
     return `v${version.version} was submitted and is read only.`;
   if (version.status === "in_review")
     return `v${version.version} is in review and read only.`;
+  if (version.status === "approved")
+    return `v${version.version} is approved by every reviewer and read only.`;
+  if (version.status === "rejected")
+    return `v${version.version} was rejected in review and is read only.`;
   return version.status === "draft"
     ? `v${version.version} is a draft built from ${sourceLabel(version)}. Each edit needs a reason and is traced.`
     : `v${version.version} is superseded and read only.`;

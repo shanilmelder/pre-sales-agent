@@ -1,11 +1,12 @@
-"""The reviews module's tables (Story 9.1). `opportunity_id`, `target_id`,
-`estimate_version_id`, `reviewer_id` and `requested_by` hold ids owned by other modules
-without foreign keys (AD-2)."""
+"""The reviews module's tables (Stories 9.1 and 9.3). No cross-module foreign keys (AD-2):
+`opportunity_id`, `target_id`, `estimate_version_id`, `reviewer_id`, `requested_by`,
+`decided_by` and `escalated_to` hold ids owned by other modules. Decisions reference their
+Review Request (an in-module foreign key)."""
 
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, Index, Integer, Text, Uuid, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base
@@ -63,3 +64,42 @@ class ReviewRequestRow(Base):
     row_version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ReviewDecisionRow(Base):
+    """A Review Decision (Story 9.3): what the request's reviewer decided, why, on which
+    version of the target, and (for an escalation) who the request went to. Append-only:
+    `psa_app` may only SELECT and INSERT."""
+
+    __tablename__ = "reviews_review_decisions"
+    __table_args__ = (
+        Index(None, "review_request_id", "decided_at"),
+        CheckConstraint(
+            "decision IN ('approved', 'rejected', 'challenged', 'evidence_requested', "
+            "'alternative_requested', 'escalated')",
+            name="decision",
+        ),
+        CheckConstraint(
+            "decision = 'approved' OR (reason IS NOT NULL AND char_length(btrim(reason)) >= 1)",
+            name="reason_required",
+        ),
+        CheckConstraint("reason IS NULL OR char_length(reason) <= 1000", name="reason"),
+        CheckConstraint(
+            "(decision = 'escalated') = (escalated_to IS NOT NULL)", name="escalated_has_target"
+        ),
+        CheckConstraint("target_version >= 1", name="target_version"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    review_request_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "reviews_review_requests.id", name="fk_reviews_review_decisions_review_request_id"
+        ),
+    )
+    decision: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    decided_by: Mapped[UUID] = mapped_column(Uuid)
+    target_version: Mapped[int] = mapped_column(Integer)
+    escalated_to: Mapped[UUID | None] = mapped_column(Uuid)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

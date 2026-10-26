@@ -78,6 +78,10 @@ class Action(StrEnum):
     never a reviewer collaborator)."""
     REVIEW_REQUEST_CANCEL = "reviews.review_request.cancel"
     """Story 9.1: cancel a pending Review Request (its sender or the Opportunity's owner)."""
+    REVIEW_REQUEST_DECIDE = "reviews.review_request.decide"
+    """Story 9.3: record a Review Decision on a pending Review Request (only its current
+    reviewer, holding the review type's role, checked by `reviews`; never a sales
+    representative)."""
     NOTIFICATION_READ = "notifications.notification.read"
     """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
@@ -164,6 +168,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.DECISION_RESOLVE: _A,
         Action.REVIEW_REQUEST_CREATE: _S,
         Action.REVIEW_REQUEST_CANCEL: _D,
+        Action.REVIEW_REQUEST_DECIDE: _A,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,

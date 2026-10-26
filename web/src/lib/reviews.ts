@@ -3,10 +3,13 @@
 // nothing here checks a role.
 import type { LucideIcon } from "lucide-react";
 import {
+  ArrowUpIcon,
   BanIcon,
   CircleCheckIcon,
   CircleXIcon,
   ClockIcon,
+  FileSearchIcon,
+  GitCompareArrowsIcon,
   MessageSquareWarningIcon,
   RedoIcon,
 } from "lucide-react";
@@ -20,6 +23,14 @@ export type ReviewRequest = components["schemas"]["ReviewRequestView"];
 export type ReviewRequestsView = components["schemas"]["ReviewRequestsView"];
 export type AssessmentOption = components["schemas"]["AssessmentOption"];
 export type CreatedReviewRequests = components["schemas"]["CreatedReviewRequests"];
+// Story 9.3
+export type Decision = components["schemas"]["Decision"];
+export type ReviewDecision = components["schemas"]["ReviewDecisionView"];
+export type ReviewPanel = components["schemas"]["ReviewPanel"];
+export type RecordedDecision = components["schemas"]["RecordedDecision"];
+export type VersionDiff = components["schemas"]["VersionDiff"];
+export type LineDiff = components["schemas"]["LineDiff"];
+export type ReviewPerson = components["schemas"]["ReviewPerson"];
 
 /** The review types, in the segmented control's order. */
 export const REVIEW_TYPES: readonly { value: ReviewType; label: string }[] = [
@@ -113,11 +124,180 @@ export function reviewRowId(requestId: string): string {
   return `review-${requestId}`;
 }
 
-/** The trace frames after which the Estimate tab reads its requests again. */
+/** The trace frames after which the Estimate tab reads its requests (and the open review
+ * panel) again. */
 export const REVIEW_TRACE_EVENTS: readonly string[] = [
   "reviews.review_request.created",
   "reviews.review_request.cancelled",
+  "reviews.review_decision.recorded",
   "estimates.estimate_version.review_started",
   "estimates.estimate_version.review_ended",
+  "estimates.estimate_version.approved",
+  "estimates.estimate_version.rejected",
   "estimates.estimate_version.submitted",
 ];
+
+// --- Review Decisions and the review panel (Story 9.3) --------------------------------------
+
+type DecisionStyle = { label: string; tone: PillTone; icon: LucideIcon };
+
+/** Each decision's label, tone and icon: never colour alone. */
+export const DECISION_STYLES: Record<Decision, DecisionStyle> = {
+  approved: { label: "Approved", tone: "resolved", icon: CircleCheckIcon },
+  rejected: { label: "Rejected", tone: "blocker", icon: CircleXIcon },
+  challenged: { label: "Challenged", tone: "gap", icon: MessageSquareWarningIcon },
+  evidence_requested: { label: "Evidence requested", tone: "gap", icon: FileSearchIcon },
+  alternative_requested: {
+    label: "Alternative requested",
+    tone: "gap",
+    icon: GitCompareArrowsIcon,
+  },
+  escalated: { label: "Escalated", tone: "gap", icon: ArrowUpIcon },
+};
+
+/** A decision the panel's reason form records: every one but Approve, and not Challenge
+ * (Story 9.5 builds its dialog). */
+export type ReasonedDecision =
+  | "rejected"
+  | "evidence_requested"
+  | "alternative_requested"
+  | "escalated";
+
+export const DECISION_REASON_MAX = 1000;
+export const APPROVE = "Approve";
+export const REJECT = "Reject";
+export const CHALLENGE = "Challenge";
+export const REQUEST_EVIDENCE = "Request evidence";
+export const REQUEST_ALTERNATIVE = "Request alternative";
+export const ESCALATE = "Escalate";
+export const CHALLENGE_LATER = "Challenge arrives with Story 9.5";
+export const CHOOSE_REVIEWER = "Choose a reviewer";
+export const OPEN_IN_TAB = "Open in tab";
+export const FIRST_VERSION = "First version";
+export const NO_CHANGES = "No line changed.";
+export const DECISION_FAILED = "Not recorded: the platform is not reachable. Try again.";
+export const DECISION_FORBIDDEN = "You can't decide this Review Request.";
+export const LOADING_PANEL = "Loading the review…";
+export const PANEL_NOT_LOADED = "The review could not be loaded. Try again in a moment.";
+export const DECISIONS_TITLE = "Decisions";
+export const ACTIONS_LABEL = "Review decision";
+export const VIEW_DIFF = "View diff";
+export const HIDE_DIFF = "Hide diff";
+
+const REASON_VERB: Record<ReasonedDecision, string> = {
+  rejected: "rejecting",
+  evidence_requested: "requesting evidence",
+  alternative_requested: "requesting an alternative",
+  escalated: "escalating",
+};
+
+const ACTION_LABEL: Record<ReasonedDecision, string> = {
+  rejected: REJECT,
+  evidence_requested: REQUEST_EVIDENCE,
+  alternative_requested: REQUEST_ALTERNATIVE,
+  escalated: ESCALATE,
+};
+
+/** "Reason for rejecting (required)". */
+export function reasonLabel(decision: ReasonedDecision): string {
+  return `Reason for ${REASON_VERB[decision]} (required)`;
+}
+
+/** "Confirm Reject", "Confirm Escalate". */
+export function confirmLabel(decision: ReasonedDecision): string {
+  return `Confirm ${ACTION_LABEL[decision]}`;
+}
+
+/** What is announced once a decision is recorded: "Estimate v3 approved" when the approval
+ * approved the version, else "Review approved", "Review rejected", "Evidence requested",
+ * "Alternative requested" or "Review escalated to Cy Ruiz". */
+export function decisionAnnouncement(recorded: RecordedDecision): string {
+  const { decision, request, version_status } = recorded;
+  switch (decision.decision) {
+    case "approved":
+      return version_status === "approved"
+        ? `Estimate v${request.estimate_version} approved`
+        : "Review approved";
+    case "rejected":
+      return "Review rejected";
+    case "escalated":
+      return `Review escalated to ${decision.escalated_to?.name ?? "another reviewer"}`;
+    default:
+      return DECISION_STYLES[decision.decision].label;
+  }
+}
+
+const DATE = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+const DATE_TIME = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
+
+function formatted(format: Intl.DateTimeFormat, value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : format.format(date);
+}
+
+/** The panel header's eyebrow: "Engineering review · From Owner Person · 24 Oct 2026". */
+export function panelEyebrow(request: ReviewRequest): string {
+  const when = formatted(DATE, request.created_at);
+  const head = `${reviewTypeLabel(request.review_type)} review · From ${request.requested_by.name}`;
+  return when ? `${head} · ${when}` : head;
+}
+
+/** The panel's title: "Review request: Estimate v3, {Opportunity}". */
+export function panelTitle(request: ReviewRequest, opportunityTitle: string | null): string {
+  const head = `Review request: ${request.target.label}`;
+  return opportunityTitle ? `${head}, ${opportunityTitle}` : head;
+}
+
+/** A decision's line: "Ana Ruiz · Evidence requested · 25 Oct, 10:02" ("Escalated to Cy Ruiz"
+ * for an escalation). */
+export function decisionLine(decision: ReviewDecision): string {
+  const what =
+    decision.decision === "escalated" && decision.escalated_to
+      ? `${decision.label} to ${decision.escalated_to.name}`
+      : decision.label;
+  const when = formatted(DATE_TIME, decision.decided_at);
+  const head = `${decision.decided_by.name} · ${what}`;
+  return when ? `${head} · ${when}` : head;
+}
+
+/** "Superseded by v4" (just "Superseded" when the newer version is unknown). */
+export function supersededLabel(supersededBy: number | null): string {
+  return supersededBy == null ? "Superseded" : `Superseded by v${supersededBy}`;
+}
+
+/** Whether the panel shows greyed and read only: the request or its version is superseded. */
+export function isSupersededPanel(panel: Pick<ReviewPanel, "request" | "version_status">): boolean {
+  return panel.request.status === "superseded" || panel.version_status === "superseded";
+}
+
+/** "+12 h", "−10 h" (a minus sign), "0 h". */
+export function deltaLabel(hours: number): string {
+  const rounded = Math.round(hours * 10) / 10;
+  if (rounded > 0) return `+${rounded} h`;
+  if (rounded < 0) return `−${Math.abs(rounded)} h`;
+  return "0 h";
+}
+
+/** The diff's heading: "Compared with v2", or "First version". */
+export function diffHeading(diff: VersionDiff): string {
+  return diff.first || diff.previous_version == null
+    ? FIRST_VERSION
+    : `Compared with v${diff.previous_version}`;
+}
+
+/** `/opportunities/{id}/estimate/reviews/{rid}`: the panel full width (**Open in tab**). */
+export function reviewPanelHref(opportunityId: string, requestId: string): string {
+  return `/opportunities/${opportunityId}/estimate/reviews/${requestId}`;
+}

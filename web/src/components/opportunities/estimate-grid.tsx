@@ -38,7 +38,11 @@ import {
   OriginGapInspector,
 } from "@/components/opportunities/assumptions-register";
 import { RequestReviewDialog } from "@/components/opportunities/request-review-dialog";
-import { ReviewRequestsCard } from "@/components/opportunities/review-requests-card";
+import { ReviewPanelLoader } from "@/components/opportunities/review-panel";
+import {
+  linkedReview,
+  ReviewRequestsCard,
+} from "@/components/opportunities/review-requests-card";
 import { RiskInspector, type RiskFields } from "@/components/opportunities/risk-inspector";
 import { RisksCard } from "@/components/opportunities/risks-card";
 import { Card } from "@/components/ui/card";
@@ -98,8 +102,8 @@ import {
   type Totals,
 } from "@/lib/estimates";
 import { useReviewEvents } from "@/lib/opportunity-events";
-import { NO_ACCESS_TO_OPPORTUNITY } from "@/lib/opportunities";
-import type { ReviewRequestsView } from "@/lib/reviews";
+import { NO_ACCESS_TO_OPPORTUNITY, UUID_RE } from "@/lib/opportunities";
+import type { ReviewRequest, ReviewRequestsView } from "@/lib/reviews";
 import { cn } from "@/lib/utils";
 import { tabHref } from "@/lib/workspace";
 
@@ -110,11 +114,17 @@ const num = "px-2.5 text-right text-numeric whitespace-nowrap";
 const cont = "border-l border-border";
 const headCell = "h-[34px] bg-background px-2.5 text-label text-muted-foreground whitespace-nowrap";
 
-/** Each version status's pill tone (Story 9.1: `submitted` neutral, `in_review` gap). */
-const VERSION_TONES: Record<EstimateVersion["status"], "agent" | "neutral" | "gap"> = {
+/** Each version status's pill tone (Story 9.1: `submitted` neutral, `in_review` gap; Story
+ * 9.3: `approved` resolved, `rejected` blocker). */
+const VERSION_TONES: Record<
+  EstimateVersion["status"],
+  "agent" | "neutral" | "gap" | "resolved" | "blocker"
+> = {
   draft: "agent",
   submitted: "neutral",
   in_review: "gap",
+  approved: "resolved",
+  rejected: "blocker",
   superseded: "neutral",
 };
 
@@ -603,9 +613,10 @@ export function UncoveredBanner({ count }: { count: number }) {
   );
 }
 
-/** What the right pane shows: a line, an Assumption (Story 8.5), a Risk (Story 8.5), or the
- * Gap an Assumption or a Risk was made from. */
+/** What the right pane shows: a line, an Assumption (Story 8.5), a Risk (Story 8.5), the
+ * Gap an Assumption or a Risk was made from, or a Review Request's review panel (Story 9.3). */
 type Selection =
+  | { kind: "review"; id: string }
   | { kind: "line"; id: string }
   | { kind: "assumption"; id: string }
   | { kind: "risk"; id: string }
@@ -761,6 +772,32 @@ export function EstimateSection({
     setEditFocusRequest(0);
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
+
+  /** Story 9.3: a Review requests row (or `?review={id}`) opens its review panel. */
+  function openReview(requestId: string, viaKeyboard: boolean) {
+    setSelection({ kind: "review", id: requestId });
+    setReplaced(false);
+    returnFocusTo.current = viaKeyboard ? `[data-open-review="${requestId}"]` : null;
+    setFocusRequest(0);
+    setEditFocusRequest(0);
+    if (!rightPaneOpen) setRightPaneOpen(true);
+  }
+
+  // `?review={id}` (the Inbox's and the blockers' links): open that panel once.
+  const linkedOpened = useRef(false);
+  useEffect(() => {
+    if (linkedOpened.current) return;
+    const wanted = linkedReview();
+    if (!wanted || !UUID_RE.test(wanted)) return;
+    // After the first render (the URL is read in the browser only). The ref is set when the
+    // timer fires, so a StrictMode re-run (whose cleanup cleared the first timer) opens it.
+    const timer = setTimeout(() => {
+      linkedOpened.current = true;
+      setSelection({ kind: "review", id: wanted });
+      setRightPaneOpen(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [setRightPaneOpen]);
 
   function openGap(assumption: Assumption, viaKeyboard: boolean) {
     setSelection({ kind: "gap", assumptionId: assumption.id });
@@ -1059,6 +1096,8 @@ export function EstimateSection({
               opportunityId={opportunityId}
               items={versionReviews.items}
               onChanged={() => void reloadReviews()}
+              onOpen={(request: ReviewRequest, viaKeyboard) => openReview(request.id, viaKeyboard)}
+              selectedId={selection?.kind === "review" ? selection.id : null}
             />
           ) : null}
           <UncoveredBanner count={version.uncovered_count} />
@@ -1167,6 +1206,17 @@ export function EstimateSection({
       ) : gapOf ? (
         <RightPaneContent>
           <OriginGapInspector key={gapOf.id} gap={gapOf.origin} focusRequest={focusRequest} />
+        </RightPaneContent>
+      ) : selection?.kind === "review" ? (
+        <RightPaneContent>
+          <div key={selection.id} className="p-gutter">
+            <ReviewPanelLoader
+              opportunityId={opportunityId}
+              requestId={selection.id}
+              layout="inspector"
+              onDecided={() => void reloadReviews()}
+            />
+          </div>
         </RightPaneContent>
       ) : null}
     </div>

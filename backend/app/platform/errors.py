@@ -114,6 +114,22 @@ class ForbiddenError(ProblemError):
     title = "Forbidden"
 
 
+class ReviewerNotAuthorizedError(ForbiddenError):
+    """The caller is not the Review Request's current reviewer, or no longer holds the role
+    its review type needs (Story 9.3); nothing was written."""
+
+    code = "reviewer_not_authorized"
+    title = "Reviewer not authorized"
+
+
+class SelfApprovalForbiddenError(ForbiddenError):
+    """The author of an Estimate Version tried to approve a review of it (Story 9.3);
+    nothing was written."""
+
+    code = "self_approval_forbidden"
+    title = "Self-approval forbidden"
+
+
 class NotFoundError(ProblemError):
     """The resource does not exist (or the caller may not know that it does)."""
 
@@ -250,7 +266,7 @@ class EstimateVersionSupersededError(ConflictError):
 
 class EstimateVersionRejectedError(ConflictError):
     """A Review Request was asked for a rejected Estimate Version (Story 9.1; the status
-    arrives with Story 9.3)."""
+    arrived with Story 9.3)."""
 
     code = "estimate_version_rejected"
     title = "Estimate Version rejected"
@@ -265,7 +281,8 @@ class ReviewRequestDuplicateError(ConflictError):
 
 
 class ReviewRequestNotPendingError(ConflictError):
-    """A Review Request that is no longer `pending` was cancelled (Story 9.1)."""
+    """A Review Request that is no longer `pending` was cancelled (Story 9.1) or decided
+    (Story 9.3)."""
 
     code = "review_request_not_pending"
     title = "Review Request not pending"

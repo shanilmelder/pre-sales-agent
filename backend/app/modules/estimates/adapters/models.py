@@ -63,7 +63,8 @@ class EstimateVersionRow(RowVersioned, Base):
     Assumption proposals (Story 8.4); null for a version that never had them queued. Story
     8.6: submitting moves the draft to `submitted` and marks earlier `submitted` versions
     `superseded`. Story 9.1: a Review Request moves a submitted version to `in_review`, and
-    cancelling its last pending request moves it back."""
+    cancelling its last pending request moves it back. Story 9.3: review decisions move an
+    `in_review` version to `approved` or `rejected`."""
 
     __tablename__ = "estimates_estimate_versions"
     __table_args__ = (
@@ -75,7 +76,8 @@ class EstimateVersionRow(RowVersioned, Base):
             postgresql_where=text("status = 'draft'"),
         ),
         CheckConstraint(
-            "status IN ('draft', 'submitted', 'in_review', 'superseded')", name="status"
+            "status IN ('draft', 'submitted', 'in_review', 'approved', 'rejected', 'superseded')",
+            name="status",
         ),
         CheckConstraint(
             "status <> 'submitted' OR submitted_at IS NOT NULL", name="submitted_has_at"

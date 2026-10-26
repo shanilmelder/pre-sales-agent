@@ -48,6 +48,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   startRedTeamReview: vi.fn(),
   resolveConflict,
   escalateConflict: vi.fn(),
+  loadReviewPanel: vi.fn(),
+  decideReviewRequest: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -78,6 +80,8 @@ import WorkspaceTabPage from "@/app/opportunities/[id]/[tab]/page";
 import OpportunityLayout from "@/app/opportunities/[id]/layout";
 import OpportunityPage from "@/app/opportunities/[id]/page";
 import NewOpportunityPage from "@/app/opportunities/new/page";
+import ReviewPanelPage from "@/app/opportunities/[id]/estimate/reviews/[rid]/page";
+import { REVIEW_ID, reviewPanel } from "@/test/review-fixtures";
 import OpportunitiesPage from "@/app/opportunities/page";
 import MyOpportunitiesPage from "@/app/my-opportunities/page";
 import { RightPane } from "@/components/shell/right-pane";
@@ -2537,5 +2541,45 @@ describe("/opportunities/[id] workspace", () => {
       view.unmount();
     }
     expect(apiGet).not.toHaveBeenCalled();
+  });
+});
+
+describe("/opportunities/[id]/estimate/reviews/[rid] (Story 9.3, Open in tab)", () => {
+  function panelRead(status = 200) {
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/panel")
+        ? status === 200
+          ? { data: reviewPanel(), response: new Response(null, { status }) }
+          : { response: new Response(null, { status }) }
+        : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+  }
+
+  it("renders the review panel full width, without Open in tab", async () => {
+    signedIn(["engineering_reviewer"]);
+    panelRead();
+    const page = await ReviewPanelPage({
+      params: Promise.resolve({ id: OPP_ID, rid: REVIEW_ID }),
+    });
+    const { container } = renderPage(page!);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Review request: Estimate v3, [OPPORTUNITY]" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Review decision" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open in tab" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Back to the Estimate" }).getAttribute("href")).toBe(
+      `/opportunities/${OPP_ID}/estimate`,
+    );
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("says when the review can't be read", async () => {
+    signedIn(["engineering_reviewer"]);
+    panelRead(404);
+    const page = await ReviewPanelPage({
+      params: Promise.resolve({ id: OPP_ID, rid: REVIEW_ID }),
+    });
+    renderPage(page!);
+    expect(screen.getByText("The review could not be loaded. Try again in a moment.")).toBeTruthy();
   });
 });
