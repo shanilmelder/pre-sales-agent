@@ -906,7 +906,7 @@ describe("/opportunities/[id] workspace", () => {
         li.getAttribute("data-step-state"),
       );
 
-    it("New Opportunity: KPIs '—', every step not started, nothing needs you, no decision or run", async () => {
+    it("New Opportunity: KPIs '—', every step pending, nothing needs you, no decision or run", async () => {
       signedIn(["presales_engineer"]);
       found();
       const { container } = await renderWorkspace();
@@ -917,9 +917,9 @@ describe("/opportunities/[id] workspace", () => {
         [/^Estimate\s*—\s*No Estimate yet\.$/, "estimate"],
       ] as const)
         expect(kpi(name).getAttribute("href")).toBe(href(tab));
-      expect(stepStates()).toEqual(Array(7).fill("not-started"));
-      expect(within(card("Submission pipeline")).getAllByText("Not started")).toHaveLength(7);
-      expect(within(card("Submission pipeline")).getByText("0 of 7 steps complete")).toBeTruthy();
+      expect(stepStates()).toEqual(Array(8).fill("pending"));
+      expect(within(card("Submission pipeline")).getAllByText("Pending")).toHaveLength(8);
+      expect(within(card("Submission pipeline")).getByText("0 of 8 steps complete")).toBeTruthy();
       expect(within(card("Needs you")).getByText("Nothing needs attention.")).toBeTruthy();
       expect(within(card("Needs you")).getByText("In your queue").textContent).toBe(
         "In your queue 0",
@@ -947,11 +947,11 @@ describe("/opportunities/[id] workspace", () => {
         href("gaps"),
       );
       expect(
-        kpi(/^Open Conflicts\s*2\s*Needs a decision\s*1 escalated$/).getAttribute("href"),
+        kpi(/^Open Conflicts\s*2\s*Blocks submit\s*1 escalated$/).getAttribute("href"),
       ).toBe(href("conflicts"));
       expect(
         kpi(
-          /^Estimate · v3\s*278\.0\s*h\s*Engineer 225\.4 h · PM 52\.6 h\s*From Assessments run 2$/,
+          /^Estimate · v3 draft\s*278\.0\s*h\s*Engineer 225\.4 h · PM 52\.6 h\s*From Assessments run 2$/,
         ).getAttribute("href"),
       ).toBe(href("estimate"));
 
@@ -980,14 +980,20 @@ describe("/opportunities/[id] workspace", () => {
         "in-progress",
         "blocked",
         "blocked",
+        "pending",
       ]);
       expect(within(pipeline).getByText("6 of 6 parsed")).toBeTruthy();
       expect(within(pipeline).getByText("9 of 12")).toBeTruthy();
       expect(within(pipeline).getByText("3 open, 2 High")).toBeTruthy();
-      expect(within(pipeline).getByText("2 open, 1 escalated")).toBeTruthy();
+      expect(within(pipeline).getByText("2 open")).toBeTruthy();
+      expect(within(pipeline).getByText("2 Assumptions not accepted")).toBeTruthy();
+      expect(within(pipeline).getByText("Starts when blockers clear")).toBeTruthy();
       expect(within(pipeline).getByText(/^Proposal due in \d+ days$/)).toBeTruthy();
-      expect(within(pipeline).getByText("2 of 7 steps complete")).toBeTruthy();
-      expect(within(pipeline).getByText("3 blocked")).toBeTruthy();
+      expect(within(pipeline).getByText("2 of 8 steps complete")).toBeTruthy();
+      expect(within(pipeline).getByText("3 steps blocked")).toBeTruthy();
+      expect(
+        within(pipeline).getByRole("link", { name: "Conflicts resolved" }).getAttribute("href"),
+      ).toBe(href("conflicts"));
 
       // Needs you: ranked, each with a state line and an action to its tab.
       const needs = card("Needs you");
@@ -1129,8 +1135,10 @@ describe("/opportunities/[id] workspace", () => {
       expect(kpi(/^Open Gaps\s*—\s*Open Gaps could not be loaded/).getAttribute("href")).toBe(
         href("gaps"),
       );
-      expect(within(card("Submission pipeline")).getByText(message)).toBeTruthy();
-      expect(stepStates()[3]).toBe("unknown");
+      // The step's Blocked comes from the blockers view, not the Gaps read.
+      expect(stepStates()[3]).toBe("blocked");
+      expect(within(card("Submission pipeline")).getByText("3 open")).toBeTruthy();
+      expect(within(card("Submission pipeline")).queryByText(message)).toBeNull();
       // The blockers card reads the API's check, not the Gaps read.
       expect(
         within(card("Submission blockers")).getByText("8 to submit · 0 to Baseline"),
@@ -1178,7 +1186,8 @@ describe("/opportunities/[id] workspace", () => {
       const submit = screen.getByRole("button", { name: "Submit" });
       expect(submit.getAttribute("aria-disabled")).toBeNull();
       expect(screen.queryByRole("link", { name: /^Resolve/ })).toBeNull();
-      expect(stepStates().slice(5)).toEqual(["complete", "complete"]);
+      expect(stepStates().slice(5)).toEqual(["complete", "complete", "pending"]);
+      expect(within(card("Submission pipeline")).getByText("Starts after you submit")).toBeTruthy();
       expect(await axeViolations(container)).toEqual([]);
     });
 
@@ -1207,7 +1216,7 @@ describe("/opportunities/[id] workspace", () => {
         kpi(/^Requirements confirmed\s*—\s*Requirements could not be loaded\. Try again in a moment\.$/)
           .getAttribute("href"),
       ).toBe(href("requirements"));
-      expect(stepStates().slice(1, 3)).toEqual(["unknown", "unknown"]);
+      expect(stepStates().slice(1, 3)).toEqual(["pending", "pending"]);
     });
 
     it("Cut: 8 rows and '+N more' linking to the tab", async () => {
@@ -1236,7 +1245,8 @@ describe("/opportunities/[id] workspace", () => {
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
       await renderWorkspace();
       expect(kpi(/^Estimate\s*—\s*The Estimate could not be loaded/)).toBeTruthy();
-      expect(stepStates()[6]).toBe("unknown");
+      // The Assumption blockers still block the step (the view decides, not the Estimate read).
+      expect(stepStates()[6]).toBe("blocked");
       expect(within(card("Needs you")).getByText(/may be incomplete/)).toBeTruthy();
       expect(within(card("Needs you")).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
       expect(kpi(/^Open Gaps\s*3/)).toBeTruthy();
@@ -1257,10 +1267,11 @@ describe("/opportunities/[id] workspace", () => {
       ).toBeTruthy();
       expect(screen.queryByRole("region", { name: "Latest agent decision" })).toBeNull();
       expect(screen.queryByRole("region", { name: "Agent run" })).toBeNull();
-      expect(stepStates()[4]).toBe("unknown");
-      expect(stepStates()[5]).toBe("unknown");
+      expect(stepStates()[4]).toBe("pending");
+      // The Conflict blockers still block the step.
+      expect(stepStates()[5]).toBe("blocked");
       expect(within(card("Needs you")).getByText("Red Team: [ERP FIELDS]")).toBeTruthy();
-      expect(kpi(/^Estimate · v3\s*278\.0\s*h/)).toBeTruthy();
+      expect(kpi(/^Estimate · v3 draft\s*278\.0\s*h/)).toBeTruthy();
     });
 
     it("Before a step has run: the KPI is '—' with the step's status", async () => {
@@ -1282,7 +1293,7 @@ describe("/opportunities/[id] workspace", () => {
       await renderWorkspace();
       expect(kpi(/^Requirements confirmed\s*—\s*Extracting…$/)).toBeTruthy();
       expect(kpi(/^Open Gaps\s*—\s*Failed$/)).toBeTruthy();
-      expect(stepStates().slice(1, 4)).toEqual(["in-progress", "not-started", "blocked"]);
+      expect(stepStates().slice(1, 4)).toEqual(["in-progress", "pending", "in-progress"]);
     });
 
     it("Who: a sales representative sees the same read-only summary", async () => {
@@ -1290,7 +1301,7 @@ describe("/opportunities/[id] workspace", () => {
       found(FUTURE, MID);
       const { container } = await renderWorkspace();
       expect(within(card("Needs you")).getAllByRole("listitem")).toHaveLength(7);
-      expect(kpi(/^Estimate · v3\s*278\.0\s*h/)).toBeTruthy();
+      expect(kpi(/^Estimate · v3 draft\s*278\.0\s*h/)).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Run assessment" })).toBeNull();
       expect(await axeViolations(container)).toEqual([]);
     });
