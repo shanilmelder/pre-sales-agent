@@ -9,8 +9,8 @@ export const WORKSPACE_TABS = [
   { slug: "assessments", label: "Assessments", key: "5" },
   { slug: "conflicts", label: "Conflicts", key: "6" },
   { slug: "estimate", label: "Estimate", key: "7" },
-  { slug: "trace", label: "Trace", key: "8" },
-  { slug: "actuals", label: "Actuals", key: "9" },
+  { slug: "actuals", label: "Actuals", key: "8" },
+  { slug: "trace", label: "Trace", key: "9" },
 ] as const;
 
 export type WorkspaceTab = (typeof WORKSPACE_TABS)[number];

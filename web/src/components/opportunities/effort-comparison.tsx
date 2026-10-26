@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 
+import { Card } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
 import { AGENTS, type AgentAssessment } from "@/lib/assessments";
+import { cn } from "@/lib/utils";
 import {
   ADDS_UP_NOTE,
   AGENTS_TOTAL,
@@ -23,7 +26,10 @@ import {
 import type { EstimateVersion } from "@/lib/estimates";
 import type { Requirement } from "@/lib/requirements";
 
-const NUMERIC = "py-2.5 pl-3 text-right text-numeric whitespace-nowrap";
+const NUMERIC = "px-4 py-2 text-right text-numeric whitespace-nowrap";
+/** The left rule that sets the Estimate columns apart from the agents'. */
+const ESTIMATE_RULE = "border-l border-border";
+const HEAD = "h-[34px] px-4 text-right font-normal whitespace-nowrap";
 
 /** One row's (or the totals row's) number cells. */
 function ValueCells({
@@ -40,12 +46,10 @@ function ValueCells({
           {comparisonHours(values.agents[agent.value])}
         </td>
       ))}
-      <td className={`${NUMERIC} font-semibold`}>
-        {comparisonHours(values.agentsTotal)}
-      </td>
+      <td className={cn(NUMERIC, "font-semibold")}>{comparisonHours(values.agentsTotal)}</td>
       {withEstimate ? (
         <>
-          <td className={NUMERIC}>{comparisonHours(values.estimate)}</td>
+          <td className={cn(NUMERIC, ESTIMATE_RULE)}>{comparisonHours(values.estimate)}</td>
           <td className={NUMERIC}>{signedHours(values.difference)}</td>
         </>
       ) : null}
@@ -95,73 +99,72 @@ export function EffortComparisonSection({
               {ADDS_UP_NOTE}
               {withEstimate ? ` ${estimateColumnNote(comparison.estimateVersion)}` : null}
             </p>
-            <div
-              role="region"
-              aria-labelledby={captionId}
-              tabIndex={0}
-              className="overflow-x-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <table className="w-full border-collapse text-left">
-                <caption id={captionId} className="sr-only">
-                  {EFFORT_COMPARISON} by Requirement, in hours
-                </caption>
-                <thead>
-                  <tr className="border-b border-border text-label text-muted-foreground">
-                    <th scope="col" className="py-2.5 pr-3 font-normal">
-                      Requirement
-                    </th>
-                    {AGENTS.map((agent) => (
-                      <th
-                        key={agent.value}
-                        scope="col"
-                        className="py-2.5 pl-3 text-right font-normal"
-                      >
-                        {agentColumn(agent.value)}
+            <Card className="gap-0 overflow-hidden p-0">
+              <div
+                role="region"
+                aria-labelledby={captionId}
+                tabIndex={0}
+                className="overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+              >
+                <table className="w-full border-collapse text-left text-body">
+                  <caption id={captionId} className="sr-only">
+                    {EFFORT_COMPARISON} by Requirement, in hours
+                  </caption>
+                  <thead className="bg-surface-alt text-label text-muted-foreground">
+                    <tr>
+                      <th scope="col" className={cn(HEAD, "pl-5 text-left")}>
+                        Requirement
                       </th>
-                    ))}
-                    <th scope="col" className="py-2.5 pl-3 text-right font-normal">
-                      {AGENTS_TOTAL}
-                    </th>
-                    {withEstimate ? (
-                      <>
-                        <th scope="col" className="py-2.5 pl-3 text-right font-normal">
-                          {ESTIMATE_ALLOCATED}
+                      {AGENTS.map((agent) => (
+                        <th key={agent.value} scope="col" className={HEAD}>
+                          {agentColumn(agent.value)}
                         </th>
-                        <th scope="col" className="py-2.5 pl-3 text-right font-normal">
-                          {DIFFERENCE}
-                        </th>
-                      </>
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {comparison.rows.map((row) => (
-                    <tr key={row.id} className="border-b border-border align-baseline">
-                      <th scope="row" className="py-2.5 pr-3 text-left font-normal">
-                        <span className="text-meta text-muted-foreground">
-                          {row.label}
-                        </span>{" "}
-                        <span className="text-body">{row.excerpt}</span>
+                      ))}
+                      <th scope="col" className={HEAD}>
+                        {AGENTS_TOTAL}
                       </th>
-                      <ValueCells values={row} withEstimate={withEstimate} />
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="text-body-strong align-baseline">
-                    <th scope="row" className="py-2.5 pr-3 text-left font-semibold">
-                      Total
-                      {comparison.unlinkedHours ? (
-                        <span className="block text-meta font-normal text-muted-foreground">
-                          {NOT_LINKED}: {comparisonHours(comparison.unlinkedHours)} h
-                        </span>
+                      {withEstimate ? (
+                        <>
+                          <th scope="col" className={cn(HEAD, ESTIMATE_RULE)}>
+                            {ESTIMATE_ALLOCATED}
+                          </th>
+                          <th scope="col" className={HEAD}>
+                            {DIFFERENCE}
+                          </th>
+                        </>
                       ) : null}
-                    </th>
-                    <ValueCells values={comparison.totals} withEstimate={withEstimate} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparison.rows.map((row) => (
+                      <tr key={row.id} className="h-row border-t border-border">
+                        <th scope="row" className="py-2 pr-4 pl-5 text-left font-normal">
+                          <span className="flex min-w-0 items-center gap-2">
+                            {/* The space keeps the row's name "R1 text", not "R1text". */}
+                            <Chip className="shrink-0 px-1.5 py-0">{row.label}</Chip>{" "}
+                            <span className="min-w-48">{row.excerpt}</span>
+                          </span>
+                        </th>
+                        <ValueCells values={row} withEstimate={withEstimate} />
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="h-row border-t border-border-strong bg-surface-alt font-semibold">
+                      <th scope="row" className="py-2 pr-4 pl-5 text-left">
+                        Total
+                        {comparison.unlinkedHours ? (
+                          <span className="block text-meta font-normal text-muted-foreground">
+                            {NOT_LINKED}: {comparisonHours(comparison.unlinkedHours)} h
+                          </span>
+                        ) : null}
+                      </th>
+                      <ValueCells values={comparison.totals} withEstimate={withEstimate} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </Card>
             {comparison.estimateEffortTotal !== null && comparison.unlinkedHours !== null ? (
               <p className="text-meta text-muted-foreground">
                 {estimateTotalNote(comparison.estimateEffortTotal, comparison.unlinkedHours)}
@@ -178,8 +181,8 @@ export function EffortComparisonSection({
   }
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-2">
-      <h3 id={headingId} className="text-body-strong">
+    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+      <h3 id={headingId} className="text-section">
         {EFFORT_COMPARISON}
       </h3>
       {body}
