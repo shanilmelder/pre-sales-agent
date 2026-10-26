@@ -1,13 +1,18 @@
-"""Persistence for Review Requests (Story 9.1) and their Review Decisions (Story 9.3). Runs
-inside the caller's Unit of Work."""
+"""Persistence for Review Requests (Story 9.1), their Review Decisions (Story 9.3) and their
+replies (Story 9.4). Runs inside the caller's Unit of Work."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, insert, select, update
 
-from app.modules.reviews.adapters.models import ReviewDecisionRow, ReviewRequestRow
+from app.modules.reviews.adapters.models import (
+    ReviewDecisionRow,
+    ReviewReplyRow,
+    ReviewRequestRow,
+)
 from app.platform.uow import UnitOfWork
 
 
@@ -28,6 +33,7 @@ class RequestRecord:
     row_version: int
     created_at: datetime
     updated_at: datetime
+    linked_request_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +44,7 @@ class NewRequest:
     target_id: UUID
     target_version: int
     reviewer_id: UUID
+    linked_request_id: UUID | None = None
 
 
 def _record(row: ReviewRequestRow) -> RequestRecord:
@@ -57,6 +64,7 @@ def _record(row: ReviewRequestRow) -> RequestRecord:
         row_version=row.row_version,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        linked_request_id=row.linked_request_id,
     )
 
 
@@ -86,6 +94,7 @@ async def insert_requests(
                 "message": message,
                 "status": "pending",
                 "row_version": 1,
+                "linked_request_id": r.linked_request_id,
             }
             for r in requests
         ],
@@ -380,3 +389,106 @@ async def all_approved(uow: UnitOfWork, estimate_version_id: UUID) -> bool:
     )
     statuses = list(rows.scalars())
     return bool(statuses) and all(s == "approved" for s in statuses)
+
+
+# --- replies (Story 9.4) --------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ReplyRecord:
+    id: UUID
+    review_request_id: UUID
+    message: str
+    evidence: list[dict[str, Any]]
+    alternative_version_id: UUID | None
+    replied_by: UUID
+    replied_at: datetime
+
+
+def _reply(row: ReviewReplyRow) -> ReplyRecord:
+    return ReplyRecord(
+        id=row.id,
+        review_request_id=row.review_request_id,
+        message=row.message,
+        evidence=list(row.evidence or []),
+        alternative_version_id=row.alternative_version_id,
+        replied_by=row.replied_by,
+        replied_at=row.replied_at,
+    )
+
+
+async def insert_reply(
+    uow: UnitOfWork,
+    *,
+    reply_id: UUID,
+    review_request_id: UUID,
+    message: str,
+    evidence: list[dict[str, Any]],
+    alternative_version_id: UUID | None,
+    replied_by: UUID,
+) -> ReplyRecord:
+    await uow.session.execute(
+        insert(ReviewReplyRow).values(
+            id=reply_id,
+            review_request_id=review_request_id,
+            message=message,
+            evidence=evidence,
+            alternative_version_id=alternative_version_id,
+            replied_by=replied_by,
+        )
+    )
+    row = (
+        await uow.session.execute(
+            select(ReviewReplyRow)
+            .where(ReviewReplyRow.id == reply_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    return _reply(row)
+
+
+_REPLIES_NEWEST_FIRST = (ReviewReplyRow.replied_at.desc(), ReviewReplyRow.id.desc())
+
+
+async def replies_of(uow: UnitOfWork, request_id: UUID) -> list[ReplyRecord]:
+    """The request's replies, newest first."""
+    rows = await uow.session.execute(
+        select(ReviewReplyRow)
+        .where(ReviewReplyRow.review_request_id == request_id)
+        .order_by(*_REPLIES_NEWEST_FIRST)
+    )
+    return [_reply(row) for row in rows.scalars()]
+
+
+async def latest_replies(uow: UnitOfWork, request_ids: list[UUID]) -> dict[UUID, ReplyRecord]:
+    """Each of these requests' latest reply; ones with none are left out."""
+    if not request_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(ReviewReplyRow)
+        .where(ReviewReplyRow.review_request_id.in_(request_ids))
+        .order_by(*_REPLIES_NEWEST_FIRST)
+    )
+    latest: dict[UUID, ReplyRecord] = {}
+    for row in rows.scalars():
+        latest.setdefault(row.review_request_id, _reply(row))
+    return latest
+
+
+async def latest_alternatives(uow: UnitOfWork, request_ids: list[UUID]) -> dict[UUID, ReplyRecord]:
+    """Each of these requests' latest reply that names an alternative; ones with none are left
+    out."""
+    if not request_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(ReviewReplyRow)
+        .where(
+            ReviewReplyRow.review_request_id.in_(request_ids),
+            ReviewReplyRow.alternative_version_id.is_not(None),
+        )
+        .order_by(*_REPLIES_NEWEST_FIRST)
+    )
+    latest: dict[UUID, ReplyRecord] = {}
+    for row in rows.scalars():
+        latest.setdefault(row.review_request_id, _reply(row))
+    return latest

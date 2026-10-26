@@ -288,6 +288,30 @@ class ReviewRequestNotPendingError(ConflictError):
     title = "Review Request not pending"
 
 
+class ReviewReplyNotExpectedError(ConflictError):
+    """A reply was sent on a pending Review Request whose latest decision asks for neither
+    evidence nor an alternative (Story 9.4); nothing was written."""
+
+    code = "review_reply_not_expected"
+    title = "No reply expected"
+
+
+class EstimateVersionNotDecidedError(ConflictError):
+    """A new Estimate Version was asked for from a base that is neither `rejected` nor
+    `approved` (Story 9.4)."""
+
+    code = "estimate_version_not_decided"
+    title = "Estimate Version not decided"
+
+
+class EstimateDraftExistsError(ConflictError):
+    """A new Estimate Version was asked for while the Opportunity already has a draft (Story
+    9.4)."""
+
+    code = "estimate_draft_exists"
+    title = "Draft Estimate exists"
+
+
 class NoDraftEstimateError(ConflictError):
     """A Gap was converted to a Risk while the Opportunity has no draft Estimate Version
     (Story 8.5)."""

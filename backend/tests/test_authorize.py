@@ -196,6 +196,8 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_CREATE,
         Action.REVIEW_REQUEST_CANCEL,
         Action.REVIEW_REQUEST_DECIDE,
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -223,6 +225,8 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_CREATE,
         Action.REVIEW_REQUEST_CANCEL,
         Action.REVIEW_REQUEST_DECIDE,
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
     }
     assert REVIEWER_GRANTS == {Action.OPPORTUNITY_READ, Action.REVIEW_REQUEST_DECIDE}
     assert RELATION_EXCLUDED_ROLES == {
@@ -248,6 +252,8 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_CANCEL: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_DECIDE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_REPLY: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ESTIMATE_VERSION_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -552,6 +558,8 @@ def test_review_requests_for_owner_and_members_except_sales_reps(role: Role) -> 
         Action.REVIEW_REQUEST_CREATE,
         Action.REVIEW_REQUEST_CANCEL,
         Action.REVIEW_REQUEST_DECIDE,
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
     ):
         assert can(owner, action, opportunity) is allowed
         assert can(member, action, opportunity) is allowed

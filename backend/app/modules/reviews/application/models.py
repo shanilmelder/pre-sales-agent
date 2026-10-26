@@ -1,6 +1,7 @@
-"""reviews' API models (Stories 9.1 and 9.3)."""
+"""reviews' API models (Stories 9.1, 9.3 and 9.4)."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
@@ -8,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from app.modules.assessments.application.public import AssessmentView
 from app.modules.estimates.application.public import EstimateVersion, VersionDiff
 from app.modules.reviews.domain.decisions import Decision
+from app.modules.reviews.domain.replies import REPLY_EVIDENCE_MAX, REPLY_MAX
 from app.modules.reviews.domain.requests import (
     MESSAGE_MAX,
     REASON_MAX,
@@ -130,6 +132,9 @@ class ReviewRequestView(BaseModel):
     updated_at: datetime
     can_cancel: bool
     latest_decision: ReviewDecisionView | None = None
+    linked_request_id: str | None = Field(
+        description="Story 9.4: the request on an older version this one is the alternative to.",
+    )
 
 
 class AssessmentOption(BaseModel):
@@ -184,6 +189,8 @@ class ReviewRequestState(BaseModel):
     status: RequestStatus
     requested_by: UUID
     reviewer_id: UUID
+    superseded_by: int | None = None
+    """Story 9.4: for a superseded request, the number of the version that replaced it."""
 
 
 class RecordedDecision(BaseModel):
@@ -193,6 +200,86 @@ class RecordedDecision(BaseModel):
     decision: ReviewDecisionView
     request: ReviewRequestView
     version_status: str
+
+
+# --- replies (Story 9.4) --------------------------------------------------------------------
+
+
+class ReplyEvidenceIn(BaseModel):
+    """Evidence to cite in a reply: a Requirement or a Source document of the Opportunity, with
+    its id and version (as the Evidence picker lists them)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["requirement", "source_document"]
+    id: UUID
+    version: int = Field(ge=1, le=2**31 - 1)
+
+    @property
+    def span(self) -> None:
+        """No span: a whole Requirement version or Source version is cited."""
+        return None
+
+
+class ReviewReplyCreate(BaseModel):
+    """Reply to the reviewer's request for evidence or an alternative: a message (1 to 2,000
+    characters, trimmed), up to 20 Evidence references and, after `alternative_requested`
+    only, this Opportunity's draft Estimate Version (numbered above the one under review) as
+    the alternative."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: StrictStr = Field(
+        max_length=4 * REPLY_MAX, description=f"Trimmed, 1 to {REPLY_MAX:,} characters."
+    )
+    evidence: list[ReplyEvidenceIn] = Field(default_factory=list, max_length=REPLY_EVIDENCE_MAX)
+    alternative_version_id: UUID | None = Field(
+        default=None, description="The draft Estimate Version offered as the alternative."
+    )
+
+
+class ReviewEvidence(BaseModel):
+    """Evidence cited in a reply, with its label: `R<n>` (`Superseded` once no longer active)
+    or `S<n> · <file name>`."""
+
+    kind: str
+    id: str
+    version: int | None
+    label: str
+
+
+class VersionRef(BaseModel):
+    """An Estimate Version by id and number."""
+
+    id: str
+    version: int
+
+
+class LinkedRequest(BaseModel):
+    """The request a linked one is the alternative to, and the number of its version."""
+
+    id: str
+    version_number: int
+
+
+class ReviewReplyView(BaseModel):
+    """A reply: the message, its Evidence, the alternative draft it names (if any), who
+    replied and when."""
+
+    id: str
+    message: str
+    evidence: list[ReviewEvidence]
+    alternative: VersionRef | None
+    replied_by: ReviewPerson
+    replied_at: datetime
+
+
+class RecordedReply(BaseModel):
+    """The reply just recorded and the request as it is now (still `pending`; its new
+    `row_version` is also the `ETag`)."""
+
+    reply: ReviewReplyView
+    request: ReviewRequestView
 
 
 class ReviewPanel(BaseModel):
@@ -211,6 +298,17 @@ class ReviewPanel(BaseModel):
       (`estimate`) with its `diff` against the version before; or an Assessment at that
       version (`assessment`) with its Findings and their Evidence. The other side is null.
 
+    Story 9.4, the author's side:
+
+    - `is_author`: the caller sent the request or owns the Opportunity (and isn't its
+      reviewer); `can_reply`: they may reply now (the latest decision requests evidence or an
+      alternative, on a pending request); `can_link_alternative`: the reply may name
+      `alternative_draft` (the Opportunity's draft, numbered above this version) as the
+      alternative; `can_create_version`: they may start a new draft from this rejected or
+      approved version.
+    - `replies`, newest first, with their Evidence labels; `linked_request`: the request this
+      one is the alternative to; `escalated_to`: who the latest escalation handed it to.
+
     The UI only uses the flags to show or hide controls; the API decides."""
 
     request: ReviewRequestView
@@ -225,3 +323,11 @@ class ReviewPanel(BaseModel):
     estimate: EstimateVersion | None
     diff: VersionDiff | None
     assessment: AssessmentView | None
+    is_author: bool
+    can_reply: bool
+    can_link_alternative: bool
+    can_create_version: bool
+    alternative_draft: VersionRef | None
+    replies: list[ReviewReplyView]
+    linked_request: LinkedRequest | None
+    escalated_to: ReviewPerson | None

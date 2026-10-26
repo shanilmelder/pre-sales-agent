@@ -6,7 +6,8 @@ Assumption (Story 8.5, `PATCH …/assumptions/{assumption_id}`), converting a Ga
 editing a Risk (Story 8.5, `POST …/risks`, `PATCH …/risks/{risk_id}`), exporting the
 Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`), and the submission blockers
 and submitting a version (Story 8.6, `GET …/submission-blockers`,
-`POST …/estimate/versions/{version_id}/submit`). No endpoint accepts a total."""
+`POST …/estimate/versions/{version_id}/submit`), and Story 9.4's **New version**
+(`POST …/estimate-versions/{version_id}/new-version`). No endpoint accepts a total."""
 
 from typing import Annotated, Any
 from uuid import UUID
@@ -19,10 +20,12 @@ from app.modules.estimates.application.public import (
     AcceptAllResult,
     Assumption,
     AssumptionChanges,
+    CreatedVersion,
     EstimateDraft,
     EstimateLineChanges,
     EstimateView,
     ExportFormat,
+    NewVersionCreate,
     Risk,
     RiskChanges,
     RiskCreate,
@@ -530,3 +533,52 @@ async def submit_estimate_version(
     submitted = await estimates.submit_version(uow, actor, opportunity_id, version_id, if_match)
     response.headers["ETag"] = etag(submitted.row_version)
     return submitted
+
+
+def _new_version_responses() -> dict[int | str, dict[str, Any]]:
+    responses = _responses(422)
+    responses[403] = {"description": _ACCEPT_403, "content": PROBLEM_CONTENT}
+    responses[404] = {
+        "description": "No Opportunity with this id, or the caller may not see it, or no "
+        "Estimate Version with this id in it (`not_found`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[409] = {
+        "description": "The base is neither rejected nor approved "
+        "(`estimate_version_not_decided`), or the Opportunity already has a draft "
+        "(`estimate_draft_exists`); nothing changed",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[201] = {
+        "description": "The new draft version",
+        "headers": {
+            "ETag": {
+                "description": "The new version's row version.",
+                "schema": {"type": "string"},
+            }
+        },
+    }
+    return responses
+
+
+@router.post(
+    "/estimate-versions/{version_id}/new-version",
+    operation_id="create_estimate_version",
+    status_code=201,
+    responses=_new_version_responses(),
+)
+async def create_estimate_version(
+    opportunity_id: UUID,
+    version_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    body: NewVersionCreate | None = None,
+) -> CreatedVersion:
+    """Story 9.4: start a new draft Estimate Version from a rejected or approved one, with a
+    copy of its lines and its Assumptions and Risks carried. The base keeps its status until
+    the new draft is submitted. The owner and collaborators, except sales representatives."""
+    reason = None if body is None else body.reason
+    created = await estimates.create_version(uow, actor, opportunity_id, version_id, reason)
+    response.headers["ETag"] = etag(created.row_version)
+    return created

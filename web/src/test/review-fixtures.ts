@@ -31,6 +31,7 @@ export function reviewRequest(overrides: Partial<ReviewRequest> = {}): ReviewReq
     updated_at: "2026-10-24T09:00:00Z",
     can_cancel: false,
     latest_decision: null,
+    linked_request_id: null,
     ...overrides,
   };
 }
@@ -202,6 +203,14 @@ export function reviewPanel(overrides: Partial<ReviewPanel> = {}): ReviewPanel {
       total_delta: 12,
     },
     assessment: null,
+    is_author: false,
+    can_reply: false,
+    can_link_alternative: false,
+    can_create_version: false,
+    alternative_draft: null,
+    replies: [],
+    linked_request: null,
+    escalated_to: null,
     ...overrides,
   };
 }

@@ -26,6 +26,11 @@ class NotificationKind(StrEnum):
     REVIEW_CANCELLED = "review_cancelled"
     RUN_WAITING = "run_waiting"
     CONFLICT_ESCALATED = "conflict_escalated"
+    REVIEW_OUTCOME = "review_outcome"
+    """Story 9.4: a reviewer decided; to the Opportunity's owner and the request's sender."""
+    REVIEW_REPLIED = "review_replied"
+    """Story 9.4: the author replied to a request for evidence or an alternative; to the
+    reviewer."""
 
 
 class ChannelName(StrEnum):
@@ -53,6 +58,8 @@ KIND_GROUP: dict[NotificationKind, InboxGroup] = {
     NotificationKind.RUN_WAITING: InboxGroup.WAITING,
     NotificationKind.CONFLICT_ESCALATED: InboxGroup.WAITING,
     NotificationKind.REVIEW_CANCELLED: InboxGroup.UPDATES,
+    NotificationKind.REVIEW_OUTCOME: InboxGroup.REVIEWS,
+    NotificationKind.REVIEW_REPLIED: InboxGroup.REVIEWS,
 }
 
 

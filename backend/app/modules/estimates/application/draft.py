@@ -290,6 +290,8 @@ async def store_version(
     source: VersionSource = VersionSource.MODEL,
     source_run_id: UUID | None = None,
     created_by: UUID | None = None,
+    base: repo.VersionRecord | None = None,
+    reason: str | None = None,
 ) -> StoredVersion:
     """Store `lines` as the Opportunity's new `draft` Estimate Version, superseding its
     current draft, and do what follows every new version: carry the superseded draft's
@@ -300,9 +302,13 @@ async def store_version(
 
     `active`: the active Requirements (id, current version) the lines were checked against;
     `uncovered_count` defaults to how many of them no line covers. `created_by` (Story 9.1):
-    the person who triggered the version (its author for the review rules), if known."""
+    the person who triggered the version (its author for the review rules), if known.
+
+    `base` (Story 9.4, a person's **New version**): the rejected or approved version the lines
+    were copied from; its Assumptions, Risks and line edits are carried instead of the current
+    draft's (there is none then), and the trace names it with the person's `reason`."""
     # Story 8.7: the draft version being superseded, whose accepted Assumptions are carried.
-    previous = await repo.current_version(uow, opportunity_id)
+    previous = base if base is not None else await repo.current_version(uow, opportunity_id)
     superseded = await repo.supersede_drafts(uow, opportunity_id)
     number = await repo.latest_version_number(uow, opportunity_id) + 1
     version_id = new_id()
@@ -364,6 +370,9 @@ async def store_version(
         uncarried_edit_count=edits.uncarried,
         source=source.value,
         source_run_id=None if source_run_id is None else str(source_run_id),
+        base_version_id=None if base is None else str(base.id),
+        base_version=None if base is None else base.version,
+        reason=reason,
     )
     await trace.append(
         uow,

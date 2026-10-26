@@ -356,6 +356,11 @@ class EstimateView(BaseModel):
         description="Story 9.1: whether the caller may send Review Requests and the current "
         "version is submitted or in review.",
     )
+    can_create_version: bool = Field(
+        default=False,
+        description="Story 9.4: whether the caller may start a new draft from the current "
+        "version, which is rejected or approved (no draft exists then).",
+    )
 
 
 class EstimateLineChanges(BaseModel):
@@ -414,6 +419,29 @@ class SubmittedVersion(BaseModel):
     status: VersionStatus
     row_version: int = Field(ge=1)
     superseded_count: int = Field(ge=0)
+
+
+class NewVersionCreate(BaseModel):
+    """Story 9.4: start a new draft Estimate Version from a rejected or approved one, with an
+    optional reason (at most 1,000 characters, trimmed)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: StrictStr | None = Field(
+        default=None, max_length=4000, description="Why; trimmed, at most 1,000 characters."
+    )
+
+
+class CreatedVersion(BaseModel):
+    """Story 9.4: the new draft Estimate Version (its id, number, `draft` status and
+    `row_version`) and the version it was copied from."""
+
+    id: str
+    version: int = Field(ge=1)
+    status: VersionStatus
+    row_version: int = Field(ge=1)
+    base_version_id: str
+    base_version: int = Field(ge=1)
 
 
 class AcceptAllResult(BaseModel):

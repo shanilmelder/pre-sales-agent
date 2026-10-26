@@ -20,6 +20,8 @@ import {
   addTextSource,
   cancelReviewRequest,
   decideReviewRequest,
+  replyToReviewRequest,
+  createEstimateVersion,
   approveAllClarificationQuestions,
   cancelAssessmentRun,
   resolveRunDecision,
@@ -2832,6 +2834,107 @@ describe("decideReviewRequest (Story 9.3)", () => {
     ]) {
       expect(await decideReviewRequest(bad)).toEqual({ kind: "error" });
     }
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("replyToReviewRequest (Story 9.4)", () => {
+  const RID = "00000000-0000-7000-8000-0000000000d1";
+  const V4 = "00000000-0000-7000-8000-0000000000e4";
+  const PATH = "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/replies";
+  const R4 = { kind: "requirement", id: "00000000-0000-7000-8000-0000000000e9", version: 1 };
+  const BASE = { opportunityId: OPP_ID, requestId: RID, rowVersion: 3, evidence: [R4] };
+  const RECORDED = { reply: { id: "r" }, request: { id: RID } };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts the trimmed message and Evidence with If-Match; an alternative only when given", async () => {
+    api.POST.mockResolvedValue({ data: RECORDED, response: status(201) });
+    expect(await replyToReviewRequest({ ...BASE, message: "  See R4  " })).toEqual({
+      kind: "ok",
+      value: RECORDED,
+    });
+    expect(api.POST).toHaveBeenCalledWith(PATH, {
+      params: { path: { opportunity_id: OPP_ID, request_id: RID }, header: { "If-Match": '"3"' } },
+      body: { message: "See R4", evidence: [R4] },
+    });
+    await replyToReviewRequest({ ...BASE, message: "v4", alternativeVersionId: V4 });
+    expect(api.POST.mock.calls[1]![1].body).toEqual({
+      message: "v4",
+      evidence: [R4],
+      alternative_version_id: V4,
+    });
+  });
+
+  it.each([
+    [412, { code: "row_version_mismatch", detail: "Changed by Ana since you opened it." }, {
+      kind: "stale",
+      detail: "Changed by Ana since you opened it.",
+    }],
+    [409, { code: "review_reply_not_expected", detail: "Nothing to reply to." }, {
+      kind: "invalid",
+      detail: "Nothing to reply to.",
+    }],
+    [422, { code: "evidence_unresolvable", detail: "Evidence requirement:x does not resolve" }, {
+      kind: "invalid",
+      detail: "Evidence requirement:x does not resolve",
+    }],
+    [422, { code: "evidence_unresolvable" }, {
+      kind: "invalid",
+      detail: "That Evidence can't be cited: choose this Opportunity's Requirements or Sources.",
+    }],
+    [403, { code: "forbidden" }, { kind: "forbidden" }],
+    [404, { code: "not_found" }, { kind: "not-found" }],
+    [500, { code: "internal_error" }, { kind: "error" }],
+  ])("maps %i %o", async (code, error, expected) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    expect(await replyToReviewRequest({ ...BASE, message: "x" })).toEqual(expected);
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    for (const bad of [
+      { ...BASE, message: 3 },
+      { ...BASE, message: "x", evidence: [{ kind: "knowledge_chunk", id: R4.id, version: 1 }] },
+      { ...BASE, message: "x", alternativeVersionId: "nope" },
+    ]) {
+      expect(await replyToReviewRequest(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("createEstimateVersion (Story 9.4)", () => {
+  const V3 = "00000000-0000-7000-8000-0000000000e3";
+  const PATH = "/api/v1/opportunities/{opportunity_id}/estimate-versions/{version_id}/new-version";
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts for the base version", async () => {
+    const created = { id: "v4", version: 4, status: "draft", row_version: 1 };
+    api.POST.mockResolvedValue({ data: created, response: status(201) });
+    expect(await createEstimateVersion({ opportunityId: OPP_ID, versionId: V3 })).toEqual({
+      kind: "ok",
+      value: created,
+    });
+    expect(api.POST).toHaveBeenCalledWith(PATH, {
+      params: { path: { opportunity_id: OPP_ID, version_id: V3 } },
+      body: {},
+    });
+  });
+
+  it("maps a 409 to the API's sentence and refuses bad ids", async () => {
+    api.POST.mockResolvedValue({
+      error: { code: "estimate_draft_exists", detail: "Draft v4 already exists." },
+      response: status(409),
+    });
+    expect(await createEstimateVersion({ opportunityId: OPP_ID, versionId: V3 })).toEqual({
+      kind: "invalid",
+      detail: "Draft v4 already exists.",
+    });
+    api.POST.mockReset();
+    expect(await createEstimateVersion({ opportunityId: OPP_ID, versionId: "x" })).toEqual({
+      kind: "error",
+    });
     expect(api.POST).not.toHaveBeenCalled();
   });
 });

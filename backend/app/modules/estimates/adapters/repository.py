@@ -247,6 +247,19 @@ async def latest_version_number(uow: UnitOfWork, opportunity_id: UUID) -> int:
     return found or 0
 
 
+async def first_submitted_after(uow: UnitOfWork, opportunity_id: UUID, version: int) -> int | None:
+    """Story 9.4: the number of the Opportunity's first version after `version` that was
+    submitted (the one that superseded a submitted version), or None."""
+    found = await uow.session.execute(
+        select(func.min(EstimateVersionRow.version)).where(
+            EstimateVersionRow.opportunity_id == opportunity_id,
+            EstimateVersionRow.version > version,
+            EstimateVersionRow.submitted_at.is_not(None),
+        )
+    )
+    return found.scalar_one_or_none()
+
+
 async def supersede_drafts(uow: UnitOfWork, opportunity_id: UUID) -> int:
     """Mark the Opportunity's `draft` version `superseded`. Returns how many changed."""
     result = await uow.session.execute(
@@ -313,14 +326,13 @@ async def insert_version(
             for line in lines
         ],
     )
-    await uow.session.execute(
-        insert(LineRequirementRow),
-        [
-            {"line_id": line.line_id, "requirement_id": rid, "requirement_version": version}
-            for line in lines
-            for rid, version in line.requirements
-        ],
-    )
+    links = [
+        {"line_id": line.line_id, "requirement_id": rid, "requirement_version": version}
+        for line in lines
+        for rid, version in line.requirements
+    ]
+    if links:  # Story 9.4: a copied line may cover nothing
+        await uow.session.execute(insert(LineRequirementRow), links)
 
 
 async def has_version_from(uow: UnitOfWork, opportunity_id: UUID, source: str) -> bool:

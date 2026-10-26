@@ -43,9 +43,19 @@ export const INBOX_GROUPS: readonly { group: InboxGroup; label: string }[] = [
   { group: "updates", label: "Updates" },
 ];
 
-const REVIEW_KINDS: readonly NotificationKind[] = ["review_requested", "review_reminder"];
+const REVIEW_KINDS: readonly NotificationKind[] = [
+  "review_requested",
+  "review_reminder",
+  "review_outcome",
+  "review_replied",
+];
 
-/** Review Requests and their reminders: a primary dot and the "Review" kind label. */
+/** Story 9.4: the author's outcome items, which follow the request whoever holds it (a reply
+ * item is the reviewer's, like their other items). */
+const AUTHOR_SIDE_KINDS: readonly NotificationKind[] = ["review_outcome"];
+
+/** Review Requests, their reminders and (Story 9.4) outcomes and replies: a primary dot and the
+ * "Review" kind label. */
 export function isReviewKind(kind: NotificationKind): boolean {
   return REVIEW_KINDS.includes(kind);
 }
@@ -108,7 +118,21 @@ export function itemBody(item: InboxItem): string {
       return `A Workflow Run${where} is paused until someone decides how it goes on.`;
     case "conflict_escalated":
       return `A Conflict${where} was escalated to you to decide.`;
+    case "review_outcome":
+      return `A reviewer decided on a Review Request${where}.`;
+    case "review_replied":
+      return `The author replied on a Review Request${where}.`;
   }
+}
+
+/** Story 9.4: whether a Review item's detail shows the review panel greyed: a superseded or
+ * cancelled request, or (for the reviewer's own items) one handed to someone else. An author's
+ * outcome on an approved or rejected request stays live (New version). */
+export function isGreyedReviewItem(item: InboxItem): boolean {
+  if (item.subject_open) return false;
+  const status = item.subject_status;
+  if (status === "superseded" || status === "cancelled") return true;
+  return !AUTHOR_SIDE_KINDS.includes(item.kind);
 }
 
 type StatusStyle = { label: string; tone: PillTone; icon: LucideIcon };
@@ -152,6 +176,9 @@ export const INBOX_TRACE_EVENTS: readonly string[] = [
   "reviews.review_request.created",
   "reviews.review_request.cancelled",
   "reviews.review_request.reminded",
+  "reviews.review_decision.recorded",
+  "reviews.review_request.replied",
+  "reviews.review_request.superseded",
   "conflicts.conflict.escalated",
   "workflows.run.waiting_for_human",
 ];

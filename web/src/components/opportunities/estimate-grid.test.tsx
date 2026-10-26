@@ -31,12 +31,14 @@ const editEstimateLine = vi.hoisted(() =>
 );
 const loadReviewRequests = vi.hoisted(() => vi.fn());
 const loadReviewPanel = vi.hoisted(() => vi.fn());
+const createEstimateVersion = vi.hoisted(() => vi.fn());
 vi.mock("@/app/opportunities/actions", () => ({
   loadEstimate,
   editEstimateLine,
   loadReviewRequests,
   loadReviewPanel,
   decideReviewRequest: vi.fn(),
+  createEstimateVersion,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -174,6 +176,7 @@ function view(
     blockers: { to_submit: [], to_baseline: [] },
     can_submit: false,
     can_request_review: false,
+    can_create_version: false,
   } satisfies EstimateView;
 }
 
@@ -1269,6 +1272,7 @@ describe("Review requests on the Estimate tab (Story 9.1)", () => {
         created_at: "2026-10-24T09:00:00Z",
         updated_at: "2026-10-24T09:00:00Z",
         can_cancel: true,
+        linked_request_id: null,
       },
     ],
   });
@@ -1386,6 +1390,33 @@ describe("Review decisions on the Estimate tab (Story 9.3)", () => {
       requests(approved.id, { status: "rejected" }),
     );
     expect(screen.getByText("v3 · Rejected").getAttribute("data-tone")).toBe("blocker");
+    expect(screen.queryByRole("button", { name: "New version" })).toBeNull();
+  });
+
+  it("Story 9.4: a rejected version offers New version beside the pill, with the reason", async () => {
+    const rejected = { ...approved, status: "rejected" as const };
+    const reason = reviewDecision({ decision: "rejected", label: "Rejected", reason: "[WHY]" });
+    createEstimateVersion.mockResolvedValue({ kind: "ok", value: { version: 4 } });
+    loadEstimate.mockResolvedValue({ kind: "error" });
+    loadReviewRequests.mockResolvedValue({ kind: "error" });
+    const user = userEvent.setup();
+    const { container } = renderSection(
+      { ...view(rejected, succeeded), can_create_version: true },
+      true,
+      requests(rejected.id, { status: "rejected", latest_decision: reason }),
+    );
+    const toolbar = container.querySelector("[data-estimate-toolbar]") as HTMLElement;
+    const create = within(toolbar).getByRole("button", { name: "New version" });
+    expect(within(toolbar).getByText("Ana Reviewer: [WHY]")).toBeTruthy();
+    expect(create.getAttribute("aria-describedby")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(create);
+    expect(createEstimateVersion).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      versionId: rejected.id,
+    });
+    await waitFor(() => expect(loadEstimate).toHaveBeenCalled());
   });
 
   it("the card shows the latest decision, and a row opens the panel in the Inspector", async () => {

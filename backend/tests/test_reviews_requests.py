@@ -285,6 +285,7 @@ def test_happy_path_sends_one_request_per_reviewer(client: TestClient, sync_engi
         "estimate_version_id": v3,
         "reviewer_id": str(ana),
         "message_length": len("Please check the totals."),
+        "linked_request_id": None,
     }
     assert (created[0]["actor_type"], created[0]["actor_id"]) == ("user", str(owner_id))
     assert len(_events(sync_engine, opp["id"], "estimates.estimate_version.review_started")) == 1
@@ -404,7 +405,8 @@ def test_draft_and_superseded_versions_are_409(client: TestClient, sync_engine: 
     assert draft.json()["detail"] == "Submit this Estimate Version before requesting review"
     superseded = _send(client, headers, opp["id"], v2, 1, [ana])
     assert_problem(superseded.json(), 409, "estimate_version_superseded")
-    assert superseded.json()["detail"] == "v2 is superseded by v4"
+    # Story 9.4: superseded by the next version submitted, not the later draft.
+    assert superseded.json()["detail"] == "v2 is superseded by v3"
     assert _requests(sync_engine, opp["id"]) == []
 
 
@@ -762,6 +764,12 @@ def test_submitting_a_newer_version_supersedes_one_in_review(
     assert submitted.status_code == 200, submitted.text
     assert submitted.json()["superseded_count"] == 1
     assert (_status(sync_engine, v1), _status(sync_engine, v2)) == ("superseded", "submitted")
+    # Story 9.4: its pending request is superseded too, and Ana's access ends with it.
+    (request,) = _requests(sync_engine, opp["id"])
+    assert request["status"] == "superseded"
+    assert _collaborator_rows(sync_engine, opp["id"]) == {}
+    (event,) = _events(sync_engine, opp["id"], "reviews.review_request.superseded")
+    assert event["payload"]["superseded_by_version"] == 2
 
 
 def test_a_reviewer_keeps_access_until_their_last_pending_request_is_cancelled(

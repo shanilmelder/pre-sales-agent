@@ -11,6 +11,7 @@ import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -39,6 +40,7 @@ import {
 } from "@/components/opportunities/assumptions-register";
 import { RequestReviewDialog } from "@/components/opportunities/request-review-dialog";
 import { ReviewPanelLoader } from "@/components/opportunities/review-panel";
+import { NewVersionButton } from "@/components/opportunities/review-reply";
 import {
   linkedReview,
   ReviewRequestsCard,
@@ -468,6 +470,7 @@ export function EstimateHeader({
   canExport = false,
   stalled = false,
   actions,
+  pillActions,
 }: {
   version: EstimateVersion | null;
   /** An assessment run is queued or running. */
@@ -479,6 +482,8 @@ export function EstimateHeader({
   stalled?: boolean;
   /** Story 9.1: more toolbar actions after Export (**Request review**). */
   actions?: ReactNode;
+  /** Story 9.4: next to the version pill (**New version** and the reviewer's reason). */
+  pillActions?: ReactNode;
 }) {
   const waiting = !version && assessmentRunning;
   const rebuilding = version !== null && assessmentRunning;
@@ -489,6 +494,7 @@ export function EstimateHeader({
       {version ? (
         <div className="flex flex-wrap items-center gap-3" data-estimate-toolbar="">
           <VersionPill version={version} />
+          {pillActions}
           {fromRun ? <p className="text-meta text-muted-foreground">{fromRun}</p> : null}
           <span className="flex-1" aria-hidden="true" />
           {canExport && opportunityId ? <EstimateExport opportunityId={opportunityId} /> : null}
@@ -646,6 +652,7 @@ export function EstimateSection({
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [view, setView] = useState<EstimateView>(initial);
+  const rejectionId = useId();
   const [reviews, setReviews] = useState<ReviewRequestsView | null>(initialReviews);
   const [reviewsFrom, setReviewsFrom] = useState(initialReviews);
   if (initialReviews !== reviewsFrom) {
@@ -1055,6 +1062,12 @@ export function EstimateSection({
   // Story 9.1: the requests shown are the current version's; the API's flags decide who may
   // send or cancel them.
   const versionReviews = reviews && version && reviews.version_id === version.id ? reviews : null;
+  // Story 9.4: a rejected or approved version can be reworked as a new draft; a rejection shows
+  // the reviewer's reason beside it.
+  const rejection =
+    version?.status === "rejected"
+      ? (versionReviews?.items.find((r) => r.status === "rejected")?.latest_decision ?? null)
+      : null;
   return (
     <div className="flex flex-col gap-4">
       <EstimateHeader
@@ -1063,6 +1076,23 @@ export function EstimateSection({
         opportunityId={opportunityId}
         canExport={view.can_export}
         stalled={stalled}
+        pillActions={
+          version && view.can_create_version ? (
+            <>
+              <NewVersionButton
+                opportunityId={opportunityId}
+                versionId={version.id}
+                describedBy={rejection?.reason ? rejectionId : undefined}
+                onCreated={() => void reloadReviews()}
+              />
+              {rejection?.reason ? (
+                <p id={rejectionId} className="text-meta text-muted-foreground" data-rejection="">
+                  {`${rejection.decided_by.name}: ${rejection.reason}`}
+                </p>
+              ) : null}
+            </>
+          ) : null
+        }
         actions={
           version && view.can_request_review && isSent(version.status) ? (
             <RequestReviewDialog

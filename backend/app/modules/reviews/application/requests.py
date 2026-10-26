@@ -455,8 +455,11 @@ async def notify_reviewer(
     opportunity_id: UUID,
     title: str | None,
     dedupe_key: str,
+    summary: str | None = None,
 ) -> bool:
-    """The reviewer's Inbox item about the request; whether one was written."""
+    """The reviewer's Inbox item about the request; whether one was written. Story 9.4: also
+    the author's outcome items (`reviewer_id` is then the recipient), with their own
+    `summary`."""
     return await notifications.notify(
         uow,
         recipient_id=reviewer_id,
@@ -465,7 +468,7 @@ async def notify_reviewer(
         subject_type=SUBJECT_TYPE,
         subject_id=request_id,
         subject_version=row_version,
-        summary=review_summary(kind, target_label, title),
+        summary=review_summary(kind, target_label, title) if summary is None else summary,
         dedupe_key=dedupe_key,
     )
 
@@ -600,6 +603,7 @@ async def _views(
             updated_at=r.updated_at,
             can_cancel=_may_cancel(actor, resource, r),
             latest_decision=None if r.id not in latest else decision_view(latest[r.id], names),
+            linked_request_id=None if r.linked_request_id is None else str(r.linked_request_id),
         )
         for r in records
     ]
@@ -685,15 +689,31 @@ async def list_open_requests(uow: UnitOfWork, version_id: UUID) -> list[OpenRevi
     ]
 
 
+async def alternative_requested(uow: UnitOfWork, version_id: UUID) -> bool:
+    """`reviews.public.alternative_requested` (Story 9.4): whether a pending request counting
+    towards the version has `alternative_requested` as its latest decision (a **New version**
+    may then start from it). No authorization."""
+    pending = await repo.of_version(uow, version_id, statuses=(RequestStatus.PENDING.value,))
+    latest = await repo.latest_decisions(uow, [r.id for r in pending])
+    return any(d.decision == Decision.ALTERNATIVE_REQUESTED.value for d in latest.values())
+
+
 async def request_status(uow: UnitOfWork, request_id: UUID) -> ReviewRequestState | None:
     """`reviews.public.request_status` (Story 9.2: an Inbox item's subject): the request's
-    status and sender, or None when unknown. No authorization."""
+    status and sender, or None when unknown; Story 9.4: for a superseded request, the number of
+    the version that replaced it. No authorization."""
     record = await repo.get(uow, request_id)
     if record is None:
         return None
+    status = RequestStatus(record.status)
+    superseded_by = None
+    if status == RequestStatus.SUPERSEDED:
+        version = await estimates.reviewable_version(uow, record.estimate_version_id)
+        superseded_by = None if version is None else version.superseded_by_version
     return ReviewRequestState(
         id=record.id,
-        status=RequestStatus(record.status),
+        status=status,
         requested_by=record.requested_by,
         reviewer_id=record.reviewer_id,
+        superseded_by=superseded_by,
     )

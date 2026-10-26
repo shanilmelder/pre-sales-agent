@@ -99,6 +99,8 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.REVIEW_REQUEST_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_CANCEL: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_DECIDE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_REPLY: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ESTIMATE_VERSION_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -136,6 +138,9 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         # Story 9.3: only the request's current reviewer, checked by `reviews` (an owner may
         # be named reviewer when they did not author the version).
         Action.REVIEW_REQUEST_DECIDE,
+        # Story 9.4: the owner may reply on any request, and start a new version.
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -167,6 +172,9 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.REVIEW_REQUEST_CANCEL,
         # Story 9.3: only the request's current reviewer, checked by `reviews`.
         Action.REVIEW_REQUEST_DECIDE,
+        # Story 9.4: only the request's sender, checked by `reviews`.
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
     }
 )
 REVIEWER_GRANTS: frozenset[Action] = frozenset(

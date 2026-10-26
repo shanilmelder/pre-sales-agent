@@ -67,6 +67,7 @@ from app.modules.estimates.application.models import (
     Totals,
     UnconvertedGap,
 )
+from app.modules.estimates.application.versions import may_start_from
 from app.modules.estimates.domain import arithmetic
 from app.modules.estimates.domain.assumptions import (
     AssumptionKind,
@@ -544,6 +545,12 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         can_request_review=record is not None
         and VersionStatus(record.status) in REVIEWABLE
         and identity.can(actor, Action.REVIEW_REQUEST_CREATE, resource),
+        # Story 9.4: the current version is a draft whenever one exists, so a current version
+        # that isn't one means there is none.
+        can_create_version=record is not None
+        and VersionStatus(record.status) != VersionStatus.DRAFT
+        and identity.can(actor, Action.ESTIMATE_VERSION_CREATE, resource)
+        and await may_start_from(uow, record.id, VersionStatus(record.status)),
     )
 
 
