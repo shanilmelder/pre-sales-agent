@@ -12,6 +12,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { BrandMark } from "@/components/shell/brand-mark";
 import { useModKeyLabel } from "@/components/shell/keyboard-shortcuts";
 import { useShell } from "@/components/shell/shell-context";
 import { UserCard } from "@/components/shell/user-card";
@@ -72,12 +73,7 @@ export function Sidebar({ me }: { me: Pick<Me, "name" | "email" | "roles" | "per
         data-testid="org-switcher"
         className="flex w-full items-center gap-2 rounded-md p-1.5 text-foreground"
       >
-        <span
-          aria-hidden="true"
-          className="flex size-[26px] shrink-0 items-center justify-center rounded-[7px] bg-primary text-[12px] leading-none font-semibold text-primary-foreground"
-        >
-          PS
-        </span>
+        <BrandMark className="size-[26px]" />
         <span className={`${cn(label, "min-w-0 flex-1 truncate")} text-[14px] leading-5 font-semibold`}>
           Pre Sales Agent Framework
         </span>
