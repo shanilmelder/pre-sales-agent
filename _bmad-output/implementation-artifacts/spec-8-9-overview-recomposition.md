@@ -113,6 +113,8 @@ context:
 - `GapsLiveRefresh` is kept (it has its own test) but no longer used on the Overview.
 - `pages.test.tsx` Overview expectations were updated to the 8 steps and new states.
 
+- **Merge with main (Stories 9.3/9.4):** `VersionStatus` gained `approved` and `rejected`. Review and Baseline shows In progress "Approved, Baseline not set yet" or "Rejected in review" for them (still never Complete before 9.7); the KPI label words them "approved" / "rejected".
+
 ## Spec Change Log
 
 ## Review Triage Log

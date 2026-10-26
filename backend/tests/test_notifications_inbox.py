@@ -40,7 +40,7 @@ from tests.conftest import run_async
 from tests.test_gaps_detection import rows
 from tests.test_health import assert_problem
 from tests.test_intake_parse_job import _alembic
-from tests.test_opportunities import PSE, _create, _user
+from tests.test_opportunities import BASE, PSE, _create, _user
 from tests.test_reviews_requests import (
     ENG,
     REASON,
@@ -351,11 +351,17 @@ def test_superseded_and_cancelled_requests_get_no_reminder(
     _, ben = _user(client, sync_engine, "Ben Reviewer", ENG)
     first, second = _send(client, headers, opp["id"], v3, 1, [ana, ben]).json()["items"]
     assert _cancel(client, headers, opp["id"], first).status_code == 200
-    with sync_engine.begin() as conn:  # 9.4 supersedes; here the status is set directly
-        conn.execute(
-            sa.text("UPDATE reviews_review_requests SET status = 'superseded' WHERE id = :i"),
-            {"i": second["id"]},
-        )
+    # Story 9.4: submitting v4 supersedes Ben's pending request.
+    v4 = _version(sync_engine, opp["id"], 4, status="draft")
+    submitted = client.post(
+        f"{BASE}/{opp['id']}/estimate/versions/{v4}/submit",
+        headers={**headers, "If-Match": '"1"'},
+    )
+    assert submitted.status_code == 200, submitted.text
+    (stored,) = rows(
+        sync_engine, "SELECT status FROM reviews_review_requests WHERE id = :i", i=second["id"]
+    )
+    assert stored["status"] == "superseded"
     _age(sync_engine, first["id"], 7)
     _age(sync_engine, second["id"], 7)
 

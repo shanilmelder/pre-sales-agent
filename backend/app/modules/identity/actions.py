@@ -78,6 +78,17 @@ class Action(StrEnum):
     never a reviewer collaborator)."""
     REVIEW_REQUEST_CANCEL = "reviews.review_request.cancel"
     """Story 9.1: cancel a pending Review Request (its sender or the Opportunity's owner)."""
+    REVIEW_REQUEST_DECIDE = "reviews.review_request.decide"
+    """Story 9.3: record a Review Decision on a pending Review Request (only its current
+    reviewer, holding the review type's role, checked by `reviews`; never a sales
+    representative)."""
+    REVIEW_REQUEST_REPLY = "reviews.review_request.reply"
+    """Story 9.4: reply, with Evidence or an alternative draft, to a reviewer's request for
+    evidence or an alternative (only the request's sender or the Opportunity's owner, checked
+    by `reviews`; never a sales representative)."""
+    ESTIMATE_VERSION_CREATE = "estimates.estimate_version.create"
+    """Story 9.4: start a new draft Estimate Version from a rejected or approved one (the owner
+    and collaborators, except sales representatives)."""
     NOTIFICATION_READ = "notifications.notification.read"
     """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
@@ -164,6 +175,9 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.DECISION_RESOLVE: _A,
         Action.REVIEW_REQUEST_CREATE: _S,
         Action.REVIEW_REQUEST_CANCEL: _D,
+        Action.REVIEW_REQUEST_DECIDE: _A,
+        Action.REVIEW_REQUEST_REPLY: _S,
+        Action.ESTIMATE_VERSION_CREATE: _W,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,

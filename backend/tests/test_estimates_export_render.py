@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 
+import pytest
 from docx import Document
 from openpyxl import load_workbook
 
@@ -477,12 +478,22 @@ def test_the_column_row_repeats_on_every_page() -> None:
         assert "w:tblHeader" not in table.rows[1]._tr.xml
 
 
-def test_a_submitted_version_is_labelled_submitted() -> None:
-    """Story 8.6: the export of a submitted current version says so in its header."""
-    submitted = version().model_copy(update={"status": VersionStatus.SUBMITTED})
+@pytest.mark.parametrize(
+    ("status", "label"),
+    [
+        (VersionStatus.SUBMITTED, "Submitted"),
+        (VersionStatus.IN_REVIEW, "In review"),
+        (VersionStatus.APPROVED, "Approved"),
+        (VersionStatus.REJECTED, "Rejected"),
+    ],
+)
+def test_a_sent_version_is_labelled_with_its_status(status: VersionStatus, label: str) -> None:
+    """Story 8.6 (submitted), 9.1 (in review) and 9.3 (approved, rejected): the export of a
+    sent current version says so in its header."""
+    sent = version().model_copy(update={"status": status})
 
     document = build_export(
-        opportunity_title="Acme Ltd — Pick & Pack", version=submitted, gaps=GAPS, exported_at=AT
+        opportunity_title="Acme Ltd — Pick & Pack", version=sent, gaps=GAPS, exported_at=AT
     )
 
-    assert document.header[1] == "Estimate v2 · Submitted"
+    assert document.header[1] == f"Estimate v2 · {label}"

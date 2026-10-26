@@ -9,16 +9,21 @@ from app.platform.config import Settings
 from app.platform.errors import (
     _HTTP_CODES,
     AuthorCannotReviewError,
+    EstimateDraftExistsError,
+    EstimateVersionNotDecidedError,
     EstimateVersionNotSubmittedError,
     EstimateVersionRejectedError,
     EstimateVersionSupersededError,
     ForbiddenError,
     IfMatchRequiredError,
     ProblemError,
+    ReviewerNotAuthorizedError,
     ReviewerNotAuthorizedForTypeError,
+    ReviewReplyNotExpectedError,
     ReviewRequestDuplicateError,
     ReviewRequestNotPendingError,
     RowVersionMismatchError,
+    SelfApprovalForbiddenError,
 )
 from tests.conftest import UNREACHABLE_DB, make_client
 from tests.test_health import assert_problem
@@ -49,6 +54,13 @@ def _app_raising(exc: Exception) -> FastAPI:
         (ReviewRequestNotPendingError("x"), 409, "review_request_not_pending"),
         (ReviewerNotAuthorizedForTypeError("x"), 422, "reviewer_not_authorized_for_type"),
         (AuthorCannotReviewError("x"), 422, "author_cannot_review"),
+        # Story 9.3
+        (ReviewerNotAuthorizedError("x"), 403, "reviewer_not_authorized"),
+        (SelfApprovalForbiddenError("x"), 403, "self_approval_forbidden"),
+        # Story 9.4
+        (ReviewReplyNotExpectedError("x"), 409, "review_reply_not_expected"),
+        (EstimateVersionNotDecidedError("x"), 409, "estimate_version_not_decided"),
+        (EstimateDraftExistsError("x"), 409, "estimate_draft_exists"),
     ],
 )
 def test_errors_map_to_problem_json(exc: Exception, status: int, code: str) -> None:

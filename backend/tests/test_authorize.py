@@ -195,6 +195,9 @@ def test_resource_scoped_grants() -> None:
         Action.FINDING_OVERRIDE,
         Action.REVIEW_REQUEST_CREATE,
         Action.REVIEW_REQUEST_CANCEL,
+        Action.REVIEW_REQUEST_DECIDE,
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -221,8 +224,11 @@ def test_resource_scoped_grants() -> None:
         Action.FINDING_RESOLVE,
         Action.REVIEW_REQUEST_CREATE,
         Action.REVIEW_REQUEST_CANCEL,
+        Action.REVIEW_REQUEST_DECIDE,
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
     }
-    assert REVIEWER_GRANTS == {Action.OPPORTUNITY_READ}
+    assert REVIEWER_GRANTS == {Action.OPPORTUNITY_READ, Action.REVIEW_REQUEST_DECIDE}
     assert RELATION_EXCLUDED_ROLES == {
         Action.REQUIREMENT_EDIT: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.GAP_DETECTION_START: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -245,6 +251,9 @@ def test_resource_scoped_grants() -> None:
         Action.FINDING_OVERRIDE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_CANCEL: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_DECIDE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_REPLY: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ESTIMATE_VERSION_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -545,13 +554,21 @@ def test_review_requests_for_owner_and_members_except_sales_reps(role: Role) -> 
     member, member_id = _user({role})
     opportunity = _opportunity(owner_id, member_id)
     allowed = role is not Role.SALES_REPRESENTATIVE
-    for action in (Action.REVIEW_REQUEST_CREATE, Action.REVIEW_REQUEST_CANCEL):
+    for action in (
+        Action.REVIEW_REQUEST_CREATE,
+        Action.REVIEW_REQUEST_CANCEL,
+        Action.REVIEW_REQUEST_DECIDE,
+        Action.REVIEW_REQUEST_REPLY,
+        Action.ESTIMATE_VERSION_CREATE,
+    ):
         assert can(owner, action, opportunity) is allowed
         assert can(member, action, opportunity) is allowed
 
 
 @pytest.mark.parametrize("role", list(Role))
-def test_a_reviewer_collaborator_may_only_read(role: Role) -> None:
+def test_a_reviewer_collaborator_may_only_read_and_decide(role: Role) -> None:
+    """Story 9.3: reading, and deciding (their own request, checked by `reviews`), except as a
+    sales representative."""
     _, owner_id = _user({Role.PRESALES_ENGINEER})
     reviewer, reviewer_id = _user({role}, permissions=set())
     opportunity = Resource(
@@ -561,5 +578,8 @@ def test_a_reviewer_collaborator_may_only_read(role: Role) -> None:
         reviewer_ids=frozenset({reviewer_id}),
     )
     assert can(reviewer, Action.OPPORTUNITY_READ, opportunity)
-    for action in (OWNER_GRANTS | MEMBER_GRANTS) - {Action.OPPORTUNITY_READ}:
+    assert can(reviewer, Action.REVIEW_REQUEST_DECIDE, opportunity) is (
+        role is not Role.SALES_REPRESENTATIVE
+    )
+    for action in (OWNER_GRANTS | MEMBER_GRANTS) - REVIEWER_GRANTS:
         assert not can(reviewer, action, opportunity), action

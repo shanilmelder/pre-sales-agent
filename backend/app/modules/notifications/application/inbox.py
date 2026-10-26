@@ -7,7 +7,10 @@ unknown one. Only signed-in users have an Inbox (403 for agents and systems).
 Each item's subject status is read live from the module that owns it (`reviews`,
 `workflows`, `conflicts`), and Opportunity titles from `opportunities`, all imported lazily:
 those modules import `notifications.public` to create items. When the subject is no longer
-open the item has no `href` and shows its status.
+open the item has no `href` and shows its status. Story 9.3: a Review Request item is
+closed for a reader who is no longer the request's reviewer (it was escalated). Story 9.4: an
+outcome item is open while its request is pending, and a superseded request reads
+"Superseded by v4".
 """
 
 from dataclasses import dataclass
@@ -45,6 +48,21 @@ CONFLICT_LABELS = {
     "resolved": "Resolved",
 }
 CONFLICT_OPEN = frozenset({"open", "negotiating", "escalated"})
+ESCALATED = "escalated"
+ESCALATED_LABEL = "Escalated"
+"""Story 9.3: a pending Review Request handed to another reviewer, as its earlier reviewer's
+item shows it (closed: no `href`)."""
+AUTHOR_SIDE_KINDS = frozenset({NotificationKind.REVIEW_OUTCOME})
+"""Story 9.4: the author's outcome items, open while the request is pending whoever holds it,
+never "Escalated". A `review_replied` item is the reviewer's, closed like their others once
+the request is escalated away."""
+
+
+def superseded_label(version: int) -> str:
+    """Story 9.4: "Superseded by v4"."""
+    return f"Superseded by v{version}"
+
+
 _log = get_logger(__name__)
 
 
@@ -79,9 +97,17 @@ async def _subject(uow: UnitOfWork, record: NotificationRecord) -> _Subject:
             return _Subject(None, None, False, None)
         is_open = state.status == reviews.RequestStatus.PENDING
         href = _tab(record.opportunity_id, "estimate", f"?review={record.subject_id}")
+        # Story 9.4: an outcome item follows the request itself, whoever holds it.
+        reviewer_item = NotificationKind(record.kind) not in AUTHOR_SIDE_KINDS
+        if is_open and reviewer_item and state.reviewer_id != record.recipient_id:
+            # Story 9.3: escalated to someone else, so it is no longer this reader's to decide.
+            return _Subject(ESCALATED, ESCALATED_LABEL, False, None, state.requested_by)
+        label = reviews.STATUS_LABELS[state.status]
+        if state.status == reviews.RequestStatus.SUPERSEDED and state.superseded_by is not None:
+            label = superseded_label(state.superseded_by)
         return _Subject(
             state.status.value,
-            reviews.STATUS_LABELS[state.status],
+            label,
             is_open,
             href if is_open else None,
             state.requested_by,

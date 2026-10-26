@@ -247,6 +247,9 @@ def test_a_finished_run_builds_a_version_from_the_assessments(
         "uncarried_edit_count": 0,
         "source": "assessments",
         "source_run_id": body["id"],
+        "base_version_id": None,
+        "base_version": None,
+        "reason": None,
     }
     assert "SAP" not in str(event["payload"])
     # What follows every new version: its Assumption proposals and the Red Team Review.

@@ -356,6 +356,11 @@ class EstimateView(BaseModel):
         description="Story 9.1: whether the caller may send Review Requests and the current "
         "version is submitted or in review.",
     )
+    can_create_version: bool = Field(
+        default=False,
+        description="Story 9.4: whether the caller may start a new draft from the current "
+        "version, which is rejected or approved (no draft exists then).",
+    )
 
 
 class EstimateLineChanges(BaseModel):
@@ -376,6 +381,35 @@ class EstimateLineChanges(BaseModel):
     reason: StrictStr = Field(description="Why. Trimmed, it must be 1 to 300 characters.")
 
 
+class LineDiff(BaseModel):
+    """Story 9.3: one line that differs between two Estimate Versions, matched by section and
+    title (trimmed, case-insensitive): `added` (only in the newer), `removed` (only in the
+    older) or `changed` (its hours or role mix differ). Hours include the line's
+    Contingency; `delta_hours` is after minus before (a missing side counts as 0)."""
+
+    change: Literal["added", "removed", "changed"]
+    section: Section
+    title: str
+    before_hours: float | None
+    after_hours: float | None
+    delta_hours: float
+
+
+class VersionDiff(BaseModel):
+    """Story 9.3 (`estimates.compare_versions`): an Estimate Version against the one numbered
+    just before it (`previous_version`, null for the first: `first` is then true and `lines`
+    empty). `lines`: added, removed and changed lines in template order; the total hours of
+    each side and their delta."""
+
+    version: int = Field(ge=1)
+    previous_version: int | None
+    first: bool
+    lines: list[LineDiff]
+    total_before: float | None
+    total_after: float
+    total_delta: float
+
+
 class SubmittedVersion(BaseModel):
     """A submitted Estimate Version (Story 8.6): its id, number, `submitted` status and new
     `row_version`, and how many earlier submitted versions it superseded."""
@@ -385,6 +419,29 @@ class SubmittedVersion(BaseModel):
     status: VersionStatus
     row_version: int = Field(ge=1)
     superseded_count: int = Field(ge=0)
+
+
+class NewVersionCreate(BaseModel):
+    """Story 9.4: start a new draft Estimate Version from a rejected or approved one, with an
+    optional reason (at most 1,000 characters, trimmed)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: StrictStr | None = Field(
+        default=None, max_length=4000, description="Why; trimmed, at most 1,000 characters."
+    )
+
+
+class CreatedVersion(BaseModel):
+    """Story 9.4: the new draft Estimate Version (its id, number, `draft` status and
+    `row_version`) and the version it was copied from."""
+
+    id: str
+    version: int = Field(ge=1)
+    status: VersionStatus
+    row_version: int = Field(ge=1)
+    base_version_id: str
+    base_version: int = Field(ge=1)
 
 
 class AcceptAllResult(BaseModel):

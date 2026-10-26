@@ -6,6 +6,8 @@ the effort rows in Requirement order with the total hours. Superseded Assessment
 hidden. No authorization: `workflows` composes it with the latest run into the Assessments
 tab's view (Story 5.2), behind the Opportunity's read check.
 
+`assessment_at` (Story 9.3): one Assessment at a version, for a Review Request's target.
+
 `outdated_assessments` (Story 2.7): the current Assessments that used a Requirement version
 that has changed since, for the Requirements tab's notice (anyone who can read the
 Opportunity).
@@ -156,6 +158,20 @@ async def agent_assessments(uow: UnitOfWork, opportunity_id: UUID) -> list[Agent
     """One slot per agent (Engineering, PM, Security) with its current Assessment or null."""
     views = await _views(uow, opportunity_id, await repo.current_assessments(uow, opportunity_id))
     return [AgentAssessment(agent=agent, assessment=views.get(agent.value)) for agent in AGENTS]
+
+
+async def assessment_at(
+    uow: UnitOfWork, assessment_id: UUID, version: int
+) -> AssessmentView | None:
+    """Story 9.3 (a Review Request's target): the Assessment with this id at this version,
+    current or since superseded, with its ranked Findings and their Requirement chips; None
+    when there is none. No authorization: `reviews` reads it for a request the caller may
+    see."""
+    found = [r for r in await repo.assessments_by_id(uow, [assessment_id]) if r.version == version]
+    if not found:
+        return None
+    record = found[0]
+    return (await _views(uow, record.opportunity_id, [record]))[record.agent]
 
 
 async def outdated_assessments(

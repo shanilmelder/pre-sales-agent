@@ -128,8 +128,8 @@ development_status:
   epic-9: in-progress
   9-1-send-review-requests-to-named-reviewers: review
   9-2-inbox-with-in-app-notifications-and-review-reminders: review
-  9-3-reviewers-record-decisions-in-the-review-panel: backlog
-  9-4-author-side-review-outcomes-and-superseded-requests: backlog
+  9-3-reviewers-record-decisions-in-the-review-panel: review
+  9-4-author-side-review-outcomes-and-superseded-requests: review
   9-5-raise-a-challenge-and-confirm-reassessment: backlog
   9-6-challenge-reassessment-run-creates-a-new-estimate-version: backlog
   9-7-set-the-baseline: backlog

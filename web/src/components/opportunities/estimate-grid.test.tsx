@@ -14,8 +14,14 @@ import type {
   EstimateView,
   SectionName,
 } from "@/lib/estimates";
-import type { ReviewRequestsView } from "@/lib/reviews";
+import type { ReviewRequest, ReviewRequestsView } from "@/lib/reviews";
 import { axeViolations } from "@/test/axe";
+import {
+  REVIEW_ID,
+  reviewDecision,
+  reviewPanel,
+  reviewRequest,
+} from "@/test/review-fixtures";
 
 const loadEstimate = vi.hoisted(() =>
   vi.fn<(opportunityId: string) => Promise<EstimateResult>>(),
@@ -24,10 +30,15 @@ const editEstimateLine = vi.hoisted(() =>
   vi.fn<(input: EstimateLineEditInput) => Promise<EstimateLineEditResult>>(),
 );
 const loadReviewRequests = vi.hoisted(() => vi.fn());
+const loadReviewPanel = vi.hoisted(() => vi.fn());
+const createEstimateVersion = vi.hoisted(() => vi.fn());
 vi.mock("@/app/opportunities/actions", () => ({
   loadEstimate,
   editEstimateLine,
   loadReviewRequests,
+  loadReviewPanel,
+  decideReviewRequest: vi.fn(),
+  createEstimateVersion,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
@@ -165,6 +176,7 @@ function view(
     blockers: { to_submit: [], to_baseline: [] },
     can_submit: false,
     can_request_review: false,
+    can_create_version: false,
   } satisfies EstimateView;
 }
 
@@ -1260,6 +1272,7 @@ describe("Review requests on the Estimate tab (Story 9.1)", () => {
         created_at: "2026-10-24T09:00:00Z",
         updated_at: "2026-10-24T09:00:00Z",
         can_cancel: true,
+        linked_request_id: null,
       },
     ],
   });
@@ -1337,5 +1350,120 @@ describe("Review requests on the Estimate tab (Story 9.1)", () => {
     );
     expect(screen.queryByRole("button", { name: "Request review" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Review requests" })).toBeNull();
+  });
+});
+
+describe("Review decisions on the Estimate tab (Story 9.3)", () => {
+  const approved: EstimateVersion = {
+    ...version(3),
+    status: "approved",
+    submitted_at: "2026-10-14T09:00:00Z",
+  };
+  const requests = (versionId: string, overrides: Partial<ReviewRequest> = {}) => ({
+    version_id: versionId,
+    version: 3,
+    can_create: false,
+    assessments: [],
+    items: [reviewRequest({ estimate_version_id: versionId, ...overrides })],
+  });
+
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  it("an approved version: the resolved pill and Approved current", async () => {
+    const { container } = renderSection(
+      { ...view(approved, succeeded), can_request_review: false },
+      true,
+      requests(approved.id, { status: "approved" }),
+    );
+    expect(screen.getByText("v3 · Approved").getAttribute("data-tone")).toBe("resolved");
+    const lifecycle = container.querySelector("[data-lifecycle]") as HTMLElement;
+    const step = within(lifecycle).getByText("Approved").closest("li");
+    expect(step?.getAttribute("aria-current")).toBe("step");
+    expect(screen.queryByRole("button", { name: "Request review" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a rejected version has the blocker pill", () => {
+    renderSection(
+      { ...view({ ...approved, status: "rejected" }, succeeded), can_request_review: false },
+      true,
+      requests(approved.id, { status: "rejected" }),
+    );
+    expect(screen.getByText("v3 · Rejected").getAttribute("data-tone")).toBe("blocker");
+    expect(screen.queryByRole("button", { name: "New version" })).toBeNull();
+  });
+
+  it("Story 9.4: a rejected version offers New version beside the pill, with the reason", async () => {
+    const rejected = { ...approved, status: "rejected" as const };
+    const reason = reviewDecision({ decision: "rejected", label: "Rejected", reason: "[WHY]" });
+    createEstimateVersion.mockResolvedValue({ kind: "ok", value: { version: 4 } });
+    loadEstimate.mockResolvedValue({ kind: "error" });
+    loadReviewRequests.mockResolvedValue({ kind: "error" });
+    const user = userEvent.setup();
+    const { container } = renderSection(
+      { ...view(rejected, succeeded), can_create_version: true },
+      true,
+      requests(rejected.id, { status: "rejected", latest_decision: reason }),
+    );
+    const toolbar = container.querySelector("[data-estimate-toolbar]") as HTMLElement;
+    const create = within(toolbar).getByRole("button", { name: "New version" });
+    expect(within(toolbar).getByText("Ana Reviewer: [WHY]")).toBeTruthy();
+    expect(create.getAttribute("aria-describedby")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(create);
+    expect(createEstimateVersion).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      versionId: rejected.id,
+    });
+    await waitFor(() => expect(loadEstimate).toHaveBeenCalled());
+  });
+
+  it("the card shows the latest decision, and a row opens the panel in the Inspector", async () => {
+    const inReview = { ...approved, status: "in_review" as const };
+    const latest = reviewDecision();
+    loadReviewPanel.mockResolvedValue({
+      kind: "ok",
+      panel: reviewPanel({ decisions: [latest] }),
+    });
+    const user = userEvent.setup();
+    const { container } = renderSection(
+      { ...view(inReview, succeeded), can_request_review: true },
+      true,
+      requests(inReview.id, { latest_decision: latest }),
+    );
+    const card = screen.getByRole("region", { name: "Review requests" });
+    const status = card.querySelector("[data-decision]")!;
+    expect(status.textContent).toBe("Evidence requested");
+    expect(status.querySelector("svg")).not.toBeNull();
+    expect(within(card).getByText("Ana Reviewer · Evidence requested · 25 Oct, 10:02")).toBeTruthy();
+    expect(within(card).getByText("[REASON]")).toBeTruthy();
+
+    await user.click(within(card).getByRole("button", { name: /Ana Reviewer/ }));
+
+    expect(
+      await within(pane()).findByRole("heading", {
+        name: "Review request: Estimate v3, [OPPORTUNITY]",
+      }),
+    ).toBeTruthy();
+    expect(within(pane()).getByRole("link", { name: "Open in tab" })).toBeTruthy();
+    expect(within(pane()).getByRole("group", { name: "Review decision" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("?review={id} opens that request's panel", async () => {
+    const inReview = { ...approved, status: "in_review" as const };
+    loadReviewPanel.mockResolvedValue({ kind: "ok", panel: reviewPanel() });
+    window.history.replaceState(null, "", `/opportunities/${OPP_ID}/estimate?review=${REVIEW_ID}`);
+    renderSection(
+      { ...view(inReview, succeeded), can_request_review: true },
+      true,
+      requests(inReview.id),
+    );
+    const details = await screen.findByRole("complementary", { name: "Details" });
+    expect(
+      await within(details).findByRole("heading", { name: /Review request: Estimate v3/ }),
+    ).toBeTruthy();
+    expect(loadReviewPanel).toHaveBeenCalledWith({ opportunityId: OPP_ID, requestId: REVIEW_ID });
   });
 });

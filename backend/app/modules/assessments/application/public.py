@@ -21,6 +21,7 @@ from app.modules.assessments.application.assessment import (
 )
 from app.modules.assessments.application.assessments import (
     agent_assessments,
+    assessment_at,
     outdated_assessments,
 )
 from app.modules.assessments.application.critic import (
@@ -130,6 +131,7 @@ __all__ = [
     "accept_critic_review",
     "agent_assessments",
     "agent_role",
+    "assessment_at",
     "blocking_finding_counts",
     "build_inputs",
     "critic_inputs",

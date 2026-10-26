@@ -1,11 +1,15 @@
-"""The reviews module's tables (Story 9.1). `opportunity_id`, `target_id`,
-`estimate_version_id`, `reviewer_id` and `requested_by` hold ids owned by other modules
-without foreign keys (AD-2)."""
+"""The reviews module's tables (Stories 9.1, 9.3 and 9.4). No cross-module foreign keys
+(AD-2): `opportunity_id`, `target_id`, `estimate_version_id`, `reviewer_id`, `requested_by`,
+`decided_by`, `escalated_to`, `alternative_version_id` and `replied_by` hold ids owned by other
+modules. Decisions and replies reference their Review Request, and a linked request the one it
+is an alternative to (in-module foreign keys)."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, Index, Integer, Text, Uuid, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, Uuid, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base
@@ -17,7 +21,8 @@ class ReviewRequestRow(Base):
     """A Review Request: one named reviewer asked to review one target (an Estimate Version,
     or one of its Assessments at `target_version`) for one review type, counting towards
     `estimate_version_id`. Inserted `pending`; only its status (and a cancel's reason) ever
-    changes, bumping `row_version`. Never deleted."""
+    changes, bumping `row_version`. Never deleted. `linked_request_id` (Story 9.4): the request
+    on an older version this one is an alternative to."""
 
     __tablename__ = "reviews_review_requests"
     __table_args__ = (
@@ -63,3 +68,79 @@ class ReviewRequestRow(Base):
     row_version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    linked_request_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "reviews_review_requests.id", name="fk_reviews_review_requests_linked_request_id"
+        ),
+    )
+
+
+class ReviewDecisionRow(Base):
+    """A Review Decision (Story 9.3): what the request's reviewer decided, why, on which
+    version of the target, and (for an escalation) who the request went to. Append-only:
+    `psa_app` may only SELECT and INSERT."""
+
+    __tablename__ = "reviews_review_decisions"
+    __table_args__ = (
+        Index(None, "review_request_id", "decided_at"),
+        CheckConstraint(
+            "decision IN ('approved', 'rejected', 'challenged', 'evidence_requested', "
+            "'alternative_requested', 'escalated')",
+            name="decision",
+        ),
+        CheckConstraint(
+            "decision = 'approved' OR (reason IS NOT NULL AND char_length(btrim(reason)) >= 1)",
+            name="reason_required",
+        ),
+        CheckConstraint("reason IS NULL OR char_length(reason) <= 1000", name="reason"),
+        CheckConstraint(
+            "(decision = 'escalated') = (escalated_to IS NOT NULL)", name="escalated_has_target"
+        ),
+        CheckConstraint("target_version >= 1", name="target_version"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    review_request_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "reviews_review_requests.id", name="fk_reviews_review_decisions_review_request_id"
+        ),
+    )
+    decision: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    decided_by: Mapped[UUID] = mapped_column(Uuid)
+    target_version: Mapped[int] = mapped_column(Integer)
+    escalated_to: Mapped[UUID | None] = mapped_column(Uuid)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ReviewReplyRow(Base):
+    """A reply (Story 9.4): the request's sender or the Opportunity's owner answering a request
+    for evidence or an alternative, with a message, its Evidence (`[{kind, id, version}]`) and,
+    after `alternative_requested`, the draft Estimate Version offered as the alternative.
+    Append-only: `psa_app` may only SELECT and INSERT."""
+
+    __tablename__ = "reviews_review_replies"
+    __table_args__ = (
+        Index(None, "review_request_id", "replied_at"),
+        CheckConstraint(
+            "char_length(btrim(message)) >= 1 AND char_length(message) <= 2000", name="message"
+        ),
+        CheckConstraint("jsonb_typeof(evidence) = 'array'", name="evidence"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    review_request_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "reviews_review_requests.id", name="fk_reviews_review_replies_review_request_id"
+        ),
+    )
+    message: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb")
+    )
+    alternative_version_id: Mapped[UUID | None] = mapped_column(Uuid)
+    replied_by: Mapped[UUID] = mapped_column(Uuid)
+    replied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

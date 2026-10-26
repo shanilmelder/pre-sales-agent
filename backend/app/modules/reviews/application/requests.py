@@ -28,7 +28,8 @@ a pending request with a reason (1 to 1,000 characters) and `If-Match` its `row_
 becomes `cancelled`; the reviewer loses access when they have no pending request left on the
 Opportunity; `reviews.review_request.cancelled`, and a `review_cancelled` Inbox item for the
 reviewer (Story 9.2, key `review:{id}:cancelled`); and the version goes back to `submitted`
-when no pending request is left for it.
+when no pending request is left for it, or (Story 9.3) becomes `approved` when every request
+left is approved.
 
 Logs and trace carry ids, types and lengths only, never the message or the reason.
 """
@@ -50,12 +51,13 @@ from app.modules.notifications.application import public as notifications
 from app.modules.notifications.application.public import NotificationKind
 from app.modules.opportunities.application import public as opportunities
 from app.modules.reviews.adapters import repository as repo
-from app.modules.reviews.adapters.repository import NewRequest, RequestRecord
+from app.modules.reviews.adapters.repository import DecisionRecord, NewRequest, RequestRecord
 from app.modules.reviews.application.models import (
     AssessmentOption,
     AssessmentRef,
     CreatedReviewRequests,
     OpenReviewRequest,
+    ReviewDecisionView,
     ReviewPerson,
     ReviewRequestCancel,
     ReviewRequestCreate,
@@ -64,6 +66,7 @@ from app.modules.reviews.application.models import (
     ReviewRequestView,
     ReviewTarget,
 )
+from app.modules.reviews.domain.decisions import DECISION_LABELS, Decision
 from app.modules.reviews.domain.requests import (
     MESSAGE_MAX,
     OPEN_STATUSES,
@@ -145,8 +148,10 @@ def _check_reviewable(version: ReviewableVersion) -> None:
         return
     if version.status == VersionStatus.SUPERSEDED:
         raise EstimateVersionSupersededError(superseded_detail(version))
-    if version.status.value == "rejected":  # pragma: no cover - the status arrives in 9.3
+    if version.status == VersionStatus.REJECTED:
         raise EstimateVersionRejectedError(f"v{version.version} was rejected")
+    if version.status == VersionStatus.APPROVED:
+        raise EstimateVersionNotSubmittedError(f"v{version.version} is already approved")
     raise EstimateVersionNotSubmittedError(NOT_SUBMITTED)
 
 
@@ -392,9 +397,13 @@ async def cancel_review_request(
         subject_version=cancelled.row_version,
     )
     if not await repo.has_pending_for_version(uow, cancelled.estimate_version_id):
-        await estimates.mark_submitted_from_review(
-            uow, cancelled.estimate_version_id, actor=actor.actor
-        )
+        # Story 9.3: when every request left is approved, the version is approved.
+        if await repo.all_approved(uow, cancelled.estimate_version_id):
+            await estimates.mark_approved(uow, cancelled.estimate_version_id, actor=actor.actor)
+        else:
+            await estimates.mark_submitted_from_review(
+                uow, cancelled.estimate_version_id, actor=actor.actor
+            )
     _log.info(
         "reviews.review_request_cancelled",
         extra={
@@ -446,8 +455,11 @@ async def notify_reviewer(
     opportunity_id: UUID,
     title: str | None,
     dedupe_key: str,
+    summary: str | None = None,
 ) -> bool:
-    """The reviewer's Inbox item about the request; whether one was written."""
+    """The reviewer's Inbox item about the request; whether one was written. Story 9.4: also
+    the author's outcome items (`reviewer_id` is then the recipient), with their own
+    `summary`."""
     return await notifications.notify(
         uow,
         recipient_id=reviewer_id,
@@ -456,7 +468,7 @@ async def notify_reviewer(
         subject_type=SUBJECT_TYPE,
         subject_id=request_id,
         subject_version=row_version,
-        summary=review_summary(kind, target_label, title),
+        summary=review_summary(kind, target_label, title) if summary is None else summary,
         dedupe_key=dedupe_key,
     )
 
@@ -513,13 +525,51 @@ async def target_labels(uow: UnitOfWork, records: Sequence[RequestRecord]) -> di
     return {r.id: label(r) for r in records}
 
 
+def decision_people(decisions: Sequence[DecisionRecord]) -> set[UUID]:
+    return {d.decided_by for d in decisions} | {
+        d.escalated_to for d in decisions if d.escalated_to is not None
+    }
+
+
+def decision_view(record: DecisionRecord, names: dict[UUID, str]) -> ReviewDecisionView:
+    """Story 9.3: a Review Decision with its people's names (`names` holds them)."""
+    decision = Decision(record.decision)
+    return ReviewDecisionView(
+        id=str(record.id),
+        decision=decision,
+        label=DECISION_LABELS[decision],
+        reason=record.reason,
+        decided_by=ReviewPerson(
+            id=str(record.decided_by), name=names.get(record.decided_by, UNKNOWN_USER)
+        ),
+        escalated_to=None
+        if record.escalated_to is None
+        else ReviewPerson(
+            id=str(record.escalated_to), name=names.get(record.escalated_to, UNKNOWN_USER)
+        ),
+        target_version=record.target_version,
+        decided_at=record.decided_at,
+    )
+
+
+async def request_views(
+    uow: UnitOfWork, actor: Principal, resource: Resource, records: Sequence[RequestRecord]
+) -> list[ReviewRequestView]:
+    """The requests as the Estimate tab lists them, each with its latest decision."""
+    return await _views(uow, actor, resource, records)
+
+
 async def _views(
     uow: UnitOfWork, actor: Principal, resource: Resource, records: Sequence[RequestRecord]
 ) -> list[ReviewRequestView]:
     if not records:
         return []
+    latest = await repo.latest_decisions(uow, [r.id for r in records])
     names = await identity.user_names(
-        uow, {r.reviewer_id for r in records} | {r.requested_by for r in records}
+        uow,
+        {r.reviewer_id for r in records}
+        | {r.requested_by for r in records}
+        | decision_people(list(latest.values())),
     )
     labels = await target_labels(uow, records)
     numbers: dict[UUID, int] = {}
@@ -552,6 +602,8 @@ async def _views(
             created_at=r.created_at,
             updated_at=r.updated_at,
             can_cancel=_may_cancel(actor, resource, r),
+            latest_decision=None if r.id not in latest else decision_view(latest[r.id], names),
+            linked_request_id=None if r.linked_request_id is None else str(r.linked_request_id),
         )
         for r in records
     ]
@@ -637,15 +689,31 @@ async def list_open_requests(uow: UnitOfWork, version_id: UUID) -> list[OpenRevi
     ]
 
 
+async def alternative_requested(uow: UnitOfWork, version_id: UUID) -> bool:
+    """`reviews.public.alternative_requested` (Story 9.4): whether a pending request counting
+    towards the version has `alternative_requested` as its latest decision (a **New version**
+    may then start from it). No authorization."""
+    pending = await repo.of_version(uow, version_id, statuses=(RequestStatus.PENDING.value,))
+    latest = await repo.latest_decisions(uow, [r.id for r in pending])
+    return any(d.decision == Decision.ALTERNATIVE_REQUESTED.value for d in latest.values())
+
+
 async def request_status(uow: UnitOfWork, request_id: UUID) -> ReviewRequestState | None:
     """`reviews.public.request_status` (Story 9.2: an Inbox item's subject): the request's
-    status and sender, or None when unknown. No authorization."""
+    status and sender, or None when unknown; Story 9.4: for a superseded request, the number of
+    the version that replaced it. No authorization."""
     record = await repo.get(uow, request_id)
     if record is None:
         return None
+    status = RequestStatus(record.status)
+    superseded_by = None
+    if status == RequestStatus.SUPERSEDED:
+        version = await estimates.reviewable_version(uow, record.estimate_version_id)
+        superseded_by = None if version is None else version.superseded_by_version
     return ReviewRequestState(
         id=record.id,
-        status=RequestStatus(record.status),
+        status=status,
         requested_by=record.requested_by,
         reviewer_id=record.reviewer_id,
+        superseded_by=superseded_by,
     )

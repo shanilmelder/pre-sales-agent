@@ -599,6 +599,12 @@ class EstimatesEstimateVersionCreated(TracePayload):
     run finished (actor `system`), else `model`."""
     source_run_id: str | None = None
     """Story 8.3: that assessment run's id."""
+    base_version_id: str | None = None
+    """Story 9.4: a person's **New version**: the rejected or approved version whose lines,
+    Assumptions and Risks were copied (actor: that person)."""
+    base_version: int | None = None
+    reason: str | None = None
+    """Story 9.4: the person's reason for the new version, if they gave one."""
 
 
 # Story 8.4. Payloads hold ids, kinds and hours only, never Assumption wording or Gap text.
@@ -785,6 +791,30 @@ class EstimatesEstimateVersionReviewEnded(TracePayload):
     cancelled it."""
 
     event_type: ClassVar[str] = "estimates.estimate_version.review_ended"
+
+    version_id: str
+    version: int
+
+
+@register
+class EstimatesEstimateVersionApproved(TracePayload):
+    """An `in_review` Estimate Version went `approved` (Story 9.3): every non-cancelled Review
+    Request counting towards it was approved. Subject: the version
+    (`estimates.estimate_version`). Actor: the reviewer whose approval was the last."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.approved"
+
+    version_id: str
+    version: int
+
+
+@register
+class EstimatesEstimateVersionRejected(TracePayload):
+    """An `in_review` Estimate Version went `rejected` (Story 9.3): a reviewer rejected a
+    Review Request counting towards it. Subject: the version (`estimates.estimate_version`).
+    Actor: that reviewer."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.rejected"
 
     version_id: str
     version: int
@@ -1324,6 +1354,9 @@ class ReviewsReviewRequestCreated(TracePayload):
     estimate_version_id: str
     reviewer_id: str
     message_length: int = 0
+    linked_request_id: str | None = None
+    """Story 9.4: the request on an older version this one is the alternative to (created
+    when the alternative draft was submitted)."""
 
 
 @register
@@ -1341,6 +1374,77 @@ class ReviewsReviewRequestCancelled(TracePayload):
     estimate_version_id: str
     reviewer_id: str
     reason_length: int
+
+
+@register
+class ReviewsReviewDecisionRecorded(TracePayload):
+    """The request's reviewer recorded a Review Decision (Story 9.3): `approved`, `rejected`,
+    `evidence_requested`, `alternative_requested` or `escalated` (to `escalated_to`, who then
+    holds the request), with the reviewer's `reason` (null only for an approval without
+    one), on the target at `target_version`. Actor: the reviewer."""
+
+    event_type: ClassVar[str] = "reviews.review_decision.recorded"
+
+    request_id: str
+    decision_id: str
+    decision: Literal[
+        "approved",
+        "rejected",
+        "challenged",
+        "evidence_requested",
+        "alternative_requested",
+        "escalated",
+    ]
+    reason: str | None = None
+    target_kind: Literal["estimate_version", "assessment"]
+    target_id: str
+    target_version: int
+    escalated_to: str | None = None
+
+
+class ReplyEvidenceRef(BaseModel):
+    """An Evidence reference cited in a reply (Story 9.4): kind, id and version only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["requirement", "source_document"]
+    id: str
+    version: int
+
+
+@register
+class ReviewsReviewRequestReplied(TracePayload):
+    """The request's sender or the Opportunity's owner replied to a request for evidence or an
+    alternative (Story 9.4): the reply's id, its Evidence references, whether it names an
+    alternative draft (and which), and the message's length, never its text. The request
+    stays `pending`. Actor: that person."""
+
+    event_type: ClassVar[str] = "reviews.review_request.replied"
+
+    request_id: str
+    reply_id: str
+    evidence: list[ReplyEvidenceRef]
+    has_alternative: bool
+    alternative_version_id: str | None = None
+    message_length: int
+
+
+@register
+class ReviewsReviewRequestSuperseded(TracePayload):
+    """Submitting a newer Estimate Version superseded a `pending` or `challenged` Review
+    Request on an older one (Story 9.4): its approvals never count and it gets no reminders.
+    `linked_request_id`: the request created on the new version when the author's reply had
+    named it as the alternative. Actor: the person who submitted."""
+
+    event_type: ClassVar[str] = "reviews.review_request.superseded"
+
+    request_id: str
+    from_status: Literal["pending", "challenged"]
+    estimate_version_id: str
+    superseded_by_version_id: str
+    superseded_by_version: int
+    reviewer_id: str
+    linked_request_id: str | None = None
 
 
 @register

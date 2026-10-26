@@ -58,6 +58,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "blockers": {"to_submit": [], "to_baseline": []},
         "can_submit": False,
         "can_request_review": False,
+        "can_create_version": False,
     }
     assert theirs.json() == {
         "version": None,
@@ -73,6 +74,7 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "blockers": {"to_submit": [], "to_baseline": []},
         "can_submit": False,
         "can_request_review": False,
+        "can_create_version": False,
     }
 
 
@@ -284,13 +286,18 @@ def test_no_endpoint_accepts_a_total() -> None:
             assert method in {"get", "post", "patch"}
             if "requestBody" not in operation:
                 continue
+            body = operation["requestBody"]["content"]["application/json"]["schema"]
+            ref = body["$ref"] if "$ref" in body else body["anyOf"][0]["$ref"]
+            fields = schema["components"]["schemas"][ref.rsplit("/", 1)[1]]["properties"]
+            if path.endswith("/new-version"):
+                # Story 9.4: a New version takes only an optional reason.
+                assert (method, set(fields)) == ("post", {"reason"})
+                continue
             # Story 8.2: only a line's edit takes a body, and none of its fields is a total.
             assert (method, path.rsplit("/", 1)[0]) == (
                 "patch",
                 "/api/v1/opportunities/{opportunity_id}/estimate-lines",
             )
-            ref = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
-            fields = schema["components"]["schemas"][ref.rsplit("/", 1)[1]]["properties"]
             assert set(fields) == {"effort_hours", "role_mix", "reason"}
             bodies += 1
     assert bodies == 1

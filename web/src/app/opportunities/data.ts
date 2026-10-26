@@ -13,7 +13,7 @@ import type { CriticView } from "@/lib/critic";
 import type { EstimateView } from "@/lib/estimates";
 import type { GapList, GapsContext } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
-import type { ReviewRequestsView } from "@/lib/reviews";
+import type { ReviewPanel, ReviewRequestsView } from "@/lib/reviews";
 import type { OutdatedAssessment, RequirementList } from "@/lib/requirements";
 import type { Source } from "@/lib/sources";
 import type { SubmissionBlockersView } from "@/lib/submission";
@@ -255,6 +255,31 @@ export async function getReviewRequests(id: string): Promise<ReviewRequestsResul
     console.error(
       `GET review requests failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
+    return { kind: "error" };
+  }
+}
+
+export type ReviewPanelResult =
+  | { kind: "ok"; panel: ReviewPanel }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+/** Story 9.3: `GET …/review-requests/{rid}/panel`. 404 (an unknown request, or one the caller
+ * may no longer read, e.g. after escalating it) is `not-found`. */
+export async function getReviewPanel(id: string, requestId: string): Promise<ReviewPanelResult> {
+  if (!UUID_RE.test(id) || !UUID_RE.test(requestId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/panel",
+      { params: { path: { opportunity_id: id, request_id: requestId } } },
+    );
+    if (data) return { kind: "ok", panel: data };
+    if (response.status === 404) return { kind: "not-found" };
+    console.error(`GET review panel failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET review panel failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

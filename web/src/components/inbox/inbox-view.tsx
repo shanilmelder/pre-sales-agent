@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { getInbox, markAllInboxRead, markInboxItemRead } from "@/app/inbox/actions";
+import { ReviewPanelLoader } from "@/components/opportunities/review-panel";
 import { useAnnounce } from "@/components/shell/live-region";
 import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { useShell } from "@/components/shell/shell-context";
@@ -21,8 +22,10 @@ import {
   NO_SELECTION,
   NOT_REACHABLE,
   OPEN,
+  REVIEW_SUBJECT,
   closedStatus,
   groupItems,
+  isGreyedReviewItem,
   isReviewKind,
   itemBody,
   itemMeta,
@@ -142,16 +145,10 @@ function Row({
   );
 }
 
-function Detail({ item }: { item: InboxItem | null }) {
-  if (!item) {
-    return (
-      <Card aria-label="Inbox item" role="region" className="p-6">
-        <p className="text-text-secondary">{NO_SELECTION}</p>
-      </Card>
-    );
-  }
+/** The item's own header, sentence, status and **Open** (9.2's detail body). */
+function DetailBody({ item }: { item: InboxItem }) {
   return (
-    <Card aria-label="Inbox item" role="region" className="gap-4 p-6">
+    <>
       <div>
         <p className="mb-1 text-meta text-text-secondary">
           {kindLabel(item.kind)} · {itemMeta(item)}
@@ -170,6 +167,48 @@ function Detail({ item }: { item: InboxItem | null }) {
           </Link>
         </div>
       ) : null}
+    </>
+  );
+}
+
+function Detail({
+  item,
+  onDecided,
+}: {
+  item: InboxItem | null;
+  /** After a decision in the review panel: read the Inbox again (the row's status). */
+  onDecided?: () => void;
+}) {
+  if (!item) {
+    return (
+      <Card aria-label="Inbox item" role="region" className="p-6">
+        <p className="text-text-secondary">{NO_SELECTION}</p>
+      </Card>
+    );
+  }
+  // Story 9.3: a Review item shows the review panel in place of the body and Open, greyed
+  // when its subject is closed; 9.2's body while it loads and when it can't be read (e.g.
+  // the reader's access ended with the request). Story 9.4: an author's outcome stays live
+  // on a decided request; superseded and cancelled ones are greyed.
+  if (item.subject_type === REVIEW_SUBJECT && item.opportunity_id) {
+    return (
+      <Card aria-label="Inbox item" role="region" className="gap-4 p-6" data-review-detail="">
+        <ReviewPanelLoader
+          key={item.id}
+          opportunityId={item.opportunity_id}
+          requestId={item.subject_id}
+          layout="inbox"
+          live={false}
+          dimmed={isGreyedReviewItem(item)}
+          fallback={<DetailBody item={item} />}
+          onDecided={onDecided}
+        />
+      </Card>
+    );
+  }
+  return (
+    <Card aria-label="Inbox item" role="region" className="gap-4 p-6">
+      <DetailBody item={item} />
     </Card>
   );
 }
@@ -350,7 +389,7 @@ export function InboxView({
               </section>
             ))}
           </Card>
-          <Detail item={selected} />
+          <Detail item={selected} onDecided={() => void reload()} />
         </div>
         <Pagination page={page} />
       </>

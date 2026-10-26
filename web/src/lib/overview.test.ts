@@ -519,7 +519,7 @@ function blockersView(
     noVersion = false,
     toBaseline = [],
   }: {
-    status?: "draft" | "submitted" | "in_review" | "superseded";
+    status?: NonNullable<SubmissionBlockersView["version"]>["status"];
     noVersion?: boolean;
     toBaseline?: Blocker[];
   } = {},
@@ -681,7 +681,19 @@ describe("pipelineSteps (Story 8.9)", () => {
     expect(pendingOnly[7]).toMatchObject({ state: "in-progress", sub: "1 Review Request pending" });
     const noRequests = pipelineSteps(mockup(), blockersView([], { status: "in_review" }));
     expect(noRequests[7]).toMatchObject({ state: "in-progress", sub: "In review" });
-    const all = [submitted, inReview, pendingOnly, noRequests].map((s) => s[7].state);
+    const approved = pipelineSteps(mockup(), blockersView([], { status: "approved" }));
+    expect(approved[7]).toMatchObject({
+      state: "in-progress",
+      sub: "Approved, Baseline not set yet",
+    });
+    const rejected = pipelineSteps(
+      mockup(),
+      blockersView([], { status: "rejected", toBaseline: [requests[0]!] }),
+    );
+    expect(rejected[7]).toMatchObject({ state: "in-progress", sub: "Rejected in review" });
+    const all = [submitted, inReview, pendingOnly, noRequests, approved, rejected].map(
+      (s) => s[7].state,
+    );
     expect(all).not.toContain("complete");
   });
 

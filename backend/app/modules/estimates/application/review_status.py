@@ -7,6 +7,10 @@ command's Unit of Work (holding `lock_opportunity`):
   an `in_review` version stays as it is.
 - `mark_submitted_from_review`: `in_review` → `submitted` once its last pending request is
   cancelled (traced `estimates.estimate_version.review_ended`).
+- Story 9.3: `mark_approved`: `in_review` → `approved` once every non-cancelled request is
+  approved (traced `estimates.estimate_version.approved`); `mark_rejected`: `in_review` →
+  `rejected` when a reviewer rejects (traced `estimates.estimate_version.rejected`). Either
+  leaves a version in any other status as it is.
 
 `reviewable_version` reads what the review rules need: the status, the `row_version`
 (`If-Match`), the author (`created_by`, null when unknown) and, for a superseded version, the
@@ -23,6 +27,8 @@ from app.modules.estimates.domain.estimates import VERSION_SUBJECT_TYPE, Version
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.trace.catalogue import (
+    EstimatesEstimateVersionApproved,
+    EstimatesEstimateVersionRejected,
     EstimatesEstimateVersionReviewEnded,
     EstimatesEstimateVersionReviewStarted,
 )
@@ -41,14 +47,18 @@ class ReviewableVersion:
     created_by: UUID | None
     submitted_at: datetime | None
     superseded_by_version: int | None = None
-    """For a superseded version, the number of the Opportunity's current (else latest)
-    version."""
+    """For a superseded version, the number of the first later version submitted (Story 9.4)
+    when it was itself submitted, else the Opportunity's current (else latest) version."""
 
 
 async def _view(uow: UnitOfWork, record: VersionRecord) -> ReviewableVersion:
     status = VersionStatus(record.status)
     replaced_by: int | None = None
-    if status == VersionStatus.SUPERSEDED:
+    if status == VersionStatus.SUPERSEDED and record.submitted_at is not None:
+        # Story 9.4: a submitted version is superseded by the next one submitted, whatever
+        # drafts came after.
+        replaced_by = await repo.first_submitted_after(uow, record.opportunity_id, record.version)
+    if status == VersionStatus.SUPERSEDED and replaced_by is None:
         current = await repo.current_version(uow, record.opportunity_id)
         replaced_by = (
             current.version
@@ -140,3 +150,44 @@ async def mark_submitted_from_review(
         return None
     await _trace(uow, actor, moved, started=False)
     return await _view(uow, moved)
+
+
+async def _move_from_review(
+    uow: UnitOfWork, version_id: UUID, to_status: VersionStatus, *, actor: Actor
+) -> ReviewableVersion | None:
+    moved = await repo.move_status(
+        uow, version_id, from_status=VersionStatus.IN_REVIEW.value, to_status=to_status.value
+    )
+    if moved is None:
+        return None
+    approved = to_status == VersionStatus.APPROVED
+    payload = (EstimatesEstimateVersionApproved if approved else EstimatesEstimateVersionRejected)(
+        version_id=str(moved.id), version=moved.version
+    )
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=payload,
+        subject_type=VERSION_SUBJECT_TYPE,
+        subject_id=moved.id,
+        opportunity_id=moved.opportunity_id,
+        subject_version=moved.row_version,
+    )
+    return await _view(uow, moved)
+
+
+async def mark_approved(
+    uow: UnitOfWork, version_id: UUID, *, actor: Actor
+) -> ReviewableVersion | None:
+    """Story 9.3: move an `in_review` version to `approved` (the caller checked that every
+    non-cancelled Review Request counting towards it is approved); None, and no change, when
+    it isn't `in_review`."""
+    return await _move_from_review(uow, version_id, VersionStatus.APPROVED, actor=actor)
+
+
+async def mark_rejected(
+    uow: UnitOfWork, version_id: UUID, *, actor: Actor
+) -> ReviewableVersion | None:
+    """Story 9.3: move an `in_review` version to `rejected` (a reviewer rejected a request
+    counting towards it); None, and no change, when it isn't `in_review`."""
+    return await _move_from_review(uow, version_id, VersionStatus.REJECTED, actor=actor)

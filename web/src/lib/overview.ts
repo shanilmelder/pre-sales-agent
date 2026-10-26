@@ -325,6 +325,8 @@ const VERSION_WORDS: Record<VersionStatus, string> = {
   draft: "draft",
   submitted: "submitted",
   in_review: "in review",
+  approved: "approved",
+  rejected: "rejected",
   superseded: "superseded",
 };
 
@@ -501,6 +503,10 @@ function estimateStep(
 function reviewStep(view: SubmissionBlockersView | null): StepBody {
   if (view === null) return BLOCKERS_FAILED;
   const version = view.version;
+  // Stories 9.3/9.4: a decided review waits for the Baseline (9.7) or a new version.
+  if (version?.status === "approved")
+    return { sub: "Approved, Baseline not set yet", state: "in-progress" };
+  if (version?.status === "rejected") return { sub: "Rejected in review", state: "in-progress" };
   if (version?.status === "in_review" || view.to_baseline.length > 0) {
     const requests = view.to_baseline.filter((b) => b.kind === "review_request").length;
     const sub = requests === 0 ? "In review" : `${plural(requests, "Review Request")} pending`;
