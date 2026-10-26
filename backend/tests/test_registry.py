@@ -14,6 +14,7 @@ import ast
 import importlib.util
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -341,6 +342,47 @@ def test_the_profile_override_applies_only_when_set_explicitly(
     )
 
 
+def test_the_effective_model_names_the_profile_and_model_actually_called(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("PSA_MODEL_PROFILE_CHAT", "PSA_OPENAI_MODEL", "PSA_OPENAI_REASONING_EFFORT"):
+        monkeypatch.delenv(name, raising=False)
+    version = rules.ConfigVersion(
+        id=uuid4(),
+        agent_id="pm_agent",
+        version=1,
+        semver="0.1.0",
+        model_profile="demo-chat",
+        model_digest="unpinned",
+        prompt_version=1,
+        input_schema_version=1,
+        output_schema_version=1,
+        contract_version="1",
+        tool_permissions=(),
+        budgets={},
+        created_by=None,
+        created_at=None,  # type: ignore[arg-type]
+    )
+    assert registry.effective_model(version, Settings()) == registry.EffectiveModel(
+        profile="demo-chat", model="gpt-oss:120b-cloud", overridden=False
+    )
+    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "openai-chat")
+    assert registry.effective_model(version, Settings()).model == "gpt-4.1-mini"
+    monkeypatch.setenv("PSA_OPENAI_MODEL", "gpt-5-mini")
+    assert registry.effective_model(version, Settings()) == registry.EffectiveModel(
+        profile="openai-chat", model="gpt-5-mini", overridden=True
+    )
+    # PSA_OPENAI_MODEL replaces only `openai` provider profiles' model.
+    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "local-chat")
+    assert registry.effective_model(version, Settings()).model == "qwen3:8b"
+    # A pinned profile this deployment doesn't define has no model.
+    monkeypatch.delenv("PSA_MODEL_PROFILE_CHAT")
+    retired = replace(version, model_profile="retired-chat")
+    assert registry.effective_model(retired, Settings()) == registry.EffectiveModel(
+        profile="retired-chat", model=None, overridden=False
+    )
+
+
 # --- the seed and its backfill --------------------------------------------------------------
 
 
@@ -423,6 +465,7 @@ def test_admins_list_and_read_agents(client: TestClient, sync_engine: Engine) ->
     assert pm.status_code == 200
     assert pm.headers["ETag"] == f'"{pm.json()["row_version"]}"'
     assert pm.json()["current_config"]["agent_id"] == "pm_agent"
+    assert set(pm.json()["effective_model"]) == {"profile", "model", "overridden"}
     versions = client.get(f"{URL}/pm_agent/config-versions", headers=admin).json()["items"]
     assert versions[-1]["id"] == str(rules.seed_config_version_id("pm_agent"))
     _problem(client.get(f"{URL}/nobody_agent", headers=admin), 404)

@@ -55,6 +55,7 @@ from app.modules.registry.application.models import (
     AgentConfigVersion,
     AgentConfigVersionList,
     AgentStatusChange,
+    EffectiveModel,
     EvalBar,
     EvalCost,
     EvalFailure,
@@ -81,7 +82,7 @@ from app.modules.registry.domain.registry import (
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
-from app.platform.config import Settings
+from app.platform.config import Settings, get_settings
 from app.platform.errors import (
     ForbiddenError,
     NotFoundError,
@@ -95,6 +96,7 @@ from app.platform.errors import (
 )
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
+from app.platform.model_gateway.profiles import UnknownModelProfileError, resolve_profile
 from app.platform.tool_gateway import list_denials
 from app.platform.tool_gateway.catalogue import READ_TOOLS
 from app.platform.trace.catalogue import (
@@ -152,6 +154,21 @@ def version_view(
     )
 
 
+def effective_model(version: ConfigVersion, settings: Settings) -> EffectiveModel:
+    """What `version` calls in this deployment: `effective_profile` and that profile's model
+    as the ModelGateway resolves it (null for a profile this deployment doesn't define)."""
+    profile = effective_profile(version, settings)
+    try:
+        model: str | None = resolve_profile(
+            profile,
+            openai_model=settings.openai_model,
+            openai_reasoning_effort=settings.openai_reasoning_effort,
+        ).model
+    except UnknownModelProfileError:
+        model = None
+    return EffectiveModel(profile=profile, model=model, overridden=profile != version.model_profile)
+
+
 def agent_view(agent: RegisteredAgent, names: Mapping[UUID, str] | None = None) -> RegistryAgent:
     return RegistryAgent(
         id=str(agent.id),
@@ -161,6 +178,7 @@ def agent_view(agent: RegisteredAgent, names: Mapping[UUID, str] | None = None) 
         row_version=agent.row_version,
         created_at=agent.created_at,
         current_config=version_view(agent.current, names),
+        effective_model=effective_model(agent.current, get_settings()),
     )
 
 

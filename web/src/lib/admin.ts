@@ -51,6 +51,19 @@ export function agentStatusLabel(status: AgentStatus): string {
   return AGENT_STATUS_LABELS[status];
 }
 
+/** What the Agent's current config calls in this deployment: the model (the profile when the
+ * deployment doesn't define it) and the profile, which notes the pinned one when a local
+ * override (`PSA_MODEL_PROFILE_CHAT`) replaces it. */
+export function effectiveModelLines(agent: RegistryAgent): { model: string; profile: string } {
+  const { profile, model, overridden } = agent.effective_model;
+  return {
+    model: model ?? profile,
+    profile: overridden
+      ? `${profile} (override; pinned ${agent.current_config.model_profile})`
+      : profile,
+  };
+}
+
 /** The Agent's tool permissions as one line, "None" when it has none. */
 export function toolPermissionsLabel(permissions: readonly string[]): string {
   return permissions.length > 0 ? permissions.join(", ") : "None";

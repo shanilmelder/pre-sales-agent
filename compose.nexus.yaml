@@ -47,6 +47,10 @@ services:
       PSA_UPLOAD_MAX_BYTES: ${PSA_UPLOAD_MAX_BYTES:-52428800}
       PSA_KNOWLEDGE_STALE_MONTHS: ${PSA_KNOWLEDGE_STALE_MONTHS:-12}
       PSA_DOWNLOAD_SIGNING_KEY: ${PSA_DOWNLOAD_SIGNING_KEY:-local-dev-download-signing-key-change-me}
+      # The worker's chat model settings, for the Admin Agents view (no key: no chat calls).
+      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
+      PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
+      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

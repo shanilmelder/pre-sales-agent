@@ -22,7 +22,7 @@ profile names against `MODEL_PROFILES` and `EMBED_PROFILES` at startup.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Literal
 
@@ -102,6 +102,22 @@ def get_profile(name: str) -> ModelProfile:
     except KeyError:
         known = ", ".join(sorted(MODEL_PROFILES))
         raise UnknownModelProfileError(f"model profile {name!r} is not defined ({known})") from None
+
+
+def resolve_profile(
+    name: str, *, openai_model: str | None, openai_reasoning_effort: str | None
+) -> ModelProfile:
+    """The named profile as it is called. For an `openai` provider profile,
+    `PSA_OPENAI_MODEL` and `PSA_OPENAI_REASONING_EFFORT` (when set) replace its model and
+    reasoning effort; other profiles are returned as defined."""
+    profile = get_profile(name)
+    if profile.provider != "openai":
+        return profile
+    return replace(
+        profile,
+        model=openai_model or profile.model,
+        reasoning_effort=openai_reasoning_effort or profile.reasoning_effort,
+    )
 
 
 def get_embed_profile(name: str) -> EmbedProfile:
