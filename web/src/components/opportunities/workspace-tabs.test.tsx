@@ -32,8 +32,8 @@ const SLUGS = [
   "assessments",
   "conflicts",
   "estimate",
-  "trace",
   "actuals",
+  "trace",
 ];
 const LABELS = [
   "Overview",
@@ -43,8 +43,8 @@ const LABELS = [
   "Assessments",
   "Conflicts",
   "Estimate",
-  "Trace",
   "Actuals",
+  "Trace",
 ];
 
 const ME: Me = {
