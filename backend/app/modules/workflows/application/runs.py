@@ -63,6 +63,9 @@ from app.modules.assessments.application import public as assessments
 from app.modules.assessments.application.public import RunErrorCode
 from app.modules.conflicts.application import public as conflicts
 from app.modules.estimates.application import public as estimates
+from app.modules.notifications.application import public as notifications
+from app.modules.notifications.application.public import NotificationKind
+from app.modules.opportunities.application import public as opportunities
 from app.modules.registry.application import public as registry
 from app.modules.workflows.adapters import repository as repo
 from app.modules.workflows.adapters.repository import (
@@ -74,6 +77,7 @@ from app.modules.workflows.adapters.repository import (
 )
 from app.modules.workflows.application import progress
 from app.modules.workflows.domain.runs import (
+    DECISION_SUBJECT_TYPE,
     PLAN_VERSION,
     RUN_ACTIVE,
     RUN_IN_PROGRESS,
@@ -84,6 +88,7 @@ from app.modules.workflows.domain.runs import (
     DecisionKind,
     DecisionStatus,
     chosen_skip,
+    decision_summary,
     run_status,
 )
 from app.platform import trace
@@ -706,10 +711,48 @@ async def _wait(ctx: JobContext, run_id: UUID, opportunity_id: UUID) -> bool:
     return True
 
 
+async def run_starter(uow: UnitOfWork, run_id: UUID) -> UUID | None:
+    """Story 9.1: the user who started the run (its plan v1's creator), or None when the
+    system queued it or the run is unknown. No authorization."""
+    for plan in await repo.plan_versions_of(uow, run_id):
+        if plan.version != 1 or plan.created_by_type != "user":
+            continue
+        try:
+            return UUID(plan.created_by)
+        except ValueError:
+            return None
+    return None
+
+
+async def _notify_starter(
+    uow: UnitOfWork, run: RunRecord, decision_id: UUID, task: TaskRecord
+) -> None:
+    """Story 9.2: the run's starter gets a `run_waiting` Inbox item, once per decision (key
+    `decision:{id}`); the Opportunity's owner when the system queued the run."""
+    recipient = await run_starter(uow, run.id) or await opportunities.opportunity_owner(
+        uow, run.opportunity_id
+    )
+    if recipient is None:  # pragma: no cover - every run belongs to an Opportunity
+        return
+    titles = await opportunities.opportunity_titles(uow, {run.opportunity_id})
+    await notifications.notify(
+        uow,
+        recipient_id=recipient,
+        kind=NotificationKind.RUN_WAITING,
+        opportunity_id=run.opportunity_id,
+        subject_type=DECISION_SUBJECT_TYPE,
+        subject_id=decision_id,
+        subject_version=None,
+        summary=decision_summary(task.agent, titles.get(run.opportunity_id)),
+        dedupe_key=f"decision:{decision_id}",
+    )
+
+
 async def _waiting_on(uow: UnitOfWork, run: RunRecord, decision_id: UUID, task: TaskRecord) -> None:
     await progress.run_waiting(
         uow, opportunity_id=run.opportunity_id, run_id=run.id, task_id=task.id, agent=task.agent
     )
+    await _notify_starter(uow, run, decision_id, task)
     if await repo.waiting_traced(uow, run.id, decision_id):
         return  # the run waits on it again (another decision was resolved meanwhile)
     await trace.append(

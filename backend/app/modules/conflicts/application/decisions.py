@@ -67,6 +67,8 @@ from app.modules.conflicts.domain.decisions import (
 )
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal, Resource
+from app.modules.notifications.application import public as notifications
+from app.modules.notifications.application.public import NotificationKind
 from app.modules.opportunities.application import public as opportunities
 from app.platform import trace
 from app.platform.actor import Actor
@@ -292,6 +294,36 @@ async def resolve_conflict(
     return await _view(uow, actor, resource, opportunity_id, conflict.id)
 
 
+def escalation_summary(conflict_type: str, title: str | None) -> str:
+    """The Inbox summary of an escalated Conflict (Story 9.2): its type and the Opportunity's
+    title only, never its summary or the reason."""
+    head = f"Conflict escalated: {conflict_type.capitalize()} Conflict"
+    return f"{head} — {title}" if title else head
+
+
+async def _notify_escalated(
+    uow: UnitOfWork, opportunity_id: UUID, conflict_id: UUID, reviewer_id: UUID
+) -> None:
+    """Story 9.2: the reviewer gets a `conflict_escalated` Inbox item, keyed by the
+    escalation's time (`conflict:{id}:escalated:{epoch}`)."""
+    escalated = await repo.get(uow, conflict_id)
+    if escalated is None or escalated.escalated_at is None:  # pragma: no cover - just written
+        return
+    titles = await opportunities.opportunity_titles(uow, {opportunity_id})
+    epoch = int(escalated.escalated_at.timestamp())
+    await notifications.notify(
+        uow,
+        recipient_id=reviewer_id,
+        kind=NotificationKind.CONFLICT_ESCALATED,
+        opportunity_id=opportunity_id,
+        subject_type=CONFLICT_SUBJECT_TYPE,
+        subject_id=conflict_id,
+        subject_version=escalated.row_version,
+        summary=escalation_summary(escalated.type, titles.get(opportunity_id)),
+        dedupe_key=f"conflict:{conflict_id}:escalated:{epoch}",
+    )
+
+
 async def escalate_conflict(
     uow: UnitOfWork,
     actor: Principal,
@@ -336,6 +368,7 @@ async def escalate_conflict(
         opportunity_id=opportunity_id,
         subject_version=new_version,
     )
+    await _notify_escalated(uow, opportunity_id, conflict.id, escalation.reviewer_id)
     _log.info(
         "conflicts.escalated",
         extra={
@@ -347,3 +380,18 @@ async def escalate_conflict(
         },
     )
     return await _view(uow, actor, resource, opportunity_id, conflict.id)
+
+
+async def conflict_status(uow: UnitOfWork, conflict_id: UUID) -> str | None:
+    """Story 9.2 (an Inbox item's subject): the Conflict's status now, following it to the
+    Conflict a later run re-raised it as (which keeps an escalation); None when unknown. No
+    authorization."""
+    record = await repo.get(uow, conflict_id)
+    seen = {conflict_id}
+    while record is not None:
+        newer = await repo.successor_of(uow, record.id)
+        if newer is None or newer.id in seen:
+            return record.status
+        seen.add(newer.id)
+        record = newer
+    return None

@@ -2,7 +2,8 @@
 use workflows only from here.
 
 - Other modules: `enqueue_run` (gaps, after a Gap detection), `run_in_progress` and
-  `run_number` (estimates).
+  `run_number` (estimates), `run_starter` (estimates, reviews) and `decision_status`
+  (notifications, Story 9.2).
 - The graph's nodes (`app.orchestration`): `node_task`, `begin_task`, `lock_running_task`,
   `complete_task`, `fail_task`, `skip_blocked_task`, `plan_of`, `error_code`; for pausing
   (Story 5.5) `escalation`, `skip_disabled_task` and, for the runner, `decision_choices`.
@@ -92,15 +93,16 @@ async def run_number(uow: UnitOfWork, opportunity_id: UUID, run_id: UUID) -> int
 
 async def run_starter(uow: UnitOfWork, run_id: UUID) -> UUID | None:
     """Story 9.1: the user who started the run (its plan v1's creator), or None when the
-    system queued it or the run is unknown. No authorization."""
-    for plan in await _repo.plan_versions_of(uow, run_id):
-        if plan.version != 1 or plan.created_by_type != "user":
-            continue
-        try:
-            return UUID(plan.created_by)
-        except ValueError:
-            return None
-    return None
+    system queued it or the run is unknown. No authorization. Story 9.2: the recipient of
+    the run's `run_waiting` Inbox items."""
+    return await _runs.run_starter(uow, run_id)
+
+
+async def decision_status(uow: UnitOfWork, decision_id: UUID) -> DecisionStatus | None:
+    """Story 9.2 (an Inbox item's subject): the decision's status now, or None when
+    unknown. No authorization."""
+    decision = await _repo.get_decision(uow, decision_id)
+    return None if decision is None else DecisionStatus(decision.status)
 
 
 async def plan_of(uow: UnitOfWork, run_id: UUID) -> list[tuple[UUID, tuple[UUID, ...]]]:
@@ -141,6 +143,7 @@ __all__ = [
     "cancel_run",
     "complete_task",
     "decision_choices",
+    "decision_status",
     "enqueue_run",
     "error_code",
     "escalation",

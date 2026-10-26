@@ -132,6 +132,9 @@ forbidden_modules = [
     "app.modules.reviews.domain",
     "app.modules.reviews.adapters",
     "app.modules.reviews.api",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
 ]
 allow_indirect_imports = true
 
@@ -162,6 +165,9 @@ forbidden_modules = [
     "app.modules.reviews.domain",
     "app.modules.reviews.adapters",
     "app.modules.reviews.api",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
 ]
 allow_indirect_imports = true
 
@@ -197,6 +203,9 @@ forbidden_modules = [
     "app.modules.reviews.domain",
     "app.modules.reviews.adapters",
     "app.modules.reviews.api",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
 ]
 allow_indirect_imports = true
 
@@ -229,6 +238,9 @@ forbidden_modules = [
     "app.modules.reviews.domain",
     "app.modules.reviews.adapters",
     "app.modules.reviews.api",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
 ]
 allow_indirect_imports = true
 
@@ -261,6 +273,9 @@ forbidden_modules = [
     "app.modules.reviews.domain",
     "app.modules.reviews.adapters",
     "app.modules.reviews.api",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
 ]
 allow_indirect_imports = true
 
@@ -283,6 +298,9 @@ forbidden_modules = [
     "app.modules.assessments",
     "app.modules.workflows",
     "app.modules.reviews",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
 ]
 # Story 6.3: only the routes hand estimates' public decision functions to the commands.
 # Story 6.2: `application/findings.py` reads assessments' Findings at call time.
@@ -307,6 +325,7 @@ forbidden_modules = [
     "app.modules.assessments",
     "app.modules.workflows",
     "app.modules.reviews",
+    "app.modules.notifications",
 ]
 # Story 3.5: only the coverage route reads the Opportunities' products, through their public API.
 ignore_imports = [
@@ -331,6 +350,7 @@ forbidden_modules = [
     "app.modules.knowledge",
     "app.modules.workflows",
     "app.modules.reviews",
+    "app.modules.notifications",
 ]
 allow_indirect_imports = true
 
@@ -348,6 +368,7 @@ source_modules = [
     "app.modules.knowledge",
     "app.modules.workflows",
     "app.modules.reviews",
+    "app.modules.notifications",
 ]
 forbidden_modules = [
     "app.modules.registry.domain",
@@ -386,6 +407,38 @@ forbidden_modules = [
     "app.modules.workflows.adapters",
     "app.modules.workflows.api",
     "app.modules.knowledge",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "notifications uses identity and opportunities only through their public APIs, and reads reviews, workflows and conflicts only through theirs (AD-2, Story 9.2)"
+type = "forbidden"
+source_modules = ["app.modules.notifications"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.intake",
+    "app.modules.gaps",
+    "app.modules.estimates",
+    "app.modules.assessments",
+    "app.modules.knowledge",
+    "app.modules.registry",
+    "app.modules.reviews.domain",
+    "app.modules.reviews.adapters",
+    "app.modules.reviews.api",
+    "app.modules.workflows.domain",
+    "app.modules.workflows.adapters",
+    "app.modules.workflows.api",
+    "app.modules.conflicts.domain",
+    "app.modules.conflicts.adapters",
+    "app.modules.conflicts.api",
 ]
 allow_indirect_imports = true
 
@@ -419,6 +472,9 @@ forbidden_modules = [
     "app.modules.reviews.domain",
     "app.modules.reviews.adapters",
     "app.modules.reviews.api",
+    "app.modules.notifications.domain",
+    "app.modules.notifications.adapters",
+    "app.modules.notifications.api",
 ]
 allow_indirect_imports = true
 

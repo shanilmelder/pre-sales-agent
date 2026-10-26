@@ -20,6 +20,7 @@ from app.modules.conflicts.application.critic import CriticConflicts, raise_crit
 from app.modules.conflicts.application.decisions import (
     AppliedDecision,
     EstimateLink,
+    conflict_status,
     escalate_conflict,
     resolve_conflict,
 )
@@ -90,6 +91,7 @@ __all__ = [
     "StanceCandidate",
     "ValidSemantic",
     "accept_semantic_conflicts",
+    "conflict_status",
     "detect_for_run",
     "escalate_conflict",
     "evaluate_semantic",

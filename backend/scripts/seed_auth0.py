@@ -43,7 +43,11 @@ CHECKLIST_AUTHOR: frozenset[Action] = frozenset(
 """Authoring Checklists (Story 3.4): the engineering, PM and security reviewers and platform
 administrators, on every Checklist. Reading them needs only a role."""
 
-ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
+EVERY_ROLE: frozenset[Action] = frozenset({Action.NOTIFICATION_READ})
+"""Held by every role (Story 9.2: one's own Inbox). The API also grants it to any principal
+holding a role (`ANY_ROLE_GRANTS`), so a token issued before a re-seed keeps working."""
+
+_ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
     Role.PLATFORM_ADMINISTRATOR: frozenset(
         {
             Action.USER_LIST,
@@ -78,8 +82,13 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
     Role.PM_REVIEWER: CHECKLIST_AUTHOR,
     Role.SECURITY_REVIEWER: CHECKLIST_AUTHOR | {Action.FINDING_OVERRIDE},
 }
-"""Which role holds which permission (README "Auth0 setup"). Roles not listed hold none:
-their access comes from being an Opportunity's owner or collaborator."""
+
+ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
+    role: _ROLE_PERMISSIONS.get(role, frozenset()) | EVERY_ROLE for role in Role
+}
+"""Which role holds which permission (README "Auth0 setup"). Beyond `EVERY_ROLE`, roles not
+listed above hold none: their access comes from being an Opportunity's owner or
+collaborator."""
 
 PERMISSIONS: frozenset[Action] = frozenset().union(*ROLE_PERMISSIONS.values())
 
@@ -107,6 +116,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.REGISTRY_AGENT_CONFIG_CREATE: "Create a new config version of an Agent",
     Action.REGISTRY_AGENT_SET_STATUS: "Enable, disable or set an Agent to eval only",
     Action.FINDING_OVERRIDE: "Override a Critic or Red Team Finding with a reason",
+    Action.NOTIFICATION_READ: "Read and mark read one's own Inbox items",
 }
 
 TIMEOUT = 30.0

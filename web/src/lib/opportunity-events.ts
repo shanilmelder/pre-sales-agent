@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { paths } from "@/lib/api/client";
 import { FINDING_EVENTS } from "@/lib/findings";
+import { INBOX_TRACE_EVENTS } from "@/lib/inbox";
 import { REVIEW_TRACE_EVENTS } from "@/lib/reviews";
 import { BLOCKER_TRACE_EVENTS } from "@/lib/submission";
 
@@ -357,6 +358,19 @@ export function useReviewEvents(
   enabled = true,
 ): boolean {
   const status = useStream(opportunityId, REVIEW_TRACE_EVENTS, () => onChange(), onChange, enabled);
+  return status === "open";
+}
+
+/** Story 9.2: subscribe to the frames that can add an Inbox item for someone on this
+ * Opportunity (`INBOX_TRACE_EVENTS`: Review Requests, escalated Conflicts, runs waiting for a
+ * person) while `enabled`, for the sidebar badge and the Inbox. `onChange` runs for each and
+ * whenever the stream (re)connects. */
+export function useInboxEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  const status = useStream(opportunityId, INBOX_TRACE_EVENTS, () => onChange(), onChange, enabled);
   return status === "open";
 }
 

@@ -1343,6 +1343,20 @@ class ReviewsReviewRequestCancelled(TracePayload):
     reason_length: int
 
 
+@register
+class ReviewsReviewRequestReminded(TracePayload):
+    """The daily reminder job gave the reviewer of a pending Review Request an Inbox
+    reminder (Story 9.2): `interval_number` N, the request being at least N reminder
+    intervals old. Appended once per request and N. Actor: the system
+    (`reviews.send_reminders`)."""
+
+    event_type: ClassVar[str] = "reviews.review_request.reminded"
+
+    request_id: str
+    reviewer_id: str
+    interval_number: int
+
+
 # --- registry -----------------------------------------------------------------------------
 # Story 7.1. Registry events have no Opportunity. Subject: the Agent (`registry.agent`), with
 # its config version number as the subject version. Payloads hold the agent id, statuses and

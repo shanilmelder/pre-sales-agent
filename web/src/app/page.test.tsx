@@ -27,6 +27,16 @@ vi.mock("@/lib/preferences", async (importOriginal) => ({
   }),
 }));
 vi.mock("@/app/settings/actions", () => ({ savePreferences: vi.fn() }));
+// Story 9.2: the Inbox page and the sidebar badge read through the Inbox server actions.
+vi.mock("@/app/inbox/actions", () => ({
+  getInbox: async () => ({
+    kind: "ok",
+    page: { items: [], page: 1, page_size: 25, total: 0, unread: 0 },
+  }),
+  getInboxUnreadCount: async () => ({ kind: "ok", unread: 0 }),
+  markInboxItemRead: vi.fn(),
+  markAllInboxRead: vi.fn(),
+}));
 
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -71,7 +81,14 @@ function signedIn(roles: Role[]) {
 }
 
 const SHELL_PAGES: [string, () => Promise<ReactElement>, string, string, string][] = [
-  ["/inbox", InboxPage, "Inbox", "Nothing waiting for you.", "Review requests and notifications."],
+  // The Inbox's own states are in components/inbox/inbox-view.test.tsx.
+  [
+    "/inbox",
+    () => InboxPage({}),
+    "Inbox",
+    "Review requests and notifications.",
+    "Review requests and notifications.",
+  ],
   [
     "/knowledge",
     KnowledgePage,

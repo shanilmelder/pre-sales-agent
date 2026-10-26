@@ -537,6 +537,20 @@ def test_escalating_to_a_collaborator_who_then_resolves_it(
     }
     assert (event["actor_id"], event["subject_version"]) == (me["id"], 2)
 
+    # Story 9.2: the reviewer gets one Inbox item, keyed by the escalation's time.
+    (item,) = client.get("/api/v1/inbox", headers=reviewer).json()["items"]
+    assert (item["kind"], item["group"], item["subject_id"]) == (
+        "conflict_escalated",
+        "waiting",
+        view["id"],
+    )
+    assert item["summary"].startswith("Conflict escalated: Effort Conflict")
+    assert "Needs the delivery lead's call." not in item["summary"]
+    assert (item["subject_status"], item["href"]) == (
+        "escalated",
+        f"/opportunities/{opp['id']}/conflicts",
+    )
+
     twice = escalate(client, headers, opp["id"], escalated, reviewer_id)
     assert (twice.status_code, twice.json()["code"]) == (409, "conflict_not_open")
 
@@ -547,6 +561,8 @@ def test_escalating_to_a_collaborator_who_then_resolves_it(
     (row,) = conflict_rows(sync_engine, opp["id"])
     assert row["resolved_by"] == reviewer_id
     assert hidden_from(client, outsider, opp["id"]) == 404
+    (item,) = client.get("/api/v1/inbox", headers=reviewer).json()["items"]
+    assert (item["subject_status_label"], item["href"]) == ("Resolved", None)
 
 
 def hidden_from(client: TestClient, headers: dict[str, str], opp_id: str) -> int:
@@ -680,7 +696,7 @@ def test_an_escalated_conflict_with_changed_figures_is_raised_again_still_escala
 ) -> None:
     headers, opp, view = effort_conflict(client, sync_engine, db_url, gateway)
     full = client.get(f"{BASE}/{opp['id']}", headers=headers).json()
-    _, reviewer_id = _user(client, sync_engine, "Sam Reviewer", PSE)
+    reviewer, reviewer_id = _user(client, sync_engine, "Sam Reviewer", PSE)
     assert _add(client, headers, full, reviewer_id).status_code == 200
     assert escalate(client, headers, opp["id"], view, reviewer_id).status_code == 200
     (escalated,) = conflict_rows(sync_engine, opp["id"])
@@ -700,3 +716,10 @@ def test_an_escalated_conflict_with_changed_figures_is_raised_again_still_escala
     assert [p["summary"] for p in listed["positions"]] == ["30 h", "40 h", "131 h"]
     assert listed["escalated_to"] == {"id": str(reviewer_id), "name": "Sam Reviewer"}
     assert get(client, headers, opp["id"]).json()["open_count"] == 1
+    # Story 9.2: the re-raise keeps the escalation, so the reviewer's one Inbox item follows
+    # the newer Conflict and stays open.
+    (item,) = client.get("/api/v1/inbox", headers=reviewer).json()["items"]
+    assert (item["subject_status"], item["href"]) == (
+        "escalated",
+        f"/opportunities/{opp['id']}/conflicts",
+    )

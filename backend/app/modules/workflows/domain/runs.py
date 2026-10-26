@@ -33,6 +33,21 @@ class TaskAgent(StrEnum):
 
 
 TASK_AGENTS: tuple[TaskAgent, ...] = tuple(TaskAgent)
+AGENT_LABELS: dict[str, str] = {
+    TaskAgent.ENGINEERING.value: "Engineering Agent",
+    TaskAgent.PM.value: "PM Agent",
+    TaskAgent.SECURITY.value: "Security Agent",
+    TaskAgent.CRITIC.value: "Critic",
+}
+DECISION_SUBJECT_TYPE = "workflows.decision"
+"""An Inbox item's subject when a run waits on a decision (Story 9.2)."""
+
+
+def decision_summary(agent: str, title: str | None) -> str:
+    """The Inbox summary of a run waiting on a decision (Story 9.2): the Agent and the
+    Opportunity's title only."""
+    head = f"Decision needed: {AGENT_LABELS.get(agent, agent)} is not active"
+    return f"{head} — {title}" if title else head
 
 
 def task_agent_rank(agent: str) -> int:

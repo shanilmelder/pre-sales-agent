@@ -20,12 +20,14 @@ Opportunity's 404), with `If-Match` the Estimate Version's `row_version`:
 4. Writes the requests, moves the version `submitted → in_review`
    (`estimates.mark_in_review`), shares the Opportunity read only with each reviewer
    (`opportunities.grant_reviewer_access`), then traces `reviews.review_request.created` per
-   request.
+   request and gives each reviewer a `review_requested` Inbox item per request (Story 9.2,
+   key `review:{id}:requested`).
 
 **Cancel** (`reviews.review_request.cancel`, and only the sender or the Opportunity's owner):
 a pending request with a reason (1 to 1,000 characters) and `If-Match` its `row_version`
 becomes `cancelled`; the reviewer loses access when they have no pending request left on the
-Opportunity; `reviews.review_request.cancelled`; and the version goes back to `submitted`
+Opportunity; `reviews.review_request.cancelled`, and a `review_cancelled` Inbox item for the
+reviewer (Story 9.2, key `review:{id}:cancelled`); and the version goes back to `submitted`
 when no pending request is left for it.
 
 Logs and trace carry ids, types and lengths only, never the message or the reason.
@@ -44,6 +46,8 @@ from app.modules.identity.application.public import (
     Role,
     UserSearchResult,
 )
+from app.modules.notifications.application import public as notifications
+from app.modules.notifications.application.public import NotificationKind
 from app.modules.opportunities.application import public as opportunities
 from app.modules.reviews.adapters import repository as repo
 from app.modules.reviews.adapters.repository import NewRequest, RequestRecord
@@ -55,6 +59,7 @@ from app.modules.reviews.application.models import (
     ReviewPerson,
     ReviewRequestCancel,
     ReviewRequestCreate,
+    ReviewRequestState,
     ReviewRequestsView,
     ReviewRequestView,
     ReviewTarget,
@@ -295,6 +300,11 @@ async def create_review_request(
     )
     records = await repo.of_ids(uow, [c.id for c in candidates])
     views = await _views(uow, actor, resource, records)
+    title = await opportunity_title(uow, opportunity_id)
+    for view in views:
+        await _notify_view(
+            uow, view, NotificationKind.REVIEW_REQUESTED, opportunity_id, title, "requested"
+        )
     return CreatedReviewRequests(
         items=views, version_status=marked.status.value, version_row_version=marked.row_version
     )
@@ -394,7 +404,82 @@ async def cancel_review_request(
         },
     )
     (view,) = await _views(uow, actor, resource, [cancelled])
+    await _notify_view(
+        uow,
+        view,
+        NotificationKind.REVIEW_CANCELLED,
+        opportunity_id,
+        await opportunity_title(uow, opportunity_id),
+        "cancelled",
+    )
     return view
+
+
+# --- Inbox items (Story 9.2) ----------------------------------------------------------------
+
+SUMMARY_HEAD: dict[NotificationKind, str] = {
+    NotificationKind.REVIEW_REQUESTED: "Review: {target}",
+    NotificationKind.REVIEW_REMINDER: "Reminder: review {target}",
+    NotificationKind.REVIEW_CANCELLED: "Review cancelled: {target}",
+}
+
+
+def review_summary(kind: NotificationKind, target_label: str, title: str | None) -> str:
+    """E.g. "Review: Estimate v3 — {Opportunity}": the target label and the Opportunity's
+    title only, never the message or a reason."""
+    head = SUMMARY_HEAD[kind].format(target=target_label)
+    return f"{head} — {title}" if title else head
+
+
+async def opportunity_title(uow: UnitOfWork, opportunity_id: UUID) -> str | None:
+    return (await opportunities.opportunity_titles(uow, {opportunity_id})).get(opportunity_id)
+
+
+async def notify_reviewer(
+    uow: UnitOfWork,
+    *,
+    kind: NotificationKind,
+    request_id: UUID,
+    reviewer_id: UUID,
+    row_version: int,
+    target_label: str,
+    opportunity_id: UUID,
+    title: str | None,
+    dedupe_key: str,
+) -> bool:
+    """The reviewer's Inbox item about the request; whether one was written."""
+    return await notifications.notify(
+        uow,
+        recipient_id=reviewer_id,
+        kind=kind,
+        opportunity_id=opportunity_id,
+        subject_type=SUBJECT_TYPE,
+        subject_id=request_id,
+        subject_version=row_version,
+        summary=review_summary(kind, target_label, title),
+        dedupe_key=dedupe_key,
+    )
+
+
+async def _notify_view(
+    uow: UnitOfWork,
+    view: ReviewRequestView,
+    kind: NotificationKind,
+    opportunity_id: UUID,
+    title: str | None,
+    key_suffix: str,
+) -> None:
+    await notify_reviewer(
+        uow,
+        kind=kind,
+        request_id=UUID(view.id),
+        reviewer_id=UUID(view.reviewer.id),
+        row_version=view.row_version,
+        target_label=view.target.label,
+        opportunity_id=opportunity_id,
+        title=title,
+        dedupe_key=f"review:{view.id}:{key_suffix}",
+    )
 
 
 # --- reads ----------------------------------------------------------------------------------
@@ -410,6 +495,24 @@ def _may_cancel(actor: Principal, resource: Resource, record: RequestRecord) -> 
     )
 
 
+async def target_labels(uow: UnitOfWork, records: Sequence[RequestRecord]) -> dict[UUID, str]:
+    """Per request its target's label: "Estimate v3" or "Security Assessment v2"."""
+    agents: dict[UUID, dict[UUID, str]] = {}
+    for opportunity_id in {r.opportunity_id for r in records}:
+        agents[opportunity_id] = {
+            UUID(a.id): a.label.rsplit(" v", 1)[0]
+            for a in await _current_assessments(uow, opportunity_id)
+        }
+
+    def label(r: RequestRecord) -> str:
+        if r.target_kind == TargetKind.ESTIMATE_VERSION:
+            return f"Estimate v{r.target_version}"
+        name = agents[r.opportunity_id].get(r.target_id, "Assessment")
+        return f"{name} v{r.target_version}"
+
+    return {r.id: label(r) for r in records}
+
+
 async def _views(
     uow: UnitOfWork, actor: Principal, resource: Resource, records: Sequence[RequestRecord]
 ) -> list[ReviewRequestView]:
@@ -418,19 +521,11 @@ async def _views(
     names = await identity.user_names(
         uow, {r.reviewer_id for r in records} | {r.requested_by for r in records}
     )
-    labels = {
-        UUID(a.id): a.label.rsplit(" v", 1)[0]
-        for a in await _current_assessments(uow, records[0].opportunity_id)
-    }
+    labels = await target_labels(uow, records)
     numbers: dict[UUID, int] = {}
     for version_id in {r.estimate_version_id for r in records}:
         found = await estimates.reviewable_version(uow, version_id)
         numbers[version_id] = 0 if found is None else found.version
-
-    def label(r: RequestRecord) -> str:
-        if r.target_kind == TargetKind.ESTIMATE_VERSION:
-            return f"Estimate v{r.target_version}"
-        return f"{labels.get(r.target_id, 'Assessment')} v{r.target_version}"
 
     return [
         ReviewRequestView(
@@ -440,7 +535,7 @@ async def _views(
                 kind=TargetKind(r.target_kind),
                 id=str(r.target_id),
                 version=r.target_version,
-                label=label(r),
+                label=labels[r.id],
             ),
             estimate_version_id=str(r.estimate_version_id),
             estimate_version=numbers[r.estimate_version_id],
@@ -540,3 +635,17 @@ async def list_open_requests(uow: UnitOfWork, version_id: UUID) -> list[OpenRevi
         )
         for r in records
     ]
+
+
+async def request_status(uow: UnitOfWork, request_id: UUID) -> ReviewRequestState | None:
+    """`reviews.public.request_status` (Story 9.2: an Inbox item's subject): the request's
+    status and sender, or None when unknown. No authorization."""
+    record = await repo.get(uow, request_id)
+    if record is None:
+        return None
+    return ReviewRequestState(
+        id=record.id,
+        status=RequestStatus(record.status),
+        requested_by=record.requested_by,
+        reviewer_id=record.reviewer_id,
+    )

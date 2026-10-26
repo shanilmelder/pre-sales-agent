@@ -431,7 +431,7 @@ graph TD
 | Actual, Calibration suggestion | `actuals` |
 | Agent, agent config version, eval result (`registry_eval_results`, insert-only) | `registry` |
 | User, role, action catalogue | `identity` |
-| Notification, delivery | `notifications` |
+| Notification (`notifications_notifications`, Inbox items), delivery | `notifications` |
 | Integration connection, sync state, pricing rule set | `integrations` |
 | Trace event, job, schedule, idempotency key, model call, file metadata | `platform` |
 

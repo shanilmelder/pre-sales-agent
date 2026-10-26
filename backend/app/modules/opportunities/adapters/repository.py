@@ -121,6 +121,30 @@ COLLABORATOR = "collaborator"
 REVIEWER = "reviewer"
 
 
+async def titles(uow: UnitOfWork, opportunity_ids: list[UUID]) -> dict[UUID, str]:
+    """`{id: title}` for the ids that exist."""
+    if not opportunity_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(OpportunityRow.id, OpportunityRow.title).where(
+            OpportunityRow.id.in_(opportunity_ids)
+        )
+    )
+    return {row.id: row.title for row in rows}
+
+
+async def owners(uow: UnitOfWork, opportunity_ids: list[UUID]) -> dict[UUID, UUID]:
+    """`{id: owner_id}` for the ids that exist."""
+    if not opportunity_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(OpportunityRow.id, OpportunityRow.owner_id).where(
+            OpportunityRow.id.in_(opportunity_ids)
+        )
+    )
+    return {row.id: row.owner_id for row in rows}
+
+
 async def collaborator_ids(
     uow: UnitOfWork, opportunity_id: UUID, *, role: str = COLLABORATOR
 ) -> list[UUID]:

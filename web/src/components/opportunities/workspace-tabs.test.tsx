@@ -9,6 +9,10 @@ import { axeViolations } from "@/test/axe";
 const push = vi.hoisted(() => vi.fn());
 const replace = vi.hoisted(() => vi.fn());
 const segment = vi.hoisted(() => ({ current: null as string | null }));
+// The sidebar's Inbox badge reads the unread count through a server action (Story 9.2).
+vi.mock("@/app/inbox/actions", () => ({
+  getInboxUnreadCount: async () => ({ kind: "ok", unread: 0 }),
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace, prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => "/opportunities/x",

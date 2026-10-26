@@ -262,6 +262,19 @@ def test_a_disabled_agent_escalates_and_the_run_waits_for_a_person(
         "security_agent waiting_for_human",
     )
 
+    # Story 9.2: the run's starter (the owner) gets one Inbox item about the decision.
+    (item,) = client.get("/api/v1/inbox", headers=headers).json()["items"]
+    assert (item["kind"], item["group"], item["subject_id"]) == (
+        "run_waiting",
+        "waiting",
+        str(decision["id"]),
+    )
+    assert item["summary"].startswith("Decision needed: Security Agent is not active — ")
+    assert (item["subject_status"], item["href"]) == (
+        "open",
+        f"/opportunities/{opp['id']}/assessments",
+    )
+
     shown = view(client, headers, opp["id"])
     assert shown["can_resolve"] is True
     assert (shown["run"]["status"], shown["run"]["plan_version"]) == ("waiting_for_human", 1)
@@ -295,6 +308,30 @@ def test_a_disabled_agent_escalates_and_the_run_waits_for_a_person(
             await engine.dispose()
 
     assert run_async(in_progress()) is False
+
+
+def test_the_run_waiting_item_goes_to_the_collaborator_who_started_it_not_the_owner(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    restore_agents: None,
+) -> None:
+    """Story 9.2: the recipient is the run's starter; the owner only for a system run."""
+    admin, _ = _admin(client)
+    headers, opp = prepared(client, sync_engine, db_url, gateway)
+    collaborator, collaborator_id = _user(client, sync_engine, "Cara Collaborator", PSE)
+    full = client.get(f"{BASE}/{opp['id']}", headers=headers).json()
+    assert _add(client, headers, full, collaborator_id).status_code == 200
+    set_status(client, admin, SECURITY, "disabled")
+    install(AgentGateway(replies()))
+    body = started(client, collaborator, opp["id"])
+    assert drain(db_url, ASSESS) == ["succeeded"]
+
+    (decision,) = decision_rows(sync_engine, body["id"])
+    (item,) = client.get("/api/v1/inbox", headers=collaborator).json()["items"]
+    assert (item["kind"], item["subject_id"]) == ("run_waiting", str(decision["id"]))
+    assert client.get("/api/v1/inbox", headers=headers).json()["items"] == []
 
 
 def test_a_node_run_again_before_the_resolve_keeps_one_decision_and_one_event(

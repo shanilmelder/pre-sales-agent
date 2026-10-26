@@ -1,7 +1,7 @@
 """Persistence for Review Requests (Story 9.1). Runs inside the caller's Unit of Work."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, insert, select, update
@@ -214,3 +214,21 @@ async def set_status(
         )
     ).one_or_none()
     return None if changed is None else await get(uow, request_id)
+
+
+async def pending_for_reminders(
+    uow: UnitOfWork, interval_s: int
+) -> tuple[datetime, list[RequestRecord]]:
+    """The database's `now()` and the pending requests at least one interval old, oldest
+    first (Story 9.2)."""
+    now = (await uow.session.execute(select(func.now()))).scalar_one()
+    rows = await uow.session.execute(
+        select(ReviewRequestRow)
+        .where(
+            ReviewRequestRow.status == "pending",
+            ReviewRequestRow.created_at <= now - timedelta(seconds=interval_s),
+        )
+        .order_by(ReviewRequestRow.created_at, ReviewRequestRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return now, [_record(row) for row in rows.scalars()]

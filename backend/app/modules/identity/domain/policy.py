@@ -182,8 +182,11 @@ KNOWLEDGE_SOURCE_OWNER_GRANTS: frozenset[Action] = frozenset(
 hold one. Registering has no Source yet, so it is granted by role only."""
 
 
-ANY_ROLE_GRANTS: frozenset[Action] = frozenset({Action.KNOWLEDGE_CHUNK_SEARCH})
-"""What every principal holding at least one role may do (reads open to all roles)."""
+ANY_ROLE_GRANTS: frozenset[Action] = frozenset(
+    {Action.KNOWLEDGE_CHUNK_SEARCH, Action.NOTIFICATION_READ}
+)
+"""What every principal holding at least one role may do (reads open to all roles; Story
+9.2: one's own Inbox, which only ever holds the caller's items)."""
 
 
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:

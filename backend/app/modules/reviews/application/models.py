@@ -132,3 +132,13 @@ class OpenReviewRequest(BaseModel):
     target_version: int
     message: str | None
     created_at: datetime
+
+
+class ReviewRequestState(BaseModel):
+    """`reviews.public.request_status` (Story 9.2): a request's status now, its sender and
+    its reviewer."""
+
+    id: UUID
+    status: RequestStatus
+    requested_by: UUID
+    reviewer_id: UUID
