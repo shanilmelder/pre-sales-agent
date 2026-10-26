@@ -28,33 +28,43 @@ collaborators, never a sales representative; the Opportunity's 404 for everyone 
    Every decision bumps the request's `row_version`. The previous reviewer loses read access
    once they have no pending request left on the Opportunity. Then
    `reviews.review_decision.recorded` is traced.
+6. Story 9.4: the Opportunity's owner and the request's sender (one item when they are the
+   same person, none for the reviewer themselves) get a `review_outcome` Inbox item, "{Reviewer}
+   {decision} Estimate v3: {reason}" (key `review:{id}:outcome:{decision_id}:{recipient}`).
 
 **Panel** (anyone who can read the Opportunity): the request, its decisions, what the
 caller may do, the escalation candidates and the target (an Estimate Version with its diff
-against the version before, or an Assessment at its version).
+against the version before, or an Assessment at its version). Story 9.4: the author's side
+(whether the caller is the request's sender or the Opportunity's owner, may reply, may link an
+alternative or start a new version), the replies, the request a linked one is the alternative
+to, and who the latest escalation went to.
 """
 
 from uuid import UUID
 
 from app.modules.estimates.application import public as estimates
-from app.modules.estimates.application.public import ReviewableVersion, VersionStatus
+from app.modules.estimates.application.public import DECIDED, ReviewableVersion, VersionStatus
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal, Resource
 from app.modules.notifications.application.public import NotificationKind
 from app.modules.opportunities.application import public as opportunities
 from app.modules.reviews.adapters import repository as repo
-from app.modules.reviews.adapters.repository import RequestRecord
+from app.modules.reviews.adapters.repository import DecisionRecord, RequestRecord
 from app.modules.reviews.application.models import (
+    LinkedRequest,
     RecordedDecision,
     ReviewDecisionCreate,
     ReviewPanel,
     ReviewPerson,
+    VersionRef,
 )
+from app.modules.reviews.application.replies import latest_change_by, reply_views
 from app.modules.reviews.application.requests import (
     MAX_ROW_VERSION,
     REQUEST_NOT_FOUND,
     ROLE_FOR_TYPE,
     UNKNOWN_USER,
+    alternative_requested,
     author_detail,
     decision_people,
     decision_view,
@@ -70,8 +80,10 @@ from app.modules.reviews.domain.decisions import (
     RECORDABLE,
     Decision,
     clean_decision_reason,
+    outcome_summary,
     status_after,
 )
+from app.modules.reviews.domain.replies import may_link_alternative, may_reply
 from app.modules.reviews.domain.requests import (
     REASON_MAX,
     SUBJECT_TYPE,
@@ -107,7 +119,6 @@ CHALLENGE_LATER = "Challenge arrives with Story 9.5."
 ESCALATE_TARGET = "Choose who to escalate to."
 NOT_ESCALATING = "Only an escalation names who it goes to."
 ESCALATE_SELF = "Escalate to another reviewer, not the current one."
-SOMEONE_ELSE = "someone else"
 _log = get_logger(__name__)
 
 
@@ -133,13 +144,8 @@ def _is_reviewer(actor: Principal, record: RequestRecord) -> bool:
 
 
 async def _stale(uow: UnitOfWork, record: RequestRecord) -> RowVersionMismatchError:
-    latest = (await repo.latest_decisions(uow, [record.id])).get(record.id)
-    name = SOMEONE_ELSE
-    if latest is not None:
-        name = (await identity.user_names(uow, {latest.decided_by})).get(
-            latest.decided_by, SOMEONE_ELSE
-        )
-    return RowVersionMismatchError(changed_detail(name))
+    # Story 9.4: the latest change may be a reply.
+    return RowVersionMismatchError(changed_detail(await latest_change_by(uow, record)))
 
 
 async def _check_if_match(uow: UnitOfWork, if_match: str | None, record: RequestRecord) -> int:
@@ -300,8 +306,9 @@ async def decide(
         opportunity_id=opportunity_id,
         subject_version=updated.row_version,
     )
+    labels = await target_labels(uow, [updated])
+    await _notify_outcome(uow, updated, decision, labels[updated.id])
     if escalated_to is not None:
-        labels = await target_labels(uow, [updated])
         await notify_reviewer(
             uow,
             kind=NotificationKind.REVIEW_REQUESTED,
@@ -329,6 +336,37 @@ async def decide(
         request=view,
         version_status="" if version_status is None else version_status.value,
     )
+
+
+async def _notify_outcome(
+    uow: UnitOfWork, record: RequestRecord, decision: DecisionRecord, target_label: str
+) -> None:
+    """Story 9.4: the author's `review_outcome` items (module docstring, step 6)."""
+    owner = await opportunities.opportunity_owner(uow, record.opportunity_id)
+    recipients = [
+        r
+        for r in dict.fromkeys((owner, record.requested_by))
+        if r is not None and r != decision.decided_by
+    ]
+    if not recipients:
+        return
+    name = (await identity.user_names(uow, {decision.decided_by})).get(
+        decision.decided_by, UNKNOWN_USER
+    )
+    summary = outcome_summary(name, Decision(decision.decision), target_label, decision.reason)
+    for recipient in recipients:
+        await notify_reviewer(
+            uow,
+            kind=NotificationKind.REVIEW_OUTCOME,
+            request_id=record.id,
+            reviewer_id=recipient,
+            row_version=record.row_version,
+            target_label=target_label,
+            opportunity_id=record.opportunity_id,
+            title=None,
+            dedupe_key=f"review:{record.id}:outcome:{decision.id}:{recipient}",
+            summary=summary,
+        )
 
 
 # --- the panel ------------------------------------------------------------------------------
@@ -391,6 +429,40 @@ async def review_panel(
         diff = await estimates.compare_versions(uow, record.target_id)
     else:
         assessment = await assessments.assessment_at(uow, record.target_id, record.target_version)
+    # Story 9.4: the author's side.
+    user_id = actor.user_id
+    is_author = (
+        user_id is not None
+        and user_id in (record.requested_by, resource.owner_id)
+        and user_id != record.reviewer_id
+    )
+    latest = None if not decisions else Decision(decisions[0].decision)
+    live = version is not None and version.status != VersionStatus.SUPERSEDED
+    can_reply = (
+        is_author
+        and live
+        and record.status == RequestStatus.PENDING
+        and may_reply(latest)
+        and identity.can(actor, Action.REVIEW_REQUEST_REPLY, resource)
+    )
+    current = await estimates.current_reviewable_version(uow, opportunity_id)
+    draft = current if current is not None and current.status == VersionStatus.DRAFT else None
+    alternative = (
+        draft
+        if draft is not None and version is not None and draft.version > version.version
+        else None
+    )
+    escalation = next((d for d in decisions if d.decision == Decision.ESCALATED.value), None)
+    linked = None
+    if record.linked_request_id is not None:
+        original = await repo.get(uow, record.linked_request_id)
+        found = (
+            None
+            if original is None
+            else await estimates.reviewable_version(uow, original.estimate_version_id)
+        )
+        if original is not None and found is not None:
+            linked = LinkedRequest(id=str(original.id), version_number=found.version)
     return ReviewPanel(
         request=view,
         opportunity_title=await opportunity_title(uow, opportunity_id),
@@ -406,4 +478,29 @@ async def review_panel(
         estimate=estimate,
         diff=diff,
         assessment=assessment,
+        is_author=is_author,
+        can_reply=can_reply,
+        can_link_alternative=can_reply and may_link_alternative(latest) and alternative is not None,
+        can_create_version=is_author
+        and version is not None
+        and draft is None
+        and identity.can(actor, Action.ESTIMATE_VERSION_CREATE, resource)
+        and (
+            version.status in DECIDED
+            or (
+                version.status in estimates.REVIEWABLE
+                and await alternative_requested(uow, version.id)
+            )
+        ),
+        alternative_draft=None
+        if alternative is None
+        else VersionRef(id=str(alternative.id), version=alternative.version),
+        replies=await reply_views(uow, opportunity_id, await repo.replies_of(uow, record.id)),
+        linked_request=linked,
+        escalated_to=None
+        if escalation is None or escalation.escalated_to is None
+        else ReviewPerson(
+            id=str(escalation.escalated_to),
+            name=names.get(escalation.escalated_to, UNKNOWN_USER),
+        ),
     )

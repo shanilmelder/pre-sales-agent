@@ -13,6 +13,10 @@ sales representatives; other readers 403, everyone else the Opportunity's 404), 
 4. Otherwise the version becomes `submitted`; the Opportunity's earlier `submitted` versions
    become `superseded`, each traced `estimates.estimate_version.superseded`; then
    `estimates.estimate_version.submitted` (ids and counts only).
+5. Story 9.4: for each superseded version, `reviews.public.supersede_open_requests` in this
+   Unit of Work: its pending and challenged Review Requests become `superseded` (and a request
+   linked to one goes to the new version when the author's reply named it as the
+   alternative, which moves the new version to `in_review`).
 
 Lines and Assumptions of a submitted version stay immutable through the existing not-draft
 errors (`line_edits`, `assumptions`).
@@ -109,6 +113,11 @@ async def submit_version(
             opportunity_id=opportunity_id,
             subject_version=old.row_version,
         )
+    # Imported here: reviews imports estimates' public API, which imports this module.
+    from app.modules.reviews.application import public as reviews
+
+    for old in superseded:
+        await reviews.supersede_open_requests(uow, old.id, submitted.id, actor=actor.actor)
     line_count = len(await repo.lines_of(uow, version_id))
     assumption_count = len(await repo.assumptions_of(uow, version_id))
     await trace.append(
@@ -136,6 +145,8 @@ async def submit_version(
             "superseded_count": len(superseded),
         },
     )
+    # A linked request (Story 9.4) may have moved it on to `in_review`.
+    submitted = await repo.get_version(uow, version_id) or submitted
     return SubmittedVersion(
         id=str(submitted.id),
         version=submitted.version,

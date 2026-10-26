@@ -17,6 +17,10 @@ import {
   deltaLabel,
   diffHeading,
   isSupersededPanel,
+  alternativeToLabel,
+  escalatedLabel,
+  outcomeRows,
+  replyLabel,
   panelEyebrow,
   panelTitle,
   reasonLabel,
@@ -120,5 +124,54 @@ describe("Review Decisions (Story 9.3)", () => {
     ]) {
       expect(REVIEW_TRACE_EVENTS).toContain(event);
     }
+  });
+});
+
+describe("Review outcomes (Story 9.4)", () => {
+  it("lists every decision and reply oldest first, each with its tone", () => {
+    const rows = outcomeRows({
+      decisions: [
+        reviewDecision({
+          id: "d2",
+          decision: "escalated",
+          label: "Escalated",
+          escalated_to: CY,
+          decided_at: "2026-10-25T12:00:00Z",
+        }),
+        reviewDecision({ id: "d1", decided_at: "2026-10-25T10:02:00Z" }),
+      ],
+      replies: [
+        {
+          id: "r1",
+          message: "[REPLY]",
+          evidence: [{ kind: "requirement", id: "e", version: 1, label: "R4" }],
+          alternative: { id: "v4", version: 4 },
+          replied_by: { id: "o", name: "Owner Person" },
+          replied_at: "2026-10-25T11:00:00Z",
+        },
+      ],
+    });
+    expect(rows.map((r) => [r.id, r.tone, r.who, r.what])).toEqual([
+      ["d1", "gap", "Ana Reviewer", "Evidence requested"],
+      ["r1", "primary", "Owner Person", "Replied with v4 as the alternative"],
+      ["d2", "gap", "Ana Reviewer", "Escalated to Cy Reviewer"],
+    ]);
+    expect(rows[0]!.when).toBe("25 Oct 2026, 10:02");
+    expect(rows[1]!.evidence.map((e) => e.label)).toEqual(["R4"]);
+    expect(
+      outcomeRows({
+        decisions: [
+          reviewDecision({ id: "a", decision: "approved", label: "Approved", reason: null }),
+          reviewDecision({ id: "b", decision: "rejected", label: "Rejected" }),
+        ],
+        replies: [],
+      }).map((r) => r.tone),
+    ).toEqual(["resolved", "blocker"]);
+  });
+
+  it("words the author's controls", () => {
+    expect(replyLabel("Ana Reviewer")).toBe("Reply to Ana Reviewer (required)");
+    expect(escalatedLabel("Cy Reviewer")).toBe("Escalated to Cy Reviewer");
+    expect(alternativeToLabel(3)).toBe("Alternative to the v3 request");
   });
 });

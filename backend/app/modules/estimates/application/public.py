@@ -1,4 +1,5 @@
-"""estimates' public API. Other modules import estimates only from here."""
+"""estimates' public API. Other modules import estimates only from here. Story 9.4:
+`create_version` (a person's **New version** from a rejected or approved version)."""
 
 from uuid import UUID
 
@@ -38,6 +39,7 @@ from app.modules.estimates.application.models import (
     AssumptionGroups,
     AssumptionLine,
     Blocker,
+    CreatedVersion,
     CurrentEstimate,
     EstimateDraft,
     EstimateLine,
@@ -48,6 +50,7 @@ from app.modules.estimates.application.models import (
     LineConflict,
     LineDiff,
     LineRequirement,
+    NewVersionCreate,
     OriginGap,
     Risk,
     RiskChanges,
@@ -75,7 +78,8 @@ from app.modules.estimates.application.review_status import (
     lock_opportunity as lock_for_review,
 )
 from app.modules.estimates.application.submit import submit_version
-from app.modules.estimates.domain.estimates import REVIEWABLE, VersionStatus
+from app.modules.estimates.application.versions import create_version
+from app.modules.estimates.domain.estimates import DECIDED, REVIEWABLE, VersionStatus
 from app.modules.estimates.domain.from_assessments import AgentSizing, SizingRow
 from app.platform.uow import UnitOfWork
 
@@ -89,6 +93,7 @@ async def enqueue_draft(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 
 
 __all__ = [
+    "DECIDED",
     "REVIEWABLE",
     "AcceptAllResult",
     "AgentSizing",
@@ -98,6 +103,7 @@ __all__ = [
     "AssumptionGroups",
     "AssumptionLine",
     "Blocker",
+    "CreatedVersion",
     "CurrentEstimate",
     "EstimateDraft",
     "EstimateLine",
@@ -111,6 +117,7 @@ __all__ = [
     "LineDiff",
     "LineRef",
     "LineRequirement",
+    "NewVersionCreate",
     "OriginGap",
     "ReviewableVersion",
     "Risk",
@@ -134,6 +141,7 @@ __all__ = [
     "build_from_assessments",
     "compare_versions",
     "create_risk",
+    "create_version",
     "current_estimates",
     "current_reviewable_version",
     "current_version_lines",

@@ -309,6 +309,9 @@ def test_a_draft_stores_version_1_with_lines_links_and_one_event(
         "uncarried_edit_count": 0,
         "source": "model",
         "source_run_id": None,
+        "base_version_id": None,
+        "base_version": None,
+        "reason": None,
     }
 
     # One model call: instructions as the system message, Requirements and Gaps only as

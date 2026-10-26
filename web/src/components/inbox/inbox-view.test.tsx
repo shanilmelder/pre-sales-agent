@@ -16,6 +16,12 @@ vi.mock("@/app/inbox/actions", () => actions);
 const reviewActions = vi.hoisted(() => ({
   loadReviewPanel: vi.fn(),
   decideReviewRequest: vi.fn(),
+  // Story 9.4: the author's side.
+  replyToReviewRequest: vi.fn(),
+  createEstimateVersion: vi.fn(),
+  loadEvidenceOptions: vi.fn(),
+  addSource: vi.fn(),
+  addTextSource: vi.fn(),
 }));
 vi.mock("@/app/opportunities/actions", () => reviewActions);
 vi.mock("next/navigation", () => ({
@@ -24,7 +30,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { ShellProviders } from "@/components/shell/shell-context";
-import { reviewPanel, reviewRequest } from "@/test/review-fixtures";
+import { reviewDecision, reviewPanel, reviewRequest } from "@/test/review-fixtures";
 import { resetInboxUnread, useInboxUnread } from "@/lib/use-inbox-count";
 
 import { InboxView } from "./inbox-view";
@@ -400,5 +406,42 @@ describe("InboxView", () => {
     await within(detail()).findByRole("heading", { name: /Review request/ });
     expect(container.querySelector("[data-greyed]")).not.toBeNull();
     expect(within(detail()).queryByRole("group", { name: "Review decision" })).toBeNull();
+  });
+
+  it("Story 9.4: an outcome on a rejected request shows the live author panel", async () => {
+    const outcome = item(1, {
+      kind: "review_outcome",
+      summary: "Ana Reviewer rejected Estimate v3: [WHY]",
+      subject_status: "rejected",
+      subject_status_label: "Rejected",
+      subject_open: false,
+      href: null,
+      read: true,
+    });
+    const rejected = reviewDecision({ decision: "rejected", label: "Rejected", reason: "[WHY]" });
+    const panel = reviewPanel({
+      request: reviewRequest({
+        id: outcome.subject_id,
+        status: "rejected",
+        latest_decision: rejected,
+      }),
+      decisions: [rejected],
+      version_status: "rejected",
+      can_decide: false,
+      can_approve: false,
+      is_author: true,
+      can_create_version: true,
+    });
+    reviewActions.loadReviewPanel.mockResolvedValue({ kind: "ok", panel });
+    const { user, container } = renderView(page([outcome]));
+    await screen.findByRole("region", { name: "Inbox items" });
+    expect(within(row("Ana Reviewer rejected Estimate v3: [WHY]")).getByText("Review")).toBeTruthy();
+    await user.click(row("Ana Reviewer rejected Estimate v3: [WHY]"));
+    await within(detail()).findByRole("heading", { name: /Review request/ });
+    expect(container.querySelector("[data-greyed]")).toBeNull();
+    expect(within(detail()).getByRole("button", { name: "New version" })).toBeTruthy();
+    expect(within(detail()).getByRole("region", { name: "Review outcomes" })).toBeTruthy();
+    expect(within(detail()).queryByRole("group", { name: "Review decision" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
   });
 });

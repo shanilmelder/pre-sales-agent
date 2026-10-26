@@ -98,6 +98,8 @@ class VersionStatus(StrEnum):
 
 REVIEWABLE = frozenset({VersionStatus.SUBMITTED, VersionStatus.IN_REVIEW})
 """Story 9.1: the statuses a Review Request may be sent for."""
+DECIDED = frozenset({VersionStatus.REJECTED, VersionStatus.APPROVED})
+"""Story 9.4: the statuses a new draft version may be started from."""
 
 
 class VersionSource(StrEnum):

@@ -7,6 +7,7 @@ import { axeViolations } from "@/test/axe";
 import {
   ANA,
   CY,
+  OWNER,
   REVIEW_ID,
   REVIEW_OPP,
   recorded,
@@ -19,6 +20,11 @@ import {
 const actions = vi.hoisted(() => ({
   decideReviewRequest: vi.fn(),
   loadReviewPanel: vi.fn(),
+  replyToReviewRequest: vi.fn(),
+  createEstimateVersion: vi.fn(),
+  loadEvidenceOptions: vi.fn(),
+  addSource: vi.fn(),
+  addTextSource: vi.fn(),
 }));
 vi.mock("@/app/opportunities/actions", () => actions);
 vi.mock("next/navigation", () => ({
@@ -54,6 +60,10 @@ const button = (name: string) => screen.getByRole("button", { name });
 beforeEach(() => {
   actions.decideReviewRequest.mockReset();
   actions.loadReviewPanel.mockReset();
+  actions.replyToReviewRequest.mockReset();
+  actions.createEstimateVersion.mockReset();
+  actions.loadEvidenceOptions.mockReset();
+  actions.loadEvidenceOptions.mockResolvedValue({ kind: "ok", items: [] });
 });
 
 describe("ReviewPanelView", () => {
@@ -454,5 +464,287 @@ describe("ReviewPanelLoader", () => {
     expect(
       await screen.findByText("The review could not be loaded. Try again in a moment."),
     ).toBeTruthy();
+  });
+});
+
+// --- the author's side (Story 9.4) ----------------------------------------------------------
+
+const V4 = { id: "00000000-0000-7000-8000-0000000000e4", version: 4 };
+
+function authorPanel(overrides: Partial<ReviewPanel> = {}): ReviewPanel {
+  const asked = reviewDecision();
+  return reviewPanel({
+    request: reviewRequest({ latest_decision: asked, row_version: 2 }),
+    decisions: [asked],
+    can_decide: false,
+    can_approve: false,
+    escalation_candidates: [],
+    is_author: true,
+    can_reply: true,
+    ...overrides,
+  });
+}
+
+function expectIconAndText(container: HTMLElement) {
+  const rows = container.querySelectorAll("[data-outcome]");
+  expect(rows.length).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.querySelector("svg")).not.toBeNull();
+    expect(row.textContent).not.toBe("");
+  }
+}
+
+describe("ReviewPanelView, the author's side", () => {
+  it("replies with Evidence: the composer, the outcomes, and no reviewer actions", async () => {
+    const reply = {
+      id: "00000000-0000-7000-8000-0000000000f2",
+      message: "See R4",
+      evidence: [],
+      alternative: null,
+      replied_by: OWNER,
+      replied_at: "2026-10-25T11:00:00Z",
+    };
+    actions.replyToReviewRequest.mockResolvedValue({
+      kind: "ok",
+      value: { reply, request: reviewRequest({ row_version: 3 }) },
+    });
+    const onReplied = vi.fn();
+    const user = userEvent.setup();
+    const { container } = render(
+      <ShellProviders singleKeyShortcuts={false}>
+        <ReviewPanelView
+          opportunityId={REVIEW_OPP}
+          panel={authorPanel()}
+          layout="inbox"
+          onReload={vi.fn()}
+          onDecided={vi.fn()}
+          onReplied={onReplied}
+        />
+      </ShellProviders>,
+    );
+
+    expect(actionsGroup()).toBeNull();
+    const outcomes = screen.getByRole("region", { name: "Review outcomes" });
+    expect(within(outcomes).getByText("Ana Reviewer")).toBeTruthy();
+    expect(within(outcomes).getByText(/Evidence requested/)).toBeTruthy();
+    expectIconAndText(container);
+    expect(button("Reply").hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Link as alternative" })).toBeNull();
+    expect(button("Add Source")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.type(screen.getByLabelText("Reply to Ana Reviewer (required)"), "  See R4 ");
+    await user.click(button("Reply"));
+
+    expect(actions.replyToReviewRequest).toHaveBeenCalledWith({
+      opportunityId: REVIEW_OPP,
+      requestId: REVIEW_ID,
+      rowVersion: 2,
+      message: "  See R4 ",
+      evidence: [],
+    });
+    await waitFor(() => expect(onReplied).toHaveBeenCalled());
+  });
+
+  it("links the draft as the alternative when asked for one", async () => {
+    const asked = reviewDecision({
+      decision: "alternative_requested",
+      label: "Alternative requested",
+    });
+    actions.replyToReviewRequest.mockResolvedValue({ kind: "error" });
+    const { user, container } = renderPanel(
+      authorPanel({
+        decisions: [asked],
+        request: reviewRequest({ latest_decision: asked, row_version: 2 }),
+        can_link_alternative: true,
+        alternative_draft: V4,
+      }),
+    );
+    const link = button("Link as alternative");
+    expect(link.getAttribute("aria-pressed")).toBe("false");
+    await user.click(link);
+    expect(link.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByLabelText("Alternative draft")).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Draft v4" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.type(screen.getByLabelText("Reply to Ana Reviewer (required)"), "v4 splits L1");
+    await user.click(button("Reply"));
+    expect(actions.replyToReviewRequest.mock.calls[0]![0].alternativeVersionId).toBe(V4.id);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("shows who an escalation went to, with the reason", async () => {
+    const escalated = reviewDecision({
+      decision: "escalated",
+      label: "Escalated",
+      reason: "[WHY]",
+      escalated_to: CY,
+    });
+    const { container } = renderPanel(
+      authorPanel({
+        decisions: [escalated],
+        request: reviewRequest({ latest_decision: escalated, reviewer: CY }),
+        can_reply: false,
+        escalated_to: CY,
+      }),
+    );
+    expect(container.querySelector("[data-escalated-to]")?.textContent).toBe(
+      "Escalated to Cy Reviewer",
+    );
+    expect(screen.getAllByText("[WHY]").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("group", { name: "Reply" })).toBeNull();
+    expect(actionsGroup()).toBeNull();
+    expectIconAndText(container);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("on an approved version says the Baseline can be set, with no button", async () => {
+    const approved = reviewDecision({ decision: "approved", label: "Approved", reason: null });
+    const { container } = renderPanel(
+      authorPanel({
+        decisions: [approved],
+        request: reviewRequest({ latest_decision: approved, status: "approved" }),
+        version_status: "approved",
+        can_reply: false,
+      }),
+    );
+    expect(screen.getByText("All requested reviews approved. Baseline can be set.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Set Baseline/ })).toBeNull();
+    expectIconAndText(container);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("on a rejected version offers New version", async () => {
+    const rejected = reviewDecision({ decision: "rejected", label: "Rejected", reason: "[WHY]" });
+    actions.createEstimateVersion.mockResolvedValue({
+      kind: "ok",
+      value: { ...V4, status: "draft", row_version: 1, base_version_id: "b", base_version: 3 },
+    });
+    const { user, onReload, container } = renderPanel(
+      authorPanel({
+        decisions: [rejected],
+        request: reviewRequest({ latest_decision: rejected, status: "rejected" }),
+        version_status: "rejected",
+        can_reply: false,
+        can_create_version: true,
+      }),
+    );
+    expect(await axeViolations(container)).toEqual([]);
+    await user.click(button("New version"));
+    expect(actions.createEstimateVersion).toHaveBeenCalledWith({
+      opportunityId: REVIEW_OPP,
+      versionId: reviewRequest().estimate_version_id,
+    });
+    await waitFor(() => expect(onReload).toHaveBeenCalled());
+  });
+
+  it("greys a superseded request with no actions", async () => {
+    const { container } = renderPanel(
+      authorPanel({
+        request: reviewRequest({ status: "superseded", latest_decision: reviewDecision() }),
+        version_status: "superseded",
+        superseded_by: 4,
+        can_reply: false,
+      }),
+    );
+    expect(container.querySelector("[data-greyed]")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Superseded by v4" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Reply" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New version" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("ReviewPanelView, the reviewer's side (Story 9.4)", () => {
+  it("shows the replies with their Evidence and the request this is the alternative to", async () => {
+    const original = "00000000-0000-7000-8000-0000000000c0";
+    const { container } = renderPanel(
+      reviewPanel({
+        decisions: [reviewDecision()],
+        replies: [
+          {
+            id: "00000000-0000-7000-8000-0000000000f3",
+            message: "[REPLY]",
+            evidence: [{ kind: "requirement", id: "e", version: 1, label: "R4" }],
+            alternative: null,
+            replied_by: OWNER,
+            replied_at: "2026-10-25T11:00:00Z",
+          },
+        ],
+        linked_request: { id: original, version_number: 3 },
+      }),
+    );
+    expect(
+      screen.getByRole("link", { name: "Alternative to the v3 request" }).getAttribute("href"),
+    ).toBe(`/opportunities/${REVIEW_OPP}/estimate/reviews/${original}`);
+    const outcomes = screen.getByRole("region", { name: "Review outcomes" });
+    expect(within(outcomes).getByText("[REPLY]")).toBeTruthy();
+    expect(within(outcomes).getByText("R4")).toBeTruthy();
+    expect(actionsGroup()).not.toBeNull();
+    expectIconAndText(container);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("Story 9.4 review follow-ups", () => {
+  it("after a request for an alternative, New version sits next to Reply", async () => {
+    const asked = reviewDecision({
+      decision: "alternative_requested",
+      label: "Alternative requested",
+    });
+    const { container } = renderPanel(
+      authorPanel({
+        decisions: [asked],
+        request: reviewRequest({ latest_decision: asked }),
+        can_create_version: true,
+      }),
+    );
+    const composer = screen.getByRole("group", { name: "Reply" });
+    expect(within(composer).getByRole("button", { name: "New version" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "New version" })).toHaveLength(1);
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the loader shows the reply, and a second reply sends the recorded row version", async () => {
+    const reply = (id: string, message: string) => ({
+      id,
+      message,
+      evidence: [],
+      alternative: null,
+      replied_by: OWNER,
+      replied_at: "2026-10-25T11:00:00Z",
+    });
+    actions.replyToReviewRequest
+      .mockResolvedValueOnce({
+        kind: "ok",
+        value: {
+          reply: reply("00000000-0000-7000-8000-0000000000f4", "[FIRST]"),
+          request: reviewRequest({ row_version: 7, latest_decision: reviewDecision() }),
+        },
+      })
+      .mockResolvedValueOnce({ kind: "error" });
+    const user = userEvent.setup();
+    render(
+      <ShellProviders singleKeyShortcuts={false}>
+        <ReviewPanelLoader
+          opportunityId={REVIEW_OPP}
+          requestId={REVIEW_ID}
+          layout="inspector"
+          initial={authorPanel()}
+          live={false}
+        />
+      </ShellProviders>,
+    );
+    const field = () => screen.getByLabelText("Reply to Ana Reviewer (required)");
+
+    await user.type(field(), "First reply");
+    await user.click(button("Reply"));
+    const outcomes = screen.getByRole("region", { name: "Review outcomes" });
+    expect(await within(outcomes).findByText("[FIRST]")).toBeTruthy();
+
+    await user.type(field(), "Second reply");
+    await user.click(button("Reply"));
+    expect(actions.replyToReviewRequest.mock.calls[1]![0].rowVersion).toBe(7);
   });
 });

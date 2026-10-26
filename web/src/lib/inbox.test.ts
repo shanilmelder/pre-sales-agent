@@ -5,6 +5,7 @@ import {
   closedStatus,
   groupItems,
   inboxLinkName,
+  isGreyedReviewItem,
   itemBody,
   itemMeta,
   kindLabel,
@@ -106,5 +107,39 @@ describe("inbox helpers", () => {
     expect(opportunityIdOf(`/opportunities/${id}`)).toBe(id);
     expect(opportunityIdOf("/opportunities/new")).toBeNull();
     expect(opportunityIdOf("/inbox")).toBeNull();
+  });
+});
+
+describe("outcome and reply items (Story 9.4)", () => {
+  it("are Review items with their own sentence", () => {
+    expect(kindLabel("review_outcome")).toBe("Review");
+    expect(kindLabel("review_replied")).toBe("Review");
+    expect(itemBody(item({ kind: "review_outcome" }))).toBe(
+      "A reviewer decided on a Review Request on [OPPORTUNITY].",
+    );
+    expect(itemBody(item({ kind: "review_replied" }))).toBe(
+      "The author replied on a Review Request on [OPPORTUNITY].",
+    );
+  });
+
+  it("grey only superseded, cancelled and handed-on subjects", () => {
+    const closed = { subject_open: false, href: null };
+    expect(isGreyedReviewItem(item())).toBe(false);
+    for (const status of ["approved", "rejected"]) {
+      expect(
+        isGreyedReviewItem(item({ ...closed, kind: "review_outcome", subject_status: status })),
+      ).toBe(false);
+      expect(isGreyedReviewItem(item({ ...closed, subject_status: status }))).toBe(true);
+    }
+    for (const status of ["superseded", "cancelled"]) {
+      expect(
+        isGreyedReviewItem(item({ ...closed, kind: "review_outcome", subject_status: status })),
+      ).toBe(true);
+    }
+    expect(isGreyedReviewItem(item({ ...closed, subject_status: "escalated" }))).toBe(true);
+    // A reply item is the reviewer's: greyed once escalated away.
+    expect(
+      isGreyedReviewItem(item({ ...closed, kind: "review_replied", subject_status: "escalated" })),
+    ).toBe(true);
   });
 });

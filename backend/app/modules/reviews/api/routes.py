@@ -9,6 +9,8 @@
 - Story 9.3: `POST …/review-requests/{request_id}/decisions` with `If-Match` the request's
   ETag: record a Review Decision; `GET …/review-requests/{request_id}/panel`: the review
   panel.
+- Story 9.4: `POST …/review-requests/{request_id}/replies` with `If-Match` the request's ETag:
+  reply to the reviewer's request for evidence or an alternative.
 """
 
 from typing import Annotated, Any
@@ -25,8 +27,10 @@ from app.modules.reviews.application import public as reviews
 from app.modules.reviews.application.public import (
     CreatedReviewRequests,
     RecordedDecision,
+    RecordedReply,
     ReviewDecisionCreate,
     ReviewPanel,
+    ReviewReplyCreate,
     ReviewRequestCancel,
     ReviewRequestCreate,
     ReviewRequestsView,
@@ -297,3 +301,54 @@ async def get_review_panel(
     panel = await reviews.review_panel(uow, actor, opportunity_id, request_id)
     response.headers["ETag"] = etag(panel.request.row_version)
     return panel
+
+
+@router.post(
+    "/review-requests/{request_id}/replies",
+    operation_id="reply_to_review_request",
+    status_code=201,
+    responses={
+        **_responses(
+            404,
+            412,
+            428,
+            described={
+                403: "Not allowed (`forbidden`): only the request's sender or the Opportunity's "
+                "owner, never a sales representative or the reviewer",
+                409: "The request is no longer pending (`review_request_not_pending`), or its "
+                "latest decision asks for neither evidence nor an alternative "
+                "(`review_reply_not_expected`); nothing was written",
+                422: "`validation_error`: a blank or over-2,000-character message, an alternative "
+                "after anything but a request for one, or one that is not this Opportunity's "
+                "newer draft; `evidence_unresolvable`: an Evidence reference that doesn't "
+                "resolve or is another Opportunity's. The `detail` is the sentence to show",
+            },
+        ),
+        201: {
+            "description": "The reply recorded and the request now (still pending)",
+            "headers": {
+                "ETag": {
+                    "description": "The request's row version.",
+                    "schema": {"type": "string"},
+                }
+            },
+        },
+    },
+)
+async def reply_to_review_request(
+    opportunity_id: UUID,
+    request_id: UUID,
+    body: ReviewReplyCreate,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _REQUEST_IF_MATCH = None,
+) -> RecordedReply:
+    """Reply to the reviewer's request for evidence or an alternative, with a message, the
+    Evidence (Requirements or Source documents of the Opportunity) and, after a request for an
+    alternative, the draft Estimate Version offered as one: once that draft is submitted the
+    reviewer gets a linked request on it. The request stays pending; the reviewer gets an Inbox
+    item. Only the request's sender or the Opportunity's owner."""
+    recorded = await reviews.reply(uow, actor, opportunity_id, request_id, body, if_match)
+    response.headers["ETag"] = etag(recorded.request.row_version)
+    return recorded

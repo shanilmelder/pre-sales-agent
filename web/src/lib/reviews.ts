@@ -12,6 +12,8 @@ import {
   GitCompareArrowsIcon,
   MessageSquareWarningIcon,
   RedoIcon,
+  ReplyIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 
 import type { components } from "@/lib/api/client";
@@ -31,6 +33,11 @@ export type RecordedDecision = components["schemas"]["RecordedDecision"];
 export type VersionDiff = components["schemas"]["VersionDiff"];
 export type LineDiff = components["schemas"]["LineDiff"];
 export type ReviewPerson = components["schemas"]["ReviewPerson"];
+// Story 9.4
+export type ReviewReply = components["schemas"]["ReviewReplyView"];
+export type RecordedReply = components["schemas"]["RecordedReply"];
+export type ReviewEvidence = components["schemas"]["ReviewEvidence"];
+export type CreatedVersion = components["schemas"]["CreatedVersion"];
 
 /** The review types, in the segmented control's order. */
 export const REVIEW_TYPES: readonly { value: ReviewType; label: string }[] = [
@@ -135,6 +142,10 @@ export const REVIEW_TRACE_EVENTS: readonly string[] = [
   "estimates.estimate_version.approved",
   "estimates.estimate_version.rejected",
   "estimates.estimate_version.submitted",
+  // Story 9.4
+  "reviews.review_request.replied",
+  "reviews.review_request.superseded",
+  "estimates.estimate_version.created",
 ];
 
 // --- Review Decisions and the review panel (Story 9.3) --------------------------------------
@@ -300,4 +311,115 @@ export function diffHeading(diff: VersionDiff): string {
 /** `/opportunities/{id}/estimate/reviews/{rid}`: the panel full width (**Open in tab**). */
 export function reviewPanelHref(opportunityId: string, requestId: string): string {
   return `/opportunities/${opportunityId}/estimate/reviews/${requestId}`;
+}
+
+// --- the author's side (Story 9.4) ----------------------------------------------------------
+
+export const REVIEW_OUTCOMES_TITLE = "Review outcomes";
+export const REPLY = "Reply";
+export const REPLY_MAX = 2000;
+export const LINK_ALTERNATIVE = "Link as alternative";
+export const ALTERNATIVE_DRAFT = "Alternative draft";
+export const ADD_SOURCE = "Add Source";
+export const HIDE_ADD_SOURCE = "Done adding Sources";
+export const NEW_VERSION = "New version";
+export const ALL_APPROVED = "All requested reviews approved. Baseline can be set.";
+export const REPLY_FAILED = "Not sent: the platform is not reachable. Try again.";
+export const REPLY_FORBIDDEN = "You can't reply to this Review Request.";
+export const REPLY_SENT = "Reply sent";
+export const NEW_VERSION_FAILED = "No new version: the platform is not reachable. Try again.";
+export const NEW_VERSION_FORBIDDEN = "You can't start a new version of this Estimate.";
+
+/** "Reply to Ana Ruiz (required)". */
+export function replyLabel(reviewer: string): string {
+  return `Reply to ${reviewer} (required)`;
+}
+
+/** "Escalated to Cy Ruiz". */
+export function escalatedLabel(name: string): string {
+  return `Escalated to ${name}`;
+}
+
+/** "Alternative to the v3 request". */
+export function alternativeToLabel(version: number): string {
+  return `Alternative to the v${version} request`;
+}
+
+/** "Draft v4 started" (announced after **New version**). */
+export function newVersionAnnouncement(version: number): string {
+  return `Draft v${version} started`;
+}
+
+/** An outcome row's icon and colour (EXPERIENCE.md: icon and text, never colour alone):
+ * approved green, rejected blocker, the requests and escalations amber, a reply primary. */
+export type OutcomeTone = "resolved" | "blocker" | "gap" | "primary";
+
+export const OUTCOME_TONES: Record<OutcomeTone, { icon: LucideIcon; className: string }> = {
+  resolved: { icon: CircleCheckIcon, className: "text-resolved" },
+  blocker: { icon: CircleXIcon, className: "text-blocker" },
+  gap: { icon: TriangleAlertIcon, className: "text-gap" },
+  primary: { icon: ReplyIcon, className: "text-primary-text" },
+};
+
+/** One row of the Review outcomes list: "**who** · what", the time and a note (a reason or
+ * the reply's message), with the reply's Evidence. */
+export type OutcomeRow = {
+  id: string;
+  tone: OutcomeTone;
+  who: string;
+  what: string;
+  when: string;
+  at: string;
+  note: string | null;
+  evidence: ReviewEvidence[];
+};
+
+const DECISION_TONES: Record<Decision, OutcomeTone> = {
+  approved: "resolved",
+  rejected: "blocker",
+  challenged: "gap",
+  evidence_requested: "gap",
+  alternative_requested: "gap",
+  escalated: "gap",
+};
+
+const OUTCOME_DATE = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
+
+/** The Review outcomes list: one row per decision and per reply, oldest first. */
+export function outcomeRows(
+  panel: Pick<ReviewPanel, "decisions" | "replies">,
+): OutcomeRow[] {
+  const decided: OutcomeRow[] = panel.decisions.map((d) => ({
+    id: d.id,
+    tone: DECISION_TONES[d.decision],
+    who: d.decided_by.name,
+    what:
+      d.decision === "escalated" && d.escalated_to
+        ? escalatedLabel(d.escalated_to.name)
+        : d.label,
+    when: formatted(OUTCOME_DATE, d.decided_at),
+    at: d.decided_at,
+    note: d.reason,
+    evidence: [],
+  }));
+  const replied: OutcomeRow[] = panel.replies.map((r) => ({
+    id: r.id,
+    tone: "primary",
+    who: r.replied_by.name,
+    what: r.alternative ? `Replied with v${r.alternative.version} as the alternative` : "Replied",
+    when: formatted(OUTCOME_DATE, r.replied_at),
+    at: r.replied_at,
+    note: r.message,
+    evidence: r.evidence,
+  }));
+  return [...decided, ...replied].sort(
+    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+  );
 }

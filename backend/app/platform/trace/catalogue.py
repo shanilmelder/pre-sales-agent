@@ -599,6 +599,12 @@ class EstimatesEstimateVersionCreated(TracePayload):
     run finished (actor `system`), else `model`."""
     source_run_id: str | None = None
     """Story 8.3: that assessment run's id."""
+    base_version_id: str | None = None
+    """Story 9.4: a person's **New version**: the rejected or approved version whose lines,
+    Assumptions and Risks were copied (actor: that person)."""
+    base_version: int | None = None
+    reason: str | None = None
+    """Story 9.4: the person's reason for the new version, if they gave one."""
 
 
 # Story 8.4. Payloads hold ids, kinds and hours only, never Assumption wording or Gap text.
@@ -1348,6 +1354,9 @@ class ReviewsReviewRequestCreated(TracePayload):
     estimate_version_id: str
     reviewer_id: str
     message_length: int = 0
+    linked_request_id: str | None = None
+    """Story 9.4: the request on an older version this one is the alternative to (created
+    when the alternative draft was submitted)."""
 
 
 @register
@@ -1391,6 +1400,51 @@ class ReviewsReviewDecisionRecorded(TracePayload):
     target_id: str
     target_version: int
     escalated_to: str | None = None
+
+
+class ReplyEvidenceRef(BaseModel):
+    """An Evidence reference cited in a reply (Story 9.4): kind, id and version only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["requirement", "source_document"]
+    id: str
+    version: int
+
+
+@register
+class ReviewsReviewRequestReplied(TracePayload):
+    """The request's sender or the Opportunity's owner replied to a request for evidence or an
+    alternative (Story 9.4): the reply's id, its Evidence references, whether it names an
+    alternative draft (and which), and the message's length, never its text. The request
+    stays `pending`. Actor: that person."""
+
+    event_type: ClassVar[str] = "reviews.review_request.replied"
+
+    request_id: str
+    reply_id: str
+    evidence: list[ReplyEvidenceRef]
+    has_alternative: bool
+    alternative_version_id: str | None = None
+    message_length: int
+
+
+@register
+class ReviewsReviewRequestSuperseded(TracePayload):
+    """Submitting a newer Estimate Version superseded a `pending` or `challenged` Review
+    Request on an older one (Story 9.4): its approvals never count and it gets no reminders.
+    `linked_request_id`: the request created on the new version when the author's reply had
+    named it as the alternative. Actor: the person who submitted."""
+
+    event_type: ClassVar[str] = "reviews.review_request.superseded"
+
+    request_id: str
+    from_status: Literal["pending", "challenged"]
+    estimate_version_id: str
+    superseded_by_version_id: str
+    superseded_by_version: int
+    reviewer_id: str
+    linked_request_id: str | None = None
 
 
 @register

@@ -291,3 +291,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-3-review-decisions.md`
   summary: Once a reviewer rejects an Estimate Version, the other reviewers' pending requests on it stay pending, keep their access and keep getting 9.2 reminders; close or supersede them with 9.4's new-version flow.
   evidence: Story 9.3 review (Blind Hunter); `reviews.decide` only moves the rejecting request and the version, and `send_reminders` selects every `pending` request.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-4-review-outcomes.md`
+  summary: No test covers storing a version whose lines have no Requirement links (the `if links:` guard in `estimates.adapters.repository.insert_version`).
+  evidence: Story 9.4 review (Verification Gap). Model and Assessment drafts always have covers; settle by confirming whether line edits or legacy data can leave a line with no links, then add a New version test from such a base.

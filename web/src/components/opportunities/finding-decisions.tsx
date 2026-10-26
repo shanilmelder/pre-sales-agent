@@ -172,7 +172,7 @@ function refKey(option: Pick<EvidenceOption, "kind" | "id" | "version">): string
  * Sources, loaded when first opened; up to 20 may be chosen (each item then shows a check and
  * `aria-checked`, and a removable chip), after which the others are disabled and "Up to 20"
  * shows. */
-function EvidencePicker({
+export function EvidencePicker({
   opportunityId,
   chosen,
   onChange,

@@ -49,8 +49,10 @@ import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
 import type {
   CreatedReviewRequests,
+  CreatedVersion,
   Decision,
   RecordedDecision,
+  RecordedReply,
   ReviewRequest,
   ReviewType,
 } from "@/lib/reviews";
@@ -3530,6 +3532,119 @@ export async function decideReviewRequest(input: unknown): Promise<DecideResult>
   } catch (thrown) {
     console.error(
       `decide review request failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- the author's side (Story 9.4) ------------------------------------------------------------
+
+export type ReplyInput = {
+  opportunityId: string;
+  requestId: string;
+  /** The request's `row_version`, sent as `If-Match`. */
+  rowVersion: number;
+  message: string;
+  evidence: EvidenceRef[];
+  alternativeVersionId?: string;
+};
+
+export type ReplyResult =
+  | { kind: "ok"; value: RecordedReply }
+  /** 412: the request changed first; `detail` is "Changed by {name} since you opened it.". */
+  | { kind: "stale"; detail: string }
+  /** 409 or 422: the API's sentence. */
+  | { kind: "invalid"; detail: string }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isReplyInput(input: unknown): input is ReplyInput {
+  if (typeof input !== "object" || input === null) return false;
+  const r = input as Record<string, unknown>;
+  return (
+    isId(r.opportunityId) &&
+    isId(r.requestId) &&
+    isRowVersion(r.rowVersion) &&
+    typeof r.message === "string" &&
+    Array.isArray(r.evidence) &&
+    r.evidence.every(isEvidenceRef) &&
+    (r.alternativeVersionId === undefined || isId(r.alternativeVersionId))
+  );
+}
+
+/** `POST …/review-requests/{rid}/replies` with `If-Match` the request's ETag: the author's reply
+ * to a request for evidence or an alternative. Logs ids and statuses only, never the message. */
+export async function replyToReviewRequest(input: unknown): Promise<ReplyResult> {
+  if (!isReplyInput(input)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/replies",
+      {
+        params: {
+          path: { opportunity_id: input.opportunityId, request_id: input.requestId },
+          header: { "If-Match": `"${input.rowVersion}"` },
+        },
+        body: {
+          message: input.message.trim(),
+          evidence: input.evidence,
+          ...(input.alternativeVersionId
+            ? { alternative_version_id: input.alternativeVersionId }
+            : {}),
+        },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    const { code, detail } = problem(error);
+    switch (response.status) {
+      case 412:
+        return { kind: "stale", detail: detail ?? "Changed by someone else since you opened it." };
+      case 409:
+      case 422:
+        return {
+          kind: "invalid",
+          detail:
+            detail ??
+            (code === "evidence_unresolvable"
+              ? "That Evidence can't be cited: choose this Opportunity's Requirements or Sources."
+              : "The reply was not accepted."),
+        };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(`reply to review failed: status=${response.status} code=${String(code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`reply to review failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST …/estimate-versions/{vid}/new-version`: a new draft from a rejected or approved
+ * version. Logs ids and statuses only. */
+export async function createEstimateVersion(
+  input: unknown,
+): Promise<ReviewActionResult<CreatedVersion>> {
+  const { opportunityId, versionId } = (input ?? {}) as Record<string, unknown>;
+  if (!isId(opportunityId) || !isId(versionId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/estimate-versions/{version_id}/new-version",
+      {
+        params: { path: { opportunity_id: opportunityId, version_id: versionId } },
+        body: {},
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    return reviewFailure("new estimate version", response.status, error);
+  } catch (thrown) {
+    console.error(
+      `new estimate version failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

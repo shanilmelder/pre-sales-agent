@@ -47,14 +47,18 @@ class ReviewableVersion:
     created_by: UUID | None
     submitted_at: datetime | None
     superseded_by_version: int | None = None
-    """For a superseded version, the number of the Opportunity's current (else latest)
-    version."""
+    """For a superseded version, the number of the first later version submitted (Story 9.4)
+    when it was itself submitted, else the Opportunity's current (else latest) version."""
 
 
 async def _view(uow: UnitOfWork, record: VersionRecord) -> ReviewableVersion:
     status = VersionStatus(record.status)
     replaced_by: int | None = None
-    if status == VersionStatus.SUPERSEDED:
+    if status == VersionStatus.SUPERSEDED and record.submitted_at is not None:
+        # Story 9.4: a submitted version is superseded by the next one submitted, whatever
+        # drafts came after.
+        replaced_by = await repo.first_submitted_after(uow, record.opportunity_id, record.version)
+    if status == VersionStatus.SUPERSEDED and replaced_by is None:
         current = await repo.current_version(uow, record.opportunity_id)
         replaced_by = (
             current.version

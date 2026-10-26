@@ -25,6 +25,7 @@ import {
   REVIEW_SUBJECT,
   closedStatus,
   groupItems,
+  isGreyedReviewItem,
   isReviewKind,
   itemBody,
   itemMeta,
@@ -187,7 +188,8 @@ function Detail({
   }
   // Story 9.3: a Review item shows the review panel in place of the body and Open, greyed
   // when its subject is closed; 9.2's body while it loads and when it can't be read (e.g.
-  // the reader's access ended with the request).
+  // the reader's access ended with the request). Story 9.4: an author's outcome stays live
+  // on a decided request; superseded and cancelled ones are greyed.
   if (item.subject_type === REVIEW_SUBJECT && item.opportunity_id) {
     return (
       <Card aria-label="Inbox item" role="region" className="gap-4 p-6" data-review-detail="">
@@ -197,7 +199,7 @@ function Detail({
           requestId={item.subject_id}
           layout="inbox"
           live={false}
-          dimmed={!item.subject_open}
+          dimmed={isGreyedReviewItem(item)}
           fallback={<DetailBody item={item} />}
           onDecided={onDecided}
         />

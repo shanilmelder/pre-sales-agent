@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLinkIcon, QuoteIcon, RedoIcon } from "lucide-react";
+import { ExternalLinkIcon, GitCompareArrowsIcon, QuoteIcon, RedoIcon } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
@@ -11,6 +11,12 @@ import {
 } from "@/app/opportunities/actions";
 import type { ReviewPanelResult } from "@/app/opportunities/data";
 import { ReasonInput } from "@/components/opportunities/reason-input";
+import { ReviewOutcomes } from "@/components/opportunities/review-outcomes";
+import {
+  NewVersionButton,
+  ReplyComposer,
+  outlineButtonClass,
+} from "@/components/opportunities/review-reply";
 import { RequestStatusPill } from "@/components/opportunities/review-requests-card";
 import { RisksCard } from "@/components/opportunities/risks-card";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
@@ -32,6 +38,7 @@ import { useReviewEvents } from "@/lib/opportunity-events";
 import { codePointLength } from "@/lib/opportunities";
 import {
   ACTIONS_LABEL,
+  ALL_APPROVED,
   APPROVE,
   CANCEL,
   CHALLENGE,
@@ -41,7 +48,6 @@ import {
   DECISION_FORBIDDEN,
   DECISION_REASON_MAX,
   DECISION_STYLES,
-  DECISIONS_TITLE,
   ESCALATE,
   HIDE_DIFF,
   NO_CHANGES,
@@ -52,11 +58,13 @@ import {
   REQUEST_ALTERNATIVE,
   REQUEST_EVIDENCE,
   VIEW_DIFF,
+  alternativeToLabel,
   confirmLabel,
   decisionAnnouncement,
   decisionLine,
   deltaLabel,
   diffHeading,
+  escalatedLabel,
   isSupersededPanel,
   panelEyebrow,
   panelTitle,
@@ -66,6 +74,7 @@ import {
   type Decision,
   type ReasonedDecision,
   type RecordedDecision,
+  type RecordedReply,
   type ReviewDecision,
   type ReviewPanel,
   type VersionDiff,
@@ -77,7 +86,7 @@ import { tabHref } from "@/lib/workspace";
  * **Open in tab** page. */
 export type PanelLayout = "inspector" | "inbox" | "page";
 
-const outlineClass = "border-border-strong bg-surface";
+const outlineClass = outlineButtonClass;
 
 /** A Review Decision as a pill: its icon and label, never colour alone. */
 export function DecisionPill({ decision }: { decision: Decision }) {
@@ -450,11 +459,15 @@ function afterDecision(panel: ReviewPanel, recorded: RecordedDecision): ReviewPa
 /** The review panel (Story 9.3; the mockup's review block): the header (eyebrow "{Type}
  * review · From {sender} · {date}", the title and the author's message), the request's status
  * with its latest decision, the target (an Estimate Version's lines, totals, Assumptions,
- * Risks and its diff; or an Assessment's Findings with their Evidence chips), the decision
- * history and, only when `can_decide`, the two action rows. Greyed with a "Superseded by v4"
- * link, and no actions, when the request or its version is superseded; `dimmed` greys it too
- * (a closed Inbox subject). A 412 shows "Changed by {name} since you opened it." with Reload
- * and View diff; nothing is recorded. */
+ * Risks and its diff; or an Assessment's Findings with their Evidence chips) and, only when
+ * `can_decide`, the two action rows. Story 9.4: for the author (`is_author`, not deciding) the
+ * reviewer's actions stay hidden; "Escalated to {name}" after an escalation, the Reply composer
+ * (`can_reply`), "All requested reviews approved. Baseline can be set." on an approved version
+ * and **New version** (`can_create_version`); for both sides "Alternative to the v{n} request"
+ * on a linked request and, under the actions, the Review outcomes list. Greyed with a
+ * "Superseded by v4" link, and no actions, when the request or its version is superseded;
+ * `dimmed` greys it too (a closed Inbox subject). A 412 shows "Changed by {name} since you
+ * opened it." with Reload and View diff; nothing is recorded. */
 export function ReviewPanelView({
   opportunityId,
   panel,
@@ -462,6 +475,7 @@ export function ReviewPanelView({
   dimmed = false,
   onReload,
   onDecided,
+  onReplied,
 }: {
   opportunityId: string;
   panel: ReviewPanel;
@@ -470,6 +484,8 @@ export function ReviewPanelView({
   onReload: () => Promise<void> | void;
   /** After a decision is recorded (the panel already shows it). */
   onDecided: (recorded: RecordedDecision) => void;
+  /** Story 9.4: after the author's reply is recorded. */
+  onReplied?: (recorded: RecordedReply) => void;
 }) {
   const announce = useAnnounce();
   const headingId = useId();
@@ -481,7 +497,20 @@ export function ReviewPanelView({
   const superseded = isSupersededPanel(panel);
   const greyed = superseded || dimmed;
   const actionable = panel.can_decide && !greyed;
+  // Story 9.4: the author's side, where the reviewer's actions stay hidden.
+  const authorView = panel.is_author && !panel.can_decide && !greyed;
   const latest = panel.decisions[0] ?? request.latest_decision ?? null;
+  const reasonId = useId();
+  // Story 9.4: next to Reply after a request for an alternative, else on its own.
+  const newVersion =
+    authorView && panel.can_create_version ? (
+      <NewVersionButton
+        opportunityId={opportunityId}
+        versionId={request.estimate_version_id}
+        describedBy={latest ? reasonId : undefined}
+        onCreated={() => void onReload()}
+      />
+    ) : null;
   const Heading = layout === "inspector" ? "h3" : "h2";
 
   async function decide(decision: Decision, reason: string, escalatedTo?: string) {
@@ -557,7 +586,26 @@ export function ReviewPanelView({
             {`Reviewer: ${request.reviewer.name}`}
           </span>
         </div>
-        {latest ? <DecisionEntry decision={latest} /> : null}
+        {latest ? (
+          <div id={reasonId}>
+            <DecisionEntry decision={latest} />
+          </div>
+        ) : null}
+        {panel.is_author && latest?.decision === "escalated" && panel.escalated_to ? (
+          <p className="text-body-strong" data-escalated-to="">
+            {escalatedLabel(panel.escalated_to.name)}
+          </p>
+        ) : null}
+        {panel.linked_request ? (
+          <Link
+            href={reviewPanelHref(opportunityId, panel.linked_request.id)}
+            className="inline-flex items-center gap-1.5 self-start text-meta text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+            data-linked-request=""
+          >
+            <GitCompareArrowsIcon aria-hidden="true" className="size-3.5" />
+            {alternativeToLabel(panel.linked_request.version_number)}
+          </Link>
+        ) : null}
         {panel.estimate ? <EstimateTarget version={panel.estimate} /> : null}
         {panel.assessment ? <AssessmentTarget assessment={panel.assessment} /> : null}
         {panel.diff ? (
@@ -577,14 +625,6 @@ export function ReviewPanelView({
               )}
             </div>
             {diffOpen || panel.diff.first ? <DiffView diff={panel.diff} /> : null}
-          </section>
-        ) : null}
-        {panel.decisions.length > 1 ? (
-          <section className="flex flex-col gap-2" aria-label={DECISIONS_TITLE}>
-            <SubHeading>{DECISIONS_TITLE}</SubHeading>
-            {panel.decisions.slice(1).map((d) => (
-              <DecisionEntry key={d.id} decision={d} />
-            ))}
           </section>
         ) : null}
       </div>
@@ -617,6 +657,29 @@ export function ReviewPanelView({
       {actionable ? (
         <DecisionActions panel={panel} busy={busy} onDecide={decide} />
       ) : null}
+      {authorView && panel.can_reply ? (
+        <ReplyComposer
+          opportunityId={opportunityId}
+          panel={panel}
+          onReload={onReload}
+          onReplied={(recorded) => onReplied?.(recorded)}
+          beside={newVersion}
+        />
+      ) : null}
+      {authorView && panel.version_status === "approved" ? (
+        <p
+          className="border-t border-border pt-3 text-[13px] leading-5 text-text-secondary"
+          data-all-approved=""
+        >
+          {ALL_APPROVED}
+        </p>
+      ) : null}
+      {newVersion && !panel.can_reply ? (
+        <div className="border-t border-border pt-3">{newVersion}</div>
+      ) : null}
+      <div className={cn(greyed && "opacity-60")}>
+        <ReviewOutcomes panel={panel} />
+      </div>
     </section>
   );
 }
@@ -706,6 +769,17 @@ export function ReviewPanelLoader({
       onDecided={(recorded) => {
         setPanel((current) => (current ? afterDecision(current, recorded) : current));
         onDecided?.(recorded);
+      }}
+      onReplied={(recorded) => {
+        setPanel((current) =>
+          current
+            ? {
+                ...current,
+                request: recorded.request,
+                replies: [recorded.reply, ...current.replies],
+              }
+            : current,
+        );
       }}
     />
   );

@@ -30,6 +30,24 @@ DECISION_LABELS: dict[Decision, str] = {
     Decision.ESCALATED: "Escalated",
 }
 
+OUTCOME_VERBS: dict[Decision, str] = {
+    Decision.APPROVED: "approved",
+    Decision.REJECTED: "rejected",
+    Decision.CHALLENGED: "challenged",
+    Decision.EVIDENCE_REQUESTED: "requested evidence on",
+    Decision.ALTERNATIVE_REQUESTED: "requested an alternative to",
+    Decision.ESCALATED: "escalated",
+}
+"""Story 9.4: how an outcome Inbox item words the decision, e.g. "Ana Ruiz rejected Estimate
+v3: …"."""
+
+
+def outcome_summary(reviewer: str, decision: Decision, target: str, reason: str | None) -> str:
+    """Story 9.4: "{Reviewer} {decision} {target}: {reason}" (no colon without a reason)."""
+    head = f"{reviewer} {OUTCOME_VERBS[decision]} {target}"
+    return f"{head}: {reason}" if reason else head
+
+
 RECORDABLE = frozenset(Decision) - {Decision.CHALLENGED}
 """What `reviews.decide` records; a Challenge arrives with Story 9.5."""
 
