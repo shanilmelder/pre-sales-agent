@@ -899,10 +899,12 @@ describe("mockup chrome (theme and shell redesign)", () => {
     expect(document.activeElement).toBe(toggle);
   });
 
-  it("sidebar: PS org tile, bordered Search, active item in the primary tint", () => {
+  it("sidebar: brand mark tile, bordered Search, active item in the primary tint", () => {
     renderShell();
     const org = screen.getByTestId("org-switcher");
-    expect(within(org).getByText("PS").className).toContain("bg-primary");
+    const mark = within(org).getByTestId("brand-mark");
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    expect(mark.querySelector("rect")?.getAttribute("fill")).toBe("var(--primary)");
     const search = within(sidebar()).getByRole("button", { name: "Search or run a command" });
     expect(search.className).toContain("bg-surface-alt");
     expect(search.className).toContain("border-border");
@@ -926,7 +928,7 @@ describe("mockup chrome (theme and shell redesign)", () => {
     expect(sidebar().getAttribute("data-collapsed")).toBe("true");
     expect(sidebar().className).not.toContain("min-[1280px]:w-sidebar");
     const org = screen.getByTestId("org-switcher");
-    expect(within(org).getByText("PS")).toBeTruthy();
+    expect(within(org).getByTestId("brand-mark")).toBeTruthy();
     expect(within(org).getByText("Pre Sales Agent Framework").className).toContain("sr-only");
     expect(within(org).getByText("Pre Sales Agent Framework").className).not.toContain(
       "not-sr-only",
