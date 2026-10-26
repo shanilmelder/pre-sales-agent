@@ -15,6 +15,7 @@ import {
   fromRunLabel,
   hours,
   isDrafting,
+  isSent,
   lifecycleSteps,
   lineHeading,
   registerStatus,
@@ -111,6 +112,25 @@ describe("estimate helpers", () => {
     ]);
     expect(versionTag({ status: "in_review", version: 3 })).toBe("v3 · In review");
     expect(versionNote({ ...draft, status: "in_review" })).toBe("v3 is in review and read only.");
+    // Story 9.3: Approved is current, with In review passed; a rejected version has no step.
+    expect(lifecycleSteps("approved").map((s) => s.state)).toEqual([
+      "passed",
+      "passed",
+      "current",
+      "upcoming",
+    ]);
+    expect(lifecycleSteps("rejected").map((s) => s.state)).toEqual([
+      "passed",
+      "upcoming",
+      "upcoming",
+      "upcoming",
+    ]);
+    expect(versionTag({ status: "approved", version: 3 })).toBe("v3 · Approved");
+    expect(versionTag({ status: "rejected", version: 3 })).toBe("v3 · Rejected");
+    expect(versionNote({ ...draft, status: "approved" })).toBe(
+      "v3 is approved by every reviewer and read only.",
+    );
+    expect(isSent("approved") && isSent("rejected") && !isSent("superseded")).toBe(true);
   });
 
   it("splits a role mix into bar shares and labels the role totals", () => {

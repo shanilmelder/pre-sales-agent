@@ -103,7 +103,12 @@ def _validated(changes: EstimateLineChanges) -> _Edit:
 def not_draft_detail(status: str) -> str:
     """Why a version that is not the draft can't be changed: submitted (Story 8.6), or
     replaced by a newer draft."""
-    sent = (VersionStatus.SUBMITTED, VersionStatus.IN_REVIEW)
+    sent = (
+        VersionStatus.SUBMITTED,
+        VersionStatus.IN_REVIEW,
+        VersionStatus.APPROVED,
+        VersionStatus.REJECTED,
+    )
     return SUBMITTED_DETAIL if status in sent else NOT_DRAFT_DETAIL
 
 

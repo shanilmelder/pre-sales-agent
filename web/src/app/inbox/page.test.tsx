@@ -13,6 +13,10 @@ vi.mock("@/app/inbox/actions", () => ({
   markInboxItemRead: vi.fn(),
   markAllInboxRead: vi.fn(),
 }));
+vi.mock("@/app/opportunities/actions", () => ({
+  loadReviewPanel: async () => ({ kind: "not-found" }),
+  decideReviewRequest: vi.fn(),
+}));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
     throw new Error(`NEXT_REDIRECT ${href}`);

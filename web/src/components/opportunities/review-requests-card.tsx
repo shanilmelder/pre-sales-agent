@@ -31,6 +31,8 @@ import {
   REASON_REQUIRED,
   REQUEST_STATUSES,
   REVIEW_REQUESTS_TITLE,
+  DECISION_STYLES,
+  decisionLine,
   reviewRowId,
   reviewTypeLabel,
   sentLabel,
@@ -185,8 +187,30 @@ function CancelRequest({
   );
 }
 
+/** A request's status on the card (Story 9.3): its latest decision while it is still pending
+ * (Evidence requested, Alternative requested, Escalated), else its status. */
+function RequestStatus({ request }: { request: ReviewRequest }) {
+  const latest = request.latest_decision;
+  if (latest && request.status === "pending") {
+    const style = DECISION_STYLES[latest.decision];
+    const Icon = style.icon;
+    return (
+      <Pill
+        tone={style.tone}
+        icon={<Icon />}
+        data-request-status={request.status}
+        data-decision={latest.decision}
+        className="shrink-0"
+      >
+        {style.label}
+      </Pill>
+    );
+  }
+  return <RequestStatusPill status={request.status} />;
+}
+
 /** The `?review={id}` of the page's URL, if any (read in the browser only). */
-function linkedReview(): string | null {
+export function linkedReview(): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get("review");
 }
@@ -195,16 +219,24 @@ function linkedReview(): string | null {
  * one row per request with the reviewer, the review type, the target, the status pill (icon
  * and label), when it was sent and the message, and **Cancel request** for its sender while
  * it is pending (`can_cancel`, the API's decision). `?review={id}` scrolls to that row and
- * highlights it. "No Review Request sent yet" when there is none. */
+ * highlights it. "No Review Request sent yet" when there is none. Story 9.3: the status
+ * shows the latest decision ("{who} · {decision} · {when}" and its reason under it), and
+ * clicking a row (`onOpen`) opens its review panel in the Inspector. */
 export function ReviewRequestsCard({
   opportunityId,
   items,
   onChanged,
+  onOpen,
+  selectedId = null,
 }: {
   opportunityId: string;
   items: ReviewRequest[];
   /** Runs after a cancel (the tab reads the Estimate and the requests again). */
   onChanged: () => void;
+  /** Opens the request's review panel; `viaKeyboard` when opened with Enter or Space. */
+  onOpen?: (request: ReviewRequest, viaKeyboard: boolean) => void;
+  /** The request whose panel is open. */
+  selectedId?: string | null;
 }) {
   const headingId = useId();
 
@@ -243,19 +275,34 @@ export function ReviewRequestsCard({
               id={reviewRowId(request.id)}
               tabIndex={-1}
               data-review-row={request.id}
+              data-selected={selectedId === request.id ? "" : undefined}
               className={
                 "flex flex-wrap items-start gap-3 border-t border-border px-5 py-3 outline-none " +
                 "first:border-t-0 focus-visible:ring-2 focus-visible:ring-primary " +
-                "data-[highlighted]:bg-primary-tint"
+                "data-[highlighted]:bg-primary-tint data-[selected]:bg-primary-tint"
               }
             >
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-body-strong">{request.reviewer.name}</span>
+                  {onOpen ? (
+                    <button
+                      type="button"
+                      data-open-review={request.id}
+                      aria-current={selectedId === request.id ? "true" : undefined}
+                      // A keyboard-activated click has no pointer clicks (detail 0).
+                      onClick={(event) => onOpen(request, event.detail === 0)}
+                      className="rounded-sm text-left text-body-strong text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      {request.reviewer.name}
+                      <span className="sr-only">{`: open the ${request.target.label} review`}</span>
+                    </button>
+                  ) : (
+                    <span className="text-body-strong">{request.reviewer.name}</span>
+                  )}
                   <span className="text-meta text-muted-foreground">
                     {`${reviewTypeLabel(request.review_type)} review · ${request.target.label}`}
                   </span>
-                  <RequestStatusPill status={request.status} />
+                  <RequestStatus request={request} />
                 </div>
                 <p className="text-meta text-muted-foreground">
                   <time dateTime={request.created_at}>{sentLabel(request.created_at)}</time>
@@ -263,6 +310,18 @@ export function ReviewRequestsCard({
                 </p>
                 {request.message ? (
                   <p className="whitespace-pre-wrap break-words text-body">{request.message}</p>
+                ) : null}
+                {request.latest_decision ? (
+                  <div className="flex flex-col" data-latest-decision="">
+                    <p className="text-meta text-muted-foreground">
+                      {decisionLine(request.latest_decision)}
+                    </p>
+                    {request.latest_decision.reason ? (
+                      <p className="whitespace-pre-wrap break-words text-meta">
+                        {request.latest_decision.reason}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
                 {request.status === "cancelled" && request.cancel_reason ? (
                   <p className="text-meta text-muted-foreground">

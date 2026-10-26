@@ -7,6 +7,7 @@ import {
   getEstimate,
   getOpportunity,
   getRedTeam,
+  getReviewPanel,
   getReviewRequests,
   getSubmissionBlockers,
   listGaps,
@@ -20,6 +21,7 @@ import {
   type OutdatedAssessmentsResult,
   type RedTeamResult,
   type RequirementsResult,
+  type ReviewPanelResult,
   type ReviewRequestsResult,
   type SourcesResult,
 } from "@/app/opportunities/data";
@@ -45,7 +47,13 @@ import {
 import { openGapCount, type ClarificationQuestion, type Detection, type Gap } from "@/lib/gaps";
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
-import type { CreatedReviewRequests, ReviewRequest, ReviewType } from "@/lib/reviews";
+import type {
+  CreatedReviewRequests,
+  Decision,
+  RecordedDecision,
+  ReviewRequest,
+  ReviewType,
+} from "@/lib/reviews";
 import type {
   SubmissionBlockers,
   SubmissionBlockersView,
@@ -3420,6 +3428,108 @@ export async function cancelReviewRequest(
   } catch (thrown) {
     console.error(
       `cancel review request failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+// --- Review Decisions (Story 9.3) -------------------------------------------------------------
+
+/** The review panel of a Review Request, read again by the panel (after a decision, a Reload
+ * or a Review frame of the event stream). */
+export async function loadReviewPanel(input: unknown): Promise<ReviewPanelResult> {
+  const { opportunityId, requestId } = (input ?? {}) as Record<string, unknown>;
+  if (!isId(opportunityId) || !isId(requestId)) return { kind: "error" };
+  return getReviewPanel(opportunityId, requestId);
+}
+
+const DECISION_VALUES: readonly Decision[] = [
+  "approved",
+  "rejected",
+  "evidence_requested",
+  "alternative_requested",
+  "escalated",
+];
+
+export type DecideInput = {
+  opportunityId: string;
+  requestId: string;
+  /** The request's `row_version`, sent as `If-Match`. */
+  rowVersion: number;
+  decision: Decision;
+  reason: string;
+  escalatedTo?: string;
+};
+
+export type DecideResult =
+  | { kind: "ok"; value: RecordedDecision }
+  /** 412: the request changed first; `detail` is "Changed by {name} since you opened it.". */
+  | { kind: "stale"; detail: string }
+  /** 409 or 422: the API's sentence. */
+  | { kind: "invalid"; detail: string }
+  /** 403: the API's sentence (e.g. the author approving). */
+  | { kind: "forbidden"; detail: string | null }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isDecideInput(input: unknown): input is DecideInput {
+  if (typeof input !== "object" || input === null) return false;
+  const r = input as Record<string, unknown>;
+  return (
+    isId(r.opportunityId) &&
+    isId(r.requestId) &&
+    isRowVersion(r.rowVersion) &&
+    typeof r.decision === "string" &&
+    (DECISION_VALUES as readonly string[]).includes(r.decision) &&
+    typeof r.reason === "string" &&
+    (r.escalatedTo === undefined || isId(r.escalatedTo))
+  );
+}
+
+/** `POST …/review-requests/{rid}/decisions` with `If-Match` the request's ETag. Logs ids and
+ * statuses only, never the reason. */
+export async function decideReviewRequest(input: unknown): Promise<DecideResult> {
+  if (!isDecideInput(input)) return { kind: "error" };
+  const reason = input.reason.trim();
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/decisions",
+      {
+        params: {
+          path: { opportunity_id: input.opportunityId, request_id: input.requestId },
+          header: { "If-Match": `"${input.rowVersion}"` },
+        },
+        body: {
+          decision: input.decision,
+          reason: reason ? reason : null,
+          ...(input.decision === "escalated" && input.escalatedTo
+            ? { escalated_to: input.escalatedTo }
+            : {}),
+        },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    const { code, detail } = problem(error);
+    switch (response.status) {
+      case 412:
+        return { kind: "stale", detail: detail ?? "Changed by someone else since you opened it." };
+      case 409:
+      case 422:
+        return { kind: "invalid", detail: detail ?? "The decision was not accepted." };
+      case 403:
+        return { kind: "forbidden", detail: code === "forbidden" ? null : (detail ?? null) };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(
+          `decide review request failed: status=${response.status} code=${String(code)}`,
+        );
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(
+      `decide review request failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return { kind: "error" };
   }

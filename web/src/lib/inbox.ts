@@ -29,6 +29,8 @@ export const EMPTY_BODY = "Review requests and notifications for your Opportunit
 export const NOT_REACHABLE = "The platform is not reachable right now. Try again in a moment.";
 export const NO_SELECTION = "Select an item to see it here.";
 export const LIST_LABEL = "Inbox items";
+/** A Review Request item's subject type (Story 9.3: its detail is the review panel). */
+export const REVIEW_SUBJECT = "reviews.review_request";
 
 /** How often the badge and the Inbox read again while the window is open. */
 export const INBOX_POLL_MS = 30_000;
@@ -128,7 +130,7 @@ export function closedStatus(item: InboxItem): StatusStyle | null {
   if (item.subject_open || !item.subject_status) return null;
   const status = item.subject_status;
   const style =
-    item.subject_type === "reviews.review_request" && status in REQUEST_STATUSES
+    item.subject_type === REVIEW_SUBJECT && status in REQUEST_STATUSES
       ? REQUEST_STATUSES[status as RequestStatus]
       : OTHER_STATUSES[status];
   if (!style) return { label: item.subject_status_label ?? status, tone: "neutral", icon: BanIcon };

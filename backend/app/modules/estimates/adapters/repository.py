@@ -337,13 +337,13 @@ async def has_version_from(uow: UnitOfWork, opportunity_id: UUID, source: str) -
     return found.first() is not None
 
 
-_SENT_STATUSES = ("submitted", "in_review")
+_SENT_STATUSES = ("submitted", "in_review", "approved", "rejected")
 _CURRENT_STATUSES = ("draft", *_SENT_STATUSES)
 
 
 def _current_first(rows: list[EstimateVersionRow]) -> EstimateVersionRow | None:
-    """The draft among these versions of one Opportunity, else the latest `submitted` or
-    `in_review` (Story 9.1) one."""
+    """The draft among these versions of one Opportunity, else the latest `submitted`,
+    `in_review` (Story 9.1), `approved` or `rejected` (Story 9.3) one."""
     drafts = [r for r in rows if r.status == "draft"]
     pool = drafts or [r for r in rows if r.status in _SENT_STATUSES]
     return max(pool, key=lambda r: r.version, default=None)
@@ -351,8 +351,8 @@ def _current_first(rows: list[EstimateVersionRow]) -> EstimateVersionRow | None:
 
 async def current_version(uow: UnitOfWork, opportunity_id: UUID) -> VersionRecord | None:
     """The Opportunity's current Estimate Version: its `draft` if it has one, otherwise its
-    latest `submitted` (Story 8.6) or `in_review` (Story 9.1) version; superseded versions
-    never are."""
+    latest `submitted` (Story 8.6), `in_review` (Story 9.1), `approved` or `rejected` (Story
+    9.3) version; superseded versions never are."""
     rows = await uow.session.execute(
         select(EstimateVersionRow)
         .where(
@@ -423,9 +423,9 @@ async def submit_version(
 async def move_status(
     uow: UnitOfWork, version_id: UUID, *, from_status: str, to_status: str
 ) -> VersionRecord | None:
-    """Story 9.1: move the version from `from_status` to `to_status` (`submitted` and
-    `in_review`), bumping its `row_version`; None (and no change) when it is not in
-    `from_status`."""
+    """Story 9.1: move the version from `from_status` to `to_status` (`submitted`,
+    `in_review`, and Story 9.3's `approved` and `rejected`), bumping its `row_version`; None
+    (and no change) when it is not in `from_status`."""
     changed = (
         await uow.session.execute(
             update(EstimateVersionRow)
@@ -441,9 +441,9 @@ async def move_status(
 async def supersede_submitted(
     uow: UnitOfWork, opportunity_id: UUID, *, keep: UUID
 ) -> list[VersionRecord]:
-    """Mark the Opportunity's `submitted` and `in_review` (Story 9.1) versions other than
-    `keep` `superseded` (bumping their `row_version`); the versions as they are now, oldest
-    first."""
+    """Mark the Opportunity's `submitted`, `in_review` (Story 9.1), `approved` and `rejected`
+    (Story 9.3) versions other than `keep` `superseded` (bumping their `row_version`); the
+    versions as they are now, oldest first."""
     result = await uow.session.execute(
         update(EstimateVersionRow)
         .where(
@@ -632,6 +632,23 @@ async def links_for(uow: UnitOfWork, line_ids: list[UUID]) -> list[LineLinkRecor
         )
         for row in rows.scalars()
     ]
+
+
+async def version_by_number(
+    uow: UnitOfWork, opportunity_id: UUID, number: int
+) -> VersionRecord | None:
+    """Story 9.3: the Opportunity's Estimate Version with this number, whatever its status."""
+    row = (
+        await uow.session.execute(
+            select(EstimateVersionRow)
+            .where(
+                EstimateVersionRow.opportunity_id == opportunity_id,
+                EstimateVersionRow.version == number,
+            )
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _version(row)
 
 
 async def get_version(

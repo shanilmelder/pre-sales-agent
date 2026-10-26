@@ -95,11 +95,11 @@ class UserRef(BaseModel):
 
 class EstimateSummary(BaseModel):
     """A list row's current Estimate Version (its draft, else its latest submitted or
-    in-review one): its number, its status (`draft`, `submitted` or `in_review`) and total
-    hours, Contingency included."""
+    in-review one): its number, its status (`draft`, `submitted`, `in_review`, or Story 9.3's
+    `approved` or `rejected`) and total hours, Contingency included."""
 
     version: int
-    status: Literal["draft", "submitted", "in_review"]
+    status: Literal["draft", "submitted", "in_review", "approved", "rejected"]
     total_hours: float
 
 

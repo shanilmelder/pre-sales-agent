@@ -12,12 +12,19 @@ const actions = vi.hoisted(() => ({
   markAllInboxRead: vi.fn(),
 }));
 vi.mock("@/app/inbox/actions", () => actions);
+// Story 9.3: a Review item's detail reads the review panel.
+const reviewActions = vi.hoisted(() => ({
+  loadReviewPanel: vi.fn(),
+  decideReviewRequest: vi.fn(),
+}));
+vi.mock("@/app/opportunities/actions", () => reviewActions);
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => "/inbox",
 }));
 
 import { ShellProviders } from "@/components/shell/shell-context";
+import { reviewPanel, reviewRequest } from "@/test/review-fixtures";
 import { resetInboxUnread, useInboxUnread } from "@/lib/use-inbox-count";
 
 import { InboxView } from "./inbox-view";
@@ -119,6 +126,9 @@ beforeEach(() => {
     item: { ...ITEMS.find((i) => i.id === id)!, read: true },
   }));
   actions.markAllInboxRead.mockResolvedValue({ kind: "ok", unread: 0 });
+  reviewActions.loadReviewPanel.mockReset();
+  reviewActions.loadReviewPanel.mockResolvedValue({ kind: "not-found" });
+  reviewActions.decideReviewRequest.mockReset();
 });
 
 describe("InboxView", () => {
@@ -343,5 +353,52 @@ describe("InboxView", () => {
     expect(
       await screen.findByText("The platform is not reachable right now. Try again in a moment."),
     ).toBeTruthy();
+  });
+
+  it("a Review item's detail is the review panel, in place of the body and Open", async () => {
+    const panel = reviewPanel({
+      request: reviewRequest({ id: ITEMS[0]!.subject_id }),
+    });
+    reviewActions.loadReviewPanel.mockResolvedValue({ kind: "ok", panel });
+    const { user, container } = renderView();
+    await screen.findByRole("region", { name: "Inbox items" });
+    await user.click(row("Review: Estimate v1"));
+
+    expect(
+      await within(detail()).findByRole("heading", {
+        name: "Review request: Estimate v3, [OPPORTUNITY]",
+      }),
+    ).toBeTruthy();
+    expect(reviewActions.loadReviewPanel).toHaveBeenCalledWith({
+      opportunityId: OPP,
+      requestId: ITEMS[0]!.subject_id,
+    });
+    expect(within(detail()).queryByRole("link", { name: "Open" })).toBeNull();
+    const group = within(detail()).getByRole("group", { name: "Review decision" });
+    expect(within(group).getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(within(detail()).getByRole("link", { name: "Open in tab" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a closed Review item (e.g. escalated away) shows the greyed panel without actions", async () => {
+    const escalated = item(1, {
+      subject_status: "escalated",
+      subject_status_label: "Escalated",
+      subject_open: false,
+      href: null,
+      read: true,
+    });
+    const panel = reviewPanel({
+      request: reviewRequest({ id: escalated.subject_id }),
+      can_decide: false,
+      can_approve: false,
+    });
+    reviewActions.loadReviewPanel.mockResolvedValue({ kind: "ok", panel });
+    const { user, container } = renderView(page([escalated]));
+    await screen.findByRole("region", { name: "Inbox items" });
+    await user.click(row("Review: Estimate v1"));
+    await within(detail()).findByRole("heading", { name: /Review request/ });
+    expect(container.querySelector("[data-greyed]")).not.toBeNull();
+    expect(within(detail()).queryByRole("group", { name: "Review decision" })).toBeNull();
   });
 });

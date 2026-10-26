@@ -790,6 +790,30 @@ class EstimatesEstimateVersionReviewEnded(TracePayload):
     version: int
 
 
+@register
+class EstimatesEstimateVersionApproved(TracePayload):
+    """An `in_review` Estimate Version went `approved` (Story 9.3): every non-cancelled Review
+    Request counting towards it was approved. Subject: the version
+    (`estimates.estimate_version`). Actor: the reviewer whose approval was the last."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.approved"
+
+    version_id: str
+    version: int
+
+
+@register
+class EstimatesEstimateVersionRejected(TracePayload):
+    """An `in_review` Estimate Version went `rejected` (Story 9.3): a reviewer rejected a
+    Review Request counting towards it. Subject: the version (`estimates.estimate_version`).
+    Actor: that reviewer."""
+
+    event_type: ClassVar[str] = "estimates.estimate_version.rejected"
+
+    version_id: str
+    version: int
+
+
 # Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.
 
 
@@ -1341,6 +1365,32 @@ class ReviewsReviewRequestCancelled(TracePayload):
     estimate_version_id: str
     reviewer_id: str
     reason_length: int
+
+
+@register
+class ReviewsReviewDecisionRecorded(TracePayload):
+    """The request's reviewer recorded a Review Decision (Story 9.3): `approved`, `rejected`,
+    `evidence_requested`, `alternative_requested` or `escalated` (to `escalated_to`, who then
+    holds the request), with the reviewer's `reason` (null only for an approval without
+    one), on the target at `target_version`. Actor: the reviewer."""
+
+    event_type: ClassVar[str] = "reviews.review_decision.recorded"
+
+    request_id: str
+    decision_id: str
+    decision: Literal[
+        "approved",
+        "rejected",
+        "challenged",
+        "evidence_requested",
+        "alternative_requested",
+        "escalated",
+    ]
+    reason: str | None = None
+    target_kind: Literal["estimate_version", "assessment"]
+    target_id: str
+    target_version: int
+    escalated_to: str | None = None
 
 
 @register

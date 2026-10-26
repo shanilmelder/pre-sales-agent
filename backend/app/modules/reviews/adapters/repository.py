@@ -1,4 +1,5 @@
-"""Persistence for Review Requests (Story 9.1). Runs inside the caller's Unit of Work."""
+"""Persistence for Review Requests (Story 9.1) and their Review Decisions (Story 9.3). Runs
+inside the caller's Unit of Work."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -6,7 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import func, insert, select, update
 
-from app.modules.reviews.adapters.models import ReviewRequestRow
+from app.modules.reviews.adapters.models import ReviewDecisionRow, ReviewRequestRow
 from app.platform.uow import UnitOfWork
 
 
@@ -232,3 +233,150 @@ async def pending_for_reminders(
         .execution_options(populate_existing=True)
     )
     return now, [_record(row) for row in rows.scalars()]
+
+
+async def reassign(
+    uow: UnitOfWork, request_id: UUID, *, reviewer_id: UUID, expected_row_version: int
+) -> RequestRecord | None:
+    """Story 9.3 (an escalation): hand the `pending` request at `expected_row_version` to
+    `reviewer_id`, bumping `row_version`; None (and no change) otherwise."""
+    changed = (
+        await uow.session.execute(
+            update(ReviewRequestRow)
+            .where(
+                ReviewRequestRow.id == request_id,
+                ReviewRequestRow.status == "pending",
+                ReviewRequestRow.row_version == expected_row_version,
+            )
+            .values(
+                reviewer_id=reviewer_id,
+                row_version=ReviewRequestRow.row_version + 1,
+                updated_at=func.now(),
+            )
+            .returning(ReviewRequestRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get(uow, request_id)
+
+
+async def bump(
+    uow: UnitOfWork, request_id: UUID, *, expected_row_version: int
+) -> RequestRecord | None:
+    """Story 9.3 (a decision that leaves the request `pending`): bump the `row_version` of the
+    pending request at `expected_row_version`; None (and no change) otherwise."""
+    changed = (
+        await uow.session.execute(
+            update(ReviewRequestRow)
+            .where(
+                ReviewRequestRow.id == request_id,
+                ReviewRequestRow.status == "pending",
+                ReviewRequestRow.row_version == expected_row_version,
+            )
+            .values(row_version=ReviewRequestRow.row_version + 1, updated_at=func.now())
+            .returning(ReviewRequestRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get(uow, request_id)
+
+
+# --- Review Decisions (Story 9.3) -----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionRecord:
+    id: UUID
+    review_request_id: UUID
+    decision: str
+    reason: str | None
+    decided_by: UUID
+    target_version: int
+    escalated_to: UUID | None
+    decided_at: datetime
+
+
+def _decision(row: ReviewDecisionRow) -> DecisionRecord:
+    return DecisionRecord(
+        id=row.id,
+        review_request_id=row.review_request_id,
+        decision=row.decision,
+        reason=row.reason,
+        decided_by=row.decided_by,
+        target_version=row.target_version,
+        escalated_to=row.escalated_to,
+        decided_at=row.decided_at,
+    )
+
+
+async def insert_decision(
+    uow: UnitOfWork,
+    *,
+    decision_id: UUID,
+    review_request_id: UUID,
+    decision: str,
+    reason: str | None,
+    decided_by: UUID,
+    target_version: int,
+    escalated_to: UUID | None,
+) -> DecisionRecord:
+    await uow.session.execute(
+        insert(ReviewDecisionRow).values(
+            id=decision_id,
+            review_request_id=review_request_id,
+            decision=decision,
+            reason=reason,
+            decided_by=decided_by,
+            target_version=target_version,
+            escalated_to=escalated_to,
+        )
+    )
+    row = (
+        await uow.session.execute(
+            select(ReviewDecisionRow)
+            .where(ReviewDecisionRow.id == decision_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    return _decision(row)
+
+
+_NEWEST_FIRST = (ReviewDecisionRow.decided_at.desc(), ReviewDecisionRow.id.desc())
+
+
+async def decisions_of(uow: UnitOfWork, request_id: UUID) -> list[DecisionRecord]:
+    """The request's decisions, newest first."""
+    rows = await uow.session.execute(
+        select(ReviewDecisionRow)
+        .where(ReviewDecisionRow.review_request_id == request_id)
+        .order_by(*_NEWEST_FIRST)
+    )
+    return [_decision(row) for row in rows.scalars()]
+
+
+async def latest_decisions(uow: UnitOfWork, request_ids: list[UUID]) -> dict[UUID, DecisionRecord]:
+    """Each of these requests' latest decision; ones with none are left out."""
+    if not request_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(ReviewDecisionRow)
+        .where(ReviewDecisionRow.review_request_id.in_(request_ids))
+        .order_by(*_NEWEST_FIRST)
+    )
+    latest: dict[UUID, DecisionRecord] = {}
+    for row in rows.scalars():
+        latest.setdefault(row.review_request_id, _decision(row))
+    return latest
+
+
+async def all_approved(uow: UnitOfWork, estimate_version_id: UUID) -> bool:
+    """Whether every non-cancelled request counting towards the version is `approved` (and
+    there is at least one)."""
+    rows = await uow.session.execute(
+        select(ReviewRequestRow.status).where(
+            ReviewRequestRow.estimate_version_id == estimate_version_id,
+            ReviewRequestRow.status != "cancelled",
+        )
+    )
+    statuses = list(rows.scalars())
+    return bool(statuses) and all(s == "approved" for s in statuses)

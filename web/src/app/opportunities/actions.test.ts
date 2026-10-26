@@ -19,6 +19,7 @@ import {
   addSource,
   addTextSource,
   cancelReviewRequest,
+  decideReviewRequest,
   approveAllClarificationQuestions,
   cancelAssessmentRun,
   resolveRunDecision,
@@ -2759,5 +2760,78 @@ describe("Review Requests (Story 9.1)", () => {
     expect(
       await searchReviewerCandidates({ opportunityId: OPP_ID, reviewType: "legal", q: "" }),
     ).toEqual({ kind: "error" });
+  });
+});
+
+describe("decideReviewRequest (Story 9.3)", () => {
+  const RID = "00000000-0000-7000-8000-0000000000d1";
+  const CY = "00000000-0000-7000-8000-0000000000a3";
+  const PATH = "/api/v1/opportunities/{opportunity_id}/review-requests/{request_id}/decisions";
+  const BASE = { opportunityId: OPP_ID, requestId: RID, rowVersion: 3 };
+  const RECORDED = { decision: { id: "d" }, request: { id: RID }, version_status: "approved" };
+
+  beforeEach(() => api.POST.mockReset());
+
+  it("posts with If-Match; approve sends a null reason", async () => {
+    api.POST.mockResolvedValue({ data: RECORDED, response: status(201) });
+    expect(await decideReviewRequest({ ...BASE, decision: "approved", reason: "  " })).toEqual({
+      kind: "ok",
+      value: RECORDED,
+    });
+    expect(api.POST).toHaveBeenCalledWith(PATH, {
+      params: { path: { opportunity_id: OPP_ID, request_id: RID }, header: { "If-Match": '"3"' } },
+      body: { decision: "approved", reason: null },
+    });
+  });
+
+  it("reject sends the trimmed reason; only escalate sends escalated_to", async () => {
+    api.POST.mockResolvedValue({ data: RECORDED, response: status(201) });
+    const reject = { ...BASE, decision: "rejected", reason: "  No basis  ", escalatedTo: CY };
+    await decideReviewRequest(reject);
+    expect(api.POST.mock.calls[0]![1].body).toEqual({ decision: "rejected", reason: "No basis" });
+    await decideReviewRequest({ ...BASE, decision: "escalated", reason: "Cy", escalatedTo: CY });
+    expect(api.POST.mock.calls[1]![1].body).toEqual({
+      decision: "escalated",
+      reason: "Cy",
+      escalated_to: CY,
+    });
+  });
+
+  it.each([
+    [412, { code: "row_version_mismatch", detail: "Changed by Ana since you opened it." }, {
+      kind: "stale",
+      detail: "Changed by Ana since you opened it.",
+    }],
+    [409, { code: "review_request_not_pending", detail: "Only pending." }, {
+      kind: "invalid",
+      detail: "Only pending.",
+    }],
+    [422, { code: "validation_error", detail: "Give a reason." }, {
+      kind: "invalid",
+      detail: "Give a reason.",
+    }],
+    [403, { code: "forbidden", detail: "Not allowed" }, { kind: "forbidden", detail: null }],
+    [403, { code: "self_approval_forbidden", detail: "You authored v3." }, {
+      kind: "forbidden",
+      detail: "You authored v3.",
+    }],
+    [404, { code: "not_found" }, { kind: "not-found" }],
+    [500, { code: "internal_error" }, { kind: "error" }],
+  ])("maps %i %o", async (code, error, expected) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    expect(await decideReviewRequest({ ...BASE, decision: "approved", reason: "" })).toEqual(
+      expected,
+    );
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    for (const bad of [
+      { ...BASE, decision: "challenged", reason: "x" },
+      { ...BASE, decision: "approved", reason: "", rowVersion: "3" },
+      { ...BASE, decision: "escalated", reason: "x", escalatedTo: "nope" },
+    ]) {
+      expect(await decideReviewRequest(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.POST).not.toHaveBeenCalled();
   });
 });

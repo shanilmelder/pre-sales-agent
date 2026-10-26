@@ -98,6 +98,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.FINDING_OVERRIDE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_CANCEL: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.REVIEW_REQUEST_DECIDE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -132,6 +133,9 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.FINDING_OVERRIDE,
         Action.REVIEW_REQUEST_CREATE,
         Action.REVIEW_REQUEST_CANCEL,
+        # Story 9.3: only the request's current reviewer, checked by `reviews` (an owner may
+        # be named reviewer when they did not author the version).
+        Action.REVIEW_REQUEST_DECIDE,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -161,11 +165,16 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.REVIEW_REQUEST_CREATE,
         # Only the request's sender, checked by `reviews` (the owner may cancel any).
         Action.REVIEW_REQUEST_CANCEL,
+        # Story 9.3: only the request's current reviewer, checked by `reviews`.
+        Action.REVIEW_REQUEST_DECIDE,
     }
 )
-REVIEWER_GRANTS: frozenset[Action] = frozenset({Action.OPPORTUNITY_READ})
-"""Story 9.1: what a reviewer collaborator may do on the Opportunity: read it, nothing more
-(9.3 adds recording their decision)."""
+REVIEWER_GRANTS: frozenset[Action] = frozenset(
+    {Action.OPPORTUNITY_READ, Action.REVIEW_REQUEST_DECIDE}
+)
+"""Story 9.1: what a reviewer collaborator may do on the Opportunity: read it and (Story
+9.3) record a decision on their own pending Review Request (`reviews` checks it is theirs),
+nothing more."""
 
 
 KNOWLEDGE_SOURCE_OWNER_GRANTS: frozenset[Action] = frozenset(
