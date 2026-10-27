@@ -16,11 +16,13 @@
   and `challenge_suggestions` (the routes); `challenge_status` (notifications, an Inbox
   item's subject, read lazily); `may_raise_challenge` (workflows: the Assessments tab's
   `can_challenge`, read lazily).
+- Story 9.9: `challenges_for` (`estimates`' lineage, read lazily).
 """
 
 from app.modules.reviews.application.challenges import (
     challenge_status,
     challenge_suggestions,
+    challenges_for,
     confirm_reassessment,
     decline_challenge,
     get_challenge,
@@ -34,6 +36,7 @@ from app.modules.reviews.application.models import (
     ChallengeConfirm,
     ChallengeCreate,
     ChallengeDecline,
+    ChallengeRef,
     ChallengeState,
     ChallengeSuggestions,
     ChallengeSuggestionView,
@@ -101,6 +104,7 @@ __all__ = [
     "ChallengeConfirm",
     "ChallengeCreate",
     "ChallengeDecline",
+    "ChallengeRef",
     "ChallengeState",
     "ChallengeStatus",
     "ChallengeSuggestionView",
@@ -137,6 +141,7 @@ __all__ = [
     "cancel_review_request",
     "challenge_status",
     "challenge_suggestions",
+    "challenges_for",
     "confirm_reassessment",
     "create_from_body",
     "create_review_request",

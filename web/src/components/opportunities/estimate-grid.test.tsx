@@ -17,6 +17,7 @@ import type {
 } from "@/lib/estimates";
 import type { ReviewRequest, ReviewRequestsView } from "@/lib/reviews";
 import { axeViolations } from "@/test/axe";
+import { comparison, lineLineage } from "@/test/lineage-fixtures";
 import {
   REVIEW_ID,
   reviewDecision,
@@ -36,6 +37,8 @@ const createEstimateVersion = vi.hoisted(() => vi.fn());
 const loadEstimateVersions = vi.hoisted(() => vi.fn());
 const loadVersionApprovers = vi.hoisted(() => vi.fn());
 const setEstimateBaseline = vi.hoisted(() => vi.fn());
+const loadVersionComparison = vi.hoisted(() => vi.fn());
+const loadLineLineage = vi.hoisted(() => vi.fn());
 const push = vi.hoisted(() => vi.fn());
 vi.mock("@/app/opportunities/actions", () => ({
   loadEstimate,
@@ -47,6 +50,8 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadEstimateVersions,
   loadVersionApprovers,
   setEstimateBaseline,
+  loadVersionComparison,
+  loadLineLineage,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn(), prefetch: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -340,7 +345,8 @@ describe("the inspector", () => {
     expect(within(inspector).getByText("[EXCERPT 2b]")).toBeTruthy();
     const section = within(inspector).getByRole("region", { name: "[LINE 2]" });
     expect(within(section).queryByRole("textbox")).toBeNull();
-    expect(within(section).queryByRole("button")).toBeNull();
+    // Read only: the only button is Story 9.9's **Trace**.
+    expect(within(section).queryAllByRole("button").map((b) => b.textContent)).toEqual(["Trace"]);
     expect(await axeViolations(container)).toEqual([]);
   });
 
@@ -1690,5 +1696,163 @@ describe("EstimateSection, the Baseline (Story 9.7)", () => {
     const lifecycle = container.querySelector("[data-lifecycle]") as HTMLElement;
     expect(lifecycle.querySelectorAll("[data-step-state='passed']").length).toBe(4);
     expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
+describe("EstimateSection, lineage and compare (Story 9.9)", () => {
+  const baselined: EstimateVersion = {
+    ...version(2),
+    id: "00000000-0000-7000-8000-0000000000c2",
+    status: "approved",
+  };
+  const v3: EstimateVersion = { ...version(3), id: "00000000-0000-7000-8000-0000000000c3" };
+  const baselineRef = {
+    version_id: baselined.id,
+    version: 2,
+    set_at: "2026-10-21T09:00:00Z",
+    set_by_name: "Owner Person",
+  };
+  const listItem = (
+    v: number,
+    status: VersionListItem["status"],
+    isBaseline = false,
+  ): VersionListItem => ({
+    id: `00000000-0000-7000-8000-0000000000c${v}`,
+    version: v,
+    status,
+    is_baseline: isBaseline,
+    created_by_name: "Owner Person",
+    created_at: "2026-10-20T09:00:00Z",
+    reason: null,
+  });
+  const VERSIONS = [listItem(2, "approved", true), listItem(3, "draft"), listItem(1, "superseded")];
+  const LINE_2 = line(2, "integration", 0, [0, 0, 0]).id;
+
+  beforeEach(() => {
+    loadVersionComparison.mockReset();
+    loadLineLineage.mockReset();
+    window.history.replaceState(null, "", "/opportunities/x/estimate");
+  });
+
+  it("t on a focused line opens it with focus on its Lineage; Trace does the same", async () => {
+    const user = userEvent.setup();
+    Element.prototype.scrollIntoView = vi.fn();
+    loadLineLineage.mockResolvedValue({ kind: "ok", lineage: lineLineage() });
+    renderSection(view(version(), succeeded));
+
+    await user.tab();
+    await user.keyboard("j");
+    await user.keyboard("t");
+
+    const inspector = pane();
+    expect(within(inspector).getByRole("heading", { level: 3, name: "[LINE 2]" })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Lineage"));
+    expect(loadLineLineage).toHaveBeenCalledWith(OPP_ID, LINE_2);
+    expect(await within(inspector).findByText("[FINDING TITLE]")).toBeTruthy();
+    expect(
+      within(inspector).getByRole("link", { name: "Open in Trace" }).getAttribute("href"),
+    ).toBe(`/opportunities/${OPP_ID}/trace?subject=estimates.estimate_line&subject_id=${LINE_2}`);
+
+    // A click opens another line on its title; **Trace** moves focus to its Lineage.
+    await user.click(lineButton(3));
+    await user.click(within(pane()).getByRole("button", { name: "Trace" }));
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Lineage"));
+  });
+
+  it("d turns on Diff vs the Baseline: deltas, Why it changed, and a menu to re-diff", async () => {
+    const user = userEvent.setup();
+    loadVersionComparison.mockResolvedValue({ kind: "ok", comparison: comparison() });
+    const { container } = renderSection(
+      { ...view(v3, succeeded), baseline: baselineRef },
+      true,
+      null,
+      VERSIONS,
+    );
+    const toggle = screen.getByRole("button", { name: "Diff vs v2" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("[data-estimate-toolbar] [data-diff-toggle]")).not.toBeNull();
+
+    await user.keyboard("d");
+
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(loadVersionComparison).toHaveBeenCalledWith(OPP_ID, 2, 3));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe("Comparing v3 with v2"),
+    );
+    expect(window.location.search).toBe("?diff=2");
+    const changed = lineButton(2).closest("tr") as HTMLElement;
+    await waitFor(() =>
+      expect(changed.querySelector("[data-delta]")?.textContent).toBe("−4.0 h"),
+    );
+    expect(changed.className).toContain("bg-diff-tint");
+    expect(changed.querySelector("[data-delta]")!.className).toContain("text-gap");
+    expect(changed.querySelector("[data-diff-status]")?.textContent).toBe("changed");
+    const added = lineButton(3).closest("tr") as HTMLElement;
+    expect(added.querySelector("[data-diff-status]")?.textContent).toBe("added");
+    const unchanged = lineButton(1).closest("tr") as HTMLElement;
+    expect(unchanged.querySelector("[data-delta]")?.textContent).toBe("no change");
+    expect(unchanged.querySelector("[data-delta]")!.className).toContain("text-text-secondary");
+    const removed = container.querySelector("[data-diff-row=removed]") as HTMLElement;
+    expect(removed.querySelector("s")?.textContent).toBe("[OLD LINE]");
+    expect(removed.textContent).toContain("removed");
+    const totals = container.querySelector("[data-totals]") as HTMLElement;
+    expect(totals.querySelector("[data-delta]")?.textContent).toBe("−2.5 h");
+    const subtotals = Array.from(container.querySelectorAll("[data-subtotal] [data-delta]"));
+    // Functional: [OLD LINE] removed (−5 h); integration: −4 h and +6.5 h.
+    expect(subtotals.map((d) => d.textContent)).toEqual(["−5.0 h", "+2.5 h"]);
+
+    const right = pane();
+    expect(within(right).getByRole("heading", { name: "Compared with v2" })).toBeTruthy();
+    expect(await within(right).findByRole("heading", { name: "Why it changed" })).toBeTruthy();
+    expect(within(right).getByText("[WHY REASON]")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Compare with another version" }));
+    await user.click(screen.getByRole("menuitemradio", { name: /v1/ }));
+
+    expect(
+      screen.getByRole("button", { name: "Diff vs v1" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    await waitFor(() => expect(loadVersionComparison).toHaveBeenCalledWith(OPP_ID, 1, 3));
+    expect(window.location.search).toBe("?diff=1");
+
+    await user.keyboard("d");
+    expect(
+      screen.getByRole("button", { name: "Diff vs v1" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(container.querySelector("[data-delta]")).toBeNull();
+    expect(window.location.search).toBe("");
+  });
+
+  it("?diff=n in the URL turns the diff on against that version", async () => {
+    loadVersionComparison.mockResolvedValue({
+      kind: "ok",
+      comparison: comparison({ from_version: 1 }),
+    });
+    window.history.replaceState(null, "", "/opportunities/x/estimate?diff=1");
+    renderSection({ ...view(v3, succeeded), baseline: baselineRef }, true, null, VERSIONS);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Diff vs v1" }).getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    await waitFor(() => expect(loadVersionComparison).toHaveBeenCalledWith(OPP_ID, 1, 3));
+    // The link opens the Compare pane, as the toggle does.
+    expect(within(pane()).getByRole("heading", { name: "Compared with v1" })).toBeTruthy();
+  });
+
+  it("without a Baseline the default is the version just before", () => {
+    renderSection(view(v3, succeeded), true, null, [
+      listItem(3, "draft"),
+      listItem(2, "superseded"),
+      listItem(1, "superseded"),
+    ]);
+    expect(screen.getByRole("button", { name: "Diff vs v2" })).toBeTruthy();
+  });
+
+  it("a single version has no diff toggle", () => {
+    renderSection(view(version(1), succeeded), true, null, [listItem(1, "draft")]);
+    expect(screen.queryByRole("button", { name: /Diff vs/ })).toBeNull();
   });
 });

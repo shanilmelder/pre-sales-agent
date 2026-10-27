@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { getOpportunity, listTrace, parsePage } from "@/app/opportunities/data";
+import {
+  getLineLineage,
+  getOpportunity,
+  listTrace,
+  parsePage,
+} from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { TraceSection } from "@/components/opportunities/trace-list";
 import { getMe } from "@/lib/api/server";
@@ -15,7 +20,8 @@ import { PAGE_PADDING } from "@/components/shell/page-header";
 type SearchParams = Record<string, string | string[] | undefined>;
 
 /** Tab 8: the Opportunity's Decision Trace, read-only (Story 9.8, demo slice): its trace
- * events newest first, filtered by the URL's `subject`, `actor` and `event`, one page
+ * events newest first, filtered by the URL's `subject`, `actor` and `event` (and, Story 9.9,
+ * `subject_id`: one Estimate line's events, its chip named by the line's title), one page
  * (`page`) at a time. Renders nothing when the user may not read the Opportunity; the
  * workspace layout shows why. */
 export async function TraceTab({
@@ -32,7 +38,13 @@ export async function TraceTab({
   const { opportunity } = loaded;
   const filters = parseTraceFilters(searchParams);
   const page = parsePage(searchParams.page);
-  const listed = await listTrace(opportunity.id, page, filters);
+  const [listed, line] = await Promise.all([
+    listTrace(opportunity.id, page, filters),
+    filters.subject_id && filters.subject === "estimates.estimate_line"
+      ? getLineLineage(opportunity.id, filters.subject_id)
+      : null,
+  ]);
+  const subjectTitle = line?.kind === "ok" ? line.lineage.title : null;
   if (
     listed.kind === "ok" &&
     listed.page.items.length === 0 &&
@@ -50,6 +62,7 @@ export async function TraceTab({
           opportunityId={opportunity.id}
           page={listed.page}
           filters={filters}
+          subjectTitle={subjectTitle}
         />
       ) : (
         <>

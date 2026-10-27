@@ -11,6 +11,7 @@ import {
   ReasonField,
   reasonValid,
 } from "@/components/opportunities/estimate-item-parts";
+import { AssumptionLineageSection } from "@/components/opportunities/lineage-section";
 import type { EditOutcome } from "@/components/opportunities/estimate-line-edit";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -318,15 +319,18 @@ export function EditAssumptionForm({
  * its hours and line, its origin card (the Gap opens with its own inspector), "Accepted by
  * {name} · {date}" or "Not accepted" with **Accept**, and the "Edit Assumption" form. Without
  * `accepting` and `editing` (a version that isn't the draft, or a sales representative) it is
- * read-only. */
+ * read-only. Story 9.9: with `opportunityId`, it ends with the **Lineage** chain. */
 export function AssumptionInspector({
   assumption,
+  opportunityId,
   focusRequest = 0,
   accepting,
   editing,
   onOpenGap,
 }: {
   assumption: Assumption;
+  /** For the lineage; without it the section is left out. */
+  opportunityId?: string;
   focusRequest?: number;
   accepting?: AssumptionAccepting;
   editing?: AssumptionEditing;
@@ -417,6 +421,10 @@ export function AssumptionInspector({
           assumption={assumption}
           editing={editing}
         />
+      ) : null}
+
+      {opportunityId ? (
+        <AssumptionLineageSection opportunityId={opportunityId} assumptionId={assumption.id} />
       ) : null}
     </section>
   );

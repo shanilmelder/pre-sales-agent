@@ -424,6 +424,33 @@ async def list_gaps(
     )
 
 
+async def gap_lineage(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    gap_id: UUID,
+    *,
+    store: BlobStore | None = None,
+) -> Gap | None:
+    """Story 9.9 (an Assumption's lineage): the Opportunity's Gap with this id, whatever its
+    status, with its Clarification Question, the recorded answer (who, when and the Source
+    passage) and its history; None when it is not one of the Opportunity's. A sales
+    representative's view follows `list_gaps`: a question not yet approved or sent is null.
+    No authorization: the caller has checked that the actor may read the Opportunity."""
+    found = await repo.gaps_by_id(uow, opportunity_id, [gap_id])
+    record = found.get(gap_id)
+    if record is None:
+        return None
+    (view,) = await gap_views(
+        uow,
+        opportunity_id,
+        [record],
+        approved_only=sees_only_approved_questions(actor),
+        store=store,
+    )
+    return view
+
+
 async def irrelevance_share(uow: UnitOfWork, opportunity_id: UUID | None) -> IrrelevanceShare:
     """The FR-11 live irrelevance measure: detected Gaps that are not superseded, and how many
     of them are dismissed as "Not relevant", for one Opportunity or (None) all of them. No

@@ -66,6 +66,7 @@ def _insert(
     payload: dict[str, Any],
     at: datetime,
     subject_version: int | None = None,
+    subject_id: UUID | None = None,
 ) -> str:
     event_id = new_id()
     with engine.begin() as conn:
@@ -83,7 +84,7 @@ def _insert(
                 "actor": actor_id,
                 "event": event_type,
                 "subject": subject_type,
-                "subject_id": uuid4(),
+                "subject_id": subject_id or uuid4(),
                 "version": subject_version,
                 "payload": json.dumps(payload),
                 "occurred": at,
@@ -267,6 +268,53 @@ def test_an_unknown_filter_value_is_an_empty_page(client: TestClient, sync_engin
         assert resp.status_code == 200, resp.text
         assert (resp.json()["items"], resp.json()["total"]) == ([], 0)
         assert resp.json()["options"]["event_types"] == ["opportunities.opportunity.created"]
+
+
+def test_a_subject_id_shows_only_that_subjects_events(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    """Story 9.9 (**Open in Trace** from a line's lineage): only the line's events, with the
+    other filters still applied; an unknown or malformed id is an empty page."""
+    headers, _ = _user(client, sync_engine, "Owner Person", PSE)
+    opp = _create(client, headers)
+    _agent_and_system(sync_engine, opp["id"])
+    line_id = uuid4()
+    now = datetime.now(UTC)
+    for n in (1, 2):
+        _insert(
+            sync_engine,
+            opportunity_id=opp["id"],
+            actor_type="user",
+            actor_id=opp["owner"]["id"],
+            event_type="estimates.estimate_line.edited",
+            subject_type="estimates.estimate_line",
+            payload={"version": 1, "before_hours": n, "after_hours": n + 1, "reason": "Why"},
+            at=now + timedelta(seconds=30 + n),
+            subject_id=line_id,
+        )
+
+    resp = _trace(client, headers, opp["id"], subject_id=str(line_id))
+    narrowed = _trace(
+        client,
+        headers,
+        opp["id"],
+        subject_id=str(line_id),
+        subject_type="estimates.estimate_line",
+        actor_type="agent",
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 2
+    assert {i["subject"]["id"] for i in body["items"]} == {str(line_id)}
+    assert [i["payload"]["before_hours"] for i in body["items"]] == [2, 1]
+    assert (narrowed.json()["items"], narrowed.json()["total"]) == ([], 0)
+    assert body["options"] == _trace(client, headers, opp["id"]).json()["options"]
+    for unknown in (str(uuid4()), "not-a-uuid"):
+        empty = _trace(client, headers, opp["id"], subject_id=unknown)
+        assert empty.status_code == 200, empty.text
+        assert (empty.json()["items"], empty.json()["total"]) == ([], 0)
+    assert _trace(client, headers, opp["id"], subject_id="x" * 201).status_code == 422
 
 
 def test_an_empty_filter_value_is_no_filter(client: TestClient, sync_engine: Engine) -> None:

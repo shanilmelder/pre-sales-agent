@@ -702,3 +702,145 @@ export function longDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : LONG_DATE.format(date);
 }
+
+// --- lineage and compare (Story 9.9) --------------------------------------------------------
+
+export type LineLineage = components["schemas"]["LineLineage"];
+export type LineageRequirement = components["schemas"]["LineageRequirement"];
+export type LineageFinding = components["schemas"]["LineageFinding"];
+export type LineageDecision = components["schemas"]["LineageDecision"];
+export type LineageAssumption = components["schemas"]["LineageAssumption"];
+export type LineageEdit = components["schemas"]["LineageEdit"];
+export type LineageReview = components["schemas"]["LineageReview"];
+export type LineageEvidence = components["schemas"]["LineageEvidence"];
+export type LineageActor = components["schemas"]["LineageActor"];
+export type AssumptionLineage = components["schemas"]["AssumptionLineage"];
+export type LineageStep = components["schemas"]["LineageStep"];
+export type VersionComparison = components["schemas"]["VersionComparison"];
+export type LineDiff = components["schemas"]["LineDiff"];
+export type ItemDiff = components["schemas"]["ItemDiff"];
+export type WhyEvent = components["schemas"]["WhyEvent"];
+
+export const LINEAGE = "Lineage";
+export const TRACE = "Trace";
+export const OPEN_IN_TRACE = "Open in Trace";
+export const NOTHING_RECORDED = "Nothing recorded.";
+export const LINEAGE_FAILED = "The lineage could not be loaded.";
+export const LOADING_LINEAGE = "Loading lineage";
+export const SUPERSEDED = "superseded";
+export const WHY_IT_CHANGED = "Why it changed";
+export const COMPARE_FAILED = "The comparison could not be loaded.";
+export const LOADING_COMPARISON = "Loading comparison";
+export const NO_CHANGE = "no change";
+export const NO_ITEM_CHANGES = "No Assumption or Risk changes.";
+export const NO_WHY_EVENTS = "No recorded decisions between these versions.";
+
+/** The line's lineage sections, in order, with their headings. */
+export const LINE_LINEAGE_SECTIONS = [
+  { key: "requirements", label: "Requirements" },
+  { key: "findings", label: "Findings" },
+  { key: "decisions", label: "Decisions" },
+  { key: "assumptions", label: "Assumptions" },
+  { key: "edits", label: "Edits" },
+  { key: "reviews", label: "Reviews" },
+] as const;
+
+/** `/opportunities/{id}/trace?subject=estimates.estimate_line&subject_id={line}`: the line's
+ * trace events (**Open in Trace**). */
+export function lineTraceHref(opportunityId: string, lineId: string): string {
+  const query = new URLSearchParams({ subject: "estimates.estimate_line", subject_id: lineId });
+  return `/opportunities/${opportunityId}/trace?${query.toString()}`;
+}
+
+/** A delta in hours for a Total cell: "+4.0 h", "−4.0 h" (a minus sign), or "no change". */
+export function deltaText(delta: number): string {
+  const rounded = Math.round(delta * 10) / 10;
+  if (rounded > 0) return `+${hours(rounded)} h`;
+  if (rounded < 0) return `−${hours(Math.abs(rounded))} h`;
+  return NO_CHANGE;
+}
+
+/** "Diff vs v2" (the toolbar toggle). */
+export function diffToggleLabel(version: number): string {
+  return `Diff vs v${version}`;
+}
+
+/** "Compared with v2" (the right pane's heading). */
+export function comparedWith(version: number): string {
+  return `Compared with v${version}`;
+}
+
+/** "Comparing v3 with v2" (announced when the diff turns on or changes). */
+export function comparingAnnouncement(shown: number, against: number): string {
+  return `Comparing v${shown} with v${against}`;
+}
+
+/** The version a diff compares against by default: the Baseline when one exists and the
+ * shown version is later, else the version numbered just before (null: none). */
+export function defaultDiffTarget(
+  versions: readonly Pick<VersionListItem, "version" | "is_baseline">[],
+  shown: number,
+): number | null {
+  const baseline = versions.find((v) => v.is_baseline);
+  if (baseline && baseline.version < shown) return baseline.version;
+  const earlier = versions.filter((v) => v.version < shown).map((v) => v.version);
+  return earlier.length > 0 ? Math.max(...earlier) : null;
+}
+
+/** The versions a diff can compare against: every other version, the Baseline first, then
+ * newest first (the API's order). */
+export function diffTargets<T extends Pick<VersionListItem, "version">>(
+  versions: readonly T[],
+  shown: number,
+): T[] {
+  return versions.filter((v) => v.version !== shown);
+}
+
+/** `?diff=n` from the URL as a positive whole number, or null. */
+export function parseDiffParam(search: string): number | null {
+  return parseVersionParam(new URLSearchParams(search).get("diff"));
+}
+
+/** The current URL with `?diff=n` set (or removed for null), keeping everything else. */
+export function withDiffParam(href: string, diff: number | null): string {
+  const url = new URL(href);
+  if (diff === null) url.searchParams.delete("diff");
+  else url.searchParams.set("diff", String(diff));
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function lineKey(section: string, title: string): string {
+  return `${section}\u0000${title.trim().toLowerCase()}`;
+}
+
+/** The comparison's line diffs by the shown line's section and title (as the server matches
+ * them); removed lines are left out (they have no row). */
+export function lineDeltas(comparison: VersionComparison): Map<string, LineDiff> {
+  const found = new Map<string, LineDiff>();
+  for (const diff of comparison.lines) {
+    if (diff.change !== "removed") found.set(lineKey(diff.section, diff.title), diff);
+  }
+  return found;
+}
+
+/** The line diff of a shown line, or null when it didn't change. */
+export function lineDelta(
+  deltas: Map<string, LineDiff>,
+  line: Pick<EstimateLine, "section" | "title">,
+): LineDiff | null {
+  return deltas.get(lineKey(line.section, line.title)) ?? null;
+}
+
+/** "Superseded"-style words for a lineage actor and time: "Ana Reviewer · 21 Oct 2026". */
+export function actorAndDate(
+  actor: Pick<LineageActor, "name"> | null | undefined,
+  at: string | null | undefined,
+): string {
+  return [actor?.name, at ? longDate(at) : null].filter(Boolean).join(" · ");
+}
+
+/** A finding or effort entry's heading: "Engineering Agent · Assessment v2". */
+export function findingSource(finding: Pick<LineageFinding, "agent_label" | "entry" | "version">): string {
+  const kind = finding.entry === "critic" || finding.entry === "red_team" ? "Review" : "Assessment";
+  return `${finding.agent_label} · ${kind} v${finding.version}`;
+}

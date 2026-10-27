@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  defaultDiffTarget,
+  deltaText,
+  diffTargets,
+  diffToggleLabel,
+  comparingAnnouncement,
+  lineDelta,
+  lineDeltas,
+  lineTraceHref,
+  parseDiffParam,
+  withDiffParam,
+} from "./estimates";
+import { comparison } from "@/test/lineage-fixtures";
+
+import {
   acceptAllLabel,
   acceptedLabel,
   approvedOn,
@@ -279,5 +293,45 @@ describe("Assumptions Register helpers", () => {
     expect(isProposing({ proposal_status: "succeeded" })).toBe(false);
     expect(isProposing({ proposal_status: null })).toBe(false);
     expect(isProposing(null)).toBe(false);
+  });
+});
+
+describe("lineage and compare helpers (Story 9.9)", () => {
+  const item = (version: number, isBaseline = false) => ({ version, is_baseline: isBaseline });
+
+  it("a delta reads +x.x h, −x.x h (a minus sign) or no change", () => {
+    expect(deltaText(4)).toBe("+4.0 h");
+    expect(deltaText(-2.5)).toBe("−2.5 h");
+    expect(deltaText(0.04)).toBe("no change");
+    expect(deltaText(0)).toBe("no change");
+  });
+
+  it("the default target is the Baseline when the shown version is later, else the one before", () => {
+    expect(defaultDiffTarget([item(2, true), item(3), item(1)], 3)).toBe(2);
+    expect(defaultDiffTarget([item(4, true), item(5), item(3), item(2)], 3)).toBe(2);
+    expect(defaultDiffTarget([item(2, true), item(3), item(1)], 2)).toBe(1);
+    expect(defaultDiffTarget([item(3), item(2), item(1)], 3)).toBe(2);
+    expect(defaultDiffTarget([item(1)], 1)).toBeNull();
+    expect(diffTargets([item(2, true), item(3), item(1)], 3).map((v) => v.version)).toEqual([2, 1]);
+  });
+
+  it("labels, the URL parameter and the trace link", () => {
+    expect(diffToggleLabel(2)).toBe("Diff vs v2");
+    expect(comparingAnnouncement(3, 2)).toBe("Comparing v3 with v2");
+    expect(parseDiffParam("?diff=2&version=3")).toBe(2);
+    expect(parseDiffParam("?diff=0")).toBeNull();
+    expect(parseDiffParam("?diff=x")).toBeNull();
+    expect(withDiffParam("http://h/o/1/estimate?version=3", 2)).toBe("/o/1/estimate?version=3&diff=2");
+    expect(withDiffParam("http://h/o/1/estimate?diff=2", null)).toBe("/o/1/estimate");
+    expect(lineTraceHref("o1", "l1")).toBe(
+      "/opportunities/o1/trace?subject=estimates.estimate_line&subject_id=l1",
+    );
+  });
+
+  it("line deltas match the shown line by section and title, removed ones left out", () => {
+    const deltas = lineDeltas(comparison());
+    expect(lineDelta(deltas, { section: "integration", title: " [line 2] " })?.delta_hours).toBe(-4);
+    expect(lineDelta(deltas, { section: "functional", title: "[OLD LINE]" })).toBeNull();
+    expect(lineDelta(deltas, { section: "functional", title: "[LINE 1]" })).toBeNull();
   });
 });

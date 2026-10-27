@@ -1,5 +1,6 @@
 "use client";
 
+import { XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -39,6 +40,8 @@ import {
   pageCount,
   payloadValue,
   relativeTime,
+  removeSubjectLabel,
+  subjectChipLabel,
   subjectHref,
   subjectLabel,
   subjectLinkText,
@@ -292,15 +295,19 @@ export function TraceInspector({
  * Values come from the URL (`filters`) and every change replaces the URL, on page 1, so a
  * filtered view survives reload and sharing. The choices are the values present on this
  * Opportunity's trace; a value from a shared URL that isn't among them is still shown so the
- * control never lies about what is applied. */
+ * control never lies about what is applied. Story 9.9: a `subject_id` filter (**Open in
+ * Trace** from a line's lineage) is a visible, removable "Line {title}" chip. */
 export function TraceFilterBar({
   opportunityId,
   filters,
   options,
+  subjectTitle = null,
 }: {
   opportunityId: string;
   filters: TraceFilters;
   options: TracePage["options"];
+  /** The `subject_id` filter's line title, when known. */
+  subjectTitle?: string | null;
 }) {
   const router = useRouter();
   const id = useId();
@@ -375,6 +382,22 @@ export function TraceFilterBar({
       aria-busy={pending || undefined}
       className="flex flex-wrap items-center gap-2"
     >
+      {values.subject_id ? (
+        <span
+          data-subject-id-chip=""
+          className="inline-flex items-center gap-1 rounded-md border border-primary-tint bg-primary-tint py-[3px] pr-1 pl-2.5 text-[13px] leading-[1.4] text-primary-text"
+        >
+          <span className="max-w-60 truncate">{subjectChipLabel(subjectTitle)}</span>
+          <button
+            type="button"
+            aria-label={removeSubjectLabel(subjectTitle)}
+            onClick={() => navigate(withTraceFilter(values, "subject_id", ""))}
+            className="inline-flex size-5 items-center justify-center rounded-sm outline-none hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <XIcon aria-hidden="true" className="size-3" />
+          </button>
+        </span>
+      ) : null}
       {chip("subject", "Subject", "Any subject", options.subject_types, subjectLabel)}
       {chip("actor", "Actor", "Any actor", options.actor_types, actorTypeLabel)}
       {chip("event", "Event", "Any event", options.event_types, eventLabel)}
@@ -445,11 +468,14 @@ export function TraceSection({
   page,
   filters,
   now,
+  subjectTitle = null,
 }: {
   opportunityId: string;
   page: TracePage;
   filters: TraceFilters;
   now?: number;
+  /** Story 9.9: the `subject_id` filter's line title, when known. */
+  subjectTitle?: string | null;
 }) {
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -499,6 +525,7 @@ export function TraceSection({
             opportunityId={opportunityId}
             filters={filters}
             options={page.options}
+            subjectTitle={subjectTitle}
           />
         ) : null}
       </div>

@@ -1272,3 +1272,139 @@ async def version_reasons(uow: UnitOfWork, version_ids: list[UUID]) -> dict[UUID
         if isinstance(reason, str) and reason:
             found[subject_id] = reason
     return found
+
+
+# --- trace reads for lineage and compare (Story 9.9) ----------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TraceRecord:
+    """A stored trace event, as lineage and compare read it (ids, kinds and the stored
+    payload; never written here)."""
+
+    id: UUID
+    occurred_at: datetime
+    event_type: str
+    actor_type: str
+    actor_id: str
+    subject_type: str
+    subject_id: UUID
+    subject_version: int | None
+    payload: dict[str, Any]
+
+
+_TRACE_COLUMNS = (
+    TraceEvent.id,
+    TraceEvent.occurred_at,
+    TraceEvent.event_type,
+    TraceEvent.actor_type,
+    TraceEvent.actor_id,
+    TraceEvent.subject_type,
+    TraceEvent.subject_id,
+    TraceEvent.subject_version,
+    TraceEvent.payload,
+)
+
+
+def _trace(row: Any) -> TraceRecord:
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    return TraceRecord(
+        id=row.id,
+        occurred_at=row.occurred_at,
+        event_type=row.event_type,
+        actor_type=row.actor_type,
+        actor_id=row.actor_id,
+        subject_type=row.subject_type,
+        subject_id=row.subject_id,
+        subject_version=row.subject_version,
+        payload=dict(payload),
+    )
+
+
+_OLDEST_FIRST = (TraceEvent.occurred_at, TraceEvent.id)
+
+
+async def subject_events(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    subject_type: str,
+    subject_ids: list[UUID],
+    event_types: tuple[str, ...],
+) -> list[TraceRecord]:
+    """The Opportunity's events of these types about these subjects, oldest first (served by
+    the `(subject_type, subject_id)` index)."""
+    if not subject_ids:
+        return []
+    rows = await uow.session.execute(
+        select(*_TRACE_COLUMNS)
+        .where(
+            TraceEvent.opportunity_id == opportunity_id,
+            TraceEvent.subject_type == subject_type,
+            TraceEvent.subject_id.in_(subject_ids),
+            TraceEvent.event_type.in_(event_types),
+        )
+        .order_by(*_OLDEST_FIRST)
+    )
+    return [_trace(row) for row in rows]
+
+
+async def line_edit_events(
+    uow: UnitOfWork, opportunity_id: UUID, line_ids: list[UUID]
+) -> list[TraceRecord]:
+    """Every `estimates.estimate_line.edited` event of these lines, oldest first."""
+    return await subject_events(
+        uow,
+        opportunity_id,
+        subject_type="estimates.estimate_line",
+        subject_ids=line_ids,
+        event_types=("estimates.estimate_line.edited",),
+    )
+
+
+async def payload_events(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    event_type: str,
+    key: str,
+    values: list[str],
+) -> list[TraceRecord]:
+    """The Opportunity's events of `event_type` whose payload `key` is one of `values`
+    (e.g. a Conflict decision's `line_id`), oldest first (the `(opportunity_id,
+    occurred_at)` index narrows to the Opportunity)."""
+    if not values:
+        return []
+    rows = await uow.session.execute(
+        select(*_TRACE_COLUMNS)
+        .where(
+            TraceEvent.opportunity_id == opportunity_id,
+            TraceEvent.event_type == event_type,
+            TraceEvent.payload[key].astext.in_(values),
+        )
+        .order_by(*_OLDEST_FIRST)
+    )
+    return [_trace(row) for row in rows]
+
+
+async def events_between(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    start: datetime,
+    end: datetime,
+    event_types: tuple[str, ...],
+) -> list[TraceRecord]:
+    """The Opportunity's events of these types with `start <= occurred_at <= end`, oldest
+    first (served by the `(opportunity_id, occurred_at)` index)."""
+    rows = await uow.session.execute(
+        select(*_TRACE_COLUMNS)
+        .where(
+            TraceEvent.opportunity_id == opportunity_id,
+            TraceEvent.occurred_at >= start,
+            TraceEvent.occurred_at <= end,
+            TraceEvent.event_type.in_(event_types),
+        )
+        .order_by(*_OLDEST_FIRST)
+    )
+    return [_trace(row) for row in rows]

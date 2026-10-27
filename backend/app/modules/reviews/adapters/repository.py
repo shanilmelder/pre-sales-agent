@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, or_, select, update
 
 from app.modules.reviews.adapters.models import (
     ChallengeRow,
@@ -612,6 +612,33 @@ async def get_challenge(
         statement = statement.with_for_update()
     row = (await uow.session.execute(statement)).scalar_one_or_none()
     return None if row is None else _challenge(row)
+
+
+async def challenges_for(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    estimate_version_ids: list[UUID],
+    target_ids: list[UUID],
+) -> list[ChallengeRecord]:
+    """Story 9.9: the Opportunity's Challenges raised in the context of one of these Estimate
+    Versions or targeting one of these ids (a version, an Assessment or a Finding), oldest
+    first."""
+    if not estimate_version_ids and not target_ids:
+        return []
+    rows = await uow.session.execute(
+        select(ChallengeRow)
+        .where(
+            ChallengeRow.opportunity_id == opportunity_id,
+            or_(
+                ChallengeRow.estimate_version_id.in_(estimate_version_ids),
+                ChallengeRow.target_id.in_(target_ids),
+            ),
+        )
+        .order_by(ChallengeRow.created_at, ChallengeRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return [_challenge(row) for row in rows.scalars()]
 
 
 async def update_challenge(

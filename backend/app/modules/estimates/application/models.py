@@ -602,3 +602,258 @@ class RiskChanges(BaseModel):
     likelihood: RiskLevel | None = None
     impact: RiskLevel | None = None
     reason: StrictStr = Field(description="Why. Trimmed, it must be 1 to 300 characters.")
+
+
+# --- lineage and compare (Story 9.9) --------------------------------------------------------
+
+
+class LineageActor(BaseModel):
+    """Who recorded a decision: a person's name, an agent's role in words (e.g. "Red Team
+    Agent", with its version) or "System"."""
+
+    type: Literal["user", "agent", "system"]
+    id: str
+    name: str
+    version: str | None = None
+
+
+class LineageEvidence(BaseModel):
+    """An Evidence chip: a Requirement at the version cited (`label` `R<n>`, or `Superseded`
+    once no longer active) or a Source passage (`S<n> · <file name>`, with its `passage_id`).
+    `superseded`: the Requirement was edited after this version was cited, or is no longer
+    active; the chip still opens the cited version."""
+
+    kind: Literal["requirement", "source_document"]
+    id: str
+    version: int | None
+    label: str
+    superseded: bool
+    passage_id: str | None = None
+    excerpt: str = ""
+
+
+class LineageRequirement(BaseModel):
+    """A Requirement the line covers, at the version it cites (`text`: that version's text),
+    with its Evidence chip. `active_version`: its current version (null once no longer
+    active); `superseded` when that is newer than the cited one, or it is no longer active."""
+
+    id: str
+    version: int = Field(ge=1)
+    label: str
+    text: str
+    active_version: int | None
+    superseded: bool
+    evidence: list[LineageEvidence]
+
+
+class LineageFinding(BaseModel):
+    """What sized or challenged the line, from the version's assessment run: a specialist
+    `finding` or `effort` entry citing one of the line's Requirements (its agent, Assessment
+    id and version), or a `critic` or `red_team` Finding citing them (or the line). `title`:
+    the Finding's title, or the effort's Requirement; `detail`: its detail, or the effort's
+    basis; `hours` for an effort entry. `evidence`: the cited Requirement versions.
+    `superseded`: a rerun replaced the Assessment (or a newer Review the Review)."""
+
+    entry: Literal["finding", "effort", "critic", "red_team"]
+    id: str
+    agent: str
+    agent_label: str
+    assessment_id: str
+    version: int = Field(ge=1)
+    title: str
+    detail: str
+    severity: str | None
+    hours: float | None
+    status: str | None
+    created_at: datetime | None
+    superseded: bool
+    evidence: list[LineageEvidence]
+
+
+class LineageDecision(BaseModel):
+    """A human decision behind the line: a Conflict resolution that set its hours
+    (`conflict_resolved`), or the override or resolution of a Finding in its lineage
+    (`finding_overridden`, `finding_resolved`), with the reason, who and when. `version`:
+    the Estimate Version number (a Conflict) or the Review version (a Finding);
+    `superseded`: it was on a superseded Review."""
+
+    kind: Literal["conflict_resolved", "finding_overridden", "finding_resolved"]
+    subject_id: str
+    title: str
+    reason: str | None
+    actor: LineageActor
+    at: datetime
+    version: int | None
+    superseded: bool
+
+
+class LineageAssumption(BaseModel):
+    """A Contingency Assumption linked to the line: its register number, wording, hours,
+    and who accepted it and when (null while unaccepted)."""
+
+    id: str
+    position: int = Field(ge=1)
+    wording: str
+    amount_hours: float | None
+    accepted_by_name: str | None
+    accepted_at: datetime | None
+    version: int = Field(ge=1)
+    superseded: bool
+
+
+class LineageEdit(BaseModel):
+    """A person's edit of the line, or of the line on an earlier version it was carried from
+    (`line_id`): the hours before and after, why, who and when. `version`: the Estimate
+    Version number it was made on; `superseded`: a later edit replaced it."""
+
+    line_id: str
+    version: int = Field(ge=1)
+    before_hours: float
+    after_hours: float
+    reason: str
+    actor: LineageActor
+    at: datetime
+    superseded: bool
+
+
+class LineageReview(BaseModel):
+    """A Challenge targeting the line's version, or a Finding or Assessment in its lineage
+    (`challenge`, `label` its status), or a Review Decision on the version or one of those
+    Assessments (`review_decision`, `label` the decision), with the reason, who and when.
+    `version`: the target's version; `superseded`: the target was superseded since."""
+
+    kind: Literal["challenge", "review_decision"]
+    id: str
+    label: str
+    target_kind: str
+    target_id: str
+    reason: str | None
+    actor: LineageActor
+    at: datetime
+    version: int | None
+    superseded: bool
+    decline_reason: str | None = Field(
+        default=None,
+        description="A declined Challenge: the owner's reason for declining it.",
+    )
+
+
+class LineLineage(BaseModel):
+    """Story 9.9 (`estimates.get_line_lineage`): what is behind an Estimate line, derived
+    (nothing is stored): its Requirements, the Findings and effort entries of the version's
+    assessment run, human decisions, its Contingencies, its edits (and its carried
+    predecessors') and the reviews of its version. Empty sections are empty lists."""
+
+    line_id: str
+    title: str
+    section: Section
+    version_id: str
+    version: int = Field(ge=1)
+    source: VersionSource
+    requirements: list[LineageRequirement]
+    findings: list[LineageFinding]
+    decisions: list[LineageDecision]
+    assumptions: list[LineageAssumption]
+    edits: list[LineageEdit]
+    reviews: list[LineageReview]
+
+
+class LineagePassage(BaseModel):
+    """A Source passage, as the answer step cites it."""
+
+    passage_id: str
+    source_id: str
+    source_version: int = Field(ge=1)
+    filename: str
+    label: str
+    excerpt: str
+
+
+LineageStepKind = Literal[
+    "gap", "unknown", "finding", "question", "answer", "conversion", "acceptance"
+]
+
+
+class LineageStep(BaseModel):
+    """One step of an Assumption's chain of origin. `title`: the Gap's or Finding's title,
+    the question's text, the answer's Source, the conversion or the acceptance; `detail`:
+    why it matters, the answer date and so on. `actor` and `at`: who and when (null when
+    not recorded). `version`: the Gap's row version the Assumption was made from, or the
+    Assessment's; `superseded`: the origin moved on since the Assumption was made from it."""
+
+    kind: LineageStepKind
+    id: str
+    title: str
+    detail: str | None
+    actor: LineageActor | None
+    at: datetime | None
+    version: int | None
+    superseded: bool
+    evidence: list[LineageEvidence] = Field(default_factory=list)
+    passage: LineagePassage | None = None
+
+
+class AssumptionLineage(BaseModel):
+    """Story 9.9 (`estimates.get_assumption_lineage`): an Assumption's chain, oldest first:
+    its origin (a Gap, an Unknown or a Finding), the Clarification Question, the recorded
+    answer with its Source passage, the conversion and the acceptance. A step that never
+    happened (or a question a sales representative may not see) is left out."""
+
+    assumption_id: str
+    version_id: str
+    version: int = Field(ge=1)
+    kind: AssumptionKind
+    wording: str
+    steps: list[LineageStep]
+
+
+class ItemDiff(BaseModel):
+    """An Assumption or Risk that differs between two versions, matched by its origin (else
+    its wording): `added`, `removed` or `changed`, with a one-line summary of each side."""
+
+    change: Literal["added", "removed", "changed"]
+    id: str
+    text: str
+    before: str | None
+    after: str | None
+
+
+class WhySubject(BaseModel):
+    """What a trace event is about, as stored."""
+
+    type: str
+    id: str
+    version: int | None
+
+
+class WhyEvent(BaseModel):
+    """A trace event between the two versions that explains a change: its type and label,
+    who and when, the reason given (null when none) and its subject."""
+
+    id: str
+    event_type: str
+    label: str
+    actor: LineageActor
+    occurred_at: datetime
+    reason: str | None
+    subject: WhySubject
+
+
+class VersionComparison(BaseModel):
+    """Story 9.9 (`estimates.compare_any`): any two Estimate Versions of the Opportunity,
+    `from_version` (the base) against `to_version`: the line diffs (as `compare_versions`),
+    each side's total and the delta, the Assumptions and Risks added, removed or changed,
+    and `why`: the trace events between the older version's and the newer version's
+    creation that explain the change, oldest first."""
+
+    from_version: int = Field(ge=1)
+    from_version_id: str
+    to_version: int = Field(ge=1)
+    to_version_id: str
+    lines: list[LineDiff]
+    total_before: float
+    total_after: float
+    total_delta: float
+    assumptions: list[ItemDiff]
+    risks: list[ItemDiff]
+    why: list[WhyEvent]

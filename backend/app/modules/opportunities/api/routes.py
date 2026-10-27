@@ -354,6 +354,15 @@ async def list_opportunity_trace(
             description="Only events of this type, e.g. `estimates.assumption.accepted`.",
         ),
     ] = None,
+    subject_id: Annotated[
+        str | None,
+        Query(
+            max_length=TRACE_FILTER_MAX,
+            description="Story 9.9: only events about this subject id (e.g. an Estimate "
+            "line's, for **Open in Trace**). An unknown id, or one that isn't a UUID, gives an "
+            "empty page.",
+        ),
+    ] = None,
 ) -> TracePage:
     """The Opportunity's Decision Trace, read-only, newest first, one page at a time, with
     the subject, actor and event types present on it (`options`, unaffected by filters).
@@ -369,4 +378,5 @@ async def list_opportunity_trace(
         subject_type=subject_type or None,
         actor_type=actor_type or None,
         event_type=event_type or None,
+        subject_id=subject_id or None,
     )

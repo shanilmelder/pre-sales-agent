@@ -10,12 +10,14 @@ and submitting a version (Story 8.6, `GET …/submission-blockers`,
 (`POST …/estimate-versions/{version_id}/new-version`), and Story 9.7's Baseline
 (`POST …/estimate-versions/{version_id}/baseline`, `GET …/{version_id}/approvers`), the
 version list (`GET …/estimate-versions`) and an earlier version read only
-(`GET …/estimate?version=n`). No endpoint accepts a total."""
+(`GET …/estimate?version=n`); Story 9.9's lineage (`GET …/estimate-lines/{line_id}/lineage`,
+`GET …/assumptions/{assumption_id}/lineage`) and any-two-versions compare
+(`GET …/estimate-versions/compare?from=n&to=m`). No endpoint accepts a total."""
 
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Query, Response
+from fastapi import APIRouter, Header, Query, Request, Response
 
 from app.modules.estimates.application import public as estimates
 from app.modules.estimates.application.export_content import MEDIA_TYPES
@@ -23,6 +25,7 @@ from app.modules.estimates.application.public import (
     AcceptAllResult,
     Assumption,
     AssumptionChanges,
+    AssumptionLineage,
     BaselineApproval,
     BaselineSet,
     Blocker,
@@ -31,6 +34,7 @@ from app.modules.estimates.application.public import (
     EstimateLineChanges,
     EstimateView,
     ExportFormat,
+    LineLineage,
     NewVersionCreate,
     Risk,
     RiskChanges,
@@ -38,11 +42,14 @@ from app.modules.estimates.application.public import (
     SubmissionBlockers,
     SubmissionBlockersView,
     SubmittedVersion,
+    VersionComparison,
     VersionListItem,
 )
 from app.modules.identity.application.public import CurrentPrincipal
 from app.platform.concurrency import etag
+from app.platform.config import Settings
 from app.platform.errors import PROBLEM_JSON, Problem
+from app.platform.storage import BlobStore
 from app.platform.uow import UoW
 
 PROBLEM_CONTENT = {PROBLEM_JSON: {"schema": Problem.model_json_schema()}}
@@ -672,6 +679,101 @@ async def set_estimate_baseline(
     undone, only replaced by a newer approved version. The owner and collaborators, except
     sales representatives; people only."""
     return await estimates.set_baseline(uow, actor, opportunity_id, version_id, if_match)
+
+
+@router.get(
+    "/estimate-versions/compare",
+    operation_id="compare_estimate_versions",
+    responses={
+        **_responses(422),
+        404: {
+            "description": "No Opportunity with this id, or the caller may not see it, or no "
+            "Estimate Version with one of these numbers in it (`not_found`)",
+            "content": PROBLEM_CONTENT,
+        },
+    },
+)
+async def compare_estimate_versions(
+    opportunity_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    from_: Annotated[
+        int,
+        Query(
+            alias="from",
+            ge=1,
+            le=2**31 - 1,
+            description="The base Estimate Version's number.",
+        ),
+    ],
+    to: Annotated[
+        int,
+        Query(ge=1, le=2**31 - 1, description="The Estimate Version compared with the base."),
+    ],
+) -> VersionComparison:
+    """Story 9.9: any two Estimate Versions of the Opportunity, `from` (the base) against
+    `to`: the added, removed and changed lines with their deltas, each side's total and the
+    delta, the Assumptions and Risks added, removed or changed, and **why it changed**: the
+    trace events between the two versions' creation (line edits, versions created,
+    Conflicts resolved or escalated, Challenges, review decisions, Assessments completed,
+    Findings overridden or resolved, Assumption and Risk changes, Gaps converted). The same
+    number twice is 422. Anyone who can read the Opportunity."""
+    return await estimates.compare_any(uow, actor, opportunity_id, from_, to)
+
+
+@router.get(
+    "/estimate-lines/{line_id}/lineage",
+    operation_id="get_estimate_line_lineage",
+    responses={
+        **_responses(422),
+        404: {
+            "description": "No Opportunity with this id, or the caller may not see it, or no "
+            "Estimate line with this id in it (`not_found`)",
+            "content": PROBLEM_CONTENT,
+        },
+    },
+)
+async def get_estimate_line_lineage(
+    opportunity_id: UUID, line_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> LineLineage:
+    """Story 9.9: what is behind the Estimate line, derived and read only: the Requirements it
+    covers at their cited versions (with Evidence), the Findings and effort entries of its
+    version's assessment run that cite them, human decisions (Conflict resolutions, Finding
+    overrides and resolutions), its Contingencies, its edits and those of the lines it was
+    carried from, and the Challenges and review decisions on its version. Each item says
+    which version it cites and whether it was superseded. Anyone who can read the
+    Opportunity."""
+    return await estimates.get_line_lineage(uow, actor, opportunity_id, line_id)
+
+
+@router.get(
+    "/assumptions/{assumption_id}/lineage",
+    operation_id="get_assumption_lineage",
+    responses={
+        **_responses(422),
+        404: {
+            "description": "No Opportunity with this id, or the caller may not see it, or no "
+            "Assumption with this id in it (`not_found`)",
+            "content": PROBLEM_CONTENT,
+        },
+    },
+)
+async def get_assumption_lineage(
+    opportunity_id: UUID,
+    assumption_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    request: Request,
+) -> AssumptionLineage:
+    """Story 9.9: the Assumption's chain, oldest first: its origin (a Gap, an Unknown or a
+    Finding), the Clarification Question, the recorded answer with its Source passage, the
+    conversion and the acceptance (who and when). A step that never happened is left out; a
+    sales representative sees a question only once approved or sent. Anyone who can read the
+    Opportunity."""
+    settings: Settings = request.app.state.settings
+    return await estimates.get_assumption_lineage(
+        uow, actor, opportunity_id, assumption_id, store=BlobStore(settings.storage_dir)
+    )
 
 
 @router.get(

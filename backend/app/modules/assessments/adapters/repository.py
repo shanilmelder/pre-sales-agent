@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, insert, select, text, tuple_, update
+from sqlalchemy import ColumnElement, func, insert, or_, select, text, tuple_, update
 
 from app.modules.assessments.adapters.models import (
     FindingEvidenceRow,
@@ -376,6 +376,46 @@ async def current_review(uow: UnitOfWork, opportunity_id: UUID, kind: str) -> Re
         )
     ).scalar_one_or_none()
     return None if row is None else _review(row)
+
+
+async def reviews_for(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    run_id: UUID | None,
+    estimate_version_id: UUID | None,
+) -> list[ReviewRecord]:
+    """Story 9.9: the Opportunity's Critic Reviews of the assessment run `run_id` and its Red
+    Team Reviews of the Estimate Version `estimate_version_id`, current or superseded, oldest
+    first (None: none of that kind)."""
+    conditions: list[ColumnElement[bool]] = []
+    if run_id is not None:
+        conditions.append((ReviewRow.kind == "critic") & (ReviewRow.run_id == run_id))
+    if estimate_version_id is not None:
+        conditions.append(
+            (ReviewRow.kind == "red_team") & (ReviewRow.estimate_version_id == estimate_version_id)
+        )
+    if not conditions:
+        return []
+    rows = await uow.session.execute(
+        select(ReviewRow)
+        .where(ReviewRow.opportunity_id == opportunity_id, or_(*conditions))
+        .order_by(ReviewRow.created_at, ReviewRow.version)
+    )
+    return [_review(row) for row in rows.scalars()]
+
+
+async def findings_of_reviews(uow: UnitOfWork, review_ids: list[UUID]) -> list[FindingRecord]:
+    """Story 9.9: these Reviews' Findings, by Review then position."""
+    if not review_ids:
+        return []
+    rows = await uow.session.execute(
+        select(FindingRow)
+        .where(FindingRow.review_id.in_(review_ids))
+        .order_by(FindingRow.review_id, FindingRow.position)
+        .execution_options(populate_existing=True)
+    )
+    return [_finding(row) for row in rows.scalars()]
 
 
 def _finding(row: FindingRow) -> FindingRecord:

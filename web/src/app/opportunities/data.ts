@@ -11,7 +11,13 @@ import type { ActualsView } from "@/lib/actuals";
 import type { AssessmentsView } from "@/lib/assessments";
 import type { ConflictsView } from "@/lib/conflicts";
 import type { CriticView } from "@/lib/critic";
-import type { EstimateView, VersionListItem } from "@/lib/estimates";
+import type {
+  AssumptionLineage,
+  EstimateView,
+  LineLineage,
+  VersionComparison,
+  VersionListItem,
+} from "@/lib/estimates";
 import type { GapList, GapsContext } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
 import type { ReviewPanel, ReviewRequestsView } from "@/lib/reviews";
@@ -50,6 +56,19 @@ export type ReviewRequestsResult =
   | { kind: "ok"; reviews: ReviewRequestsView }
   | { kind: "error" };
 export type TraceResult = { kind: "ok"; page: TracePage } | { kind: "error" };
+/** Story 9.9: an Estimate line's or an Assumption's lineage, and two versions compared. */
+export type LineLineageResult =
+  | { kind: "ok"; lineage: LineLineage }
+  | { kind: "not-found" }
+  | { kind: "error" };
+export type AssumptionLineageResult =
+  | { kind: "ok"; lineage: AssumptionLineage }
+  | { kind: "not-found" }
+  | { kind: "error" };
+export type VersionComparisonResult =
+  | { kind: "ok"; comparison: VersionComparison }
+  | { kind: "not-found" }
+  | { kind: "error" };
 export type RedTeamResult = { kind: "ok"; redTeam: RedTeamView } | { kind: "error" };
 export type CriticResult = { kind: "ok"; critic: CriticView } | { kind: "error" };
 export type ConflictsResult = { kind: "ok"; conflicts: ConflictsView } | { kind: "error" };
@@ -476,6 +495,8 @@ export async function listTrace(
       ...(filters.subject ? { subject_type: filters.subject } : {}),
       ...(filters.actor ? { actor_type: filters.actor } : {}),
       ...(filters.event ? { event_type: filters.event } : {}),
+      // Story 9.9: one subject's events (**Open in Trace** from a line's lineage).
+      ...(filters.subject_id ? { subject_id: filters.subject_id } : {}),
     };
     const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/trace", {
       params: { path: { opportunity_id: id }, query },
@@ -485,6 +506,77 @@ export async function listTrace(
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET trace failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** Story 9.9: `GET /api/v1/opportunities/{id}/estimate-lines/{line_id}/lineage`, what is
+ * behind an Estimate line. Logs statuses only. */
+export async function getLineLineage(id: string, lineId: string): Promise<LineLineageResult> {
+  if (!UUID_RE.test(id) || !UUID_RE.test(lineId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/estimate-lines/{line_id}/lineage",
+      { params: { path: { opportunity_id: id, line_id: lineId } } },
+    );
+    if (data) return { kind: "ok", lineage: data };
+    if (response.status === 404) return { kind: "not-found" };
+    console.error(`GET line lineage failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET line lineage failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** Story 9.9: `GET /api/v1/opportunities/{id}/assumptions/{assumption_id}/lineage`, an
+ * Assumption's chain of origin. Logs statuses only. */
+export async function getAssumptionLineage(
+  id: string,
+  assumptionId: string,
+): Promise<AssumptionLineageResult> {
+  if (!UUID_RE.test(id) || !UUID_RE.test(assumptionId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}/lineage",
+      { params: { path: { opportunity_id: id, assumption_id: assumptionId } } },
+    );
+    if (data) return { kind: "ok", lineage: data };
+    if (response.status === 404) return { kind: "not-found" };
+    console.error(`GET assumption lineage failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET assumption lineage failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** Story 9.9: `GET /api/v1/opportunities/{id}/estimate-versions/compare?from=&to=`, any two
+ * Estimate Versions compared. Logs statuses only. */
+export async function getVersionComparison(
+  id: string,
+  from: number,
+  to: number,
+): Promise<VersionComparisonResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/estimate-versions/compare",
+      { params: { path: { opportunity_id: id }, query: { from, to } } },
+    );
+    if (data) return { kind: "ok", comparison: data };
+    if (response.status === 404) return { kind: "not-found" };
+    console.error(`GET version comparison failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET version comparison failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }

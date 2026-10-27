@@ -1,11 +1,13 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, WaypointsIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { EditLineForm, type SaveLine } from "@/components/opportunities/estimate-line-edit";
+import { LineLineageSection } from "@/components/opportunities/lineage-section";
 import { typeLabel } from "@/lib/conflicts";
 import {
   editedLabel,
@@ -14,6 +16,7 @@ import {
   lineHeading,
   OPEN_CONFLICT,
   roleShares,
+  TRACE,
   type EstimateLine,
   type RoleMix,
   type RoleName,
@@ -74,21 +77,33 @@ export type LineEditing = {
  * chips with their excerpts. A line with an open Conflict about a Requirement it covers (Story
  * 8.3) names each Conflict's type and links to the Conflicts tab; an edited line (Story 8.2)
  * shows who edited it, when and why. With `editing` (a draft the user may edit) it ends with
- * the "Edit line" form. */
+ * the "Edit line" form. Story 9.9: with `opportunityId`, a **Trace** outline button under the
+ * title and the **Lineage** section at the end; **Trace** (or `lineageFocusRequest` going up,
+ * `t` on a grid row) scrolls to and focuses it. */
 export function EstimateInspector({
   line,
   opportunityId,
   focusRequest = 0,
+  lineageFocusRequest = 0,
+  lineageFocusHandled = 0,
+  onLineageFocused,
   editing,
 }: {
   line: EstimateLine;
-  /** Needed for the Conflicts tab link; without it the link is left out. */
+  /** Needed for the Conflicts tab link and the lineage; without it they are left out. */
   opportunityId?: string;
   focusRequest?: number;
+  /** Bumped to scroll to and focus the Lineage section (`t` on a grid row). */
+  lineageFocusRequest?: number;
+  /** The last `lineageFocusRequest` already acted on (a remount must not act on it again). */
+  lineageFocusHandled?: number;
+  onLineageFocused?: (request: number) => void;
   editing?: LineEditing;
 }) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
+  /** Bumped by the **Trace** button. */
+  const [traceRequest, setTraceRequest] = useState(0);
 
   useEffect(() => {
     if (focusRequest > 0) headingRef.current?.focus();
@@ -106,6 +121,19 @@ export function EstimateInspector({
         >
           {line.title}
         </h3>
+        {opportunityId ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-1 w-fit text-control"
+            data-trace-button=""
+            onClick={() => setTraceRequest((n) => n + 1)}
+          >
+            <WaypointsIcon aria-hidden="true" />
+            {TRACE}
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -218,6 +246,18 @@ export function EstimateInspector({
           onReload={editing.onReload}
           onDirtyChange={editing.onDirtyChange}
           focusRequest={editing.focusRequest}
+        />
+      ) : null}
+
+      {opportunityId ? (
+        <LineLineageSection
+          opportunityId={opportunityId}
+          lineId={line.id}
+          focusRequest={traceRequest}
+          externalFocusRequest={lineageFocusRequest}
+          externalFocusHandled={lineageFocusHandled}
+          onExternalFocus={onLineageFocused}
+          reloadKey={`${line.row_version}:${line.total_hours}`}
         />
       ) : null}
     </section>

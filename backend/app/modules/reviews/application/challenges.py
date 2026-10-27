@@ -42,6 +42,7 @@ Only Story 9.6's run writes `completed` or `failed`.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
 from app.modules.estimates.application import public as estimates
@@ -58,6 +59,7 @@ from app.modules.reviews.application.models import (
     ChallengeConfirm,
     ChallengeCreate,
     ChallengeDecline,
+    ChallengeRef,
     ChallengeState,
     ChallengeSuggestions,
     ChallengeSuggestionView,
@@ -856,3 +858,40 @@ async def challenge_status(uow: UnitOfWork, challenge_id: UUID) -> ChallengeStat
         challenger_id=record.challenger_id,
         workflow_run_id=record.workflow_run_id,
     )
+
+
+async def challenges_for(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    estimate_version_ids: Sequence[UUID] = (),
+    target_ids: Sequence[UUID] = (),
+) -> list[ChallengeRef]:
+    """`reviews.public.challenges_for` (Story 9.9, `estimates`' lineage): the Opportunity's
+    Challenges raised on one of these Estimate Versions or targeting one of these ids (a
+    version, an Assessment or a Finding), oldest first, with the challenger's name. No
+    authorization: the caller has checked that the actor may read the Opportunity."""
+    records = await repo.challenges_for(
+        uow,
+        opportunity_id,
+        estimate_version_ids=list(estimate_version_ids),
+        target_ids=list(target_ids),
+    )
+    names = await identity.user_names(uow, {r.challenger_id for r in records})
+    return [
+        ChallengeRef(
+            id=r.id,
+            status=ChallengeStatus(r.status),
+            target_kind=ChallengeTargetKind(r.target_kind),
+            target_id=r.target_id,
+            target_version=r.target_version,
+            estimate_version_id=r.estimate_version_id,
+            reason=r.reason,
+            decline_reason=r.decline_reason,
+            challenger_id=r.challenger_id,
+            challenger_name=names.get(r.challenger_id, UNKNOWN_USER),
+            created_at=r.created_at or datetime.now(UTC),
+            updated_at=r.updated_at,
+        )
+        for r in records
+    ]
