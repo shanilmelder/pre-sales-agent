@@ -2208,6 +2208,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Graph
+         * @description Products (from Sources, Checklists and the Opportunities the caller can read), active
+         *     Integration Types, non-retired Knowledge Sources and active published Checklists, each
+         *     with a status and a Coverage score (0 to 100), and the links between them: tags and
+         *     scopes (`linked`), and product to Integration Type pairs that are Ready (`linked`) or
+         *     Partial (`gap`). Platform administrators and the roles that may edit Checklists.
+         */
+        get: operations["get_knowledge_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/downloads/{token}": {
         parameters: {
             query?: never;
@@ -5337,6 +5361,58 @@ export interface components {
             name: string;
             domain: components["schemas"]["Domain"];
         };
+        /**
+         * GraphEdge
+         * @description A link between two nodes (their ids). Products are always `source` of a product and
+         *     Integration Type edge; Sources and Checklists are always `source` of their tag edges.
+         */
+        GraphEdge: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            kind: components["schemas"]["GraphEdgeKind"];
+        };
+        /**
+         * GraphEdgeKind
+         * @enum {string}
+         */
+        GraphEdgeKind: "linked" | "gap";
+        /**
+         * GraphNode
+         * @description One node. `id` is prefixed by type (`product:<match key>`, `integration_type:<id>`,
+         *     `source:<id>`, `checklist:<id>`). `owner`: the Source's owner or the Checklist's creator
+         *     (None for products and Integration Types). `last_reviewed_on`: the Source's last review
+         *     or the Checklist's latest publication. `row_version` and `can_review` (the caller may
+         *     Mark reviewed) are for Sources only; `stale_in_days` (0 once stale) too.
+         */
+        GraphNode: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["GraphNodeType"];
+            /** Label */
+            label: string;
+            status: components["schemas"]["NodeStatus"];
+            /** Score */
+            score: number;
+            owner: components["schemas"]["KnowledgeUserRef"] | null;
+            /** Last Reviewed On */
+            last_reviewed_on: string | null;
+            /** Row Version */
+            row_version?: number | null;
+            /**
+             * Can Review
+             * @default false
+             */
+            can_review: boolean;
+            /** Stale In Days */
+            stale_in_days?: number | null;
+        };
+        /**
+         * GraphNodeType
+         * @enum {string}
+         */
+        GraphNodeType: "product" | "integration_type" | "source" | "checklist";
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -5520,6 +5596,20 @@ export interface components {
             /** Version */
             version: number;
             span: components["schemas"]["KnowledgeSpan"];
+        };
+        /**
+         * KnowledgeGraph
+         * @description Products, active Integration Types, non-retired Sources and active published
+         *     Checklists, and the links between them. `stale_months` is the review age after which a
+         *     Source is stale.
+         */
+        KnowledgeGraph: {
+            /** Nodes */
+            nodes: components["schemas"]["GraphNode"][];
+            /** Edges */
+            edges: components["schemas"]["GraphEdge"][];
+            /** Stale Months */
+            stale_months: number;
         };
         /**
          * KnowledgeSearchHit
@@ -5947,6 +6037,11 @@ export interface components {
              */
             reason?: string | null;
         };
+        /**
+         * NodeStatus
+         * @enum {string}
+         */
+        NodeStatus: "ready" | "partial" | "missing" | "stale" | "embedding" | "embedding_failed";
         /**
          * NotificationKind
          * @enum {string}
@@ -24876,6 +24971,92 @@ export interface operations {
                 };
             };
             /** @description The caller has no role (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_knowledge_graph: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeGraph"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not edit Checklists (`forbidden`) */
             403: {
                 headers: {
                     [name: string]: unknown;

@@ -6,6 +6,8 @@ import { SourcesTab } from "@/components/knowledge/sources-tab";
 import { AppShell } from "@/components/shell/app-shell";
 import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
+import { canAuthor } from "@/lib/checklists";
+import { selectedParam } from "@/lib/coverage";
 import { initialSourceFilters, type KnowledgeSource } from "@/lib/knowledge-sources";
 
 import { loadSources } from "./actions";
@@ -27,15 +29,18 @@ async function activeIntegrationTypes(): Promise<{ id: string; name: string }[] 
   }
 }
 
-/** Knowledge → Sources (Checklists and Coverage have their own routes).
+/** Knowledge → Sources (Graph, Checklists and Coverage have their own routes).
  * `?integration_type=<id>` and `?product=<name>` seed the filters (the Gaps tab's coverage
- * banner and Coverage cells link here). */
+ * banner and Coverage cells link here); `?source=<id>` opens that Source (the Graph's Open
+ * source). */
 export default async function KnowledgePage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 } = {}) {
-  const filters = initialSourceFilters((await searchParams) ?? {});
+  const params = (await searchParams) ?? {};
+  const filters = initialSourceFilters(params);
+  const selectedId = selectedParam(params, "source");
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
 
@@ -46,7 +51,7 @@ export default async function KnowledgePage({
     <AppShell me={result.me}>
       <PageHeader title="Knowledge" subtitle={PAGE_SUBTITLES.knowledge} />
       <PageContent>
-        <KnowledgeNav current="sources" />
+        <KnowledgeNav current="sources" showGraph={canAuthor(result.me.permissions)} />
         {list.kind === "error" || types === null ? (
           <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : (
@@ -55,6 +60,7 @@ export default async function KnowledgePage({
             initialSources={sources}
             integrationTypes={types}
             initialFilters={filters}
+            initialSelectedId={selectedId}
             me={{ id: result.me.id, roles: result.me.roles }}
           />
         )}

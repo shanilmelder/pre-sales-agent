@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import { applyChecklistFilters, checklistProducts } from "@/lib/checklists";
 import {
+  checklistHref,
   checklistsHref,
   checklistsText,
   COVERAGE_STATUSES,
+  coverageHref,
+  narrowCoverage,
   seededFilters,
+  selectedParam,
+  sourceHref,
   sourcesHref,
   sourcesText,
   withOption,
+  type KnowledgeCoverage,
 } from "@/lib/coverage";
 import { checklist, TYPE_ID } from "@/test/checklist-fixtures";
 
@@ -122,5 +128,56 @@ describe("applyChecklistFilters", () => {
       "SAP",
       "Zed",
     ]);
+  });
+});
+
+describe("Knowledge Graph links (Story 3.6)", () => {
+  const ID = "00000000-0000-7000-8000-000000000101";
+
+  it("opens a Source or a Checklist, and narrows Coverage to a product or a type", () => {
+    expect(sourceHref(ID)).toBe(`/knowledge?source=${ID}`);
+    expect(checklistHref(ID)).toBe(`/knowledge/checklists?checklist=${ID}`);
+    expect(coverageHref({ product: "SAP EWM" })).toBe("/knowledge/coverage?product=SAP+EWM");
+    expect(coverageHref({ integrationTypeId: ID })).toBe(
+      `/knowledge/coverage?integration_type=${ID}`,
+    );
+  });
+
+  it("reads only a well-formed, single id", () => {
+    expect(selectedParam({ source: ID.toUpperCase() }, "source")).toBe(ID);
+    expect(selectedParam({ source: "nope" }, "source")).toBeNull();
+    expect(selectedParam({ source: [ID, ID] }, "source")).toBeNull();
+    expect(selectedParam({ source: ID }, "checklist")).toBeNull();
+    expect(selectedParam(undefined, "source")).toBeNull();
+  });
+
+  it("narrows the matrix to one row or one column", () => {
+    const cell = (id: string) => ({
+      integration_type_id: id,
+      sources: 0,
+      stale: 0,
+      checklists: 0,
+      status: "missing" as const,
+    });
+    const coverage: KnowledgeCoverage = {
+      integration_types: [
+        { id: TYPE_ID, code: "A", name: "A" },
+        { id: OTHER_TYPE, code: "B", name: "B" },
+      ],
+      rows: [
+        { product: "SAP EWM", cells: [cell(TYPE_ID), cell(OTHER_TYPE)] },
+        { product: "HubSpot", cells: [cell(TYPE_ID), cell(OTHER_TYPE)] },
+      ],
+      industries: [{ industry: "Retail", checklists: 1, names: ["PCI"] }],
+      stale_months: 12,
+    };
+    const row = narrowCoverage(coverage, { product: "sap ewm", integrationTypeId: "" });
+    expect(row.rows.map((r) => r.product)).toEqual(["SAP EWM"]);
+    expect(row.integration_types).toHaveLength(2);
+    const column = narrowCoverage(coverage, { product: "", integrationTypeId: OTHER_TYPE });
+    expect(column.integration_types.map((t) => t.id)).toEqual([OTHER_TYPE]);
+    expect(column.rows.every((r) => r.cells.length === 1 && r.cells[0].integration_type_id === OTHER_TYPE)).toBe(true);
+    expect(column.industries).toEqual(coverage.industries);
+    expect(narrowCoverage(coverage, { product: "", integrationTypeId: "" })).toEqual(coverage);
   });
 });

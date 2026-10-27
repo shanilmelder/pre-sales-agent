@@ -10,6 +10,7 @@ export type CoverageIndustry = components["schemas"]["CoverageIndustry"];
 export type CoverageIntegrationType = components["schemas"]["CoverageIntegrationType"];
 export type CoverageStatus = CoverageCell["status"];
 
+export const GRAPH_HREF = "/knowledge/graph";
 export const SOURCES_HREF = "/knowledge";
 export const CHECKLISTS_HREF = "/knowledge/checklists";
 export const COVERAGE_HREF = "/knowledge/coverage";
@@ -77,4 +78,52 @@ export function withOption(
   const match = options.find((o) => o.toLowerCase() === wanted.toLowerCase());
   if (match !== undefined) return { options: [...options], selected: match };
   return { options: [...options, wanted].sort((a, b) => a.localeCompare(b)), selected: wanted };
+}
+
+/** The id a link asks to open (`?source=<id>`, `?checklist=<id>`), or null when missing,
+ * malformed or repeated. */
+export function selectedParam(
+  params: Record<string, string | string[] | undefined> | undefined,
+  key: "source" | "checklist",
+): string | null {
+  const value = params?.[key];
+  return typeof value === "string" && UUID_RE.test(value.trim()) ? value.trim().toLowerCase() : null;
+}
+
+/** Knowledge → Sources with the Source open. */
+export function sourceHref(sourceId: string): string {
+  return `${SOURCES_HREF}?${new URLSearchParams({ source: sourceId }).toString()}`;
+}
+
+/** Knowledge → Checklists with the Checklist open. */
+export function checklistHref(checklistId: string): string {
+  return `${CHECKLISTS_HREF}?${new URLSearchParams({ checklist: checklistId }).toString()}`;
+}
+
+/** Knowledge → Coverage narrowed to one product (its row) or one Integration Type (its
+ * column). */
+export function coverageHref(filter: { product: string } | { integrationTypeId: string }): string {
+  const query: Record<string, string> =
+    "product" in filter
+      ? { product: filter.product }
+      : { integration_type: filter.integrationTypeId };
+  return `${COVERAGE_HREF}?${new URLSearchParams(query).toString()}`;
+}
+
+/** The matrix narrowed to the product's row (ignoring case) and the Integration Type's
+ * column; an empty filter keeps everything. Industry-only Checklists are kept. */
+export function narrowCoverage(
+  coverage: KnowledgeCoverage,
+  filter: { product: string; integrationTypeId: string },
+): KnowledgeCoverage {
+  const product = filter.product.toLowerCase();
+  const typeId = filter.integrationTypeId;
+  const keepType = (id: string) => typeId === "" || id === typeId;
+  return {
+    ...coverage,
+    integration_types: coverage.integration_types.filter((t) => keepType(t.id)),
+    rows: coverage.rows
+      .filter((row) => product === "" || row.product.toLowerCase() === product)
+      .map((row) => ({ ...row, cells: row.cells.filter((c) => keepType(c.integration_type_id)) })),
+  };
 }
