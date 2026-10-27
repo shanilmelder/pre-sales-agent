@@ -170,7 +170,7 @@ const SUMMARY: OpportunitySummary = {
   open_gaps: 3,
   open_conflicts: 2,
   blocker_count: 0,
-  estimate: { version: 3, status: "draft", total_hours: 278 },
+  estimate: { version: 3, status: "draft", total_hours: 278, is_baseline: false },
 };
 
 const OPPORTUNITY: Opportunity = {

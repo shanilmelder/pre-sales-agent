@@ -538,6 +538,8 @@ function blockersView(
           submitted_at: status === "draft" ? null : "2026-10-14T09:00:00Z",
         },
     can_submit: true,
+    is_baseline: false,
+    can_set_baseline: false,
   };
 }
 
@@ -695,6 +697,12 @@ describe("pipelineSteps (Story 8.9)", () => {
       (s) => s[7].state,
     );
     expect(all).not.toContain("complete");
+    // Story 9.7: Complete once the version is the Baseline.
+    const baselined = pipelineSteps(mockup(), {
+      ...blockersView([], { status: "approved" }),
+      is_baseline: true,
+    });
+    expect(baselined[7]).toMatchObject({ state: "complete", sub: "Baseline set on v3" });
   });
 
   it("a failed blockers read makes steps 4–8 Pending and says so", () => {

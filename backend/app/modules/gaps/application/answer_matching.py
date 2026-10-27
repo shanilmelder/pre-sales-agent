@@ -71,6 +71,7 @@ from app.platform.config import Settings, get_settings
 from app.platform.errors import NotFoundError, RowVersionMismatchError
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelOutputInvalidError
@@ -177,7 +178,7 @@ async def accept_answer_matches(
     is no longer waiting for an answer (answered or its Gap closed during the model call) is
     stale: skipped, never invalid."""
     output = proposal(result)
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     waiting = {q.id for q, _ in await repo.questions_open_to_answer(uow, opportunity_id)}
     labels = {q.label: q.question_id for q in questions}
     known = await repo.known_match_pairs(uow, [qid for qid in labels.values() if qid in waiting])

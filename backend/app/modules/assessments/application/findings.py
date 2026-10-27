@@ -85,6 +85,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import (
     AssessmentsFindingOverridden,
@@ -129,7 +130,7 @@ async def stamp(
 ) -> list[repo.NewFinding]:
     """The Findings with their fingerprint, discipline, `policy_ref` and previous override
     set (module docstring). Takes the Opportunity's Findings lock until commit."""
-    await repo.lock_findings(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     prints = [
         fingerprint(kind.value, d.finding.category, (r for r, _ in d.finding.requirements), d.keys)
         for d in drafts
@@ -307,7 +308,7 @@ async def _load(
     uow: UnitOfWork, actor: Principal, opportunity_id: UUID, finding_id: UUID
 ) -> _Loaded:
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    await repo.lock_findings(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     found = await repo.get_finding(uow, finding_id)
     if found is None or found[1].opportunity_id != opportunity_id:
         raise NotFoundError(NOT_FOUND_DETAIL)

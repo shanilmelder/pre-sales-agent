@@ -73,6 +73,7 @@ from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import UserRef
 from app.modules.registry.application import public as registry
 from app.platform.errors import GapDetectionInProgressError
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.storage import BlobStore
 from app.platform.uow import UnitOfWork
@@ -436,7 +437,7 @@ async def start_detection(uow: UnitOfWork, actor: Principal, opportunity_id: UUI
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.GAP_DETECTION_START, resource)
     await registry.require_enabled(uow, CLARIFICATION_AGENT)  # 409 while it is disabled
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     busy = await repo.detection_in(uow, opportunity_id, tuple(s.value for s in IN_PROGRESS))
     if busy is not None:

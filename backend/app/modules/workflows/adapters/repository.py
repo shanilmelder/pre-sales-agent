@@ -22,6 +22,7 @@ from app.modules.workflows.adapters.models import (
 from app.platform.actor import Actor
 from app.platform.events import EVENTS_CHANNEL
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork
 
@@ -137,7 +138,13 @@ class TraceRecord:
 async def lock_runs(uow: UnitOfWork, opportunity_id: UUID) -> None:
     """Serialise the Opportunity's runs until commit: starting one, retrying a task,
     cancelling, a job starting, and finishing a run. (The key predates the move to
-    `workflows`; keeping it keeps old and new code serialised during a deploy.)"""
+    `workflows`; keeping it keeps old and new code serialised during a deploy.)
+
+    Story 9.7: the Opportunity's shared lock (`platform.locks.opportunity_lock`) is taken
+    first. Finishing or cancelling a run builds an Estimate Version under the shared lock,
+    and an accepted Gap detection (holding the shared lock) queues a run, so both locks are
+    always taken in that order."""
+    await opportunity_lock(uow, opportunity_id)
     await uow.session.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
         {"key": f"assessments.assessment_run:{opportunity_id}"},

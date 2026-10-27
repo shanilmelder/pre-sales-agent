@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.assessments.application.public import AssessmentView
-from app.modules.estimates.application.public import EstimateVersion, VersionDiff
+from app.modules.estimates.application.public import EstimateVersion, VersionDiff, VersionGate
 from app.modules.reviews.domain.decisions import Decision
 from app.modules.reviews.domain.replies import REPLY_EVIDENCE_MAX, REPLY_MAX
 from app.modules.reviews.domain.requests import (
@@ -181,6 +181,23 @@ class OpenReviewRequest(BaseModel):
     created_at: datetime
 
 
+class VersionApproval(BaseModel):
+    """`reviews.public.version_approvals` (Story 9.7): a non-cancelled request counting
+    towards an Estimate Version, with its status and its latest decision (null fields while it
+    has none). For an approved version every one is an approval."""
+
+    request_id: UUID
+    review_type: ReviewType
+    reviewer_id: UUID
+    reviewer_name: str
+    status: RequestStatus
+    decision_id: UUID | None
+    decision: str | None
+    decided_by: UUID | None
+    decided_by_name: str | None
+    decided_at: datetime | None
+
+
 class ReviewRequestState(BaseModel):
     """`reviews.public.request_status` (Story 9.2): a request's status now, its sender and
     its reviewer."""
@@ -331,3 +348,9 @@ class ReviewPanel(BaseModel):
     replies: list[ReviewReplyView]
     linked_request: LinkedRequest | None
     escalated_to: ReviewPerson | None
+    version_gate: VersionGate | None = Field(
+        default=None,
+        description="Story 9.7: the Estimate Version's Set Baseline state (whether it is the "
+        "Baseline, its blockers to Baseline, whether the caller may set it); null when the "
+        "version is unknown.",
+    )

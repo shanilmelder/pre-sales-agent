@@ -187,6 +187,9 @@ function view(v: EstimateVersion, may = true): EstimateView {
     can_submit: false,
     can_request_review: false,
     can_create_version: false,
+    baseline: null,
+    is_current: true,
+    can_set_baseline: false,
   };
 }
 
@@ -364,7 +367,7 @@ describe("the Assumption inspector", () => {
     const alert = await within(pane()).findByRole("alert");
     expect(alert.textContent).toContain("Changed by [OTHER] since you opened it.");
     await user.click(within(alert).getByRole("button", { name: "Reload" }));
-    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
+    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID, null);
   });
 
   it("after a 412 with a reason typed, Reload takes the new values and row version", async () => {
@@ -480,7 +483,7 @@ describe("the Risks card", () => {
     const alert = await within(pane()).findByRole("alert");
     expect(alert.textContent).toContain("Changed by [OTHER] since you opened it.");
     await user.click(within(alert).getByRole("button", { name: "Reload" }));
-    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
+    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID, null);
   });
 
   it("lists R{n}, likelihood, impact and the Risk with its origin, in the API's order", async () => {

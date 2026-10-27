@@ -25,7 +25,7 @@ function item(n: number): OpportunitySummary {
     open_gaps: 3,
     open_conflicts: 2,
     blocker_count: 0,
-    estimate: { version: 3, status: "draft", total_hours: 278 },
+    estimate: { version: 3, status: "draft", total_hours: 278, is_baseline: false },
   };
 }
 
@@ -139,17 +139,31 @@ describe("OpportunitiesTable", () => {
     vi.useFakeTimers();
     renderTable({
       items: [
-        { ...item(1), estimate: { version: 2, status: "submitted", total_hours: 6644 } },
+        {
+          ...item(1),
+          estimate: { version: 2, status: "submitted", total_hours: 6644, is_baseline: false },
+        },
         { ...item(2), estimate: null },
-        { ...item(3), estimate: { version: 3, status: "in_review", total_hours: 120 } },
+        {
+          ...item(3),
+          estimate: { version: 3, status: "in_review", total_hours: 120, is_baseline: false },
+        },
+        {
+          ...item(4),
+          estimate: { version: 4, status: "approved", total_hours: 842, is_baseline: true },
+        },
       ],
     });
     await pastSkeleton();
-    const [, first, second, third] = screen.getAllByRole("row");
+    const [, first, second, third, fourth] = screen.getAllByRole("row");
     expect(first.querySelectorAll("td")[5].textContent).toBe("6,644.0 hSubmitted v2");
     expect(second.querySelectorAll("td")[5].textContent).toBe("—No estimate");
     // Story 9.1.
     expect(third.querySelectorAll("td")[5].textContent).toBe("120.0 hIn review v3");
+    // Story 9.7: the Baseline, with the anchor.
+    const cell = fourth!.querySelectorAll("td")[5]!;
+    expect(cell.textContent).toBe("842.0 hBaseline v4");
+    expect(cell.querySelector("[data-baseline] svg")).not.toBeNull();
   });
 
   it("a row click opens the Opportunity; link and modified clicks don't", async () => {

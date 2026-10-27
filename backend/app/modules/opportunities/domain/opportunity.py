@@ -32,10 +32,11 @@ class OpportunityStatus(StrEnum):
     CLOSED = "closed"
 
 
-def derived_status() -> OpportunityStatus:
-    """The status of an Opportunity. Nothing after intake exists yet (sources, gaps,
-    assessments and estimates arrive in later epics), so every Opportunity is `intake`."""
-    return OpportunityStatus.INTAKE
+def derived_status(has_baseline: bool = False) -> OpportunityStatus:
+    """The status of an Opportunity. Story 9.7: `baselined` once a Baseline is set
+    (`estimates_baselines` has a row for it); otherwise `intake` (the other statuses arrive
+    in later stories)."""
+    return OpportunityStatus.BASELINED if has_baseline else OpportunityStatus.INTAKE
 
 
 def required_text(value: str, *, max_length: int) -> str:

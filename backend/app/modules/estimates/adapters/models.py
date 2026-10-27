@@ -292,3 +292,40 @@ class RiskRow(RowVersioned, Base):
             name="fk_estimates_risks_carried_from",
         ),
     )
+
+
+class BaselineRow(Base):
+    """Story 9.7 (AD-26): an approved Estimate Version a person set as the Opportunity's
+    Baseline, with the version it replaced (`previous_version_id`, null for the first), when
+    (`set_at`) and by whom (`set_by`, an identity user id). Insert-only: the current Baseline is
+    the Opportunity's latest row; written only by `estimates.set_baseline`. Unlike the other
+    tables here, `opportunity_id` is keyed to the Opportunity (Story 9.7's spec)."""
+
+    __tablename__ = "estimates_baselines"
+    __table_args__ = (
+        Index(
+            "ix_estimates_baselines_opportunity_id_set_at",
+            "opportunity_id",
+            text("set_at DESC"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    opportunity_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("opportunities_opportunities.id", name="fk_estimates_baselines_opportunity_id"),
+    )
+    estimate_version_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "estimates_estimate_versions.id", name="fk_estimates_baselines_estimate_version_id"
+        ),
+    )
+    previous_version_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "estimates_estimate_versions.id", name="fk_estimates_baselines_previous_version_id"
+        ),
+    )
+    set_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    set_by: Mapped[UUID] = mapped_column(Uuid)

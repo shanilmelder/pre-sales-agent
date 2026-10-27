@@ -146,6 +146,8 @@ export const REVIEW_TRACE_EVENTS: readonly string[] = [
   "reviews.review_request.replied",
   "reviews.review_request.superseded",
   "estimates.estimate_version.created",
+  // Story 9.7
+  "estimates.baseline.set",
 ];
 
 // --- Review Decisions and the review panel (Story 9.3) --------------------------------------

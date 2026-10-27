@@ -4,7 +4,7 @@
 sales representatives, so never a reviewer collaborator; everyone else the Opportunity's
 404), with `If-Match` the request's `row_version`, in one Unit of Work:
 
-1. `identity.authorize`, the Opportunity's Estimate lock (`estimates.lock_for_review`), then
+1. `identity.authorize`, the Opportunity's Estimate lock (`platform.locks.opportunity_lock`), then
    the request `for_update` (404 unless it is the Opportunity's).
 2. Only its sender or the Opportunity's owner, never its reviewer (403 otherwise); a blank
    message, or one over 2,000 characters, is 422.
@@ -76,6 +76,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import ReplyEvidenceRef, ReviewsReviewRequestReplied
 from app.platform.uow import UnitOfWork
@@ -214,7 +215,7 @@ async def reply(
     (module docstring)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.REVIEW_REQUEST_REPLY, resource)
-    await estimates.lock_for_review(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     record = await repo.get(uow, request_id, for_update=True)
     if record is None or record.opportunity_id != opportunity_id:
         raise NotFoundError(REQUEST_NOT_FOUND)

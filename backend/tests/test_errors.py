@@ -9,6 +9,8 @@ from app.platform.config import Settings
 from app.platform.errors import (
     _HTTP_CODES,
     AuthorCannotReviewError,
+    BaselineBlockedError,
+    BaselineNotNewerError,
     EstimateDraftExistsError,
     EstimateVersionNotDecidedError,
     EstimateVersionNotSubmittedError,
@@ -61,6 +63,8 @@ def _app_raising(exc: Exception) -> FastAPI:
         (ReviewReplyNotExpectedError("x"), 409, "review_reply_not_expected"),
         (EstimateVersionNotDecidedError("x"), 409, "estimate_version_not_decided"),
         (EstimateDraftExistsError("x"), 409, "estimate_draft_exists"),
+        # Story 9.7
+        (BaselineNotNewerError("x"), 409, "baseline_not_newer"),
     ],
 )
 def test_errors_map_to_problem_json(exc: Exception, status: int, code: str) -> None:
@@ -71,6 +75,16 @@ def test_errors_map_to_problem_json(exc: Exception, status: int, code: str) -> N
     body = resp.json()
     assert_problem(body, status, code)
     assert body["instance"] == "/api/v1/raise"
+
+
+def test_baseline_blocked_carries_its_blockers() -> None:
+    """Story 9.7: the `blockers` extension member sits beside the standard members."""
+    blocker = {"kind": "conflict", "subject_id": "c1", "title": "t", "detail": "d", "href": "/"}
+    with make_client(_app_raising(BaselineBlockedError("x", blockers=[blocker]))) as client:
+        resp = client.post("/api/v1/raise")
+    body = resp.json()
+    assert body["blockers"] == [blocker]
+    assert_problem({k: v for k, v in body.items() if k != "blockers"}, 409, "baseline_blocked")
 
 
 def test_stale_data_detail_does_not_leak_sql() -> None:

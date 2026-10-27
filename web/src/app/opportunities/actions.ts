@@ -5,6 +5,7 @@ import {
   getConflicts,
   getCritic,
   getEstimate,
+  getEstimateVersions,
   getOpportunity,
   getRedTeam,
   getReviewPanel,
@@ -17,6 +18,7 @@ import {
   type AssessmentsResult,
   type CriticResult,
   type EstimateResult,
+  type EstimateVersionsResult,
   type GapsResult,
   type OutdatedAssessmentsResult,
   type RedTeamResult,
@@ -31,6 +33,8 @@ import type { Conflict } from "@/lib/conflicts";
 import type {
   Assumption,
   AssumptionKind,
+  BaselineApproval,
+  BaselineSet,
   EstimateDraft,
   EstimateView,
   Risk,
@@ -57,6 +61,7 @@ import type {
   ReviewType,
 } from "@/lib/reviews";
 import type {
+  Blocker,
   SubmissionBlockers,
   SubmissionBlockersView,
   SubmittedVersion,
@@ -778,9 +783,23 @@ export async function startGapDetection(opportunityId: unknown): Promise<StartGa
 
 /** The Opportunity's Estimate and latest draft as stored now (the Estimate tab polls this
  * while a draft runs). */
-export async function loadEstimate(opportunityId: unknown): Promise<EstimateResult> {
+export async function loadEstimate(
+  opportunityId: unknown,
+  version?: unknown,
+): Promise<EstimateResult> {
   if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
-  return getEstimate(opportunityId);
+  // Story 9.7: an earlier version, read only (`?version=n`).
+  const wanted =
+    typeof version === "number" && Number.isSafeInteger(version) && version >= 1 ? version : null;
+  return getEstimate(opportunityId, wanted);
+}
+
+/** Story 9.7: every Estimate Version of the Opportunity, the Baseline first. */
+export async function loadEstimateVersions(
+  opportunityId: unknown,
+): Promise<EstimateVersionsResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  return getEstimateVersions(opportunityId);
 }
 
 /** `POST /api/v1/opportunities/{id}/estimate-drafts`: draft the Estimate again (the Retry of
@@ -3646,6 +3665,92 @@ export async function createEstimateVersion(
     console.error(
       `new estimate version failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
+    return { kind: "error" };
+  }
+}
+
+// --- the Baseline (Story 9.7) ------------------------------------------------------------------
+
+export type ApproversResult = { kind: "ok"; approvers: BaselineApproval[] } | { kind: "error" };
+
+/** `GET …/estimate-versions/{vid}/approvers`: the Review Requests behind the version, each with
+ * who decided and when (the Set Baseline dialog). Logs statuses only. */
+export async function loadVersionApprovers(input: unknown): Promise<ApproversResult> {
+  const { opportunityId, versionId } = (input ?? {}) as Record<string, unknown>;
+  if (!isId(opportunityId) || !isId(versionId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/estimate-versions/{version_id}/approvers",
+      { params: { path: { opportunity_id: opportunityId, version_id: versionId } } },
+    );
+    if (data) return { kind: "ok", approvers: data };
+    console.error(`GET version approvers failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET version approvers failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+export type SetBaselineResult =
+  | { kind: "ok"; baseline: BaselineSet }
+  | { kind: "blocked"; blockers: Blocker[]; detail: string | null }
+  | { kind: "not-newer"; detail: string | null }
+  | { kind: "stale" }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function baselineBlockersOf(error: unknown): Blocker[] {
+  const found = (error ?? {}) as { blockers?: unknown };
+  return Array.isArray(found.blockers) ? (found.blockers as Blocker[]) : [];
+}
+
+/** `POST …/estimate-versions/{vid}/baseline` with `If-Match`. The API checks the blockers to
+ * Baseline again under the Opportunity's lock; a 409 carries them. Logs ids and statuses only. */
+export async function setEstimateBaseline(input: unknown): Promise<SetBaselineResult> {
+  const { opportunityId, versionId, rowVersion } = (input ?? {}) as Record<string, unknown>;
+  if (
+    !isId(opportunityId) ||
+    !isId(versionId) ||
+    typeof rowVersion !== "number" ||
+    !Number.isSafeInteger(rowVersion) ||
+    rowVersion < 0
+  )
+    return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/estimate-versions/{version_id}/baseline",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, version_id: versionId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+      },
+    );
+    if (data) return { kind: "ok", baseline: data };
+    const { code, detail } = problem(error);
+    switch (response.status) {
+      case 409:
+        return code === "baseline_blocked"
+          ? { kind: "blocked", blockers: baselineBlockersOf(error), detail: detail ?? null }
+          : { kind: "not-newer", detail: detail ?? null };
+      case 412:
+        return { kind: "stale" };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(`set baseline failed: status=${response.status} code=${String(code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`set baseline failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

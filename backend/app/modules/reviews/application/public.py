@@ -10,6 +10,8 @@
 - Story 9.4: `reply` (the author's reply to a request for evidence or an alternative), and
   for `estimates.submit_version` (read lazily) `supersede_open_requests`, and for **New
   version** (read lazily) `alternative_requested`.
+- Story 9.7: for `estimates.set_baseline` and the approvers read (read lazily)
+  `version_approvals`.
 """
 
 from app.modules.reviews.application.decisions import decide, review_panel
@@ -35,6 +37,7 @@ from app.modules.reviews.application.models import (
     ReviewRequestsView,
     ReviewRequestView,
     ReviewTarget,
+    VersionApproval,
     VersionRef,
 )
 from app.modules.reviews.application.reminders import SEND_REMINDERS
@@ -49,6 +52,7 @@ from app.modules.reviews.application.requests import (
     may_request_review,
     request_status,
     reviewer_candidates,
+    version_approvals,
 )
 from app.modules.reviews.application.supersede import supersede_open_requests
 from app.modules.reviews.domain.decisions import DECISION_LABELS, Decision
@@ -90,6 +94,7 @@ __all__ = [
     "ReviewTarget",
     "ReviewType",
     "TargetKind",
+    "VersionApproval",
     "VersionRef",
     "alternative_requested",
     "cancel_review_request",
@@ -104,4 +109,5 @@ __all__ = [
     "review_panel",
     "reviewer_candidates",
     "supersede_open_requests",
+    "version_approvals",
 ]

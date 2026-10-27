@@ -1,9 +1,15 @@
 """estimates' public API. Other modules import estimates only from here. Story 9.4:
-`create_version` (a person's **New version** from a rejected or approved version)."""
+`create_version` (a person's **New version** from a rejected or approved version). Story 9.7:
+`set_baseline`, `version_approvers` and `list_versions`."""
 
 from uuid import UUID
 
 from app.modules.estimates.application import draft
+from app.modules.estimates.application.baseline import (
+    set_baseline,
+    version_approvers,
+    version_gate,
+)
 from app.modules.estimates.application.blockers import (
     get_submission_blockers,
     submission_blocker_counts,
@@ -18,6 +24,7 @@ from app.modules.estimates.application.estimates import (
     edit_line,
     edit_risk,
     get_estimate,
+    list_versions,
     start_draft,
     submission_blockers_view,
 )
@@ -38,6 +45,9 @@ from app.modules.estimates.application.models import (
     AssumptionCounts,
     AssumptionGroups,
     AssumptionLine,
+    BaselineApproval,
+    BaselineRef,
+    BaselineSet,
     Blocker,
     CreatedVersion,
     CurrentEstimate,
@@ -64,6 +74,8 @@ from app.modules.estimates.application.models import (
     Totals,
     UnconvertedGap,
     VersionDiff,
+    VersionGate,
+    VersionListItem,
 )
 from app.modules.estimates.application.review_status import (
     ReviewableVersion,
@@ -73,9 +85,6 @@ from app.modules.estimates.application.review_status import (
     mark_rejected,
     mark_submitted_from_review,
     reviewable_version,
-)
-from app.modules.estimates.application.review_status import (
-    lock_opportunity as lock_for_review,
 )
 from app.modules.estimates.application.submit import submit_version
 from app.modules.estimates.application.versions import create_version
@@ -102,6 +111,9 @@ __all__ = [
     "AssumptionCounts",
     "AssumptionGroups",
     "AssumptionLine",
+    "BaselineApproval",
+    "BaselineRef",
+    "BaselineSet",
     "Blocker",
     "CreatedVersion",
     "CurrentEstimate",
@@ -133,7 +145,9 @@ __all__ = [
     "Totals",
     "UnconvertedGap",
     "VersionDiff",
+    "VersionGate",
     "VersionLines",
+    "VersionListItem",
     "VersionStatus",
     "accept_all_assumptions",
     "accept_assumption",
@@ -152,17 +166,20 @@ __all__ = [
     "export_estimate",
     "get_estimate",
     "get_submission_blockers",
+    "list_versions",
     "lock_for_decision",
-    "lock_for_review",
     "mark_approved",
     "mark_in_review",
     "mark_rejected",
     "mark_submitted_from_review",
     "reviewable_version",
+    "set_baseline",
     "start_draft",
     "submission_blocker_counts",
     "submission_blockers_view",
     "submit_version",
+    "version_approvers",
     "version_detail",
+    "version_gate",
     "version_lines",
 ]

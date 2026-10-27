@@ -8,16 +8,18 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, insert, select, text, tuple_, update
+from sqlalchemy import delete, func, insert, select, tuple_, update
 
 from app.modules.estimates.adapters.models import (
     AssumptionRow,
+    BaselineRow,
     DraftRow,
     EstimateLineRow,
     EstimateVersionRow,
     LineRequirementRow,
     RiskRow,
 )
+from app.platform.trace.models import TraceEvent
 from app.platform.uow import UnitOfWork
 
 
@@ -88,15 +90,6 @@ class NewLine:
 
 
 # --- drafts ---------------------------------------------------------------------------------
-
-
-async def lock_opportunity(uow: UnitOfWork, opportunity_id: UUID) -> None:
-    """Serialise the Opportunity's Estimate drafting until commit: queueing, a job starting,
-    and accepting a result (which numbers and supersedes versions)."""
-    await uow.session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"estimates.draft:{opportunity_id}"},
-    )
 
 
 def _draft(row: DraftRow) -> DraftRecord:
@@ -455,14 +448,19 @@ async def supersede_submitted(
 ) -> list[VersionRecord]:
     """Mark the Opportunity's `submitted`, `in_review` (Story 9.1), `approved` and `rejected`
     (Story 9.3) versions other than `keep` `superseded` (bumping their `row_version`); the
-    versions as they are now, oldest first."""
+    versions as they are now, oldest first. Story 9.7: the current Baseline's version is never
+    superseded (it stays `approved`)."""
+    conditions = [
+        EstimateVersionRow.opportunity_id == opportunity_id,
+        EstimateVersionRow.status.in_(_SENT_STATUSES),
+        EstimateVersionRow.id != keep,
+    ]
+    baseline = await current_baseline(uow, opportunity_id)
+    if baseline is not None:
+        conditions.append(EstimateVersionRow.id != baseline.estimate_version_id)
     result = await uow.session.execute(
         update(EstimateVersionRow)
-        .where(
-            EstimateVersionRow.opportunity_id == opportunity_id,
-            EstimateVersionRow.status.in_(_SENT_STATUSES),
-            EstimateVersionRow.id != keep,
-        )
+        .where(*conditions)
         .values(status="superseded", row_version=EstimateVersionRow.row_version + 1)
         .returning(EstimateVersionRow.id)
         .execution_options(synchronize_session=False)
@@ -697,15 +695,6 @@ async def set_proposal_status(
 
 
 # --- Assumptions (Story 8.4) ----------------------------------------------------------------
-
-
-async def lock_assumptions(uow: UnitOfWork, opportunity_id: UUID) -> None:
-    """Serialise the Opportunity's Assumption writes until commit: storing proposals and
-    accepting (which converts Gaps)."""
-    await uow.session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"estimates.opportunity:{opportunity_id}"},
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1161,3 +1150,125 @@ async def risk_carried_from_versions(uow: UnitOfWork, source_ids: list[UUID]) ->
         .where(RiskRow.id.in_(source_ids))
     )
     return {row.id: row.version for row in rows}
+
+
+# --- the Baseline (Story 9.7) ---------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineRecord:
+    id: UUID
+    opportunity_id: UUID
+    estimate_version_id: UUID
+    previous_version_id: UUID | None
+    set_at: datetime
+    set_by: UUID
+
+
+def _baseline(row: BaselineRow) -> BaselineRecord:
+    return BaselineRecord(
+        id=row.id,
+        opportunity_id=row.opportunity_id,
+        estimate_version_id=row.estimate_version_id,
+        previous_version_id=row.previous_version_id,
+        set_at=row.set_at,
+        set_by=row.set_by,
+    )
+
+
+_LATEST_BASELINE = (BaselineRow.set_at.desc(), BaselineRow.id.desc())
+
+
+async def current_baseline(uow: UnitOfWork, opportunity_id: UUID) -> BaselineRecord | None:
+    """The Opportunity's current Baseline (its latest row), or None before the first."""
+    row = (
+        await uow.session.execute(
+            select(BaselineRow)
+            .where(BaselineRow.opportunity_id == opportunity_id)
+            .order_by(*_LATEST_BASELINE)
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _baseline(row)
+
+
+async def current_baselines(
+    uow: UnitOfWork, opportunity_ids: list[UUID]
+) -> dict[UUID, BaselineRecord]:
+    """Each of these Opportunities' current Baseline, in one query; ones with none are left
+    out."""
+    if not opportunity_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(BaselineRow)
+        .where(BaselineRow.opportunity_id.in_(opportunity_ids))
+        .order_by(*_LATEST_BASELINE)
+    )
+    found: dict[UUID, BaselineRecord] = {}
+    for row in rows.scalars():
+        found.setdefault(row.opportunity_id, _baseline(row))
+    return found
+
+
+async def insert_baseline(
+    uow: UnitOfWork,
+    *,
+    baseline_id: UUID,
+    opportunity_id: UUID,
+    estimate_version_id: UUID,
+    previous_version_id: UUID | None,
+    set_by: UUID,
+) -> BaselineRecord:
+    """A new Baseline row. `set_at` is the clock time (after the caller took the
+    Opportunity's lock), so the latest row is always the newest Baseline."""
+    await uow.session.execute(
+        insert(BaselineRow).values(
+            id=baseline_id,
+            opportunity_id=opportunity_id,
+            estimate_version_id=estimate_version_id,
+            previous_version_id=previous_version_id,
+            set_at=func.clock_timestamp(),
+            set_by=set_by,
+        )
+    )
+    row = (
+        await uow.session.execute(
+            select(BaselineRow)
+            .where(BaselineRow.id == baseline_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    return _baseline(row)
+
+
+async def versions_of(uow: UnitOfWork, opportunity_id: UUID) -> list[VersionRecord]:
+    """Every Estimate Version of the Opportunity, whatever its status, newest first."""
+    rows = await uow.session.execute(
+        select(EstimateVersionRow)
+        .where(EstimateVersionRow.opportunity_id == opportunity_id)
+        .order_by(EstimateVersionRow.version.desc())
+        .execution_options(populate_existing=True)
+    )
+    return [_version(row) for row in rows.scalars()]
+
+
+async def version_reasons(uow: UnitOfWork, version_ids: list[UUID]) -> dict[UUID, str]:
+    """Story 9.7: the reason a person gave for each of these versions' **New version** (Story
+    9.4, kept in its `estimates.estimate_version.created` trace event); versions with none are
+    left out."""
+    if not version_ids:
+        return {}
+    rows = await uow.session.execute(
+        select(TraceEvent.subject_id, TraceEvent.payload).where(
+            TraceEvent.subject_type == "estimates.estimate_version",
+            TraceEvent.subject_id.in_(version_ids),
+            TraceEvent.event_type == "estimates.estimate_version.created",
+        )
+    )
+    found: dict[UUID, str] = {}
+    for subject_id, payload in rows:
+        reason = payload.get("reason") if isinstance(payload, dict) else None
+        if isinstance(reason, str) and reason:
+            found[subject_id] = reason
+    return found

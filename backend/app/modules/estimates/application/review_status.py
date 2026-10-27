@@ -1,7 +1,7 @@
 """An Estimate Version's review status (Story 9.1), for `reviews` through `public.py`.
 
 `reviews` sends Review Requests for a `submitted` or `in_review` version and calls, in its own
-command's Unit of Work (holding `lock_opportunity`):
+command's Unit of Work (holding `platform.locks.opportunity_lock`):
 
 - `mark_in_review`: `submitted` → `in_review` (traced `estimates.estimate_version.review_started`);
   an `in_review` version stays as it is.
@@ -90,12 +90,6 @@ async def current_reviewable_version(
     in-review one), or None before the first."""
     record = await repo.current_version(uow, opportunity_id)
     return None if record is None else await _view(uow, record)
-
-
-async def lock_opportunity(uow: UnitOfWork, opportunity_id: UUID) -> None:
-    """Take the Opportunity's Estimate lock until commit (the one submit and drafting take),
-    so a Review Request and a version change never interleave."""
-    await repo.lock_opportunity(uow, opportunity_id)
 
 
 async def _trace(uow: UnitOfWork, actor: Actor, record: VersionRecord, *, started: bool) -> None:

@@ -15,6 +15,11 @@ export type RoleHours = components["schemas"]["RoleHours"];
 export type RoleMix = components["schemas"]["RoleMix"];
 export type SectionName = components["schemas"]["Section"];
 export type RoleName = components["schemas"]["EstimateRole"];
+export type BaselineRef = components["schemas"]["BaselineRef"];
+export type VersionListItem = components["schemas"]["VersionListItem"];
+export type VersionGate = components["schemas"]["VersionGate"];
+export type BaselineApproval = components["schemas"]["BaselineApproval"];
+export type BaselineSet = components["schemas"]["BaselineSet"];
 
 /** The template's sections with their labels, in template order. */
 export const SECTIONS: readonly { value: SectionName; label: string }[] = [
@@ -120,11 +125,13 @@ export type LifecycleState = "passed" | "current" | "upcoming";
  * Baseline. Draft is current for a draft and passed once the version is submitted or
  * superseded (the version pill says Superseded); In review is current while a Review Request
  * is pending (Story 9.1); Approved is current, with In review passed, once every Review
- * Request is approved (Story 9.3). Baseline is never current yet (Story 9.7). */
+ * Request is approved (Story 9.3). Story 9.7: every step is passed for the Baseline. */
 export function lifecycleSteps(
   status: EstimateVersion["status"],
+  isBaseline = false,
 ): { label: string; state: LifecycleState }[] {
   const labels = ["Draft", "In review", "Approved", "Baseline"];
+  if (isBaseline) return labels.map((label) => ({ label, state: "passed" }));
   const current = ["draft", "in_review", "approved"].indexOf(status);
   return labels.map((label, i) => ({
     label,
@@ -136,7 +143,9 @@ export function lifecycleSteps(
 /** The note under the stepper. */
 export function versionNote(
   version: Pick<EstimateVersion, "status" | "version" | "source" | "source_run">,
+  isBaseline = false,
 ): string {
+  if (isBaseline) return baselineNote(version.version);
   if (version.status === "submitted")
     return `v${version.version} was submitted and is read only.`;
   if (version.status === "in_review")
@@ -585,4 +594,111 @@ export function exportFailureReason(status: number | null, code?: string | null)
 /** "Export failed: <reason>". */
 export function exportFailure(reason: string): string {
   return `Export failed: ${reason}`;
+}
+
+// --- the Baseline and the version switcher (Story 9.7) --------------------------------------
+
+export const BASELINE = "Baseline";
+export const SET_BASELINE = "Set Baseline";
+export const ALL_VERSIONS = "All versions";
+
+/** "v2 is the Baseline. …" (the stepper's note on the Baseline version). */
+export function baselineNote(version: number): string {
+  return (
+    `v${version} is the Baseline. A Baseline is replaced only by a newer approved version, ` +
+    "and editing it creates a new version."
+  );
+}
+
+/** "Baseline v3" (the Opportunities list's estimate cell). */
+export function baselineTag(version: number): string {
+  return `Baseline v${version}`;
+}
+
+/** Whether `version` is the Opportunity's current Baseline. */
+export function isBaselineVersion(
+  view: Pick<EstimateView, "baseline">,
+  version: Pick<EstimateVersion, "id"> | null | undefined,
+): boolean {
+  return Boolean(version && view.baseline && view.baseline.version_id === version.id);
+}
+
+/** The switcher's segments: the Baseline (if any), then the two most recent versions, without
+ * repeating one, and the selected version (`selected`, its number) when it is none of them. */
+export function switcherVersions(
+  versions: readonly VersionListItem[],
+  selected?: number | null,
+): VersionListItem[] {
+  const baseline = versions.find((v) => v.is_baseline);
+  const newest = [...versions].sort((a, b) => b.version - a.version).slice(0, 2);
+  const picked = baseline ? [baseline, ...newest.filter((v) => v.id !== baseline.id)] : newest;
+  const chosen = versions.find((v) => v.version === selected);
+  return chosen && !picked.includes(chosen) ? [...picked, chosen] : picked;
+}
+
+/** The Estimate tab's href for one version: `?version=n` (none for the current one). */
+export function versionHref(opportunityId: string, version: number | null): string {
+  const base = `/opportunities/${opportunityId}/estimate`;
+  return version === null ? base : `${base}?version=${version}`;
+}
+
+/** `?version=n` as a positive whole number, or null. */
+export function parseVersionParam(value: string | string[] | undefined | null): number | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw || !/^[1-9][0-9]{0,8}$/.test(raw)) return null;
+  return Number(raw);
+}
+
+/** "Estimate v3 is now the Baseline" (announced after Set Baseline). */
+export function baselineSetAnnouncement(version: number): string {
+  return `Estimate v${version} is now the Baseline`;
+}
+
+/** "Set Baseline for Estimate v3?". */
+export function setBaselineTitle(version: number): string {
+  return `Set Baseline for Estimate v${version}?`;
+}
+
+/** "v3 is superseded and can't become the Baseline." */
+export function supersededReason(version: number): string {
+  return `v${version} is superseded and can't become the Baseline.`;
+}
+
+/** "v3 was rejected in review." */
+export function rejectedReason(version: number): string {
+  return `v${version} was rejected in review.`;
+}
+
+/** "Every requested review must approve v3 first." */
+export function approveFirstReason(version: number): string {
+  return `Every requested review must approve v${version} first.`;
+}
+
+export const BASELINE_WARNING =
+  "This cannot be undone. A Baseline is replaced only by a newer approved version.";
+export const BASELINE_STALE = "Changed since you opened it.";
+export const BASELINE_FAILED = "Not set: the platform is not reachable. Try again.";
+export const BASELINE_FORBIDDEN = "You can't set the Baseline of this Estimate.";
+export const APPROVERS_FAILED = "The approvers could not be loaded.";
+export const NO_APPROVERS = "No approvals recorded.";
+
+const LONG_DATE = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "Approved 21 Oct 2026" (the dialog's approver pill). */
+export function approvedOn(decidedAt: string | null | undefined): string {
+  const date = decidedAt ? new Date(decidedAt) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? `Approved ${LONG_DATE.format(date)}`
+    : "Approved";
+}
+
+/** "21 Oct 2026" (the All versions list). */
+export function longDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : LONG_DATE.format(date);
 }

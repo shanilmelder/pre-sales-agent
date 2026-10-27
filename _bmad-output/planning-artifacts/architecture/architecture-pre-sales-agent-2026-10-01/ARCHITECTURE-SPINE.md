@@ -424,7 +424,7 @@ graph TD
 | Workflow Run, Plan, Task, progress, change set | `workflows` |
 | Assessment, Finding, FindingOverride | `assessments` |
 | Conflict, Negotiation | `conflicts` |
-| Estimate, Estimate Version, Estimate Line, Assumption, Risk, Baseline | `estimates` |
+| Estimate, Estimate Version, Estimate Line, Assumption, Risk, Baseline (`estimates_baselines`, insert-only) | `estimates` |
 | Review Request (`reviews_review_requests`), Review Decision (`reviews_review_decisions`), Review reply (`reviews_review_replies`), Challenge, approval policy | `reviews` |
 | Scenario (metadata, constraint deltas) | `scenarios` |
 | Proposal | `proposals` |

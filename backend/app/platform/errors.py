@@ -249,6 +249,27 @@ class EstimateVersionBlockedError(ConflictError):
         self.extensions = {"blockers": blockers}
 
 
+class BaselineBlockedError(ConflictError):
+    """A Baseline was asked for a version that isn't approved or still has blockers to
+    Baseline (Story 9.7). The body's `blockers` extension member lists each one with its kind;
+    nothing changed."""
+
+    code = "baseline_blocked"
+    title = "Baseline blocked"
+
+    def __init__(self, detail: str | None = None, *, blockers: list[Mapping[str, Any]]) -> None:
+        super().__init__(detail)
+        self.extensions = {"blockers": blockers}
+
+
+class BaselineNotNewerError(ConflictError):
+    """A Baseline was asked for a version that isn't a newer approved version than the
+    current Baseline (Story 9.7); nothing changed."""
+
+    code = "baseline_not_newer"
+    title = "Baseline not newer"
+
+
 class EstimateVersionNotSubmittedError(ConflictError):
     """A Review Request was asked for an Estimate Version that is still a draft (Story 9.1)."""
 

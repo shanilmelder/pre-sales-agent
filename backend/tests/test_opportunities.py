@@ -113,8 +113,10 @@ def test_policy_resource_type_is_the_opportunity_subject_type() -> None:
     assert SUBJECT_TYPE == OPPORTUNITY_RESOURCE
 
 
-def test_derived_status_is_intake() -> None:
+def test_derived_status_is_intake_until_a_baseline() -> None:
     assert derived_status() is OpportunityStatus.INTAKE
+    assert derived_status(False) is OpportunityStatus.INTAKE
+    assert derived_status(True) is OpportunityStatus.BASELINED
 
 
 def test_new_opportunity_normalises_fields() -> None:
@@ -793,7 +795,12 @@ def test_list_row_estimate_is_the_draft_total_with_contingency(
 
     row = _row(client, headers, opp["id"])
 
-    assert row["estimate"] == {"version": 3, "status": "draft", "total_hours": 278.0}
+    assert row["estimate"] == {
+        "version": 3,
+        "status": "draft",
+        "total_hours": 278.0,
+        "is_baseline": False,
+    }
     estimate = client.get(f"{BASE}/{opp['id']}/estimate", headers=headers)
     assert estimate.status_code == 200, estimate.text
     assert estimate.json()["version"]["totals"]["total_hours"] == 278.0

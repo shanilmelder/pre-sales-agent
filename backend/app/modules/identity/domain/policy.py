@@ -22,6 +22,9 @@ Three kinds of grant, any of which allows an action:
 - **Any-role grants**: `ANY_ROLE_GRANTS` are allowed to every user holding at least one
   role (e.g. searching the Knowledge Base, Story 3.3), with no permission or relation.
   A principal with no role holds none of them.
+
+Story 9.7: `HUMAN_ONLY_ACTIONS` (setting the Baseline) are denied to every principal that isn't
+a person, whatever its grants.
 """
 
 from collections.abc import Mapping
@@ -101,6 +104,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.REVIEW_REQUEST_DECIDE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_REPLY: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_VERSION_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ESTIMATE_BASELINE_SET: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -141,6 +145,8 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         # Story 9.4: the owner may reply on any request, and start a new version.
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
+        # Story 9.7: people only (`HUMAN_ONLY_ACTIONS`).
+        Action.ESTIMATE_BASELINE_SET,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -175,6 +181,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         # Story 9.4: only the request's sender, checked by `reviews`.
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
+        Action.ESTIMATE_BASELINE_SET,
     }
 )
 REVIEWER_GRANTS: frozenset[Action] = frozenset(
@@ -206,6 +213,11 @@ ANY_ROLE_GRANTS: frozenset[Action] = frozenset(
 9.2: one's own Inbox, which only ever holds the caller's items)."""
 
 
+HUMAN_ONLY_ACTIONS: frozenset[Action] = frozenset({Action.ESTIMATE_BASELINE_SET})
+"""Story 9.7: actions only a person may take. Any principal that isn't a `user` actor (an
+agent or the system) is denied them, whatever permissions or relations it holds."""
+
+
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:
     """True if the principal holds the action as a permission, or the principal is the
     resource's owner or a member and that relation grants it. Relations count only on an
@@ -213,7 +225,9 @@ def is_allowed(principal: Principal, action: Action, resource: Resource | None =
     least one role (a user whose roles were all removed loses access), and not for a
     principal whose roles are all excluded for the action (`RELATION_EXCLUDED_ROLES`). Agent
     and system actors follow the same rules: with no granting permission or relation they
-    are denied."""
+    are denied; and they are always denied `HUMAN_ONLY_ACTIONS` (Story 9.7)."""
+    if action in HUMAN_ONLY_ACTIONS and principal.actor.type != "user":
+        return False
     if action in principal.permissions:
         return True
     if action in ANY_ROLE_GRANTS and principal.roles:

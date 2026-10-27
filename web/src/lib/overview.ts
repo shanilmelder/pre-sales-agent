@@ -499,10 +499,12 @@ function estimateStep(
   return { sub: `Estimate v${version.version}, every Assumption accepted`, state: "complete" };
 }
 
-/** Review and Baseline: never Complete before Baseline exists (Story 9.7). */
+/** Review and Baseline: Complete only once the version is the Baseline (Story 9.7). */
 function reviewStep(view: SubmissionBlockersView | null): StepBody {
   if (view === null) return BLOCKERS_FAILED;
   const version = view.version;
+  if (version && view.is_baseline)
+    return { sub: `Baseline set on v${version.version}`, state: "complete" };
   // Stories 9.3/9.4: a decided review waits for the Baseline (9.7) or a new version.
   if (version?.status === "approved")
     return { sub: "Approved, Baseline not set yet", state: "in-progress" };

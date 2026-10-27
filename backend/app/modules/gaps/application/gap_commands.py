@@ -3,9 +3,10 @@
 Every command follows the AD-3 path: `identity.authorize` (`gaps.gap.edit`: the
 Opportunity's owner and collaborators except sales representatives; other readers 403,
 everyone else the Opportunity's 404), validate, write, then a history entry and a trace
-event, in the caller's Unit of Work. Each takes the Opportunity's detection lock
-(`lock_opportunity`): dismiss and reopen change submission blockers (AD-26), and an impact
-change must not race a detection, which keeps Gaps a person touched.
+event, in the caller's Unit of Work. Each takes the Opportunity's shared lock
+(`platform.locks.opportunity_lock`, which detection takes too): dismiss and reopen change
+submission blockers (AD-26), and an impact change must not race a detection, which keeps Gaps
+a person touched.
 
 Order of checks: authorize (403/404) → Gap in this Opportunity (404) → body (422) →
 `If-Match` (428) → status (409 `gap_not_open` / `gap_not_reopenable`; `gap_mandatory` for a
@@ -66,6 +67,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import GapsGapDismissed, GapsGapImpactChanged, GapsGapReopened
 from app.platform.uow import UnitOfWork
@@ -93,7 +95,7 @@ async def _authorized(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -
     user_id = actor.user_id
     if user_id is None:  # pragma: no cover - the policy grants this action to users only
         raise ForbiddenError("Only people can change Gaps.")
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     return user_id
 
 

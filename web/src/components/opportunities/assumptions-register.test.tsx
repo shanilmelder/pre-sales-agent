@@ -182,6 +182,9 @@ function view(v: EstimateVersion, canAccept = true): EstimateView {
     can_submit: false,
     can_request_review: false,
     can_create_version: false,
+    baseline: null,
+    is_current: true,
+    can_set_baseline: false,
   };
 }
 

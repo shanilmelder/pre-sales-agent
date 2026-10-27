@@ -101,6 +101,10 @@ class EstimateSummary(BaseModel):
     version: int
     status: Literal["draft", "submitted", "in_review", "approved", "rejected"]
     total_hours: float
+    is_baseline: bool = Field(
+        default=False,
+        description="Story 9.7: whether this version is the Opportunity's current Baseline.",
+    )
 
 
 class OpportunitySummary(BaseModel):

@@ -1,5 +1,6 @@
 "use client";
 
+import { AnchorIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
@@ -18,7 +19,7 @@ import {
   initials,
   type OpportunitySummary,
 } from "@/lib/opportunities";
-import { versionStatusLabel } from "@/lib/estimates";
+import { baselineTag, versionStatusLabel } from "@/lib/estimates";
 import { NEW_OPPORTUNITY_HREF } from "@/lib/shortcuts";
 import { useSkeletonDone } from "@/lib/use-skeleton-done";
 import { cn } from "@/lib/utils";
@@ -122,7 +123,14 @@ function Estimate({ estimate }: { estimate: OpportunitySummary["estimate"] }) {
       </span>
       <span className="block text-meta text-text-secondary">
         {estimate
-          ? `${versionStatusLabel(estimate.status)} v${estimate.version}`
+          ? estimate.is_baseline
+            ? (
+                <span className="inline-flex items-center gap-1 text-resolved" data-baseline="">
+                  <AnchorIcon aria-hidden="true" className="size-3 shrink-0" />
+                  {baselineTag(estimate.version)}
+                </span>
+              )
+            : `${versionStatusLabel(estimate.status)} v${estimate.version}`
           : "No estimate"}
       </span>
     </span>

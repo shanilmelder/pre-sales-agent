@@ -18,7 +18,7 @@ EVENT_TYPE_RE = re.compile(rf"^{_SEGMENT}\.{_SEGMENT}\.{_SEGMENT}$")
 # past participles here when an event needs one. This is a heuristic, not a guarantee:
 # non-past words that end in "ed" (need, seed) also pass, so reviewers still check names.
 _IRREGULAR_PAST_TENSE = frozenset(
-    {"built", "done", "lost", "made", "overridden", "run", "sent", "split", "won"}
+    {"built", "done", "lost", "made", "overridden", "run", "sent", "set", "split", "won"}
 )
 # State events: names that report a state entered rather than a past-tense verb. Kept to the
 # few the architecture names verbatim (Story 5.5: AD-7's `workflows.run.waiting_for_human`).
@@ -818,6 +818,34 @@ class EstimatesEstimateVersionRejected(TracePayload):
 
     version_id: str
     version: int
+
+
+class BaselineApprover(BaseModel):
+    """One approval behind a Baseline (Story 9.7): the deciding person, the review type and
+    the decision's id."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    user_id: str
+    review_type: str
+    decision_id: str
+
+
+@register
+class EstimatesBaselineSet(TracePayload):
+    """A person set an approved Estimate Version as the Opportunity's Baseline (Story 9.7;
+    AD-26). Subject: the version (`estimates.estimate_version`). Actor: that person (never an
+    agent or the system). The version, the Baseline it replaced (null for the first) and the
+    approvals behind it: ids, numbers and review types only."""
+
+    event_type: ClassVar[str] = "estimates.baseline.set"
+
+    baseline_id: str
+    version_id: str
+    version: int
+    previous_version_id: str | None
+    previous_version: int | None
+    approvers: list[BaselineApprover]
 
 
 # Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.

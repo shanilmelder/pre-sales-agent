@@ -286,6 +286,7 @@ def test_the_batched_count_equals_the_query_for_a_page(
         "version": 2,
         "status": "draft",
         "total_hours": 6.0,
+        "is_baseline": False,
     }
 
 
