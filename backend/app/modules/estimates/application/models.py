@@ -770,8 +770,26 @@ class LineagePassage(BaseModel):
 
 
 LineageStepKind = Literal[
-    "gap", "unknown", "finding", "question", "answer", "conversion", "acceptance"
+    "gap", "unknown", "finding", "question", "answer", "conversion", "acceptance", "actual"
 ]
+
+
+class LineageActual(BaseModel):
+    """Story 10.4: an Actual version that named the Assumption as failed, from its
+    `actuals.actual.recorded` or `.corrected` trace event: the Actual (`actual_id`, its
+    `version`), the line it was recorded against (`line_label` "L{n}" in grid order, null for
+    Unplanned work), its kind and effort, and its variance cause with its words."""
+
+    actual_id: str
+    version: int = Field(ge=1)
+    corrected: bool
+    line_id: str | None
+    line_label: str | None
+    line_title: str | None
+    kind: Literal["milestone", "final"]
+    effort_hours: float
+    variance_cause: str | None
+    cause_label: str | None
 
 
 class LineageStep(BaseModel):
@@ -791,19 +809,26 @@ class LineageStep(BaseModel):
     superseded: bool
     evidence: list[LineageEvidence] = Field(default_factory=list)
     passage: LineagePassage | None = None
+    actual: LineageActual | None = Field(
+        default=None, description="Story 10.4: an `actual` step's Actual."
+    )
 
 
 class AssumptionLineage(BaseModel):
     """Story 9.9 (`estimates.get_assumption_lineage`): an Assumption's chain, oldest first:
     its origin (a Gap, an Unknown or a Finding), the Clarification Question, the recorded
-    answer with its Source passage, the conversion and the acceptance. A step that never
-    happened (or a question a sales representative may not see) is left out."""
+    answer with its Source passage, the conversion and the acceptance, then (Story 10.4)
+    each Actual version that named it as failed. A step that never happened (or a question
+    a sales representative may not see) is left out. `position`: its register number
+    ("A{n}"); `amount_hours`: a Contingency's hours."""
 
     assumption_id: str
     version_id: str
     version: int = Field(ge=1)
     kind: AssumptionKind
+    position: int = Field(ge=1)
     wording: str
+    amount_hours: float | None = None
     steps: list[LineageStep]
 
 

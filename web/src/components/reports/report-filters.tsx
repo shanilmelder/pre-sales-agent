@@ -21,8 +21,8 @@ const SELECT_LABEL = `${LABEL} w-44`;
 const DATE =
   "h-[38px] rounded-md border border-border-strong bg-surface-alt px-2 text-body text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring text-numeric";
 
-/** The toolbar between the sub-tabs and the KPIs: Group by, Product, Work Package, Cause, the
- * closed-date range and Include milestones. Every control is kept in the URL, so a reload or a
+/** The toolbar between the sub-tabs and the KPIs: Group by, Product, Work Package, Integration
+ * Type (Story 10.4), Cause, the closed-date range and Include milestones. Every control is kept in the URL, so a reload or a
  * shared link shows the same report. */
 export function ReportFilters({
   params,
@@ -39,7 +39,8 @@ export function ReportFilters({
     startTransition(() => router.replace(reportHref(next), { scroll: false }));
 
   const select =
-    (key: "product" | "workPackageId" | "cause") => (event: ChangeEvent<HTMLSelectElement>) =>
+    (key: "product" | "workPackageId" | "integrationTypeId" | "cause") =>
+    (event: ChangeEvent<HTMLSelectElement>) =>
       apply({ ...params, [key]: event.target.value || undefined });
 
   const date = (key: "closedFrom" | "closedTo") => (event: ChangeEvent<HTMLInputElement>) => {
@@ -103,6 +104,25 @@ export function ReportFilters({
           {params.workPackageId &&
           !options.work_packages.some((wp) => wp.id === params.workPackageId) ? (
             <option value={params.workPackageId}>Selected Work Package</option>
+          ) : null}
+        </Select>
+      </label>
+      <label className={SELECT_LABEL} htmlFor={`${id}-it`}>
+        Integration Type
+        <Select
+          id={`${id}-it`}
+          value={params.integrationTypeId ?? ""}
+          onChange={select("integrationTypeId")}
+        >
+          <option value="">All Integration Types</option>
+          {options.integration_types.map((it) => (
+            <option key={it.id} value={it.id}>
+              {it.name}
+            </option>
+          ))}
+          {params.integrationTypeId &&
+          !options.integration_types.some((it) => it.id === params.integrationTypeId) ? (
+            <option value={params.integrationTypeId}>Selected Integration Type</option>
           ) : null}
         </Select>
       </label>

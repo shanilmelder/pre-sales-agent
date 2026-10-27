@@ -4,6 +4,7 @@ import { useEffect, useId, useState } from "react";
 
 import { correctActual, saveActuals, type SaveActualsResult } from "@/app/opportunities/actions";
 import type { CatalogueOptions } from "@/app/opportunities/data";
+import { FailedAssumptionList } from "@/components/opportunities/failed-assumption-list";
 import { ReasonInput } from "@/components/opportunities/reason-input";
 import { useAnnounce } from "@/components/shell/live-region";
 import { Button } from "@/components/ui/button";
@@ -101,7 +102,9 @@ function parseCost(text: string, currency: string): number | null | "invalid" {
 
 /** The Inspector's full Actual form (kind, milestone label, hours, duration, cost, cause,
  * note, failed Assumptions and, for Unplanned work, the Integration Type or Work Package), the
- * correction reason, and the Actual's history. Read only unless `view.can_record`. */
+ * correction reason, and the Actual's history. Read only unless `view.can_record`. Story 10.4:
+ * the failed Assumptions are also listed read-only for every role, each with **Open in
+ * Trace**. */
 export function ActualInspector({
   opportunityId,
   view,
@@ -526,15 +529,15 @@ export function ActualInspector({
           <dt className="text-text-secondary">Note</dt>
           <dd>{actual.note ?? DASH}</dd>
           <dt className="text-text-secondary">Failed Assumptions</dt>
-          <dd>
-            {actual.failed_assumptions.length === 0
-              ? DASH
-              : actual.failed_assumptions.map((a) => a.wording).join("; ")}
-          </dd>
+          <dd>{actual.failed_assumptions.length === 0 ? DASH : actual.failed_assumptions.length}</dd>
         </dl>
       ) : (
         <p className="text-meta text-text-secondary">Not recorded</p>
       )}
+
+      {actual !== null ? (
+        <FailedAssumptionList opportunityId={opportunityId} assumptions={actual.failed_assumptions} />
+      ) : null}
 
       {actual !== null ? (
         <section aria-labelledby={`${ids}-history`} className="flex flex-col gap-2">

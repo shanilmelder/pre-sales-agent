@@ -9,7 +9,7 @@ Baseline version stay tied to it and are reported in `version_mismatch`.
 """
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -43,12 +43,13 @@ from app.modules.actuals.domain.actuals import (
     variance,
 )
 from app.modules.estimates.application import public as estimates
-from app.modules.estimates.application.public import AssumptionRef, LineRef
+from app.modules.estimates.application.public import AssumptionDetail, AssumptionRef, LineRef
 from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Action, Principal, Resource
 from app.modules.intake.application import public as intake
 from app.modules.knowledge.application import public as knowledge
 from app.modules.opportunities.application import public as opportunities
+from app.platform.storage import BlobStore
 from app.platform.uow import UnitOfWork
 
 UNKNOWN_USER = "Unknown user"
@@ -138,19 +139,31 @@ async def line_integration_types(
     return found
 
 
+Details = dict[UUID, dict[UUID, AssumptionDetail]]
+
+
 def _failed(
-    record: ActualRecord, registers: dict[UUID, dict[UUID, AssumptionRef]]
+    record: ActualRecord,
+    registers: dict[UUID, dict[UUID, AssumptionRef]],
+    details: Details | None = None,
 ) -> list[FailedAssumption]:
     register = registers.get(record.estimate_version_id, {})
+    detailed = (details or {}).get(record.estimate_version_id, {})
     out: list[FailedAssumption] = []
     for assumption_id, version in record.failed_assumptions:
         found = register.get(assumption_id)
+        detail = detailed.get(assumption_id)
         out.append(
             FailedAssumption(
                 assumption_id=str(assumption_id),
                 version=version,
                 kind="" if found is None else found.kind,
                 wording="" if found is None else found.wording,
+                position=None if found is None else found.position,
+                amount_hours=None if detail is None else detail.amount_hours,
+                accepted_by=None if detail is None else detail.accepted_by,
+                accepted_at=None if detail is None else detail.accepted_at,
+                evidence=[] if detail is None else detail.evidence,
             )
         )
     return out
@@ -160,6 +173,7 @@ def _version_view(
     record: ActualRecord,
     names: dict[UUID, str],
     registers: dict[UUID, dict[UUID, AssumptionRef]],
+    details: Details | None = None,
 ) -> ActualVersionView:
     return ActualVersionView(
         id=str(record.id),
@@ -174,7 +188,7 @@ def _version_view(
         if record.variance_cause is None
         else VarianceCause(record.variance_cause),
         note=record.note,
-        failed_assumptions=_failed(record, registers),
+        failed_assumptions=_failed(record, registers, details),
         correction_reason=record.correction_reason,
         recorded_by_name=names.get(record.recorded_by, UNKNOWN_USER),
         recorded_at=record.recorded_at,
@@ -184,17 +198,43 @@ def _version_view(
 @dataclass(frozen=True, slots=True)
 class ViewContext:
     """What every Actual view needs: names, registers by version id, version numbers by id,
-    catalogue entries, and each group's earlier versions (newest first)."""
+    catalogue entries, and each group's earlier versions (newest first). Story 10.4:
+    `details`, the failed Assumptions' acceptance and Evidence by version id (empty unless
+    asked for with an actor)."""
 
     names: dict[UUID, str]
     registers: dict[UUID, dict[UUID, AssumptionRef]]
     version_numbers: dict[UUID, int]
     catalogue: dict[UUID, CatalogueRef]
     history: dict[UUID, list[ActualRecord]]
+    details: Details = field(default_factory=dict)
+
+
+async def failed_details(
+    uow: UnitOfWork, records: list[ActualRecord], actor: Principal, store: BlobStore | None
+) -> Details:
+    """The failed Assumptions these Actuals name, with their acceptance and Evidence
+    (`estimates.assumption_details`), by Estimate Version id. `store` is passed through for
+    the Evidence excerpts (None: `intake`'s configured storage directory)."""
+    wanted: dict[UUID, set[UUID]] = defaultdict(set)
+    for r in records:
+        wanted[r.estimate_version_id].update(a for a, _ in r.failed_assumptions)
+    return {
+        version_id: await estimates.assumption_details(
+            uow, version_id, ids, actor=actor, store=store
+        )
+        for version_id, ids in sorted(wanted.items(), key=lambda kv: str(kv[0]))
+        if ids
+    }
 
 
 async def view_context(
-    uow: UnitOfWork, opportunity_id: UUID, records: list[ActualRecord]
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    records: list[ActualRecord],
+    *,
+    actor: Principal | None = None,
+    store: BlobStore | None = None,
 ) -> ViewContext:
     version_ids = {r.estimate_version_id for r in records}
     registers: dict[UUID, dict[UUID, AssumptionRef]] = {}
@@ -218,6 +258,7 @@ async def view_context(
         version_numbers=numbers,
         catalogue=await catalogue_refs(uow, catalogue_ids),
         history=dict(history),
+        details={} if actor is None else await failed_details(uow, records, actor, store),
     )
 
 
@@ -226,7 +267,7 @@ def actual_view(
 ) -> ActualView:
     """The current version of an Actual; `estimate_hours` is its line's (None for Unplanned
     work, which varies against 0)."""
-    base = _version_view(record, context.names, context.registers)
+    base = _version_view(record, context.names, context.registers, context.details)
     return ActualView(
         **base.model_dump(),
         group_id=str(record.actual_group_id),
@@ -241,7 +282,7 @@ def actual_view(
         else context.catalogue.get(record.work_package_id),
         variance=variance_view(variance(estimate_hours or Decimal(0), record.effort_hours)),
         history=[
-            _version_view(h, context.names, context.registers)
+            _version_view(h, context.names, context.registers, context.details)
             for h in context.history.get(record.actual_group_id, [])
         ],
     )
@@ -280,9 +321,16 @@ def _empty(row_version: int) -> ActualsView:
 
 
 async def build_view(
-    uow: UnitOfWork, actor: Principal, resource: Resource, opportunity_id: UUID
+    uow: UnitOfWork,
+    actor: Principal,
+    resource: Resource,
+    opportunity_id: UUID,
+    *,
+    store: BlobStore | None = None,
 ) -> ActualsView:
-    """The tab for an actor who may read the Opportunity (module docstring)."""
+    """The tab for an actor who may read the Opportunity (module docstring). `store` is the
+    blob store the failed Assumptions' Evidence excerpts are read from (without it, `intake`
+    uses the configured storage directory)."""
     can_record = identity.can(actor, Action.ACTUAL_RECORD, resource)
     row_version = await repo.change_count(uow, opportunity_id)
     baseline = await load_baseline(uow, opportunity_id)
@@ -306,7 +354,7 @@ async def build_view(
 
     records = await repo.actuals_of(uow, opportunity_id)
     current = [r for r in records if r.is_current]
-    context = await view_context(uow, opportunity_id, records)
+    context = await view_context(uow, opportunity_id, records, actor=actor, store=store)
     by_line = {r.estimate_line_id: r for r in current if r.estimate_line_id is not None}
     types = await line_integration_types(uow, baseline.lines)
 
@@ -407,7 +455,9 @@ async def build_view(
     )
 
 
-async def get_actuals(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> ActualsView:
+async def get_actuals(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID, *, store: BlobStore | None = None
+) -> ActualsView:
     """`actuals.get_actuals`: the Actuals tab (module docstring)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    return await build_view(uow, actor, resource, opportunity_id)
+    return await build_view(uow, actor, resource, opportunity_id, store=store)

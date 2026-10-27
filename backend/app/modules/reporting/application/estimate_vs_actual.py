@@ -36,6 +36,7 @@ from app.modules.reporting.application.models import (
     FailedKindCount,
     GroupBy,
     GroupOpportunity,
+    IntegrationTypeOption,
     ReportOptions,
     ReportVarianceView,
     VarianceGroup,
@@ -99,6 +100,7 @@ class ReportFilters:
     closed_from: date | None = None
     closed_to: date | None = None
     include_milestones: bool = False
+    integration_type_id: UUID | None = None
 
 
 # Every part of the report is one JSON column over the materialized CTEs, so the view is
@@ -112,6 +114,11 @@ SELECT
     (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', w.id, 'name', w.name)), '[]')
      FROM (SELECT DISTINCT CAST(work_package_id AS text) AS id, work_package_name AS name
            FROM r_all WHERE work_package_id IS NOT NULL) w) AS packages,
+    (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name)), '[]')
+     FROM (SELECT DISTINCT CAST(t.id AS text) AS id, t.name
+           FROM r_all
+           CROSS JOIN LATERAL unnest(r_all.integration_type_ids, r_all.integration_type_names)
+               AS t(id, name)) t) AS integration_types,
     (SELECT jsonb_build_object(
          'n', count(*),
          'closed', count(DISTINCT opportunity_id) FILTER (WHERE closed_at IS NOT NULL),
@@ -152,9 +159,28 @@ SELECT
 """
 
 
-def _report_statement(
+@dataclass(frozen=True, slots=True)
+class FilteredRows:
+    """The CTEs every Reports statement starts from (`r_all`: the readable rows; `r`: the
+    filtered ones; `g`: `r` expanded into its groups; `f`: their failed-Assumption references),
+    with their bound parameters."""
+
+    sql: str
+    params: dict[str, Any]
+    types: list[sa.BindParameter[Any]]
+
+    def statement(self, select: str) -> sa.TextClause:
+        statement = sa.text(self.sql + select)
+        if self.types:
+            statement = statement.bindparams(*self.types)
+        return statement.bindparams(**self.params) if self.params else statement
+
+
+def filtered_rows(
     readable: opportunities.ReadableOpportunities, filters: ReportFilters, group_by: GroupBy
-) -> sa.TextClause:
+) -> FilteredRows:
+    """The rows the caller may read, narrowed to `filters` and expanded by `group_by`
+    (module docstring, steps 2 and 3)."""
     readable_where = ["TRUE"]
     where = ["TRUE"]
     params: dict[str, Any] = {}
@@ -174,6 +200,10 @@ def _report_statement(
         where.append("x.work_package_id = :wp")
         params["wp"] = filters.work_package_id
         types.append(sa.bindparam("wp", type_=sa.Uuid()))
+    if filters.integration_type_id is not None:
+        where.append(":it = ANY(x.integration_type_ids)")
+        params["it"] = filters.integration_type_id
+        types.append(sa.bindparam("it", type_=sa.Uuid()))
     if filters.cause is not None:
         where.append("x.variance_cause = :cause")
         params["cause"] = filters.cause.value
@@ -194,13 +224,29 @@ WITH r_all AS MATERIALIZED (
     SELECT r.*, k.group_key, k.group_label
     FROM r CROSS JOIN LATERAL ({_GROUP_LATERAL[group_by]}) k
 ), f AS MATERIALIZED (
-    SELECT fa.actual_id, fa.assumption_id, fa.assumption_kind
-    FROM {FAILED_VIEW} fa WHERE fa.actual_id IN (SELECT actual_id FROM r)
+    SELECT fa.* FROM {FAILED_VIEW} fa WHERE fa.actual_id IN (SELECT actual_id FROM r)
 )"""  # noqa: S608
-    statement = sa.text(ctes + _REPORT_SELECT)
-    if types:
-        statement = statement.bindparams(*types)
-    return statement.bindparams(**params) if params else statement
+    return FilteredRows(ctes, params, types)
+
+
+def _report_statement(
+    readable: opportunities.ReadableOpportunities, filters: ReportFilters, group_by: GroupBy
+) -> sa.TextClause:
+    return filtered_rows(readable, filters, group_by).statement(_REPORT_SELECT)
+
+
+def applied_filters(filters: ReportFilters) -> AppliedFilters:
+    return AppliedFilters(
+        product=filters.product,
+        work_package_id=None if filters.work_package_id is None else str(filters.work_package_id),
+        integration_type_id=None
+        if filters.integration_type_id is None
+        else str(filters.integration_type_id),
+        cause=filters.cause,
+        closed_from=filters.closed_from,
+        closed_to=filters.closed_to,
+        include_milestones=filters.include_milestones,
+    )
 
 
 def _variance_view(estimate: Decimal, actual: Decimal) -> ReportVarianceView:
@@ -371,6 +417,13 @@ def _options(report: sa.Row[Any]) -> ReportOptions:
             (WorkPackageOption(id=p["id"], name=p["name"] or p["id"]) for p in report.packages),
             key=lambda p: (p.name.casefold(), p.id),
         ),
+        integration_types=sorted(
+            (
+                IntegrationTypeOption(id=t["id"], name=t["name"] or t["id"])
+                for t in report.integration_types
+            ),
+            key=lambda t: (t.name.casefold(), t.id),
+        ),
         causes=_all_causes(),
     )
 
@@ -383,7 +436,9 @@ def _empty_report(group_by: GroupBy, applied: AppliedFilters) -> EstimateVsActua
         kpis=None,
         groups=[],
         calibration=Calibration(threshold=CALIBRATION_THRESHOLD, message=calibration_message([])),
-        options=ReportOptions(products=[], work_packages=[], causes=_all_causes()),
+        options=ReportOptions(
+            products=[], work_packages=[], integration_types=[], causes=_all_causes()
+        ),
     )
 
 
@@ -398,14 +453,7 @@ async def estimate_vs_actual(
     authorize(actor, Action.REPORTING_REPORT_READ)
     filters = filters or ReportFilters()
     readable = await opportunities.readable_opportunities(uow, actor)
-    applied = AppliedFilters(
-        product=filters.product,
-        work_package_id=None if filters.work_package_id is None else str(filters.work_package_id),
-        cause=filters.cause,
-        closed_from=filters.closed_from,
-        closed_to=filters.closed_to,
-        include_milestones=filters.include_milestones,
-    )
+    applied = applied_filters(filters)
     if not readable.everything and not readable.ids:
         return _empty_report(group_by, applied)
     statement = _report_statement(readable, filters, group_by)

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assumptionTraceHref,
+  failedAcceptedLabel,
+  failedAssumptionText,
+  failedKindLabel,
   defaultDiffTarget,
   deltaText,
   diffTargets,
@@ -333,5 +337,25 @@ describe("lineage and compare helpers (Story 9.9)", () => {
     expect(lineDelta(deltas, { section: "integration", title: " [line 2] " })?.delta_hours).toBe(-4);
     expect(lineDelta(deltas, { section: "functional", title: "[OLD LINE]" })).toBeNull();
     expect(lineDelta(deltas, { section: "functional", title: "[LINE 1]" })).toBeNull();
+  });
+});
+
+describe("failed Assumptions (Story 10.4)", () => {
+  it("labels, texts and links them", () => {
+    expect(failedKindLabel("condition", 2)).toBe("Condition · A2");
+    expect(failedKindLabel("contingency", null)).toBe("Contingency");
+    expect(failedAssumptionText({ kind: "contingency", wording: "Late spec", amount_hours: 12 })).toBe(
+      "12.0 h · Late spec",
+    );
+    expect(failedAssumptionText({ kind: "condition", wording: "Volumes", amount_hours: null })).toBe(
+      "Volumes",
+    );
+    expect(
+      failedAcceptedLabel({ accepted_by: { name: "Jane Doe" }, accepted_at: "2026-10-05T09:00:00Z" }),
+    ).toBe("Accepted by Jane Doe · 5 Oct 2026");
+    expect(failedAcceptedLabel({ accepted_by: null, accepted_at: null })).toBe("Not accepted");
+    expect(assumptionTraceHref("o1", "a2")).toBe(
+      "/opportunities/o1/trace?subject=estimates.assumption&subject_id=a2",
+    );
   });
 });

@@ -373,13 +373,34 @@ export function pageCount(
 
 // --- one subject (Story 9.9) ---------------------------------------------------------------
 
-/** "Line {title}" (the removable chip of a `subject_id` filter); "Line" when the title isn't
+export const ASSUMPTION_SUBJECT = "estimates.assumption";
+const CHIP_WORDING_MAX = 48;
+
+/** The removable chip of a `subject_id` filter: "Line {title}", or (Story 10.4) for an
+ * Assumption, "Assumption A{n} · {wording}"; just "Line" / "Assumption" when the title isn't
  * known. */
-export function subjectChipLabel(title: string | null | undefined): string {
-  return title ? `Line ${title}` : "Line";
+export function subjectChipLabel(
+  title: string | null | undefined,
+  subject?: string | null,
+): string {
+  const kind = subject === ASSUMPTION_SUBJECT ? "Assumption" : "Line";
+  return title ? `${kind} ${title}` : kind;
 }
 
 /** "Remove the Line {title} filter". */
-export function removeSubjectLabel(title: string | null | undefined): string {
-  return `Remove the ${subjectChipLabel(title)} filter`;
+export function removeSubjectLabel(
+  title: string | null | undefined,
+  subject?: string | null,
+): string {
+  return `Remove the ${subjectChipLabel(title, subject)} filter`;
 }
+
+/** An Assumption's chip title, "A2 · Volumes as stated" (the wording truncated with "…"). */
+export function assumptionChipTitle(assumption: { position: number; wording: string }): string {
+  const chars = Array.from(assumption.wording.trim());
+  const wording =
+    chars.length > CHIP_WORDING_MAX ? `${chars.slice(0, CHIP_WORDING_MAX - 1).join("").trimEnd()}…` : chars.join("");
+  return `A${assumption.position} · ${wording}`;
+}
+
+export const CHAIN = "Chain";
