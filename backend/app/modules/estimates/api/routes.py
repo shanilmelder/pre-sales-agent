@@ -6,8 +6,11 @@ Assumption (Story 8.5, `PATCH …/assumptions/{assumption_id}`), converting a Ga
 editing a Risk (Story 8.5, `POST …/risks`, `PATCH …/risks/{risk_id}`), exporting the
 Estimate (Story 8.8, `GET …/estimate/export?format=xlsx|docx`), and the submission blockers
 and submitting a version (Story 8.6, `GET …/submission-blockers`,
-`POST …/estimate/versions/{version_id}/submit`), and Story 9.4's **New version**
-(`POST …/estimate-versions/{version_id}/new-version`). No endpoint accepts a total."""
+`POST …/estimate/versions/{version_id}/submit`), Story 9.4's **New version**
+(`POST …/estimate-versions/{version_id}/new-version`), and Story 9.7's Baseline
+(`POST …/estimate-versions/{version_id}/baseline`, `GET …/{version_id}/approvers`), the
+version list (`GET …/estimate-versions`) and an earlier version read only
+(`GET …/estimate?version=n`). No endpoint accepts a total."""
 
 from typing import Annotated, Any
 from uuid import UUID
@@ -20,6 +23,9 @@ from app.modules.estimates.application.public import (
     AcceptAllResult,
     Assumption,
     AssumptionChanges,
+    BaselineApproval,
+    BaselineSet,
+    Blocker,
     CreatedVersion,
     EstimateDraft,
     EstimateLineChanges,
@@ -32,6 +38,7 @@ from app.modules.estimates.application.public import (
     SubmissionBlockers,
     SubmissionBlockersView,
     SubmittedVersion,
+    VersionListItem,
 )
 from app.modules.identity.application.public import CurrentPrincipal
 from app.platform.concurrency import etag
@@ -64,13 +71,28 @@ router = APIRouter(prefix="/opportunities/{opportunity_id}", tags=["estimates"])
 
 
 @router.get("/estimate", operation_id="get_estimate", responses=_responses(404, 422))
-async def get_estimate(opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW) -> EstimateView:
+async def get_estimate(
+    opportunity_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    version: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            le=2**31 - 1,
+            description="Story 9.7: an Estimate Version's number, to read that version (read "
+            "only unless it is the current one; 404 when there is none). Without it, the "
+            "current version.",
+        ),
+    ] = None,
+) -> EstimateView:
     """The Opportunity's current Estimate Version (its draft, else its latest submitted one;
     null before the first) with its sections, lines, covered Requirements and
     server-calculated per-role hours, subtotals and totals, and its submission blockers; and
-    its latest Estimate draft run (null before the first). Anyone who can read the
+    its latest Estimate draft run (null before the first). Story 9.7: with the current
+    Baseline, and `?version=n` reads an earlier version read only. Anyone who can read the
     Opportunity."""
-    return await estimates.get_estimate(uow, actor, opportunity_id)
+    return await estimates.get_estimate(uow, actor, opportunity_id, version)
 
 
 @router.post(
@@ -582,3 +604,106 @@ async def create_estimate_version(
     created = await estimates.create_version(uow, actor, opportunity_id, version_id, reason)
     response.headers["ETag"] = etag(created.row_version)
     return created
+
+
+# --- the Baseline and the version list (Story 9.7) ------------------------------------------
+
+_BASELINE_403 = (
+    "Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a "
+    "collaborator, is a sales representative, or is not a person (an agent or the system)"
+)
+
+
+def _baseline_responses() -> dict[int | str, dict[str, Any]]:
+    responses = _responses(422, 428)
+    responses[403] = {"description": _BASELINE_403, "content": PROBLEM_CONTENT}
+    responses[404] = {
+        "description": "No Opportunity with this id, or the caller may not see it, or no "
+        "Estimate Version with this id in it (`not_found`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[409] = {
+        "description": "The version isn't a newer approved version than the current Baseline "
+        "(`baseline_not_newer`), or it isn't approved or still has blockers to Baseline "
+        "(`baseline_blocked`, each listed by kind in `blockers`); nothing changed",
+        "content": {PROBLEM_JSON: {"schema": _BASELINE_BLOCKED_SCHEMA}},
+    }
+    responses[412] = {
+        "description": "The version changed since the caller read it (`row_version_mismatch`)",
+        "content": PROBLEM_CONTENT,
+    }
+    responses[201] = {"description": "The Baseline just set"}
+    return responses
+
+
+class BaselineBlockedProblem(Problem):
+    """The Set Baseline 409 body: for `baseline_blocked`, the problem with each blocker to
+    Baseline found at the time of the request in its `blockers` extension member; absent for
+    `baseline_not_newer`."""
+
+    blockers: list[Blocker] | None = None
+
+
+_BASELINE_BLOCKED_SCHEMA = {
+    k: v
+    for k, v in BaselineBlockedProblem.model_json_schema(
+        ref_template="#/components/schemas/{model}"
+    ).items()
+    if k != "$defs"
+}
+
+
+@router.post(
+    "/estimate-versions/{version_id}/baseline",
+    operation_id="set_estimate_baseline",
+    status_code=201,
+    responses=_baseline_responses(),
+)
+async def set_estimate_baseline(
+    opportunity_id: UUID,
+    version_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    if_match: _VERSION_IF_MATCH = None,
+) -> BaselineSet:
+    """Story 9.7: set the approved Estimate Version as the Opportunity's Baseline. It must be
+    approved, have no blockers to Baseline (checked again under the Opportunity's lock) and,
+    when a Baseline exists, be numbered above it. Traced with its approvers; it can't be
+    undone, only replaced by a newer approved version. The owner and collaborators, except
+    sales representatives; people only."""
+    return await estimates.set_baseline(uow, actor, opportunity_id, version_id, if_match)
+
+
+@router.get(
+    "/estimate-versions/{version_id}/approvers",
+    operation_id="list_estimate_version_approvers",
+    responses={
+        **_responses(422),
+        404: {
+            "description": "No Opportunity with this id, or the caller may not see it, or no "
+            "Estimate Version with this id in it (`not_found`)",
+            "content": PROBLEM_CONTENT,
+        },
+    },
+)
+async def list_estimate_version_approvers(
+    opportunity_id: UUID, version_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> list[BaselineApproval]:
+    """Story 9.7: the Review Requests behind the version (not cancelled, oldest first), each
+    with who decided, the review type and when, for the Set Baseline dialog. Anyone who can
+    read the Opportunity."""
+    return await estimates.version_approvers(uow, actor, opportunity_id, version_id)
+
+
+@router.get(
+    "/estimate-versions",
+    operation_id="list_estimate_versions",
+    responses=_responses(404, 422),
+)
+async def list_estimate_versions(
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW
+) -> list[VersionListItem]:
+    """Story 9.7: every Estimate Version of the Opportunity, the Baseline first, then newest
+    first, with its status, who created it and when, and the reason for a **New version**.
+    Anyone who can read the Opportunity."""
+    return await estimates.list_versions(uow, actor, opportunity_id)

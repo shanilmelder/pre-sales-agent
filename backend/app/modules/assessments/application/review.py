@@ -72,6 +72,7 @@ from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelOutputInvalidError, ModelTimeoutError
@@ -111,6 +112,7 @@ async def queue_review(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 async def enqueue_review(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     """Queue a Red Team Review of the Opportunity in the caller's Unit of Work, unless one is
     already queued and not yet started: then that one's id is returned and nothing added."""
+    await opportunity_lock(uow, opportunity_id)  # Story 9.7: the shared lock first
     await repo.lock_opportunity(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     waiting = await repo.run_in(uow, opportunity_id, _QUEUED)
@@ -227,6 +229,7 @@ async def accept_red_team_review(
     record = await repo.get_run(uow, run_id)
     if record is None:
         return None
+    await opportunity_lock(uow, record.opportunity_id)  # Story 9.7: the shared lock first
     await repo.lock_opportunity(uow, record.opportunity_id)
     record = await repo.get_run(uow, run_id, for_update=True)
     if record is None or record.status != RunStatus.RUNNING:
@@ -428,6 +431,7 @@ async def _start(ctx: JobContext, run_id: UUID) -> _Started | None:
         record = await repo.get_run(uow, run_id)
         if record is None:
             return None
+        await opportunity_lock(uow, record.opportunity_id)  # Story 9.7: the shared lock first
         await repo.lock_opportunity(uow, record.opportunity_id)
         record = await repo.get_run(uow, run_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:

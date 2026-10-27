@@ -139,15 +139,6 @@ async def notify_gaps_changed(uow: UnitOfWork, opportunity_id: UUID) -> None:
 # --- detections -----------------------------------------------------------------------------
 
 
-async def lock_opportunity(uow: UnitOfWork, opportunity_id: UUID) -> None:
-    """Serialise detection bookkeeping for one Opportunity until commit: queueing, a job
-    starting, and accepting a result."""
-    await uow.session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"gaps.detection:{opportunity_id}"},
-    )
-
-
 def _detection(row: DetectionRow) -> DetectionRecord:
     return DetectionRecord(
         id=row.id,
@@ -295,8 +286,8 @@ async def supersede_detected(uow: UnitOfWork, opportunity_id: UUID) -> tuple[int
     (Story 4.5), sent or marked "No answer" (Story 4.6), or whose impact a person changed
     or that a person reopened (`touched_by_human`, Story 4.4): they stay as they are.
     Dismissed Gaps are never touched. Returns how many Gaps changed and how many were kept.
-    The caller holds
-    `lock_opportunity`, which question and Gap edits take too."""
+    The caller holds `platform.locks.opportunity_lock`, which question and Gap edits take
+    too."""
     gap_ids = list(
         (
             await uow.session.execute(

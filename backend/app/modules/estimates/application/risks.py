@@ -58,6 +58,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import EstimatesRiskCreated, EstimatesRiskEdited
 from app.platform.uow import UnitOfWork
@@ -94,8 +95,7 @@ async def create_risk(
     if description is None:
         raise UnprocessableError(DESCRIPTION_RULE)
     # The draft lock first, then the Assumption lock: the order accepting takes them.
-    await repo.lock_opportunity(uow, opportunity_id)
-    await repo.lock_assumptions(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     version = await repo.draft_version(uow, opportunity_id)  # never a submitted one (Story 8.6)
     if version is None:
         raise NoDraftEstimateError(NO_DRAFT_DETAIL)
@@ -177,8 +177,7 @@ async def edit_risk(
         description = risk_description(changes.description)
         if description is None:
             raise UnprocessableError(DESCRIPTION_RULE)
-    await repo.lock_opportunity(uow, opportunity_id)
-    await repo.lock_assumptions(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     record, version = await _load(uow, opportunity_id, risk_id)
     if version.status != VersionStatus.DRAFT:
         raise EstimateVersionNotDraftError(NOT_DRAFT_DETAIL)

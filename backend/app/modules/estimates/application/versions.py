@@ -47,6 +47,7 @@ from app.platform.errors import (
     NotFoundError,
     UnprocessableError,
 )
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
 
@@ -117,8 +118,7 @@ async def create_version(
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.ESTIMATE_VERSION_CREATE, resource)
     text = _clean_reason(reason)
-    await repo.lock_opportunity(uow, opportunity_id)
-    await repo.lock_assumptions(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     base = await repo.get_version(uow, base_version_id, for_update=True)
     if base is None or base.opportunity_id != opportunity_id:
         raise NotFoundError(NOT_FOUND_DETAIL)

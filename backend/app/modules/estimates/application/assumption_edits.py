@@ -47,6 +47,7 @@ from app.platform.errors import (
     RowVersionMismatchError,
     UnprocessableError,
 )
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import EstimatesAssumptionEdited
 from app.platform.uow import UnitOfWork
@@ -106,8 +107,7 @@ async def edit_assumption(
     if reason is None:
         raise UnprocessableError(REASON_RULE)
     # The draft lock first, then the Assumption lock: the order `accept_assumption` takes.
-    await repo.lock_opportunity(uow, opportunity_id)
-    await repo.lock_assumptions(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     record, version = await _load(uow, opportunity_id, assumption_id)
     if version.status != VersionStatus.DRAFT:
         raise EstimateVersionNotDraftError(NOT_DRAFT_DETAIL)

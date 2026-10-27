@@ -4,7 +4,7 @@
 sales representatives; a reviewer collaborator or any other reader 403, everyone else the
 Opportunity's 404), with `If-Match` the Estimate Version's `row_version`:
 
-1. Takes the Opportunity's Estimate lock (`estimates.lock_for_review`, the lock submit
+1. Takes the Opportunity's Estimate lock (`platform.locks.opportunity_lock`, the lock submit
    takes), then reads the version: 404 unless it is the Opportunity's; 409
    `estimate_version_not_submitted` for a draft, `estimate_version_superseded` for a
    superseded one, `estimate_version_rejected` for a rejected one (Story 9.3); then the
@@ -65,6 +65,7 @@ from app.modules.reviews.application.models import (
     ReviewRequestsView,
     ReviewRequestView,
     ReviewTarget,
+    VersionApproval,
 )
 from app.modules.reviews.domain.decisions import DECISION_LABELS, Decision
 from app.modules.reviews.domain.requests import (
@@ -95,6 +96,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import ReviewsReviewRequestCancelled, ReviewsReviewRequestCreated
 from app.platform.uow import UnitOfWork
@@ -231,7 +233,7 @@ async def create_review_request(
     except ValueError:
         raise UnprocessableError(MESSAGE_RULE) from None
 
-    await estimates.lock_for_review(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     version = await _version_of(uow, opportunity_id, version_id)
     _check_reviewable(version)
     _check_if_match(if_match, version.row_version, STALE_VERSION)
@@ -346,7 +348,7 @@ async def cancel_review_request(
     """Cancel a pending Review Request (module docstring)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.REVIEW_REQUEST_CANCEL, resource)
-    await estimates.lock_for_review(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     record = await repo.get(uow, request_id, for_update=True)
     if record is None or record.opportunity_id != opportunity_id:
         raise NotFoundError(REQUEST_NOT_FOUND)
@@ -687,6 +689,43 @@ async def list_open_requests(uow: UnitOfWork, version_id: UUID) -> list[OpenRevi
         )
         for r in records
     ]
+
+
+async def version_approvals(uow: UnitOfWork, version_id: UUID) -> list[VersionApproval]:
+    """`reviews.public.version_approvals` (Story 9.7): the non-cancelled requests counting
+    towards the version, oldest first, each with its latest decision (who decided, when and
+    the decision's id), for the Set Baseline dialog and the Baseline's trace. No
+    authorization: callers have checked that the actor may read the Opportunity."""
+    records = [
+        r
+        for r in await repo.of_version(uow, version_id)
+        if r.status != RequestStatus.CANCELLED.value
+    ]
+    latest = await repo.latest_decisions(uow, [r.id for r in records])
+    names = await identity.user_names(
+        uow,
+        {r.reviewer_id for r in records} | {d.decided_by for d in latest.values()},
+    )
+    approvals: list[VersionApproval] = []
+    for r in records:
+        decision = latest.get(r.id)
+        approvals.append(
+            VersionApproval(
+                request_id=r.id,
+                review_type=ReviewType(r.review_type),
+                reviewer_id=r.reviewer_id,
+                reviewer_name=names.get(r.reviewer_id, UNKNOWN_USER),
+                status=RequestStatus(r.status),
+                decision_id=None if decision is None else decision.id,
+                decision=None if decision is None else decision.decision,
+                decided_by=None if decision is None else decision.decided_by,
+                decided_by_name=None
+                if decision is None
+                else names.get(decision.decided_by, UNKNOWN_USER),
+                decided_at=None if decision is None else decision.decided_at,
+            )
+        )
+    return approvals
 
 
 async def alternative_requested(uow: UnitOfWork, version_id: UUID) -> bool:

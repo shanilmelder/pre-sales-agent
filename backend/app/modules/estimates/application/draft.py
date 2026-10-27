@@ -82,6 +82,7 @@ from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelOutputInvalidError, ModelTimeoutError
@@ -124,7 +125,7 @@ async def queue_draft(
 async def enqueue_draft(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     """Queue an Estimate draft of the Opportunity in the caller's Unit of Work, unless one is
     already queued and not yet started: then that one's id is returned and nothing added."""
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     waiting = await repo.draft_in(uow, opportunity_id, _QUEUED)
     ids = {"opportunity_id": str(opportunity_id)}
@@ -218,7 +219,7 @@ async def accept_draft(
     record = await repo.get_draft(uow, draft_id)
     if record is None:
         return None
-    await repo.lock_opportunity(uow, record.opportunity_id)
+    await opportunity_lock(uow, record.opportunity_id)
     record = await repo.get_draft(uow, draft_id, for_update=True)
     if record is None or record.status != DraftStatus.RUNNING:
         return None
@@ -298,7 +299,7 @@ async def store_version(
     Assumptions (Stories 8.7 and 8.5), Risks (Story 8.5) and line edits (Story 8.2) onto it, trace
     `estimates.estimate_version.created`, queue its Assumption proposals (Story 8.4) and the
     Opportunity's Red Team Review (Story 6.5). No model call. The caller holds the
-    Opportunity's draft lock (`repo.lock_opportunity`).
+    Opportunity's lock (`platform.locks.opportunity_lock`).
 
     `active`: the active Requirements (id, current version) the lines were checked against;
     `uncovered_count` defaults to how many of them no line covers. `created_by` (Story 9.1):
@@ -500,7 +501,7 @@ async def _start(ctx: JobContext, draft_id: UUID) -> _Started | None:
         record = await repo.get_draft(uow, draft_id)
         if record is None:
             return None
-        await repo.lock_opportunity(uow, record.opportunity_id)
+        await opportunity_lock(uow, record.opportunity_id)
         record = await repo.get_draft(uow, draft_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:
             return None

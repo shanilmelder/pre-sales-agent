@@ -14,6 +14,10 @@
 - Story 8.5: `edit_assumption` (see `assumption_edits`), `create_risk` and `edit_risk` (see
   `risks`); the Register's rows carry their number, whether their origin Gap was superseded
   and whether it is an Unknown, and the version its Risks.
+- Story 9.7: `get_estimate` takes an optional version number (`?version=`), answering that
+  version read only (`is_current` false when it isn't the current one), and carries the
+  Opportunity's current Baseline; `list_versions` lists every version, the Baseline first;
+  the submission-blockers view says whether its version is the Baseline.
 - `start_draft`: queue a new draft, e.g. to retry a failed one (`estimates.draft.start`: the
   owner and collaborators except sales representatives; other readers 403, everyone else
   the Opportunity's 404). 409 `estimate_draft_in_progress` while one is queued or running;
@@ -39,6 +43,7 @@ from app.modules.estimates.adapters.repository import (
 from app.modules.estimates.application import assumption_edits, line_edits, risks
 from app.modules.estimates.application import assumptions as assumption_commands
 from app.modules.estimates.application import blockers as submission
+from app.modules.estimates.application.baseline import baseline_ref
 from app.modules.estimates.application.draft import fail_stale, queue_draft, stale_after
 from app.modules.estimates.application.models import (
     AcceptAllResult,
@@ -62,10 +67,12 @@ from app.modules.estimates.application.models import (
     RiskCreate,
     RoleHours,
     RoleMix,
+    SubmissionBlockers,
     SubmissionBlockersView,
     SubmissionVersion,
     Totals,
     UnconvertedGap,
+    VersionListItem,
 )
 from app.modules.estimates.application.versions import may_start_from
 from app.modules.estimates.domain import arithmetic
@@ -95,7 +102,8 @@ from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import UserRef
 from app.modules.registry.application import public as registry
-from app.platform.errors import EstimateDraftInProgressError
+from app.platform.errors import EstimateDraftInProgressError, NotFoundError
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
 
@@ -507,13 +515,16 @@ async def current_estimates(
     version_ids = [v.id for v in versions.values()]
     lines = await repo.lines_of_versions(uow, version_ids)
     assumptions = await repo.assumptions_of_versions(uow, version_ids)
+    baselines = await repo.current_baselines(uow, list(versions))
     found: dict[UUID, CurrentEstimate] = {}
     for opportunity_id, version in versions.items():
         _, calculated = _calculate(lines.get(version.id, []), assumptions.get(version.id, []))
+        baseline = baselines.get(opportunity_id)
         found[opportunity_id] = CurrentEstimate(
             version=version.version,
             status=VersionStatus(version.status),
             total_hours=_hours(calculated.overall.total),
+            is_baseline=baseline is not None and baseline.estimate_version_id == version.id,
         )
     return found
 
@@ -526,9 +537,45 @@ def _may_submit(actor: Principal, resource: Resource, record: VersionRecord | No
     )
 
 
-async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> EstimateView:
+VERSION_NOT_FOUND_DETAIL = "No Estimate Version with this number."
+
+
+async def get_estimate(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID, version: int | None = None
+) -> EstimateView:
+    """The Estimate (module docstring). Story 9.7: with `version`, that Estimate Version
+    (404 when the Opportunity has none with this number), read only unless it is the current
+    one."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
-    record, blockers = await submission.current_blockers(uow, opportunity_id)
+    current, blockers = await submission.current_blockers(uow, opportunity_id)
+    record = current
+    if version is not None and (current is None or current.version != version):
+        record = await repo.version_by_number(uow, opportunity_id, version)
+        if record is None:
+            raise NotFoundError(VERSION_NOT_FOUND_DETAIL)
+        blockers = await submission.blockers_for(uow, opportunity_id, record)
+    is_current = record is None or (current is not None and record.id == current.id)
+    view = await _estimate_view(uow, actor, resource, opportunity_id, record, blockers)
+    if is_current:
+        return view
+    return view.model_copy(
+        update={
+            "is_current": False,
+            "can_submit": False,
+            "can_request_review": False,
+            "can_create_version": False,
+        }
+    )
+
+
+async def _estimate_view(
+    uow: UnitOfWork,
+    actor: Principal,
+    resource: Resource,
+    opportunity_id: UUID,
+    record: VersionRecord | None,
+    blockers: SubmissionBlockers,
+) -> EstimateView:
     return EstimateView(
         version=None if record is None else await version_view(uow, record),
         draft=_draft(await repo.latest_draft(uow, opportunity_id)),
@@ -551,7 +598,38 @@ async def get_estimate(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
         and VersionStatus(record.status) != VersionStatus.DRAFT
         and identity.can(actor, Action.ESTIMATE_VERSION_CREATE, resource)
         and await may_start_from(uow, record.id, VersionStatus(record.status)),
+        baseline=await baseline_ref(uow, await repo.current_baseline(uow, opportunity_id)),
+        can_set_baseline=identity.can(actor, Action.ESTIMATE_BASELINE_SET, resource),
     )
+
+
+async def list_versions(
+    uow: UnitOfWork, actor: Principal, opportunity_id: UUID
+) -> list[VersionListItem]:
+    """Story 9.7: every Estimate Version of the Opportunity, the Baseline first, then newest
+    first, with who created each and the reason given for a **New version**. Anyone who can
+    read the Opportunity."""
+    await opportunities.readable_resource(uow, actor, opportunity_id)
+    versions = await repo.versions_of(uow, opportunity_id)
+    baseline = await repo.current_baseline(uow, opportunity_id)
+    baseline_id = None if baseline is None else baseline.estimate_version_id
+    names = await identity.user_names(
+        uow, {v.created_by for v in versions if v.created_by is not None}
+    )
+    reasons = await repo.version_reasons(uow, [v.id for v in versions])
+    ordered = sorted(versions, key=lambda v: (v.id != baseline_id, -v.version))
+    return [
+        VersionListItem(
+            id=str(v.id),
+            version=v.version,
+            status=VersionStatus(v.status),
+            is_baseline=v.id == baseline_id,
+            created_by_name=None if v.created_by is None else names.get(v.created_by, UNKNOWN_USER),
+            created_at=v.created_at,
+            reason=reasons.get(v.id),
+        )
+        for v in ordered
+    ]
 
 
 async def submission_blockers_view(
@@ -561,6 +639,10 @@ async def submission_blockers_view(
     for the Overview card and the header (anyone who can read the Opportunity)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     record, blockers = await submission.current_blockers(uow, opportunity_id)
+    baseline = await repo.current_baseline(uow, opportunity_id)
+    baseline_record = (
+        None if baseline is None else await repo.get_version(uow, baseline.estimate_version_id)
+    )
     return SubmissionBlockersView(
         to_submit=blockers.to_submit,
         to_baseline=blockers.to_baseline,
@@ -575,6 +657,11 @@ async def submission_blockers_view(
             submitted_at=record.submitted_at,
         ),
         can_submit=_may_submit(actor, resource, record),
+        is_baseline=record is not None
+        and baseline is not None
+        and baseline.estimate_version_id == record.id,
+        baseline_version=None if baseline_record is None else baseline_record.version,
+        can_set_baseline=identity.can(actor, Action.ESTIMATE_BASELINE_SET, resource),
     )
 
 
@@ -583,7 +670,7 @@ async def start_draft(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.ESTIMATE_DRAFT_START, resource)
     await registry.require_enabled(uow, ESTIMATING_AGENT)  # 409 while it is disabled
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     busy = await repo.draft_in(uow, opportunity_id, tuple(s.value for s in IN_PROGRESS))
     if busy is not None:

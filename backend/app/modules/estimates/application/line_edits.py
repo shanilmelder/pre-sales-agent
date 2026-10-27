@@ -60,6 +60,7 @@ from app.platform.errors import (
     RowVersionMismatchError,
     UnprocessableError,
 )
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import EstimatesEstimateLineEdited
 from app.platform.uow import UnitOfWork
@@ -161,7 +162,7 @@ async def edit_line(
     user_id = await _authorized(uow, actor, opportunity_id)
     edit = _validated(changes)
     # The draft lock (as `accept_draft` takes it): no re-draft supersedes the version mid-edit.
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     line, version = await _load(uow, opportunity_id, line_id)
     if version.status != VersionStatus.DRAFT:
         raise EstimateVersionNotDraftError(not_draft_detail(version.status))
@@ -258,7 +259,7 @@ async def carry_edits(
 async def lock_for_decision(uow: UnitOfWork, opportunity_id: UUID) -> None:
     """Take the Opportunity's draft lock until commit, before a Conflict decision that may
     edit a line (the order an assessment run's end takes the Estimate and Conflicts locks)."""
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
 
 
 async def apply_decision(

@@ -25,6 +25,8 @@ const actions = vi.hoisted(() => ({
   replyToReviewRequest: vi.fn(),
   createEstimateVersion: vi.fn(),
   loadEvidenceOptions: vi.fn(),
+  loadVersionApprovers: vi.fn(),
+  setEstimateBaseline: vi.fn(),
   addSource: vi.fn(),
   addTextSource: vi.fn(),
   loadChallengeSuggestions: vi.fn(),
@@ -32,7 +34,13 @@ const actions = vi.hoisted(() => ({
 }));
 vi.mock("@/app/opportunities/actions", () => actions);
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    refresh: vi.fn(),
+  }),
   usePathname: () => `/opportunities/${REVIEW_OPP}/estimate`,
 }));
 
@@ -637,7 +645,66 @@ describe("ReviewPanelView, the author's side", () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it("on an approved version says the Baseline can be set, with no button", async () => {
+  it("on an approved version offers Set Baseline beside the sentence (Story 9.7)", async () => {
+    const approved = reviewDecision({ decision: "approved", label: "Approved", reason: null });
+    actions.loadVersionApprovers.mockResolvedValue({
+      kind: "ok",
+      approvers: [
+        {
+          name: "Ana Reviewer",
+          review_type: "engineering",
+          status: "approved",
+          decided_at: "2026-10-21T09:00:00Z",
+          decision_id: "00000000-0000-7000-8000-0000000000d1",
+        },
+      ],
+    });
+    actions.setEstimateBaseline.mockResolvedValue({
+      kind: "ok",
+      baseline: {
+        version_id: "v3",
+        version: 3,
+        set_at: "2026-10-26T09:00:00Z",
+        set_by_name: "Owner Person",
+        previous_version_id: null,
+        previous_version: null,
+      },
+    });
+    const gate = {
+      version_id: "00000000-0000-7000-8000-0000000000e3",
+      version: 3,
+      status: "approved" as const,
+      row_version: 5,
+      is_baseline: false,
+      to_baseline: [],
+      can_set_baseline: true,
+    };
+    const { user, container, onReload } = renderPanel(
+      authorPanel({
+        decisions: [approved],
+        request: reviewRequest({ latest_decision: approved, status: "approved" }),
+        version_status: "approved",
+        can_reply: false,
+        version_gate: gate,
+      }),
+    );
+    expect(screen.getByText("All requested reviews approved. Baseline can be set.")).toBeTruthy();
+    expectIconAndText(container);
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Set Baseline" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set Baseline for Estimate v3?" });
+    expect(await within(dialog).findByText("Ana Reviewer · Engineering review")).toBeTruthy();
+    await user.click(within(dialog).getByRole("button", { name: "Set Baseline" }));
+    await waitFor(() => expect(onReload).toHaveBeenCalled());
+    expect(actions.setEstimateBaseline).toHaveBeenCalledWith({
+      opportunityId: REVIEW_OPP,
+      versionId: gate.version_id,
+      rowVersion: 5,
+    });
+  });
+
+  it("on the Baseline version shows the marker and no Set Baseline", async () => {
     const approved = reviewDecision({ decision: "approved", label: "Approved", reason: null });
     const { container } = renderPanel(
       authorPanel({
@@ -645,11 +712,21 @@ describe("ReviewPanelView, the author's side", () => {
         request: reviewRequest({ latest_decision: approved, status: "approved" }),
         version_status: "approved",
         can_reply: false,
+        version_gate: {
+          version_id: "00000000-0000-7000-8000-0000000000e3",
+          version: 3,
+          status: "approved",
+          row_version: 5,
+          is_baseline: true,
+          to_baseline: [],
+          can_set_baseline: true,
+        },
       }),
     );
-    expect(screen.getByText("All requested reviews approved. Baseline can be set.")).toBeTruthy();
+    const marker = container.querySelector("[data-baseline-pill]");
+    expect(marker?.textContent).toBe("v3 · Baseline");
+    expect(marker?.querySelector("svg")).not.toBeNull();
     expect(screen.queryByRole("button", { name: /Set Baseline/ })).toBeNull();
-    expectIconAndText(container);
     expect(await axeViolations(container)).toEqual([]);
   });
 

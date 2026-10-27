@@ -1051,7 +1051,8 @@ export interface paths {
          * @description The Opportunity's current Estimate Version (its draft, else its latest submitted one;
          *     null before the first) with its sections, lines, covered Requirements and
          *     server-calculated per-role hours, subtotals and totals, and its submission blockers; and
-         *     its latest Estimate draft run (null before the first). Anyone who can read the
+         *     its latest Estimate draft run (null before the first). Story 9.7: with the current
+         *     Baseline, and `?version=n` reads an earlier version read only. Anyone who can read the
          *     Opportunity.
          */
         get: operations["get_estimate"];
@@ -1312,6 +1313,74 @@ export interface paths {
          *     the new draft is submitted. The owner and collaborators, except sales representatives.
          */
         post: operations["create_estimate_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/estimate-versions/{version_id}/baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Estimate Baseline
+         * @description Story 9.7: set the approved Estimate Version as the Opportunity's Baseline. It must be
+         *     approved, have no blockers to Baseline (checked again under the Opportunity's lock) and,
+         *     when a Baseline exists, be numbered above it. Traced with its approvers; it can't be
+         *     undone, only replaced by a newer approved version. The owner and collaborators, except
+         *     sales representatives; people only.
+         */
+        post: operations["set_estimate_baseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/estimate-versions/{version_id}/approvers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Estimate Version Approvers
+         * @description Story 9.7: the Review Requests behind the version (not cancelled, oldest first), each
+         *     with who decided, the review type and when, for the Set Baseline dialog. Anyone who can
+         *     read the Opportunity.
+         */
+        get: operations["list_estimate_version_approvers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/estimate-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Estimate Versions
+         * @description Story 9.7: every Estimate Version of the Opportunity, the Baseline first, then newest
+         *     first, with its status, who created it and when, and the reason for a **New version**.
+         *     Anyone who can read the Opportunity.
+         */
+        get: operations["list_estimate_versions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3330,6 +3399,66 @@ export interface components {
             title: string;
         };
         /**
+         * BaselineApproval
+         * @description Story 9.7: one Review Request behind an Estimate Version, for the Set Baseline dialog:
+         *     the reviewer who decided (else the reviewer), the review type, the request's status, and
+         *     when and which decision (null while undecided).
+         */
+        BaselineApproval: {
+            /** Name */
+            name: string;
+            /**
+             * Review Type
+             * @enum {string}
+             */
+            review_type: "engineering" | "pm" | "security";
+            /** Status */
+            status: string;
+            /** Decided At */
+            decided_at: string | null;
+            /** Decision Id */
+            decision_id: string | null;
+        };
+        /**
+         * BaselineRef
+         * @description Story 9.7: the Opportunity's current Baseline: its version (id and number), when it was
+         *     set and by whom.
+         */
+        BaselineRef: {
+            /** Version Id */
+            version_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Set At
+             * Format: date-time
+             */
+            set_at: string;
+            /** Set By Name */
+            set_by_name: string;
+        };
+        /**
+         * BaselineSet
+         * @description Story 9.7: the Baseline just set, and the version it replaced (null for the first).
+         */
+        BaselineSet: {
+            /** Version Id */
+            version_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Set At
+             * Format: date-time
+             */
+            set_at: string;
+            /** Set By Name */
+            set_by_name: string;
+            /** Previous Version Id */
+            previous_version_id: string | null;
+            /** Previous Version */
+            previous_version: number | null;
+        };
+        /**
          * Blocker
          * @description One thing that stands between an Estimate Version and its submission (Story 8.6):
          *     its `kind`, the id of its subject (a Gap, Assumption, Conflict, Finding or Requirement),
@@ -3340,7 +3469,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "gap" | "assumption" | "conflict" | "finding" | "uncovered_requirement" | "review_request";
+            kind: "gap" | "assumption" | "conflict" | "finding" | "uncovered_requirement" | "review_request" | "no_review_request";
             /** Subject Id */
             subject_id: string;
             /** Title */
@@ -4482,6 +4611,12 @@ export interface components {
             status: "draft" | "submitted" | "in_review" | "approved" | "rejected";
             /** Total Hours */
             total_hours: number;
+            /**
+             * Is Baseline
+             * @description Story 9.7: whether this version is the Opportunity's current Baseline.
+             * @default false
+             */
+            is_baseline: boolean;
         };
         /**
          * EstimateVersion
@@ -4609,6 +4744,20 @@ export interface components {
              * @default false
              */
             can_create_version: boolean;
+            /** @description Story 9.7: the Opportunity's current Baseline; null before the first. */
+            baseline?: components["schemas"]["BaselineRef"] | null;
+            /**
+             * Is Current
+             * @description Story 9.7: whether `version` is the current Estimate Version (false when an earlier one was asked for with `?version=`: it is then read only).
+             * @default true
+             */
+            is_current: boolean;
+            /**
+             * Can Set Baseline
+             * @description Story 9.7: whether the caller may set the Baseline (the owner and collaborators, not a sales representative). Set Baseline is offered on an approved version that isn't the Baseline and whose `blockers.to_baseline` is empty; the API re-checks.
+             * @default false
+             */
+            can_set_baseline: boolean;
         };
         /**
          * EvalBar
@@ -6867,6 +7016,8 @@ export interface components {
             replies: components["schemas"]["ReviewReplyView"][];
             linked_request: components["schemas"]["LinkedRequest"] | null;
             escalated_to: components["schemas"]["ReviewPerson"] | null;
+            /** @description Story 9.7: the Estimate Version's Set Baseline state (whether it is the Baseline, its blockers to Baseline, whether the caller may set it); null when the version is unknown. */
+            version_gate?: components["schemas"]["VersionGate"] | null;
         };
         /** ReviewPerson */
         ReviewPerson: {
@@ -7305,7 +7456,9 @@ export interface components {
          *     Conflicts, open critical Findings of the current Critic and Red Team Reviews, and active
          *     Requirements no line covers, in that order; the version can be submitted when it is
          *     empty. `to_baseline` (Story 9.1): the version's pending, rejected and challenged Review
-         *     Requests.
+         *     Requests; Story 9.7: for a version past the draft, also `no_review_request` when none was
+         *     sent and the content checks above (they can reopen after submit). A Baseline needs it
+         *     empty.
          */
         SubmissionBlockers: {
             /** To Submit */
@@ -7328,6 +7481,23 @@ export interface components {
             version: components["schemas"]["SubmissionVersion"] | null;
             /** Can Submit */
             can_submit: boolean;
+            /**
+             * Is Baseline
+             * @description Story 9.7: whether that version is the Opportunity's current Baseline.
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Baseline Version
+             * @description Story 9.7: the current Baseline's version number (null before the first): a version at or below it can't replace it.
+             */
+            baseline_version?: number | null;
+            /**
+             * Can Set Baseline
+             * @description Story 9.7: whether the caller may set the Baseline (the owner and collaborators, not a sales representative). Set Baseline is offered on an approved version that isn't the Baseline and whose `to_baseline` is empty; the API re-checks.
+             * @default false
+             */
+            can_set_baseline: boolean;
         };
         /**
          * SubmissionVersion
@@ -7669,6 +7839,56 @@ export interface components {
             total_delta: number;
         };
         /**
+         * VersionGate
+         * @description Story 9.7: what Set Baseline needs to know about one Estimate Version: its id, number,
+         *     status and `row_version` (the `If-Match`), whether it is the Baseline, its blockers to
+         *     Baseline (`to_baseline`, the one check) and whether the caller may set the Baseline.
+         */
+        VersionGate: {
+            /** Version Id */
+            version_id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["VersionStatus"];
+            /** Row Version */
+            row_version: number;
+            /** Is Baseline */
+            is_baseline: boolean;
+            /** To Baseline */
+            to_baseline: components["schemas"]["Blocker"][];
+            /** Can Set Baseline */
+            can_set_baseline: boolean;
+            /**
+             * Baseline Version
+             * @description The current Baseline's version number (null before the first): a version at or below it can't replace it.
+             */
+            baseline_version?: number | null;
+        };
+        /**
+         * VersionListItem
+         * @description Story 9.7: one Estimate Version in the version switcher's full list: its number,
+         *     status, whether it is the Baseline, who created it and when, and the reason given for a
+         *     **New version** (null otherwise).
+         */
+        VersionListItem: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            status: components["schemas"]["VersionStatus"];
+            /** Is Baseline */
+            is_baseline: boolean;
+            /** Created By Name */
+            created_by_name: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
          * VersionRef
          * @description An Estimate Version by id and number.
          */
@@ -7692,7 +7912,8 @@ export interface components {
          *     (back to `submitted` when its last pending request is cancelled). Story 9.3 adds
          *     `approved` (every non-cancelled Review Request approved) and `rejected` (a reviewer
          *     rejected it); both stay current until a newer version supersedes them. Only a `draft` is
-         *     editable.
+         *     editable. Story 9.7: the Baseline is not a status but a row in `estimates_baselines`; the
+         *     Baseline's version stays `approved` and is never superseded while it is the Baseline.
          * @enum {string}
          */
         VersionStatus: "draft" | "submitted" | "in_review" | "approved" | "rejected" | "superseded";
@@ -15472,7 +15693,10 @@ export interface operations {
     };
     get_estimate: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Story 9.7: an Estimate Version's number, to read that version (read only unless it is the current one; 404 when there is none). Without it, the current version. */
+                version?: number | null;
+            };
             header?: never;
             path: {
                 opportunity_id: string;
@@ -17440,6 +17664,431 @@ export interface operations {
             };
             /** @description The base is neither rejected nor approved (`estimate_version_not_decided`), or the Opportunity already has a draft (`estimate_draft_exists`); nothing changed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    set_estimate_baseline: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Estimate Version as last read (its `row_version`), e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Baseline just set */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineSet"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): the caller can read the Opportunity but is not its owner or a collaborator, is a sales representative, or is not a person (an agent or the system) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The version isn't a newer approved version than the current Baseline (`baseline_not_newer`), or it isn't approved or still has blockers to Baseline (`baseline_blocked`, each listed by kind in `blockers`); nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                        /** Blockers */
+                        blockers?: components["schemas"]["Blocker"][] | null;
+                    };
+                };
+            };
+            /** @description The version changed since the caller read it (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_estimate_version_approvers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineApproval"][];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Estimate Version with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity id is not a UUID (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_estimate_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionListItem"][];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

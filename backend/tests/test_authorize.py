@@ -11,6 +11,7 @@ import pytest
 from app.modules.identity.application.public import (
     ACTION_NAME_RE,
     ANY_ROLE_GRANTS,
+    HUMAN_ONLY_ACTIONS,
     MEMBER_GRANTS,
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
@@ -117,6 +118,29 @@ def test_role_admin_writes_are_gone_from_the_catalogue() -> None:
     )
 
 
+# --- Story 9.7: people-only actions --------------------------------------------------------
+
+
+def test_setting_the_baseline_is_people_only() -> None:
+    assert HUMAN_ONLY_ACTIONS == {Action.ESTIMATE_BASELINE_SET}
+
+
+@pytest.mark.parametrize("actor_type", ["agent", "system"])
+def test_no_agent_or_system_may_set_the_baseline_whatever_its_grants(actor_type: str) -> None:
+    some_id = uuid4()
+    principal = Principal(
+        Actor(actor_type, str(some_id)),  # type: ignore[arg-type]
+        frozenset({Role.PRESALES_ENGINEER}),
+        frozenset(Action),
+    )
+    resource = _opportunity(some_id, some_id)
+    assert not can(principal, Action.ESTIMATE_BASELINE_SET, resource)
+    assert not can(principal, Action.ESTIMATE_BASELINE_SET)
+    with pytest.raises(ForbiddenError):
+        authorize(principal, Action.ESTIMATE_BASELINE_SET, resource)
+    assert can(principal, Action.ESTIMATE_VERSION_SUBMIT, resource)  # other grants stand
+
+
 @pytest.mark.parametrize("action", list(Action))
 def test_a_permission_grants_its_action_without_any_role(action: Action) -> None:
     principal, _ = _user(permissions={action})
@@ -198,6 +222,7 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_DECIDE,
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
+        Action.ESTIMATE_BASELINE_SET,
         Action.CHALLENGE_RAISE,
         Action.CHALLENGE_CONFIRM,
         Action.CHALLENGE_DECLINE,
@@ -230,6 +255,7 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_DECIDE,
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
+        Action.ESTIMATE_BASELINE_SET,
     }
     assert REVIEWER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -261,6 +287,7 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_DECIDE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.REVIEW_REQUEST_REPLY: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_VERSION_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.ESTIMATE_BASELINE_SET: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CHALLENGE_RAISE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CHALLENGE_CONFIRM: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CHALLENGE_DECLINE: frozenset({Role.SALES_REPRESENTATIVE}),
@@ -570,6 +597,7 @@ def test_review_requests_for_owner_and_members_except_sales_reps(role: Role) -> 
         Action.REVIEW_REQUEST_DECIDE,
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
+        Action.ESTIMATE_BASELINE_SET,
     ):
         assert can(owner, action, opportunity) is allowed
         assert can(member, action, opportunity) is allowed

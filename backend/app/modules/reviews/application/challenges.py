@@ -2,7 +2,7 @@
 reads behind the Challenge dialog.
 
 Every command runs in one Unit of Work: `identity.authorize`, the Opportunity's Estimate lock
-(`estimates.lock_for_review`), the rows `for_update`, the state rules, the `If-Match` check
+(`platform.locks.opportunity_lock`), the rows `for_update`, the state rules, the `If-Match` check
 (428/412), the writes, the trace, then the Inbox item.
 
 **Raise** (`reviews.challenge.raise`: the Opportunity's owner, or a reviewer with a `pending`
@@ -110,6 +110,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import (
     ReviewsChallengeConfirmed,
@@ -589,7 +590,7 @@ async def raise_challenge(
     identity.authorize(actor, Action.CHALLENGE_RAISE, resource)
     challenger = _user(actor)
     owner = _is_owner(actor, resource)
-    await estimates.lock_for_review(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
 
     request: RequestRecord | None = None
     if body.review_request_id is not None:
@@ -696,7 +697,7 @@ async def confirm_reassessment(
     resource = await _owner_resource(
         uow, actor, opportunity_id, Action.CHALLENGE_CONFIRM, OWNER_ONLY_CONFIRM
     )
-    await estimates.lock_for_review(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     record = await _load(uow, opportunity_id, challenge_id, for_update=True)
     if record.status == ChallengeStatus.REASSESSING and record.workflow_run_id is not None:
         return await _view(uow, actor, resource, record)  # confirmed already: the same run
@@ -721,7 +722,7 @@ async def decline_challenge(
     resource = await _owner_resource(
         uow, actor, opportunity_id, Action.CHALLENGE_DECLINE, OWNER_ONLY_DECLINE
     )
-    await estimates.lock_for_review(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     record = await _load(uow, opportunity_id, challenge_id, for_update=True)
     reason = clean_challenge_reason(body.reason)
     if reason is None:

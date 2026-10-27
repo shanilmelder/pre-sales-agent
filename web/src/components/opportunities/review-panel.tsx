@@ -20,6 +20,11 @@ import {
 } from "@/components/opportunities/review-reply";
 import { RequestStatusPill } from "@/components/opportunities/review-requests-card";
 import { RisksCard } from "@/components/opportunities/risks-card";
+import {
+  BaselinePill,
+  SetBaseline,
+  type BaselineTarget,
+} from "@/components/opportunities/set-baseline";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import { useAnnounce } from "@/components/shell/live-region";
 import { Button } from "@/components/ui/button";
@@ -456,6 +461,20 @@ function afterDecision(panel: ReviewPanel, recorded: RecordedDecision): ReviewPa
   };
 }
 
+/** Story 9.7: the review panel's version as Set Baseline needs it. */
+function targetOf(gate: NonNullable<ReviewPanel["version_gate"]>): BaselineTarget {
+  return {
+    versionId: gate.version_id,
+    version: gate.version,
+    status: gate.status,
+    rowVersion: gate.row_version,
+    isBaseline: gate.is_baseline,
+    toBaseline: gate.to_baseline,
+    canSet: gate.can_set_baseline,
+    baselineVersion: gate.baseline_version ?? null,
+  };
+}
+
 /** The review panel (Story 9.3; the mockup's review block): the header (eyebrow "{Type}
  * review · From {sender} · {date}", the title and the author's message), the request's status
  * with its latest decision, the target (an Estimate Version's lines, totals, Assumptions,
@@ -513,6 +532,8 @@ export function ReviewPanelView({
       />
     ) : null;
   const Heading = layout === "inspector" ? "h3" : "h2";
+  // Story 9.7: the version's Set Baseline state (the Baseline marker, Set Baseline).
+  const gate = panel.version_gate ?? null;
 
   async function decide(decision: Decision, reason: string, escalatedTo?: string) {
     if (busy) return false;
@@ -582,7 +603,11 @@ export function ReviewPanelView({
           <p className="whitespace-pre-wrap break-words text-body">{request.message}</p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2" data-review-status="">
-          <RequestStatusPill status={request.status} />
+          {gate?.is_baseline ? (
+            <BaselinePill label={`v${gate.version} · Baseline`} />
+          ) : (
+            <RequestStatusPill status={request.status} />
+          )}
           <span className="text-meta text-muted-foreground">
             {`Reviewer: ${request.reviewer.name}`}
           </span>
@@ -685,13 +710,25 @@ export function ReviewPanelView({
           beside={newVersion}
         />
       ) : null}
-      {authorView && panel.version_status === "approved" ? (
-        <p
-          className="border-t border-border pt-3 text-[13px] leading-5 text-text-secondary"
+      {authorView && panel.version_status === "approved" && !gate?.is_baseline ? (
+        // Story 9.7: **Set Baseline** beside it (the mockup's review block).
+        <div
+          className="flex flex-wrap items-center gap-3 border-t border-border pt-3"
           data-all-approved=""
         >
-          {ALL_APPROVED}
-        </p>
+          <p className="min-w-0 flex-1 text-[13px] leading-5 text-text-secondary">
+            {ALL_APPROVED}
+          </p>
+          {gate ? (
+            <SetBaseline
+              opportunityId={opportunityId}
+              target={targetOf(gate)}
+              showReason={false}
+              onSet={() => void onReload()}
+              onReload={() => void onReload()}
+            />
+          ) : null}
+        </div>
       ) : null}
       {newVersion && !panel.can_reply ? (
         <div className="border-t border-border pt-3">{newVersion}</div>

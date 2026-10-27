@@ -625,7 +625,9 @@ def test_open_requests_are_blockers_to_baseline(client: TestClient, sync_engine:
     headers, _, opp, v3 = _setup(client, sync_engine)
     _, ana = _user(client, sync_engine, "Ana Reviewer", ENG)
     before = client.get(f"{BASE}/{opp['id']}/submission-blockers", headers=headers).json()
-    assert (before["to_submit"], before["to_baseline"]) == ([], [])
+    # Story 9.7: a submitted version with no Review Request yet is blocked from the Baseline.
+    assert before["to_submit"] == []
+    assert [b["kind"] for b in before["to_baseline"]] == ["no_review_request"]
 
     request = _send(client, headers, opp["id"], v3, 1, [ana], message="Check L3 hours").json()[
         "items"
@@ -646,7 +648,8 @@ def test_open_requests_are_blockers_to_baseline(client: TestClient, sync_engine:
 
     assert _cancel(client, headers, opp["id"], request).status_code == 200
     after = client.get(f"{BASE}/{opp['id']}/submission-blockers", headers=headers).json()
-    assert after["to_baseline"] == []
+    # The cancelled request no longer blocks, but with none left the version needs one again.
+    assert [b["kind"] for b in after["to_baseline"]] == ["no_review_request"]
 
 
 # --- reviewer candidates --------------------------------------------------------------------

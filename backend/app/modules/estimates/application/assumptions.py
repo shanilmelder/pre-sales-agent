@@ -106,6 +106,7 @@ from app.platform.errors import (
 )
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelOutputInvalidError
@@ -258,7 +259,7 @@ async def accept_assumption_proposals(
     version = await repo.get_version(uow, version_id)
     if version is None:
         return None
-    await repo.lock_assumptions(uow, version.opportunity_id)
+    await opportunity_lock(uow, version.opportunity_id)
     version = await repo.get_version(uow, version_id, for_update=True)
     if (
         version is None
@@ -402,7 +403,7 @@ async def _start(ctx: JobContext, version_id: UUID) -> _Started | None:
         version = await repo.get_version(uow, version_id)
         if version is None:
             return None
-        await repo.lock_assumptions(uow, version.opportunity_id)
+        await opportunity_lock(uow, version.opportunity_id)
         version = await repo.get_version(uow, version_id, for_update=True)
         if (
             version is None
@@ -602,8 +603,7 @@ async def accept_assumption(
     user_id = await _authorized(uow, actor, opportunity_id)
     # The draft lock first (as `accept_draft` takes it), so no draft can supersede the
     # version while its Assumptions are accepted; then the Assumption lock.
-    await repo.lock_opportunity(uow, opportunity_id)
-    await repo.lock_assumptions(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     version = await repo.current_version(uow, opportunity_id)
     record = await repo.get_assumption(uow, assumption_id)
     if version is None or record is None or record.version_id != version.id:
@@ -639,8 +639,7 @@ async def accept_all_assumptions(uow: UnitOfWork, actor: Principal, opportunity_
     user_id = await _authorized(uow, actor, opportunity_id)
     # The draft lock first (as `accept_draft` takes it), so no draft can supersede the
     # version while its Assumptions are accepted; then the Assumption lock.
-    await repo.lock_opportunity(uow, opportunity_id)
-    await repo.lock_assumptions(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     version = await repo.current_version(uow, opportunity_id)
     if version is None:
         return 0

@@ -299,6 +299,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-4-review-outcomes.md`
   summary: No test covers storing a version whose lines have no Requirement links (the `if links:` guard in `estimates.adapters.repository.insert_version`).
   evidence: Story 9.4 review (Verification Gap). Model and Assessment drafts always have covers; settle by confirming whether line edits or legacy data can leave a line with no links, then add a New version test from such a base.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-7-set-the-baseline.md`
+  summary: Conflict detection (semantic, Critic) and Requirement intake writers keep their own locks, so a new Conflict or uncovered Requirement can commit alongside `estimates.set_baseline`.
+  evidence: Story 9.7 review (Blind Hunter). `conflicts` `repo.lock_opportunity` in `semantic.py:148`, `critic.py:73`; `intake` `requirements.py:228`. The 9.7 intent kept these locks; moving them onto `platform.locks.opportunity_lock` (shared lock first) closes the race.
+
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-5-raise-challenge.md`
   summary: A confirmed Challenge leaves its Review Request `challenged` and the reviewer keeps Opportunity access until Story 9.6 completes the Challenge and supersedes the previous version's requests.
   evidence: Review pass 1 finding 2 (BH, EC): `CHALLENGED` only moves to `SUPERSEDED` or (on decline) `PENDING`, and `has_pending_for_reviewer` counts `challenged`; 9.5's frozen intent leaves `completed` to 9.6.

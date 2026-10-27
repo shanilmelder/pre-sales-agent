@@ -4,8 +4,8 @@
 sales representatives; other readers 403, everyone else the Opportunity's 404), with
 `If-Match` the version's `row_version` (428 without, 412 when stale):
 
-1. Takes the Opportunity's draft lock, then its Assumption lock (the order Accept takes
-   them), so no accept, conversion or re-draft runs alongside.
+1. Takes the Opportunity's shared lock (`platform.locks.opportunity_lock`, Story 9.7), so no
+   accept, conversion, re-draft, review decision or Baseline runs alongside.
 2. 404 unless the version is one of the Opportunity's; 409 `estimate_version_not_draft`
    unless it is the `draft`; then the `If-Match` check.
 3. Re-runs `get_submission_blockers` in this Unit of Work: anything in `to_submit` is 409
@@ -40,6 +40,7 @@ from app.platform.errors import (
     NotFoundError,
     RowVersionMismatchError,
 )
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import (
     EstimatesEstimateVersionSubmitted,
@@ -69,8 +70,7 @@ async def submit_version(
     """Submit the Opportunity's draft Estimate Version (module docstring)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.ESTIMATE_VERSION_SUBMIT, resource)
-    await repo.lock_opportunity(uow, opportunity_id)
-    await repo.lock_assumptions(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     version = await repo.get_version(uow, version_id, for_update=True)
     if version is None or version.opportunity_id != opportunity_id:
         raise NotFoundError(NOT_FOUND_DETAIL)

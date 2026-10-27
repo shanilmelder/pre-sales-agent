@@ -7,10 +7,16 @@ import { axeViolations } from "@/test/axe";
 
 const refresh = vi.hoisted(() => vi.fn());
 const submitEstimateVersion = vi.hoisted(() => vi.fn());
+const loadVersionApprovers = vi.hoisted(() => vi.fn());
+const setEstimateBaseline = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh, push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }));
-vi.mock("@/app/opportunities/actions", () => ({ submitEstimateVersion }));
+vi.mock("@/app/opportunities/actions", () => ({
+  submitEstimateVersion,
+  loadVersionApprovers,
+  setEstimateBaseline,
+}));
 
 import { ShellProviders } from "../shell/shell-context";
 import { SubmissionBlockersCard, SubmissionHeaderActions } from "./submission";
@@ -60,6 +66,8 @@ function view(
           submitted_at: status === "submitted" ? "2026-10-14T09:00:00Z" : null,
         },
     can_submit: canSubmit,
+    is_baseline: false,
+    can_set_baseline: false,
   };
 }
 
@@ -318,5 +326,219 @@ describe("Blockers to Baseline (Story 9.1)", () => {
   it("submitted with no request: No Review Request sent yet", () => {
     renderAll(oppId(), view([], { status: "submitted" }));
     expect(within(card()).getByText("No Review Request sent yet")).toBeTruthy();
+  });
+});
+
+// --- Story 9.7: the Baseline gate and Set Baseline -------------------------------------------
+
+function sent(
+  status: "submitted" | "in_review" | "approved" | "rejected",
+  toBaseline: Blocker[],
+  { isBaseline = false, canSet = true } = {},
+): SubmissionBlockersView {
+  return {
+    ...view([], { status: "submitted" }),
+    version: {
+      id: "00000000-0000-7000-8000-0000000000e3",
+      version: 3,
+      status,
+      row_version: 6,
+      created_at: "2026-10-04T10:00:00Z",
+      submitted_at: "2026-10-14T09:00:00Z",
+    },
+    to_baseline: toBaseline,
+    is_baseline: isBaseline,
+    can_set_baseline: canSet,
+  };
+}
+
+const APPROVER = {
+  name: "Ana Reviewer",
+  review_type: "engineering" as const,
+  status: "approved",
+  decided_at: "2026-10-21T09:00:00Z",
+  decision_id: "00000000-0000-7000-8000-0000000000d1",
+};
+
+describe("Set Baseline and the Baseline gate (Story 9.7)", () => {
+  beforeEach(() => {
+    refresh.mockReset();
+    loadVersionApprovers.mockReset();
+    setEstimateBaseline.mockReset();
+    loadVersionApprovers.mockResolvedValue({ kind: "ok", approvers: [APPROVER] });
+    vi.stubGlobal("EventSource", FakeSource);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("ready: 0 blockers to Baseline, and Set Baseline is the header's primary action", async () => {
+    const { container } = renderAll(oppId(), sent("approved", []));
+
+    expect(within(card()).getByText("0 blockers")).toBeTruthy();
+    const ready = card().querySelector("[data-baseline-ready]")!;
+    expect(ready.textContent).toContain("0 blockers to Baseline");
+    expect(ready.textContent).toContain(
+      "Every requested review approved. Set Baseline is now the primary action.",
+    );
+    expect(ready.querySelector("svg")).not.toBeNull();
+    const set = screen.getByRole("button", { name: "Set Baseline" });
+    expect(set.getAttribute("aria-disabled")).toBeNull();
+    expect(set.className).toContain("bg-primary");
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("blocked: aria-disabled with the first blocker as its reason, and the rows", async () => {
+    const id = oppId();
+    const { container } = renderAll(
+      id,
+      sent("approved", [
+        blocker("conflict", "[CONFLICT]"),
+        blocker("no_review_request", "No Review Request sent yet", "v3"),
+      ]),
+    );
+
+    const set = screen.getByRole("button", { name: "Set Baseline" });
+    expect(set.getAttribute("aria-disabled")).toBe("true");
+    const reason = document.getElementById(set.getAttribute("aria-describedby")!)!;
+    expect(reason.textContent).toBe("[CONFLICT]");
+    await userEvent.click(set);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(card()).getByText("Blockers to Baseline · 2")).toBeTruthy();
+    const rows = Array.from(card().querySelectorAll<HTMLElement>("[data-blocker]"));
+    expect(rows.map((r) => r.getAttribute("data-blocker"))).toEqual([
+      "conflict",
+      "no_review_request",
+    ]);
+    expect(within(rows[0]!).getByRole("link", { name: "[CONFLICT]" })).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("not approved yet: the reason says every review must approve it", () => {
+    renderAll(oppId(), sent("in_review", []));
+    const set = screen.getByRole("button", { name: "Set Baseline" });
+    expect(set.getAttribute("aria-disabled")).toBe("true");
+    expect(document.getElementById(set.getAttribute("aria-describedby")!)!.textContent).toBe(
+      "Every requested review must approve v3 first.",
+    );
+  });
+
+  it("a replaced Baseline, a superseded or a rejected version: a true reason", () => {
+    const reasonOf = () => {
+      const set = screen.getByRole("button", { name: "Set Baseline" });
+      expect(set.getAttribute("aria-disabled")).toBe("true");
+      return document.getElementById(set.getAttribute("aria-describedby")!)!.textContent;
+    };
+    const first = renderAll(oppId(), { ...sent("approved", []), baseline_version: 4 });
+    expect(reasonOf()).toBe("Only a newer approved Estimate Version can replace the Baseline");
+    first.unmount();
+    const second = renderAll(oppId(), {
+      ...sent("approved", []),
+      version: { ...sent("approved", []).version!, status: "superseded" },
+    });
+    expect(reasonOf()).toBe("v3 is superseded and can't become the Baseline.");
+    second.unmount();
+    renderAll(oppId(), sent("rejected", [blocker("review_request", "[REQ]")]));
+    expect(reasonOf()).toBe("v3 was rejected in review.");
+  });
+
+  it("who: no Set Baseline for a reader who may not set it", () => {
+    renderAll(oppId(), sent("approved", [], { canSet: false }));
+    expect(screen.queryByRole("button", { name: "Set Baseline" })).toBeNull();
+  });
+
+  it("the Baseline: the marker in the card, the gate reads it, no Set Baseline", async () => {
+    const { container } = renderAll(oppId(), sent("approved", [], { isBaseline: true }));
+    const marker = card().querySelector("[data-baseline-pill]")!;
+    expect(marker.textContent).toBe("Baseline");
+    expect(marker.querySelector("svg")).not.toBeNull();
+    expect(within(card()).getByText("Estimate v3 is the Baseline")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Set Baseline" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("the dialog: approvers, the warning, and on confirm the announcement and refreshes", async () => {
+    const id = oppId();
+    setEstimateBaseline.mockResolvedValue({
+      kind: "ok",
+      baseline: {
+        version_id: "00000000-0000-7000-8000-0000000000e3",
+        version: 3,
+        set_at: "2026-10-26T09:00:00Z",
+        set_by_name: "Owner Person",
+        previous_version_id: null,
+        previous_version: null,
+      },
+    });
+    const load = vi.fn(async () => sent("approved", [], { isBaseline: true }));
+    renderAll(id, sent("approved", []), load);
+
+    await userEvent.click(screen.getByRole("button", { name: "Set Baseline" }));
+    const dialog = screen.getByRole("dialog", { name: "Set Baseline for Estimate v3?" });
+    expect(within(dialog).getByText("Approvers")).toBeTruthy();
+    expect(await within(dialog).findByText("Ana Reviewer · Engineering review")).toBeTruthy();
+    expect(within(dialog).getByText("Approved 21 Oct 2026")).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "This cannot be undone. A Baseline is replaced only by a newer approved version.",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(loadVersionApprovers).toHaveBeenCalledWith({
+      opportunityId: id,
+      versionId: "00000000-0000-7000-8000-0000000000e3",
+    });
+    expect(await axeViolations(document.body)).toEqual([]);
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Set Baseline" }));
+
+    expect(setEstimateBaseline).toHaveBeenCalledWith({
+      opportunityId: id,
+      versionId: "00000000-0000-7000-8000-0000000000e3",
+      rowVersion: 6,
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe("Estimate v3 is now the Baseline"),
+    );
+    expect(refresh).toHaveBeenCalled();
+    await waitFor(() => expect(load).toHaveBeenCalledWith(id));
+    await waitFor(() =>
+      expect(within(card()).getByText("Estimate v3 is the Baseline")).toBeTruthy(),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a 409 lists the blockers inline", async () => {
+    setEstimateBaseline.mockResolvedValue({
+      kind: "blocked",
+      blockers: [blocker("conflict", "[NEW CONFLICT]")],
+      detail: "Resolve 1 blocker before you can set the Baseline.",
+    });
+    renderAll(oppId(), sent("approved", []), vi.fn(async () => sent("approved", [])));
+
+    await userEvent.click(screen.getByRole("button", { name: "Set Baseline" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Set Baseline" }));
+
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert.textContent).toContain("Resolve 1 blocker before you can set the Baseline.");
+    expect(within(alert).getByRole("link", { name: "[NEW CONFLICT]" })).toBeTruthy();
+    expect(await axeViolations(document.body)).toEqual([]);
+  });
+
+  it("a 412 says it changed since you opened it, with Reload", async () => {
+    setEstimateBaseline.mockResolvedValue({ kind: "stale" });
+    renderAll(oppId(), sent("approved", []), vi.fn(async () => sent("approved", [])));
+
+    await userEvent.click(screen.getByRole("button", { name: "Set Baseline" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Set Baseline" }));
+
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert.textContent).toContain("Changed since you opened it.");
+    expect(await axeViolations(document.body)).toEqual([]);
+    await userEvent.click(within(alert).getByRole("button", { name: "Reload" }));
+    expect(refresh).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

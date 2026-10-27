@@ -80,6 +80,7 @@ from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelOutputInvalidError, ModelTimeoutError
@@ -123,7 +124,7 @@ async def queue_detection(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
 async def enqueue_detection(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
     """Queue a Gap detection of the Opportunity in the caller's Unit of Work, unless one is
     already queued and not yet started: then that one's id is returned and nothing added."""
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     waiting = await repo.detection_in(uow, opportunity_id, _QUEUED)
     ids = {"opportunity_id": str(opportunity_id)}
@@ -253,7 +254,7 @@ async def accept_gap_detection(
     record = await repo.get_detection(uow, detection_id)
     if record is None:
         return None
-    await repo.lock_opportunity(uow, record.opportunity_id)
+    await opportunity_lock(uow, record.opportunity_id)
     record = await repo.get_detection(uow, detection_id, for_update=True)
     if record is None or record.status != DetectionStatus.RUNNING:
         return None
@@ -459,7 +460,7 @@ async def _start(
         record = await repo.get_detection(uow, detection_id)
         if record is None:
             return None
-        await repo.lock_opportunity(uow, record.opportunity_id)
+        await opportunity_lock(uow, record.opportunity_id)
         record = await repo.get_detection(uow, detection_id, for_update=True)
         if record is None or record.status not in _IN_PROGRESS:
             return None
