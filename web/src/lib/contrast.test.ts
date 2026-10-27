@@ -155,6 +155,12 @@ const BOTH: Pair[] = [
   ["graph-chip-border", "graph-canvas", UI],
   ["graph-chip-off-text", "graph-chip-background", TEXT],
   ["graph-chip-text", "graph-chip-background", TEXT],
+  ["graph-legend-text", "graph-chip-background", TEXT],
+  ["graph-chip-text", "graph-canvas", TEXT], // node labels
+  // The badge glyph on every status colour.
+  ...["graph-ready", "graph-checklist", "graph-missing", "graph-product"].map(
+    (bg): Pair => ["graph-badge-text", bg, TEXT],
+  ),
 ];
 
 const LIGHT_ONLY: Pair[] = [["role-pm", "surface-alt", UI]];
@@ -258,6 +264,9 @@ describe("DESIGN.md colour values", () => {
     ["graph-chip-border", "#4F5BD5", "#4F5BD5"],
     ["graph-chip-text", "#E4E8F5", "#E4E8F5"],
     ["graph-chip-off-text", "#9AA6C8", "#9AA6C8"],
+    ["graph-chip-off-border", "#2C3760", "#2C3760"],
+    ["graph-legend-text", "#B8C2E0", "#B8C2E0"],
+    ["graph-badge-text", "#0F1426", "#0F1426"],
   ])("--%s is %s light and %s dark", (name, lightHex, darkHex) => {
     expect(resolveVar(light, name).toUpperCase()).toBe(lightHex);
     expect(resolveVar(dark, name).toUpperCase()).toBe(darkHex);

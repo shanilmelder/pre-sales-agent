@@ -95,6 +95,9 @@
   --color-graph-chip-border: var(--graph-chip-border);
   --color-graph-chip-text: var(--graph-chip-text);
   --color-graph-chip-off-text: var(--graph-chip-off-text);
+  --color-graph-chip-off-border: var(--graph-chip-off-border);
+  --color-graph-legend-text: var(--graph-legend-text);
+  --color-graph-badge-text: var(--graph-badge-text);
   /* Legacy aliases, kept until Story 17.3. */
   --color-diff-tint: var(--diff-tint);
   --color-evidence-highlight: var(--evidence-highlight);
@@ -191,6 +194,10 @@
   --graph-chip-border: #4F5BD5;
   --graph-chip-text: #E4E8F5;
   --graph-chip-off-text: #9AA6C8;
+  /* Story 3.6: the off chip's and the search box's border, the legend text, the badge glyph. */
+  --graph-chip-off-border: #2C3760;
+  --graph-legend-text: #B8C2E0;
+  --graph-badge-text: #0F1426;
 
   /* shadcn names mapped onto the DESIGN.md surfaces. */
   --foreground: var(--text);

@@ -28,13 +28,14 @@ vi.mock("@/app/opportunities/actions", () => ({
   retryParse: vi.fn(),
 }));
 
-function renderTab(roles: Parameters<typeof permissionsFor>[0]) {
+function renderTab(roles: Parameters<typeof permissionsFor>[0], initialSelectedId?: string) {
   const utils = render(
     <ShellProviders singleKeyShortcuts>
       <ChecklistsTab
         initialChecklists={[checklist(1, { name: "Security baseline" })]}
         catalogue={[]}
         permissions={permissionsFor(roles)}
+        initialSelectedId={initialSelectedId}
       />
       <RightPane />
     </ShellProviders>,
@@ -52,6 +53,17 @@ beforeEach(() => {
 });
 
 describe("ChecklistsTab", () => {
+  it("opens the linked Checklist in the right pane (the Graph's Edit checklist)", async () => {
+    renderTab(["security_reviewer"], checklist(1).id);
+    expect(await screen.findByRole("heading", { name: "Security baseline" })).toBeTruthy();
+    expect(actions.loadChecklist).toHaveBeenCalledWith(checklist(1).id);
+  });
+
+  it("ignores a linked Checklist that isn't listed", () => {
+    renderTab(["security_reviewer"], "00000000-0000-7000-8000-00000000ffff");
+    expect(screen.queryByRole("heading", { name: "Security baseline" })).toBeNull();
+  });
+
   it("lets an author press c, name a Checklist and create it", async () => {
     const created = checklist(2, { name: "Delivery risks", current_version: null });
     actions.createChecklist.mockResolvedValue({ kind: "ok", checklist: created });
