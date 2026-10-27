@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { ActualsTab } from "@/app/opportunities/[id]/actuals";
 import { AssessmentsTab } from "@/app/opportunities/[id]/assessments";
 import { ConflictsTab } from "@/app/opportunities/[id]/conflicts";
 import { EstimateTab } from "@/app/opportunities/[id]/estimate";
@@ -12,8 +13,8 @@ import { isWorkspaceTab, TAB_NOT_AVAILABLE, WORKSPACE_TABS } from "@/lib/workspa
 import { PAGE_PADDING } from "@/components/shell/page-header";
 
 /** `/opportunities/{id}/{tab}`: Overview, Sources, Requirements, Gaps, Assessments,
- * Conflicts, Estimate, Trace, or "Not available yet." for a tab later epics build. An unknown slug is the
- * not-found page. */
+ * Conflicts, Estimate, Actuals (Story 10.1), Trace, or "Not available yet." for a tab later
+ * epics build. An unknown slug is the not-found page. */
 export default async function WorkspaceTabPage({
   params,
   searchParams,
@@ -32,6 +33,7 @@ export default async function WorkspaceTabPage({
   if (tab === "conflicts") return await ConflictsTab({ id });
   if (tab === "estimate")
     return await EstimateTab({ id, searchParams: (await searchParams) ?? {} });
+  if (tab === "actuals") return await ActualsTab({ id });
   if (tab === "trace") return await TraceTab({ id, searchParams: (await searchParams) ?? {} });
   return (
     <div className={PAGE_PADDING}>

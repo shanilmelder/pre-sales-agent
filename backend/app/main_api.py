@@ -14,6 +14,7 @@ from typing import Literal
 from fastapi import APIRouter, FastAPI, Request, Response
 from pydantic import BaseModel
 
+from app.modules.actuals.api.routes import router as actuals_router
 from app.modules.assessments.api.routes import router as assessments_router
 from app.modules.conflicts.api.routes import router as conflicts_router
 from app.modules.estimates.api.routes import router as estimates_router
@@ -26,6 +27,7 @@ from app.modules.intake.api.routes import requirements_router as intake_requirem
 from app.modules.intake.api.routes import router as intake_router
 from app.modules.knowledge.api.checklist_routes import router as knowledge_checklists_router
 from app.modules.knowledge.api.coverage_routes import router as knowledge_coverage_router
+from app.modules.knowledge.api.graph_routes import router as knowledge_graph_router
 from app.modules.knowledge.api.routes import router as knowledge_router
 from app.modules.knowledge.api.source_routes import router as knowledge_sources_router
 from app.modules.knowledge.api.source_routes import search_router as knowledge_search_router
@@ -35,6 +37,7 @@ from app.modules.opportunities.api.routes import router as opportunities_router
 from app.modules.registry.api.routes import denials_router as registry_denials_router
 from app.modules.registry.api.routes import evals_router as registry_evals_router
 from app.modules.registry.api.routes import router as registry_router
+from app.modules.reporting.api.routes import router as reporting_router
 from app.modules.reviews.api.routes import router as reviews_router
 from app.modules.workflows.api.routes import router as workflows_router
 from app.platform.config import Settings, get_settings
@@ -148,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(knowledge_search_router, prefix=API_PREFIX)
     app.include_router(knowledge_checklists_router, prefix=API_PREFIX)
     app.include_router(knowledge_coverage_router, prefix=API_PREFIX)
+    app.include_router(knowledge_graph_router, prefix=API_PREFIX)
     app.include_router(downloads_router, prefix=API_PREFIX)
     app.include_router(conflicts_router, prefix=API_PREFIX)
     app.include_router(registry_router, prefix=API_PREFIX)
@@ -155,6 +159,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(registry_denials_router, prefix=API_PREFIX)
     app.include_router(reviews_router, prefix=API_PREFIX)
     app.include_router(notifications_router, prefix=API_PREFIX)
+    app.include_router(actuals_router, prefix=API_PREFIX)
+    app.include_router(reporting_router, prefix=API_PREFIX)
     return app
 
 

@@ -43,6 +43,7 @@ export function SourcesTab({
   initialSources,
   integrationTypes,
   initialFilters = NO_FILTERS,
+  initialSelectedId = null,
   me,
 }: {
   initialSources: readonly KnowledgeSource[];
@@ -51,6 +52,8 @@ export function SourcesTab({
   /** The filters the page opens with (`?integration_type=` and `?product=`, from the Gaps
    * tab's coverage banner or a Coverage cell). */
   initialFilters?: Filters;
+  /** The Source to open in the right pane (`?source=<id>`, from the Knowledge Graph). */
+  initialSelectedId?: string | null;
   me: { id: string; roles: readonly Role[] };
 }) {
   const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();
@@ -68,7 +71,9 @@ export function SourcesTab({
       integrationTypeId: knownType ? initialFilters.integrationTypeId : "",
     };
   });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    initialSources.some((s) => s.id === initialSelectedId) ? initialSelectedId : null,
+  );
   const [creating, setCreating] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
@@ -84,6 +89,13 @@ export function SourcesTab({
 
   const selected = sources.find((s) => s.id === selectedId) ?? null;
   const visible = applyFilters(sources, filters);
+
+  // A linked Source opens in the right pane once, on arrival.
+  useEffect(() => {
+    if (selectedId !== null && !rightPaneOpen) setRightPaneOpen(true);
+    // Only on mount: later selections open the pane themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const pending = sources.some(isProcessing);
 
   // While a Source is parsing or embedding the list is re-read every couple of seconds, for a

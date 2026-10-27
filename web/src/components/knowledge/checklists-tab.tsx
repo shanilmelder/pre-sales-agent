@@ -52,17 +52,22 @@ export function ChecklistsTab({
   catalogue,
   permissions,
   initialFilters,
+  initialSelectedId = null,
 }: {
   initialChecklists: readonly Checklist[];
   catalogue: readonly CatalogueOption[];
   permissions: readonly Permission[];
   /** Filters applied on load (`?product=&integration_type=`, from a Coverage cell). */
   initialFilters?: Partial<ChecklistFilters>;
+  /** The Checklist to open in the right pane (`?checklist=<id>`, from the Knowledge Graph). */
+  initialSelectedId?: string | null;
 }) {
   const { rightPaneOpen, setRightPaneOpen, singleKeyShortcuts, dialog } = useShell();
   const [checklists, setChecklists] = useState<readonly Checklist[]>(initialChecklists);
   const [syncedFrom, setSyncedFrom] = useState(initialChecklists);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    initialChecklists.some((c) => c.id === initialSelectedId) ? initialSelectedId : null,
+  );
   const [creating, setCreating] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
@@ -84,6 +89,13 @@ export function ChecklistsTab({
 
   const selected = checklists.find((c) => c.id === selectedId) ?? null;
   const visible = applyChecklistFilters(checklists, filters);
+
+  // A linked Checklist opens in the right pane once, on arrival.
+  useEffect(() => {
+    if (selectedId !== null && !rightPaneOpen) setRightPaneOpen(true);
+    // Only on mount: later selections open the pane themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const filtered = filters.product !== "" || filters.integrationTypeId !== "";
   // A seeded product no Checklist names yet stays choosable, so the filter shows what it is.
   const products = withOption(checklistProducts(checklists), filters.product).options;

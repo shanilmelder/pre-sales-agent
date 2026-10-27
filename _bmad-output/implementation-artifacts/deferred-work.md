@@ -308,6 +308,10 @@
   summary: A confirmed Challenge leaves its Review Request `challenged` and the reviewer keeps Opportunity access until Story 9.6 completes the Challenge and supersedes the previous version's requests.
   evidence: Review pass 1 finding 2 (BH, EC): `CHALLENGED` only moves to `SUPERSEDED` or (on decline) `PENDING`, and `has_pending_for_reviewer` counts `challenged`; 9.5's frozen intent leaves `completed` to 9.6.
 
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-import-actuals-from-a-file.md`
+  summary: Story 10.6's retention purge must delete `actuals_imports` rows (raw `rows` JSONB holds free-text Notes and reasons) and release their `platform_files` blob references.
+  evidence: Story 10.2 grants `psa_app` no DELETE on `actuals_imports` and never releases the upload's blob reference, so imports live until the purge job removes them per Opportunity.
+
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-9-trace-and-compare.md`
   summary: `web/src/components/opportunities/estimate-export.test.tsx` fails two tests with `TypeError: object.stream is not a function` (jsdom Blob in the local Node), independent of 9.9.
   evidence: Reproduced on `main` (455831d) in `D:\pre-sales-agent\web` with the same error; 9.9 does not touch the export component or its test. Other full-suite failures seen during 9.9 verification (checklist-inspector, finding-decisions, requirement-lifecycle, specialist-assessments) were load-related timeouts/duplicates and pass when run alone.

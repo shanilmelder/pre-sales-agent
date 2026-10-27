@@ -284,6 +284,30 @@ async def list_all(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ReadableOpportunities:
+    """Which Opportunities the caller can read (Story 10.3: Reports filter their rows by it
+    before aggregating). `everything`: all of them; otherwise exactly `ids`."""
+
+    everything: bool
+    ids: frozenset[UUID] = frozenset()
+
+    def includes(self, opportunity_id: UUID) -> bool:
+        return self.everything or opportunity_id in self.ids
+
+
+async def readable_opportunities(uow: UnitOfWork, actor: Principal) -> ReadableOpportunities:
+    """The Opportunities the caller can read: the same set as `list_all` (every one with
+    `opportunities.opportunity.read`, else those they own or collaborate on, none without a
+    role)."""
+    sees_any, where = _visibility(actor, everything=identity.can(actor, Action.OPPORTUNITY_READ))
+    if not sees_any:
+        return ReadableOpportunities(everything=False)
+    if where is None:
+        return ReadableOpportunities(everything=True)
+    return ReadableOpportunities(everything=False, ids=await repository.ids_matching(uow, where))
+
+
 async def facets(uow: UnitOfWork, actor: Principal) -> OpportunityFacets:
     """The owners and products across the Opportunities the caller can read (the same set
     as `list_all`), for the All Opportunities filters. Owners are sorted by name and

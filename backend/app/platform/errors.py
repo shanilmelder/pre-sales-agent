@@ -5,7 +5,7 @@ An error may add extension members (RFC 9457 §3.2), e.g. `blockers` on
 `estimate_version_blocked` (Story 8.6).
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 from types import MappingProxyType
 from typing import Any
@@ -268,6 +268,61 @@ class BaselineNotNewerError(ConflictError):
 
     code = "baseline_not_newer"
     title = "Baseline not newer"
+
+
+class ActualsNoBaselineError(ConflictError):
+    """Actuals were written for an Opportunity with no Baseline (Story 10.1); nothing
+    changed."""
+
+    code = "actuals_no_baseline"
+    title = "No Baseline"
+
+
+class DeliveryNotReadyError(ConflictError):
+    """Close delivery was asked while Baseline lines still have no final Actual (Story 10.1).
+    The body's `open_line_count` extension member gives how many; nothing changed."""
+
+    code = "delivery_not_ready"
+    title = "Delivery not ready to close"
+
+    def __init__(self, detail: str | None = None, *, open_line_count: int) -> None:
+        super().__init__(detail)
+        self.extensions = {"open_line_count": open_line_count}
+
+
+class DeliveryClosedError(ConflictError):
+    """Delivery is already closed, so Actuals no longer change (Story 10.1)."""
+
+    code = "delivery_closed"
+    title = "Delivery closed"
+
+
+class ActualsImportNotReadyError(ConflictError):
+    """An Actuals import was confirmed before its file was read, or after reading it failed
+    (Story 10.2); nothing changed."""
+
+    code = "actuals_import_not_ready"
+    title = "Import not ready"
+
+
+class ActualsImportAppliedError(ConflictError):
+    """The Actuals import was already applied (Story 10.2); nothing changed."""
+
+    code = "actuals_import_applied"
+    title = "Import already applied"
+
+
+class ActualsImportRepeatedError(ConflictError):
+    """The same file (by SHA-256) was already applied on this Opportunity and the confirm did
+    not tick that it should be imported again (Story 10.2). The body's `applied_at` extension
+    member says when; nothing changed."""
+
+    code = "actuals_import_repeated"
+    title = "File already imported"
+
+    def __init__(self, detail: str | None = None, *, applied_at: str) -> None:
+        super().__init__(detail)
+        self.extensions = {"applied_at": applied_at}
 
 
 class EstimateVersionNotSubmittedError(ConflictError):
@@ -541,6 +596,15 @@ class UploadTypeNotAllowedError(ProblemError):
     title = "File type not allowed"
 
 
+class UploadContentMismatchError(ProblemError):
+    """An Actuals import file's bytes don't match its extension, e.g. a PDF renamed .xlsx
+    (Story 10.2, 415). Nothing is stored."""
+
+    status = 415
+    code = "file_content_mismatch"
+    title = "File content doesn't match its type"
+
+
 class UnprocessableError(ProblemError):
     """The request is well-formed but breaks a domain rule checked after parsing (422).
     Subclasses set a stable `code`."""
@@ -548,6 +612,19 @@ class UnprocessableError(ProblemError):
     status = 422
     code = "validation_error"
     title = "Unprocessable content"
+
+
+class ActualInvalidError(UnprocessableError):
+    """An Actual breaks a rule (Story 10.1). The body's `errors` extension member lists each
+    one as `{item, field, message}` (`item`: its index in the batch, null for a single
+    Actual); nothing changed."""
+
+    code = "actual_invalid"
+    title = "Actual not valid"
+
+    def __init__(self, detail: str | None = None, *, errors: Sequence[Mapping[str, Any]]) -> None:
+        super().__init__(detail)
+        self.extensions = {"errors": list(errors)}
 
 
 class InvalidCollaboratorError(UnprocessableError):

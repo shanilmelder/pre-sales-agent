@@ -305,6 +305,20 @@ async def get_version(uow: UnitOfWork, checklist_id: UUID, version: int) -> Vers
     return None if row is None else _version(row)
 
 
+async def last_published_at(uow: UnitOfWork, checklist_ids: list[UUID]) -> dict[UUID, datetime]:
+    """`{checklist_id: when its latest version was published}` for the published ones."""
+    if not checklist_ids:
+        return {}
+    rows = (
+        await uow.session.execute(
+            select(V.checklist_id, func.max(V.published_at))
+            .where(V.checklist_id.in_(checklist_ids))
+            .group_by(V.checklist_id)
+        )
+    ).all()
+    return {checklist_id: published_at for checklist_id, published_at in rows}
+
+
 async def item_counts(uow: UnitOfWork, checklist_id: UUID) -> dict[int, tuple[int, int]]:
     """`{version: (item count, mandatory count)}` for the Checklist's versions."""
     rows = (

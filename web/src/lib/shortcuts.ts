@@ -27,6 +27,8 @@ export type Shortcut = {
   singleKey: boolean;
   /** Only for users who may do what it does (display only: the API still decides). */
   requires?: "create-opportunity";
+  /** Story 10.3: only for holders of this permission (a `g` shortcut to a gated nav item). */
+  permission?: Permission;
 };
 
 /** Where `c` (and New Opportunity) goes. */
@@ -52,6 +54,7 @@ const goShortcuts: Shortcut[] = NAV_ITEMS.flatMap((item) =>
           keys: ["G", item.gKey.toUpperCase()],
           match: { kind: "sequence", keys: ["g", item.gKey] } as const,
           singleKey: true,
+          ...(item.requires ? { permission: item.requires } : {}),
         },
       ]
     : [],
@@ -114,5 +117,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
 /** The shortcuts this user has: those that need a permission only when they hold it. */
 export function shortcutsFor(permissions: readonly Permission[]): readonly Shortcut[] {
   const canCreate = canCreateOpportunity(permissions);
-  return SHORTCUTS.filter((s) => s.requires !== "create-opportunity" || canCreate);
+  return SHORTCUTS.filter(
+    (s) =>
+      (s.requires !== "create-opportunity" || canCreate) &&
+      (!s.permission || permissions.includes(s.permission)),
+  );
 }

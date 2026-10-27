@@ -25,6 +25,10 @@ Three kinds of grant, any of which allows an action:
 
 Story 9.7: `HUMAN_ONLY_ACTIONS` (setting the Baseline) are denied to every principal that isn't
 a person, whatever its grants.
+
+Story 10.1: `RELATION_REQUIRED_ROLES` narrows an owner or member grant to principals holding
+one of the listed roles (Actuals: delivery managers only). Everyone else who can read the
+Opportunity sees Actuals read only.
 """
 
 from collections.abc import Mapping
@@ -112,6 +116,15 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
 
+ACTUALS_ACTIONS: frozenset[Action] = frozenset(
+    {Action.ACTUAL_RECORD, Action.ACTUAL_CORRECT, Action.DELIVERY_CLOSE, Action.ACTUAL_IMPORT}
+)
+RELATION_REQUIRED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
+    {action: frozenset({Role.DELIVERY_MANAGER}) for action in ACTUALS_ACTIONS}
+)
+"""Story 10.1: per action, the roles a principal must hold (one of) to earn its owner or
+member grant."""
+
 OWNER_GRANTS: frozenset[Action] = frozenset(
     {
         Action.OPPORTUNITY_READ,
@@ -154,6 +167,8 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.CHALLENGE_RAISE,
         Action.CHALLENGE_CONFIRM,
         Action.CHALLENGE_DECLINE,
+        # Story 10.1: delivery managers only (`RELATION_REQUIRED_ROLES`), people only.
+        *ACTUALS_ACTIONS,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -189,6 +204,7 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
         Action.ESTIMATE_BASELINE_SET,
+        *ACTUALS_ACTIONS,
     }
 )
 REVIEWER_GRANTS: frozenset[Action] = frozenset(
@@ -221,9 +237,10 @@ ANY_ROLE_GRANTS: frozenset[Action] = frozenset(
 9.2: one's own Inbox, which only ever holds the caller's items)."""
 
 
-HUMAN_ONLY_ACTIONS: frozenset[Action] = frozenset({Action.ESTIMATE_BASELINE_SET})
-"""Story 9.7: actions only a person may take. Any principal that isn't a `user` actor (an
-agent or the system) is denied them, whatever permissions or relations it holds."""
+HUMAN_ONLY_ACTIONS: frozenset[Action] = frozenset({Action.ESTIMATE_BASELINE_SET, *ACTUALS_ACTIONS})
+"""Story 9.7 (and 10.1, Actuals): actions only a person may take. Any principal that isn't a
+`user` actor (an agent or the system) is denied them, whatever permissions or relations it
+holds."""
 
 
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:
@@ -254,6 +271,9 @@ def is_allowed(principal: Principal, action: Action, resource: Resource | None =
     if resource.type != OPPORTUNITY_RESOURCE:
         return False
     if principal.roles <= RELATION_EXCLUDED_ROLES.get(action, frozenset()):
+        return False
+    required = RELATION_REQUIRED_ROLES.get(action)
+    if required is not None and not principal.roles & required:
         return False
     if action in OWNER_GRANTS and resource.owner_id is not None and user_id == resource.owner_id:
         return True

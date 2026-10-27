@@ -100,6 +100,20 @@ class Action(StrEnum):
     """Story 9.5: confirm a Challenge's reassessment (the Opportunity's owner only)."""
     CHALLENGE_DECLINE = "reviews.challenge.decline"
     """Story 9.5: decline a Challenge with a reason (the Opportunity's owner only)."""
+    ACTUAL_RECORD = "actuals.actual.record"
+    """Story 10.1: record an Actual against a Baseline line or as Unplanned work (delivery
+    managers who can read the Opportunity: `RELATION_REQUIRED_ROLES`; people only)."""
+    ACTUAL_CORRECT = "actuals.actual.correct"
+    """Story 10.1: correct an Actual with a reason, as a new version (as `ACTUAL_RECORD`)."""
+    DELIVERY_CLOSE = "actuals.delivery.close"
+    """Story 10.1: close delivery once every Baseline line has a final Actual (as
+    `ACTUAL_RECORD`)."""
+    ACTUAL_IMPORT = "actuals.actual.import"
+    """Story 10.2: download the Actuals template, upload a file of Actuals, review its preview
+    and apply it (as `ACTUAL_RECORD`)."""
+    REPORTING_REPORT_READ = "reporting.report.read"
+    """Story 10.3: read Reports (estimate versus actual across the Opportunities one can
+    read). Head of Delivery and platform administrators only (a permission, no relation)."""
     NOTIFICATION_READ = "notifications.notification.read"
     """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
@@ -193,6 +207,11 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.CHALLENGE_RAISE: _W,
         Action.CHALLENGE_CONFIRM: _A,
         Action.CHALLENGE_DECLINE: _A,
+        Action.ACTUAL_RECORD: _W,
+        Action.ACTUAL_CORRECT: _W,
+        Action.DELIVERY_CLOSE: _A,
+        Action.ACTUAL_IMPORT: _W,
+        Action.REPORTING_REPORT_READ: _R,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,

@@ -9,6 +9,9 @@ published version of every active Checklist whose scope matches, for Gap detecti
 Story 3.5: `get_pair_coverage` (Source and Checklist counts and status per product and
 Integration Type pair) and `coverage_matrix` (the Coverage view).
 
+Story 3.6: `get_graph` (the Knowledge Graph's nodes and edges, for admins and Checklist
+editors).
+
 Story 4.1: `get_coverage` (whether active, embedded Sources document the products and
 Integration Types in scope).
 
@@ -73,6 +76,14 @@ from app.modules.knowledge.application.coverage_models import (
     KnowledgeCoverage,
 )
 from app.modules.knowledge.application.evidence import check_chunk_refs, resolve_evidence
+from app.modules.knowledge.application.graph import get_graph
+from app.modules.knowledge.application.graph_models import (
+    GraphEdge,
+    GraphEdgeKind,
+    GraphNode,
+    GraphNodeType,
+    KnowledgeGraph,
+)
 from app.modules.knowledge.application.models import (
     CatalogueEntry,
     CatalogueList,
@@ -142,6 +153,7 @@ from app.modules.knowledge.domain.embedding import (
     EmbedErrorCode,
     EmbedStatus,
 )
+from app.modules.knowledge.domain.graph import NodeStatus as GraphNodeStatus
 
 __all__ = [
     "EVIDENCE_KIND",
@@ -179,11 +191,17 @@ __all__ = [
     "EmbedErrorCode",
     "EmbedStatus",
     "EntryChanges",
+    "GraphEdge",
+    "GraphEdgeKind",
+    "GraphNode",
+    "GraphNodeStatus",
+    "GraphNodeType",
     "IntegrationTypeCoverage",
     "IntegrationTypeTag",
     "Kind",
     "KnowledgeCoverage",
     "KnowledgeEvidence",
+    "KnowledgeGraph",
     "KnowledgeSearchHit",
     "KnowledgeSearchResult",
     "KnowledgeSource",
@@ -217,6 +235,7 @@ __all__ = [
     "find_applicable_checklists",
     "get_catalogue_entry",
     "get_coverage",
+    "get_graph",
     "get_pair_coverage",
     "list_catalogue",
     "list_checklists",

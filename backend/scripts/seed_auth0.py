@@ -72,12 +72,26 @@ _ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.REGISTRY_AGENT_REGISTER,
             Action.REGISTRY_AGENT_CONFIG_CREATE,
             Action.REGISTRY_AGENT_SET_STATUS,
+            # Reports (Story 10.3): platform administrators and the Head of Delivery only.
+            Action.REPORTING_REPORT_READ,
         }
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
     # Overriding a Critic or Red Team Finding (Story 6.6, R1): a Head of Delivery on any
     # overridable Finding, a security reviewer on a security one only (the policy narrows it).
-    Role.HEAD_OF_DELIVERY: frozenset({Action.OPPORTUNITY_READ, Action.FINDING_OVERRIDE}),
+    Role.HEAD_OF_DELIVERY: frozenset(
+        {Action.OPPORTUNITY_READ, Action.FINDING_OVERRIDE, Action.REPORTING_REPORT_READ}
+    ),
+    # Actuals (Story 10.1): delivery managers, on the Opportunities they can read (the API
+    # checks read access first, and grants owners and collaborators holding the role too).
+    Role.DELIVERY_MANAGER: frozenset(
+        {
+            Action.ACTUAL_RECORD,
+            Action.ACTUAL_CORRECT,
+            Action.DELIVERY_CLOSE,
+            Action.ACTUAL_IMPORT,
+        }
+    ),
     Role.ENGINEERING_REVIEWER: CHECKLIST_AUTHOR,
     Role.PM_REVIEWER: CHECKLIST_AUTHOR,
     Role.SECURITY_REVIEWER: CHECKLIST_AUTHOR | {Action.FINDING_OVERRIDE},
@@ -117,6 +131,11 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.REGISTRY_AGENT_SET_STATUS: "Enable, disable or set an Agent to eval only",
     Action.FINDING_OVERRIDE: "Override a Critic or Red Team Finding with a reason",
     Action.NOTIFICATION_READ: "Read and mark read one's own Inbox items",
+    Action.ACTUAL_RECORD: "Record Actuals on Opportunities one can read",
+    Action.ACTUAL_CORRECT: "Correct Actuals on Opportunities one can read",
+    Action.DELIVERY_CLOSE: "Close delivery on Opportunities one can read",
+    Action.ACTUAL_IMPORT: "Import Actuals from a file on Opportunities one can read",
+    Action.REPORTING_REPORT_READ: "Read Reports across the Opportunities one can read",
 }
 
 TIMEOUT = 30.0

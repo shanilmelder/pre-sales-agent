@@ -8,7 +8,8 @@ import { source } from "@/test/knowledge-fixtures";
 
 vi.mock("@/app/knowledge/actions", () => ({
   loadSources: vi.fn(),
-  loadSource: vi.fn(),
+  loadSource: vi.fn(async () => ({ kind: "error" })),
+  loadText: vi.fn(async () => ({ kind: "unavailable" })),
   registerSource: vi.fn(),
   searchOwners: vi.fn(),
 }));
@@ -18,6 +19,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/knowledge",
 }));
 
+import { RightPane } from "../shell/right-pane";
 import { ShellProviders } from "../shell/shell-context";
 import { SourcesTab } from "./sources-tab";
 
@@ -33,15 +35,17 @@ const SOURCES = [
   }),
 ];
 
-function renderTab(initialFilters = NO_FILTERS) {
+function renderTab(initialFilters = NO_FILTERS, initialSelectedId?: string) {
   return render(
     <ShellProviders singleKeyShortcuts>
       <SourcesTab
         initialSources={SOURCES}
         integrationTypes={[SAP, EDI]}
         initialFilters={initialFilters}
+        initialSelectedId={initialSelectedId}
         me={ME}
       />
+      <RightPane />
     </ShellProviders>,
   );
 }
@@ -96,5 +100,12 @@ describe("SourcesTab initial filters (Story 4.1)", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByText("AutoStore guide")).toBeTruthy();
     expect(screen.getByText("Pick station EDI guide")).toBeTruthy();
+  });
+});
+
+describe("SourcesTab linked Source (Story 3.6)", () => {
+  it("opens the Source the Graph's Open source links to", async () => {
+    renderTab(NO_FILTERS, SOURCES[1].id);
+    expect(await screen.findByRole("heading", { name: "Pick station EDI guide" })).toBeTruthy();
   });
 });

@@ -53,6 +53,40 @@ async def _lines(uow: UnitOfWork, version_id: UUID) -> list[LineRef]:
     ]
 
 
+@dataclass(frozen=True, slots=True)
+class AssumptionRef:
+    """An Assumption of an Estimate Version's register (Story 10.1: the failed Assumptions an
+    Actual may name): its kind (`condition` or `contingency`), wording, the line it is tied to
+    (None: the whole Estimate), whether it was accepted, and `version`, its row version, which
+    an Actual stores with the reference (AD-13)."""
+
+    id: UUID
+    version_id: UUID
+    position: int
+    kind: str
+    wording: str = field(repr=False)
+    version: int
+    line_id: UUID | None
+    accepted: bool
+
+
+async def version_assumptions(uow: UnitOfWork, version_id: UUID) -> list[AssumptionRef]:
+    """The version's Assumptions Register in order (Story 10.1). No authorization."""
+    return [
+        AssumptionRef(
+            id=a.id,
+            version_id=a.version_id,
+            position=a.position,
+            kind=a.kind,
+            wording=a.wording,
+            version=a.row_version,
+            line_id=a.line_id,
+            accepted=a.accepted_at is not None,
+        )
+        for a in await repo.assumptions_of(uow, version_id)
+    ]
+
+
 async def current_version_lines(uow: UnitOfWork, opportunity_id: UUID) -> VersionLines | None:
     """The Opportunity's current Estimate Version (its draft, else its latest submitted one:
     Story 8.6) with its lines; None before the first."""

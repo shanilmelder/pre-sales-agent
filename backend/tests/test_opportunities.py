@@ -117,6 +117,8 @@ def test_derived_status_is_intake_until_a_baseline() -> None:
     assert derived_status() is OpportunityStatus.INTAKE
     assert derived_status(False) is OpportunityStatus.INTAKE
     assert derived_status(True) is OpportunityStatus.BASELINED
+    # Story 10.1: closing delivery wins.
+    assert derived_status(True, delivered=True) is OpportunityStatus.DELIVERED
 
 
 def test_new_opportunity_normalises_fields() -> None:

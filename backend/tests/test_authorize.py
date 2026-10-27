@@ -16,6 +16,7 @@ from app.modules.identity.application.public import (
     OPPORTUNITY_RESOURCE,
     OWNER_GRANTS,
     RELATION_EXCLUDED_ROLES,
+    RELATION_REQUIRED_ROLES,
     REVIEWER_GRANTS,
     Action,
     OverrideBasis,
@@ -52,6 +53,8 @@ ADMIN_ONLY = (
     Action.REGISTRY_AGENT_SET_STATUS,
 )
 MODULES = {
+    "actuals",
+    "reporting",
     "identity",
     "notifications",
     "opportunities",
@@ -65,6 +68,14 @@ MODULES = {
     "workflows",
     "reviews",
 }
+
+
+ACTUALS = (
+    Action.ACTUAL_RECORD,
+    Action.ACTUAL_CORRECT,
+    Action.DELIVERY_CLOSE,
+    Action.ACTUAL_IMPORT,
+)
 
 
 def _user(
@@ -122,7 +133,7 @@ def test_role_admin_writes_are_gone_from_the_catalogue() -> None:
 
 
 def test_setting_the_baseline_is_people_only() -> None:
-    assert HUMAN_ONLY_ACTIONS == {Action.ESTIMATE_BASELINE_SET}
+    assert HUMAN_ONLY_ACTIONS == {Action.ESTIMATE_BASELINE_SET, *ACTUALS}
 
 
 @pytest.mark.parametrize("actor_type", ["agent", "system"])
@@ -226,6 +237,7 @@ def test_resource_scoped_grants() -> None:
         Action.CHALLENGE_RAISE,
         Action.CHALLENGE_CONFIRM,
         Action.CHALLENGE_DECLINE,
+        *ACTUALS,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -256,6 +268,7 @@ def test_resource_scoped_grants() -> None:
         Action.REVIEW_REQUEST_REPLY,
         Action.ESTIMATE_VERSION_CREATE,
         Action.ESTIMATE_BASELINE_SET,
+        *ACTUALS,
     }
     assert REVIEWER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -638,3 +651,47 @@ def test_a_reviewer_collaborator_may_only_read_and_decide(role: Role) -> None:
     )
     for action in (OWNER_GRANTS | MEMBER_GRANTS) - REVIEWER_GRANTS:
         assert not can(reviewer, action, opportunity), action
+
+
+# --- Actuals (Story 10.1): delivery managers who can read the Opportunity -------------------
+
+
+def test_actuals_relations_need_the_delivery_manager_role() -> None:
+    assert RELATION_REQUIRED_ROLES == dict.fromkeys(ACTUALS, frozenset({Role.DELIVERY_MANAGER}))
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_only_delivery_managers_record_actuals(role: Role) -> None:
+    """By relation alone (no permissions) and with the seeded permissions."""
+    allowed = role is Role.DELIVERY_MANAGER
+    for permissions in (set(), None):
+        owner, owner_id = _user({role}, permissions=permissions)
+        member, member_id = _user({role}, permissions=permissions)
+        opportunity = _opportunity(owner_id, member_id)
+        for action in ACTUALS:
+            assert can(owner, action, opportunity) is allowed, (role, action)
+            assert can(member, action, opportunity) is allowed, (role, action)
+
+
+def test_a_delivery_manager_with_another_role_keeps_the_grant() -> None:
+    _, owner_id = _user({Role.PRESALES_ENGINEER})
+    both, both_id = _user({Role.PRESALES_ENGINEER, Role.DELIVERY_MANAGER}, permissions=set())
+    assert can(both, Action.ACTUAL_RECORD, _opportunity(owner_id, both_id))
+
+
+def test_the_delivery_manager_permissions_are_seeded() -> None:
+    assert set(ACTUALS) <= _seeded({Role.DELIVERY_MANAGER})
+    for role in set(Role) - {Role.DELIVERY_MANAGER}:
+        assert not set(ACTUALS) & _seeded({role}), role
+
+
+@pytest.mark.parametrize("actor_type", ["agent", "system"])
+def test_no_agent_or_system_records_actuals(actor_type: str) -> None:
+    some_id = uuid4()
+    principal = Principal(
+        Actor(actor_type, str(some_id)),  # type: ignore[arg-type]
+        frozenset({Role.DELIVERY_MANAGER}),
+        frozenset(Action),
+    )
+    for action in ACTUALS:
+        assert not can(principal, action, _opportunity(some_id, some_id))

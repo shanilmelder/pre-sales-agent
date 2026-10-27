@@ -6,7 +6,8 @@ import { KnowledgeNav } from "@/components/knowledge/knowledge-nav";
 import { AppShell } from "@/components/shell/app-shell";
 import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
 import { createServerApiClient, getMe } from "@/lib/api/server";
-import { seededFilters } from "@/lib/coverage";
+import { canAuthor } from "@/lib/checklists";
+import { seededFilters, selectedParam } from "@/lib/coverage";
 
 import { loadChecklists } from "./actions";
 
@@ -30,7 +31,8 @@ async function activeCatalogue(): Promise<CatalogueOption[] | null> {
 }
 
 /** Knowledge → Checklists (Story 3.4). `?product=&integration_type=` (a Coverage cell's
- * link) seeds the product and Integration Type filters. */
+ * link) seeds the product and Integration Type filters; `?checklist=<id>` opens that
+ * Checklist (the Graph's Edit checklist). */
 export default async function KnowledgeChecklistsPage({
   searchParams,
 }: {
@@ -38,7 +40,9 @@ export default async function KnowledgeChecklistsPage({
 } = {}) {
   const result = await getMe();
   if (!hasAccess(result)) return <AccessGate result={result} />;
-  const seeded = seededFilters(await searchParams);
+  const params = await searchParams;
+  const seeded = seededFilters(params);
+  const selectedId = selectedParam(params, "checklist");
 
   const [list, catalogue] = await Promise.all([loadChecklists(), activeCatalogue()]);
 
@@ -46,13 +50,14 @@ export default async function KnowledgeChecklistsPage({
     <AppShell me={result.me}>
       <PageHeader title="Knowledge" subtitle={PAGE_SUBTITLES.knowledge} />
       <PageContent>
-        <KnowledgeNav current="checklists" />
+        <KnowledgeNav current="checklists" showGraph={canAuthor(result.me.permissions)} />
         {list.kind === "error" || catalogue === null ? (
           <p>The platform is not reachable right now. Try again in a moment.</p>
         ) : (
           <ChecklistsTab
             key={`${seeded.product}|${seeded.integrationTypeId}`}
             initialFilters={seeded}
+            initialSelectedId={selectedId}
             initialChecklists={list.checklists}
             catalogue={catalogue}
             permissions={result.me.permissions}
