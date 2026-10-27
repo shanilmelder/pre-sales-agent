@@ -85,7 +85,12 @@ _ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
     # Actuals (Story 10.1): delivery managers, on the Opportunities they can read (the API
     # checks read access first, and grants owners and collaborators holding the role too).
     Role.DELIVERY_MANAGER: frozenset(
-        {Action.ACTUAL_RECORD, Action.ACTUAL_CORRECT, Action.DELIVERY_CLOSE}
+        {
+            Action.ACTUAL_RECORD,
+            Action.ACTUAL_CORRECT,
+            Action.DELIVERY_CLOSE,
+            Action.ACTUAL_IMPORT,
+        }
     ),
     Role.ENGINEERING_REVIEWER: CHECKLIST_AUTHOR,
     Role.PM_REVIEWER: CHECKLIST_AUTHOR,
@@ -129,6 +134,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.ACTUAL_RECORD: "Record Actuals on Opportunities one can read",
     Action.ACTUAL_CORRECT: "Correct Actuals on Opportunities one can read",
     Action.DELIVERY_CLOSE: "Close delivery on Opportunities one can read",
+    Action.ACTUAL_IMPORT: "Import Actuals from a file on Opportunities one can read",
     Action.REPORTING_REPORT_READ: "Read Reports across the Opportunities one can read",
 }
 

@@ -14,8 +14,8 @@
 `psa_app` may only SELECT them: the default privileges from 0002 also grant INSERT, UPDATE
 and DELETE on every new relation, so those are revoked explicitly.
 
-Revision ID: 0054_reporting_views
-Revises: 0053_actuals_actuals
+Revision ID: 0055_reporting_views
+Revises: 0054_actuals_imports
 Create Date: 2026-10-27
 """
 
@@ -23,8 +23,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0054_reporting_views"
-down_revision: str | None = "0053_actuals_actuals"
+revision: str = "0055_reporting_views"
+down_revision: str | None = "0054_actuals_imports"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

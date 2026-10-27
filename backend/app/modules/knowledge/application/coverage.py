@@ -56,9 +56,11 @@ from app.platform.uow import UnitOfWork
 
 
 @dataclass(frozen=True, slots=True)
-class _Scope:
-    """An active Checklist's published scope."""
+class Scope:
+    """An active Checklist's published scope (and who created the Checklist)."""
 
+    id: UUID
+    created_by: UUID
     name: str
     products: list[str]
     industry: str | None
@@ -66,23 +68,27 @@ class _Scope:
 
 
 @dataclass(slots=True)
-class _Tally:
+class Tally:
     sources: int = 0
     stale: int = 0
     checklists: int = 0
 
 
-type _Tallies = dict[tuple[str, UUID], _Tally]
+type Tallies = dict[tuple[str, UUID], Tally]
 
 
-async def _load(uow: UnitOfWork) -> tuple[list[CoverageSource], list[_Scope]]:
+async def load_coverage(uow: UnitOfWork) -> tuple[list[CoverageSource], list[Scope]]:
+    """The Sources that count (non-retired, latest version Ready) and the published scopes
+    of the active Checklists that have a published version, by name."""
     sources = await source_repository.ready_sources(uow)
     records = sorted(
         await checklist_repository.published_active(uow), key=lambda r: (r.name.casefold(), r.id)
     )
     tags = await checklist_repository.tags_for(uow, [r.id for r in records])
     scopes = [
-        _Scope(
+        Scope(
+            id=r.id,
+            created_by=r.created_by,
             name=r.name,
             products=r.products,
             industry=r.industry,
@@ -93,41 +99,47 @@ async def _load(uow: UnitOfWork) -> tuple[list[CoverageSource], list[_Scope]]:
     return sources, scopes
 
 
-def _tally(
+def tally_pairs(
     keys: set[str],
     type_ids: set[UUID],
     sources: list[CoverageSource],
-    scopes: list[_Scope],
+    scopes: list[Scope],
     *,
     today: date,
     stale_months: int,
-) -> _Tallies:
+) -> Tallies:
     """The counts of every pair of `keys` (product `match_key`s) and `type_ids` covered by
     something; pairs not in the result have none."""
-    tallies: _Tallies = {}
+    tallies: Tallies = {}
     for source in sources:
         key = match_key(source.product)
         if key not in keys:
             continue
         stale = is_stale(source.last_reviewed_on, today, stale_months)
         for type_id in set(source.integration_type_ids) & type_ids:
-            tally = tallies.setdefault((key, type_id), _Tally())
+            tally = tallies.setdefault((key, type_id), Tally())
             tally.sources += 1
             tally.stale += int(stale)
     for scope in scopes:
-        products = {match_key(p) for p in scope.products}
-        types = set(scope.integration_type_ids)
-        if not products and not types:
-            continue  # Industry only.
-        rows = (products & keys) if products else keys
-        columns = (types & type_ids) if types else type_ids
-        for key in rows:
-            for type_id in columns:
-                tallies.setdefault((key, type_id), _Tally()).checklists += 1
+        for pair in scope_pairs(scope, keys, type_ids):
+            tallies.setdefault(pair, Tally()).checklists += 1
     return tallies
 
 
-def _distinct(products: Iterable[str]) -> dict[str, str]:
+def scope_pairs(scope: Scope, keys: set[str], type_ids: set[UUID]) -> set[tuple[str, UUID]]:
+    """The pairs of `keys` and `type_ids` a Checklist's scope covers: each scoped product with
+    each scoped Integration Type; with no Integration Types every one of `type_ids`, with no
+    products every one of `keys`; scoped only by industry, none."""
+    products = {match_key(p) for p in scope.products}
+    types = set(scope.integration_type_ids)
+    if not products and not types:
+        return set()  # Industry only.
+    rows = (products & keys) if products else keys
+    columns = (types & type_ids) if types else type_ids
+    return {(key, type_id) for key in rows for type_id in columns}
+
+
+def distinct_products(products: Iterable[str]) -> dict[str, str]:
     """`{match_key: first trimmed spelling}` of the non-blank products, in order."""
     result: dict[str, str] = {}
     for product in products:
@@ -137,8 +149,8 @@ def _distinct(products: Iterable[str]) -> dict[str, str]:
     return result
 
 
-def _counts(tallies: _Tallies, key: str, type_id: UUID) -> dict[str, object]:
-    tally = tallies.get((key, type_id), _Tally())
+def _counts(tallies: Tallies, key: str, type_id: UUID) -> dict[str, object]:
+    tally = tallies.get((key, type_id), Tally())
     return {
         "sources": tally.sources,
         "stale": tally.stale,
@@ -153,7 +165,7 @@ async def get_coverage(
     """Per product and per Integration Type, `ready` when at least one active Source
     matches (its product, trimmed and ignoring case; or one of its tags) and its latest
     version is embedded (`ready`)."""
-    wanted_products = _distinct(products)
+    wanted_products = distinct_products(products)
     wanted_types = list(dict.fromkeys(integration_type_ids))
 
     ready = await source_repository.ready_sources(uow)
@@ -183,13 +195,13 @@ async def get_pair_coverage(
     ones skipped) with each Integration Type, products first, in the order given. For other
     modules (Gap detection, weak-coverage banners); no authorization. Retired or unknown
     Integration Type ids are dropped."""
-    wanted = _distinct(products)
+    wanted = distinct_products(products)
     active = {UUID(e.id) for e in await list_catalogue(uow, Kind.INTEGRATION_TYPE)}
     type_ids = [t for t in dict.fromkeys(integration_type_ids) if t in active]
     if not wanted or not type_ids:
         return []
-    sources, scopes = await _load(uow)
-    tallies = _tally(
+    sources, scopes = await load_coverage(uow)
+    tallies = tally_pairs(
         set(wanted),
         set(type_ids),
         sources,
@@ -206,7 +218,7 @@ async def get_pair_coverage(
     ]
 
 
-def _industries(scopes: list[_Scope]) -> list[CoverageIndustry]:
+def _industries(scopes: list[Scope]) -> list[CoverageIndustry]:
     groups: dict[str, tuple[str, list[str]]] = {}
     for scope in scopes:
         if scope.products or scope.integration_type_ids or scope.industry is None:
@@ -240,8 +252,8 @@ async def coverage_matrix(
     if not actor.roles:
         raise ForbiddenError("You are not allowed to perform this action.")
     entries = await list_catalogue(uow, Kind.INTEGRATION_TYPE)
-    sources, scopes = await _load(uow)
-    names = _distinct(
+    sources, scopes = await load_coverage(uow)
+    names = distinct_products(
         [
             *(s.product for s in sources),
             *(p for scope in scopes for p in scope.products),
@@ -249,7 +261,7 @@ async def coverage_matrix(
         ]
     )
     columns = [UUID(e.id) for e in entries]
-    tallies = _tally(
+    tallies = tally_pairs(
         set(names),
         set(columns),
         sources,

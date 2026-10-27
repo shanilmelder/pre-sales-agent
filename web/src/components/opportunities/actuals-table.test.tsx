@@ -165,12 +165,28 @@ describe("ActualsSection", () => {
     expect(
       screen.getByText("Empty lines are not counted in variance. Each change is added to the Trace."),
     ).toBeTruthy();
-    const importButton = screen.getByRole("button", { name: /Import from file/ });
-    expect(importButton.getAttribute("aria-disabled")).toBe("true");
-    expect(importButton.textContent).toContain("Import arrives in a later release");
+    // Story 10.2: Import from file is enabled, an outline button beside Save Actuals.
+    const importButton = screen.getByRole("button", { name: "Import from file" });
+    expect(importButton.getAttribute("aria-disabled")).toBeNull();
+    expect(importButton.textContent).not.toContain("later release");
     const close = screen.getByRole("button", { name: "Close delivery" });
     expect(close.getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByText("1 line has no final Actual")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Import from file waits while the table has unsaved edits", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSection(view());
+    const importButton = () => screen.getByRole("button", { name: /Import from file/ });
+    expect(importButton().getAttribute("aria-disabled")).toBeNull();
+    await user.type(within(row(L1)).getByRole("textbox", { name: /Actual hours, L1/ }), "120");
+    expect(importButton().getAttribute("aria-disabled")).toBe("true");
+    expect(importButton().textContent).toContain("Save or discard your changes first");
+    // The header keeps its two actions side by side.
+    expect(screen.getByRole("button", { name: "Save Actuals" }).getAttribute("aria-disabled")).toBeNull();
+    await user.click(importButton());
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
   });
 

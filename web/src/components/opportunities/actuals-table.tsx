@@ -19,10 +19,11 @@ import {
   ActualInspector,
   type ActualTarget,
 } from "@/components/opportunities/actual-inspector";
+import { ActualsImport } from "@/components/opportunities/actuals-import";
 import { ReasonInput } from "@/components/opportunities/reason-input";
 import { useAnnounce } from "@/components/shell/live-region";
 import { RightPaneContent, useShell } from "@/components/shell/shell-context";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -33,7 +34,6 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyTabCard } from "@/components/ui/empty-tab-card";
 import { InlineAlert } from "@/components/ui/inline-alert";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ACTUALS_REASON_MAX,
   ACTUALS_TITLE,
@@ -43,11 +43,10 @@ import {
   EMPTY_BODY,
   EMPTY_TITLE,
   FOOTNOTE,
-  IMPORT_FROM_FILE,
-  IMPORT_LATER,
   LOAD_FAILED,
   NO_BASELINE,
   NOT_RECORDED,
+  UNSAVED_EDITS,
   REASON_LABEL,
   REASON_REQUIRED,
   RECORD_ACTUALS,
@@ -95,7 +94,7 @@ function VarianceText({ line }: { line: ActualsLine }) {
 }
 
 /** Tab 8: the Actuals of the Opportunity's Baseline lines (Story 10.1), as the mockup draws it:
- * a header with **Import from file** (later) and **Save Actuals**, a five-column table where a
+ * a header with **Import from file** (Story 10.2) and **Save Actuals**, a five-column table where a
  * delivery manager edits hours and cause inline, the footnote, and the Inspector's full form.
  * Everyone else sees it read only. Variance always comes from the server. */
 export function ActualsSection({
@@ -294,21 +293,17 @@ export function ActualsSection({
       </div>
       {editable ? (
         <>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-disabled="true"
-                  className={`${buttonVariants({ variant: "outline" })} text-control`}
-                />
-              }
-            >
-              {IMPORT_FROM_FILE}
-              <span className="sr-only">{`. ${IMPORT_LATER}`}</span>
-            </TooltipTrigger>
-            <TooltipContent>{IMPORT_LATER}</TooltipContent>
-          </Tooltip>
+          <ActualsImport
+            opportunityId={opportunityId}
+            causes={view.causes}
+            disabledReason={dirty ? UNSAVED_EDITS : null}
+            onApplied={(next) => {
+              apply(next);
+              setDrafts({});
+              setStale(false);
+              setFailure(null);
+            }}
+          />
           <Button
             type="button"
             aria-disabled={!dirty || busy || undefined}

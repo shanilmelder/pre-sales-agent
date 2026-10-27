@@ -108,6 +108,9 @@ class Action(StrEnum):
     DELIVERY_CLOSE = "actuals.delivery.close"
     """Story 10.1: close delivery once every Baseline line has a final Actual (as
     `ACTUAL_RECORD`)."""
+    ACTUAL_IMPORT = "actuals.actual.import"
+    """Story 10.2: download the Actuals template, upload a file of Actuals, review its preview
+    and apply it (as `ACTUAL_RECORD`)."""
     REPORTING_REPORT_READ = "reporting.report.read"
     """Story 10.3: read Reports (estimate versus actual across the Opportunities one can
     read). Head of Delivery and platform administrators only (a permission, no relation)."""
@@ -207,6 +210,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.ACTUAL_RECORD: _W,
         Action.ACTUAL_CORRECT: _W,
         Action.DELIVERY_CLOSE: _A,
+        Action.ACTUAL_IMPORT: _W,
         Action.REPORTING_REPORT_READ: _R,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,

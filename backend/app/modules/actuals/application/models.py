@@ -8,13 +8,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 
 from app.modules.actuals.domain.actuals import (
+    FAILED_ASSUMPTIONS_MAX,
     ActualKind,
     VarianceCause,
     VarianceDirection,
 )
 
 BATCH_MAX = 500
-FAILED_ASSUMPTIONS_MAX = 50
 
 
 class CatalogueRef(BaseModel):
@@ -233,3 +233,110 @@ class SavedActuals(BaseModel):
     recorded: int
     corrected: int
     view: ActualsView
+
+
+# --- imports (Story 10.2) -------------------------------------------------------------------
+
+IMPORT_EXCLUSIONS_MAX = 2000
+
+
+class ActualsTemplate(BaseModel):
+    """The Actuals import template of the Baseline version (`.xlsx`, one row per line): a
+    short-lived signed link (`url`, relative to the API origin) to the file, downloaded as
+    `file_name`, until `expires_at`."""
+
+    url: str
+    file_name: str
+    expires_at: datetime
+    line_count: int
+
+
+class ImportRowView(BaseModel):
+    """One row of an import's preview, checked now with the manual-entry rules. `status`:
+    `create` (the line has no Actual yet), `correct` (it has one: a new version, which needs
+    the row's Correction reason or the batch reason; `reason_missing` says the row has none of
+    its own), `invalid` (each problem in `problems`, e.g. "Row 7: line ID not in Baseline v3")
+    or `skipped` (every Actual field blank). `row` is the sheet's row number."""
+
+    row: int
+    status: Literal["create", "correct", "invalid", "skipped"]
+    line_id: str | None
+    line_label: str | None
+    line_title: str | None
+    estimate_hours: float | None
+    kind: ActualKind | None
+    effort_hours: float | None
+    variance_cause: VarianceCause | None
+    correction_reason: str | None
+    reason_missing: bool
+    problems: list[str]
+
+
+class ImportCounts(BaseModel):
+    create: int
+    correct: int
+    invalid: int
+    skipped: int
+
+
+class AppliedCounts(BaseModel):
+    """What applying wrote: rows created and corrected, excluded by the person, skipped as
+    blank."""
+
+    created: int
+    corrected: int
+    excluded: int
+    skipped: int
+
+
+class ActualsImportView(BaseModel):
+    """An Actuals import. `status`: `queued` and `running` while the worker reads the file,
+    `parsed` (the preview: `rows` and `counts`), `failed` (`error_code` and `error_message`;
+    **Retry**), `applied` (`applied_at` and `applied`). `repeat_applied_at` and
+    `repeat_message` ("This file was already imported on 14 Oct") are set when the same file
+    was already applied here: Confirm then needs `confirm_repeat`. `row_version` is the
+    Actuals tab's ETag the preview was checked against: Confirm's `If-Match`."""
+
+    id: str
+    filename: str
+    size_bytes: int
+    file_kind: Literal["xlsx", "csv"]
+    status: Literal["queued", "running", "parsed", "failed", "applied"]
+    error_code: str | None
+    error_message: str | None
+    uploaded_by_name: str
+    created_at: datetime
+    estimate_version: int | None
+    rows: list[ImportRowView]
+    counts: ImportCounts | None
+    repeat_applied_at: datetime | None
+    repeat_message: str | None
+    applied_at: datetime | None
+    applied: AppliedCounts | None
+    row_version: int
+
+
+class ActualsImportLatest(BaseModel):
+    """The Opportunity's most recent import (null: none yet)."""
+
+    latest: ActualsImportView | None
+
+
+class ActualsImportApply(BaseModel):
+    """**Confirm** an import's preview: `excluded_rows` (sheet row numbers) are left out;
+    `reason` (1 to 1,000 characters) is the correction reason of every correcting row that
+    has none of its own; `confirm_repeat` must be true when the same file was already
+    applied."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    excluded_rows: list[StrictInt] = Field(default_factory=list, max_length=IMPORT_EXCLUSIONS_MAX)
+    reason: StrictStr | None = None
+    confirm_repeat: bool = False
+
+
+class AppliedImport(BaseModel):
+    """The applied import, with the counts, and the Actuals tab as it is now."""
+
+    imported: ActualsImportView
+    actuals: ActualsView

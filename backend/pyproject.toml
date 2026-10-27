@@ -328,8 +328,10 @@ forbidden_modules = [
     "app.modules.notifications",
 ]
 # Story 3.5: only the coverage route reads the Opportunities' products, through their public API.
+# Story 3.6: and the graph route, the same way.
 ignore_imports = [
     "app.modules.knowledge.api.coverage_routes -> app.modules.opportunities.application.public",
+    "app.modules.knowledge.api.graph_routes -> app.modules.opportunities.application.public",
 ]
 allow_indirect_imports = true
 

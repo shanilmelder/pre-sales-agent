@@ -70,7 +70,12 @@ MODULES = {
 }
 
 
-ACTUALS = (Action.ACTUAL_RECORD, Action.ACTUAL_CORRECT, Action.DELIVERY_CLOSE)
+ACTUALS = (
+    Action.ACTUAL_RECORD,
+    Action.ACTUAL_CORRECT,
+    Action.DELIVERY_CLOSE,
+    Action.ACTUAL_IMPORT,
+)
 
 
 def _user(

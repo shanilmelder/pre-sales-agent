@@ -127,3 +127,44 @@ class DeliveryRow(Base):
     estimate_version_id: Mapped[UUID] = mapped_column(Uuid)
     closed_by: Mapped[UUID] = mapped_column(Uuid)
     closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ImportRow(Base):
+    """One uploaded Actuals file (Story 10.2): stored by SHA-256, read by the
+    `actuals.import_file` job into `rows` (raw strings per column, with the sheet row number),
+    then applied once. `status`: `queued | running | parsed | failed | applied`; `failed` has an
+    `error_code`. Never deleted."""
+
+    __tablename__ = "actuals_imports"
+    __table_args__ = (
+        Index("ix_actuals_imports_opportunity_id_created_at", "opportunity_id", "created_at"),
+        Index("ix_actuals_imports_opportunity_id_file_sha256", "opportunity_id", "file_sha256"),
+        CheckConstraint("file_kind IN ('xlsx', 'csv')", name="file_kind"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'parsed', 'failed', 'applied')", name="status"
+        ),
+        CheckConstraint("size_bytes >= 0", name="size_bytes"),
+        CheckConstraint("(status = 'failed') = (error_code IS NOT NULL)", name="failed_has_code"),
+        CheckConstraint("(status = 'applied') = (applied_at IS NOT NULL)", name="applied_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    opportunity_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("opportunities_opportunities.id", name="fk_actuals_imports_opportunity_id"),
+    )
+    uploaded_by: Mapped[UUID] = mapped_column(Uuid)
+    file_sha256: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    filename: Mapped[str] = mapped_column(Text)
+    file_kind: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(Text)
+    rows: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_by: Mapped[UUID | None] = mapped_column(Uuid)
+    created_count: Mapped[int | None] = mapped_column(Integer)
+    corrected_count: Mapped[int | None] = mapped_column(Integer)
+    excluded_count: Mapped[int | None] = mapped_column(Integer)
+    skipped_count: Mapped[int | None] = mapped_column(Integer)

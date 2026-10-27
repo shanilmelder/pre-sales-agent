@@ -74,7 +74,7 @@ context:
   - `domain/variance.py`: reuse `actuals.domain.actuals.variance` only via `actuals/application/public.py` (add an export), or move the rounding rule. Do not import actuals' domain directly.
   - Register it in `app/main_api.py:17-40,135+`.
   - Add an importlinter contract in `pyproject.toml`, copying the actuals block at :482-528.
-- **Migration** `backend/migrations/versions/20261027_0054_reporting_views.py`, revision `0054_reporting_views`, down `0053_actuals_actuals`:
+- **Migration** `backend/migrations/versions/20261027_0055_reporting_views.py`, revision `0055_reporting_views`, down `0054_actuals_imports` (re-chained after Story 10.2 took 0054):
   - `CREATE VIEW`, then `GRANT SELECT` and `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ... FROM psa_app` (the trap is at `0002_platform_trace.py:82-85`).
   - The downgrade drops the views.
   - Line label: `row_number() OVER (PARTITION BY version_id ORDER BY position)` over `estimates_estimate_lines`.
@@ -105,7 +105,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Migration 0054 + `tests/test_reporting_views.py` -- views, grants, write-denied test, row shape for planned, Unplanned and multi-IT Actuals -- the reporting layer.
+- [ ] Migration 0055 + `tests/test_reporting_views.py` -- views, grants, write-denied test, row shape for planned, Unplanned and multi-IT Actuals -- the reporting layer.
 - [ ] `identity` action + category, seed, `opportunities.public` visibility helper -- access.
 - [ ] `reporting` module (application, api, importlinter, main_api) + `tests/test_reporting_api.py` -- the I/O matrix, 403 for delivery_manager, presales_engineer and pm_reviewer, each group_by, each filter, the milestone toggle, and a perf test seeding 200 delivered Opportunities that asserts P95 < 500 ms over 20 calls per grouping.
 - [ ] Web nav gating + test updates -- Reports visible only with the permission.

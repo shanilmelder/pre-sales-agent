@@ -2208,6 +2208,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Graph
+         * @description Products (from Sources, Checklists and the Opportunities the caller can read), active
+         *     Integration Types, non-retired Knowledge Sources and active published Checklists, each
+         *     with a status and a Coverage score (0 to 100), and the links between them: tags and
+         *     scopes (`linked`), and product to Integration Type pairs that are Ready (`linked`) or
+         *     Partial (`gap`). Platform administrators and the roles that may edit Checklists.
+         */
+        get: operations["get_knowledge_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/downloads/{token}": {
         parameters: {
             query?: never;
@@ -2880,6 +2904,135 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/actuals/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Actuals Template
+         * @description **Download template**: the Baseline version's `.xlsx` with one row per line (Line ID,
+         *     Line, Integration Type, Work Package, Estimate h) and empty Actual columns, as a
+         *     short-lived signed link; traced with the Opportunity. Delivery managers only.
+         */
+        get: operations["get_actuals_template"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/actuals/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Actuals Import
+         * @description **Choose file**: upload one .xlsx or .csv of Actuals. It is checked and stored, and the
+         *     worker reads it; poll `GET …/actuals/imports/{id}` for the preview. Nothing is written to
+         *     the Actuals until **Confirm**. Delivery managers only.
+         */
+        post: operations["create_actuals_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/actuals/imports/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Actuals Import
+         * @description The Opportunity's most recent import (null when none), with its preview once read.
+         *     Delivery managers only.
+         */
+        get: operations["get_latest_actuals_import"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Actuals Import
+         * @description The import's status and, once read, its preview: each row checked now with the
+         *     manual-entry rules (to create, to correct, invalid with its reasons, or skipped as
+         *     blank), and whether the same file was already imported. Delivery managers only.
+         */
+        get: operations["get_actuals_import"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Actuals Import
+         * @description **Retry** reading a file whose reading failed. Delivery managers only.
+         */
+        post: operations["retry_actuals_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Actuals Import
+         * @description **Confirm** the preview: every row not excluded or blank is recorded or corrected in
+         *     one Unit of Work with the rules of **Save Actuals**, or nothing is. `If-Match` is the
+         *     Actuals tab ETag the preview showed. Delivery managers only.
+         */
+        post: operations["apply_actuals_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/estimate-vs-actual": {
         parameters: {
             query?: never;
@@ -3088,6 +3241,83 @@ export interface components {
             set_at: string;
         };
         /**
+         * ActualsImportApply
+         * @description **Confirm** an import's preview: `excluded_rows` (sheet row numbers) are left out;
+         *     `reason` (1 to 1,000 characters) is the correction reason of every correcting row that
+         *     has none of its own; `confirm_repeat` must be true when the same file was already
+         *     applied.
+         */
+        ActualsImportApply: {
+            /** Excluded Rows */
+            excluded_rows?: number[];
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Confirm Repeat
+             * @default false
+             */
+            confirm_repeat: boolean;
+        };
+        /**
+         * ActualsImportLatest
+         * @description The Opportunity's most recent import (null: none yet).
+         */
+        ActualsImportLatest: {
+            latest: components["schemas"]["ActualsImportView"] | null;
+        };
+        /**
+         * ActualsImportView
+         * @description An Actuals import. `status`: `queued` and `running` while the worker reads the file,
+         *     `parsed` (the preview: `rows` and `counts`), `failed` (`error_code` and `error_message`;
+         *     **Retry**), `applied` (`applied_at` and `applied`). `repeat_applied_at` and
+         *     `repeat_message` ("This file was already imported on 14 Oct") are set when the same file
+         *     was already applied here: Confirm then needs `confirm_repeat`. `row_version` is the
+         *     Actuals tab's ETag the preview was checked against: Confirm's `If-Match`.
+         */
+        ActualsImportView: {
+            /** Id */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * File Kind
+             * @enum {string}
+             */
+            file_kind: "xlsx" | "csv";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "parsed" | "failed" | "applied";
+            /** Error Code */
+            error_code: string | null;
+            /** Error Message */
+            error_message: string | null;
+            /** Uploaded By Name */
+            uploaded_by_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Estimate Version */
+            estimate_version: number | null;
+            /** Rows */
+            rows: components["schemas"]["ImportRowView"][];
+            counts: components["schemas"]["ImportCounts"] | null;
+            /** Repeat Applied At */
+            repeat_applied_at: string | null;
+            /** Repeat Message */
+            repeat_message: string | null;
+            /** Applied At */
+            applied_at: string | null;
+            applied: components["schemas"]["AppliedCounts"] | null;
+            /** Row Version */
+            row_version: number;
+        };
+        /**
          * ActualsLine
          * @description A Baseline line, labelled "L{n}" in grid order, with its estimate, the Integration Types
          *     of its Requirements and its current Actual (null: "Not recorded", left out of the
@@ -3121,6 +3351,25 @@ export interface components {
             items: components["schemas"]["ActualInput"][];
             /** Reason */
             reason?: string | null;
+        };
+        /**
+         * ActualsTemplate
+         * @description The Actuals import template of the Baseline version (`.xlsx`, one row per line): a
+         *     short-lived signed link (`url`, relative to the API origin) to the file, downloaded as
+         *     `file_name`, until `expires_at`.
+         */
+        ActualsTemplate: {
+            /** Url */
+            url: string;
+            /** File Name */
+            file_name: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Line Count */
+            line_count: number;
         };
         /**
          * ActualsTotals
@@ -3391,6 +3640,21 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * AppliedCounts
+         * @description What applying wrote: rows created and corrected, excluded by the person, skipped as
+         *     blank.
+         */
+        AppliedCounts: {
+            /** Created */
+            created: number;
+            /** Corrected */
+            corrected: number;
+            /** Excluded */
+            excluded: number;
+            /** Skipped */
+            skipped: number;
+        };
         /** AppliedFilters */
         AppliedFilters: {
             /** Product */
@@ -3404,6 +3668,14 @@ export interface components {
             closed_to: string | null;
             /** Include Milestones */
             include_milestones: boolean;
+        };
+        /**
+         * AppliedImport
+         * @description The applied import, with the counts, and the Actuals tab as it is now.
+         */
+        AppliedImport: {
+            imported: components["schemas"]["ActualsImportView"];
+            actuals: components["schemas"]["ActualsView"];
         };
         /**
          * ApproveAllResult
@@ -5815,6 +6087,58 @@ export interface components {
             domain: components["schemas"]["Domain"];
         };
         /**
+         * GraphEdge
+         * @description A link between two nodes (their ids). Products are always `source` of a product and
+         *     Integration Type edge; Sources and Checklists are always `source` of their tag edges.
+         */
+        GraphEdge: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            kind: components["schemas"]["GraphEdgeKind"];
+        };
+        /**
+         * GraphEdgeKind
+         * @enum {string}
+         */
+        GraphEdgeKind: "linked" | "gap";
+        /**
+         * GraphNode
+         * @description One node. `id` is prefixed by type (`product:<match key>`, `integration_type:<id>`,
+         *     `source:<id>`, `checklist:<id>`). `owner`: the Source's owner or the Checklist's creator
+         *     (None for products and Integration Types). `last_reviewed_on`: the Source's last review
+         *     or the Checklist's latest publication. `row_version` and `can_review` (the caller may
+         *     Mark reviewed) are for Sources only; `stale_in_days` (0 once stale) too.
+         */
+        GraphNode: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["GraphNodeType"];
+            /** Label */
+            label: string;
+            status: components["schemas"]["NodeStatus"];
+            /** Score */
+            score: number;
+            owner: components["schemas"]["KnowledgeUserRef"] | null;
+            /** Last Reviewed On */
+            last_reviewed_on: string | null;
+            /** Row Version */
+            row_version?: number | null;
+            /**
+             * Can Review
+             * @default false
+             */
+            can_review: boolean;
+            /** Stale In Days */
+            stale_in_days?: number | null;
+        };
+        /**
+         * GraphNodeType
+         * @enum {string}
+         */
+        GraphNodeType: "product" | "integration_type" | "source" | "checklist";
+        /**
          * GroupBy
          * @enum {string}
          */
@@ -5876,11 +6200,57 @@ export interface components {
              */
             reason: string;
         };
+        /** ImportCounts */
+        ImportCounts: {
+            /** Create */
+            create: number;
+            /** Correct */
+            correct: number;
+            /** Invalid */
+            invalid: number;
+            /** Skipped */
+            skipped: number;
+        };
         /**
          * ImportErrorCode
          * @enum {string}
          */
         ImportErrorCode: "unreadable" | "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled";
+        /**
+         * ImportRowView
+         * @description One row of an import's preview, checked now with the manual-entry rules. `status`:
+         *     `create` (the line has no Actual yet), `correct` (it has one: a new version, which needs
+         *     the row's Correction reason or the batch reason; `reason_missing` says the row has none of
+         *     its own), `invalid` (each problem in `problems`, e.g. "Row 7: line ID not in Baseline v3")
+         *     or `skipped` (every Actual field blank). `row` is the sheet's row number.
+         */
+        ImportRowView: {
+            /** Row */
+            row: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "create" | "correct" | "invalid" | "skipped";
+            /** Line Id */
+            line_id: string | null;
+            /** Line Label */
+            line_label: string | null;
+            /** Line Title */
+            line_title: string | null;
+            /** Estimate Hours */
+            estimate_hours: number | null;
+            kind: components["schemas"]["ActualKind"] | null;
+            /** Effort Hours */
+            effort_hours: number | null;
+            variance_cause: components["schemas"]["VarianceCause"] | null;
+            /** Correction Reason */
+            correction_reason: string | null;
+            /** Reason Missing */
+            reason_missing: boolean;
+            /** Problems */
+            problems: string[];
+        };
         /**
          * ImportStatus
          * @enum {string}
@@ -6027,6 +6397,20 @@ export interface components {
             /** Version */
             version: number;
             span: components["schemas"]["KnowledgeSpan"];
+        };
+        /**
+         * KnowledgeGraph
+         * @description Products, active Integration Types, non-retired Sources and active published
+         *     Checklists, and the links between them. `stale_months` is the review age after which a
+         *     Source is stale.
+         */
+        KnowledgeGraph: {
+            /** Nodes */
+            nodes: components["schemas"]["GraphNode"][];
+            /** Edges */
+            edges: components["schemas"]["GraphEdge"][];
+            /** Stale Months */
+            stale_months: number;
         };
         /**
          * KnowledgeSearchHit
@@ -6454,6 +6838,11 @@ export interface components {
              */
             reason?: string | null;
         };
+        /**
+         * NodeStatus
+         * @enum {string}
+         */
+        NodeStatus: "ready" | "partial" | "missing" | "stale" | "embedding" | "embedding_failed";
         /**
          * NotificationKind
          * @enum {string}
@@ -25575,6 +25964,92 @@ export interface operations {
             };
         };
     };
+    get_knowledge_graph: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeGraph"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not edit Checklists (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
     download_file: {
         parameters: {
             query?: never;
@@ -30611,6 +31086,996 @@ export interface operations {
                 };
             };
             /** @description `validation_error`: a malformed id or body; `actual_invalid`: an Actual breaks a rule, each listed in `errors` as `{item, field, message}` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_actuals_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A short-lived signed link to the template */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualsTemplate"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity import Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no import with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Baseline yet (`actuals_no_baseline`) or delivery is closed (`delivery_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: an empty file, no `file` part, an unusable file name, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_actuals_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description One .xlsx or .csv file of Actuals (start from the template), at most `PSA_ACTUALS_IMPORT_MAX_BYTES` (5 MB).
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The import, `queued` for reading */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualsImportView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity import Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no import with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Baseline yet (`actuals_no_baseline`) or delivery is closed (`delivery_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: larger than the Actuals import limit (`file_too_large`; the `detail` is the sentence to show) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Rejected file: not .xlsx or .csv (`file_type_not_allowed`), or its content does not match its extension (`file_content_mismatch`); the `detail` is the sentence to show */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: an empty file, no `file` part, an unusable file name, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_latest_actuals_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The latest import */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualsImportLatest"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity import Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no import with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: an empty file, no `file` part, an unusable file name, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_actuals_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The import */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualsImportView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity import Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no import with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: an empty file, no `file` part, an unusable file name, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    retry_actuals_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The import, `queued` again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualsImportView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity import Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no import with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Only an import whose reading failed can be retried (`parse_not_failed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: an empty file, no `file` part, an unusable file name, or an id that is not a UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    apply_actuals_import: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The Actuals tab ETag as last read (its `row_version`), e.g. `"4"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActualsImportApply"];
+            };
+        };
+        responses: {
+            /** @description The applied import, and the tab */
+            200: {
+                headers: {
+                    /** @description The Actuals tab's `row_version` */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppliedImport"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity import Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no import with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Baseline yet (`actuals_no_baseline`), delivery closed (`delivery_closed`), the file not read yet or its reading failed (`actuals_import_not_ready`), already applied (`actuals_import_applied`), or the same file was already applied and `confirm_repeat` is false (`actuals_import_repeated`, with `applied_at`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Actuals changed since the caller read them (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body; `actual_invalid`: rows break a rule, each listed in `errors` as `{item, field, message}` (`item`: the sheet row; `message`, e.g. "Row 7: line ID not in Baseline v3") */
             422: {
                 headers: {
                     [name: string]: unknown;
