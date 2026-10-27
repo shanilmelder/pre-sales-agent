@@ -425,7 +425,7 @@ graph TD
 | Assessment, Finding, FindingOverride | `assessments` |
 | Conflict, Negotiation | `conflicts` |
 | Estimate, Estimate Version, Estimate Line, Assumption, Risk, Baseline | `estimates` |
-| Review Request (`reviews_review_requests`), Review Decision (`reviews_review_decisions`), Review reply (`reviews_review_replies`), Challenge, approval policy | `reviews` |
+| Review Request (`reviews_review_requests`), Review Decision (`reviews_review_decisions`), Review reply (`reviews_review_replies`), Challenge (`reviews_challenges`), approval policy | `reviews` |
 | Scenario (metadata, constraint deltas) | `scenarios` |
 | Proposal | `proposals` |
 | Actual, Calibration suggestion | `actuals` |

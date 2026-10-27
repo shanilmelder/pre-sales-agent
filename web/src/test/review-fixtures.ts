@@ -1,7 +1,15 @@
-// Review Request and review panel fixtures (Stories 9.1 and 9.3). Placeholders only.
+// Review Request, review panel and Challenge fixtures (Stories 9.1, 9.3, 9.5). Placeholders only.
 import type { Assessment } from "@/lib/assessments";
 import type { EstimateVersion } from "@/lib/estimates";
-import type { RecordedDecision, ReviewDecision, ReviewPanel, ReviewRequest } from "@/lib/reviews";
+import type {
+  ChallengeSuggestion,
+  ChallengeSuggestions,
+  ChallengeView,
+  RecordedDecision,
+  ReviewDecision,
+  ReviewPanel,
+  ReviewRequest,
+} from "@/lib/reviews";
 
 export const REVIEW_OPP = "00000000-0000-7000-8000-000000000001";
 export const REVIEW_ID = "00000000-0000-7000-8000-0000000000c1";
@@ -225,5 +233,82 @@ export function recorded(
     decision: made,
     request: reviewRequest({ row_version: 2, latest_decision: made, ...request }),
     version_status: versionStatus,
+  };
+}
+
+// --- Challenges (Story 9.5) -----------------------------------------------------------------
+
+export const CHALLENGE_ID = "00000000-0000-7000-8000-0000000000b1";
+export const RUN_ID = "00000000-0000-7000-8000-0000000000b9";
+
+const SUGGESTED: ChallengeSuggestion[] = [
+  {
+    agent: "engineering_agent",
+    label: "Engineering Agent",
+    why: "Holds the challenged Finding",
+    tag: "suggested",
+    preselected: true,
+  },
+  {
+    agent: "pm_agent",
+    label: "PM Agent",
+    why: "Cites R12",
+    tag: "optional",
+    preselected: false,
+  },
+];
+
+export function challengeSuggestions(
+  overrides: Partial<ChallengeSuggestions> = {},
+): ChallengeSuggestions {
+  return {
+    title: "Challenge Estimate v3",
+    target: {
+      kind: "estimate_version",
+      id: "00000000-0000-7000-8000-0000000000e3",
+      version: 3,
+      label: "Estimate v3",
+    },
+    estimate_version: 3,
+    superseded_by: null,
+    suggested: SUGGESTED,
+    always_rerun: ["Critic", "Red Team"],
+    can_raise: true,
+    can_confirm: false,
+    ...overrides,
+  };
+}
+
+export function challengeView(overrides: Partial<ChallengeView> = {}): ChallengeView {
+  return {
+    id: CHALLENGE_ID,
+    title: "Challenge Finding: [FINDING]",
+    target: {
+      kind: "finding",
+      id: "00000000-0000-7000-8000-0000000000f9",
+      version: 2,
+      label: "Finding: [FINDING]",
+    },
+    estimate_version_id: "00000000-0000-7000-8000-0000000000e3",
+    estimate_version: 3,
+    superseded_by: null,
+    superseded_by_id: null,
+    review_request_id: REVIEW_ID,
+    challenger: ANA,
+    reason: "[REASON]",
+    status: "awaiting_confirmation",
+    status_label: "Awaiting confirmation",
+    suggested: SUGGESTED,
+    confirmed: null,
+    always_rerun: ["Critic", "Red Team"],
+    decline_reason: null,
+    workflow_run_id: null,
+    run_number: null,
+    row_version: 1,
+    created_at: "2026-10-26T09:00:00Z",
+    updated_at: "2026-10-26T09:00:00Z",
+    can_confirm: true,
+    can_decline: true,
+    ...overrides,
   };
 }

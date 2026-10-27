@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 
+import { ChallengeButton } from "@/components/opportunities/challenge-dialog";
 import { Chip } from "@/components/ui/chip";
 import { SeverityPill } from "@/components/opportunities/severity-pill";
 import {
@@ -12,15 +13,22 @@ import {
 } from "@/lib/assessments";
 
 /** The selected specialist Finding in the right pane, read-only: its severity, kind and
- * agent, its title and detail, and the Requirements it cites as chips with their excerpts. */
+ * agent, its title and detail, and the Requirements it cites as chips with their excerpts.
+ * Story 9.5: **Challenge** opens the Challenge dialog on this Finding when the API's
+ * `can_challenge` allows it (`opportunityId` set). Critic and Red Team Findings have their own
+ * inspectors and no Challenge. */
 export function AssessmentFindingInspector({
   finding,
   agent,
   focusRequest = 0,
+  opportunityId,
+  canChallenge = false,
 }: {
   finding: AssessmentFinding;
   agent: AssessmentAgent;
   focusRequest?: number;
+  opportunityId?: string;
+  canChallenge?: boolean;
 }) {
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -49,6 +57,15 @@ export function AssessmentFindingInspector({
         >
           {finding.title}
         </h3>
+        {canChallenge && opportunityId ? (
+          <div>
+            <ChallengeButton
+              opportunityId={opportunityId}
+              target={{ kind: "finding", id: finding.id }}
+              size="sm"
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-1">

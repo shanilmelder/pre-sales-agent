@@ -1,7 +1,7 @@
-"""Persistence for Review Requests (Story 9.1), their Review Decisions (Story 9.3) and their
-replies (Story 9.4). Runs inside the caller's Unit of Work."""
+"""Persistence for Review Requests (Story 9.1), their Review Decisions (Story 9.3), their
+replies (Story 9.4) and Challenges (Story 9.5). Runs inside the caller's Unit of Work."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import func, insert, select, update
 
 from app.modules.reviews.adapters.models import (
+    ChallengeRow,
     ReviewDecisionRow,
     ReviewReplyRow,
     ReviewRequestRow,
@@ -170,16 +171,35 @@ async def pending_duplicates(uow: UnitOfWork, candidates: list[NewRequest]) -> l
 async def has_pending_for_reviewer(
     uow: UnitOfWork, opportunity_id: UUID, reviewer_id: UUID
 ) -> bool:
+    """Whether the reviewer still has an open request on the Opportunity: `pending`, or
+    (Story 9.5) `challenged`, so they keep read access while their Challenge is open."""
     found = await uow.session.execute(
         select(ReviewRequestRow.id)
         .where(
             ReviewRequestRow.opportunity_id == opportunity_id,
             ReviewRequestRow.reviewer_id == reviewer_id,
-            ReviewRequestRow.status == "pending",
+            ReviewRequestRow.status.in_(("pending", "challenged")),
         )
         .limit(1)
     )
     return found.first() is not None
+
+
+async def pending_of_reviewer(
+    uow: UnitOfWork, opportunity_id: UUID, reviewer_id: UUID
+) -> list[RequestRecord]:
+    """Story 9.5: the reviewer's `pending` requests on the Opportunity, oldest first."""
+    rows = await uow.session.execute(
+        select(ReviewRequestRow)
+        .where(
+            ReviewRequestRow.opportunity_id == opportunity_id,
+            ReviewRequestRow.reviewer_id == reviewer_id,
+            ReviewRequestRow.status == "pending",
+        )
+        .order_by(ReviewRequestRow.created_at, ReviewRequestRow.id)
+        .execution_options(populate_existing=True)
+    )
+    return [_record(row) for row in rows.scalars()]
 
 
 async def has_pending_for_version(uow: UnitOfWork, estimate_version_id: UUID) -> bool:
@@ -492,3 +512,143 @@ async def latest_alternatives(uow: UnitOfWork, request_ids: list[UUID]) -> dict[
     for row in rows.scalars():
         latest.setdefault(row.review_request_id, _reply(row))
     return latest
+
+
+# --- Challenges (Story 9.5) -----------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ChallengeRecord:
+    id: UUID
+    opportunity_id: UUID
+    target_kind: str
+    target_id: UUID
+    target_version: int
+    assessment_id: UUID | None
+    estimate_version_id: UUID
+    review_request_id: UUID | None
+    challenger_id: UUID
+    reason: str = field(repr=False)
+    suggested: list[dict[str, Any]] = field(default_factory=list)
+    confirmed: list[str] | None = None
+    decline_reason: str | None = field(default=None, repr=False)
+    workflow_run_id: UUID | None = None
+    status: str = "awaiting_confirmation"
+    row_version: int = 1
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+def _challenge(row: ChallengeRow) -> ChallengeRecord:
+    return ChallengeRecord(
+        id=row.id,
+        opportunity_id=row.opportunity_id,
+        target_kind=row.target_kind,
+        target_id=row.target_id,
+        target_version=row.target_version,
+        assessment_id=row.assessment_id,
+        estimate_version_id=row.estimate_version_id,
+        review_request_id=row.review_request_id,
+        challenger_id=row.challenger_id,
+        reason=row.reason,
+        suggested=list(row.suggested or []),
+        confirmed=None if row.confirmed is None else list(row.confirmed),
+        decline_reason=row.decline_reason,
+        workflow_run_id=row.workflow_run_id,
+        status=row.status,
+        row_version=row.row_version,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+async def insert_challenge(
+    uow: UnitOfWork,
+    *,
+    challenge_id: UUID,
+    opportunity_id: UUID,
+    target_kind: str,
+    target_id: UUID,
+    target_version: int,
+    assessment_id: UUID | None,
+    estimate_version_id: UUID,
+    review_request_id: UUID | None,
+    challenger_id: UUID,
+    reason: str,
+    suggested: list[dict[str, Any]],
+) -> ChallengeRecord:
+    """An `awaiting_confirmation` Challenge at row version 1."""
+    await uow.session.execute(
+        insert(ChallengeRow).values(
+            id=challenge_id,
+            opportunity_id=opportunity_id,
+            target_kind=target_kind,
+            target_id=target_id,
+            target_version=target_version,
+            assessment_id=assessment_id,
+            estimate_version_id=estimate_version_id,
+            review_request_id=review_request_id,
+            challenger_id=challenger_id,
+            reason=reason,
+            suggested=suggested,
+            status="awaiting_confirmation",
+            row_version=1,
+        )
+    )
+    found = await get_challenge(uow, challenge_id)
+    assert found is not None  # just inserted
+    return found
+
+
+async def get_challenge(
+    uow: UnitOfWork, challenge_id: UUID, *, for_update: bool = False
+) -> ChallengeRecord | None:
+    statement = (
+        select(ChallengeRow)
+        .where(ChallengeRow.id == challenge_id)
+        .execution_options(populate_existing=True)
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    row = (await uow.session.execute(statement)).scalar_one_or_none()
+    return None if row is None else _challenge(row)
+
+
+async def update_challenge(
+    uow: UnitOfWork,
+    challenge_id: UUID,
+    *,
+    from_status: str,
+    expected_row_version: int,
+    status: str,
+    confirmed: list[str] | None = None,
+    workflow_run_id: UUID | None = None,
+    decline_reason: str | None = None,
+) -> ChallengeRecord | None:
+    """Move the Challenge from `from_status` at `expected_row_version` to `status` with the
+    values given, bumping `row_version`; None (and no change) otherwise."""
+    values: dict[str, Any] = {
+        "status": status,
+        "row_version": ChallengeRow.row_version + 1,
+        "updated_at": func.now(),
+    }
+    if confirmed is not None:
+        values["confirmed"] = confirmed
+    if workflow_run_id is not None:
+        values["workflow_run_id"] = workflow_run_id
+    if decline_reason is not None:
+        values["decline_reason"] = decline_reason
+    changed = (
+        await uow.session.execute(
+            update(ChallengeRow)
+            .where(
+                ChallengeRow.id == challenge_id,
+                ChallengeRow.status == from_status,
+                ChallengeRow.row_version == expected_row_version,
+            )
+            .values(**values)
+            .returning(ChallengeRow.id)
+            .execution_options(synchronize_session=False)
+        )
+    ).one_or_none()
+    return None if changed is None else await get_challenge(uow, challenge_id)

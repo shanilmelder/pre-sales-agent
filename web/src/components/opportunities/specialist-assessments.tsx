@@ -44,6 +44,7 @@ import { Chip } from "@/components/ui/chip";
 import { Pill } from "@/components/ui/pill";
 import { pillToneFor } from "@/lib/pill-tone";
 import { AssessmentFindingInspector } from "@/components/opportunities/assessment-finding-inspector";
+import { ChallengeButton, ChallengeDialog } from "@/components/opportunities/challenge-dialog";
 import { CriticInspector } from "@/components/opportunities/critic-inspector";
 import { FindingStatusPill } from "@/components/opportunities/finding-decisions";
 import { useFindingSelection } from "@/components/opportunities/finding-selection";
@@ -468,8 +469,17 @@ function ResultCard({
 
 /** One agent's result card: its name, version, recommendation, confidence, the confidence
  * basis as its summary, up to three Requirement evidence chips and **Show effort**, which
- * reveals the per-Requirement effort table. */
-export function AssessmentCard({ assessment }: { assessment: Assessment }) {
+ * reveals the per-Requirement effort table. Story 9.5: **Challenge** opens the Challenge
+ * dialog on this Assessment when the API's `can_challenge` allows it (`opportunityId` set). */
+export function AssessmentCard({
+  assessment,
+  opportunityId,
+  canChallenge = false,
+}: {
+  assessment: Assessment;
+  opportunityId?: string;
+  canChallenge?: boolean;
+}) {
   const effortId = useId();
   const [showEffort, setShowEffort] = useState(false);
   return (
@@ -491,7 +501,7 @@ export function AssessmentCard({ assessment }: { assessment: Assessment }) {
       <EvidenceChips
         items={evidenceLabels(assessment.findings, assessment.effort)}
       />
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
           variant="ghost"
@@ -510,6 +520,13 @@ export function AssessmentCard({ assessment }: { assessment: Assessment }) {
           />
           {showEffort ? HIDE_EFFORT : SHOW_EFFORT}
         </Button>
+        {canChallenge && opportunityId ? (
+          <ChallengeButton
+            opportunityId={opportunityId}
+            target={{ kind: "assessment", id: assessment.id }}
+            size="sm"
+          />
+        ) : null}
       </div>
       <div id={effortId} hidden={!showEffort}>
         {showEffort ? <EffortTable assessment={assessment} /> : null}
@@ -1258,6 +1275,15 @@ export function SpecialistAssessmentsSection({
   const [focusRequest, setFocusRequest] = useState(0);
   const returnFocusTo = useRef<string | null>(null);
   const [syncedFrom, setSyncedFrom] = useState(initial);
+  /** Story 9.5: `?challenge={id}` (the owner's Inbox link) opens that Challenge once. */
+  const [linkedChallenge, setLinkedChallenge] = useState<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("challenge");
+    if (!id || !/^[0-9a-fA-F-]{36}$/.test(id)) return;
+    // After the first render (the URL is read in the browser only).
+    const timer = setTimeout(() => setLinkedChallenge(id), 0);
+    return () => clearTimeout(timer);
+  }, []);
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -1666,7 +1692,12 @@ export function SpecialistAssessmentsSection({
         <Subsection title="Results so far">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {results.map((assessment) => (
-              <AssessmentCard key={assessment.agent} assessment={assessment} />
+              <AssessmentCard
+                key={assessment.agent}
+                assessment={assessment}
+                opportunityId={opportunityId}
+                canChallenge={view.can_challenge}
+              />
             ))}
             {review ? <RedTeamResultCard review={review} /> : null}
             {criticReview || criticReviewing ? (
@@ -1697,6 +1728,21 @@ export function SpecialistAssessmentsSection({
           )}
         </Subsection>
       ) : null}
+      {linkedChallenge ? (
+        <ChallengeDialog
+          opportunityId={opportunityId}
+          mode={{ kind: "existing", challengeId: linkedChallenge }}
+          open
+          onOpenChange={(open) => {
+            if (open) return;
+            setLinkedChallenge(null);
+            // Drop `?challenge=` so a refresh does not reopen it.
+            const url = new URL(window.location.href);
+            url.searchParams.delete("challenge");
+            window.history.replaceState(window.history.state, "", url);
+          }}
+        />
+      ) : null}
       {selected ? (
         <RightPaneContent>
           {selected.source === "specialist" ? (
@@ -1705,6 +1751,8 @@ export function SpecialistAssessmentsSection({
               finding={selected.finding}
               agent={selected.agent}
               focusRequest={focusRequest}
+              opportunityId={opportunityId}
+              canChallenge={view.can_challenge}
             />
           ) : selected.source === "critic" ? (
             <CriticInspector

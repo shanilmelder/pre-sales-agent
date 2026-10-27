@@ -3,7 +3,9 @@ Pure, no I/O.
 
 A request asks one named reviewer to review one target, an Estimate Version or one of its
 Assessments at a version, for one review type. Its status follows the state machine below:
-9.1 uses only `pending → cancelled`; the decisions (9.3) and superseding (9.4) use the rest.
+9.1 uses only `pending → cancelled`; the decisions (9.3), Challenges (9.5: `pending →
+challenged`, and back to `pending` when the Challenge is declined) and superseding (9.4) use
+the rest.
 """
 
 from enum import StrEnum
@@ -64,7 +66,8 @@ TRANSITIONS: dict[RequestStatus, frozenset[RequestStatus]] = {
     # A decided request is replaced only when a newer version supersedes it (9.4).
     RequestStatus.APPROVED: frozenset({RequestStatus.SUPERSEDED}),
     RequestStatus.REJECTED: frozenset({RequestStatus.SUPERSEDED}),
-    RequestStatus.CHALLENGED: frozenset({RequestStatus.SUPERSEDED}),
+    # Story 9.5: a declined Challenge puts the request back to `pending`.
+    RequestStatus.CHALLENGED: frozenset({RequestStatus.SUPERSEDED, RequestStatus.PENDING}),
     RequestStatus.SUPERSEDED: frozenset(),
     RequestStatus.CANCELLED: frozenset(),
 }

@@ -89,6 +89,13 @@ class Action(StrEnum):
     ESTIMATE_VERSION_CREATE = "estimates.estimate_version.create"
     """Story 9.4: start a new draft Estimate Version from a rejected or approved one (the owner
     and collaborators, except sales representatives)."""
+    CHALLENGE_RAISE = "reviews.challenge.raise"
+    """Story 9.5: raise a Challenge (the Opportunity's owner, or a reviewer with a pending
+    Review Request on it, checked by `reviews`; never a sales representative)."""
+    CHALLENGE_CONFIRM = "reviews.challenge.confirm"
+    """Story 9.5: confirm a Challenge's reassessment (the Opportunity's owner only)."""
+    CHALLENGE_DECLINE = "reviews.challenge.decline"
+    """Story 9.5: decline a Challenge with a reason (the Opportunity's owner only)."""
     NOTIFICATION_READ = "notifications.notification.read"
     """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
@@ -178,6 +185,9 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.REVIEW_REQUEST_DECIDE: _A,
         Action.REVIEW_REQUEST_REPLY: _S,
         Action.ESTIMATE_VERSION_CREATE: _W,
+        Action.CHALLENGE_RAISE: _W,
+        Action.CHALLENGE_CONFIRM: _A,
+        Action.CHALLENGE_DECLINE: _A,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,

@@ -11,6 +11,9 @@
   panel.
 - Story 9.4: `POST …/review-requests/{request_id}/replies` with `If-Match` the request's ETag:
   reply to the reviewer's request for evidence or an alternative.
+- Story 9.5: `POST …/challenges` (raise), `GET …/challenges/suggestions?target_kind=&target_id=`,
+  `GET …/challenges/{challenge_id}`, and with `If-Match` the Challenge's ETag
+  `POST …/challenges/{challenge_id}/confirm` and `…/decline`.
 """
 
 from typing import Annotated, Any
@@ -25,6 +28,12 @@ from app.modules.identity.application.public import (
 )
 from app.modules.reviews.application import public as reviews
 from app.modules.reviews.application.public import (
+    ChallengeConfirm,
+    ChallengeCreate,
+    ChallengeDecline,
+    ChallengeSuggestions,
+    ChallengeTargetKind,
+    ChallengeView,
     CreatedReviewRequests,
     RecordedDecision,
     RecordedReply,
@@ -236,7 +245,8 @@ async def cancel_review_request(
                 "escalation's reviewer already has a pending request of that type on the same "
                 "target (`review_request_duplicate`)",
                 422: "`validation_error`: a missing or over-1,000-character reason (only Approve "
-                "may have none), a Challenge (Story 9.5), or a missing or misplaced "
+                "may have none), `challenged` (raise a Challenge instead), or a missing or "
+                "misplaced "
                 "`escalated_to`; `reviewer_not_authorized_for_type` / `author_cannot_review`: "
                 "the escalation's reviewer lacks the role or authored the version. The "
                 "`detail` is the sentence to show",
@@ -352,3 +362,179 @@ async def reply_to_review_request(
     recorded = await reviews.reply(uow, actor, opportunity_id, request_id, body, if_match)
     response.headers["ETag"] = etag(recorded.request.row_version)
     return recorded
+
+
+# --- Challenges (Story 9.5) -----------------------------------------------------------------
+
+_CHALLENGE_IF_MATCH = Annotated[
+    str | None,
+    Header(
+        alias="If-Match",
+        description='The ETag of the Challenge as last read (its `row_version`), e.g. `"1"`.',
+    ),
+]
+_CHALLENGE_ETAG = {
+    "ETag": {"description": "The Challenge's row version.", "schema": {"type": "string"}}
+}
+
+
+@router.post(
+    "/challenges",
+    operation_id="raise_challenge",
+    status_code=201,
+    responses={
+        **_responses(
+            404,
+            described={
+                403: "Not allowed: a sales representative, a collaborator, or a reviewer "
+                "without a pending Review Request here (`forbidden`); someone else's Review "
+                "Request (`reviewer_not_authorized`); `confirmed` from anyone but the owner",
+                409: "No Estimate Version yet (`challenge_needs_estimate`); the version in "
+                "context is superseded (`challenge_version_superseded`); the Review Request "
+                "is no longer pending (`review_request_not_pending`); the owner's confirmation "
+                "while another run is active (`assessment_in_progress`); nothing was written",
+                422: "`validation_error`: a blank or over-1,000-character reason, a target that "
+                "is not the version in context, a current Assessment or one of its specialist "
+                "Findings, or `confirmed` empty or outside the suggestions. The `detail` is the "
+                "sentence to show",
+            },
+        ),
+        201: {"description": "The Challenge raised", "headers": _CHALLENGE_ETAG},
+    },
+)
+async def raise_challenge(
+    opportunity_id: UUID,
+    body: ChallengeCreate,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+) -> ChallengeView:
+    """Raise a Challenge of the Estimate Version in context, a current Assessment or one of
+    its Findings, with a reason. The platform stores the Assessments it suggests rerunning.
+    From a Review Request, that request becomes `challenged`. A reviewer's Challenge goes
+    to the Opportunity's owner to confirm; the owner may raise and confirm at once with
+    `confirmed`, which starts the reassessment run."""
+    view = await reviews.raise_challenge(uow, actor, opportunity_id, body)
+    response.headers["ETag"] = etag(view.row_version)
+    return view
+
+
+@router.get(
+    "/challenges/suggestions",
+    operation_id="get_challenge_suggestions",
+    responses=_responses(
+        404,
+        described={
+            409: "No Estimate Version yet (`challenge_needs_estimate`)",
+            422: "`validation_error`: a malformed query, or a target that can't be challenged",
+        },
+    ),
+)
+async def get_challenge_suggestions(
+    opportunity_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    target_kind: ChallengeTargetKind,
+    target_id: UUID,
+) -> ChallengeSuggestions:
+    """What the Challenge dialog shows before raising: its title, the version in context,
+    the Assessments suggested for a rerun and whether the caller may raise (and confirm).
+    Anyone who can read the Opportunity."""
+    return await reviews.challenge_suggestions(uow, actor, opportunity_id, target_kind, target_id)
+
+
+@router.get(
+    "/challenges/{challenge_id}",
+    operation_id="get_challenge",
+    responses={
+        **_responses(404, 422),
+        200: {"description": "The Challenge", "headers": _CHALLENGE_ETAG},
+    },
+)
+async def get_challenge(
+    opportunity_id: UUID,
+    challenge_id: UUID,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+) -> ChallengeView:
+    """A Challenge: its target, reason, suggestions, status, run and what the caller may do.
+    Anyone who can read the Opportunity."""
+    view = await reviews.get_challenge(uow, actor, opportunity_id, challenge_id)
+    response.headers["ETag"] = etag(view.row_version)
+    return view
+
+
+@router.post(
+    "/challenges/{challenge_id}/confirm",
+    operation_id="confirm_challenge",
+    responses={
+        **_responses(
+            404,
+            412,
+            428,
+            described={
+                403: "Not allowed (`forbidden`): only the Opportunity's owner",
+                409: "Not awaiting confirmation (`challenge_not_awaiting_confirmation`); the "
+                "version in context is superseded (`challenge_version_superseded`); another run "
+                "is active (`assessment_in_progress`)",
+                422: "`validation_error`: no Assessment ticked, or one outside the suggestions",
+            },
+        ),
+        200: {
+            "description": "The Challenge, `reassessing` with its run (a repeat returns the "
+            "same run)",
+            "headers": _CHALLENGE_ETAG,
+        },
+    },
+)
+async def confirm_challenge(
+    opportunity_id: UUID,
+    challenge_id: UUID,
+    body: ChallengeConfirm,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _CHALLENGE_IF_MATCH = None,
+) -> ChallengeView:
+    """Confirm the reassessment: the ticked Assessments rerun, then the Critic, in a
+    `challenge` Workflow Run. Confirming again returns the same run. The Opportunity's owner
+    only."""
+    view = await reviews.confirm_reassessment(
+        uow, actor, opportunity_id, challenge_id, body, if_match
+    )
+    response.headers["ETag"] = etag(view.row_version)
+    return view
+
+
+@router.post(
+    "/challenges/{challenge_id}/decline",
+    operation_id="decline_challenge",
+    responses={
+        **_responses(
+            404,
+            412,
+            428,
+            described={
+                403: "Not allowed (`forbidden`): only the Opportunity's owner",
+                409: "Not awaiting confirmation (`challenge_not_awaiting_confirmation`)",
+                422: "`validation_error`: a blank or over-1,000-character reason",
+            },
+        ),
+        200: {"description": "The declined Challenge", "headers": _CHALLENGE_ETAG},
+    },
+)
+async def decline_challenge(
+    opportunity_id: UUID,
+    challenge_id: UUID,
+    body: ChallengeDecline,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: _CHALLENGE_IF_MATCH = None,
+) -> ChallengeView:
+    """Decline a Challenge with a reason: a challenged Review Request is pending again and
+    the challenger gets an Inbox item. The Opportunity's owner only."""
+    view = await reviews.decline_challenge(uow, actor, opportunity_id, challenge_id, body, if_match)
+    response.headers["ETag"] = etag(view.row_version)
+    return view

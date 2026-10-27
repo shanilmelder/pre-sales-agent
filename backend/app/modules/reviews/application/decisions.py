@@ -9,8 +9,9 @@ collaborators, never a sales representative; the Opportunity's 404 for everyone 
 2. The actor: the request's current reviewer, still holding the review type's role (from
    the token), else 403 `reviewer_not_authorized`; the version's author approving is 403
    `self_approval_forbidden`. A decision on a superseded version is 409
-   `estimate_version_superseded`. A Challenge (Story 9.5), a missing reason (every decision but
-   Approve) or a reason over 1,000 characters is 422.
+   `estimate_version_superseded`. A `challenged` decision (recorded only by raising a
+   Challenge, Story 9.5), a missing reason (every decision but Approve) or a reason over
+   1,000 characters is 422.
 3. The state: only a `pending` request (409 `review_request_not_pending`); then the
    `If-Match` check (428/412, "Changed by {name} since you opened it.").
 4. An escalation's target must hold the type's role (422 `reviewer_not_authorized_for_type`),
@@ -26,7 +27,8 @@ collaborators, never a sales representative; the Opportunity's 404 for everyone 
      and a `review_requested` Inbox item (key `review:{id}:escalated:{decision_id}`).
 
    Every decision bumps the request's `row_version`. The previous reviewer loses read access
-   once they have no pending request left on the Opportunity. Then
+   once they have no pending (or, Story 9.5, challenged) request left on the Opportunity.
+   Then
    `reviews.review_decision.recorded` is traced.
 6. Story 9.4: the Opportunity's owner and the request's sender (one item when they are the
    same person, none for the reviewer themselves) get a `review_outcome` Inbox item, "{Reviewer}
@@ -115,7 +117,7 @@ NOT_REVIEWER = "Only this Review Request's reviewer, holding its review role, ca
 NOT_PENDING = "Only a pending Review Request can be decided."
 REASON_RULE = f"Give a reason of 1 to {REASON_MAX:,} characters."
 APPROVE_REASON_RULE = f"The reason can be at most {REASON_MAX:,} characters."
-CHALLENGE_LATER = "Challenge arrives with Story 9.5."
+CHALLENGE_ELSEWHERE = "Raise a Challenge to challenge this review."
 ESCALATE_TARGET = "Choose who to escalate to."
 NOT_ESCALATING = "Only an escalation names who it goes to."
 ESCALATE_SELF = "Escalate to another reviewer, not the current one."
@@ -157,7 +159,7 @@ async def _check_if_match(uow: UnitOfWork, if_match: str | None, record: Request
 
 def _clean_reason(body: ReviewDecisionCreate) -> str | None:
     if body.decision not in RECORDABLE:
-        raise UnprocessableError(CHALLENGE_LATER)
+        raise UnprocessableError(CHALLENGE_ELSEWHERE)
     try:
         return clean_decision_reason(body.decision, body.reason)
     except ValueError:

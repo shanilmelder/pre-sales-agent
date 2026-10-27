@@ -20,8 +20,11 @@ from app.modules.assessments.application.assessment import (
     run_finding_snapshots,
 )
 from app.modules.assessments.application.assessments import (
+    AssessmentCitations,
+    FindingCitations,
     agent_assessments,
     assessment_at,
+    current_citations,
     outdated_assessments,
 )
 from app.modules.assessments.application.critic import (
@@ -95,6 +98,7 @@ __all__ = [
     "AssessedGap",
     "AssessedRequirement",
     "AssessmentAgent",
+    "AssessmentCitations",
     "AssessmentEffort",
     "AssessmentFinding",
     "AssessmentInputs",
@@ -108,6 +112,7 @@ __all__ = [
     "CriticReviewView",
     "CriticView",
     "EvidenceRefIn",
+    "FindingCitations",
     "FindingEvidence",
     "FindingEvidenceSubmission",
     "FindingLine",
@@ -137,6 +142,7 @@ __all__ = [
     "critic_inputs",
     "critic_task",
     "current_assessment_snapshots",
+    "current_citations",
     "current_finding_snapshots",
     "current_sizings",
     "enqueue_review",

@@ -70,6 +70,7 @@ from app.modules.intake.application.requirement_refs import (
 )
 from app.modules.intake.application.requirements import (
     integration_scope,
+    integration_types_by_requirement,
     list_requirements,
     start_extraction,
 )
@@ -158,6 +159,7 @@ __all__ = [
     "get_passage",
     "input_budget_chars",
     "integration_scope",
+    "integration_types_by_requirement",
     "list_requirements",
     "list_sources",
     "max_body_bytes",

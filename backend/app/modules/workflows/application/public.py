@@ -2,8 +2,9 @@
 use workflows only from here.
 
 - Other modules: `enqueue_run` (gaps, after a Gap detection), `run_in_progress` and
-  `run_number` (estimates), `run_starter` (estimates, reviews) and `decision_status`
-  (notifications, Story 9.2).
+  `run_number` (estimates; Story 9.5 also reviews), `run_starter` (estimates, reviews),
+  `decision_status` (notifications, Story 9.2) and `start_run` with `RunType.CHALLENGE`
+  (reviews, Story 9.5: a Challenge's reassessment).
 - The graph's nodes (`app.orchestration`): `node_task`, `begin_task`, `lock_running_task`,
   `complete_task`, `fail_task`, `skip_blocked_task`, `plan_of`, `error_code`; for pausing
   (Story 5.5) `escalation`, `skip_disabled_task` and, for the runner, `decision_choices`.
@@ -62,6 +63,7 @@ from app.modules.workflows.domain.runs import (
     AssessmentTaskStatus,
     DecisionChoice,
     DecisionStatus,
+    RunType,
     TaskAgent,
 )
 from app.platform.uow import UnitOfWork
@@ -137,6 +139,7 @@ __all__ = [
     "PlanVersionTask",
     "ProgressEventData",
     "RunDecision",
+    "RunType",
     "TaskAgent",
     "TraceEventData",
     "begin_task",

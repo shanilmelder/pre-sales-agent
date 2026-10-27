@@ -524,11 +524,14 @@ def test_a_decided_request_is_409(client: TestClient, sync_engine: Engine) -> No
     assert again.json()["code"] == "review_request_not_pending"
 
 
-def test_a_challenge_is_not_recorded_yet(client: TestClient, sync_engine: Engine) -> None:
+def test_a_challenge_is_raised_not_decided(client: TestClient, sync_engine: Engine) -> None:
+    """Story 9.5: `challenged` is recorded by raising a Challenge (`POST …/challenges`, see
+    `test_reviews_challenges`), never through the decisions endpoint."""
     _, _, opp, _, [(ana_h, _)], [request] = _sent(client, sync_engine, "Ana Reviewer")
     resp = _decide(client, ana_h, opp["id"], request, "challenged")
     assert resp.status_code == 422
-    assert resp.json()["detail"] == "Challenge arrives with Story 9.5."
+    assert resp.json()["detail"] == "Raise a Challenge to challenge this review."
+    assert _decisions(sync_engine, request["id"]) == []
 
 
 # --- grants and the DB checks ---------------------------------------------------------------

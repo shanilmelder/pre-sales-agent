@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { getInbox, markAllInboxRead, markInboxItemRead } from "@/app/inbox/actions";
+import { ChallengeForm } from "@/components/opportunities/challenge-dialog";
 import { ReviewPanelLoader } from "@/components/opportunities/review-panel";
 import { useAnnounce } from "@/components/shell/live-region";
 import { PAGE_SUBTITLES, PageContent, PageHeader } from "@/components/shell/page-header";
@@ -21,6 +22,7 @@ import {
   MARK_ALL_READ,
   NO_SELECTION,
   NOT_REACHABLE,
+  CHALLENGE_SUBJECT,
   OPEN,
   REVIEW_SUBJECT,
   closedStatus,
@@ -202,6 +204,24 @@ function Detail({
           dimmed={isGreyedReviewItem(item)}
           fallback={<DetailBody item={item} />}
           onDecided={onDecided}
+        />
+      </Card>
+    );
+  }
+  // Story 9.5: a Challenge item shows the Challenge form in place (the owner confirms or
+  // declines it there; the challenger reads the outcome).
+  if (item.subject_type === CHALLENGE_SUBJECT && item.opportunity_id) {
+    return (
+      <Card aria-label="Inbox item" role="region" className="gap-4 p-6" data-challenge-detail="">
+        <p className="text-meta text-text-secondary">
+          {kindLabel(item.kind)} · {itemMeta(item)}
+        </p>
+        <ChallengeForm
+          key={item.id}
+          opportunityId={item.opportunity_id}
+          mode={{ kind: "existing", challengeId: item.subject_id }}
+          layout="inline"
+          onDone={onDecided}
         />
       </Card>
     );
