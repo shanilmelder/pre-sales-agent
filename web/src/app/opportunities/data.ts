@@ -7,6 +7,7 @@ import type { Filters } from "@/app/opportunities/filters";
 import { createServerApiClient } from "@/lib/api/server";
 import type { Opportunity, OpportunityFacets, OpportunityPage } from "@/lib/opportunities";
 import { UUID_RE } from "@/lib/opportunities";
+import type { ActualsView } from "@/lib/actuals";
 import type { AssessmentsView } from "@/lib/assessments";
 import type { ConflictsView } from "@/lib/conflicts";
 import type { CriticView } from "@/lib/critic";
@@ -34,6 +35,13 @@ export type GapsContextResult = { kind: "ok"; context: GapsContext } | { kind: "
 /** An active catalogue Integration Type, for tagging a Requirement (Story 4.1). */
 export type IntegrationTypeOption = { id: string; name: string };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
+/** Story 10.1: the Actuals tab. */
+export type ActualsResult = { kind: "ok"; actuals: ActualsView } | { kind: "error" };
+/** Story 10.1: the active catalogue entries Unplanned work may name. */
+export type CatalogueOptions = {
+  integrationTypes: IntegrationTypeOption[];
+  workPackages: IntegrationTypeOption[];
+};
 /** Story 9.7: the Opportunity's Estimate Versions, the Baseline first. */
 export type EstimateVersionsResult =
   | { kind: "ok"; versions: VersionListItem[] }
@@ -220,6 +228,48 @@ export async function listActiveIntegrationTypes(): Promise<IntegrationTypeOptio
       `GET integration types failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
     );
     return null;
+  }
+}
+
+/** Story 10.1: the active Integration Types and Work Packages, for Unplanned work; empty lists
+ * when they can't be read. */
+export async function listActiveCatalogue(): Promise<CatalogueOptions> {
+  try {
+    const api = await createServerApiClient();
+    const [types, packages] = await Promise.all(
+      (["integration_type", "work_package"] as const).map((kind) =>
+        api.GET("/api/v1/catalogue/entries", { params: { query: { kind } } }),
+      ),
+    );
+    const options = (found: typeof types) =>
+      found.data?.items.map((entry) => ({ id: entry.id, name: entry.name })) ?? [];
+    if (!types.data || !packages.data) {
+      console.error(
+        `GET catalogue failed: status=${types.response.status},${packages.response.status}`,
+      );
+    }
+    return { integrationTypes: options(types), workPackages: options(packages) };
+  } catch (thrown) {
+    console.error(`GET catalogue failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { integrationTypes: [], workPackages: [] };
+  }
+}
+
+/** Story 10.1: `GET /api/v1/opportunities/{id}/actuals`, the Actuals tab with server-calculated
+ * variance. Logs statuses only. */
+export async function getActuals(id: string): Promise<ActualsResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/actuals", {
+      params: { path: { opportunity_id: id } },
+    });
+    if (data) return { kind: "ok", actuals: data };
+    console.error(`GET actuals failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET actuals failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
   }
 }
 

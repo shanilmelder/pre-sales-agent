@@ -13,6 +13,9 @@ vi.mock("@/lib/api/server", () => ({ createServerApiClient: async () => api }));
 vi.mock("server-only", () => ({}));
 
 import {
+  closeDelivery,
+  correctActual,
+  saveActuals,
   acceptAllAssumptions,
   acceptAssumption,
   acceptRequirementChange,
@@ -3106,6 +3109,105 @@ describe("Challenges (Story 9.5)", () => {
         confirmed: [],
       }),
     ).toEqual({ kind: "error" });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("Actuals (Story 10.1)", () => {
+  const LINE = "00000000-0000-7000-8000-0000000000b2";
+  const AID = "00000000-0000-7000-8000-0000000000c2";
+  const SAVED = { recorded: 1, corrected: 0, view: { row_version: 5 } };
+  const ITEM = { line_id: LINE, kind: "final", effort_hours: 41, variance_cause: "other" };
+
+  beforeEach(() => {
+    api.POST.mockReset();
+  });
+
+  it("saveActuals posts the items and reason with the quoted If-Match", async () => {
+    api.POST.mockResolvedValue({ data: SAVED, response: status(200) });
+    expect(
+      await saveActuals({ opportunityId: OPP_ID, rowVersion: 4, items: [ITEM], reason: "Fix" }),
+    ).toEqual({ kind: "ok", saved: SAVED });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/actuals", {
+      params: { path: { opportunity_id: OPP_ID }, header: { "If-Match": '"4"' } },
+      body: { items: [ITEM], reason: "Fix" },
+    });
+  });
+
+  it("correctActual posts the fields with the Actual's version", async () => {
+    api.POST.mockResolvedValue({ data: SAVED, response: status(201) });
+    const fields = { kind: "final", effort_hours: 40, reason: "Late invoice" };
+    await correctActual({ opportunityId: OPP_ID, actualId: AID, version: 2, fields });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/actuals/{actual_id}/corrections",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, actual_id: AID },
+          header: { "If-Match": '"2"' },
+        },
+        body: fields,
+      },
+    );
+  });
+
+  it("closeDelivery posts with the quoted If-Match", async () => {
+    api.POST.mockResolvedValue({ data: { row_version: 7 }, response: status(200) });
+    expect(await closeDelivery({ opportunityId: OPP_ID, rowVersion: 6 })).toEqual({
+      kind: "ok",
+      actuals: { row_version: 7 },
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/actuals/delivery/close",
+      { params: { path: { opportunity_id: OPP_ID }, header: { "If-Match": '"6"' } } },
+    );
+  });
+
+  const ERRORS = [{ item: 0, field: "variance_cause", message: "Needs a cause." }];
+  it.each([
+    [422, { code: "actual_invalid", errors: ERRORS }, { kind: "invalid", errors: ERRORS }],
+    [412, { code: "row_version_mismatch" }, { kind: "stale" }],
+    [403, { code: "forbidden" }, { kind: "forbidden" }],
+    [409, { code: "delivery_closed", detail: "Delivery is closed." }, {
+      kind: "conflict",
+      detail: "Delivery is closed.",
+    }],
+    [500, { code: "internal_error" }, { kind: "error" }],
+  ])("save and correct map %i %o", async (code, error, expected) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    expect(await saveActuals({ opportunityId: OPP_ID, rowVersion: 1, items: [ITEM] })).toEqual(
+      expected,
+    );
+    expect(
+      await correctActual({
+        opportunityId: OPP_ID,
+        actualId: AID,
+        version: 1,
+        fields: { kind: "final", effort_hours: 1, reason: "x" },
+      }),
+    ).toEqual(expected);
+  });
+
+  it.each([
+    [412, { code: "row_version_mismatch" }, { kind: "stale" }],
+    [403, { code: "forbidden" }, { kind: "forbidden" }],
+    [409, { code: "delivery_not_ready", detail: "1 line has no final Actual" }, {
+      kind: "conflict",
+      detail: "1 line has no final Actual",
+    }],
+  ])("closeDelivery maps %i %o", async (code, error, expected) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    expect(await closeDelivery({ opportunityId: OPP_ID, rowVersion: 1 })).toEqual(expected);
+  });
+
+  it("rejects bad input without calling the API", async () => {
+    expect(await saveActuals({ opportunityId: "x", rowVersion: 1, items: [ITEM] })).toEqual({
+      kind: "error",
+    });
+    expect(await closeDelivery({ opportunityId: OPP_ID, rowVersion: -1 })).toEqual({
+      kind: "error",
+    });
     expect(api.POST).not.toHaveBeenCalled();
   });
 });

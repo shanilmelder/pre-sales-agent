@@ -1,11 +1,13 @@
 """estimates' public API. Other modules import estimates only from here. Story 9.4:
 `create_version` (a person's **New version** from a rejected or approved version). Story 9.7:
-`set_baseline`, `version_approvers` and `list_versions`."""
+`set_baseline`, `version_approvers` and `list_versions`. Story 10.1: `current_baseline_ref`,
+`version_lines` and `version_assumptions`, for Actuals."""
 
 from uuid import UUID
 
 from app.modules.estimates.application import draft
 from app.modules.estimates.application.baseline import (
+    current_baseline_ref,
     set_baseline,
     version_approvers,
     version_gate,
@@ -33,9 +35,11 @@ from app.modules.estimates.application.export_content import ExportFormat
 from app.modules.estimates.application.from_assessments import build_from_assessments
 from app.modules.estimates.application.line_edits import apply_decision, lock_for_decision
 from app.modules.estimates.application.line_refs import (
+    AssumptionRef,
     LineRef,
     VersionLines,
     current_version_lines,
+    version_assumptions,
     version_lines,
 )
 from app.modules.estimates.application.models import (
@@ -111,6 +115,7 @@ __all__ = [
     "AssumptionCounts",
     "AssumptionGroups",
     "AssumptionLine",
+    "AssumptionRef",
     "BaselineApproval",
     "BaselineRef",
     "BaselineSet",
@@ -156,6 +161,7 @@ __all__ = [
     "compare_versions",
     "create_risk",
     "create_version",
+    "current_baseline_ref",
     "current_estimates",
     "current_reviewable_version",
     "current_version_lines",
@@ -179,6 +185,7 @@ __all__ = [
     "submission_blockers_view",
     "submit_version",
     "version_approvers",
+    "version_assumptions",
     "version_detail",
     "version_gate",
     "version_lines",

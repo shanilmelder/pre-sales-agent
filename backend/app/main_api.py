@@ -14,6 +14,7 @@ from typing import Literal
 from fastapi import APIRouter, FastAPI, Request, Response
 from pydantic import BaseModel
 
+from app.modules.actuals.api.routes import router as actuals_router
 from app.modules.assessments.api.routes import router as assessments_router
 from app.modules.conflicts.api.routes import router as conflicts_router
 from app.modules.estimates.api.routes import router as estimates_router
@@ -155,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(registry_denials_router, prefix=API_PREFIX)
     app.include_router(reviews_router, prefix=API_PREFIX)
     app.include_router(notifications_router, prefix=API_PREFIX)
+    app.include_router(actuals_router, prefix=API_PREFIX)
     return app
 
 
