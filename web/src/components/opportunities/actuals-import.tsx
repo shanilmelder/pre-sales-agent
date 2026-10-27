@@ -364,7 +364,7 @@ export function ActualsImport({
       )}
       <DialogContent
         showCloseButton={false}
-        className="max-h-[85vh] w-[720px] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[720px]"
+        className="max-h-[85vh] w-[720px]! max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[720px]"
       >
         <DialogHeader>
           <DialogTitle className="text-[20px] leading-7 font-semibold">{IMPORT_TITLE}</DialogTitle>
