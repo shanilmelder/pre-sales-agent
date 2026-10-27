@@ -107,13 +107,16 @@ class AssessmentsView(BaseModel):
     """The Opportunity's latest assessment run (null before the first) with its tasks, and
     one entry per agent (Engineering, PM, Security) with its current Assessment or null.
     `can_start`: whether the caller may start a run or retry a task; `can_resolve`: whether
-    they may resolve the run's decisions (Story 5.5). The UI only uses them to hide
-    controls; the API decides."""
+    they may resolve the run's decisions (Story 5.5); `can_challenge` (Story 9.5): whether
+    they may raise a Challenge of an Assessment or one of its Findings (the owner, or a
+    reviewer with a pending Review Request). The UI only uses them to hide controls; the API
+    decides."""
 
     run: AssessmentRun | None
     assessments: list[AgentAssessment]
     can_start: bool
     can_resolve: bool = False
+    can_challenge: bool = False
 
 
 class ProgressEventData(BaseModel):

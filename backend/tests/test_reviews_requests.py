@@ -56,6 +56,8 @@ ALLOWED = {
     (RequestStatus.APPROVED, RequestStatus.SUPERSEDED),
     (RequestStatus.REJECTED, RequestStatus.SUPERSEDED),
     (RequestStatus.CHALLENGED, RequestStatus.SUPERSEDED),
+    # Story 9.5: a declined Challenge.
+    (RequestStatus.CHALLENGED, RequestStatus.PENDING),
 }
 
 

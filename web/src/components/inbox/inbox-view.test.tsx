@@ -22,6 +22,12 @@ const reviewActions = vi.hoisted(() => ({
   loadEvidenceOptions: vi.fn(),
   addSource: vi.fn(),
   addTextSource: vi.fn(),
+  // Story 9.5: a Challenge item's detail reads the Challenge.
+  loadChallenge: vi.fn(),
+  confirmChallenge: vi.fn(),
+  declineChallenge: vi.fn(),
+  loadChallengeSuggestions: vi.fn(),
+  raiseChallenge: vi.fn(),
 }));
 vi.mock("@/app/opportunities/actions", () => reviewActions);
 vi.mock("next/navigation", () => ({
@@ -30,7 +36,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { ShellProviders } from "@/components/shell/shell-context";
-import { reviewDecision, reviewPanel, reviewRequest } from "@/test/review-fixtures";
+import { challengeView, reviewDecision, reviewPanel, reviewRequest } from "@/test/review-fixtures";
 import { resetInboxUnread, useInboxUnread } from "@/lib/use-inbox-count";
 
 import { InboxView } from "./inbox-view";
@@ -135,6 +141,8 @@ beforeEach(() => {
   reviewActions.loadReviewPanel.mockReset();
   reviewActions.loadReviewPanel.mockResolvedValue({ kind: "not-found" });
   reviewActions.decideReviewRequest.mockReset();
+  reviewActions.loadChallenge.mockReset();
+  reviewActions.confirmChallenge.mockReset();
 });
 
 describe("InboxView", () => {
@@ -443,5 +451,52 @@ describe("InboxView", () => {
     expect(within(detail()).getByRole("region", { name: "Review outcomes" })).toBeTruthy();
     expect(within(detail()).queryByRole("group", { name: "Review decision" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a Challenge item's detail is the Challenge form: confirm starts the run", async () => {
+    const challenge = item(4, {
+      kind: "challenge_raised",
+      group: "challenges",
+      summary: "Challenge: Finding: [FINDING] — [OPPORTUNITY]",
+      subject_type: "reviews.challenge",
+      subject_status: "awaiting_confirmation",
+      subject_status_label: "Awaiting confirmation",
+      sender: "Ana Reviewer",
+      href: `/opportunities/${OPP}/assessments?challenge=10000000-0000-7000-8000-000000000004`,
+    });
+    reviewActions.loadChallenge.mockResolvedValue({ kind: "ok", value: challengeView() });
+    reviewActions.confirmChallenge.mockResolvedValue({
+      kind: "ok",
+      value: challengeView({
+        status: "reassessing",
+        status_label: "Reassessing",
+        workflow_run_id: "00000000-0000-7000-8000-0000000000b9",
+        run_number: 4,
+        can_confirm: false,
+        can_decline: false,
+      }),
+    });
+    actions.getInbox.mockResolvedValue({ kind: "ok", page: page([challenge]) });
+    const { user, container } = renderView(page([challenge]));
+    await screen.findByRole("region", { name: "Inbox items" });
+    expect(screen.getByRole("heading", { name: "Challenges" })).toBeTruthy();
+    await user.click(row("Challenge: Finding"));
+
+    expect(
+      await within(detail()).findByRole("heading", { name: "Challenge Finding: [FINDING]" }),
+    ).toBeTruthy();
+    expect(reviewActions.loadChallenge).toHaveBeenCalledWith({
+      opportunityId: OPP,
+      challengeId: challenge.subject_id,
+    });
+    expect(within(detail()).getByText("Reason from Ana Reviewer")).toBeTruthy();
+    const engineering = within(detail()).getByRole("button", { name: /Engineering Agent/ });
+    expect(engineering.getAttribute("aria-pressed")).toBe("true");
+    expect(await axeViolations(container)).toEqual([]);
+    await user.click(within(detail()).getByRole("button", { name: "Rerun 1 Assessment" }));
+    expect(await within(detail()).findByText("Reassessment started (run 4)")).toBeTruthy();
+    expect(
+      within(detail()).getByRole("link", { name: "Open Assessments" }).getAttribute("href"),
+    ).toBe(`/opportunities/${OPP}/assessments`);
   });
 });

@@ -105,6 +105,9 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.REVIEW_REQUEST_REPLY: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_VERSION_CREATE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.ESTIMATE_BASELINE_SET: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CHALLENGE_RAISE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CHALLENGE_CONFIRM: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.CHALLENGE_DECLINE: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -147,6 +150,10 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.ESTIMATE_VERSION_CREATE,
         # Story 9.7: people only (`HUMAN_ONLY_ACTIONS`).
         Action.ESTIMATE_BASELINE_SET,
+        # Story 9.5: Challenges; confirming and declining are the owner's alone.
+        Action.CHALLENGE_RAISE,
+        Action.CHALLENGE_CONFIRM,
+        Action.CHALLENGE_DECLINE,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -185,10 +192,11 @@ MEMBER_GRANTS: frozenset[Action] = frozenset(
     }
 )
 REVIEWER_GRANTS: frozenset[Action] = frozenset(
-    {Action.OPPORTUNITY_READ, Action.REVIEW_REQUEST_DECIDE}
+    {Action.OPPORTUNITY_READ, Action.REVIEW_REQUEST_DECIDE, Action.CHALLENGE_RAISE}
 )
-"""Story 9.1: what a reviewer collaborator may do on the Opportunity: read it and (Story
-9.3) record a decision on their own pending Review Request (`reviews` checks it is theirs),
+"""Story 9.1: what a reviewer collaborator may do on the Opportunity: read it, (Story 9.3)
+record a decision on their own pending Review Request (`reviews` checks it is theirs) and
+(Story 9.5) raise a Challenge while one of their requests is pending (`reviews` checks it),
 nothing more."""
 
 

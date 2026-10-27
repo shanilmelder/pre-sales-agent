@@ -20,6 +20,7 @@ const EMPTY_ASSESSMENTS: AssessmentsView = {
   assessments: [],
   can_start: false,
   can_resolve: false,
+  can_challenge: false,
 };
 
 /** Tab 5: the Opportunity's Assessments: the run header, Agent tasks, Results so far and

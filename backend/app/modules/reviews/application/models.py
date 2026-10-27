@@ -1,4 +1,4 @@
-"""reviews' API models (Stories 9.1, 9.3 and 9.4)."""
+"""reviews' API models (Stories 9.1, 9.3, 9.4 and 9.5)."""
 
 from datetime import datetime
 from typing import Literal
@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from app.modules.assessments.application.public import AssessmentView
 from app.modules.estimates.application.public import EstimateVersion, VersionDiff, VersionGate
+from app.modules.reviews.domain.challenges import (
+    ChallengeStatus,
+    ChallengeTargetKind,
+    SuggestionTag,
+)
 from app.modules.reviews.domain.decisions import Decision
 from app.modules.reviews.domain.replies import REPLY_EVIDENCE_MAX, REPLY_MAX
 from app.modules.reviews.domain.requests import (
@@ -82,7 +87,7 @@ REASON_BACKSTOP = 4000
 class ReviewDecisionCreate(BaseModel):
     """Record a Review Decision. Every decision but `approved` needs a reason (1 to 1,000
     characters, trimmed); `escalated_to` (the user who then holds the request) is required
-    for, and only for, `escalated`. `challenged` arrives with Story 9.5."""
+    for, and only for, `escalated`. `challenged` is recorded by raising a Challenge."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -354,3 +359,138 @@ class ReviewPanel(BaseModel):
         "Baseline, its blockers to Baseline, whether the caller may set it); null when the "
         "version is unknown.",
     )
+
+
+# --- Challenges (Story 9.5) -----------------------------------------------------------------
+
+
+class ChallengeSuggestionView(BaseModel):
+    """One Assessment the platform suggests rerunning: the `agent` (`label` in words, e.g.
+    "Engineering Agent"), `why` it is affected ("Holds the challenged Finding", "Cites R12",
+    "Shares the ERP integration type") and its `tag`: `suggested` (pre-ticked) or `optional`
+    (unticked)."""
+
+    agent: str
+    label: str
+    why: str
+    tag: SuggestionTag
+    preselected: bool
+
+
+class ChallengeTargetView(BaseModel):
+    """What a Challenge disputes: `kind`, `id`, `version` (an Assessment's, or for a Finding
+    its Assessment's) and a `label` such as "Estimate v3", "Engineering Assessment v2" or
+    "Finding: {title}"."""
+
+    kind: ChallengeTargetKind
+    id: str
+    version: int
+    label: str
+
+
+class ChallengeCreate(BaseModel):
+    """Raise a Challenge of an Estimate Version (the one in context), a current Assessment or
+    one of its Findings. `review_request_id`: the caller's pending Review Request it is
+    raised from (that request becomes `challenged`). `confirmed`: only the Opportunity's
+    owner, who then raises and confirms in one step (at least one suggested agent)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_kind: ChallengeTargetKind
+    target_id: UUID
+    reason: StrictStr = Field(
+        max_length=REASON_BACKSTOP,
+        description=f"What looks wrong and why. Trimmed, 1 to {REASON_MAX:,} characters.",
+    )
+    review_request_id: UUID | None = None
+    confirmed: list[StrictStr] | None = Field(
+        default=None,
+        max_length=3,
+        description="Owner only: the agents whose Assessments rerun now.",
+    )
+
+
+class ChallengeConfirm(BaseModel):
+    """Confirm the reassessment of these suggested agents' Assessments (at least one)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed: list[StrictStr] = Field(min_length=1, max_length=3)
+
+
+class ChallengeDecline(BaseModel):
+    """Decline a Challenge, with a reason the challenger sees."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: StrictStr = Field(
+        max_length=REASON_BACKSTOP, description=f"Why. Trimmed, 1 to {REASON_MAX:,} characters."
+    )
+
+
+class ChallengeView(BaseModel):
+    """A Challenge (Story 9.5).
+
+    - `title`: the dialog's, e.g. "Challenge Estimate v3"; `target`; `estimate_version_id`
+      and `estimate_version`: the version in context; `superseded_by` (and
+      `superseded_by_id`): the version that replaced it, null unless superseded (the dialog's
+      **Raise on v4**).
+    - `challenger`, `reason`, `review_request_id` (raised from a review), `status` with its
+      `status_label`; `suggested` (stored at raise), `confirmed` (null until confirmed),
+      `always_rerun` (never toggleable), `decline_reason`.
+    - `workflow_run_id` and `run_number` (its position among the Opportunity's runs, for
+      "Reassessment started (run 4)") once confirmed.
+    - `row_version` is also the `ETag` (`If-Match` of a confirm or decline);
+      `can_confirm` / `can_decline`: whether the caller may now. The UI only uses them to
+      show or hide controls; the API decides."""
+
+    id: str
+    title: str
+    target: ChallengeTargetView
+    estimate_version_id: str
+    estimate_version: int
+    superseded_by: int | None
+    superseded_by_id: str | None
+    review_request_id: str | None
+    challenger: ReviewPerson
+    reason: str
+    status: ChallengeStatus
+    status_label: str
+    suggested: list[ChallengeSuggestionView]
+    confirmed: list[str] | None
+    always_rerun: list[str]
+    decline_reason: str | None
+    workflow_run_id: str | None
+    run_number: int | None
+    row_version: int
+    created_at: datetime
+    updated_at: datetime
+    can_confirm: bool
+    can_decline: bool
+
+
+class ChallengeSuggestions(BaseModel):
+    """What the Challenge dialog shows before anything is raised: its `title`, the `target`,
+    the version in context (`estimate_version`, with `superseded_by` when replaced), the
+    `suggested` Assessments, `always_rerun`, and the caller's flags: `can_raise` (the owner,
+    or a reviewer with a pending request) and `can_confirm` (the owner: the cards are
+    editable and raising also confirms)."""
+
+    title: str
+    target: ChallengeTargetView
+    estimate_version: int
+    superseded_by: int | None
+    suggested: list[ChallengeSuggestionView]
+    always_rerun: list[str]
+    can_raise: bool
+    can_confirm: bool
+
+
+class ChallengeState(BaseModel):
+    """`reviews.public.challenge_status` (an Inbox item's subject): a Challenge's status,
+    challenger and run now."""
+
+    id: UUID
+    status: ChallengeStatus
+    challenger_id: UUID
+    workflow_run_id: UUID | None

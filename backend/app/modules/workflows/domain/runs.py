@@ -58,6 +58,14 @@ def task_agent_rank(agent: str) -> int:
         return len(TASK_AGENTS)
 
 
+class RunType(StrEnum):
+    """What started a run (Story 9.5): an assessment of every agent, or a Challenge's
+    reassessment of the Assessments its owner confirmed (then the Critic)."""
+
+    ASSESSMENT = "assessment"
+    CHALLENGE = "challenge"
+
+
 class AssessmentRunStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"

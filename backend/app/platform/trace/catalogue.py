@@ -1476,6 +1476,51 @@ class ReviewsReviewRequestSuperseded(TracePayload):
 
 
 @register
+class ReviewsChallengeRaised(TracePayload):
+    """Someone raised a Challenge (Story 9.5) of an Estimate Version, an Assessment or one of
+    its Findings at `target_version` (a Finding's: its Assessment's), with their `reason`,
+    in the context of `estimate_version_id`, from `review_request_id` when raised from a
+    review (which is then `challenged`). `suggested`: the agents of the Assessments the
+    platform proposed rerunning. Actor: the challenger."""
+
+    event_type: ClassVar[str] = "reviews.challenge.raised"
+
+    challenge_id: str
+    target_kind: Literal["estimate_version", "assessment", "finding"]
+    target_id: str
+    target_version: int
+    estimate_version_id: str
+    review_request_id: str | None = None
+    reason: str
+    suggested: list[str]
+
+
+@register
+class ReviewsChallengeConfirmed(TracePayload):
+    """The Opportunity's owner confirmed a Challenge's reassessment (Story 9.5): the
+    `confirmed` agents' Assessments rerun, then the Critic, in the `challenge` Workflow Run
+    `workflow_run_id`. Actor: the owner."""
+
+    event_type: ClassVar[str] = "reviews.challenge.confirmed"
+
+    challenge_id: str
+    confirmed: list[str]
+    workflow_run_id: str
+
+
+@register
+class ReviewsChallengeDeclined(TracePayload):
+    """The Opportunity's owner declined a Challenge with a `reason` (Story 9.5); a review it
+    challenged is `pending` again. Actor: the owner."""
+
+    event_type: ClassVar[str] = "reviews.challenge.declined"
+
+    challenge_id: str
+    reason: str
+    review_request_id: str | None = None
+
+
+@register
 class ReviewsReviewRequestReminded(TracePayload):
     """The daily reminder job gave the reviewer of a pending Review Request an Inbox
     reminder (Story 9.2): `interval_number` N, the request being at least N reminder

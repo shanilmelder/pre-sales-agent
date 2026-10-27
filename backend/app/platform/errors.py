@@ -333,6 +333,30 @@ class EstimateDraftExistsError(ConflictError):
     title = "Draft Estimate exists"
 
 
+class ChallengeNeedsEstimateError(ConflictError):
+    """A Challenge was raised on an Opportunity with no Estimate Version to put it in
+    context of (Story 9.5)."""
+
+    code = "challenge_needs_estimate"
+    title = "Challenge needs an Estimate"
+
+
+class ChallengeVersionSupersededError(ConflictError):
+    """A Challenge was raised or confirmed while the Estimate Version in its context is
+    superseded (Story 9.5); nothing was written."""
+
+    code = "challenge_version_superseded"
+    title = "Challenge version superseded"
+
+
+class ChallengeNotAwaitingConfirmationError(ConflictError):
+    """A Challenge that is no longer `awaiting_confirmation` was confirmed or declined
+    (Story 9.5)."""
+
+    code = "challenge_not_awaiting_confirmation"
+    title = "Challenge not awaiting confirmation"
+
+
 class NoDraftEstimateError(ConflictError):
     """A Gap was converted to a Risk while the Opportunity has no draft Estimate Version
     (Story 8.5)."""

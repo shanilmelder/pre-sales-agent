@@ -45,11 +45,16 @@ class WorkflowRunRow(Base):
     sets, and `waiting_for_human` (Story 5.5), which the job sets when the run pauses on an
     open decision. `queued_at`: when it was last queued (a task retry or a resolved decision
     queues it again); staleness counts from there. `plan_version`: its current plan (1, then
-    one more per Re-plan; every version is in `workflows_plan_versions`)."""
+    one more per Re-plan; every version is in `workflows_plan_versions`). Story 9.5:
+    `run_type` `assessment` (every agent) or `challenge` (the Assessments a Challenge's owner
+    confirmed, then the Critic), `trigger_ref` the Challenge behind it, `idempotency_key`
+    (unique) the key that started it."""
 
     __tablename__ = "workflows_runs"
     __table_args__ = (
         Index(None, "opportunity_id", "created_at"),
+        Index("uq_workflows_runs_idempotency_key", "idempotency_key", unique=True),
+        CheckConstraint("run_type IN ('assessment', 'challenge')", name="run_type"),
         CheckConstraint(
             "status IN ('queued', 'running', 'succeeded', 'partially_failed', 'failed', "
             "'cancelled', 'waiting_for_human')",
@@ -65,6 +70,9 @@ class WorkflowRunRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    run_type: Mapped[str] = mapped_column(Text, server_default=text("'assessment'"))
+    trigger_ref: Mapped[UUID | None] = mapped_column(Uuid)
+    idempotency_key: Mapped[str | None] = mapped_column(Text)
 
 
 class WorkflowTaskRow(Base):

@@ -36,6 +36,38 @@ function item(overrides: Partial<InboxItem> = {}): InboxItem {
 }
 
 describe("inbox helpers", () => {
+  it("Story 9.5: labels Challenge items, says what they ask and styles their status", () => {
+    expect(kindLabel("challenge_raised")).toBe("Challenge");
+    expect(kindLabel("challenge_declined")).toBe("Challenge");
+    expect(itemBody(item({ kind: "challenge_raised", sender: "Ana" }))).toBe(
+      "Ana challenged this on [OPPORTUNITY]. Confirm which Assessments rerun, or decline.",
+    );
+    expect(itemBody(item({ kind: "challenge_declined" }))).toBe(
+      "Your Challenge on [OPPORTUNITY] was declined. The reason is below.",
+    );
+    const declined = closedStatus(
+      item({
+        kind: "challenge_declined",
+        subject_type: "reviews.challenge",
+        subject_status: "declined",
+        subject_status_label: "Declined",
+        subject_open: false,
+        href: null,
+      }),
+    );
+    expect(declined?.label).toBe("Declined");
+    expect(declined?.tone).toBe("neutral");
+    const reassessing = closedStatus(
+      item({
+        subject_type: "reviews.challenge",
+        subject_status: "reassessing",
+        subject_status_label: "Reassessing",
+        subject_open: false,
+      }),
+    );
+    expect(reassessing?.tone).toBe("agent");
+  });
+
   it("labels review kinds Review and the rest Update", () => {
     expect(kindLabel("review_requested")).toBe("Review");
     expect(kindLabel("review_reminder")).toBe("Review");

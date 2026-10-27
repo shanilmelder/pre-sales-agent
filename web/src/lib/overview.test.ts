@@ -861,6 +861,7 @@ describe("a run waiting for a person (Story 5.5)", () => {
     assessments: [],
     can_start: true,
     can_resolve: true,
+    can_challenge: false,
   } satisfies AssessmentsView;
 
   it("is a Needs you row ranked with escalated Conflicts, linking to the Assessments tab", () => {

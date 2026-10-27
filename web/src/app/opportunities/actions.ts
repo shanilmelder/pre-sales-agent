@@ -52,6 +52,9 @@ import { openGapCount, type ClarificationQuestion, type Detection, type Gap } fr
 import type { OpportunityImport } from "@/lib/opportunity-import";
 import type { RedTeamRun } from "@/lib/red-team";
 import type {
+  ChallengeSuggestions,
+  ChallengeTargetKind,
+  ChallengeView,
   CreatedReviewRequests,
   CreatedVersion,
   Decision,
@@ -3751,6 +3754,242 @@ export async function setEstimateBaseline(input: unknown): Promise<SetBaselineRe
     }
   } catch (thrown) {
     console.error(`set baseline failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+// --- Challenges (Story 9.5) -------------------------------------------------------------------
+
+const CHALLENGE_TARGET_KINDS: readonly ChallengeTargetKind[] = [
+  "estimate_version",
+  "assessment",
+  "finding",
+];
+const CHALLENGE_AGENTS: readonly string[] = ["engineering_agent", "pm_agent", "security_agent"];
+const CHALLENGE_UNAVAILABLE = "This can't be challenged.";
+
+function isChallengeTargetKind(value: unknown): value is ChallengeTargetKind {
+  return (
+    typeof value === "string" && (CHALLENGE_TARGET_KINDS as readonly string[]).includes(value)
+  );
+}
+
+function isAgentList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= CHALLENGE_AGENTS.length &&
+    value.every((a) => typeof a === "string" && CHALLENGE_AGENTS.includes(a))
+  );
+}
+
+export type ChallengeLoad<T> =
+  | { kind: "ok"; value: T }
+  /** 409 or 422: the API's sentence (e.g. no Estimate Version yet). */
+  | { kind: "invalid"; detail: string }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+export type ChallengeResult =
+  | { kind: "ok"; value: ChallengeView }
+  /** 412: the Challenge changed first. */
+  | { kind: "stale" }
+  /** 409 or 422: the API's sentence; `code` tells a superseded version apart. */
+  | { kind: "invalid"; detail: string; code: string | null }
+  /** 403: the API's sentence when it gave one. */
+  | { kind: "forbidden"; detail: string | null }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function challengeFailure(label: string, status: number, error: unknown): ChallengeResult {
+  const { code, detail } = problem(error);
+  switch (status) {
+    case 409:
+    case 422:
+      return {
+        kind: "invalid",
+        detail: detail ?? "The Challenge was not accepted.",
+        code: code ?? null,
+      };
+    case 412:
+      return { kind: "stale" };
+    case 403:
+      return { kind: "forbidden", detail: detail ?? null };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${status} code=${String(code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `GET …/challenges/suggestions`: what the Challenge dialog shows before raising. */
+export async function loadChallengeSuggestions(
+  input: unknown,
+): Promise<ChallengeLoad<ChallengeSuggestions>> {
+  const { opportunityId, targetKind, targetId } = (input ?? {}) as Record<string, unknown>;
+  if (!isId(opportunityId) || !isChallengeTargetKind(targetKind) || !isId(targetId)) {
+    return { kind: "error" };
+  }
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/challenges/suggestions",
+      {
+        params: {
+          path: { opportunity_id: opportunityId },
+          query: { target_kind: targetKind, target_id: targetId },
+        },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    if (response.status === 404) return { kind: "not-found" };
+    if (response.status === 409 || response.status === 422) {
+      return { kind: "invalid", detail: problem(error).detail ?? CHALLENGE_UNAVAILABLE };
+    }
+    console.error(`GET challenge suggestions failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET challenge suggestions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** `GET …/challenges/{cid}`: one Challenge with what the caller may do. */
+export async function loadChallenge(input: unknown): Promise<ChallengeLoad<ChallengeView>> {
+  const { opportunityId, challengeId } = (input ?? {}) as Record<string, unknown>;
+  if (!isId(opportunityId) || !isId(challengeId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}",
+      { params: { path: { opportunity_id: opportunityId, challenge_id: challengeId } } },
+    );
+    if (data) return { kind: "ok", value: data };
+    if (response.status === 404) return { kind: "not-found" };
+    console.error(`GET challenge failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(`GET challenge failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type RaiseChallengeInput = {
+  opportunityId: string;
+  targetKind: ChallengeTargetKind;
+  targetId: string;
+  reason: string;
+  /** The caller's pending Review Request it is raised from. */
+  reviewRequestId?: string;
+  /** The owner only: raise and confirm these agents' reruns at once. */
+  confirmed?: string[];
+};
+
+function isRaiseChallengeInput(input: unknown): input is RaiseChallengeInput {
+  if (typeof input !== "object" || input === null) return false;
+  const r = input as Record<string, unknown>;
+  return (
+    isId(r.opportunityId) &&
+    isChallengeTargetKind(r.targetKind) &&
+    isId(r.targetId) &&
+    typeof r.reason === "string" &&
+    (r.reviewRequestId === undefined || isId(r.reviewRequestId)) &&
+    (r.confirmed === undefined || isAgentList(r.confirmed))
+  );
+}
+
+/** `POST …/challenges`. Logs ids and statuses only, never the reason. */
+export async function raiseChallenge(input: unknown): Promise<ChallengeResult> {
+  if (!isRaiseChallengeInput(input)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/challenges",
+      {
+        params: { path: { opportunity_id: input.opportunityId } },
+        body: {
+          target_kind: input.targetKind,
+          target_id: input.targetId,
+          reason: input.reason.trim(),
+          ...(input.reviewRequestId ? { review_request_id: input.reviewRequestId } : {}),
+          ...(input.confirmed ? { confirmed: input.confirmed } : {}),
+        },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    return challengeFailure("raise challenge", response.status, error);
+  } catch (thrown) {
+    console.error(`raise challenge failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST …/challenges/{cid}/confirm` with `If-Match` the Challenge's ETag. */
+export async function confirmChallenge(input: unknown): Promise<ChallengeResult> {
+  const { opportunityId, challengeId, rowVersion, confirmed } = (input ?? {}) as Record<
+    string,
+    unknown
+  >;
+  if (
+    !isId(opportunityId) ||
+    !isId(challengeId) ||
+    !isRowVersion(rowVersion) ||
+    !isAgentList(confirmed)
+  ) {
+    return { kind: "error" };
+  }
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}/confirm",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, challenge_id: challengeId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { confirmed },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    return challengeFailure("confirm challenge", response.status, error);
+  } catch (thrown) {
+    console.error(`confirm challenge failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST …/challenges/{cid}/decline` with `If-Match` and a reason. */
+export async function declineChallenge(input: unknown): Promise<ChallengeResult> {
+  const { opportunityId, challengeId, rowVersion, reason } = (input ?? {}) as Record<
+    string,
+    unknown
+  >;
+  if (
+    !isId(opportunityId) ||
+    !isId(challengeId) ||
+    !isRowVersion(rowVersion) ||
+    typeof reason !== "string"
+  ) {
+    return { kind: "error" };
+  }
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}/decline",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, challenge_id: challengeId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: { reason: reason.trim() },
+      },
+    );
+    if (data) return { kind: "ok", value: data };
+    return challengeFailure("decline challenge", response.status, error);
+  } catch (thrown) {
+    console.error(`decline challenge failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

@@ -6,8 +6,8 @@ The Opportunity's current Baseline is its latest row (index on `(opportunity_id,
 DESC)`). `psa_app` gets SELECT and INSERT only: a Baseline is never changed or removed, only
 replaced by a newer row.
 
-Revision ID: 0051_estimates_baselines
-Revises: 0050_review_outcomes
+Revision ID: 0052_estimates_baselines
+Revises: 0051_reviews_challenges
 Create Date: 2026-10-26
 """
 
@@ -16,8 +16,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0051_estimates_baselines"
-down_revision: str | None = "0050_review_outcomes"
+revision: str = "0052_estimates_baselines"
+down_revision: str | None = "0051_reviews_challenges"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

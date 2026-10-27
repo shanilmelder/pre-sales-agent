@@ -173,7 +173,7 @@ context:
 
 **Execution:**
 - [x] `backend/app/platform/locks.py` + the call sites listed in the Code Map -- shared lock (AD-26).
-- [x] `backend/migrations/versions/20261026_0051_estimates_baselines.py`, estimates `adapters/{models,repository}.py` -- table, grants, current and previous Baseline reads, supersede skip.
+- [x] `backend/migrations/versions/20261026_0052_estimates_baselines.py`, estimates `adapters/{models,repository}.py` -- table, grants, current and previous Baseline reads, supersede skip.
 - [x] `backend/app/modules/estimates/application/{baseline.py,blockers.py,estimates.py,public.py}`, `api/routes.py` -- command, gate kinds, `baseline` in view, endpoints.
 - [x] `backend/app/modules/reviews/application/{requests.py,public.py}` -- `version_approvals`.
 - [x] `backend/app/modules/opportunities/{domain/opportunity.py,adapters/repository.py}` and the list summary -- `baselined`, `is_baseline`.

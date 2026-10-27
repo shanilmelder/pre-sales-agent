@@ -11,6 +11,9 @@ from app.platform.errors import (
     AuthorCannotReviewError,
     BaselineBlockedError,
     BaselineNotNewerError,
+    ChallengeNeedsEstimateError,
+    ChallengeNotAwaitingConfirmationError,
+    ChallengeVersionSupersededError,
     EstimateDraftExistsError,
     EstimateVersionNotDecidedError,
     EstimateVersionNotSubmittedError,
@@ -65,6 +68,14 @@ def _app_raising(exc: Exception) -> FastAPI:
         (EstimateDraftExistsError("x"), 409, "estimate_draft_exists"),
         # Story 9.7
         (BaselineNotNewerError("x"), 409, "baseline_not_newer"),
+        # Story 9.5
+        (ChallengeNeedsEstimateError("x"), 409, "challenge_needs_estimate"),
+        (ChallengeVersionSupersededError("x"), 409, "challenge_version_superseded"),
+        (
+            ChallengeNotAwaitingConfirmationError("x"),
+            409,
+            "challenge_not_awaiting_confirmation",
+        ),
     ],
 )
 def test_errors_map_to_problem_json(exc: Exception, status: int, code: str) -> None:

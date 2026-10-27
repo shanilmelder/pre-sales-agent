@@ -36,6 +36,7 @@ from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
 
 REVIEW_SUBJECT = "reviews.review_request"
+CHALLENGE_SUBJECT = "reviews.challenge"
 DECISION_SUBJECT = "workflows.decision"
 CONFLICT_SUBJECT = "conflicts.conflict"
 NOT_FOUND = "No Inbox item with this id."
@@ -111,6 +112,25 @@ async def _subject(uow: UnitOfWork, record: NotificationRecord) -> _Subject:
             is_open,
             href if is_open else None,
             state.requested_by,
+        )
+    if record.subject_type == CHALLENGE_SUBJECT:
+        from app.modules.reviews.application import public as reviews
+
+        challenge = await reviews.challenge_status(uow, record.subject_id)
+        if challenge is None:
+            return _Subject(None, None, False, None)
+        is_open = (
+            challenge.status == reviews.ChallengeStatus.AWAITING_CONFIRMATION
+            and challenge.challenger_id != record.recipient_id
+        )
+        href = _tab(record.opportunity_id, "assessments", f"?challenge={record.subject_id}")
+        sender = challenge.challenger_id if challenge.challenger_id != record.recipient_id else None
+        return _Subject(
+            challenge.status.value,
+            reviews.CHALLENGE_STATUS_LABELS[challenge.status],
+            is_open,
+            href if is_open else None,
+            sender,
         )
     if record.subject_type == DECISION_SUBJECT:
         from app.modules.workflows.application import public as workflows

@@ -1,8 +1,9 @@
-"""The reviews module's tables (Stories 9.1, 9.3 and 9.4). No cross-module foreign keys
+"""The reviews module's tables (Stories 9.1, 9.3, 9.4 and 9.5). No cross-module foreign keys
 (AD-2): `opportunity_id`, `target_id`, `estimate_version_id`, `reviewer_id`, `requested_by`,
-`decided_by`, `escalated_to`, `alternative_version_id` and `replied_by` hold ids owned by other
-modules. Decisions and replies reference their Review Request, and a linked request the one it
-is an alternative to (in-module foreign keys)."""
+`decided_by`, `escalated_to`, `alternative_version_id`, `replied_by`, `assessment_id`,
+`challenger_id` and `workflow_run_id` hold ids owned by other modules. Decisions, replies and
+Challenges reference their Review Request, and a linked request the one it is an alternative
+to (in-module foreign keys)."""
 
 from datetime import datetime
 from typing import Any
@@ -144,3 +145,66 @@ class ReviewReplyRow(Base):
     alternative_version_id: Mapped[UUID | None] = mapped_column(Uuid)
     replied_by: Mapped[UUID] = mapped_column(Uuid)
     replied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ChallengeRow(Base):
+    """A Challenge (Story 9.5): someone disputes an Estimate Version, an Assessment or one of
+    its Findings (`target_*`, at `target_version`: the Assessment's version for a Finding)
+    with a reason, while `estimate_version_id` is the version in context. `suggested`: the
+    Assessments the platform proposed rerunning, stored at raise (`[{agent, why, tag}]`);
+    `confirmed`: the agents the owner confirmed. Only its status, `confirmed`,
+    `decline_reason` and `workflow_run_id` ever change, bumping `row_version`. Never
+    deleted."""
+
+    __tablename__ = "reviews_challenges"
+    __table_args__ = (
+        Index(None, "opportunity_id"),
+        Index(None, "review_request_id"),
+        CheckConstraint(
+            "target_kind IN ('estimate_version', 'assessment', 'finding')", name="target_kind"
+        ),
+        CheckConstraint(
+            "status IN ('awaiting_confirmation', 'reassessing', 'completed', 'declined', 'failed')",
+            name="status",
+        ),
+        CheckConstraint(
+            "char_length(btrim(reason)) >= 1 AND char_length(reason) <= 1000", name="reason"
+        ),
+        CheckConstraint(
+            "(status = 'declined') = (decline_reason IS NOT NULL)", name="declined_has_reason"
+        ),
+        CheckConstraint(
+            "decline_reason IS NULL OR (char_length(btrim(decline_reason)) >= 1 "
+            "AND char_length(decline_reason) <= 1000)",
+            name="decline_reason",
+        ),
+        CheckConstraint(
+            "status IN ('awaiting_confirmation', 'declined') OR workflow_run_id IS NOT NULL",
+            name="run_when_confirmed",
+        ),
+        CheckConstraint("target_version >= 1", name="target_version"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    opportunity_id: Mapped[UUID] = mapped_column(Uuid)
+    target_kind: Mapped[str] = mapped_column(Text)
+    target_id: Mapped[UUID] = mapped_column(Uuid)
+    target_version: Mapped[int] = mapped_column(Integer)
+    assessment_id: Mapped[UUID | None] = mapped_column(Uuid)
+    estimate_version_id: Mapped[UUID] = mapped_column(Uuid)
+    review_request_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("reviews_review_requests.id", name="fk_reviews_challenges_review_request_id"),
+    )
+    challenger_id: Mapped[UUID] = mapped_column(Uuid)
+    reason: Mapped[str] = mapped_column(Text)
+    suggested: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb")
+    )
+    confirmed: Mapped[list[str] | None] = mapped_column(JSONB)
+    decline_reason: Mapped[str | None] = mapped_column(Text)
+    workflow_run_id: Mapped[UUID | None] = mapped_column(Uuid)
+    status: Mapped[str] = mapped_column(Text)
+    row_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

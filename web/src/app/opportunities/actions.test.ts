@@ -19,9 +19,14 @@ import {
   addSource,
   addTextSource,
   cancelReviewRequest,
+  confirmChallenge,
+  declineChallenge,
   decideReviewRequest,
   replyToReviewRequest,
   createEstimateVersion,
+  loadChallenge,
+  loadChallengeSuggestions,
+  raiseChallenge,
   approveAllClarificationQuestions,
   cancelAssessmentRun,
   resolveRunDecision,
@@ -2935,6 +2940,172 @@ describe("createEstimateVersion (Story 9.4)", () => {
     expect(await createEstimateVersion({ opportunityId: OPP_ID, versionId: "x" })).toEqual({
       kind: "error",
     });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("Challenges (Story 9.5)", () => {
+  const CID = "00000000-0000-7000-8000-0000000000b1";
+  const TARGET = "00000000-0000-7000-8000-0000000000f9";
+  const RID = "00000000-0000-7000-8000-0000000000c1";
+  const VIEW = { id: CID, status: "awaiting_confirmation" };
+
+  beforeEach(() => {
+    api.POST.mockReset();
+    api.GET.mockReset();
+  });
+
+  it("raises with the trimmed reason, the request and, for the owner, confirmed", async () => {
+    api.POST.mockResolvedValue({ data: VIEW, response: status(201) });
+    const input = {
+      opportunityId: OPP_ID,
+      targetKind: "finding",
+      targetId: TARGET,
+      reason: "  Too low  ",
+      reviewRequestId: RID,
+    };
+    expect(await raiseChallenge(input)).toEqual({ kind: "ok", value: VIEW });
+    expect(api.POST).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/challenges", {
+      params: { path: { opportunity_id: OPP_ID } },
+      body: {
+        target_kind: "finding",
+        target_id: TARGET,
+        reason: "Too low",
+        review_request_id: RID,
+      },
+    });
+    await raiseChallenge({
+      opportunityId: OPP_ID,
+      targetKind: "assessment",
+      targetId: TARGET,
+      reason: "x",
+      confirmed: ["engineering_agent"],
+    });
+    expect(api.POST.mock.calls[1]![1].body).toEqual({
+      target_kind: "assessment",
+      target_id: TARGET,
+      reason: "x",
+      confirmed: ["engineering_agent"],
+    });
+  });
+
+  it("confirms and declines with If-Match", async () => {
+    api.POST.mockResolvedValue({ data: VIEW, response: status(200) });
+    await confirmChallenge({
+      opportunityId: OPP_ID,
+      challengeId: CID,
+      rowVersion: 2,
+      confirmed: ["engineering_agent", "pm_agent"],
+    });
+    expect(api.POST).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}/confirm",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID, challenge_id: CID },
+          header: { "If-Match": '"2"' },
+        },
+        body: { confirmed: ["engineering_agent", "pm_agent"] },
+      },
+    );
+    const decline = { opportunityId: OPP_ID, challengeId: CID, rowVersion: 1, reason: " No " };
+    await declineChallenge(decline);
+    expect(api.POST.mock.calls[1]![0]).toBe(
+      "/api/v1/opportunities/{opportunity_id}/challenges/{challenge_id}/decline",
+    );
+    expect(api.POST.mock.calls[1]![1].body).toEqual({ reason: "No" });
+  });
+
+  it.each([
+    [412, { code: "row_version_mismatch" }, { kind: "stale" }],
+    [409, { code: "challenge_version_superseded", detail: "v2 is superseded by v3." }, {
+      kind: "invalid",
+      detail: "v2 is superseded by v3.",
+      code: "challenge_version_superseded",
+    }],
+    [422, { code: "validation_error", detail: "Tick at least one." }, {
+      kind: "invalid",
+      detail: "Tick at least one.",
+      code: "validation_error",
+    }],
+    [403, { code: "forbidden", detail: "Only the owner." }, {
+      kind: "forbidden",
+      detail: "Only the owner.",
+    }],
+    [404, { code: "not_found" }, { kind: "not-found" }],
+    [500, { code: "internal_error" }, { kind: "error" }],
+  ])("maps %i %o", async (code, error, expected) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    expect(
+      await confirmChallenge({
+        opportunityId: OPP_ID,
+        challengeId: CID,
+        rowVersion: 1,
+        confirmed: ["engineering_agent"],
+      }),
+    ).toEqual(expected);
+  });
+
+  it("reads the suggestions and the Challenge", async () => {
+    api.GET.mockResolvedValue({ data: VIEW, response: status(200) });
+    expect(
+      await loadChallengeSuggestions({
+        opportunityId: OPP_ID,
+        targetKind: "finding",
+        targetId: TARGET,
+      }),
+    ).toEqual({ kind: "ok", value: VIEW });
+    expect(api.GET).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/challenges/suggestions",
+      {
+        params: {
+          path: { opportunity_id: OPP_ID },
+          query: { target_kind: "finding", target_id: TARGET },
+        },
+      },
+    );
+    expect(await loadChallenge({ opportunityId: OPP_ID, challengeId: CID })).toEqual({
+      kind: "ok",
+      value: VIEW,
+    });
+    api.GET.mockResolvedValue({
+      error: { code: "challenge_needs_estimate", detail: "No Estimate yet." },
+      response: status(409),
+    });
+    expect(
+      await loadChallengeSuggestions({
+        opportunityId: OPP_ID,
+        targetKind: "finding",
+        targetId: TARGET,
+      }),
+    ).toEqual({ kind: "invalid", detail: "No Estimate yet." });
+  });
+
+  it("refuses bad input without calling the API", async () => {
+    expect(
+      await raiseChallenge({
+        opportunityId: OPP_ID,
+        targetKind: "line",
+        targetId: TARGET,
+        reason: "x",
+      }),
+    ).toEqual({ kind: "error" });
+    expect(
+      await raiseChallenge({
+        opportunityId: OPP_ID,
+        targetKind: "finding",
+        targetId: TARGET,
+        reason: "x",
+        confirmed: ["critic_agent"],
+      }),
+    ).toEqual({ kind: "error" });
+    expect(
+      await confirmChallenge({
+        opportunityId: OPP_ID,
+        challengeId: CID,
+        rowVersion: "1",
+        confirmed: [],
+      }),
+    ).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
   });
 });

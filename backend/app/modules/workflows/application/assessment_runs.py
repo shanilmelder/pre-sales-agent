@@ -72,6 +72,7 @@ from app.modules.workflows.domain.runs import (
     DecisionChoice,
     DecisionKind,
     DecisionStatus,
+    RunType,
     TaskAgent,
     TaskSkipReason,
     chosen_skip,
@@ -270,12 +271,16 @@ async def latest_run_view(uow: UnitOfWork, opportunity_id: UUID) -> AssessmentRu
 async def get_assessments(
     uow: UnitOfWork, actor: Principal, opportunity_id: UUID
 ) -> AssessmentsView:
+    # Imported here: reviews starts challenge runs through this module's public API.
+    from app.modules.reviews.application import public as reviews
+
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     return AssessmentsView(
         run=await latest_run_view(uow, opportunity_id),
         assessments=await assessments.agent_assessments(uow, opportunity_id),
         can_start=identity.can(actor, Action.ASSESSMENT_START, resource),
         can_resolve=identity.can(actor, Action.DECISION_RESOLVE, resource),
+        can_challenge=await reviews.may_raise_challenge(uow, actor, resource),
     )
 
 
@@ -285,20 +290,47 @@ async def _current_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRun:
     return await full_run_view(uow, record)
 
 
-async def start_run(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) -> AssessmentRun:
-    """Queue a new assessment run of the Opportunity: one task per specialist agent."""
+async def start_run(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    *,
+    run_type: RunType = RunType.ASSESSMENT,
+    trigger_ref: UUID | None = None,
+    idempotency_key: str | None = None,
+    agents: Sequence[str] | None = None,
+) -> AssessmentRun:
+    """Queue a new assessment run of the Opportunity: one task per specialist agent.
+
+    Story 9.5: a `challenge` run (`run_type`, started by the Challenge `trigger_ref`) plans
+    only `agents` and the Critic. A run already started under `idempotency_key` is returned
+    as it is, with nothing added; otherwise an active run on the Opportunity is still 409
+    `assessment_in_progress`."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.ASSESSMENT_START, resource)
     await repo.lock_runs(uow, opportunity_id)
+    if idempotency_key is not None:
+        existing = await repo.run_by_key(uow, idempotency_key)
+        if existing is not None and existing.opportunity_id == opportunity_id:
+            return await full_run_view(uow, existing)
     await fail_stale(uow, opportunity_id)
     if await repo.run_active(uow, opportunity_id) is not None:
         raise AssessmentInProgressError(IN_PROGRESS_DETAIL)
-    run_id = await queue_run(uow, opportunity_id, actor.actor)
+    run_id = await queue_run(
+        uow,
+        opportunity_id,
+        actor.actor,
+        run_type=run_type,
+        trigger_ref=trigger_ref,
+        idempotency_key=idempotency_key,
+        agents=agents,
+    )
     _log.info(
         "workflows.run_started",
         extra={
             "opportunity_id": str(opportunity_id),
             "run_id": str(run_id),
+            "run_type": run_type.value,
             "actor_id": actor.actor.id,
         },
     )

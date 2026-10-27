@@ -40,6 +40,8 @@ class RunRecord:
     queued_at: datetime
     finished_at: datetime | None
     plan_version: int = 1
+    run_type: str = "assessment"
+    trigger_ref: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +165,8 @@ def _run(row: WorkflowRunRow) -> RunRecord:
         queued_at=row.queued_at,
         finished_at=row.finished_at,
         plan_version=row.plan_version,
+        run_type=row.run_type,
+        trigger_ref=row.trigger_ref,
     )
 
 
@@ -189,11 +193,21 @@ async def insert_run(
     opportunity_id: UUID,
     tasks: Sequence[NewTask],
     plan_version: int,
+    run_type: str = "assessment",
+    trigger_ref: UUID | None = None,
+    idempotency_key: str | None = None,
 ) -> None:
-    """A `queued` run with its `queued` tasks."""
+    """A `queued` run with its `queued` tasks (Story 9.5: of `run_type`, started by
+    `trigger_ref` under `idempotency_key`)."""
     await uow.session.execute(
         insert(WorkflowRunRow).values(
-            id=run_id, opportunity_id=opportunity_id, status="queued", plan_version=plan_version
+            id=run_id,
+            opportunity_id=opportunity_id,
+            status="queued",
+            plan_version=plan_version,
+            run_type=run_type,
+            trigger_ref=trigger_ref,
+            idempotency_key=idempotency_key,
         )
     )
     await uow.session.execute(
@@ -222,6 +236,18 @@ async def get_run(uow: UnitOfWork, run_id: UUID, *, for_update: bool = False) ->
     if for_update:
         statement = statement.with_for_update()
     row = (await uow.session.execute(statement)).scalar_one_or_none()
+    return None if row is None else _run(row)
+
+
+async def run_by_key(uow: UnitOfWork, idempotency_key: str) -> RunRecord | None:
+    """Story 9.5: the run started under this idempotency key, if any."""
+    row = (
+        await uow.session.execute(
+            select(WorkflowRunRow)
+            .where(WorkflowRunRow.idempotency_key == idempotency_key)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     return None if row is None else _run(row)
 
 
