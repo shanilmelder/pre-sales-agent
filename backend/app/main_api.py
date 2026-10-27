@@ -36,6 +36,7 @@ from app.modules.opportunities.api.routes import router as opportunities_router
 from app.modules.registry.api.routes import denials_router as registry_denials_router
 from app.modules.registry.api.routes import evals_router as registry_evals_router
 from app.modules.registry.api.routes import router as registry_router
+from app.modules.reporting.api.routes import router as reporting_router
 from app.modules.reviews.api.routes import router as reviews_router
 from app.modules.workflows.api.routes import router as workflows_router
 from app.platform.config import Settings, get_settings
@@ -157,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(reviews_router, prefix=API_PREFIX)
     app.include_router(notifications_router, prefix=API_PREFIX)
     app.include_router(actuals_router, prefix=API_PREFIX)
+    app.include_router(reporting_router, prefix=API_PREFIX)
     return app
 
 

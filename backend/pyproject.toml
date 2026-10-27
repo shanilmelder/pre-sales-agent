@@ -529,6 +529,54 @@ forbidden_modules = ["app.modules.actuals"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
+name = "reporting uses identity, opportunities and actuals only through their public APIs, and no other business module (AD-2, Story 10.3)"
+type = "forbidden"
+source_modules = ["app.modules.reporting"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.actuals.domain",
+    "app.modules.actuals.adapters",
+    "app.modules.actuals.api",
+    "app.modules.estimates",
+    "app.modules.intake",
+    "app.modules.knowledge",
+    "app.modules.gaps",
+    "app.modules.assessments",
+    "app.modules.conflicts",
+    "app.modules.workflows",
+    "app.modules.reviews",
+    "app.modules.notifications",
+    "app.modules.registry",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "No business module imports reporting (Story 10.3): it is a derived read model on top"
+type = "forbidden"
+source_modules = [
+    "app.modules.identity",
+    "app.modules.opportunities",
+    "app.modules.intake",
+    "app.modules.gaps",
+    "app.modules.estimates",
+    "app.modules.assessments",
+    "app.modules.conflicts",
+    "app.modules.knowledge",
+    "app.modules.workflows",
+    "app.modules.reviews",
+    "app.modules.notifications",
+    "app.modules.registry",
+    "app.modules.actuals",
+]
+forbidden_modules = ["app.modules.reporting"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
 name = "Orchestration uses business modules only through their public APIs (AD-5, Story 5.2)"
 type = "forbidden"
 source_modules = ["app.orchestration"]

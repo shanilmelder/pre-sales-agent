@@ -245,6 +245,12 @@ def matching(
     return and_(true(), *conditions)
 
 
+async def ids_matching(uow: UnitOfWork, where: ColumnElement[bool]) -> frozenset[UUID]:
+    """The ids of the Opportunities matching `where` (Story 10.3: the readable set)."""
+    rows = await uow.session.execute(select(OpportunityRow.id).where(where))
+    return frozenset(rows.scalars())
+
+
 async def facets(
     uow: UnitOfWork, where: ColumnElement[bool] | None
 ) -> tuple[list[UUID], list[str]]:

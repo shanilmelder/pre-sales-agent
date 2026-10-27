@@ -266,7 +266,8 @@ session and the Auth0 session.
    `knowledge.checklist.create`, `knowledge.checklist.edit`, `knowledge.checklist.publish`,
    `knowledge.checklist.retire`, `registry.agent.register`,
    `registry.agent_config.create`, `registry.agent.set_status`,
-   `assessments.finding.override`, `notifications.notification.read`. Actions that come
+   `assessments.finding.override`, `notifications.notification.read`,
+   `reporting.report.read` (Story 10.3: Reports). Actions that come
    only from being an Opportunity's owner or collaborator need no permission here (e.g.
    `estimates.assumption.accept` and `estimates.estimate_version.submit`, Story 8.6, and
    `reviews.review_request.create` / `reviews.review_request.cancel`, Story 9.1: owner and
@@ -283,9 +284,9 @@ session and the Auth0 session.
 
    | Role | Permissions |
    | --- | --- |
-   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and three `registry.*` permissions |
+   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and three `registry.*` permissions, `reporting.report.read` |
    | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
-   | `head_of_delivery` | `opportunities.opportunity.read`, `assessments.finding.override` |
+   | `head_of_delivery` | `opportunities.opportunity.read`, `assessments.finding.override`, `reporting.report.read` |
    | `engineering_reviewer`, `pm_reviewer` | the four `knowledge.checklist.*` permissions (author Checklists) |
    | `security_reviewer` | the four `knowledge.checklist.*` permissions, `assessments.finding.override` (security Findings only; with no read permission, only on Opportunities where they are a collaborator) |
 
