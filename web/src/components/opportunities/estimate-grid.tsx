@@ -24,6 +24,7 @@ import {
   editEstimateLine,
   editRisk,
   loadEstimate,
+  loadEstimateVersions,
   loadReviewRequests,
   type AssumptionAcceptResult,
   type EstimateItemEditResult,
@@ -46,6 +47,12 @@ import {
   ReviewRequestsCard,
 } from "@/components/opportunities/review-requests-card";
 import { RiskInspector, type RiskFields } from "@/components/opportunities/risk-inspector";
+import {
+  BaselinePill,
+  SetBaseline,
+  type BaselineTarget,
+} from "@/components/opportunities/set-baseline";
+import { VersionSwitcher } from "@/components/opportunities/version-switcher";
 import { RisksCard } from "@/components/opportunities/risks-card";
 import { Card } from "@/components/ui/card";
 import { submittedBanner } from "@/lib/submission";
@@ -69,6 +76,7 @@ import {
   footerRoleLabel,
   fromRunLabel,
   hours,
+  isBaselineVersion,
   isDrafting,
   isSent,
   isProposing,
@@ -102,6 +110,7 @@ import {
   type EstimateView,
   type Risk,
   type Totals,
+  type VersionListItem,
 } from "@/lib/estimates";
 import { useReviewEvents } from "@/lib/opportunity-events";
 import { NO_ACCESS_TO_OPPORTUNITY, UUID_RE } from "@/lib/opportunities";
@@ -131,12 +140,17 @@ const VERSION_TONES: Record<
 };
 
 /** The version pill: "v3 · Draft" (primary tint), "v3 · In review" (gap) or "v2 · Superseded"
- * (neutral). */
+ * (neutral). Story 9.7: the Baseline version shows the Baseline marker ("v3 · Baseline", with
+ * the anchor) instead. */
 export function VersionPill({
   version,
+  isBaseline = false,
 }: {
   version: Pick<EstimateVersion, "status" | "version">;
+  isBaseline?: boolean;
 }) {
+  if (isBaseline)
+    return <BaselinePill label={`v${version.version} · Baseline`} className="shrink-0" />;
   return (
     <Pill
       tone={VERSION_TONES[version.status] ?? "neutral"}
@@ -471,6 +485,9 @@ export function EstimateHeader({
   stalled = false,
   actions,
   pillActions,
+  isBaseline = false,
+  switcher,
+  baselineAction,
 }: {
   version: EstimateVersion | null;
   /** An assessment run is queued or running. */
@@ -484,6 +501,12 @@ export function EstimateHeader({
   actions?: ReactNode;
   /** Story 9.4: next to the version pill (**New version** and the reviewer's reason). */
   pillActions?: ReactNode;
+  /** Story 9.7: the version is the Baseline (its pill is the Baseline marker). */
+  isBaseline?: boolean;
+  /** Story 9.7: the version switcher, in place of the version pill. */
+  switcher?: ReactNode;
+  /** Story 9.7: **Set Baseline**, right after Export. */
+  baselineAction?: ReactNode;
 }) {
   const waiting = !version && assessmentRunning;
   const rebuilding = version !== null && assessmentRunning;
@@ -493,11 +516,12 @@ export function EstimateHeader({
     <div className="flex flex-col items-stretch gap-1.5">
       {version ? (
         <div className="flex flex-wrap items-center gap-3" data-estimate-toolbar="">
-          <VersionPill version={version} />
+          {switcher ?? <VersionPill version={version} isBaseline={isBaseline} />}
           {pillActions}
           {fromRun ? <p className="text-meta text-muted-foreground">{fromRun}</p> : null}
           <span className="flex-1" aria-hidden="true" />
           {canExport && opportunityId ? <EstimateExport opportunityId={opportunityId} /> : null}
+          {baselineAction}
           {actions}
         </div>
       ) : null}
@@ -531,10 +555,16 @@ export function EstimateHeader({
 
 /** The Version lifecycle card: the mockup's Draft → In review → Approved → Baseline stepper
  * (done steps green with a check, the current one primary-tinted with a primary ring and a
- * 600-weight label, the rest grey), a note on what the version is, and the note on edits a
- * new version could not carry. */
-export function VersionLifecycle({ version }: { version: EstimateVersion }) {
-  const steps = lifecycleSteps(version.status);
+ * 600-weight label, the rest grey; Story 9.7: every step done for the Baseline), a note on
+ * what the version is, and the note on edits a new version could not carry. */
+export function VersionLifecycle({
+  version,
+  isBaseline = false,
+}: {
+  version: EstimateVersion;
+  isBaseline?: boolean;
+}) {
+  const steps = lifecycleSteps(version.status, isBaseline);
   return (
     <Card className="gap-3 px-5 py-4" data-lifecycle="">
       <h3 className="text-muted-foreground uppercase">
@@ -594,7 +624,7 @@ export function VersionLifecycle({ version }: { version: EstimateVersion }) {
           );
         })}
       </ol>
-      <p className="text-meta text-muted-foreground">{versionNote(version)}</p>
+      <p className="text-meta text-muted-foreground">{versionNote(version, isBaseline)}</p>
       {version.uncarried_edit_count > 0 ? (
         <p className="flex items-center gap-1.5 text-label text-foreground" data-uncarried="">
           <CircleAlertIcon aria-hidden="true" className="size-3 shrink-0 text-gap" />
@@ -643,11 +673,14 @@ export function EstimateSection({
   opportunityId,
   initial,
   initialReviews = null,
+  initialVersions = null,
 }: {
   opportunityId: string;
   initial: EstimateView;
   /** Story 9.1: the current version's Review Requests (null: not read). */
   initialReviews?: ReviewRequestsView | null;
+  /** Story 9.7: every Estimate Version for the switcher (null: not read; no switcher). */
+  initialVersions?: VersionListItem[] | null;
 }) {
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
@@ -658,6 +691,12 @@ export function EstimateSection({
   if (initialReviews !== reviewsFrom) {
     setReviewsFrom(initialReviews);
     setReviews(initialReviews);
+  }
+  const [versions, setVersions] = useState<VersionListItem[] | null>(initialVersions);
+  const [versionsFrom, setVersionsFrom] = useState(initialVersions);
+  if (initialVersions !== versionsFrom) {
+    setVersionsFrom(initialVersions);
+    setVersions(initialVersions);
   }
   const [selection, setSelection] = useState<Selection | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -678,6 +717,8 @@ export function EstimateSection({
   const mutation = useRef(0);
   const draftingSince = useRef<number | null>(null);
   const [visible, setVisible] = useState(true);
+  /** Story 9.7: an earlier version chosen with `?version=n` (read only); reads keep it. */
+  const pinned = view.is_current === false ? (view.version?.version ?? null) : null;
   const drafting = isDrafting(view.draft);
   const proposing = isProposing(view.version);
   const building = view.assessment_running;
@@ -840,7 +881,7 @@ export function EstimateSection({
     const timer = setTimeout(async () => {
       const startedAt = mutation.current;
       try {
-        const result = await loadEstimate(opportunityId);
+        const result = await loadEstimate(opportunityId, pinned);
         if (!cancelled && result.kind === "ok" && mutation.current === startedAt) {
           const before = viewRef.current;
           setView(result.estimate);
@@ -865,7 +906,7 @@ export function EstimateSection({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [working, visible, opportunityId, pollTick, announce]);
+  }, [working, visible, opportunityId, pollTick, announce, pinned]);
 
   /** Story 8.2: save a line's change with its reason (from the inspector's "Edit line" form);
    * the grid re-renders from the server's Estimate. */
@@ -1001,7 +1042,7 @@ export function EstimateSection({
     }
     if (result.kind === "ok") {
       try {
-        const loaded = await loadEstimate(opportunityId);
+        const loaded = await loadEstimate(opportunityId, pinned);
         if (loaded.kind === "ok") {
           mutation.current += 1;
           setView(loaded.estimate);
@@ -1023,24 +1064,27 @@ export function EstimateSection({
    * and on every Review Request frame of the event stream). */
   const reloadReviews = useCallback(async () => {
     try {
-      const [estimate, requests] = await Promise.all([
-        loadEstimate(opportunityId),
+      const [estimate, requests, listed] = await Promise.all([
+        loadEstimate(opportunityId, pinned),
         loadReviewRequests(opportunityId),
+        // Story 9.7: the switcher's versions change with a new version or a Baseline.
+        versionsFrom === null ? null : loadEstimateVersions(opportunityId),
       ]);
       if (estimate.kind === "ok") {
         mutation.current += 1;
         setView(estimate.estimate);
       }
       if (requests.kind === "ok") setReviews(requests.reviews);
+      if (listed?.kind === "ok") setVersions(listed.versions);
     } catch {
       // The tab stays as it is; the next frame reads them again.
     }
-  }, [opportunityId]);
+  }, [opportunityId, pinned, versionsFrom]);
   useReviewEvents(opportunityId, () => void reloadReviews(), initialReviews !== null);
 
   async function reloadEstimate() {
     try {
-      const loaded = await loadEstimate(opportunityId);
+      const loaded = await loadEstimate(opportunityId, pinned);
       if (loaded.kind === "ok") {
         mutation.current += 1;
         setView(loaded.estimate);
@@ -1053,6 +1097,20 @@ export function EstimateSection({
 
   const { version } = view;
   const draft = version?.status === "draft";
+  // Story 9.7: the Baseline marker, the fully passed stepper and Set Baseline.
+  const baselined = isBaselineVersion(view, version);
+  const baselineTarget: BaselineTarget | null = version
+    ? {
+        versionId: version.id,
+        version: version.version,
+        status: version.status,
+        rowVersion: version.row_version,
+        isBaseline: baselined,
+        toBaseline: view.blockers.to_baseline,
+        canSet: Boolean(view.can_set_baseline),
+        baselineVersion: view.baseline?.version ?? null,
+      }
+    : null;
   const canEditLines = view.can_edit_lines && draft;
   // Story 8.5: a version that isn't the draft, and sales representatives, see no Accept,
   // Accept all, Edit or Risk edit controls.
@@ -1076,6 +1134,27 @@ export function EstimateSection({
         opportunityId={opportunityId}
         canExport={view.can_export}
         stalled={stalled}
+        isBaseline={baselined}
+        switcher={
+          version && versions && versions.length > 0 ? (
+            <VersionSwitcher
+              opportunityId={opportunityId}
+              versions={versions}
+              selected={version.version}
+            />
+          ) : undefined
+        }
+        baselineAction={
+          baselineTarget ? (
+            <SetBaseline
+              opportunityId={opportunityId}
+              target={baselineTarget}
+              showReason={false}
+              onSet={() => void reloadReviews()}
+              onReload={() => void reloadReviews()}
+            />
+          ) : null
+        }
         pillActions={
           version && view.can_create_version ? (
             <>
@@ -1120,7 +1199,7 @@ export function EstimateSection({
               </span>
             </p>
           ) : null}
-          <VersionLifecycle version={version} />
+          <VersionLifecycle version={version} isBaseline={baselined} />
           {versionReviews && isSent(version.status) ? (
             <ReviewRequestsCard
               opportunityId={opportunityId}

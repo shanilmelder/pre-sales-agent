@@ -63,6 +63,8 @@ function view(kinds: Blocker["kind"][]): SubmissionBlockersView {
       submitted_at: null,
     },
     can_submit: true,
+    is_baseline: false,
+    can_set_baseline: false,
   };
 }
 

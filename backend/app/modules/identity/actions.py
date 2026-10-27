@@ -89,6 +89,10 @@ class Action(StrEnum):
     ESTIMATE_VERSION_CREATE = "estimates.estimate_version.create"
     """Story 9.4: start a new draft Estimate Version from a rejected or approved one (the owner
     and collaborators, except sales representatives)."""
+    ESTIMATE_BASELINE_SET = "estimates.baseline.set"
+    """Story 9.7: set an approved Estimate Version as the Opportunity's Baseline (the owner and
+    collaborators, except sales representatives; people only, never an agent or the system:
+    `HUMAN_ONLY_ACTIONS`)."""
     CHALLENGE_RAISE = "reviews.challenge.raise"
     """Story 9.5: raise a Challenge (the Opportunity's owner, or a reviewer with a pending
     Review Request on it, checked by `reviews`; never a sales representative)."""
@@ -185,6 +189,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.REVIEW_REQUEST_DECIDE: _A,
         Action.REVIEW_REQUEST_REPLY: _S,
         Action.ESTIMATE_VERSION_CREATE: _W,
+        Action.ESTIMATE_BASELINE_SET: _A,
         Action.CHALLENGE_RAISE: _W,
         Action.CHALLENGE_CONFIRM: _A,
         Action.CHALLENGE_DECLINE: _A,

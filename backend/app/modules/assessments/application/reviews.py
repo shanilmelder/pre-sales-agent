@@ -52,6 +52,7 @@ from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
 from app.modules.registry.application import public as registry
 from app.platform.errors import RedTeamReviewInProgressError
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.uow import UnitOfWork
 
@@ -203,6 +204,7 @@ async def start_review(uow: UnitOfWork, actor: Principal, opportunity_id: UUID) 
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.RED_TEAM_START, resource)
     await registry.require_enabled(uow, RED_TEAM_AGENT)  # 409 while it is disabled
+    await opportunity_lock(uow, opportunity_id)  # Story 9.7: the shared lock first
     await repo.lock_opportunity(uow, opportunity_id)
     await fail_stale(uow, opportunity_id)
     busy = await repo.run_in(uow, opportunity_id, tuple(s.value for s in IN_PROGRESS))

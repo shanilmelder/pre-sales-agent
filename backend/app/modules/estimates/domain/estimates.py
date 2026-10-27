@@ -86,7 +86,8 @@ class VersionStatus(StrEnum):
     (back to `submitted` when its last pending request is cancelled). Story 9.3 adds
     `approved` (every non-cancelled Review Request approved) and `rejected` (a reviewer
     rejected it); both stay current until a newer version supersedes them. Only a `draft` is
-    editable."""
+    editable. Story 9.7: the Baseline is not a status but a row in `estimates_baselines`; the
+    Baseline's version stays `approved` and is never superseded while it is the Baseline."""
 
     DRAFT = "draft"
     SUBMITTED = "submitted"

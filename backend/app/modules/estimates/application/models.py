@@ -266,10 +266,18 @@ class CurrentEstimate(BaseModel):
     version: int
     status: VersionStatus
     total_hours: float
+    is_baseline: bool = False
+    """Story 9.7: whether this version is the Opportunity's current Baseline."""
 
 
 BlockerKind = Literal[
-    "gap", "assumption", "conflict", "finding", "uncovered_requirement", "review_request"
+    "gap",
+    "assumption",
+    "conflict",
+    "finding",
+    "uncovered_requirement",
+    "review_request",
+    "no_review_request",
 ]
 
 
@@ -291,7 +299,9 @@ class SubmissionBlockers(BaseModel):
     Conflicts, open critical Findings of the current Critic and Red Team Reviews, and active
     Requirements no line covers, in that order; the version can be submitted when it is
     empty. `to_baseline` (Story 9.1): the version's pending, rejected and challenged Review
-    Requests."""
+    Requests; Story 9.7: for a version past the draft, also `no_review_request` when none was
+    sent and the content checks above (they can reopen after submit). A Baseline needs it
+    empty."""
 
     to_submit: list[Blocker]
     to_baseline: list[Blocker]
@@ -317,6 +327,87 @@ class SubmissionBlockersView(SubmissionBlockers):
 
     version: SubmissionVersion | None
     can_submit: bool
+    is_baseline: bool = Field(
+        default=False,
+        description="Story 9.7: whether that version is the Opportunity's current Baseline.",
+    )
+    baseline_version: int | None = Field(
+        default=None,
+        description="Story 9.7: the current Baseline's version number (null before the "
+        "first): a version at or below it can't replace it.",
+    )
+    can_set_baseline: bool = Field(
+        default=False,
+        description="Story 9.7: whether the caller may set the Baseline (the owner and "
+        "collaborators, not a sales representative). Set Baseline is offered on an approved "
+        "version that isn't the Baseline and whose `to_baseline` is empty; the API re-checks.",
+    )
+
+
+class BaselineRef(BaseModel):
+    """Story 9.7: the Opportunity's current Baseline: its version (id and number), when it was
+    set and by whom."""
+
+    version_id: str
+    version: int = Field(ge=1)
+    set_at: datetime
+    set_by_name: str
+
+
+class BaselineSet(BaseModel):
+    """Story 9.7: the Baseline just set, and the version it replaced (null for the first)."""
+
+    version_id: str
+    version: int = Field(ge=1)
+    set_at: datetime
+    set_by_name: str
+    previous_version_id: str | None
+    previous_version: int | None
+
+
+class BaselineApproval(BaseModel):
+    """Story 9.7: one Review Request behind an Estimate Version, for the Set Baseline dialog:
+    the reviewer who decided (else the reviewer), the review type, the request's status, and
+    when and which decision (null while undecided)."""
+
+    name: str
+    review_type: Literal["engineering", "pm", "security"]
+    status: str
+    decided_at: datetime | None
+    decision_id: str | None
+
+
+class VersionGate(BaseModel):
+    """Story 9.7: what Set Baseline needs to know about one Estimate Version: its id, number,
+    status and `row_version` (the `If-Match`), whether it is the Baseline, its blockers to
+    Baseline (`to_baseline`, the one check) and whether the caller may set the Baseline."""
+
+    version_id: str
+    version: int = Field(ge=1)
+    status: VersionStatus
+    row_version: int = Field(ge=1)
+    is_baseline: bool
+    to_baseline: list[Blocker]
+    can_set_baseline: bool
+    baseline_version: int | None = Field(
+        default=None,
+        description="The current Baseline's version number (null before the first): a version "
+        "at or below it can't replace it.",
+    )
+
+
+class VersionListItem(BaseModel):
+    """Story 9.7: one Estimate Version in the version switcher's full list: its number,
+    status, whether it is the Baseline, who created it and when, and the reason given for a
+    **New version** (null otherwise)."""
+
+    id: str
+    version: int = Field(ge=1)
+    status: VersionStatus
+    is_baseline: bool
+    created_by_name: str | None
+    created_at: datetime
+    reason: str | None
 
 
 class EstimateView(BaseModel):
@@ -360,6 +451,22 @@ class EstimateView(BaseModel):
         default=False,
         description="Story 9.4: whether the caller may start a new draft from the current "
         "version, which is rejected or approved (no draft exists then).",
+    )
+    baseline: BaselineRef | None = Field(
+        default=None,
+        description="Story 9.7: the Opportunity's current Baseline; null before the first.",
+    )
+    is_current: bool = Field(
+        default=True,
+        description="Story 9.7: whether `version` is the current Estimate Version (false when "
+        "an earlier one was asked for with `?version=`: it is then read only).",
+    )
+    can_set_baseline: bool = Field(
+        default=False,
+        description="Story 9.7: whether the caller may set the Baseline (the owner and "
+        "collaborators, not a sales representative). Set Baseline is offered on an approved "
+        "version that isn't the Baseline and whose `blockers.to_baseline` is empty; the API "
+        "re-checks.",
     )
 
 

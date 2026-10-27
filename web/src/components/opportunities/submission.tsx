@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import { useId, useState, type ReactNode } from "react";
 
 import { submitEstimateVersion } from "@/app/opportunities/actions";
+import {
+  BaselinePill,
+  SetBaseline,
+  type BaselineTarget,
+} from "@/components/opportunities/set-baseline";
 import { useSubmission } from "@/components/opportunities/submission-context";
 import { useAnnounce } from "@/components/shell/live-region";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -21,6 +26,8 @@ import {
 } from "@/components/ui/dialog";
 import { Pill } from "@/components/ui/pill";
 import {
+  BASELINE_READY_BODY,
+  BASELINE_READY_TITLE,
   BLOCKERS_CARD_ID,
   BLOCKERS_LOAD_FAILED,
   blockersAnnouncement,
@@ -28,6 +35,7 @@ import {
   blockersPillLabel,
   CANCEL,
   groupBlockers,
+  isBaselineTitle,
   NO_REVIEW_REQUESTS,
   NOTHING_YET,
   READY_BODY,
@@ -197,13 +205,41 @@ export function SubmitEstimate({
   );
 }
 
+/** Story 9.7: the header's and the Overview's view of the current version as Set Baseline
+ * needs it, or null before the first version. */
+export function baselineTargetOf(view: SubmissionBlockersView | null): BaselineTarget | null {
+  const version = view?.version;
+  if (!view || !version) return null;
+  return {
+    versionId: version.id,
+    version: version.version,
+    status: version.status,
+    rowVersion: version.row_version,
+    isBaseline: Boolean(view.is_baseline),
+    toBaseline: view.to_baseline,
+    canSet: Boolean(view.can_set_baseline),
+    baselineVersion: view.baseline_version ?? null,
+  };
+}
+
 /** The workspace header's actions (both header variants): Submit, and while blockers remain a
  * primary **Resolve N blockers** that opens the Overview's Submission blockers card. Nothing
- * for those who may not submit. Reads the shared blockers. */
+ * for those who may not submit. Story 9.7: once the current version is past the draft, **Set
+ * Baseline** instead (the Overview's primary action), for those who may set it. Reads the
+ * shared blockers. */
 export function SubmissionHeaderActions() {
   const submission = useSubmission();
   if (!submission) return null;
   const { view, opportunityId } = submission;
+  const target = baselineTargetOf(view);
+  if (target && target.status !== "draft") {
+    if (target.isBaseline || !target.canSet) return null;
+    return (
+      <div className="ml-auto flex flex-wrap items-center gap-2" data-submission-actions="">
+        <SetBaseline opportunityId={opportunityId} target={target} showReason={false} />
+      </div>
+    );
+  }
   if (!view?.version || view.version.status !== "draft" || !view.can_submit) return null;
   const count = view.to_submit.length;
   return (
@@ -248,7 +284,7 @@ export function SubmissionBlockersCard({
         <h3 id={BLOCKERS_CARD_ID} className="min-w-0 flex-1 scroll-mt-4 text-section">
           Submission blockers
         </h3>
-        {view ? <BlockersPill view={view} /> : null}
+        {view?.is_baseline ? <BaselinePill /> : view ? <BlockersPill view={view} /> : null}
       </div>
       {view === null ? (
         <p className="px-5 py-4">{BLOCKERS_LOAD_FAILED}</p>
@@ -300,9 +336,9 @@ function BlockersBody({
   if (ready && !view.version)
     return <p className="px-5 py-4 text-muted-foreground">{NOTHING_YET}</p>;
   const status = view.version?.status;
-  if (view.version && (status === "submitted" || status === "in_review"))
-    // Story 9.1: a submitted (or in-review) version has passed the submit gate; its open
-    // Review Requests are what stands between it and the Baseline.
+  if (view.version && status !== "draft")
+    // Story 9.1: a submitted (or in-review, approved, rejected) version has passed the submit
+    // gate; Story 9.7: what stands between it and the Baseline is the Baseline gate.
     return (
       <div className="flex flex-col pb-3">
         <div className="flex flex-col items-center gap-1.5 px-4 py-6 text-center" data-submitted="">
@@ -312,7 +348,7 @@ function BlockersBody({
           </p>
           <p className="text-meta text-muted-foreground">{SUBMIT_DESCRIPTION}</p>
         </div>
-        <BaselineGroup blockers={view.to_baseline} />
+        <BaselineGroup blockers={view.to_baseline} view={view} />
       </div>
     );
   return (
@@ -362,11 +398,39 @@ function BlockersBody({
   );
 }
 
-/** The "Blockers to Baseline · N" group (Story 9.1): one mockup row per open Review Request
- * (its title, "Engineering review · Ana · Pending", linking to the request's row on the
- * Estimate tab, and the meta "Sent 24 Oct · message excerpt"), or "No Review Request sent
- * yet". */
-function BaselineGroup({ blockers }: { blockers: Blocker[] }) {
+/** The "Blockers to Baseline · N" group (Story 9.1): one mockup row per blocker (a Review
+ * Request: its title, "Engineering review · Ana · Pending", linking to the request's row on
+ * the Estimate tab, and the meta "Sent 24 Oct · message excerpt"; Story 9.7: also "No Review
+ * Request sent yet" and the Gaps, Conflicts and the like that reopened after submit), or "No
+ * Review Request sent yet". Story 9.7: an approved version with nothing left shows the
+ * mockup's ready state ("0 blockers to Baseline"), and the Baseline itself "Estimate v3 is
+ * the Baseline". */
+function BaselineGroup({
+  blockers,
+  view,
+}: {
+  blockers: Blocker[];
+  view?: SubmissionBlockersView;
+}) {
+  const version = view?.version;
+  if (version && view?.is_baseline)
+    return (
+      <div className="flex flex-col items-center gap-1.5 px-4 py-6 text-center" data-is-baseline="">
+        <CircleCheckIcon aria-hidden="true" className="size-8 text-resolved" />
+        <p className="text-section text-resolved">{isBaselineTitle(version.version)}</p>
+      </div>
+    );
+  if (version?.status === "approved" && blockers.length === 0)
+    return (
+      <div
+        className="flex flex-col items-center gap-1.5 px-4 py-8 text-center"
+        data-baseline-ready=""
+      >
+        <CircleCheckIcon aria-hidden="true" className="size-8 text-resolved" />
+        <p className="text-section text-resolved">{BASELINE_READY_TITLE}</p>
+        <p className="text-meta text-muted-foreground">{BASELINE_READY_BODY}</p>
+      </div>
+    );
   return (
     <section aria-label={`Blockers to Baseline · ${blockers.length}`}>
       <Eyebrow>{`Blockers to Baseline · ${blockers.length}`}</Eyebrow>
@@ -379,7 +443,7 @@ function BaselineGroup({ blockers }: { blockers: Blocker[] }) {
         <ul className="flex flex-col">
           {blockers.map((b) => (
             <li
-              key={b.subject_id}
+              key={`${b.kind}-${b.subject_id}`}
               data-blocker={b.kind}
               className="flex items-start gap-3 border-t border-border px-5 py-3"
             >

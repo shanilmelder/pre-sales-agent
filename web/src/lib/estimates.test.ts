@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   acceptAllLabel,
   acceptedLabel,
+  approvedOn,
+  baselineNote,
+  baselineTag,
+  parseVersionParam,
+  switcherVersions,
+  versionHref,
   assumptionKindLabel,
   carriedLabel,
   COLUMNS,
@@ -31,7 +37,56 @@ import {
   versionNote,
   versionTag,
   type SectionName,
+  type VersionListItem,
 } from "./estimates";
+
+describe("the Baseline and the version switcher (Story 9.7)", () => {
+  const item = (version: number, isBaseline = false): VersionListItem => ({
+    id: `v${version}`,
+    version,
+    status: isBaseline ? "approved" : "superseded",
+    is_baseline: isBaseline,
+    created_by_name: null,
+    created_at: "2026-10-20T09:00:00Z",
+    reason: null,
+  });
+
+  it("every step is passed for the Baseline, with its note", () => {
+    expect(lifecycleSteps("approved", true).map((s) => s.state)).toEqual([
+      "passed",
+      "passed",
+      "passed",
+      "passed",
+    ]);
+    expect(baselineNote(2)).toBe(
+      "v2 is the Baseline. A Baseline is replaced only by a newer approved version, and editing it creates a new version.",
+    );
+    expect(baselineTag(4)).toBe("Baseline v4");
+    expect(approvedOn("2026-10-21T09:00:00Z")).toBe("Approved 21 Oct 2026");
+    expect(approvedOn(null)).toBe("Approved");
+  });
+
+  it("the switcher shows the Baseline then the two newest, without repeating one", () => {
+    expect(switcherVersions([item(2, true), item(5), item(4), item(3)]).map((v) => v.version))
+      .toEqual([2, 5, 4]);
+    expect(switcherVersions([item(5, true), item(5 - 1)]).map((v) => v.version)).toEqual([5, 4]);
+    expect(switcherVersions([item(3), item(2), item(1)]).map((v) => v.version)).toEqual([3, 2]);
+    expect(switcherVersions([])).toEqual([]);
+    // The selected version joins when it isn't one of them.
+    expect(switcherVersions([item(4, true), item(5), item(3), item(1)], 1).map((v) => v.version))
+      .toEqual([4, 5, 1]);
+    expect(switcherVersions([item(4, true), item(5)], 5).map((v) => v.version)).toEqual([4, 5]);
+  });
+
+  it("?version= is a positive whole number", () => {
+    expect(parseVersionParam("3")).toBe(3);
+    expect(parseVersionParam(["12", "4"])).toBe(12);
+    for (const bad of ["0", "-1", "1.5", "x", "", undefined, null, "01"])
+      expect(parseVersionParam(bad)).toBeNull();
+    expect(versionHref("o", 2)).toBe("/opportunities/o/estimate?version=2");
+    expect(versionHref("o", null)).toBe("/opportunities/o/estimate");
+  });
+});
 
 describe("estimate helpers", () => {
   it("lists the template's sections, roles and columns in order", () => {

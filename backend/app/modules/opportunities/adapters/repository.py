@@ -9,13 +9,16 @@ from sqlalchemy import (
     ColumnElement,
     Text,
     and_,
+    case,
     cast,
+    column,
     delete,
     func,
     insert,
     literal,
     or_,
     select,
+    table,
     true,
     update,
 )
@@ -48,12 +51,27 @@ class OpportunityRecord:
     status: OpportunityStatus
 
 
+_BASELINES = table("estimates_baselines", column("opportunity_id"))
+"""Story 9.7: the Baseline table, named in SQL only (no import from `estimates`): its rows
+are only ever tested for existence here."""
+
+
 def status_expression() -> ColumnElement[str]:
     """The derived status (AD-26) as SQL, mirroring `domain.opportunity.derived_status()`.
-    Lists select it and filter on it, so the column and the filter can't disagree. Nothing
-    after intake exists yet, so it is the constant `derived_status()` returns; later stories
-    replace it with the real derivation here and in the domain together."""
-    return cast(literal(derived_status().value, Text), Text)
+    Lists select it and filter on it, so the column and the filter can't disagree. Story 9.7:
+    `baselined` when `EXISTS (SELECT 1 FROM estimates_baselines WHERE opportunity_id = id)`,
+    otherwise `intake`; later stories add the other statuses here and in the domain
+    together."""
+    has_baseline = (
+        select(literal(1))
+        .select_from(_BASELINES)
+        .where(_BASELINES.c.opportunity_id == OpportunityRow.id)
+        .exists()
+    )
+    return case(
+        (has_baseline, cast(literal(derived_status(True).value, Text), Text)),
+        else_=cast(literal(derived_status(False).value, Text), Text),
+    )
 
 
 _COLUMNS = (

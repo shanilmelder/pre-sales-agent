@@ -4,7 +4,7 @@
 collaborators, never a sales representative; the Opportunity's 404 for everyone else), with
 `If-Match` the request's `row_version`, in one Unit of Work:
 
-1. `identity.authorize`, then the Opportunity's Estimate lock (`estimates.lock_for_review`),
+1. `identity.authorize`, then the Opportunity's Estimate lock (`platform.locks.opportunity_lock`),
    then the request `for_update` (404 unless it is the Opportunity's).
 2. The actor: the request's current reviewer, still holding the review type's role (from
    the token), else 403 `reviewer_not_authorized`; the version's author approving is 403
@@ -109,6 +109,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import ReviewsReviewDecisionRecorded
 from app.platform.uow import UnitOfWork
@@ -222,7 +223,7 @@ async def decide(
     """`reviews.decide`: record a Review Decision (module docstring)."""
     resource = await opportunities.readable_resource(uow, actor, opportunity_id)
     identity.authorize(actor, Action.REVIEW_REQUEST_DECIDE, resource)
-    await estimates.lock_for_review(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     record = await repo.get(uow, request_id, for_update=True)
     if record is None or record.opportunity_id != opportunity_id:
         raise NotFoundError(REQUEST_NOT_FOUND)
@@ -504,5 +505,8 @@ async def review_panel(
         else ReviewPerson(
             id=str(escalation.escalated_to),
             name=names.get(escalation.escalated_to, UNKNOWN_USER),
+        ),
+        version_gate=await estimates.version_gate(
+            uow, actor, opportunity_id, record.estimate_version_id
         ),
     )

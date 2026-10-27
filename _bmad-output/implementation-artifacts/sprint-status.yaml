@@ -132,7 +132,7 @@ development_status:
   9-4-author-side-review-outcomes-and-superseded-requests: review
   9-5-raise-a-challenge-and-confirm-reassessment: review
   9-6-challenge-reassessment-run-creates-a-new-estimate-version: backlog
-  9-7-set-the-baseline: backlog
+  9-7-set-the-baseline: review
   9-8-decision-trace-tab: done
   9-9-trace-any-number-to-its-evidence-and-compare-versions: backlog
   9-10-decision-trace-completeness-test: backlog

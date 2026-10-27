@@ -246,7 +246,10 @@ async def _page(
                 estimate=None
                 if (e := current.get(r.id)) is None
                 else EstimateSummary(
-                    version=e.version, status=e.status.value, total_hours=e.total_hours
+                    version=e.version,
+                    status=e.status.value,
+                    total_hours=e.total_hours,
+                    is_baseline=e.is_baseline,
                 ),
             )
             for r in records

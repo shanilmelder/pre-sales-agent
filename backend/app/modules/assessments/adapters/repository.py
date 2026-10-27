@@ -457,15 +457,6 @@ async def target_links_for(uow: UnitOfWork, finding_ids: list[UUID]) -> list[Fin
 # --- blocking Findings and overrides (Story 6.6) --------------------------------------------
 
 
-async def lock_findings(uow: UnitOfWork, opportunity_id: UUID) -> None:
-    """Serialise the Opportunity's Finding overrides and resolutions, and the carry-over of
-    overrides at acceptance, until commit."""
-    await uow.session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"assessments.findings:{opportunity_id}"},
-    )
-
-
 async def get_finding(
     uow: UnitOfWork, finding_id: UUID
 ) -> tuple[FindingRecord, ReviewRecord] | None:

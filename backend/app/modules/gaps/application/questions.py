@@ -102,6 +102,7 @@ from app.platform.errors import (
     UnprocessableError,
 )
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.storage import BlobStore
 from app.platform.trace.catalogue import (
@@ -149,7 +150,7 @@ async def _authorized(
     user_id = actor.user_id
     if user_id is None:  # pragma: no cover - the policy grants these actions to users only
         raise ForbiddenError("Only people can change Clarification Questions.")
-    await repo.lock_opportunity(uow, opportunity_id)
+    await opportunity_lock(uow, opportunity_id)
     return user_id
 
 

@@ -23,6 +23,11 @@ export const BLOCKER_TRACE_EVENTS: readonly string[] = [
   "estimates.estimate_version.review_ended",
   "reviews.review_request.created",
   "reviews.review_request.cancelled",
+  // Story 9.7: decisions move the version towards the Baseline, which ends the gate.
+  "reviews.review_decision.recorded",
+  "estimates.estimate_version.approved",
+  "estimates.estimate_version.rejected",
+  "estimates.baseline.set",
   "estimates.assumption.proposed",
   "estimates.assumption.accepted",
   "estimates.assumption.edited",
@@ -57,6 +62,15 @@ export const SUBMIT_FAILED = "Not submitted: the platform is not reachable. Try 
 export const SUBMIT_STALE = "Not submitted: the Estimate changed since you opened it. Reload it.";
 export const SUBMIT_NOT_DRAFT = "Not submitted: this version is no longer the draft. Reload it.";
 export const SUBMIT_FORBIDDEN = "You can't submit this Estimate.";
+/** Story 9.7: the Baseline gate's ready state. */
+export const BASELINE_READY_TITLE = "0 blockers to Baseline";
+export const BASELINE_READY_BODY =
+  "Every requested review approved. Set Baseline is now the primary action.";
+
+/** "Estimate v3 is the Baseline" (the gate once the version is the Baseline). */
+export function isBaselineTitle(version: number): string {
+  return `Estimate v${version} is the Baseline`;
+}
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -131,6 +145,7 @@ const KIND_ORDER: readonly BlockerKind[] = [
   "finding",
   "uncovered_requirement",
   "review_request",
+  "no_review_request",
 ];
 
 const GROUPS: Record<
@@ -170,6 +185,12 @@ const GROUPS: Record<
   review_request: {
     title: (n) => `${plural(n, "Review Request")} pending`,
     meta: "Each needs a reviewer's decision.",
+    action: "Open Estimate",
+    tab: "estimate",
+  },
+  no_review_request: {
+    title: () => NO_REVIEW_REQUESTS,
+    meta: "A Baseline needs every requested review to approve the version.",
     action: "Open Estimate",
     tab: "estimate",
   },

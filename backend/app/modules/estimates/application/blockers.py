@@ -13,7 +13,13 @@ Estimate Version can be submitted.
   no line of the version covers, read live (never the stored `uncovered_count`);
 - `review_request` (`to_baseline`, Story 9.1): the version's pending, rejected and challenged
   Review Requests (`reviews.list_open_requests`), titled "{Type} review · {Reviewer} ·
-  {Status}", each linking to its row on the Estimate tab (`?review={id}`).
+  {Status}", each linking to its row on the Estimate tab (`?review={id}`);
+- `no_review_request` (`to_baseline`, Story 9.7): a submitted version no Review Request was
+  sent for (none that isn't cancelled), "No Review Request sent yet".
+
+Story 9.7: once a version is past the draft, `to_baseline` also repeats the content checks
+(Gaps, Assumptions, Conflicts, Findings, uncovered Requirements), which can reopen after
+submit. The Baseline gate and `estimates.set_baseline` read this one list.
 
 `submission_blocker_counts(uow, opportunity_ids)` is the same rule counted for a page of
 Opportunities with one batched query per module, never one per row; it always equals
@@ -160,22 +166,59 @@ async def _review_blockers(uow: UnitOfWork, version: VersionRecord) -> list[Bloc
     return found
 
 
+NO_REVIEW_REQUEST_TITLE = "No Review Request sent yet"
+
+
+async def _no_request_blockers(uow: UnitOfWork, version: VersionRecord) -> list[Blocker]:
+    """Story 9.7: `no_review_request` when no non-cancelled Review Request counts towards the
+    version (a Baseline needs at least one approval)."""
+    # Imported here for the reason given in `_review_blockers`.
+    from app.modules.reviews.application import public as reviews
+
+    if await reviews.version_approvals(uow, version.id):
+        return []
+    return [
+        Blocker(
+            kind="no_review_request",
+            subject_id=str(version.id),
+            title=NO_REVIEW_REQUEST_TITLE,
+            detail=f"Send Estimate v{version.version} for review. A Baseline needs every "
+            "requested review to approve it.",
+            href=f"/opportunities/{version.opportunity_id}/estimate",
+        )
+    ]
+
+
+async def _content_blockers(
+    uow: UnitOfWork, opportunity_id: UUID, version: VersionRecord | None
+) -> list[Blocker]:
+    """The checks submit runs: Gaps, unaccepted Assumptions, Conflicts, Findings and
+    uncovered Requirements, in that order."""
+    found = await _gap_blockers(uow, opportunity_id)
+    if version is not None:
+        found += await _assumption_blockers(uow, version)
+    found += await _conflict_blockers(uow, opportunity_id)
+    found += await _finding_blockers(uow, opportunity_id)
+    if version is not None:
+        found += await _uncovered_blockers(uow, version)
+    return found
+
+
 async def blockers_for(
     uow: UnitOfWork, opportunity_id: UUID, version: VersionRecord | None
 ) -> SubmissionBlockers:
     """The blockers of `version` (an Estimate Version of the Opportunity). Before the first
-    version only the Opportunity's own (Gaps, Conflicts, Findings) are listed; a version that
-    is no longer a draft (submitted or in review) has passed the submit gate, so it has none
-    to submit, only its open Review Requests (`to_baseline`)."""
+    version only the Opportunity's own (Gaps, Conflicts, Findings) are listed. A version that
+    is no longer a draft has passed the submit gate, so it has none to submit; Story 9.7: its
+    `to_baseline` lists its open Review Requests, `no_review_request` when none was sent, and
+    the content checks submit runs (they can reopen after submit). The Baseline gate and
+    `set_baseline` both read this one list."""
     if version is not None and version.status != VersionStatus.DRAFT:
-        return SubmissionBlockers(to_submit=[], to_baseline=await _review_blockers(uow, version))
-    to_submit = await _gap_blockers(uow, opportunity_id)
-    if version is not None:
-        to_submit += await _assumption_blockers(uow, version)
-    to_submit += await _conflict_blockers(uow, opportunity_id)
-    to_submit += await _finding_blockers(uow, opportunity_id)
-    if version is not None:
-        to_submit += await _uncovered_blockers(uow, version)
+        to_baseline = await _review_blockers(uow, version)
+        to_baseline += await _no_request_blockers(uow, version)
+        to_baseline += await _content_blockers(uow, opportunity_id, version)
+        return SubmissionBlockers(to_submit=[], to_baseline=to_baseline)
+    to_submit = await _content_blockers(uow, opportunity_id, version)
     to_baseline = [] if version is None else await _review_blockers(uow, version)
     return SubmissionBlockers(to_submit=to_submit, to_baseline=to_baseline)
 

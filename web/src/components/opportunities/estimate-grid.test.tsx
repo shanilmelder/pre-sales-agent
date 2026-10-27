@@ -13,6 +13,7 @@ import type {
   EstimateVersion,
   EstimateView,
   SectionName,
+  VersionListItem,
 } from "@/lib/estimates";
 import type { ReviewRequest, ReviewRequestsView } from "@/lib/reviews";
 import { axeViolations } from "@/test/axe";
@@ -32,6 +33,10 @@ const editEstimateLine = vi.hoisted(() =>
 const loadReviewRequests = vi.hoisted(() => vi.fn());
 const loadReviewPanel = vi.hoisted(() => vi.fn());
 const createEstimateVersion = vi.hoisted(() => vi.fn());
+const loadEstimateVersions = vi.hoisted(() => vi.fn());
+const loadVersionApprovers = vi.hoisted(() => vi.fn());
+const setEstimateBaseline = vi.hoisted(() => vi.fn());
+const push = vi.hoisted(() => vi.fn());
 vi.mock("@/app/opportunities/actions", () => ({
   loadEstimate,
   editEstimateLine,
@@ -39,9 +44,12 @@ vi.mock("@/app/opportunities/actions", () => ({
   loadReviewPanel,
   decideReviewRequest: vi.fn(),
   createEstimateVersion,
+  loadEstimateVersions,
+  loadVersionApprovers,
+  setEstimateBaseline,
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push, replace: vi.fn(), prefetch: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
   usePathname: () => "/opportunities/x/estimate",
 }));
 
@@ -177,6 +185,9 @@ function view(
     can_submit: false,
     can_request_review: false,
     can_create_version: false,
+    baseline: null,
+    is_current: true,
+    can_set_baseline: false,
   } satisfies EstimateView;
 }
 
@@ -189,6 +200,7 @@ function renderSection(
   initial: EstimateView,
   singleKeyShortcuts = true,
   initialReviews: ReviewRequestsView | null = null,
+  initialVersions: VersionListItem[] | null = null,
 ) {
   return render(
     <ShellProviders singleKeyShortcuts={singleKeyShortcuts}>
@@ -196,6 +208,7 @@ function renderSection(
         opportunityId={OPP_ID}
         initial={initial}
         initialReviews={initialReviews}
+        initialVersions={initialVersions}
       />
       <RightPane />
     </ShellProviders>,
@@ -530,7 +543,7 @@ describe("EstimateSection", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
     });
-    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
+    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID, null);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
@@ -591,7 +604,7 @@ describe("EstimateSection", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
-    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
+    expect(loadEstimate).toHaveBeenCalledWith(OPP_ID, null);
     expect(screen.queryByText("Proposing Assumptions")).toBeNull();
     expect(screen.getByText("[WORDING 1]")).toBeTruthy();
     expect(screen.getByText("Not accepted")).toBeTruthy();
@@ -1335,7 +1348,7 @@ describe("Review requests on the Estimate tab (Story 9.1)", () => {
       await act(async () => FakeSource.last!.emit("reviews.review_request.created"));
 
       await waitFor(() => expect(loadReviewRequests).toHaveBeenCalledWith(OPP_ID));
-      expect(loadEstimate).toHaveBeenCalledWith(OPP_ID);
+      expect(loadEstimate).toHaveBeenCalledWith(OPP_ID, null);
       await waitFor(() => expect(screen.getByText("Cancelled")).toBeTruthy());
     } finally {
       vi.unstubAllGlobals();
@@ -1465,5 +1478,217 @@ describe("Review decisions on the Estimate tab (Story 9.3)", () => {
       await within(details).findByRole("heading", { name: /Review request: Estimate v3/ }),
     ).toBeTruthy();
     expect(loadReviewPanel).toHaveBeenCalledWith({ opportunityId: OPP_ID, requestId: REVIEW_ID });
+  });
+});
+
+// --- Story 9.7: the Baseline marker, Set Baseline and the version switcher --------------------
+
+describe("EstimateSection, the Baseline (Story 9.7)", () => {
+  const approved: EstimateVersion = {
+    ...version(2),
+    status: "approved",
+    submitted_at: "2026-10-14T09:00:00Z",
+  };
+  const draft3: EstimateVersion = { ...version(3), id: "00000000-0000-7000-8000-0000000000c3" };
+  const baselineRef = {
+    version_id: approved.id,
+    version: 2,
+    set_at: "2026-10-21T09:00:00Z",
+    set_by_name: "Owner Person",
+  };
+  const listItem = (
+    v: number,
+    status: VersionListItem["status"],
+    isBaseline = false,
+    reason: string | null = null,
+  ): VersionListItem => ({
+    id: v === 2 ? approved.id : v === 3 ? draft3.id : `00000000-0000-7000-8000-00000000000${v}`,
+    version: v,
+    status,
+    is_baseline: isBaseline,
+    created_by_name: "Owner Person",
+    created_at: "2026-10-20T09:00:00Z",
+    reason,
+  });
+  const VERSIONS = [
+    listItem(2, "approved", true),
+    listItem(3, "draft", false, "Customer added a warehouse"),
+    listItem(1, "superseded"),
+  ];
+
+  beforeEach(() => {
+    push.mockReset();
+    loadEstimateVersions.mockReset();
+  });
+
+  it("the Baseline version: the marker, every step passed and the Baseline note", async () => {
+    const { container } = renderSection({ ...view(approved, succeeded), baseline: baselineRef });
+    const toolbar = container.querySelector("[data-estimate-toolbar]") as HTMLElement;
+    const marker = toolbar.querySelector("[data-baseline-pill]")!;
+    expect(marker.textContent).toBe("v2 · Baseline");
+    expect(marker.querySelector("svg")).not.toBeNull();
+    const lifecycle = container.querySelector("[data-lifecycle]") as HTMLElement;
+    const states = Array.from(lifecycle.querySelectorAll("[data-step-state]")).map((li) =>
+      li.getAttribute("data-step-state"),
+    );
+    expect(states).toEqual(["passed", "passed", "passed", "passed"]);
+    expect(
+      within(lifecycle).getByText(
+        "v2 is the Baseline. A Baseline is replaced only by a newer approved version, and editing it creates a new version.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Set Baseline" })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("an approved version with an empty gate: Set Baseline in the toolbar", async () => {
+    const { container } = renderSection({ ...view(approved, succeeded), can_set_baseline: true });
+    const toolbar = container.querySelector("[data-estimate-toolbar]") as HTMLElement;
+    const set = within(toolbar).getByRole("button", { name: "Set Baseline" });
+    expect(set.getAttribute("aria-disabled")).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("an approved version not newer than the Baseline can't replace it", () => {
+    const older = { ...approved, id: "00000000-0000-7000-8000-0000000000b1", version: 1 };
+    renderSection({
+      ...view(older, succeeded),
+      can_set_baseline: true,
+      baseline: baselineRef,
+      is_current: false,
+    });
+    const set = screen.getByRole("button", { name: "Set Baseline" });
+    expect(set.getAttribute("aria-disabled")).toBe("true");
+    expect(document.getElementById(set.getAttribute("aria-describedby")!)!.textContent).toBe(
+      "Only a newer approved Estimate Version can replace the Baseline",
+    );
+  });
+
+  it("the switcher: the Baseline first, then the draft; choosing one sets ?version=", async () => {
+    const user = userEvent.setup();
+    const { container } = renderSection(
+      { ...view(draft3, succeeded), baseline: baselineRef },
+      true,
+      null,
+      VERSIONS,
+    );
+    const group = screen.getByRole("group", { name: "Estimate Versions" });
+    const segments = within(group).getAllByRole("button");
+    expect(segments.map((b) => b.textContent)).toEqual(["v2Baseline", "v3Draft"]);
+    expect(segments[0]!.getAttribute("aria-pressed")).toBe("false");
+    expect(segments[1]!.getAttribute("aria-pressed")).toBe("true");
+    expect(segments[0]!.querySelector("[data-state-pill='baseline'] svg")).not.toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(segments[0]!);
+    expect(push).toHaveBeenCalledWith(`/opportunities/${OPP_ID}/estimate?version=2`, {
+      scroll: false,
+    });
+  });
+
+  it("All versions lists every version, the Baseline first, with author, date and reason", async () => {
+    const user = userEvent.setup();
+    renderSection({ ...view(draft3, succeeded), baseline: baselineRef }, true, null, VERSIONS);
+
+    await user.click(screen.getByRole("button", { name: "All versions" }));
+    const dialog = screen.getByRole("dialog", { name: "All versions" });
+    const rows = within(dialog).getAllByRole("listitem");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      "v2BaselineOwner Person · 20 Oct 2026",
+      "v3DraftOwner Person · 20 Oct 2026Customer added a warehouse",
+      "v1SupersededOwner Person · 20 Oct 2026",
+    ]);
+    expect(await axeViolations(document.body)).toEqual([]);
+    await user.click(within(rows[2]!).getByRole("button"));
+    expect(push).toHaveBeenCalledWith(`/opportunities/${OPP_ID}/estimate?version=1`, {
+      scroll: false,
+    });
+  });
+
+  it("`v` opens All versions with single-key shortcuts on, and not when they are off", async () => {
+    const user = userEvent.setup();
+    const first = renderSection(
+      { ...view(draft3, succeeded), baseline: baselineRef },
+      true,
+      null,
+      VERSIONS,
+    );
+    await user.keyboard("v");
+    expect(screen.getByRole("dialog", { name: "All versions" })).toBeTruthy();
+    first.unmount();
+    renderSection({ ...view(draft3, succeeded), baseline: baselineRef }, false, null, VERSIONS);
+    await user.keyboard("v");
+    expect(screen.queryByRole("dialog", { name: "All versions" })).toBeNull();
+  });
+
+  it("Set Baseline on an earlier version reads that version again", async () => {
+    const user = userEvent.setup();
+    loadVersionApprovers.mockResolvedValue({ kind: "ok", approvers: [] });
+    setEstimateBaseline.mockResolvedValue({
+      kind: "ok",
+      baseline: {
+        version_id: approved.id,
+        version: 2,
+        set_at: "2026-10-26T09:00:00Z",
+        set_by_name: "Owner Person",
+        previous_version_id: null,
+        previous_version: null,
+      },
+    });
+    loadEstimate.mockResolvedValue({ kind: "error" });
+    loadReviewRequests.mockResolvedValue({ kind: "error" });
+    renderSection({ ...view(approved, succeeded), is_current: false, can_set_baseline: true });
+
+    await user.click(screen.getByRole("button", { name: "Set Baseline" }));
+    const dialog = screen.getByRole("dialog", { name: "Set Baseline for Estimate v2?" });
+    await user.click(within(dialog).getByRole("button", { name: "Set Baseline" }));
+
+    await waitFor(() => expect(loadEstimate).toHaveBeenCalledWith(OPP_ID, 2));
+    expect(setEstimateBaseline).toHaveBeenCalledWith({
+      opportunityId: OPP_ID,
+      versionId: approved.id,
+      rowVersion: approved.row_version,
+    });
+  });
+
+  it("an older version chosen from All versions gets its own pressed segment", () => {
+    const older = { ...approved, id: "00000000-0000-7000-8000-000000000001", version: 1 };
+    renderSection(
+      { ...view({ ...older, status: "superseded" }, succeeded), is_current: false },
+      true,
+      null,
+      [listItem(3, "draft"), listItem(2, "approved", true), listItem(1, "superseded")],
+    );
+    const group = screen.getByRole("group", { name: "Estimate Versions" });
+    expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "v2Baseline",
+      "v3Draft",
+      "v1Superseded",
+    ]);
+    expect(within(group).getByRole("button", { pressed: true }).textContent).toBe("v1Superseded");
+  });
+
+  it("an earlier version selected: read only, with its own stepper", async () => {
+    const { container } = renderSection(
+      {
+        ...view(approved, succeeded),
+        baseline: baselineRef,
+        is_current: false,
+        can_edit_lines: true,
+        can_accept_assumptions: true,
+      },
+      true,
+      null,
+      VERSIONS,
+    );
+    const group = screen.getByRole("group", { name: "Estimate Versions" });
+    expect(within(group).getByRole("button", { pressed: true }).textContent).toBe("v2Baseline");
+    expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Request review" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New version" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Edit line/ })).toBeNull();
+    const lifecycle = container.querySelector("[data-lifecycle]") as HTMLElement;
+    expect(lifecycle.querySelectorAll("[data-step-state='passed']").length).toBe(4);
+    expect(await axeViolations(container)).toEqual([]);
   });
 });

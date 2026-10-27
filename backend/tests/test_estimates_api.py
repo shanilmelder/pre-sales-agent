@@ -59,6 +59,9 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_submit": False,
         "can_request_review": False,
         "can_create_version": False,
+        "baseline": None,
+        "can_set_baseline": True,
+        "is_current": True,
     }
     assert theirs.json() == {
         "version": None,
@@ -75,6 +78,9 @@ def test_before_any_draft_there_is_no_version(client: TestClient, sync_engine: E
         "can_submit": False,
         "can_request_review": False,
         "can_create_version": False,
+        "baseline": None,
+        "can_set_baseline": False,
+        "is_current": True,
     }
 
 

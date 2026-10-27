@@ -71,6 +71,7 @@ from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.ids import new_id
+from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.model_gateway.port import ModelGatewayPort, ModelOutputInvalidError
 from app.platform.trace.catalogue import AssessmentsCriticReviewCompleted
@@ -352,6 +353,7 @@ async def accept_critic_review(
     Opportunity's new `current` Critic Review (module docstring). The caller (the task's
     node) has locked the task as still `running` in this Unit of Work and marks it done
     after. Raises `ModelOutputInvalidError` (and writes nothing) for an unparseable reply."""
+    await opportunity_lock(uow, opportunity_id)  # Story 9.7: the shared lock first
     await repo.lock_reviews(uow, opportunity_id, _KIND)
     ids = {"run_id": str(run_id), "opportunity_id": str(opportunity_id)}
     output = proposal(result)

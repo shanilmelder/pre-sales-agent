@@ -10,7 +10,7 @@ import { UUID_RE } from "@/lib/opportunities";
 import type { AssessmentsView } from "@/lib/assessments";
 import type { ConflictsView } from "@/lib/conflicts";
 import type { CriticView } from "@/lib/critic";
-import type { EstimateView } from "@/lib/estimates";
+import type { EstimateView, VersionListItem } from "@/lib/estimates";
 import type { GapList, GapsContext } from "@/lib/gaps";
 import type { RedTeamView } from "@/lib/red-team";
 import type { ReviewPanel, ReviewRequestsView } from "@/lib/reviews";
@@ -34,6 +34,10 @@ export type GapsContextResult = { kind: "ok"; context: GapsContext } | { kind: "
 /** An active catalogue Integration Type, for tagging a Requirement (Story 4.1). */
 export type IntegrationTypeOption = { id: string; name: string };
 export type EstimateResult = { kind: "ok"; estimate: EstimateView } | { kind: "error" };
+/** Story 9.7: the Opportunity's Estimate Versions, the Baseline first. */
+export type EstimateVersionsResult =
+  | { kind: "ok"; versions: VersionListItem[] }
+  | { kind: "error" };
 export type ReviewRequestsResult =
   | { kind: "ok"; reviews: ReviewRequestsView }
   | { kind: "error" };
@@ -222,18 +226,40 @@ export async function listActiveIntegrationTypes(): Promise<IntegrationTypeOptio
 /** `GET /api/v1/opportunities/{id}/estimate`: the current Estimate Version (the draft, else
  * the latest submitted one) with its server-calculated totals and submission blockers, and
  * the latest draft run (Stories 8.1, 8.6). */
-export async function getEstimate(id: string): Promise<EstimateResult> {
+export async function getEstimate(id: string, version?: number | null): Promise<EstimateResult> {
   if (!UUID_RE.test(id)) return { kind: "error" };
   try {
     const api = await createServerApiClient();
+    // Story 9.7: `?version=n` reads that version, read only unless it is the current one.
     const { data, response } = await api.GET("/api/v1/opportunities/{opportunity_id}/estimate", {
-      params: { path: { opportunity_id: id } },
+      params: { path: { opportunity_id: id }, ...(version ? { query: { version } } : {}) },
     });
     if (data) return { kind: "ok", estimate: data };
     console.error(`GET estimate failed: status=${response.status}`);
     return { kind: "error" };
   } catch (thrown) {
     console.error(`GET estimate failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** Story 9.7: `GET /api/v1/opportunities/{id}/estimate-versions`, every Estimate Version with
+ * the Baseline first. Logs statuses only. */
+export async function getEstimateVersions(id: string): Promise<EstimateVersionsResult> {
+  if (!UUID_RE.test(id)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/estimate-versions",
+      { params: { path: { opportunity_id: id } } },
+    );
+    if (data) return { kind: "ok", versions: data };
+    console.error(`GET estimate versions failed: status=${response.status}`);
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `GET estimate versions failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
     return { kind: "error" };
   }
 }
