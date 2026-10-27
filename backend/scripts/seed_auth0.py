@@ -74,13 +74,27 @@ _ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.REGISTRY_AGENT_SET_STATUS,
             # Reports (Story 10.3): platform administrators and the Head of Delivery only.
             Action.REPORTING_REPORT_READ,
+            # The Opportunity outcome (Story 10.5): changing a won Opportunity's contract end
+            # date and reopening one, with the Head of Delivery.
+            Action.CONTRACT_END_DATE_UPDATE,
+            Action.OUTCOME_REOPEN,
         }
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
     # Overriding a Critic or Red Team Finding (Story 6.6, R1): a Head of Delivery on any
     # overridable Finding, a security reviewer on a security one only (the policy narrows it).
+    # The Opportunity outcome (Story 10.5): a Head of Delivery may record it on any
+    # Opportunity (owners get it through the relation), change a won one's contract end date
+    # and reopen one.
     Role.HEAD_OF_DELIVERY: frozenset(
-        {Action.OPPORTUNITY_READ, Action.FINDING_OVERRIDE, Action.REPORTING_REPORT_READ}
+        {
+            Action.OPPORTUNITY_READ,
+            Action.FINDING_OVERRIDE,
+            Action.REPORTING_REPORT_READ,
+            Action.OUTCOME_RECORD,
+            Action.CONTRACT_END_DATE_UPDATE,
+            Action.OUTCOME_REOPEN,
+        }
     ),
     # Actuals (Story 10.1): delivery managers, on the Opportunities they can read (the API
     # checks read access first, and grants owners and collaborators holding the role too).
@@ -136,6 +150,9 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.DELIVERY_CLOSE: "Close delivery on Opportunities one can read",
     Action.ACTUAL_IMPORT: "Import Actuals from a file on Opportunities one can read",
     Action.REPORTING_REPORT_READ: "Read Reports across the Opportunities one can read",
+    Action.OUTCOME_RECORD: "Close any Opportunity as lost or mark it won",
+    Action.CONTRACT_END_DATE_UPDATE: "Change a won Opportunity's contract end date",
+    Action.OUTCOME_REOPEN: "Reopen an Opportunity that has an outcome",
 }
 
 TIMEOUT = 30.0

@@ -112,6 +112,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
         Action.CHALLENGE_RAISE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CHALLENGE_CONFIRM: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CHALLENGE_DECLINE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.OUTCOME_RECORD: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 )
 """Per action, the roles that don't earn its owner or member grant on their own."""
@@ -169,6 +170,9 @@ OWNER_GRANTS: frozenset[Action] = frozenset(
         Action.CHALLENGE_DECLINE,
         # Story 10.1: delivery managers only (`RELATION_REQUIRED_ROLES`), people only.
         *ACTUALS_ACTIONS,
+        # Story 10.5: closing as lost or marking won is the owner's (and, by permission, a
+        # Head of Delivery's); people only. Collaborators may not.
+        Action.OUTCOME_RECORD,
     }
 )
 MEMBER_GRANTS: frozenset[Action] = frozenset(
@@ -237,10 +241,17 @@ ANY_ROLE_GRANTS: frozenset[Action] = frozenset(
 9.2: one's own Inbox, which only ever holds the caller's items)."""
 
 
-HUMAN_ONLY_ACTIONS: frozenset[Action] = frozenset({Action.ESTIMATE_BASELINE_SET, *ACTUALS_ACTIONS})
-"""Story 9.7 (and 10.1, Actuals): actions only a person may take. Any principal that isn't a
-`user` actor (an agent or the system) is denied them, whatever permissions or relations it
-holds."""
+OUTCOME_ACTIONS: frozenset[Action] = frozenset(
+    {Action.OUTCOME_RECORD, Action.CONTRACT_END_DATE_UPDATE, Action.OUTCOME_REOPEN}
+)
+"""Story 10.5: the Opportunity outcome commands."""
+
+HUMAN_ONLY_ACTIONS: frozenset[Action] = frozenset(
+    {Action.ESTIMATE_BASELINE_SET, *ACTUALS_ACTIONS, *OUTCOME_ACTIONS}
+)
+"""Story 9.7 (and 10.1, Actuals; 10.5, the outcome): actions only a person may take. Any
+principal that isn't a `user` actor (an agent or the system) is denied them, whatever
+permissions or relations it holds."""
 
 
 def is_allowed(principal: Principal, action: Action, resource: Resource | None = None) -> bool:

@@ -143,6 +143,47 @@ class OpportunitiesCollaboratorRemoved(TracePayload):
     role: Literal["collaborator", "reviewer"] = "collaborator"
 
 
+@register
+class OpportunitiesOpportunityClosed(TracePayload):
+    """Story 10.5: the Opportunity's outcome was recorded: closed as `lost` (with the person's
+    `reason`) or marked `won` (with its `contract_end_date`). `retention_until`: the last day
+    its data is kept (lost: recorded plus 3 years; won: contract end plus 7 years). Dates are
+    ISO `YYYY-MM-DD`. Nothing of the customer's beyond the reason."""
+
+    event_type: ClassVar[str] = "opportunities.opportunity.closed"
+
+    outcome: Literal["won", "lost"]
+    reason: str | None = None
+    contract_end_date: str | None = None
+    retention_until: str
+
+
+@register
+class OpportunitiesContractEndDateUpdated(TracePayload):
+    """Story 10.5: a won Opportunity's contract end date changed from
+    `previous_contract_end_date` to `contract_end_date`, with a reason; `retention_until` is
+    the recomputed retention date. Dates are ISO `YYYY-MM-DD`."""
+
+    event_type: ClassVar[str] = "opportunities.contract_end_date.updated"
+
+    previous_contract_end_date: str
+    contract_end_date: str
+    reason: str
+    retention_until: str
+
+
+@register
+class OpportunitiesOpportunityReopened(TracePayload):
+    """Story 10.5: the Opportunity was reopened, with a reason: its outcome
+    (`previous_outcome`), when it was recorded and any contract end date were cleared, so it
+    has no retention date."""
+
+    event_type: ClassVar[str] = "opportunities.opportunity.reopened"
+
+    previous_outcome: Literal["won", "lost"]
+    reason: str
+
+
 # --- intake -------------------------------------------------------------------------------
 # Subject: the Source (`intake.source`), and `opportunity_id` is set. Payloads hold ids,
 # kinds and sizes only, never filenames or content.

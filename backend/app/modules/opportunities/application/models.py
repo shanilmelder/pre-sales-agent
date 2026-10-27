@@ -4,11 +4,11 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 
 from app.modules.opportunities.domain import opportunity as rules
 from app.modules.opportunities.domain.imports import ImportErrorCode, ImportStatus
-from app.modules.opportunities.domain.opportunity import OpportunityStatus
+from app.modules.opportunities.domain.opportunity import OpportunityStatus, Outcome
 
 
 class NewOpportunity(BaseModel):
@@ -84,6 +84,48 @@ class OpportunityChanges(BaseModel):
     @classmethod
     def _title(cls, value: str | None) -> str | None:
         return None if value is None else rules.edited_title(value)
+
+
+REASON_BACKSTOP = 4000
+"""Story 10.5: a request-size backstop on an outcome reason; the 1,000 rule is checked after
+authorization (422 `outcome_invalid`)."""
+
+
+class OutcomeRecord(BaseModel):
+    """Story 10.5: record the Opportunity's outcome. `lost` needs a `reason` (trimmed, 1 to
+    1,000 characters); `won` needs a `contract_end_date` and a Baseline. The other field is
+    ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Outcome
+    reason: StrictStr | None = Field(
+        default=None,
+        max_length=REASON_BACKSTOP,
+        description=f"`lost` only, required: why. Trimmed, 1 to {rules.REASON_MAX:,} characters.",
+    )
+    contract_end_date: date | None = Field(
+        default=None, description="`won` only, required: when the customer contract ends."
+    )
+
+
+class ContractEndDateChange(BaseModel):
+    """Story 10.5: change a won Opportunity's contract end date, with a reason (trimmed, 1 to
+    1,000 characters)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_end_date: date
+    reason: StrictStr = Field(max_length=REASON_BACKSTOP)
+
+
+class OutcomeReopen(BaseModel):
+    """Story 10.5: reopen an Opportunity with an outcome, with a reason (trimmed, 1 to 1,000
+    characters)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: StrictStr = Field(max_length=REASON_BACKSTOP)
 
 
 class UserRef(BaseModel):
@@ -201,6 +243,33 @@ class Opportunity(BaseModel):
     can_manage_collaborators: bool
     can_edit: bool
     can_add_sources: bool
+    outcome: Outcome | None = Field(
+        default=None, description="Story 10.5: `won` or `lost`; null while the Opportunity is open."
+    )
+    outcome_recorded_at: datetime | None = Field(
+        default=None, description="Story 10.5: when the outcome was recorded."
+    )
+    contract_end_date: date | None = Field(
+        default=None, description="Story 10.5: when the customer contract ends (won only)."
+    )
+    retention_until: date | None = Field(
+        default=None,
+        description="Story 10.5: the last day the Opportunity's data is kept: lost, the day "
+        "the outcome was recorded plus 3 years; won, the contract end date plus 7 years; null "
+        "while open (never purged).",
+    )
+    can_record_outcome: bool = Field(
+        default=False,
+        description="Story 10.5: the caller may close it as lost or mark it won (no outcome "
+        "yet). Marking won also needs a Baseline, which the API checks.",
+    )
+    can_change_contract_end: bool = Field(
+        default=False,
+        description="Story 10.5: the caller may change the contract end date (won only).",
+    )
+    can_reopen_outcome: bool = Field(
+        default=False, description="Story 10.5: the caller may reopen it (it has an outcome)."
+    )
 
 
 # --- Decision Trace (Story 9.8, demo slice) ------------------------------------------------

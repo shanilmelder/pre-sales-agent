@@ -100,6 +100,11 @@ import {
   type Passage,
   type Requirement,
 } from "@/lib/requirements";
+import {
+  OUTCOME_COMMANDS,
+  OUTCOME_REJECTED,
+  type OutcomeCommand,
+} from "@/lib/outcome";
 import type { Source } from "@/lib/sources";
 
 /** The API's query bounds for people search (in code points). */
@@ -4392,6 +4397,123 @@ export async function applyActualsImport(input: unknown): Promise<ApplyActualsIm
     }
   } catch (thrown) {
     console.error(`apply actuals import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+// --- the Opportunity outcome (Story 10.5) ---------------------------------------------------
+
+/** What an outcome command asks for: close as lost (reason), mark won (contract end date),
+ * change the contract end date (date and reason) or reopen (reason). */
+export type OutcomeInput = {
+  opportunityId: string;
+  rowVersion: number;
+  command: OutcomeCommand;
+  reason?: string;
+  contractEndDate?: string;
+};
+
+export type OutcomeResult =
+  | { kind: "ok"; opportunity: Opportunity }
+  /** 412: someone changed the Opportunity first. `changedBy` is null when unknown. */
+  | { kind: "stale"; changedBy: string | null }
+  /** 422 or 409: the API's sentence (e.g. "An Opportunity can be marked won once it has a
+   * Baseline."). */
+  | { kind: "invalid"; detail: string; code: string | null }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isOutcomeInput(input: unknown): input is OutcomeInput {
+  if (typeof input !== "object" || input === null) return false;
+  const { opportunityId, rowVersion, command, reason, contractEndDate } = input as Record<
+    string,
+    unknown
+  >;
+  if (
+    typeof opportunityId !== "string" ||
+    !UUID_RE.test(opportunityId) ||
+    typeof rowVersion !== "number" ||
+    !Number.isSafeInteger(rowVersion) ||
+    rowVersion < 0 ||
+    typeof command !== "string" ||
+    !(OUTCOME_COMMANDS as readonly string[]).includes(command)
+  ) {
+    return false;
+  }
+  const hasReason = typeof reason === "string";
+  const hasDate = typeof contractEndDate === "string" && DATE_RE.test(contractEndDate);
+  if (reason !== undefined && !hasReason) return false;
+  if (contractEndDate !== undefined && !hasDate) return false;
+  switch (command as OutcomeCommand) {
+    case "lost":
+    case "reopen":
+      return hasReason;
+    case "won":
+      return hasDate;
+    case "contract_end":
+      return hasReason && hasDate;
+  }
+}
+
+/** One outcome command with `If-Match`: `POST .../outcome` (lost or won), `PATCH
+ * .../contract-end-date` or `POST .../outcome/reopen`. Never retries or overwrites on 412. */
+export async function changeOutcome(input: unknown): Promise<OutcomeResult> {
+  if (!isOutcomeInput(input)) return { kind: "error" };
+  const { opportunityId, rowVersion, command, reason, contractEndDate } = input;
+  const params = {
+    path: { opportunity_id: opportunityId },
+    header: { "If-Match": `"${rowVersion}"` },
+  };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } =
+      command === "lost"
+        ? await api.POST("/api/v1/opportunities/{opportunity_id}/outcome", {
+            params,
+            body: { outcome: "lost", reason: reason ?? "" },
+          })
+        : command === "won"
+          ? await api.POST("/api/v1/opportunities/{opportunity_id}/outcome", {
+              params,
+              body: { outcome: "won", contract_end_date: contractEndDate ?? "" },
+            })
+          : command === "contract_end"
+            ? await api.PATCH("/api/v1/opportunities/{opportunity_id}/contract-end-date", {
+                params,
+                body: { contract_end_date: contractEndDate ?? "", reason: reason ?? "" },
+              })
+            : await api.POST("/api/v1/opportunities/{opportunity_id}/outcome/reopen", {
+                params,
+                body: { reason: reason ?? "" },
+              });
+    if (data) return { kind: "ok", opportunity: data };
+    const { code, detail } = problem(error);
+    switch (response.status) {
+      case 412: {
+        const current = await getOpportunity(opportunityId);
+        return {
+          kind: "stale",
+          changedBy: current.kind === "ok" ? current.opportunity.last_changed_by : null,
+        };
+      }
+      case 409:
+      case 422:
+        return {
+          kind: "invalid",
+          code: code ?? null,
+          detail: detail && !detail.startsWith("Invalid fields:") ? detail : OUTCOME_REJECTED,
+        };
+      case 403:
+        return { kind: "forbidden" };
+      case 404:
+        return { kind: "not-found" };
+      default:
+        console.error(`change outcome failed: status=${response.status} code=${String(code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`change outcome failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

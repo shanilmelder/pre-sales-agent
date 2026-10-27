@@ -24,8 +24,23 @@ from app.platform.db import Base
 
 
 class OpportunityRow(RowVersioned, Base):
+    """Story 10.5: `outcome` (`won` or `lost`, null while open), `outcome_recorded_at` (set
+    exactly when there is an outcome) and `contract_end_date` (set exactly when won). The
+    retention date is derived from them (`domain.opportunity.retention_until`)."""
+
     __tablename__ = "opportunities_opportunities"
-    __table_args__ = (Index(None, "owner_id"), Index(None, "created_at", "id"))
+    __table_args__ = (
+        Index(None, "owner_id"),
+        Index(None, "created_at", "id"),
+        CheckConstraint("outcome IN ('won', 'lost')", name="outcome"),
+        CheckConstraint(
+            "(outcome IS NULL) = (outcome_recorded_at IS NULL)", name="outcome_recorded"
+        ),
+        CheckConstraint(
+            "COALESCE(outcome = 'won', false) = (contract_end_date IS NOT NULL)",
+            name="won_contract_end",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     owner_id: Mapped[UUID] = mapped_column(Uuid)
@@ -37,6 +52,9 @@ class OpportunityRow(RowVersioned, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
+    outcome: Mapped[str | None] = mapped_column(Text)
+    outcome_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    contract_end_date: Mapped[date | None] = mapped_column(Date)
 
 
 class CollaboratorRow(Base):

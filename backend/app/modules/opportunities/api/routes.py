@@ -17,6 +17,7 @@ from app.modules.identity.application.public import CurrentPrincipal
 from app.modules.opportunities.application import imports
 from app.modules.opportunities.application import public as opportunities
 from app.modules.opportunities.application.public import (
+    ContractEndDateChange,
     NewOpportunity,
     Opportunity,
     OpportunityChanges,
@@ -24,6 +25,8 @@ from app.modules.opportunities.application.public import (
     OpportunityFilters,
     OpportunityPage,
     OpportunityStatus,
+    OutcomeRecord,
+    OutcomeReopen,
     TracePage,
 )
 from app.modules.opportunities.domain.opportunity import PRODUCT_NAME_MAX
@@ -36,11 +39,15 @@ _DESCRIBED: dict[int, str] = {
     401: "No valid access token (`token_missing`, `token_expired`, `token_invalid`)",
     403: "Not allowed (`forbidden`): creating without the "
     "`opportunities.opportunity.create` permission, or "
-    "editing the Opportunity or changing collaborators without being the owner",
+    "editing the Opportunity or changing collaborators without being the owner, or an "
+    "outcome command the caller may not take",
     404: "No Opportunity with this id, or the caller may not see it (`not_found`)",
+    409: "Story 10.5: the outcome can't change this way (`outcome_already_recorded`, "
+    "`baseline_required`, `outcome_not_won`, `outcome_not_recorded`)",
     412: "The Opportunity changed since it was read (`row_version_mismatch`)",
     422: "Invalid fields (`validation_error`), e.g. a target proposal date in the past, "
-    "or collaborator (`invalid_collaborator`)",
+    "or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with "
+    "`errors` naming each field)",
     428: "The write has no `If-Match` header (`if_match_required`)",
     503: "Sign-in service unavailable (`auth_unavailable`)",
 }
@@ -64,6 +71,8 @@ _WRITE_RESPONSES[200] = {
     "description": "The Opportunity after the change",
     "headers": _ETAG_HEADER,
 }
+_OUTCOME_RESPONSES = _responses(403, 404, 409, 412, 422, 428)
+_OUTCOME_RESPONSES[200] = _WRITE_RESPONSES[200]
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -313,6 +322,68 @@ async def remove_collaborator(
     """Stop sharing the Opportunity with a collaborator. Owner only; removing someone who
     isn't a collaborator changes nothing."""
     changed = await opportunities.remove_collaborator(uow, actor, opportunity_id, user_id, if_match)
+    return _with_etag(response, changed)
+
+
+@router.post(
+    "/{opportunity_id}/outcome",
+    operation_id="record_opportunity_outcome",
+    responses=_OUTCOME_RESPONSES,
+)
+async def record_opportunity_outcome(
+    opportunity_id: UUID,
+    body: OutcomeRecord,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: IfMatchHeader = None,
+) -> Opportunity:
+    """Story 10.5: close the Opportunity as `lost` (with a reason) or mark it `won` (with a
+    contract end date; needs a Baseline). The owner (not as a sales representative alone) or
+    a Head of Delivery. Sets the retention date: lost, today plus 3 years; won, contract end
+    plus 7 years."""
+    changed = await opportunities.record_outcome(uow, actor, opportunity_id, body, if_match)
+    return _with_etag(response, changed)
+
+
+@router.patch(
+    "/{opportunity_id}/contract-end-date",
+    operation_id="change_opportunity_contract_end_date",
+    responses=_OUTCOME_RESPONSES,
+)
+async def change_opportunity_contract_end_date(
+    opportunity_id: UUID,
+    body: ContractEndDateChange,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: IfMatchHeader = None,
+) -> Opportunity:
+    """Story 10.5: change a won Opportunity's contract end date, with a reason; the
+    retention date follows. Head of Delivery and platform administrators only."""
+    changed = await opportunities.change_contract_end_date(
+        uow, actor, opportunity_id, body, if_match
+    )
+    return _with_etag(response, changed)
+
+
+@router.post(
+    "/{opportunity_id}/outcome/reopen",
+    operation_id="reopen_opportunity_outcome",
+    responses=_OUTCOME_RESPONSES,
+)
+async def reopen_opportunity_outcome(
+    opportunity_id: UUID,
+    body: OutcomeReopen,
+    actor: CurrentPrincipal,
+    uow: UoW,
+    response: Response,
+    if_match: IfMatchHeader = None,
+) -> Opportunity:
+    """Story 10.5: reopen an Opportunity with an outcome, with a reason. Clears the outcome
+    and contract end date, so it has no retention date. Head of Delivery and platform
+    administrators only."""
+    changed = await opportunities.reopen_outcome(uow, actor, opportunity_id, body, if_match)
     return _with_etag(response, changed)
 
 

@@ -40,7 +40,12 @@ from app.modules.opportunities.application.models import (
     OpportunitySummary,
     UserRef,
 )
-from app.modules.opportunities.domain.opportunity import SUBJECT_TYPE, check_target_date
+from app.modules.opportunities.domain.opportunity import (
+    SUBJECT_TYPE,
+    Outcome,
+    check_target_date,
+    retention_until,
+)
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
@@ -144,6 +149,18 @@ async def _detail(
         and identity.can(actor, Action.COLLABORATOR_REMOVE, resource),
         can_edit=identity.can(actor, Action.OPPORTUNITY_UPDATE, resource),
         can_add_sources=identity.can(actor, Action.SOURCE_ADD, resource),
+        outcome=record.outcome,
+        outcome_recorded_at=record.outcome_recorded_at,
+        contract_end_date=record.contract_end_date,
+        retention_until=retention_until(
+            record.outcome, record.outcome_recorded_at, record.contract_end_date
+        ),
+        can_record_outcome=record.outcome is None
+        and identity.can(actor, Action.OUTCOME_RECORD, resource),
+        can_change_contract_end=record.outcome is Outcome.WON
+        and identity.can(actor, Action.CONTRACT_END_DATE_UPDATE, resource),
+        can_reopen_outcome=record.outcome is not None
+        and identity.can(actor, Action.OUTCOME_REOPEN, resource),
     )
 
 

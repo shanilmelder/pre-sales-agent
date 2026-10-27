@@ -111,6 +111,16 @@ class Action(StrEnum):
     ACTUAL_IMPORT = "actuals.actual.import"
     """Story 10.2: download the Actuals template, upload a file of Actuals, review its preview
     and apply it (as `ACTUAL_RECORD`)."""
+    OUTCOME_RECORD = "opportunities.outcome.record"
+    """Story 10.5: record the Opportunity's outcome: close it as lost (with a reason) or mark
+    it won (with a contract end date, once it has a Baseline). The owner (not as a sales
+    representative alone) or a Head of Delivery (permission); people only."""
+    CONTRACT_END_DATE_UPDATE = "opportunities.contract_end_date.update"
+    """Story 10.5: change a won Opportunity's contract end date, with a reason. Head of
+    Delivery and platform administrators only (a permission, no relation); people only."""
+    OUTCOME_REOPEN = "opportunities.outcome.reopen"
+    """Story 10.5: reopen an Opportunity with an outcome, with a reason (clears the outcome).
+    Head of Delivery and platform administrators only (a permission); people only."""
     REPORTING_REPORT_READ = "reporting.report.read"
     """Story 10.3: read Reports (estimate versus actual across the Opportunities one can
     read). Head of Delivery and platform administrators only (a permission, no relation)."""
@@ -211,6 +221,9 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.ACTUAL_CORRECT: _W,
         Action.DELIVERY_CLOSE: _A,
         Action.ACTUAL_IMPORT: _W,
+        Action.OUTCOME_RECORD: _W,
+        Action.CONTRACT_END_DATE_UPDATE: _W,
+        Action.OUTCOME_REOPEN: _W,
         Action.REPORTING_REPORT_READ: _R,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,

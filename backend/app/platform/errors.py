@@ -297,6 +297,35 @@ class DeliveryClosedError(ConflictError):
     title = "Delivery closed"
 
 
+class OutcomeAlreadyRecordedError(ConflictError):
+    """The Opportunity already has an outcome (Story 10.5); reopen it first. Nothing
+    changed."""
+
+    code = "outcome_already_recorded"
+    title = "Outcome already recorded"
+
+
+class BaselineRequiredError(ConflictError):
+    """An Opportunity can be marked won only once it has a Baseline (Story 10.5)."""
+
+    code = "baseline_required"
+    title = "Baseline required"
+
+
+class OutcomeNotWonError(ConflictError):
+    """Only a won Opportunity has a contract end date to change (Story 10.5)."""
+
+    code = "outcome_not_won"
+    title = "Opportunity not won"
+
+
+class OutcomeNotRecordedError(ConflictError):
+    """The Opportunity has no outcome to reopen (Story 10.5)."""
+
+    code = "outcome_not_recorded"
+    title = "No outcome recorded"
+
+
 class ActualsImportNotReadyError(ConflictError):
     """An Actuals import was confirmed before its file was read, or after reading it failed
     (Story 10.2); nothing changed."""
@@ -621,6 +650,19 @@ class ActualInvalidError(UnprocessableError):
 
     code = "actual_invalid"
     title = "Actual not valid"
+
+    def __init__(self, detail: str | None = None, *, errors: Sequence[Mapping[str, Any]]) -> None:
+        super().__init__(detail)
+        self.extensions = {"errors": list(errors)}
+
+
+class OutcomeInvalidError(UnprocessableError):
+    """An outcome command breaks a rule (Story 10.5): a missing or too long reason, a missing
+    contract end date. The body's `errors` extension member lists each as `{field, message}`;
+    nothing changed."""
+
+    code = "outcome_invalid"
+    title = "Outcome not valid"
 
     def __init__(self, detail: str | None = None, *, errors: Sequence[Mapping[str, Any]]) -> None:
         super().__init__(detail)

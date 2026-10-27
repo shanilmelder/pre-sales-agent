@@ -35,6 +35,9 @@ const OPPORTUNITY: Opportunity = {
   can_manage_collaborators: false,
   can_edit: false,
   can_add_sources: false,
+  can_record_outcome: false,
+  can_change_contract_end: false,
+  can_reopen_outcome: false,
 };
 
 const TODAY = "2026-10-21";
@@ -48,6 +51,12 @@ function renderHeader(overrides: Partial<Opportunity> = {}, today = TODAY) {
 }
 
 describe("WorkspaceHeader", () => {
+  it("shows a lost Opportunity's Closed pill in the neutral tone (Story 10.5)", () => {
+    renderHeader({ status: "closed", outcome: "lost", retention_until: "2029-10-14" });
+    const pill = screen.getByText("Closed").closest("[data-tone]");
+    expect(pill?.getAttribute("data-tone")).toBe("neutral");
+  });
+
   it("shows breadcrumb, title with pill, chips and the date with a countdown", async () => {
     const { container } = renderHeader();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
