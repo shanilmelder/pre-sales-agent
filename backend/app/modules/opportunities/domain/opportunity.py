@@ -32,10 +32,13 @@ class OpportunityStatus(StrEnum):
     CLOSED = "closed"
 
 
-def derived_status(has_baseline: bool = False) -> OpportunityStatus:
-    """The status of an Opportunity. Story 9.7: `baselined` once a Baseline is set
-    (`estimates_baselines` has a row for it); otherwise `intake` (the other statuses arrive
-    in later stories)."""
+def derived_status(has_baseline: bool = False, delivered: bool = False) -> OpportunityStatus:
+    """The status of an Opportunity. Story 10.1: `delivered` once delivery is closed
+    (`actuals_deliveries` has a row for it). Story 9.7: otherwise `baselined` once a Baseline
+    is set (`estimates_baselines` has a row for it); otherwise `intake` (the other statuses
+    arrive in later stories)."""
+    if delivered:
+        return OpportunityStatus.DELIVERED
     return OpportunityStatus.BASELINED if has_baseline else OpportunityStatus.INTAKE
 
 

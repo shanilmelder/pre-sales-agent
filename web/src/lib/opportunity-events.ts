@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { paths } from "@/lib/api/client";
+import { ACTUALS_TRACE_EVENTS } from "@/lib/actuals";
 import { FINDING_EVENTS } from "@/lib/findings";
 import { INBOX_TRACE_EVENTS } from "@/lib/inbox";
 import { REVIEW_TRACE_EVENTS } from "@/lib/reviews";
@@ -371,6 +372,18 @@ export function useInboxEvents(
   enabled = true,
 ): boolean {
   const status = useStream(opportunityId, INBOX_TRACE_EVENTS, () => onChange(), onChange, enabled);
+  return status === "open";
+}
+
+/** Story 10.1: subscribe to the Opportunity's Actuals trace frames (`ACTUALS_TRACE_EVENTS`)
+ * while `enabled` (the Actuals tab). `onChange` runs for each and whenever the stream
+ * (re)connects. Returns whether the stream is connected. */
+export function useActualsEvents(
+  opportunityId: string,
+  onChange: () => void,
+  enabled = true,
+): boolean {
+  const status = useStream(opportunityId, ACTUALS_TRACE_EVENTS, () => onChange(), onChange, enabled);
   return status === "open";
 }
 

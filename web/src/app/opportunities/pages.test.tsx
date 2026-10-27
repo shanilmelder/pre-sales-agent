@@ -50,6 +50,10 @@ vi.mock("@/app/opportunities/actions", () => ({
   escalateConflict: vi.fn(),
   loadReviewPanel: vi.fn(),
   decideReviewRequest: vi.fn(),
+  loadActuals: vi.fn(),
+  saveActuals: vi.fn(),
+  correctActual: vi.fn(),
+  closeDelivery: vi.fn(),
 }));
 const redirect = vi.hoisted(() =>
   vi.fn((href: string) => {
@@ -2320,21 +2324,117 @@ describe("/opportunities/[id] workspace", () => {
     expect(screen.queryByRole("grid")).toBeNull();
   });
 
-  it.each([["actuals", "Actuals"]])(
-    "tab URL /%s: header, that tab selected, 'Not available yet.'",
-    async (tab, label) => {
-      signedIn(["head_of_delivery"]);
-      found();
-      const { container } = await renderWorkspace(tab);
-      expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
-      expect(selectedTabs()).toEqual([label]);
-      const panel = screen.getByRole("tabpanel");
-      expect(within(panel).getByText(NOT_AVAILABLE)).toBeTruthy();
-      expect(within(panel).getByRole("heading", { level: 2, name: label })).toBeTruthy();
-      expect(screen.queryByText("[CUSTOMER]")).toBeNull();
-      expect(await axeViolations(container)).toEqual([]);
-    },
-  );
+  /** Story 10.1: `GET …/actuals` with a Baseline v3 and one recorded line. */
+  function actualsView(canRecord: boolean) {
+    const variance = {
+      hours: 5,
+      percent: 13.9,
+      direction: "over",
+      label: "+5.0 h (13.9%)",
+      direction_label: "Over estimate",
+    };
+    return {
+      baseline: { version_id: "00000000-0000-7000-8000-0000000000e3", version: 3, set_at: "2026-10-26T10:00:00Z" },
+      lines: [
+        {
+          line_id: "00000000-0000-7000-8000-0000000000b2",
+          label: "L2",
+          title: "CRM data migration",
+          section: "data",
+          estimate_hours: 36,
+          integration_types: [],
+          actual: {
+            id: "00000000-0000-7000-8000-0000000000c2",
+            group_id: "00000000-0000-7000-8000-0000000000d2",
+            version: 1,
+            kind: "final",
+            milestone_label: null,
+            effort_hours: 41,
+            duration_days: null,
+            cost_minor: null,
+            currency: null,
+            variance_cause: "estimation_error",
+            note: null,
+            failed_assumptions: [],
+            correction_reason: null,
+            recorded_by_name: "[DM]",
+            recorded_at: "2026-10-27T10:00:00Z",
+            line_id: "00000000-0000-7000-8000-0000000000b2",
+            estimate_version_id: "00000000-0000-7000-8000-0000000000e3",
+            estimate_version: 3,
+            integration_types: [],
+            work_package: null,
+            variance,
+            cost_variance: null,
+            history: [],
+          },
+          variance,
+          cost_variance: null,
+        },
+      ],
+      unplanned: [],
+      totals: {
+        estimate_hours: 36,
+        actual_hours: 41,
+        variance,
+        recorded_line_count: 1,
+        line_count: 1,
+        unplanned_count: 0,
+      },
+      assumptions: [],
+      causes: [{ value: "estimation_error", label: "Estimation error", unplanned: false }],
+      open_line_count: 0,
+      close_blocked_reason: null,
+      can_record: canRecord,
+      can_close: canRecord,
+      delivery: null,
+      version_mismatch: null,
+      row_version: 1,
+    };
+  }
+
+  it("tab URL /actuals: the table, read only for a reviewer", async () => {
+    signedIn(["engineering_reviewer"]);
+    found(OPPORTUNITY, { "/actuals": actualsView(false) });
+    const { container } = await renderWorkspace("actuals");
+    expect(screen.getByRole("heading", { level: 1, name: "[TITLE]" })).toBeTruthy();
+    expect(selectedTabs()).toEqual(["Actuals"]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("heading", { level: 2, name: "Actuals" })).toBeTruthy();
+    expect(within(panel).queryByText(NOT_AVAILABLE)).toBeNull();
+    expect(within(panel).getByRole("table", { name: "Actuals per Estimate line" })).toBeTruthy();
+    expect(within(panel).getAllByText("+5.0 h (13.9%)").length).toBeGreaterThan(0);
+    expect(within(panel).queryByRole("textbox")).toBeNull();
+    expect(within(panel).queryByRole("button", { name: "Save Actuals" })).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/opportunities/{opportunity_id}/actuals", {
+      params: { path: { opportunity_id: OPP_ID } },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("tab URL /actuals: editable cells and Save Actuals for a delivery manager", async () => {
+    signedIn(["delivery_manager"]);
+    found(OPPORTUNITY, {
+      "/actuals": actualsView(true),
+      "/catalogue/entries": { items: [] },
+    });
+    await renderWorkspace("actuals");
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByRole("textbox", { name: /Actual hours, L2/ })).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Save Actuals" })).toBeTruthy();
+  });
+
+  it("tab URL /actuals: a failed read says so", async () => {
+    signedIn(["delivery_manager"]);
+    found(OPPORTUNITY, { "/actuals": null });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await renderWorkspace("actuals");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText(
+        "The Actuals could not be loaded. Try again in a moment.",
+      ),
+    ).toBeTruthy();
+  });
 
   it("tab URL /conflicts: the empty state, no count on the tab", async () => {
     signedIn(["sales_representative"]);

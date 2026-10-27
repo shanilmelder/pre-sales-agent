@@ -481,6 +481,56 @@ forbidden_modules = [
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
+name = "actuals uses identity, opportunities, estimates, intake and knowledge only through their public APIs, and no other business module (AD-2, Story 10.1)"
+type = "forbidden"
+source_modules = ["app.modules.actuals"]
+forbidden_modules = [
+    "app.modules.identity.domain",
+    "app.modules.identity.adapters",
+    "app.modules.identity.api",
+    "app.modules.opportunities.domain",
+    "app.modules.opportunities.adapters",
+    "app.modules.opportunities.api",
+    "app.modules.estimates.domain",
+    "app.modules.estimates.adapters",
+    "app.modules.estimates.api",
+    "app.modules.intake.domain",
+    "app.modules.intake.adapters",
+    "app.modules.intake.api",
+    "app.modules.knowledge.domain",
+    "app.modules.knowledge.adapters",
+    "app.modules.knowledge.api",
+    "app.modules.gaps",
+    "app.modules.assessments",
+    "app.modules.conflicts",
+    "app.modules.workflows",
+    "app.modules.reviews",
+    "app.modules.notifications",
+    "app.modules.registry",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Other modules never import actuals (Story 10.1): its tables are read only by name, as the derived status does"
+type = "forbidden"
+source_modules = [
+    "app.modules.identity",
+    "app.modules.opportunities",
+    "app.modules.intake",
+    "app.modules.gaps",
+    "app.modules.estimates",
+    "app.modules.assessments",
+    "app.modules.conflicts",
+    "app.modules.knowledge",
+    "app.modules.workflows",
+    "app.modules.reviews",
+    "app.modules.notifications",
+    "app.modules.registry",
+]
+forbidden_modules = ["app.modules.actuals"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
 name = "Orchestration uses business modules only through their public APIs (AD-5, Story 5.2)"
 type = "forbidden"
 source_modules = ["app.orchestration"]

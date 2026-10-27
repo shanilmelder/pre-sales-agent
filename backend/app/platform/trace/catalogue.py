@@ -848,6 +848,90 @@ class EstimatesBaselineSet(TracePayload):
     approvers: list[BaselineApprover]
 
 
+# --- actuals (Story 10.1) ------------------------------------------------------------------
+# Ids, numbers, kinds and causes only: never a note or Assumption wording. A correction's
+# reason is the person's own words (as a Conflict's, FR-29).
+
+
+class FailedAssumptionRef(BaseModel):
+    """A failed Assumption an Actual names, at the Assumption version it was named at."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    assumption_id: str
+    version: int
+
+
+@register
+class ActualsActualRecorded(TracePayload):
+    """A delivery manager recorded an Actual (Story 10.1): against a Baseline line, or as
+    Unplanned work (`line_id` null). Subject: the Actual (`actuals.actual`, its first version).
+    Actor: that person."""
+
+    event_type: ClassVar[str] = "actuals.actual.recorded"
+
+    actual_id: str
+    group_id: str
+    version: int
+    estimate_version_id: str
+    estimate_version: int
+    line_id: str | None
+    kind: Literal["milestone", "final"]
+    effort_hours: str
+    duration_days: str | None
+    cost_minor: int | None
+    currency: str | None
+    milestone_label: str | None
+    integration_type_ids: list[str]
+    work_package_id: str | None
+    variance_cause: str | None
+    failed_assumptions: list[FailedAssumptionRef]
+
+
+@register
+class ActualsActualCorrected(TracePayload):
+    """A delivery manager corrected an Actual (Story 10.1): a new version replaced
+    `previous_actual_id` (`previous_version`), with a reason. Subject: the new version
+    (`actuals.actual`). Actor: that person."""
+
+    event_type: ClassVar[str] = "actuals.actual.corrected"
+
+    actual_id: str
+    group_id: str
+    version: int
+    previous_actual_id: str
+    previous_version: int
+    estimate_version_id: str
+    estimate_version: int
+    line_id: str | None
+    kind: Literal["milestone", "final"]
+    effort_hours: str
+    duration_days: str | None
+    cost_minor: int | None
+    currency: str | None
+    milestone_label: str | None
+    integration_type_ids: list[str]
+    work_package_id: str | None
+    variance_cause: str | None
+    failed_assumptions: list[FailedAssumptionRef]
+    reason: str
+
+
+@register
+class ActualsDeliveryClosed(TracePayload):
+    """A delivery manager closed delivery (Story 10.1): every line of the Baseline version had
+    a final Actual; the Opportunity is `delivered`. Subject: the delivery
+    (`actuals.delivery`). Actor: that person. Ids and counts only."""
+
+    event_type: ClassVar[str] = "actuals.delivery.closed"
+
+    delivery_id: str
+    estimate_version_id: str
+    estimate_version: int
+    line_count: int
+    actual_count: int
+
+
 # Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.
 
 

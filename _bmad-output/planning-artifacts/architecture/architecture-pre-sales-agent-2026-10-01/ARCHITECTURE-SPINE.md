@@ -428,7 +428,7 @@ graph TD
 | Review Request (`reviews_review_requests`), Review Decision (`reviews_review_decisions`), Review reply (`reviews_review_replies`), Challenge (`reviews_challenges`), approval policy | `reviews` |
 | Scenario (metadata, constraint deltas) | `scenarios` |
 | Proposal | `proposals` |
-| Actual, Calibration suggestion | `actuals` |
+| Actual (`actuals_actuals`, versioned; only `is_current` changes), Close delivery (`actuals_deliveries`, insert-only), Calibration suggestion | `actuals` |
 | Agent, agent config version, eval result (`registry_eval_results`, insert-only) | `registry` |
 | User, role, action catalogue | `identity` |
 | Notification (`notifications_notifications`, Inbox items), delivery | `notifications` |

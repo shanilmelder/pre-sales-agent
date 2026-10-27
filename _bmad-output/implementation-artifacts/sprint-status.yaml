@@ -138,8 +138,8 @@ development_status:
   9-10-decision-trace-completeness-test: backlog
   epic-9-retrospective: optional
 
-  epic-10: backlog
-  10-1-record-actuals-per-estimate-line: backlog
+  epic-10: in-progress
+  10-1-record-actuals-per-estimate-line: review
   10-2-import-actuals-from-a-file: backlog
   10-3-variance-reporting-views-and-the-reports-table: backlog
   10-4-drill-down-from-variance-to-the-failed-assumption: backlog

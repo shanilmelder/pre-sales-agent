@@ -2833,6 +2833,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/actuals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Actuals
+         * @description The Actuals tab: every Baseline line with its estimate, current Actual and
+         *     server-calculated variance, Unplanned work, totals, the Baseline version's Assumptions
+         *     Register, and whether the caller may record Actuals or close delivery. Anyone who can
+         *     read the Opportunity.
+         */
+        get: operations["get_actuals"];
+        put?: never;
+        /**
+         * Save Actuals
+         * @description **Save Actuals**: record each entry against its Baseline line (or as Unplanned work),
+         *     correcting a line that already has an Actual (a new version; `reason` required), in one
+         *     Unit of Work. Delivery managers only.
+         */
+        post: operations["save_actuals"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/actuals/{actual_id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct Actual
+         * @description Correct an Actual with a reason: a new version, tied to the Estimate Version the Actual
+         *     was recorded against. Delivery managers only.
+         */
+        post: operations["correct_actual"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/actuals/delivery/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Delivery
+         * @description **Close delivery** once every Baseline line has a final Actual: the Opportunity becomes
+         *     `delivered`. Delivery managers only.
+         */
+        post: operations["close_delivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2844,6 +2915,262 @@ export interface components {
         AcceptAllResult: {
             /** Count */
             count: number;
+        };
+        /**
+         * ActualCorrection
+         * @description A correction of one Actual (a new version), with why: `reason`, 1 to 1,000
+         *     characters.
+         */
+        ActualCorrection: {
+            /** @default final */
+            kind: components["schemas"]["ActualKind"];
+            /** Milestone Label */
+            milestone_label?: string | null;
+            /** Effort Hours */
+            effort_hours: number;
+            /** Duration Days */
+            duration_days?: number | null;
+            /** Cost Minor */
+            cost_minor?: number | null;
+            /** Currency */
+            currency?: string | null;
+            variance_cause?: components["schemas"]["VarianceCause"] | null;
+            /** Note */
+            note?: string | null;
+            /** Failed Assumption Ids */
+            failed_assumption_ids?: string[];
+            /** Integration Type Id */
+            integration_type_id?: string | null;
+            /** Work Package Id */
+            work_package_id?: string | null;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * ActualInput
+         * @description One entry of **Save Actuals**: a Baseline line's Actual (`line_id`), or Unplanned work
+         *     (no `line_id`). A line that already has an Actual is corrected (a new version); Unplanned
+         *     work is corrected by naming its current `actual_id`. A stated `actual_id` that is no longer
+         *     current is 412.
+         */
+        ActualInput: {
+            /** @default final */
+            kind: components["schemas"]["ActualKind"];
+            /** Milestone Label */
+            milestone_label?: string | null;
+            /** Effort Hours */
+            effort_hours: number;
+            /** Duration Days */
+            duration_days?: number | null;
+            /** Cost Minor */
+            cost_minor?: number | null;
+            /** Currency */
+            currency?: string | null;
+            variance_cause?: components["schemas"]["VarianceCause"] | null;
+            /** Note */
+            note?: string | null;
+            /** Failed Assumption Ids */
+            failed_assumption_ids?: string[];
+            /** Integration Type Id */
+            integration_type_id?: string | null;
+            /** Work Package Id */
+            work_package_id?: string | null;
+            /** Line Id */
+            line_id?: string | null;
+            /** Actual Id */
+            actual_id?: string | null;
+        };
+        /**
+         * ActualKind
+         * @enum {string}
+         */
+        ActualKind: "milestone" | "final";
+        /**
+         * ActualVersionView
+         * @description One version of an Actual (the Inspector's history). `correction_reason` is null for the
+         *     first version.
+         */
+        ActualVersionView: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            kind: components["schemas"]["ActualKind"];
+            /** Milestone Label */
+            milestone_label: string | null;
+            /** Effort Hours */
+            effort_hours: number;
+            /** Duration Days */
+            duration_days: number | null;
+            /** Cost Minor */
+            cost_minor: number | null;
+            /** Currency */
+            currency: string | null;
+            variance_cause: components["schemas"]["VarianceCause"] | null;
+            /** Note */
+            note: string | null;
+            /** Failed Assumptions */
+            failed_assumptions: components["schemas"]["FailedAssumption"][];
+            /** Correction Reason */
+            correction_reason: string | null;
+            /** Recorded By Name */
+            recorded_by_name: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+        };
+        /**
+         * ActualView
+         * @description An Actual's current version, with what it is recorded against: the Estimate Version
+         *     (id and number), the line (null for Unplanned work), the Integration Types and Work
+         *     Package, its variance (`cost_variance` stays null until Estimate lines carry a cost) and
+         *     its earlier versions, newest first.
+         */
+        ActualView: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            kind: components["schemas"]["ActualKind"];
+            /** Milestone Label */
+            milestone_label: string | null;
+            /** Effort Hours */
+            effort_hours: number;
+            /** Duration Days */
+            duration_days: number | null;
+            /** Cost Minor */
+            cost_minor: number | null;
+            /** Currency */
+            currency: string | null;
+            variance_cause: components["schemas"]["VarianceCause"] | null;
+            /** Note */
+            note: string | null;
+            /** Failed Assumptions */
+            failed_assumptions: components["schemas"]["FailedAssumption"][];
+            /** Correction Reason */
+            correction_reason: string | null;
+            /** Recorded By Name */
+            recorded_by_name: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Group Id */
+            group_id: string;
+            /** Line Id */
+            line_id: string | null;
+            /** Estimate Version Id */
+            estimate_version_id: string;
+            /** Estimate Version */
+            estimate_version: number;
+            /** Integration Types */
+            integration_types: components["schemas"]["CatalogueRef"][];
+            work_package: components["schemas"]["CatalogueRef"] | null;
+            variance: components["schemas"]["VarianceView"];
+            /** Cost Variance */
+            cost_variance?: null;
+            /** History */
+            history: components["schemas"]["ActualVersionView"][];
+        };
+        /** ActualsBaseline */
+        ActualsBaseline: {
+            /** Version Id */
+            version_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Set At
+             * Format: date-time
+             */
+            set_at: string;
+        };
+        /**
+         * ActualsLine
+         * @description A Baseline line, labelled "L{n}" in grid order, with its estimate, the Integration Types
+         *     of its Requirements and its current Actual (null: "Not recorded", left out of the
+         *     variance).
+         */
+        ActualsLine: {
+            /** Line Id */
+            line_id: string;
+            /** Label */
+            label: string;
+            /** Title */
+            title: string;
+            /** Section */
+            section: string;
+            /** Estimate Hours */
+            estimate_hours: number;
+            /** Integration Types */
+            integration_types: components["schemas"]["CatalogueRef"][];
+            actual: components["schemas"]["ActualView"] | null;
+            variance: components["schemas"]["VarianceView"] | null;
+            /** Cost Variance */
+            cost_variance?: null;
+        };
+        /**
+         * ActualsSave
+         * @description **Save Actuals**: the entries, saved together; `reason` (1 to 1,000 characters) is
+         *     required when any entry corrects an Actual.
+         */
+        ActualsSave: {
+            /** Items */
+            items: components["schemas"]["ActualInput"][];
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * ActualsTotals
+         * @description The recorded lines and Unplanned work summed: estimate (Unplanned counts 0) and actual
+         *     hours and their variance (null with nothing recorded).
+         */
+        ActualsTotals: {
+            /** Estimate Hours */
+            estimate_hours: number;
+            /** Actual Hours */
+            actual_hours: number;
+            variance: components["schemas"]["VarianceView"] | null;
+            /** Recorded Line Count */
+            recorded_line_count: number;
+            /** Line Count */
+            line_count: number;
+            /** Unplanned Count */
+            unplanned_count: number;
+        };
+        /**
+         * ActualsView
+         * @description The Actuals tab. `baseline` null: no Baseline yet (nothing else is filled).
+         *     `open_line_count` lines have no final Actual; `close_blocked_reason` says so (e.g. "4
+         *     lines have no final Actual") or that delivery is closed. `can_record` and `can_close`
+         *     are the caller's (delivery managers only). `row_version` is the tab's ETag for Save
+         *     Actuals and Close delivery.
+         */
+        ActualsView: {
+            baseline: components["schemas"]["ActualsBaseline"] | null;
+            /** Lines */
+            lines: components["schemas"]["ActualsLine"][];
+            /** Unplanned */
+            unplanned: components["schemas"]["ActualView"][];
+            totals: components["schemas"]["ActualsTotals"];
+            /** Assumptions */
+            assumptions: components["schemas"]["AssumptionOption"][];
+            /** Causes */
+            causes: components["schemas"]["CauseOption"][];
+            /** Open Line Count */
+            open_line_count: number;
+            /** Close Blocked Reason */
+            close_blocked_reason: string | null;
+            /** Can Record */
+            can_record: boolean;
+            /** Can Close */
+            can_close: boolean;
+            delivery: components["schemas"]["DeliveryView"] | null;
+            version_mismatch: components["schemas"]["VersionMismatch"] | null;
+            /** Row Version */
+            row_version: number;
         };
         /**
          * AdminUser
@@ -3399,6 +3726,23 @@ export interface components {
             title: string;
         };
         /**
+         * AssumptionOption
+         * @description An Assumption of the Baseline version's register a failed-Assumption reference may
+         *     name.
+         */
+        AssumptionOption: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Wording */
+            wording: string;
+            /** Version */
+            version: number;
+            /** Line Id */
+            line_id: string | null;
+        };
+        /**
          * BaselineApproval
          * @description Story 9.7: one Review Request behind an Estimate Version, for the Set Baseline dialog:
          *     the reviewer who decided (else the reviewer), the review type, the request's status, and
@@ -3518,6 +3862,21 @@ export interface components {
             items: components["schemas"]["CatalogueEntry"][];
         };
         /**
+         * CatalogueRef
+         * @description An Integration Type or Work Package of the catalogue.
+         */
+        CatalogueRef: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "integration_type" | "work_package";
+            /** Name */
+            name: string;
+        };
+        /**
          * CatalogueVersion
          * @description One earlier or current version of an entry, with who saved it.
          */
@@ -3545,6 +3904,14 @@ export interface components {
         CatalogueVersionList: {
             /** Items */
             items: components["schemas"]["CatalogueVersion"][];
+        };
+        /** CauseOption */
+        CauseOption: {
+            value: components["schemas"]["VarianceCause"];
+            /** Label */
+            label: string;
+            /** Unplanned */
+            unplanned: boolean;
         };
         /**
          * ChallengeConfirm
@@ -4356,6 +4723,18 @@ export interface components {
          * @enum {string}
          */
         DecisionStatus: "open" | "resolved" | "cancelled";
+        /** DeliveryView */
+        DeliveryView: {
+            /**
+             * Closed At
+             * Format: date-time
+             */
+            closed_at: string;
+            /** Closed By Name */
+            closed_by_name: string;
+            /** Estimate Version */
+            estimate_version: number;
+        };
         /**
          * DetectedBy
          * @enum {string}
@@ -4970,6 +5349,21 @@ export interface components {
          * @enum {string}
          */
         ExtractionStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * FailedAssumption
+         * @description A failed Assumption an Actual names, at the version it was named at, with its kind and
+         *     wording from the Actual's Baseline version register.
+         */
+        FailedAssumption: {
+            /** Assumption Id */
+            assumption_id: string;
+            /** Version */
+            version: number;
+            /** Kind */
+            kind: string;
+            /** Wording */
+            wording: string;
+        };
         /**
          * FindingCategory
          * @enum {string}
@@ -7334,6 +7728,18 @@ export interface components {
          */
         RunStatus: "queued" | "running" | "succeeded" | "failed";
         /**
+         * SavedActuals
+         * @description What **Save Actuals** wrote: how many Actuals were recorded and corrected, and the tab
+         *     as it is now.
+         */
+        SavedActuals: {
+            /** Recorded */
+            recorded: number;
+            /** Corrected */
+            corrected: number;
+            view: components["schemas"]["ActualsView"];
+        };
+        /**
          * Section
          * @description The template's sections: the Requirement classifications, in the Requirements tab's
          *     order.
@@ -7816,6 +8222,33 @@ export interface components {
             email: string;
         };
         /**
+         * VarianceCause
+         * @enum {string}
+         */
+        VarianceCause: "unknown_requirement" | "integration_complexity" | "customer_delay" | "scope_change" | "estimation_error" | "other";
+        /**
+         * VarianceDirection
+         * @enum {string}
+         */
+        VarianceDirection: "over" | "under" | "on";
+        /**
+         * VarianceView
+         * @description Actual minus estimate (server-calculated): hours, percent of the estimate (null when
+         *     the estimate is 0, as for Unplanned work), the direction, and the signed label shown,
+         *     e.g. "+5.0 h (13.9%)", with its words, e.g. "Over estimate".
+         */
+        VarianceView: {
+            /** Hours */
+            hours: number;
+            /** Percent */
+            percent: number | null;
+            direction: components["schemas"]["VarianceDirection"];
+            /** Label */
+            label: string;
+            /** Direction Label */
+            direction_label: string;
+        };
+        /**
          * VersionDiff
          * @description Story 9.3 (`estimates.compare_versions`): an Estimate Version against the one numbered
          *     just before it (`previous_version`, null for the first: `first` is then true and `lines`
@@ -7887,6 +8320,21 @@ export interface components {
             created_at: string;
             /** Reason */
             reason: string | null;
+        };
+        /**
+         * VersionMismatch
+         * @description Story 10.1: Actuals recorded against an earlier Baseline version, which stay tied to it:
+         *     e.g. "Actuals recorded against v3; the current Baseline is v5".
+         */
+        VersionMismatch: {
+            /** Recorded Versions */
+            recorded_versions: number[];
+            /** Baseline Version */
+            baseline_version: number;
+            /** Actual Count */
+            actual_count: number;
+            /** Message */
+            message: string;
         };
         /**
          * VersionRef
@@ -29431,6 +29879,736 @@ export interface operations {
             };
             /** @description `validation_error`: a malformed id or page */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_actuals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tab */
+            200: {
+                headers: {
+                    /** @description The Actuals tab's `row_version` */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualsView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Actual with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body; `actual_invalid`: an Actual breaks a rule, each listed in `errors` as `{item, field, message}` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    save_actuals: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The Actuals tab ETag as last read (its `row_version`), e.g. `"4"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActualsSave"];
+            };
+        };
+        responses: {
+            /** @description What was saved, and the tab */
+            200: {
+                headers: {
+                    /** @description The Actuals tab's `row_version` */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedActuals"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity record Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Actual with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Baseline yet (`actuals_no_baseline`) or delivery is closed (`delivery_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Actuals changed since the caller read them (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body; `actual_invalid`: an Actual breaks a rule, each listed in `errors` as `{item, field, message}` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    correct_actual: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The Actual `version` as last read, e.g. `"1"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+                actual_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActualCorrection"];
+            };
+        };
+        responses: {
+            /** @description The correction, and the tab */
+            201: {
+                headers: {
+                    /** @description The Actuals tab's `row_version` */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedActuals"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity record Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Actual with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Baseline yet (`actuals_no_baseline`) or delivery is closed (`delivery_closed`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Actuals changed since the caller read them (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body; `actual_invalid`: an Actual breaks a rule, each listed in `errors` as `{item, field, message}` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    close_delivery: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The Actuals tab ETag as last read (its `row_version`), e.g. `"4"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tab, delivery closed */
+            200: {
+                headers: {
+                    /** @description The Actuals tab's `row_version` */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualsView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): only delivery managers who can read the Opportunity record Actuals */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it, or no Actual with this id in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Baseline yet (`actuals_no_baseline`), delivery already closed (`delivery_closed`), or lines without a final Actual (`delivery_not_ready`, with `open_line_count`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Actuals changed since the caller read them (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description `validation_error`: a malformed id or body; `actual_invalid`: an Actual breaks a rule, each listed in `errors` as `{item, field, message}` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No `If-Match` header (`if_match_required`) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

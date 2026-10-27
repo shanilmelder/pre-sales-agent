@@ -23,6 +23,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.sql.expression import TableClause
 
 from app.modules.opportunities.adapters.models import CollaboratorRow, OpportunityRow
 from app.modules.opportunities.domain.opportunity import (
@@ -54,22 +55,32 @@ class OpportunityRecord:
 _BASELINES = table("estimates_baselines", column("opportunity_id"))
 """Story 9.7: the Baseline table, named in SQL only (no import from `estimates`): its rows
 are only ever tested for existence here."""
+_DELIVERIES = table("actuals_deliveries", column("opportunity_id"))
+"""Story 10.1: Close delivery, named in SQL only (no import from `actuals`), as above."""
+
+
+def _exists_for(rows: TableClause) -> ColumnElement[bool]:
+    return (
+        select(literal(1))
+        .select_from(rows)
+        .where(rows.c.opportunity_id == OpportunityRow.id)
+        .exists()
+    )
 
 
 def status_expression() -> ColumnElement[str]:
     """The derived status (AD-26) as SQL, mirroring `domain.opportunity.derived_status()`.
-    Lists select it and filter on it, so the column and the filter can't disagree. Story 9.7:
-    `baselined` when `EXISTS (SELECT 1 FROM estimates_baselines WHERE opportunity_id = id)`,
-    otherwise `intake`; later stories add the other statuses here and in the domain
-    together."""
-    has_baseline = (
-        select(literal(1))
-        .select_from(_BASELINES)
-        .where(_BASELINES.c.opportunity_id == OpportunityRow.id)
-        .exists()
-    )
+    Lists select it and filter on it, so the column and the filter can't disagree. Story 10.1:
+    `delivered` when `EXISTS (SELECT 1 FROM actuals_deliveries WHERE opportunity_id = id)`;
+    Story 9.7: otherwise `baselined` when `EXISTS (SELECT 1 FROM estimates_baselines WHERE
+    opportunity_id = id)`; otherwise `intake`. Later stories add the other statuses here and in
+    the domain together."""
     return case(
-        (has_baseline, cast(literal(derived_status(True).value, Text), Text)),
+        (
+            _exists_for(_DELIVERIES),
+            cast(literal(derived_status(True, delivered=True).value, Text), Text),
+        ),
+        (_exists_for(_BASELINES), cast(literal(derived_status(True).value, Text), Text)),
         else_=cast(literal(derived_status(False).value, Text), Text),
     )
 
