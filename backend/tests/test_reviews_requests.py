@@ -646,7 +646,8 @@ def test_open_requests_are_blockers_to_baseline(client: TestClient, sync_engine:
 
     assert _cancel(client, headers, opp["id"], request).status_code == 200
     after = client.get(f"{BASE}/{opp['id']}/submission-blockers", headers=headers).json()
-    assert after["to_baseline"] == []
+    # The cancelled request no longer blocks, but with none left the version needs one again.
+    assert [b["kind"] for b in after["to_baseline"]] == ["no_review_request"]
 
 
 # --- reviewer candidates --------------------------------------------------------------------

@@ -1586,6 +1586,7 @@ describe("/opportunities/[id] workspace", () => {
       can_accept_assumptions: false,
       can_export: false,
       assessment_running: false,
+      blockers: { to_submit: [], to_baseline: [] },
     });
     const { container } = await renderWorkspace("estimate");
     expect(selectedTabs()).toEqual(["Estimate"]);
