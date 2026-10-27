@@ -932,6 +932,39 @@ class ActualsDeliveryClosed(TracePayload):
     actual_count: int
 
 
+@register
+class ActualsTemplateExported(TracePayload):
+    """A delivery manager downloaded the Actuals import template (Story 10.2): one row per line
+    of the Baseline version. Subject: the Opportunity (`opportunities.opportunity`). Actor:
+    that person. Ids and counts only."""
+
+    event_type: ClassVar[str] = "actuals.template.exported"
+
+    estimate_version_id: str
+    estimate_version: int
+    line_count: int
+
+
+@register
+class ActualsImportCompleted(TracePayload):
+    """A delivery manager applied an Actuals import (Story 10.2), all rows in one Unit of Work,
+    next to each row's `actuals.actual.recorded` or `.corrected`. Subject: the import
+    (`actuals.import`). Actor: that person. The file's SHA-256 and counts only: rows created,
+    corrected, excluded by the person, and skipped as blank."""
+
+    event_type: ClassVar[str] = "actuals.import.completed"
+
+    import_id: str
+    file_sha256: str
+    estimate_version_id: str
+    estimate_version: int
+    created_count: int
+    corrected_count: int
+    excluded_count: int
+    skipped_count: int
+    repeated_file: bool
+
+
 # Story 6.5. Payloads hold the version and counts only, never Requirement, Gap or Finding text.
 
 

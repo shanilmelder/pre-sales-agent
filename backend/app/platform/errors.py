@@ -297,6 +297,34 @@ class DeliveryClosedError(ConflictError):
     title = "Delivery closed"
 
 
+class ActualsImportNotReadyError(ConflictError):
+    """An Actuals import was confirmed before its file was read, or after reading it failed
+    (Story 10.2); nothing changed."""
+
+    code = "actuals_import_not_ready"
+    title = "Import not ready"
+
+
+class ActualsImportAppliedError(ConflictError):
+    """The Actuals import was already applied (Story 10.2); nothing changed."""
+
+    code = "actuals_import_applied"
+    title = "Import already applied"
+
+
+class ActualsImportRepeatedError(ConflictError):
+    """The same file (by SHA-256) was already applied on this Opportunity and the confirm did
+    not tick that it should be imported again (Story 10.2). The body's `applied_at` extension
+    member says when; nothing changed."""
+
+    code = "actuals_import_repeated"
+    title = "File already imported"
+
+    def __init__(self, detail: str | None = None, *, applied_at: str) -> None:
+        super().__init__(detail)
+        self.extensions = {"applied_at": applied_at}
+
+
 class EstimateVersionNotSubmittedError(ConflictError):
     """A Review Request was asked for an Estimate Version that is still a draft (Story 9.1)."""
 
@@ -566,6 +594,15 @@ class UploadTypeNotAllowedError(ProblemError):
     status = 415
     code = "file_type_not_allowed"
     title = "File type not allowed"
+
+
+class UploadContentMismatchError(ProblemError):
+    """An Actuals import file's bytes don't match its extension, e.g. a PDF renamed .xlsx
+    (Story 10.2, 415). Nothing is stored."""
+
+    status = 415
+    code = "file_content_mismatch"
+    title = "File content doesn't match its type"
 
 
 class UnprocessableError(ProblemError):

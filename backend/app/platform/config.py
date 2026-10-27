@@ -58,6 +58,14 @@ class Settings(BaseSettings):
         gt=0,
         description="Largest accepted upload in bytes (50 MB). Enforced by the API only.",
     )
+    actuals_import_max_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        gt=0,
+        description=(
+            "Largest accepted Actuals import file (.xlsx or .csv) in bytes (5 MB, Story 10.2). "
+            "Enforced by the API only."
+        ),
+    )
     knowledge_stale_months: int = Field(
         default=12,
         ge=1,

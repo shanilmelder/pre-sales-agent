@@ -117,7 +117,7 @@ RELATION_EXCLUDED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
 """Per action, the roles that don't earn its owner or member grant on their own."""
 
 ACTUALS_ACTIONS: frozenset[Action] = frozenset(
-    {Action.ACTUAL_RECORD, Action.ACTUAL_CORRECT, Action.DELIVERY_CLOSE}
+    {Action.ACTUAL_RECORD, Action.ACTUAL_CORRECT, Action.DELIVERY_CLOSE, Action.ACTUAL_IMPORT}
 )
 RELATION_REQUIRED_ROLES: Mapping[Action, frozenset[Role]] = MappingProxyType(
     {action: frozenset({Role.DELIVERY_MANAGER}) for action in ACTUALS_ACTIONS}

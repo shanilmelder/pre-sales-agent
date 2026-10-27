@@ -22,7 +22,7 @@ OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 VTT_MAGIC = b"WEBVTT"
 UTF8_BOM = b"\xef\xbb\xbf"
 
-TEXT_EXTENSIONS = frozenset({".txt", ".eml", ".md"})
+TEXT_EXTENSIONS = frozenset({".txt", ".eml", ".md", ".csv"})
 """Extensions whose bytes must be valid UTF-8 without NUL bytes."""
 
 EMPTY_MESSAGE = "Rejected: the file is empty"
@@ -80,15 +80,25 @@ def mismatch_message(ext: str) -> str:
     return f"Rejected: the content doesn't match {ext}"
 
 
-def _is_docx(stream: BinaryIO) -> bool:
+def _is_office_zip(stream: BinaryIO, folder: str) -> bool:
+    """A ZIP (Office Open XML package) with an entry under `folder` (`word/`, `xl/`)."""
     if stream.read(len(ZIP_MAGIC)) != ZIP_MAGIC:
         return False
     stream.seek(0)
     try:
         with zipfile.ZipFile(stream) as archive:
-            return any(name.startswith("word/") for name in archive.namelist())
+            return any(name.startswith(folder) for name in archive.namelist())
     except (zipfile.BadZipFile, zipfile.LargeZipFile, ValueError, OSError, EOFError):
         return False
+
+
+def _is_docx(stream: BinaryIO) -> bool:
+    return _is_office_zip(stream, "word/")
+
+
+def _is_xlsx(stream: BinaryIO) -> bool:
+    """Story 10.2: an Actuals import workbook is a ZIP with an `xl/` entry."""
+    return _is_office_zip(stream, "xl/")
 
 
 def _is_utf8_text(stream: BinaryIO) -> bool:
@@ -107,12 +117,15 @@ def _is_utf8_text(stream: BinaryIO) -> bool:
 def content_matches(ext: str, stream: BinaryIO) -> bool:
     """True if the bytes in `stream` (positioned at the start) match the extension: pdf
     has `%PDF-` within its first 1024 bytes; docx is a ZIP with a `word/` entry; msg is
-    an OLE compound file; vtt starts with `WEBVTT` after an optional UTF-8 BOM; txt, md
-    and eml are valid UTF-8 with no NUL bytes. Unknown extensions never match."""
+    an OLE compound file; vtt starts with `WEBVTT` after an optional UTF-8 BOM; txt, md,
+    eml and csv are valid UTF-8 with no NUL bytes; xlsx is a ZIP with an `xl/` entry (Story
+    10.2). Unknown extensions never match. Each caller keeps its own allowlist."""
     if ext in TEXT_EXTENSIONS:
         return _is_utf8_text(stream)
     if ext == ".docx":
         return _is_docx(stream)
+    if ext == ".xlsx":
+        return _is_xlsx(stream)
     if ext == ".pdf":
         # The PDF spec lets the header sit anywhere in the first 1024 bytes.
         return PDF_MAGIC in stream.read(PDF_HEADER_WINDOW)

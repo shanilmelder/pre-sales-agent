@@ -24,7 +24,7 @@ Requirements and no Work Package; Unplanned work stores the Integration Type or 
 the delivery manager picked.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -35,6 +35,7 @@ from app.modules.actuals.adapters.repository import ActualRecord, NewActual
 from app.modules.actuals.application.models import (
     ActualCorrection,
     ActualFields,
+    ActualInput,
     ActualsSave,
     SavedActuals,
 )
@@ -300,19 +301,63 @@ async def _line_type_ids(uow: UnitOfWork, lines: list[LineRef]) -> dict[UUID, li
     return {line_id: [UUID(t.id) for t in refs] for line_id, refs in types.items()}
 
 
-async def save_actuals(
+@dataclass(frozen=True, slots=True)
+class CheckedItems:
+    """Entries checked against the current state: every broken rule (`errors`, each
+    `{item, field, message}` with `item` the entry's index), and the entries ready to write,
+    each with its failed-Assumption refs and its correction reason."""
+
+    errors: list[dict[str, Any]]
+    plans: list[tuple[_Plan, list[tuple[UUID, int]], str | None]]
+
+    @property
+    def corrected(self) -> int:
+        return sum(1 for plan, _, _ in self.plans if plan.existing is not None)
+
+    @property
+    def recorded(self) -> int:
+        return len(self.plans) - self.corrected
+
+
+def _reasons(
+    plans: list[_Plan],
+    reason: str | None,
+    item_reasons: Sequence[str | None] | None,
+    errors: list[dict[str, Any]],
+) -> dict[int, str | None]:
+    """Each correcting entry's reason by index; a missing or too-long one is an error."""
+    batch = clean_reason(reason)
+    found: dict[int, str | None] = {}
+    corrections = [p for p in plans if p.existing is not None and p.index is not None]
+    if item_reasons is None:
+        if corrections and batch is None:
+            errors.append(_error(None, "reason", REASON_RULE))
+        return {p.index: batch for p in corrections if p.index is not None}
+    for plan in corrections:
+        assert plan.index is not None
+        raw = item_reasons[plan.index] if plan.index < len(item_reasons) else None
+        own = clean_reason(raw)
+        if (clean_text(raw) is not None and own is None) or (own is None and batch is None):
+            errors.append(_error(plan.index, "reason", REASON_RULE))
+        found[plan.index] = own or batch
+    return found
+
+
+async def check_items(
     uow: UnitOfWork,
     actor: Principal,
+    resource: Resource,
     opportunity_id: UUID,
-    body: ActualsSave,
-    if_match: str | None,
-) -> SavedActuals:
-    """`actuals.save_actuals`: **Save Actuals** (module docstring)."""
-    resource, user_id = await start_write(uow, actor, opportunity_id, Action.ACTUAL_RECORD)
-    expected = parse_if_match(if_match)
-    if expected >= MAX_ROW_VERSION or expected != await repo.change_count(uow, opportunity_id):
-        raise RowVersionMismatchError(STALE)
-    baseline = await open_baseline(uow, opportunity_id)
+    baseline: Baseline,
+    items: Sequence[ActualInput],
+    reason: str | None,
+    *,
+    item_reasons: Sequence[str | None] | None = None,
+) -> CheckedItems:
+    """Check entries against the Opportunity's current Actuals and the Baseline, as **Save
+    Actuals** does, without writing anything. A correction needs a reason: `reason` for the
+    whole batch, or (Story 10.2, an import) the entry's own `item_reasons[i]`, falling back to
+    `reason`. Without `item_reasons` a missing reason is one error with no item."""
     current = await repo.actuals_of(uow, opportunity_id, current_only=True)
     by_line = {r.estimate_line_id: r for r in current if r.estimate_line_id is not None}
     by_id = {r.id: r for r in current}
@@ -320,7 +365,7 @@ async def save_actuals(
     errors: list[dict[str, Any]] = []
     plans: list[_Plan] = []
     seen: set[UUID] = set()
-    for index, item in enumerate(body.items):
+    for index, item in enumerate(items):
         line: LineRef | None = None
         existing: ActualRecord | None = None
         if item.line_id is not None:
@@ -366,16 +411,13 @@ async def save_actuals(
             )
         )
 
-    corrects = any(p.existing is not None for p in plans)
-    reason = clean_reason(body.reason)
-    if corrects:
+    if any(p.existing is not None for p in plans):
         identity.authorize(actor, Action.ACTUAL_CORRECT, resource)
-        if reason is None:
-            errors.append(_error(None, "reason", REASON_RULE))
+    reasons = _reasons(plans, reason, item_reasons, errors)
     registers: dict[UUID, dict[UUID, AssumptionRef]] = {
         baseline.version_id: {a.id: a for a in baseline.assumptions}
     }
-    checked: list[tuple[_Plan, list[tuple[UUID, int]]]] = []
+    checked: list[tuple[_Plan, list[tuple[UUID, int]], str | None]] = []
     for plan in plans:
         if plan.estimate_version_id not in registers:  # an Unplanned Actual on an older version
             registers[plan.estimate_version_id] = {
@@ -383,30 +425,73 @@ async def save_actuals(
             }
         found, refs = await _check(uow, plan, registers[plan.estimate_version_id])
         errors.extend(found)
-        checked.append((plan, refs))
+        plan_reason = None if plan.index is None else reasons.get(plan.index)
+        checked.append((plan, refs, plan_reason))
+    return CheckedItems(errors=errors, plans=checked)
+
+
+async def apply_items(
+    uow: UnitOfWork,
+    actor: Principal,
+    resource: Resource,
+    user_id: UUID,
+    opportunity_id: UUID,
+    items: Sequence[ActualInput],
+    reason: str | None,
+    *,
+    item_reasons: Sequence[str | None] | None = None,
+    read_errors: Sequence[dict[str, Any]] = (),
+    describe: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
+) -> CheckedItems:
+    """The one validate-and-write path of **Save Actuals** and an import's **Confirm** (Story
+    10.2), under the caller's lock: a Baseline and open delivery, then `check_items`, then 422
+    `actual_invalid` with every broken rule, or every entry written with its trace event.
+    Nothing is written on any error. An import adds the problems found reading its rows
+    (`read_errors`) and words the rule errors for its rows (`describe`)."""
+    baseline = await open_baseline(uow, opportunity_id)
+    checked = await check_items(
+        uow, actor, resource, opportunity_id, baseline, items, reason, item_reasons=item_reasons
+    )
+    errors = [*read_errors, *(checked.errors if describe is None else describe(checked.errors))]
     if errors:
         _log.info(
             "actuals.save_invalid",
             extra={"opportunity_id": str(opportunity_id), "error_count": len(errors)},
         )
-        raise ActualInvalidError(INVALID, errors=list(errors))
-
+        raise ActualInvalidError(INVALID, errors=errors)
     line_types = await _line_type_ids(uow, baseline.lines)
-    for plan, refs in checked:
-        await _write(uow, actor, user_id, opportunity_id, plan, refs, line_types, reason)
-    corrected = sum(1 for p in plans if p.existing is not None)
+    for plan, refs, plan_reason in checked.plans:
+        await _write(uow, actor, user_id, opportunity_id, plan, refs, line_types, plan_reason)
+    return checked
+
+
+async def save_actuals(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    body: ActualsSave,
+    if_match: str | None,
+) -> SavedActuals:
+    """`actuals.save_actuals`: **Save Actuals** (module docstring)."""
+    resource, user_id = await start_write(uow, actor, opportunity_id, Action.ACTUAL_RECORD)
+    expected = parse_if_match(if_match)
+    if expected >= MAX_ROW_VERSION or expected != await repo.change_count(uow, opportunity_id):
+        raise RowVersionMismatchError(STALE)
+    checked = await apply_items(
+        uow, actor, resource, user_id, opportunity_id, body.items, body.reason
+    )
     _log.info(
         "actuals.saved",
         extra={
             "opportunity_id": str(opportunity_id),
-            "recorded": len(plans) - corrected,
-            "corrected": corrected,
+            "recorded": checked.recorded,
+            "corrected": checked.corrected,
             "actor_id": actor.actor.id,
         },
     )
     return SavedActuals(
-        recorded=len(plans) - corrected,
-        corrected=corrected,
+        recorded=checked.recorded,
+        corrected=checked.corrected,
         view=await build_view(uow, actor, resource, opportunity_id),
     )
 

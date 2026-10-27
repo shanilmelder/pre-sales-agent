@@ -14,6 +14,10 @@ export type ActualKind = components["schemas"]["ActualKind"];
 export type CauseOption = components["schemas"]["CauseOption"];
 export type AssumptionOption = components["schemas"]["AssumptionOption"];
 export type SavedActuals = components["schemas"]["SavedActuals"];
+export type ActualsImportView = components["schemas"]["ActualsImportView"];
+export type ImportRowView = components["schemas"]["ImportRowView"];
+export type ActualsImportLatest = components["schemas"]["ActualsImportLatest"];
+export type AppliedImport = components["schemas"]["AppliedImport"];
 
 /** One rule an Actual broke, as the API's 422 `actual_invalid` lists it. */
 export type ActualError = { item: number | null; field: string; message: string };
@@ -26,7 +30,6 @@ export const EMPTY_BODY =
 export const RECORD_ACTUALS = "Record Actuals";
 export const SAVE_ACTUALS = "Save Actuals";
 export const IMPORT_FROM_FILE = "Import from file";
-export const IMPORT_LATER = "Import arrives in a later release";
 export const CLOSE_DELIVERY = "Close delivery";
 export const CLOSE_WARNING =
   "This cannot be undone. Once delivery is closed, Actuals are locked and can no longer be recorded or corrected.";
@@ -46,6 +49,7 @@ export const ACTUALS_TRACE_EVENTS: readonly string[] = [
   "actuals.actual.recorded",
   "actuals.actual.corrected",
   "actuals.delivery.closed",
+  "actuals.import.completed",
 ];
 
 /** "Hours per Estimate line with a variance cause. Estimate v3 · import from file or enter by
@@ -248,4 +252,105 @@ export function formatLocalDate(value: string): string {
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+// --- Import from file (Story 10.2) -----------------------------------------------------------
+
+export const IMPORT_TITLE = "Import Actuals from a file";
+export const IMPORT_INTRO =
+  "Download the template, fill in Actual h and a variance cause per line, then choose the file. Nothing is saved until you confirm.";
+export const DOWNLOAD_TEMPLATE = "Download template";
+export const CHOOSE_FILE = "Choose file";
+export const CONFIRM_IMPORT = "Confirm";
+export const IMPORT_ACCEPT = ".xlsx,.csv";
+export const IMPORT_HINT = ".xlsx or .csv, up to 5 MB";
+export const PARSE_FAILED = "Parse failed";
+export const RETRY = "Retry";
+export const REPEAT_TICK = "Import it again";
+export const EXCLUDE_INVALID = "Exclude invalid rows";
+export const BATCH_REASON_LABEL = "Reason for the corrections";
+export const IMPORT_STALE =
+  "Actuals changed since the preview was read. The preview is refreshed: check it and confirm again.";
+export const IMPORT_FAILED = "The import could not be applied. Try again in a moment.";
+export const UPLOAD_FAILED = "The file could not be uploaded. Try again in a moment.";
+export const TEMPLATE_FAILED = "The template could not be downloaded. Try again in a moment.";
+export const IMPORT_FORBIDDEN = "Only delivery managers can import Actuals.";
+export const REASON_ROW_MISSING = "correction reason missing";
+export const NOT_IMPORTABLE =
+  "Delivery is closed or there is no Baseline, so this file can't be imported.";
+export const STILL_READING = "Still reading the file. Check again in a moment.";
+export const CHECK_AGAIN = "Check again";
+export const UNSAVED_EDITS = "Save or discard your changes first";
+
+/** The import's status in the Sources pill's words: a running read shows as Parsing. */
+export function importPillStatus(
+  status: ActualsImportView["status"],
+): "queued" | "parsing" | "parsed" | "failed" {
+  if (status === "running") return "parsing";
+  if (status === "applied") return "parsed";
+  return status;
+}
+
+/** True while the worker is still reading the file (the dialog polls). */
+export function isImportPending(view: ActualsImportView | null): boolean {
+  return view !== null && (view.status === "queued" || view.status === "running");
+}
+
+/** The problems a row shows now: the server's, plus "correction reason missing" for a
+ * correction with no reason of its own while no batch reason is typed. */
+export function rowProblems(row: ImportRowView, batchReason: string): string[] {
+  if (row.status === "correct" && row.reason_missing && batchReason.trim() === "") {
+    return [...row.problems, `Row ${row.row}: ${REASON_ROW_MISSING}`];
+  }
+  return row.problems;
+}
+
+/** "3 to create · 1 to correct · 1 invalid · 2 skipped", for the rows not excluded. */
+export function importSummary(
+  rows: readonly ImportRowView[],
+  excluded: ReadonlySet<number>,
+  batchReason: string,
+): string {
+  let create = 0;
+  let correct = 0;
+  let invalid = 0;
+  let skipped = 0;
+  let left = 0;
+  for (const row of rows) {
+    if (row.status === "skipped") skipped += 1;
+    else if (excluded.has(row.row)) left += 1;
+    else if (rowProblems(row, batchReason).length > 0) invalid += 1;
+    else if (row.status === "correct") correct += 1;
+    else create += 1;
+  }
+  const parts = [`${create} to create`, `${correct} to correct`, `${invalid} invalid`];
+  if (left > 0) parts.push(`${left} excluded`);
+  if (skipped > 0) parts.push(`${skipped} skipped`);
+  return parts.join(" · ");
+}
+
+/** Why Confirm can't go yet (null: it can): invalid rows not excluded, nothing to import, or
+ * a repeated file without the tick. */
+export function importBlocked(
+  view: ActualsImportView,
+  excluded: ReadonlySet<number>,
+  batchReason: string,
+  repeatTicked: boolean,
+): string | null {
+  if (view.status !== "parsed") return "The file hasn't been read yet.";
+  if (view.estimate_version === null) return NOT_IMPORTABLE;
+  const included = view.rows.filter((r) => r.status !== "skipped" && !excluded.has(r.row));
+  const invalid = included.filter((r) => rowProblems(r, batchReason).length > 0).length;
+  if (invalid === 1) return "1 row is invalid. Fix it in the file or exclude it.";
+  if (invalid > 1) return `${invalid} rows are invalid. Fix them in the file or exclude them.`;
+  if (included.length === 0) return "Nothing to import: every row is blank or excluded.";
+  if (view.repeat_message !== null && !repeatTicked) {
+    return `${view.repeat_message}. Tick “${REPEAT_TICK}” to import it once more.`;
+  }
+  return null;
+}
+
+/** The web route that downloads the Baseline version's import template. */
+export function actualsTemplateUrl(opportunityId: string): string {
+  return `/api/opportunities/${encodeURIComponent(opportunityId)}/actuals-template`;
 }
