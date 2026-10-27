@@ -31,12 +31,27 @@ describe("visibleNav", () => {
       (i) => i.label,
     );
     expect(labels).not.toContain("Admin");
-    expect(labels).toHaveLength(4);
+    expect(labels).toEqual(["Inbox", "Opportunities", "Knowledge"]);
     expect(visibleNav([]).map((i) => i.label)).not.toContain("Admin");
   });
 
   it("shows Admin to holders of identity.user.list, whatever their roles", () => {
     expect(visibleNav(["identity.user.list"]).map((i) => i.label)).toContain("Admin");
+  });
+
+  it("shows Reports only to holders of reporting.report.read (Story 10.3)", () => {
+    expect(visibleNav(["opportunities.opportunity.read"]).map((i) => i.label)).not.toContain(
+      "Reports",
+    );
+    expect(visibleNav(["reporting.report.read"]).map((i) => i.label)).toContain("Reports");
+  });
+});
+
+describe("shortcutsFor and g r", () => {
+  it("gives g r only to holders of reporting.report.read", () => {
+    expect(shortcutsFor([]).some((s) => s.id === "go-reports")).toBe(false);
+    expect(shortcutsFor(["reporting.report.read"]).some((s) => s.id === "go-reports")).toBe(true);
+    expect(shortcutsFor([]).some((s) => s.id === "go-inbox")).toBe(true);
   });
 });
 

@@ -6,7 +6,7 @@ import { permissionsFor } from "@/test/permissions";
 
 import type { Me } from "@/lib/api/server";
 import type { Role } from "@/lib/navigation";
-import { SEQUENCE_TIMEOUT_MS, SHORTCUTS, type Shortcut } from "@/lib/shortcuts";
+import { SEQUENCE_TIMEOUT_MS, SHORTCUTS, shortcutsFor, type Shortcut } from "@/lib/shortcuts";
 import { resetInboxUnread } from "@/lib/use-inbox-count";
 import { axeViolations } from "@/test/axe";
 
@@ -123,12 +123,14 @@ describe("AppShell layout", () => {
       .getAllByRole("link")
       .filter((a) => a.getAttribute("aria-label") !== "Open Settings")
       .map((a) => a.textContent);
-    expect(links).toEqual([
-      "Inbox",
-      "Opportunities",
-      "Knowledge",
-      "Reports",
-    ]);
+    expect(links).toEqual(["Inbox", "Opportunities", "Knowledge"]);
+  });
+
+  it("shows Reports only with reporting.report.read (the Head of Delivery)", () => {
+    renderShell({ roles: ["head_of_delivery"] });
+    expect(within(sidebar()).getByRole("link", { name: "Reports" }).getAttribute("href")).toBe(
+      "/reports",
+    );
   });
 
   it("shows Admin to platform administrators", () => {
@@ -161,7 +163,7 @@ describe("AppShell layout", () => {
   });
 
   it("below 1024px shows the read-only notice, and navigation still works", async () => {
-    const { user } = renderShell();
+    const { user } = renderShell({ roles: ["head_of_delivery"] });
     const notice = screen.getByText(READ_ONLY_MESSAGE);
     expect(notice.className).toContain("min-[1024px]:hidden");
     expect(READ_ONLY_MESSAGE).toBe(
@@ -470,6 +472,15 @@ describe("command palette", () => {
         .map((o) => o.textContent);
     const { user, unmount } = renderShell({ roles: ["pm_reviewer"] });
     await user.keyboard("{Control>}k{/Control}");
+    expect(options()).toEqual(["Inbox", "Opportunities", "Knowledge", "Open Settings"]);
+    unmount();
+    const admin = renderShell({ roles: ["platform_administrator"] });
+    await admin.user.keyboard("{Control>}k{/Control}");
+    expect(options()).toContain("Admin");
+    expect(options()).toContain("Reports");
+    admin.unmount();
+    const head = renderShell({ roles: ["head_of_delivery"] });
+    await head.user.keyboard("{Control>}k{/Control}");
     expect(options()).toEqual([
       "Inbox",
       "Opportunities",
@@ -477,10 +488,6 @@ describe("command palette", () => {
       "Reports",
       "Open Settings",
     ]);
-    unmount();
-    const admin = renderShell({ roles: ["platform_administrator"] });
-    await admin.user.keyboard("{Control>}k{/Control}");
-    expect(options()).toContain("Admin");
   });
 
   it("fuzzy-filters as you type", async () => {
@@ -532,7 +539,12 @@ describe("cheat sheet", () => {
     const terms = within(sheet)
       .getAllByRole("term")
       .map((t) => t.textContent);
-    expect(terms).toEqual(SHORTCUTS.map((s) => s.description));
+    // The presales engineer's shortcuts: all but `g r` (Reports needs
+    // reporting.report.read).
+    const own = shortcutsFor(permissionsFor(["presales_engineer"]));
+    expect(terms).toEqual(own.map((s) => s.description));
+    expect(own).toHaveLength(SHORTCUTS.length - 1);
+    expect(own.some((s) => s.id === "go-reports")).toBe(false);
   });
 
   it("opens from the visible control, traps focus and returns it on close", async () => {
@@ -564,9 +576,15 @@ describe("g navigation", () => {
     ["k", "/knowledge"],
     ["r", "/reports"],
   ])("g then %s goes to %s", async (key, href) => {
-    const { user } = renderShell();
+    const { user } = renderShell({ roles: ["head_of_delivery"] });
     await user.keyboard(`g${key}`);
     expect(push).toHaveBeenCalledWith(href);
+  });
+
+  it("g r does nothing without reporting.report.read", async () => {
+    const { user } = renderShell({ roles: ["presales_engineer"] });
+    await user.keyboard("gr");
+    expect(push).not.toHaveBeenCalled();
   });
 
   it("another key cancels the sequence", async () => {
@@ -576,7 +594,7 @@ describe("g navigation", () => {
   });
 
   it("more than 1s between keys cancels the sequence", async () => {
-    const { user } = renderShell();
+    const { user } = renderShell({ roles: ["head_of_delivery"] });
     let now = 1_000_000;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     await user.keyboard("g");
@@ -666,6 +684,9 @@ describe("Esc layering", () => {
   });
 });
 
+/** Roles that between them hold every shortcut: `c` (create) and `g r` (Reports). */
+const ALL_SHORTCUT_ROLES: Role[] = ["presales_engineer", "head_of_delivery"];
+
 describe("every shortcut in the shared definition is implemented", () => {
   async function press(user: ReturnType<typeof userEvent.setup>, shortcut: Shortcut) {
     if (shortcut.match.kind === "sequence") {
@@ -684,7 +705,9 @@ describe("every shortcut in the shared definition is implemented", () => {
 
   it.each(SHORTCUTS.map((s) => [s.id, s] as const))("%s", async (id, shortcut) => {
     const { user } = renderShell(
-      shortcut.match.kind === "digit" ? { children: <Workspace /> } : {},
+      shortcut.match.kind === "digit"
+        ? { roles: ALL_SHORTCUT_ROLES, children: <Workspace /> }
+        : { roles: ALL_SHORTCUT_ROLES },
     );
     if (id === "close-layer") await user.keyboard("]");
     await act(async () => press(user, shortcut));
@@ -847,7 +870,7 @@ describe("key matching", () => {
   });
 
   it("g sequences ignore letter case", async () => {
-    const { user } = renderShell();
+    const { user } = renderShell({ roles: ["head_of_delivery"] });
     await user.keyboard("{Shift>}gr{/Shift}");
     expect(push).toHaveBeenCalledWith("/reports");
   });
@@ -855,7 +878,10 @@ describe("key matching", () => {
   it.each(["radio", "checkbox", "button", "range"])(
     "shortcuts work while a %s input has focus",
     async (type) => {
-      const { user } = renderShell({ children: <input type={type} aria-label="Field" /> });
+      const { user } = renderShell({
+        roles: ["head_of_delivery"],
+        children: <input type={type} aria-label="Field" />,
+      });
       screen.getByLabelText("Field").focus();
       await user.keyboard("gr");
       expect(push).toHaveBeenCalledWith("/reports");

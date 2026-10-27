@@ -54,6 +54,7 @@ ADMIN_ONLY = (
 )
 MODULES = {
     "actuals",
+    "reporting",
     "identity",
     "notifications",
     "opportunities",

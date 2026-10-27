@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { KpiTile } from "@/components/ui/kpi-tile";
 import { Chip } from "@/components/ui/chip";
 import { Pill, type PillTone } from "@/components/ui/pill";
 import { ActorTile } from "@/components/opportunities/actor-tile";
@@ -112,39 +113,6 @@ function SummaryCard({
 }
 
 // --- KPI row ---------------------------------------------------------------------------------
-
-function KpiTile({
-  label,
-  href,
-  value,
-  unit,
-  children,
-}: {
-  label: string;
-  href: string;
-  value: ReactNode;
-  /** A smaller trailing part of the value: " of 12", " h". */
-  unit?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <Card className="min-w-0">
-      <Link
-        href={href}
-        className="flex h-full flex-col rounded-xl p-5 text-foreground outline-none hover:bg-surface-alt focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        <span className="text-label text-muted-foreground">{label}</span>
-        <span className="mt-1 text-kpi text-numeric">
-          {value}
-          {unit ? (
-            <span className="text-section font-normal text-muted-foreground">{unit}</span>
-          ) : null}
-        </span>
-        {children}
-      </Link>
-    </Card>
-  );
-}
 
 const KpiNote = ({ children }: { children: ReactNode }) => (
   <span className="mt-2 text-meta text-muted-foreground">{children}</span>

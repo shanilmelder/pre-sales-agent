@@ -19,6 +19,9 @@ export type Permission = string;
 /** The permission that lists users: it opens Admin. */
 export const USER_LIST_PERMISSION = "identity.user.list";
 
+/** Story 10.3: the permission that opens Reports (Head of Delivery, platform administrators). */
+export const REPORTS_PERMISSION = "reporting.report.read";
+
 export type NavItem = {
   id: "inbox" | "opportunities" | "knowledge" | "reports" | "admin";
   label: string;
@@ -28,6 +31,9 @@ export type NavItem = {
   gKey?: string;
   /** Shown only to users holding `identity.user.list`. */
   adminOnly?: boolean;
+  /** Shown (in the sidebar, the palette and as a `g` shortcut) only to holders of this
+   * permission. */
+  requires?: Permission;
   /** Story 9.2: the item shows the Inbox unread count. */
   badge?: "inbox-unread";
 };
@@ -49,7 +55,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
     gKey: "o",
   },
   { id: "knowledge", label: "Knowledge", href: "/knowledge", icon: BookOpenIcon, gKey: "k" },
-  { id: "reports", label: "Reports", href: "/reports", icon: ChartColumnIcon, gKey: "r" },
+  {
+    id: "reports",
+    label: "Reports",
+    href: "/reports",
+    icon: ChartColumnIcon,
+    gKey: "r",
+    requires: REPORTS_PERMISSION,
+  },
   { id: "admin", label: "Admin", href: "/admin", icon: ShieldCheckIcon, adminOnly: true },
 ];
 
@@ -58,10 +71,20 @@ export function isAdmin(permissions: readonly Permission[]): boolean {
   return permissions.includes(USER_LIST_PERMISSION);
 }
 
+/** Whether the user may open Reports. Display only: the API decides. */
+export function canReadReports(permissions: readonly Permission[]): boolean {
+  return permissions.includes(REPORTS_PERMISSION);
+}
+
+/** Whether the user may see this nav item (its `adminOnly` and `requires`). */
+export function canSeeNavItem(item: NavItem, permissions: readonly Permission[]): boolean {
+  if (item.adminOnly && !isAdmin(permissions)) return false;
+  return !item.requires || permissions.includes(item.requires);
+}
+
 /** The nav items this user sees. Display only: each page still gates itself. */
 export function visibleNav(permissions: readonly Permission[]): NavItem[] {
-  const admin = isAdmin(permissions);
-  return NAV_ITEMS.filter((item) => !item.adminOnly || admin);
+  return NAV_ITEMS.filter((item) => canSeeNavItem(item, permissions));
 }
 
 /** The Opportunities list on its Mine view. */

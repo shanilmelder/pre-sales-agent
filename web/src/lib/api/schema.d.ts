@@ -3033,6 +3033,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/estimate-vs-actual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Estimate Vs Actual Report
+         * @description Estimate versus actual: the KPIs (closed Opportunities, total variance, failed
+         *     Assumptions by kind), the groups (estimate and actual hours, variance with its tone and
+         *     bar, main cause, failed Assumptions) and each group's Opportunities per Estimate Version,
+         *     with the Baseline flag. Only the Opportunities the caller can read count. Every figure is
+         *     computed on the server.
+         */
+        get: operations["get_estimate_vs_actual_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3631,6 +3655,20 @@ export interface components {
             /** Skipped */
             skipped: number;
         };
+        /** AppliedFilters */
+        AppliedFilters: {
+            /** Product */
+            product: string | null;
+            /** Work Package Id */
+            work_package_id: string | null;
+            cause: components["schemas"]["VarianceCause"] | null;
+            /** Closed From */
+            closed_from: string | null;
+            /** Closed To */
+            closed_to: string | null;
+            /** Include Milestones */
+            include_milestones: boolean;
+        };
         /**
          * AppliedImport
          * @description The applied import, with the counts, and the Actuals tab as it is now.
@@ -4072,6 +4110,17 @@ export interface components {
             href: string;
         };
         /**
+         * Calibration
+         * @description The info strip: calibration isn't available yet; `message` says how many Integration
+         *     Types have at least `threshold` closed Opportunities.
+         */
+        Calibration: {
+            /** Threshold */
+            threshold: number;
+            /** Message */
+            message: string;
+        };
+        /**
          * CatalogueEntry
          * @description A catalogue entry at one version. `version` is the version shown (the current one
          *     unless another was asked for); `current_version` the latest. `retired` is true for a
@@ -4160,6 +4209,12 @@ export interface components {
             label: string;
             /** Unplanned */
             unplanned: boolean;
+        };
+        /** CauseRef */
+        CauseRef: {
+            value: components["schemas"]["VarianceCause"];
+            /** Label */
+            label: string;
         };
         /**
          * ChallengeConfirm
@@ -5387,6 +5442,22 @@ export interface components {
             can_set_baseline: boolean;
         };
         /**
+         * EstimateVsActualReport
+         * @description Reports > Estimate vs actual. `has_actuals` is false when the caller can read no
+         *     Actual at all (the empty state); `kpis` is null when no Actual matches the filters.
+         */
+        EstimateVsActualReport: {
+            group_by: components["schemas"]["GroupBy"];
+            filters: components["schemas"]["AppliedFilters"];
+            /** Has Actuals */
+            has_actuals: boolean;
+            kpis: components["schemas"]["VarianceKpis"] | null;
+            /** Groups */
+            groups: components["schemas"]["VarianceGroup"][];
+            calibration: components["schemas"]["Calibration"];
+            options: components["schemas"]["ReportOptions"];
+        };
+        /**
          * EvalBar
          * @description One release bar. `comparator` `min`: the value must be at least `threshold`; `max`:
          *     at most. `delta`: the value minus the last accepted result's, in points (null on the
@@ -5611,6 +5682,18 @@ export interface components {
             kind: string;
             /** Wording */
             wording: string;
+        };
+        /** FailedKindCount */
+        FailedKindCount: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "condition" | "contingency";
+            /** Label */
+            label: string;
+            /** Count */
+            count: number;
         };
         /**
          * FindingCategory
@@ -6055,6 +6138,36 @@ export interface components {
          * @enum {string}
          */
         GraphNodeType: "product" | "integration_type" | "source" | "checklist";
+        /**
+         * GroupBy
+         * @enum {string}
+         */
+        GroupBy: "integration_type" | "opportunity" | "product" | "work_package" | "cause";
+        /**
+         * GroupOpportunity
+         * @description One Opportunity's Actuals within a group, per Estimate Version they were recorded
+         *     against (`estimate_version`, e.g. 3; `is_baseline`: it is the current Baseline).
+         */
+        GroupOpportunity: {
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Title */
+            title: string;
+            /** Estimate Version Id */
+            estimate_version_id: string;
+            /** Estimate Version */
+            estimate_version: number;
+            /** Is Baseline */
+            is_baseline: boolean;
+            /** Estimate Hours */
+            estimate_hours: number;
+            /** Actual Hours */
+            actual_hours: number;
+            variance: components["schemas"]["ReportVarianceView"];
+            main_cause: components["schemas"]["CauseRef"] | null;
+            /** Failed Assumptions */
+            failed_assumptions: number;
+        };
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -7345,6 +7458,42 @@ export interface components {
             version: number;
         };
         /**
+         * ReportOptions
+         * @description The filter choices, from every readable Actual (filters ignored).
+         */
+        ReportOptions: {
+            /** Products */
+            products: string[];
+            /** Work Packages */
+            work_packages: components["schemas"]["WorkPackageOption"][];
+            /** Causes */
+            causes: components["schemas"]["CauseRef"][];
+        };
+        /**
+         * ReportVarianceView
+         * @description Summed actual minus summed estimate: hours, percent (null when the estimate is 0), the
+         *     direction, `display` (the signed percent, e.g. "+11.4%", or the signed hours "+12.0 h"
+         *     with no estimate), `sr_label` ("over", "under" or "on estimate", read with the figure),
+         *     `tone` (`over`: above +10 %, red; `under`: below -5 %, green; otherwise `neutral`) and the
+         *     diverging bar's `bar_left` and `bar_width` (percents of the track, centred at 50).
+         */
+        ReportVarianceView: {
+            /** Hours */
+            hours: number;
+            /** Percent */
+            percent: number | null;
+            direction: components["schemas"]["VarianceDirection"];
+            /** Display */
+            display: string;
+            /** Sr Label */
+            sr_label: string;
+            tone: components["schemas"]["Tone"];
+            /** Bar Left */
+            bar_left: number;
+            /** Bar Width */
+            bar_width: number;
+        };
+        /**
          * RequestStatus
          * @enum {string}
          */
@@ -8270,6 +8419,11 @@ export interface components {
          */
         TaskSkipReason: "agent_disabled";
         /**
+         * Tone
+         * @enum {string}
+         */
+        Tone: "over" | "under" | "neutral";
+        /**
          * ToolDenial
          * @description One denied ToolGateway call (Story 7.4), from `platform_tool_calls`. Ids, codes and
          *     the time only: never an Opportunity name, a prompt or Source text. `semver` is the
@@ -8526,6 +8680,51 @@ export interface components {
          */
         VarianceDirection: "over" | "under" | "on";
         /**
+         * VarianceGroup
+         * @description One row of the table. `key` is the grouping value (an Integration Type, Opportunity or
+         *     Work Package id, a product name or a cause), or `none` for rows without one.
+         */
+        VarianceGroup: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Opportunity Count */
+            opportunity_count: number;
+            /** Estimate Hours */
+            estimate_hours: number;
+            /** Actual Hours */
+            actual_hours: number;
+            variance: components["schemas"]["ReportVarianceView"];
+            main_cause: components["schemas"]["CauseRef"] | null;
+            /** Failed Assumptions */
+            failed_assumptions: number;
+            /** Opportunities */
+            opportunities: components["schemas"]["GroupOpportunity"][];
+        };
+        /**
+         * VarianceKpis
+         * @description The KPI tiles: closed Opportunities (of the `opportunities` with Actuals in the
+         *     report), the total variance over the report's distinct Actuals (each counted once, even
+         *     when it is in several groups) with its estimate and actual totals, and the distinct failed
+         *     Assumptions by kind.
+         */
+        VarianceKpis: {
+            /** Closed Opportunities */
+            closed_opportunities: number;
+            /** Opportunities */
+            opportunities: number;
+            /** Estimate Hours */
+            estimate_hours: number;
+            /** Actual Hours */
+            actual_hours: number;
+            variance: components["schemas"]["ReportVarianceView"];
+            /** Failed Assumptions */
+            failed_assumptions: number;
+            /** Failed By Kind */
+            failed_by_kind: components["schemas"]["FailedKindCount"][];
+        };
+        /**
          * VarianceView
          * @description Actual minus estimate (server-calculated): hours, percent of the estimate (null when
          *     the estimate is 0, as for Unplanned work), the direction, and the signed label shown,
@@ -8659,6 +8858,13 @@ export interface components {
          * @enum {string}
          */
         VersionStatus: "draft" | "submitted" | "in_review" | "approved" | "rejected" | "superseded";
+        /** WorkPackageOption */
+        WorkPackageOption: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -31893,6 +32099,129 @@ export interface operations {
             };
             /** @description No `If-Match` header (`if_match_required`) */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_estimate_vs_actual_report: {
+        parameters: {
+            query?: {
+                /** @description How the table's rows are grouped. */
+                group_by?: components["schemas"]["GroupBy"];
+                /** @description Only Opportunities with this product (trimmed, ignoring case). Blank is ignored. */
+                product?: string | null;
+                /** @description Only Actuals tagged with this Work Package. */
+                work_package_id?: string | null;
+                /** @description Only Actuals with this variance cause. */
+                cause?: components["schemas"]["VarianceCause"] | null;
+                /** @description Only Opportunities whose delivery closed on or after this date. */
+                closed_from?: string | null;
+                /** @description Only Opportunities whose delivery closed on or before this date. */
+                closed_to?: string | null;
+                /** @description Count milestone Actuals too (default: final Actuals only). */
+                include_milestones?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateVsActualReport"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller lacks `reporting.report.read` (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An invalid parameter (`validation_error`), e.g. `closed_from` after `closed_to` */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

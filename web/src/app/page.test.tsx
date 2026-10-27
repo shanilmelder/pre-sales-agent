@@ -54,7 +54,7 @@ import InboxPage from "@/app/inbox/page";
 import KnowledgePage from "@/app/knowledge/page";
 import NotFound from "@/app/not-found";
 import Home from "@/app/page";
-import ReportsPage from "@/app/reports/page";
+import ReportsPipelinePage from "@/app/reports/pipeline/page";
 import SettingsPage from "@/app/settings/page";
 import { ShellProviders } from "@/components/shell/shell-context";
 
@@ -96,9 +96,10 @@ const SHELL_PAGES: [string, () => Promise<ReactElement>, string, string, string]
     NO_KNOWLEDGE_SOURCES,
     "Knowledge Sources, Checklists and coverage.",
   ],
+  // /reports itself loads the report: see app/reports/page.test.tsx.
   [
-    "/reports",
-    ReportsPage,
+    "/reports/pipeline",
+    ReportsPipelinePage,
     "Reports",
     "Not available yet.",
     "Estimate accuracy, pipeline and cost across Opportunities.",

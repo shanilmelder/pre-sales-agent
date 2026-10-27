@@ -124,6 +124,7 @@ export function KeyboardShortcuts({ permissions }: { permissions: readonly Permi
           // Handled with the digit in `onKeyDown`.
           return;
         default: {
+          // Sequences are matched only among this user's `shortcuts`.
           const item = NAV_ITEMS.find((nav) => `go-${nav.id}` === id);
           if (item) router.push(item.href);
         }
@@ -188,8 +189,10 @@ export function KeyboardShortcuts({ permissions }: { permissions: readonly Permi
       const first = pending.current;
       pending.current = null;
       if (first && Date.now() - first.at <= SEQUENCE_TIMEOUT_MS) {
+        // Only this user's sequences: `g r` is inert without `reporting.report.read`.
         const sequence = SEQUENCES.find(
-          (s) => s.match.keys[0] === first.key && s.match.keys[1] === key,
+          (s) =>
+            shortcuts.includes(s) && s.match.keys[0] === first.key && s.match.keys[1] === key,
         );
         if (sequence) {
           event.preventDefault();
