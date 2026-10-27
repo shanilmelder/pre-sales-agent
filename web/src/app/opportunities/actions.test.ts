@@ -13,9 +13,14 @@ vi.mock("@/lib/api/server", () => ({ createServerApiClient: async () => api }));
 vi.mock("server-only", () => ({}));
 
 import {
+  applyActualsImport,
   closeDelivery,
   correctActual,
+  loadActualsImport,
+  loadLatestActualsImport,
+  retryActualsImport,
   saveActuals,
+  uploadActualsImport,
   acceptAllAssumptions,
   acceptAssumption,
   acceptRequirementChange,
@@ -3208,6 +3213,130 @@ describe("Actuals (Story 10.1)", () => {
     expect(await closeDelivery({ opportunityId: OPP_ID, rowVersion: -1 })).toEqual({
       kind: "error",
     });
+    expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("Import Actuals from a file (Story 10.2)", () => {
+  const IMPORT_ID = "00000000-0000-7000-8000-0000000000f1";
+  const IMPORTED = { id: IMPORT_ID, status: "queued" };
+  const APPLY = "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}/apply";
+
+  beforeEach(() => {
+    api.GET.mockReset();
+    api.POST.mockReset();
+  });
+
+  function apply(overrides: Record<string, unknown> = {}) {
+    return applyActualsImport({
+      opportunityId: OPP_ID,
+      importId: IMPORT_ID,
+      rowVersion: 4,
+      excludedRows: [4],
+      confirmRepeat: false,
+      ...overrides,
+    });
+  }
+
+  it("uploadActualsImport forwards the file as multipart", async () => {
+    api.POST.mockResolvedValue({ data: IMPORTED, response: status(202) });
+    const form = new FormData();
+    form.append("opportunityId", OPP_ID);
+    form.append("file", new File(["Line ID,Actual h\n"], "actuals.csv"));
+    expect(await uploadActualsImport(form)).toEqual({ kind: "ok", imported: IMPORTED });
+    const [path, init] = api.POST.mock.calls[0]!;
+    expect(path).toBe("/api/v1/opportunities/{opportunity_id}/actuals/imports");
+    expect(init.params).toEqual({ path: { opportunity_id: OPP_ID } });
+    const sent = init.bodySerializer(init.body) as FormData;
+    expect((sent.get("file") as File).name).toBe("actuals.csv");
+    expect(sent.get("opportunityId")).toBeNull();
+  });
+
+  it.each([
+    [413, { code: "file_too_large", detail: "Rejected: the file is larger than 5 MB" }],
+    [415, { code: "file_content_mismatch", detail: "Rejected: the content doesn't match .xlsx" }],
+  ])("uploadActualsImport maps %i to rejected with the API's sentence", async (code, error) => {
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    const form = new FormData();
+    form.append("opportunityId", OPP_ID);
+    form.append("file", new File(["x"], "a.xlsx"));
+    expect(await uploadActualsImport(form)).toEqual({ kind: "rejected", reason: error.detail });
+  });
+
+  it("loadLatestActualsImport, loadActualsImport and retryActualsImport", async () => {
+    api.GET.mockResolvedValueOnce({ data: { latest: IMPORTED }, response: status(200) });
+    expect(await loadLatestActualsImport(OPP_ID)).toEqual({ kind: "ok", latest: IMPORTED });
+    expect(api.GET).toHaveBeenLastCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports/latest",
+      { params: { path: { opportunity_id: OPP_ID } } },
+    );
+    api.GET.mockResolvedValueOnce({ data: IMPORTED, response: status(200) });
+    expect(await loadActualsImport(OPP_ID, IMPORT_ID)).toEqual({ kind: "ok", imported: IMPORTED });
+    expect(api.GET).toHaveBeenLastCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}",
+      { params: { path: { opportunity_id: OPP_ID, import_id: IMPORT_ID } } },
+    );
+    api.POST.mockResolvedValueOnce({
+      error: { code: "parse_not_failed", detail: "Only a failed import can be retried." },
+      response: status(409),
+    });
+    expect(await retryActualsImport(OPP_ID, IMPORT_ID)).toEqual({
+      kind: "conflict",
+      detail: "Only a failed import can be retried.",
+    });
+    expect(api.POST).toHaveBeenLastCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}/retry",
+      { params: { path: { opportunity_id: OPP_ID, import_id: IMPORT_ID } } },
+    );
+  });
+
+  it("applyActualsImport posts the exclusions and tick with the quoted If-Match", async () => {
+    const applied = { imported: IMPORTED, actuals: { row_version: 6 } };
+    api.POST.mockResolvedValue({ data: applied, response: status(200) });
+    expect(await apply({ reason: "Timesheets", confirmRepeat: true })).toEqual({
+      kind: "ok",
+      applied,
+    });
+    expect(api.POST).toHaveBeenCalledWith(APPLY, {
+      params: {
+        path: { opportunity_id: OPP_ID, import_id: IMPORT_ID },
+        header: { "If-Match": '"4"' },
+      },
+      body: { excluded_rows: [4], confirm_repeat: true, reason: "Timesheets" },
+    });
+  });
+
+  it("applyActualsImport leaves out a blank reason", async () => {
+    api.POST.mockResolvedValue({ data: {}, response: status(200) });
+    await apply({ reason: "  " });
+    expect(api.POST.mock.calls[0]![1].body).toEqual({ excluded_rows: [4], confirm_repeat: false });
+  });
+
+  const ROW_ERRORS = [{ item: 4, field: "line_id", message: "Row 4: line ID not in Baseline v3" }];
+  it.each([
+    [422, { code: "actual_invalid", errors: ROW_ERRORS }, { kind: "invalid", errors: ROW_ERRORS }],
+    [412, { code: "row_version_mismatch" }, { kind: "stale" }],
+    [409, { code: "actuals_import_repeated", detail: "Already imported on 14 Oct" }, {
+      kind: "repeated",
+      detail: "Already imported on 14 Oct",
+    }],
+    [409, { code: "actuals_import_applied", detail: "Already applied." }, {
+      kind: "conflict",
+      detail: "Already applied.",
+    }],
+    [403, { code: "forbidden" }, { kind: "forbidden" }],
+    [500, { code: "internal_error" }, { kind: "error" }],
+  ])("applyActualsImport maps %i %o", async (code, error, expected) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockResolvedValue({ error, response: status(code) });
+    expect(await apply()).toEqual(expected);
+  });
+
+  it("rejects bad input without calling the API", async () => {
+    expect(await apply({ rowVersion: -1 })).toEqual({ kind: "error" });
+    expect(await apply({ excludedRows: ["4"] })).toEqual({ kind: "error" });
+    expect(await apply({ importId: "x" })).toEqual({ kind: "error" });
+    expect(await uploadActualsImport({})).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
   });
 });

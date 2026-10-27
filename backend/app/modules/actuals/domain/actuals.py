@@ -28,6 +28,8 @@ COST_MAX = 2**63 - 1
 NOTE_MAX = 2000
 MILESTONE_LABEL_MAX = 200
 REASON_MAX = 1000
+FAILED_ASSUMPTIONS_MAX = 50
+"""The most failed Assumptions one Actual may name."""
 MINUS = "−"  # noqa: RUF001 - the real minus sign on purpose
 CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 

@@ -140,7 +140,7 @@ development_status:
 
   epic-10: in-progress
   10-1-record-actuals-per-estimate-line: review
-  10-2-import-actuals-from-a-file: backlog
+  10-2-import-actuals-from-a-file: review
   10-3-variance-reporting-views-and-the-reports-table: backlog
   10-4-drill-down-from-variance-to-the-failed-assumption: backlog
   10-5-record-the-opportunity-outcome-and-retention-dates: backlog

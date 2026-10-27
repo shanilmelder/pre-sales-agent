@@ -33,7 +33,9 @@ import type {
   ActualCorrection,
   ActualError,
   ActualInput,
+  ActualsImportView,
   ActualsView,
+  AppliedImport,
   SavedActuals,
 } from "@/lib/actuals";
 import type { AssessmentRun, TaskAgent } from "@/lib/assessments";
@@ -4147,6 +4149,209 @@ export async function closeDelivery(input: unknown): Promise<CloseDeliveryResult
     }
   } catch (thrown) {
     console.error(`close delivery failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+// --- Import Actuals from a file (Story 10.2) ---------------------------------------------------
+
+export type ActualsImportResult =
+  | { kind: "ok"; imported: ActualsImportView }
+  /** 413, 415 or 422 on upload: the API's "Rejected: ..." sentence. */
+  | { kind: "rejected"; reason: string }
+  /** 409: no Baseline, delivery closed, or (retry) the import didn't fail. */
+  | { kind: "conflict"; detail: string | null }
+  | { kind: "forbidden" }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function importOutcome(
+  label: string,
+  status: number,
+  error: unknown,
+): Exclude<ActualsImportResult, { kind: "ok" }> {
+  const { code, detail } = problem(error);
+  switch (status) {
+    case 413:
+    case 415:
+    case 422:
+      return { kind: "rejected", reason: rejectionReason(detail, FILE_UNREADABLE) };
+    case 409:
+      return { kind: "conflict", detail: detail ?? null };
+    case 403:
+      return { kind: "forbidden" };
+    case 404:
+      return { kind: "not-found" };
+    default:
+      console.error(`${label} failed: status=${status} code=${String(code)}`);
+      return { kind: "error" };
+  }
+}
+
+/** `POST …/actuals/imports` with the `file` from `formData` (its `opportunityId` names the
+ * Opportunity). The API checks who may import, the type, the size and the content; the worker
+ * reads the file. This only forwards it. */
+export async function uploadActualsImport(formData: unknown): Promise<ActualsImportResult> {
+  if (!(formData instanceof FormData)) return { kind: "error" };
+  const opportunityId = formData.get("opportunityId");
+  const file = formData.get("file");
+  if (!isId(opportunityId) || !(file instanceof File)) return { kind: "error" };
+  const upload = new FormData();
+  upload.append("file", file, file.name);
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports",
+      {
+        params: { path: { opportunity_id: opportunityId } },
+        // The generated type describes the multipart field; the body sent is the FormData.
+        body: { file: "" },
+        bodySerializer: () => upload,
+      },
+    );
+    if (data) return { kind: "ok", imported: data };
+    return importOutcome("upload actuals import", response.status, error);
+  } catch (thrown) {
+    console.error(`upload actuals import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type LatestActualsImportResult =
+  | { kind: "ok"; latest: ActualsImportView | null }
+  | { kind: "error" };
+
+/** `GET …/actuals/imports/latest`: the Opportunity's most recent import, with its preview. */
+export async function loadLatestActualsImport(
+  opportunityId: unknown,
+): Promise<LatestActualsImportResult> {
+  if (!isId(opportunityId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports/latest",
+      { params: { path: { opportunity_id: opportunityId } } },
+    );
+    if (data) return { kind: "ok", latest: data.latest ?? null };
+    console.error(
+      `load latest actuals import failed: status=${response.status} code=${String(problem(error).code)}`,
+    );
+    return { kind: "error" };
+  } catch (thrown) {
+    console.error(
+      `load latest actuals import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`,
+    );
+    return { kind: "error" };
+  }
+}
+
+/** `GET …/actuals/imports/{id}`: the import's status and, once read, its preview (the dialog
+ * polls this while the worker reads the file). */
+export async function loadActualsImport(
+  opportunityId: unknown,
+  importId: unknown,
+): Promise<ActualsImportResult> {
+  if (!isId(opportunityId) || !isId(importId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.GET(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}",
+      { params: { path: { opportunity_id: opportunityId, import_id: importId } } },
+    );
+    if (data) return { kind: "ok", imported: data };
+    return importOutcome("load actuals import", response.status, error);
+  } catch (thrown) {
+    console.error(`load actuals import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+/** `POST …/actuals/imports/{id}/retry`: read a file whose reading failed again. */
+export async function retryActualsImport(
+  opportunityId: unknown,
+  importId: unknown,
+): Promise<ActualsImportResult> {
+  if (!isId(opportunityId) || !isId(importId)) return { kind: "error" };
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}/retry",
+      { params: { path: { opportunity_id: opportunityId, import_id: importId } } },
+    );
+    if (data) return { kind: "ok", imported: data };
+    return importOutcome("retry actuals import", response.status, error);
+  } catch (thrown) {
+    console.error(`retry actuals import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
+    return { kind: "error" };
+  }
+}
+
+export type ApplyActualsImportResult =
+  | { kind: "ok"; applied: AppliedImport }
+  /** 422 `actual_invalid`: each row's problem ("Row 7: ..."). */
+  | { kind: "invalid"; errors: ActualError[] }
+  /** 412: Actuals changed since the preview. */
+  | { kind: "stale" }
+  /** 409 `actuals_import_repeated`: the same file was applied before; tick to import again. */
+  | { kind: "repeated"; detail: string | null }
+  /** 409 otherwise: no Baseline, delivery closed, not read yet or already applied. */
+  | { kind: "conflict"; detail: string | null }
+  | { kind: "forbidden" }
+  | { kind: "error" };
+
+/** `POST …/actuals/imports/{id}/apply` with `If-Match` the tab's `row_version` the preview
+ * was checked against: **Confirm**. The API applies every row or none. Logs statuses only. */
+export async function applyActualsImport(input: unknown): Promise<ApplyActualsImportResult> {
+  const { opportunityId, importId, rowVersion, excludedRows, reason, confirmRepeat } = (input ??
+    {}) as Record<string, unknown>;
+  if (!isId(opportunityId) || !isId(importId) || !isRowVersion(rowVersion)) {
+    return { kind: "error" };
+  }
+  if (
+    !Array.isArray(excludedRows) ||
+    !excludedRows.every((r) => typeof r === "number" && Number.isSafeInteger(r)) ||
+    (reason !== undefined && typeof reason !== "string") ||
+    typeof confirmRepeat !== "boolean"
+  ) {
+    return { kind: "error" };
+  }
+  try {
+    const api = await createServerApiClient();
+    const { data, error, response } = await api.POST(
+      "/api/v1/opportunities/{opportunity_id}/actuals/imports/{import_id}/apply",
+      {
+        params: {
+          path: { opportunity_id: opportunityId, import_id: importId },
+          header: { "If-Match": `"${rowVersion}"` },
+        },
+        body: {
+          excluded_rows: excludedRows as number[],
+          confirm_repeat: confirmRepeat,
+          ...(typeof reason === "string" && reason.trim() ? { reason } : {}),
+        },
+      },
+    );
+    if (data) return { kind: "ok", applied: data };
+    const { code, detail } = problem(error);
+    switch (response.status) {
+      case 422:
+        return code === "actual_invalid"
+          ? { kind: "invalid", errors: actualErrorsOf(error) }
+          : { kind: "error" };
+      case 412:
+        return { kind: "stale" };
+      case 409:
+        return code === "actuals_import_repeated"
+          ? { kind: "repeated", detail: detail ?? null }
+          : { kind: "conflict", detail: detail ?? null };
+      case 403:
+        return { kind: "forbidden" };
+      default:
+        console.error(`apply actuals import failed: status=${response.status} code=${String(code)}`);
+        return { kind: "error" };
+    }
+  } catch (thrown) {
+    console.error(`apply actuals import failed: ${thrown instanceof Error ? thrown.name : "unknown"}`);
     return { kind: "error" };
   }
 }

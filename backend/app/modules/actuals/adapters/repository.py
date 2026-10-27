@@ -1,7 +1,9 @@
-"""Persistence for Actuals and Close delivery (Story 10.1). Runs inside the caller's Unit of
-Work. Rows are only inserted; the one change ever made is clearing `is_current` on the
-version a correction replaces."""
+"""Persistence for Actuals and Close delivery (Story 10.1) and Actuals imports (Story 10.2).
+Runs inside the caller's Unit of Work. Actual and delivery rows are only inserted; the one
+change ever made is clearing `is_current` on the version a correction replaces. An import's
+status, rows and apply counts change as it moves through its states; it is never deleted."""
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -10,7 +12,7 @@ from uuid import UUID
 
 from sqlalchemy import func, insert, select, update
 
-from app.modules.actuals.adapters.models import ActualRow, DeliveryRow
+from app.modules.actuals.adapters.models import ActualRow, DeliveryRow, ImportRow
 from app.platform.uow import UnitOfWork
 
 
@@ -226,3 +228,173 @@ async def insert_delivery(
     stored = await get_delivery(uow, opportunity_id)
     assert stored is not None
     return stored
+
+
+# --- imports (Story 10.2) -------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ImportRecord:
+    id: UUID
+    opportunity_id: UUID
+    uploaded_by: UUID
+    file_sha256: str
+    size_bytes: int
+    filename: str
+    file_kind: str
+    status: str
+    error_code: str | None
+    rows: list[dict[str, Any]] | None
+    created_at: datetime
+    applied_at: datetime | None = None
+    applied_by: UUID | None = None
+    created_count: int | None = None
+    corrected_count: int | None = None
+    excluded_count: int | None = None
+    skipped_count: int | None = None
+
+
+def _import(row: ImportRow) -> ImportRecord:
+    return ImportRecord(
+        id=row.id,
+        opportunity_id=row.opportunity_id,
+        uploaded_by=row.uploaded_by,
+        file_sha256=row.file_sha256,
+        size_bytes=row.size_bytes,
+        filename=row.filename,
+        file_kind=row.file_kind,
+        status=row.status,
+        error_code=row.error_code,
+        rows=row.rows,
+        created_at=row.created_at,
+        applied_at=row.applied_at,
+        applied_by=row.applied_by,
+        created_count=row.created_count,
+        corrected_count=row.corrected_count,
+        excluded_count=row.excluded_count,
+        skipped_count=row.skipped_count,
+    )
+
+
+async def insert_import(
+    uow: UnitOfWork,
+    *,
+    import_id: UUID,
+    opportunity_id: UUID,
+    uploaded_by: UUID,
+    file_sha256: str,
+    size_bytes: int,
+    filename: str,
+    file_kind: str,
+) -> None:
+    await uow.session.execute(
+        insert(ImportRow).values(
+            id=import_id,
+            opportunity_id=opportunity_id,
+            uploaded_by=uploaded_by,
+            file_sha256=file_sha256,
+            size_bytes=size_bytes,
+            filename=filename,
+            file_kind=file_kind,
+            status="queued",
+            created_at=func.clock_timestamp(),
+        )
+    )
+
+
+async def get_import(
+    uow: UnitOfWork, import_id: UUID, *, for_update: bool = False
+) -> ImportRecord | None:
+    statement = (
+        select(ImportRow).where(ImportRow.id == import_id).execution_options(populate_existing=True)
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    row = (await uow.session.execute(statement)).scalar_one_or_none()
+    return None if row is None else _import(row)
+
+
+async def latest_import(uow: UnitOfWork, opportunity_id: UUID) -> ImportRecord | None:
+    """The Opportunity's most recent import, whatever its status."""
+    row = (
+        await uow.session.execute(
+            select(ImportRow)
+            .where(ImportRow.opportunity_id == opportunity_id)
+            .order_by(ImportRow.created_at.desc(), ImportRow.id.desc())
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _import(row)
+
+
+async def applied_with_sha(
+    uow: UnitOfWork, opportunity_id: UUID, file_sha256: str, *, excluding: UUID
+) -> ImportRecord | None:
+    """The earliest applied import of the same file on the Opportunity, other than
+    `excluding`."""
+    row = (
+        await uow.session.execute(
+            select(ImportRow)
+            .where(
+                ImportRow.opportunity_id == opportunity_id,
+                ImportRow.file_sha256 == file_sha256,
+                ImportRow.status == "applied",
+                ImportRow.id != excluding,
+            )
+            .order_by(ImportRow.applied_at)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _import(row)
+
+
+async def update_import_status(
+    uow: UnitOfWork,
+    import_id: UUID,
+    *,
+    from_statuses: Collection[str],
+    status: str,
+    error_code: str | None = None,
+    rows: list[dict[str, Any]] | None = None,
+) -> bool:
+    """Move the import to `status` if it is in one of `from_statuses` (`rows` set when
+    given). Returns whether it changed."""
+    values: dict[str, Any] = {"status": status, "error_code": error_code}
+    if rows is not None:
+        values["rows"] = rows
+    result = await uow.session.execute(
+        update(ImportRow)
+        .where(ImportRow.id == import_id, ImportRow.status.in_(list(from_statuses)))
+        .values(**values)
+        .returning(ImportRow.id)
+    )
+    return result.first() is not None
+
+
+async def mark_applied(
+    uow: UnitOfWork,
+    import_id: UUID,
+    *,
+    applied_by: UUID,
+    created: int,
+    corrected: int,
+    excluded: int,
+    skipped: int,
+) -> bool:
+    """`parsed -> applied`, once, with who applied it and the counts."""
+    result = await uow.session.execute(
+        update(ImportRow)
+        .where(ImportRow.id == import_id, ImportRow.status == "parsed")
+        .values(
+            status="applied",
+            applied_at=func.clock_timestamp(),
+            applied_by=applied_by,
+            created_count=created,
+            corrected_count=corrected,
+            excluded_count=excluded,
+            skipped_count=skipped,
+        )
+        .returning(ImportRow.id)
+    )
+    return result.first() is not None

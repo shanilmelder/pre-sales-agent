@@ -108,6 +108,9 @@ class Action(StrEnum):
     DELIVERY_CLOSE = "actuals.delivery.close"
     """Story 10.1: close delivery once every Baseline line has a final Actual (as
     `ACTUAL_RECORD`)."""
+    ACTUAL_IMPORT = "actuals.actual.import"
+    """Story 10.2: download the Actuals template, upload a file of Actuals, review its preview
+    and apply it (as `ACTUAL_RECORD`)."""
     NOTIFICATION_READ = "notifications.notification.read"
     """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
@@ -204,6 +207,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.ACTUAL_RECORD: _W,
         Action.ACTUAL_CORRECT: _W,
         Action.DELIVERY_CLOSE: _A,
+        Action.ACTUAL_IMPORT: _W,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,
