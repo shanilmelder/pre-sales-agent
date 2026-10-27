@@ -14,7 +14,12 @@ from app.modules.gaps.application.gap_refs import (
     open_gap_counts,
     open_gap_summaries,
 )
-from app.modules.gaps.application.gaps import irrelevance_share, list_gaps, start_detection
+from app.modules.gaps.application.gaps import (
+    gap_lineage,
+    irrelevance_share,
+    list_gaps,
+    start_detection,
+)
 from app.modules.gaps.application.models import (
     AnswerPassage,
     AnswerRequest,
@@ -126,6 +131,7 @@ __all__ = [
     "enqueue_answer_matching",
     "enqueue_detection",
     "export_questions",
+    "gap_lineage",
     "gap_summaries",
     "gaps_context",
     "irrelevance_share",

@@ -364,3 +364,27 @@ class OutdatedAssessments(BaseModel):
     order (Story 2.7). Empty when none did. Nothing is rerun automatically."""
 
     items: list[OutdatedAssessment]
+
+
+# --- lineage (Story 9.9) --------------------------------------------------------------------
+
+
+class LinkedReviewFinding(BaseModel):
+    """Story 9.9 (`assessments.linked_review_findings`): a Critic or Red Team Finding that
+    cites given Requirements or Estimate lines, with its Review (kind, id, version and
+    whether a newer Review superseded it), its status and its resolution or override. No
+    caller-specific flags: lineage is read only."""
+
+    id: str
+    review_kind: Literal["critic", "red_team"]
+    review_id: str
+    review_version: int = Field(ge=1)
+    review_superseded: bool
+    review_created_at: datetime
+    severity: Severity
+    title: str
+    status: FindingStatus
+    requirements: list[FindingRequirement]
+    line_ids: list[str]
+    resolution: FindingResolution | None
+    override: FindingOverride | None

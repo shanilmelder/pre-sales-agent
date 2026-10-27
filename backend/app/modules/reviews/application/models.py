@@ -494,3 +494,22 @@ class ChallengeState(BaseModel):
     status: ChallengeStatus
     challenger_id: UUID
     workflow_run_id: UUID | None
+
+
+class ChallengeRef(BaseModel):
+    """Story 9.9 (`reviews.public.challenges_for`, for lineage): a Challenge with its target,
+    the version in context, its status, the challenger's reason, the owner's decline reason
+    (when declined), who raised it and when. No caller-specific flags."""
+
+    id: UUID
+    status: ChallengeStatus
+    target_kind: ChallengeTargetKind
+    target_id: UUID
+    target_version: int
+    estimate_version_id: UUID
+    reason: str
+    decline_reason: str | None
+    challenger_id: UUID
+    challenger_name: str
+    created_at: datetime
+    updated_at: datetime | None

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseTraceFilters as parseFilters99,
+  removeSubjectLabel,
+  subjectChipLabel,
+  traceHref as traceHref99,
+} from "./trace";
+
+import {
   absoluteTime,
   actorText,
   eventLabel,
@@ -245,5 +252,22 @@ describe("payloadValue", () => {
     expect(payloadValue("after_role_mix", { engineer: 70 })).toBe('{"engineer":70}');
     expect(payloadValue("after_role_mix", null)).toBe("None");
     expect(payloadValue("kind", mix)).toBe(fieldValue(mix));
+  });
+});
+
+describe("one subject's events (Story 9.9)", () => {
+  it("subject_id is read from and written to the URL", () => {
+    const filters = parseFilters99({ subject: "estimates.estimate_line", subject_id: "l1" });
+    expect(filters).toEqual({ subject: "estimates.estimate_line", subject_id: "l1" });
+    expect(traceHref99("o1", filters)).toBe(
+      "/opportunities/o1/trace?subject=estimates.estimate_line&subject_id=l1",
+    );
+    expect(parseFilters99({ subject_id: "x".repeat(201) })).toEqual({});
+  });
+
+  it("the chip reads Line {title}", () => {
+    expect(subjectChipLabel("Connect to SAP.")).toBe("Line Connect to SAP.");
+    expect(subjectChipLabel(null)).toBe("Line");
+    expect(removeSubjectLabel("A")).toBe("Remove the Line A filter");
   });
 });

@@ -292,12 +292,14 @@ export function relativeTime(value: string, now: number = Date.now()): string {
 
 // --- URL state ------------------------------------------------------------------------------
 
-export type TraceFilterKey = "subject" | "actor" | "event";
+export type TraceFilterKey = "subject" | "actor" | "event" | "subject_id";
 export type TraceFilters = Partial<Record<TraceFilterKey, string>>;
 export const TRACE_FILTER_KEYS: readonly TraceFilterKey[] = [
   "subject",
   "actor",
   "event",
+  // Story 9.9: one subject's events (**Open in Trace** from a line's lineage).
+  "subject_id",
 ];
 const MAX_FILTER_LENGTH = 200;
 
@@ -307,8 +309,8 @@ function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** The filters from the URL's `subject`, `actor` and `event` (blank or overlong ones are
- * ignored). */
+/** The filters from the URL's `subject`, `actor`, `event` and (Story 9.9) `subject_id`
+ * (blank or overlong ones are ignored). */
 export function parseTraceFilters(
   params: SearchParams | undefined,
 ): TraceFilters {
@@ -357,4 +359,17 @@ export function pageCount(
   page: Pick<TracePage, "total" | "page_size">,
 ): number {
   return Math.max(1, Math.ceil(page.total / page.page_size));
+}
+
+// --- one subject (Story 9.9) ---------------------------------------------------------------
+
+/** "Line {title}" (the removable chip of a `subject_id` filter); "Line" when the title isn't
+ * known. */
+export function subjectChipLabel(title: string | null | undefined): string {
+  return title ? `Line ${title}` : "Line";
+}
+
+/** "Remove the Line {title} filter". */
+export function removeSubjectLabel(title: string | null | undefined): string {
+  return `Remove the ${subjectChipLabel(title)} filter`;
 }

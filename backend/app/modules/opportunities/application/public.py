@@ -42,6 +42,7 @@ from app.modules.opportunities.application.opportunities import (
 from app.modules.opportunities.application.trace import (
     TRACE_DEFAULT_PAGE_SIZE,
     TRACE_MAX_PAGE_SIZE,
+    agent_name,
     trace_page,
 )
 from app.modules.opportunities.domain.opportunity import OpportunityStatus, derived_status
@@ -72,6 +73,7 @@ __all__ = [
     "TraceSubject",
     "UserRef",
     "add_collaborator",
+    "agent_name",
     "create",
     "derived_status",
     "facets",

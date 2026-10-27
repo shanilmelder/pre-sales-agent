@@ -26,6 +26,7 @@ import {
   loadEstimate,
   loadEstimateVersions,
   loadReviewRequests,
+  loadVersionComparison,
   type AssumptionAcceptResult,
   type EstimateItemEditResult,
   type EstimateLineEditResult,
@@ -39,6 +40,7 @@ import {
   AssumptionsRegister,
   OriginGapInspector,
 } from "@/components/opportunities/assumptions-register";
+import { ComparePane, DiffToggle } from "@/components/opportunities/diff-toggle";
 import { RequestReviewDialog } from "@/components/opportunities/request-review-dialog";
 import { ReviewPanelLoader } from "@/components/opportunities/review-panel";
 import { NewVersionButton } from "@/components/opportunities/review-reply";
@@ -68,6 +70,14 @@ import {
   BUILDING,
   REBUILDING,
   COLUMNS,
+  comparingAnnouncement,
+  defaultDiffTarget,
+  deltaText,
+  diffTargets,
+  lineDelta,
+  lineDeltas,
+  parseDiffParam,
+  withDiffParam,
   DRAFT_POLL_LIMIT_MS,
   DRAFT_POLL_MS,
   EDIT_NOT_ALLOWED,
@@ -110,6 +120,7 @@ import {
   type EstimateView,
   type Risk,
   type Totals,
+  type VersionComparison,
   type VersionListItem,
 } from "@/lib/estimates";
 import { useReviewEvents } from "@/lib/opportunity-events";
@@ -183,13 +194,43 @@ export function CoversChips({ line }: { line: Pick<EstimateLine, "requirements">
   );
 }
 
-function TotalsCells({ totals, className }: { totals: Totals; className?: string }) {
+function TotalsCells({
+  totals,
+  className,
+  delta = null,
+}: {
+  totals: Totals;
+  className?: string;
+  /** Story 9.9: the total's delta while the diff is on. */
+  delta?: number | null;
+}) {
   return (
     <>
       <td className={cn(num, className)}>{hours(totals.effort_hours)}</td>
       <td className={cn(num, cont, className)}>{hours(totals.contingency_hours)}</td>
-      <td className={cn(num, "font-semibold", className)}>{hours(totals.total_hours)}</td>
+      <td className={cn(num, "font-semibold", className)}>
+        {hours(totals.total_hours)}
+        {delta !== null ? <DeltaLine delta={delta} /> : null}
+      </td>
     </>
+  );
+}
+
+/** Story 9.9: a Total cell's second line while the diff is on: "+x.x h" or "−x.x h" in the gap
+ * colour, or "no change" in the secondary text colour (11px/500). */
+export function DeltaLine({ delta }: { delta: number }) {
+  const text = deltaText(delta);
+  const changed = Math.round(delta * 10) !== 0;
+  return (
+    <span
+      data-delta=""
+      className={cn(
+        "block text-[11px] leading-4 font-medium",
+        changed ? "text-gap" : "text-text-secondary",
+      )}
+    >
+      {text}
+    </span>
   );
 }
 
@@ -251,22 +292,29 @@ export function ConflictMarker({
  * The lines are one Tab stop (roving tabindex: the last focused, else the selected, else the
  * first line); j/k (with single-key shortcuts on) or the arrow keys move between lines, and
  * Enter, Space or a click opens the line. With `canEdit`, `e` on a focused line opens it with
- * focus in the inspector's "Edit line" form. */
+ * focus in the inspector's "Edit line" form. Story 9.9: `t` on a focused line (single-key
+ * shortcuts on) opens it with focus on its Lineage. With `diff` (the diff toggle on), each
+ * Total cell has a second line with the line's delta ("no change" when none), changed and
+ * added rows are tinted (with an sr-only "changed"/"added"), removed lines follow struck
+ * through with "removed", and the totals row shows the total's delta. */
 export function EstimateGrid({
   version,
   selectedId = null,
   onOpen,
   canEdit = false,
   opportunityId,
+  diff = null,
 }: {
   version: EstimateVersion;
   selectedId?: string | null;
-  /** `viaKeyboard` is true when opened with Enter, Space or `e`, not a pointer; `edit` when
-   * opened with `e`. */
-  onOpen?: (line: EstimateLine, viaKeyboard: boolean, edit?: boolean) => void;
+  /** `viaKeyboard` is true when opened with Enter, Space, `e` or `t`, not a pointer; `edit`
+   * when opened with `e`, `trace` with `t`. */
+  onOpen?: (line: EstimateLine, viaKeyboard: boolean, edit?: boolean, trace?: boolean) => void;
   canEdit?: boolean;
   /** For the Conflicts tab links. */
   opportunityId?: string;
+  /** Story 9.9: the comparison shown while the diff is on (null: off). */
+  diff?: VersionComparison | null;
 }) {
   const { singleKeyShortcuts } = useShell();
   const container = useRef<HTMLDivElement>(null);
@@ -276,10 +324,27 @@ export function EstimateGrid({
   const tabStopId =
     [focusedId, selectedId].find((id) => id !== null && lines.some((l) => l.id === id)) ??
     lines[0]?.id;
+  const deltas = diff ? lineDeltas(diff) : null;
+  const removed = diff ? diff.lines.filter((l) => l.change === "removed") : [];
+  /** Each section's subtotal delta: its lines' deltas (a subtotal is the sum of its lines). */
+  const sectionDelta = (section: string): number | null =>
+    diff
+      ? diff.lines
+          .filter((l) => l.section === section)
+          .reduce((sum, l) => sum + l.delta_hours, 0)
+      : null;
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target as HTMLElement;
+    if (singleKeyShortcuts && event.key === "t" && target.matches("button[data-line-row]")) {
+      const line = lines.find((l) => l.id === target.dataset.lineId);
+      if (line) {
+        event.preventDefault();
+        onOpen?.(line, true, false, true);
+      }
+      return;
+    }
     if (
       editable &&
       singleKeyShortcuts &&
@@ -345,17 +410,21 @@ export function EstimateGrid({
               {section.lines.map((line) => {
                 const selected = line.id === selectedId;
                 const conflicted = line.conflicts.length > 0;
+                const change = deltas ? lineDelta(deltas, line) : null;
                 return (
                   <tr
                     key={line.id}
                     aria-selected={selected}
                     data-conflict-row={conflicted ? "" : undefined}
+                    data-diff-row={change ? change.change : undefined}
                     className={cn(
                       selected
                         ? "bg-primary-tint"
                         : conflicted
                           ? "bg-blocker-tint"
-                          : "hover:bg-muted/60",
+                          : change
+                            ? "bg-diff-tint"
+                            : "hover:bg-muted/60",
                     )}
                   >
                     <th
@@ -381,6 +450,11 @@ export function EstimateGrid({
                         >
                           {line.title}
                         </button>
+                        {change ? (
+                          <span className="sr-only" data-diff-status="">
+                            {change.change}
+                          </span>
+                        ) : null}
                         {conflicted || line.edited ? (
                           <div className="flex flex-wrap items-center gap-1.5 px-1.5">
                             <ConflictMarker line={line} opportunityId={opportunityId} />
@@ -406,6 +480,7 @@ export function EstimateGrid({
                     </td>
                     <td className={cn(num, cell, "w-24 font-semibold")}>
                       {hours(line.total_hours)}
+                      {deltas ? <DeltaLine delta={change?.delta_hours ?? 0} /> : null}
                     </td>
                   </tr>
                 );
@@ -414,10 +489,51 @@ export function EstimateGrid({
                 <th scope="row" colSpan={3} className={cn(cell, "px-4 text-left")}>
                   <span className="text-label">{`${sectionLabel(section.section)} subtotal`}</span>
                 </th>
-                <TotalsCells totals={section.subtotal} className={cell} />
+                <TotalsCells
+                  totals={section.subtotal}
+                  className={cell}
+                  delta={sectionDelta(section.section)}
+                />
               </tr>
             </tbody>
           ))}
+          {removed.length > 0 ? (
+            <tbody data-removed-lines="">
+              <tr>
+                <th
+                  scope="rowgroup"
+                  colSpan={COLUMNS.length}
+                  className="h-8 border-b border-border bg-background px-4 text-left text-muted-foreground uppercase"
+                >
+                  <span className="text-eyebrow">Removed lines</span>
+                </th>
+              </tr>
+              {removed.map((r, i) => (
+                <tr key={`${i}-${r.section}-${r.title}`} className="bg-diff-tint" data-diff-row="removed">
+                  <th scope="row" className={cn(cell, "max-w-0 py-2 pr-2.5 pl-4 text-left font-normal")}>
+                    <span className="block truncate text-body-strong">
+                      <s>{r.title}</s>
+                    </span>
+                    <span className="text-meta text-muted-foreground">{`removed · ${sectionLabel(r.section)}`}</span>
+                  </th>
+                  <td className={cell} />
+                  <td className={cell} />
+                  <td className={cn(num, cell)}>
+                    <span aria-hidden="true">–</span>
+                    <span className="sr-only">None</span>
+                  </td>
+                  <td className={cn(num, cont, cell)}>
+                    <span aria-hidden="true">–</span>
+                    <span className="sr-only">None</span>
+                  </td>
+                  <td className={cn(num, cell, "font-semibold")}>
+                    <s>{hours(r.before_hours ?? 0)}</s>
+                    <DeltaLine delta={r.delta_hours} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          ) : null}
           {version.unallocated_contingency_hours > 0 ? (
             <tbody data-unallocated="">
               <tr className="h-row">
@@ -460,6 +576,7 @@ export function EstimateGrid({
               </td>
               <td className={cn(num, "border-t border-border font-semibold text-primary-text")}>
                 {hours(version.totals.total_hours)}
+                {diff ? <DeltaLine delta={diff.total_delta} /> : null}
               </td>
             </tr>
           </tfoot>
@@ -488,6 +605,7 @@ export function EstimateHeader({
   isBaseline = false,
   switcher,
   baselineAction,
+  diffToggle,
 }: {
   version: EstimateVersion | null;
   /** An assessment run is queued or running. */
@@ -507,6 +625,8 @@ export function EstimateHeader({
   switcher?: ReactNode;
   /** Story 9.7: **Set Baseline**, right after Export. */
   baselineAction?: ReactNode;
+  /** Story 9.9: the **Diff vs v{n}** toggle, right before Export. */
+  diffToggle?: ReactNode;
 }) {
   const waiting = !version && assessmentRunning;
   const rebuilding = version !== null && assessmentRunning;
@@ -520,6 +640,7 @@ export function EstimateHeader({
           {pillActions}
           {fromRun ? <p className="text-meta text-muted-foreground">{fromRun}</p> : null}
           <span className="flex-1" aria-hidden="true" />
+          {diffToggle}
           {canExport && opportunityId ? <EstimateExport opportunityId={opportunityId} /> : null}
           {baselineAction}
           {actions}
@@ -700,6 +821,17 @@ export function EstimateSection({
   }
   const [selection, setSelection] = useState<Selection | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
+  /** Story 9.9: bumped (never reset) to scroll to and focus the line's Lineage (`t`), and
+   * the last value the inspector acted on. */
+  const [lineageRequest, setLineageRequest] = useState(0);
+  const [lineageHandled, setLineageHandled] = useState(0);
+  /** Story 9.9: the diff toggle (`d`) and the version picked in its menu (null: the default). */
+  const [diffOn, setDiffOn] = useState(false);
+  const [diffChoice, setDiffChoice] = useState<number | null>(null);
+  const [comparison, setComparison] = useState<{
+    key: string;
+    value: VersionComparison | "failed";
+  } | null>(null);
   /** Bumped to move focus into the inspector's "Edit line" form (opened with `e`). */
   const [editFocusRequest, setEditFocusRequest] = useState(0);
   /** The inspector's "Edit line" form holds unsaved changes. */
@@ -790,13 +922,15 @@ export function EstimateSection({
     }
   }, [rightPaneOpen]);
 
-  function open(line: EstimateLine, viaKeyboard: boolean, edit = false) {
+  function open(line: EstimateLine, viaKeyboard: boolean, edit = false, trace = false) {
     setSelection({ kind: "line", id: line.id });
     setReplaced(false);
     returnFocusTo.current = viaKeyboard ? `[data-line-id="${line.id}"]` : null;
-    // Focus goes to the title, or with `e` to the form's Effort field: never both.
-    setFocusRequest((n) => (viaKeyboard && !edit ? n + 1 : 0));
+    // Focus goes to the title, with `e` to the form's Effort field, or with `t` to the
+    // Lineage: never two of them.
+    setFocusRequest((n) => (viaKeyboard && !edit && !trace ? n + 1 : 0));
     setEditFocusRequest((n) => (edit ? n + 1 : 0));
+    if (trace) setLineageRequest((n) => n + 1);
     if (!rightPaneOpen) setRightPaneOpen(true);
   }
 
@@ -1097,6 +1231,21 @@ export function EstimateSection({
 
   const { version } = view;
   const draft = version?.status === "draft";
+  // Story 9.9: the diff compares the shown version with the picked one, else the default (the
+  // Baseline when the shown version is later, else the one just before).
+  const shown = version?.version ?? null;
+  const listed = Array.isArray(versions) ? versions : null;
+  const targets = listed && shown !== null ? diffTargets(listed, shown) : [];
+  const fallback = listed && shown !== null ? defaultDiffTarget(listed, shown) : null;
+  const diffTarget =
+    diffChoice !== null && targets.some((v) => v.version === diffChoice) ? diffChoice : fallback;
+  const against = diffOn ? diffTarget : null;
+  const comparisonKey =
+    against !== null && version
+      ? `${against}:${version.id}:${version.totals.total_hours}:${version.row_version}`
+      : null;
+  const shownComparison =
+    comparisonKey !== null && comparison?.key === comparisonKey ? comparison.value : null;
   // Story 9.7: the Baseline marker, the fully passed stepper and Set Baseline.
   const baselined = isBaselineVersion(view, version);
   const baselineTarget: BaselineTarget | null = version
@@ -1128,6 +1277,23 @@ export function EstimateSection({
       : null;
   return (
     <div className="flex flex-col gap-4">
+      <DiffEffects
+        opportunityId={opportunityId}
+        shown={shown}
+        against={against}
+        comparisonKey={comparisonKey}
+        onDiffFromUrl={(n) => {
+          setDiffOn(true);
+          setDiffChoice(n);
+          if (shown !== null && targets.some((v) => v.version === n)) {
+            announce(comparingAnnouncement(shown, n));
+          }
+          // The right pane shows the comparison, as when the toggle turns it on.
+          setSelection(null);
+          if (!rightPaneOpen) setRightPaneOpen(true);
+        }}
+        onComparison={setComparison}
+      />
       <EstimateHeader
         version={version}
         assessmentRunning={building}
@@ -1143,6 +1309,33 @@ export function EstimateSection({
               selected={version.version}
             />
           ) : undefined
+        }
+        diffToggle={
+          version && diffTarget !== null ? (
+            <DiffToggle
+              on={diffOn}
+              against={diffTarget}
+              targets={targets}
+              onToggle={() => {
+                const next = !diffOn;
+                setDiffOn(next);
+                if (next) {
+                  // Announced before the pane opens, so it is read first.
+                  announce(comparingAnnouncement(version.version, diffTarget));
+                  // The right pane shows the comparison.
+                  setSelection(null);
+                  if (!rightPaneOpen) setRightPaneOpen(true);
+                }
+              }}
+              onChoose={(n) => {
+                setDiffChoice(n);
+                setDiffOn(true);
+                announce(comparingAnnouncement(version.version, n));
+                setSelection(null);
+                if (!rightPaneOpen) setRightPaneOpen(true);
+              }}
+            />
+          ) : null
         }
         baselineAction={
           baselineTarget ? (
@@ -1222,6 +1415,7 @@ export function EstimateSection({
             onOpen={open}
             canEdit={canEditLines}
             opportunityId={opportunityId}
+            diff={shownComparison && shownComparison !== "failed" ? shownComparison : null}
           />
           <AssumptionsRegister
             opportunityId={opportunityId}
@@ -1254,6 +1448,9 @@ export function EstimateSection({
             line={selected}
             opportunityId={opportunityId}
             focusRequest={focusRequest}
+            lineageFocusRequest={lineageRequest}
+            lineageFocusHandled={lineageHandled}
+            onLineageFocused={setLineageHandled}
             editing={
               canEditLines && version
                 ? {
@@ -1273,6 +1470,7 @@ export function EstimateSection({
           <AssumptionInspector
             key={`${version?.id}-${selectedAssumption.id}`}
             assumption={selectedAssumption}
+            opportunityId={opportunityId}
             focusRequest={focusRequest}
             onOpenGap={() => openGap(selectedAssumption, false)}
             accepting={
@@ -1327,7 +1525,83 @@ export function EstimateSection({
             />
           </div>
         </RightPaneContent>
+      ) : against !== null ? (
+        <RightPaneContent>
+          <ComparePane
+            key={against}
+            opportunityId={opportunityId}
+            against={against}
+            comparison={shownComparison}
+          />
+        </RightPaneContent>
       ) : null}
     </div>
   );
+}
+
+/** Story 9.9: the diff's side effects, apart from the Estimate tab's render: `?diff=n` read
+ * once from the URL (after the first render: the URL is read in the browser only), the URL
+ * kept in step with the diff, and the comparison loaded. ("Comparing v{m} with v{n}" is
+ * announced by the handlers that turn it on.) Renders nothing. */
+function DiffEffects({
+  opportunityId,
+  shown,
+  against,
+  comparisonKey,
+  onDiffFromUrl,
+  onComparison,
+}: {
+  opportunityId: string;
+  shown: number | null;
+  against: number | null;
+  comparisonKey: string | null;
+  onDiffFromUrl: (version: number) => void;
+  onComparison: (loaded: { key: string; value: VersionComparison | "failed" }) => void;
+}) {
+  const fromUrl = useRef(onDiffFromUrl);
+  const loaded = useRef(onComparison);
+  useEffect(() => {
+    fromUrl.current = onDiffFromUrl;
+    loaded.current = onComparison;
+  }, [onDiffFromUrl, onComparison]);
+
+  const urlRead = useRef(false);
+  useEffect(() => {
+    if (urlRead.current) return;
+    const timer = setTimeout(() => {
+      urlRead.current = true;
+      const wanted = parseDiffParam(window.location.search);
+      if (wanted !== null) fromUrl.current(wanted);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // `?diff=n` follows the toggle (no navigation: the server render doesn't depend on it).
+  useEffect(() => {
+    if (!urlRead.current) return;
+    const next = withDiffParam(window.location.href, against);
+    if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [against]);
+
+  useEffect(() => {
+    if (comparisonKey === null || against === null || shown === null) return;
+    let cancelled = false;
+    (async () => {
+      let value: VersionComparison | "failed" = "failed";
+      try {
+        const result = await loadVersionComparison(opportunityId, against, shown);
+        if (result.kind === "ok") value = result.comparison;
+      } catch {
+        // Shown as not loaded.
+      }
+      if (!cancelled) loaded.current({ key: comparisonKey, value });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [opportunityId, comparisonKey, against, shown]);
+
+  return null;
 }

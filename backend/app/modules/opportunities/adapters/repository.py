@@ -424,11 +424,15 @@ async def trace_page(
     event_type: str | None,
     offset: int,
     limit: int,
+    subject_id: UUID | None = None,
 ) -> tuple[list[TraceRecord], int]:
     """One page of the Opportunity's trace events, newest first (`occurred_at desc, id
     desc`, served by the `(opportunity_id, occurred_at)` index), and the total matching.
-    Filters are exact matches on the stored values (None: any)."""
+    Filters are exact matches on the stored values (None: any); Story 9.9 adds the subject
+    id."""
     conditions: list[ColumnElement[bool]] = [TraceEvent.opportunity_id == opportunity_id]
+    if subject_id is not None:
+        conditions.append(TraceEvent.subject_id == subject_id)
     if subject_type is not None:
         conditions.append(TraceEvent.subject_type == subject_type)
     if actor_type is not None:

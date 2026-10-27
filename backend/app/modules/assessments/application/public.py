@@ -49,6 +49,7 @@ from app.modules.assessments.application.findings import (
     override_finding,
     supply_evidence,
 )
+from app.modules.assessments.application.linked_findings import linked_review_findings
 from app.modules.assessments.application.models import (
     AgentAssessment,
     AssessmentEffort,
@@ -68,6 +69,7 @@ from app.modules.assessments.application.models import (
     FindingRequirement,
     FindingResolution,
     FindingState,
+    LinkedReviewFinding,
     OutdatedAssessment,
     OutdatedAssessments,
     PolicyRef,
@@ -122,6 +124,7 @@ __all__ = [
     "FindingRequirement",
     "FindingResolution",
     "FindingState",
+    "LinkedReviewFinding",
     "OutdatedAssessment",
     "OutdatedAssessments",
     "PolicyRef",
@@ -151,6 +154,7 @@ __all__ = [
     "get_blocking_findings",
     "get_critic",
     "get_red_team",
+    "linked_review_findings",
     "load_critic_inputs",
     "load_inputs",
     "mark_resolved",

@@ -78,10 +78,29 @@ async def trace_page(
     subject_type: str | None = None,
     actor_type: str | None = None,
     event_type: str | None = None,
+    subject_id: str | None = None,
 ) -> TracePage:
     """One page of the Opportunity's trace, newest first, with the filter options present
-    on it. Filters are exact matches; an unknown value gives an empty page."""
+    on it. Filters are exact matches; an unknown value gives an empty page. Story 9.9:
+    `subject_id` (one subject's events, e.g. an Estimate line's); a value that isn't a UUID
+    matches nothing."""
     await readable_resource(uow, actor, opportunity_id)
+    subject: UUID | None = None
+    if subject_id is not None:
+        subject = _user_id(subject_id)
+        if subject is None:
+            subject_types, actor_types, event_types = await repository.trace_options(
+                uow, opportunity_id
+            )
+            return TracePage(
+                items=[],
+                page=page,
+                page_size=page_size,
+                total=0,
+                options=TraceFilterOptions(
+                    subject_types=subject_types, actor_types=actor_types, event_types=event_types
+                ),
+            )
     records, total = await repository.trace_page(
         uow,
         opportunity_id,
@@ -90,6 +109,7 @@ async def trace_page(
         event_type=event_type,
         offset=(page - 1) * page_size,
         limit=page_size,
+        subject_id=subject,
     )
     subject_types, actor_types, event_types = await repository.trace_options(uow, opportunity_id)
     user_ids = {

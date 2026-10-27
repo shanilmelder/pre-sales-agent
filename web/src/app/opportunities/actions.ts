@@ -2,10 +2,12 @@
 
 import {
   getAssessments,
+  getAssumptionLineage,
   getConflicts,
   getCritic,
   getEstimate,
   getEstimateVersions,
+  getLineLineage,
   getOpportunity,
   getRedTeam,
   getReviewPanel,
@@ -15,17 +17,21 @@ import {
   listOutdatedAssessments,
   listRequirements,
   listSources,
+  getVersionComparison,
   type AssessmentsResult,
+  type AssumptionLineageResult,
   type CriticResult,
   type EstimateResult,
   type EstimateVersionsResult,
   type GapsResult,
+  type LineLineageResult,
   type OutdatedAssessmentsResult,
   type RedTeamResult,
   type RequirementsResult,
   type ReviewPanelResult,
   type ReviewRequestsResult,
   type SourcesResult,
+  type VersionComparisonResult,
 } from "@/app/opportunities/data";
 import { createServerApiClient } from "@/lib/api/server";
 import type { AssessmentRun, TaskAgent } from "@/lib/assessments";
@@ -803,6 +809,40 @@ export async function loadEstimateVersions(
 ): Promise<EstimateVersionsResult> {
   if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
   return getEstimateVersions(opportunityId);
+}
+
+const isVersionNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+
+/** Story 9.9: what is behind an Estimate line (its lineage). */
+export async function loadLineLineage(
+  opportunityId: unknown,
+  lineId: unknown,
+): Promise<LineLineageResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof lineId !== "string" || !UUID_RE.test(lineId)) return { kind: "error" };
+  return getLineLineage(opportunityId, lineId);
+}
+
+/** Story 9.9: an Assumption's chain of origin (its lineage). */
+export async function loadAssumptionLineage(
+  opportunityId: unknown,
+  assumptionId: unknown,
+): Promise<AssumptionLineageResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (typeof assumptionId !== "string" || !UUID_RE.test(assumptionId)) return { kind: "error" };
+  return getAssumptionLineage(opportunityId, assumptionId);
+}
+
+/** Story 9.9: version `from` against version `to` (two different numbers). */
+export async function loadVersionComparison(
+  opportunityId: unknown,
+  from: unknown,
+  to: unknown,
+): Promise<VersionComparisonResult> {
+  if (typeof opportunityId !== "string" || !UUID_RE.test(opportunityId)) return { kind: "error" };
+  if (!isVersionNumber(from) || !isVersionNumber(to) || from === to) return { kind: "error" };
+  return getVersionComparison(opportunityId, from, to);
 }
 
 /** `POST /api/v1/opportunities/{id}/estimate-drafts`: draft the Estimate again (the Retry of

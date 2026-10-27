@@ -230,15 +230,21 @@ def _may_override(actor: Principal, resource: Resource, finding: FindingRecord) 
     )
 
 
-async def finding_states(
-    uow: UnitOfWork,
-    actor: Principal,
-    resource: Resource,
-    opportunity_id: UUID,
-    review: ReviewRecord,
-    findings: Sequence[FindingRecord],
-) -> dict[UUID, FindingState]:
-    """Each Finding's status, resolution, overrides and what the caller may do with it."""
+@dataclasses.dataclass(frozen=True, slots=True)
+class FindingDecisions:
+    """A Finding's resolution (when resolved), its override and the earlier override with
+    the same fingerprint, as read models; no caller-specific flags."""
+
+    resolution: FindingResolution | None
+    override: FindingOverride | None
+    previous_override: FindingOverride | None
+
+
+async def finding_decisions(
+    uow: UnitOfWork, opportunity_id: UUID, findings: Sequence[FindingRecord]
+) -> dict[UUID, FindingDecisions]:
+    """Each Finding's resolution and overrides (who, when, why, and the Evidence supplied).
+    No authorization: the caller has checked that the actor may read the Opportunity."""
     ids = [f.id for f in findings]
     overrides = await repo.overrides_for(uow, ids)
     previous = await repo.overrides_by_id(
@@ -254,11 +260,8 @@ async def finding_states(
     people = {o.overridden_by for o in (*overrides.values(), *previous.values())}
     people |= {p for f in findings if (p := _resolver(f.resolution)) is not None}
     names = await identity.user_names(uow, people)
-    current = review.status == ReviewStatus.CURRENT
-    may_resolve = current and identity.can(actor, Action.FINDING_RESOLVE, resource)
-    states: dict[UUID, FindingState] = {}
+    found: dict[UUID, FindingDecisions] = {}
     for f in findings:
-        is_open = f.status == FindingStatus.OPEN
         resolution = None
         resolver = _resolver(f.resolution)
         if f.resolution and resolver is not None:
@@ -279,12 +282,36 @@ async def finding_states(
             )
         override = overrides.get(f.id)
         earlier = None if f.previous_override_id is None else previous.get(f.previous_override_id)
-        states[f.id] = FindingState(
-            id=str(f.id),
-            status=FindingStatus(f.status),
+        found[f.id] = FindingDecisions(
             resolution=resolution,
             override=None if override is None else _override_view(override, names),
             previous_override=None if earlier is None else _override_view(earlier, names),
+        )
+    return found
+
+
+async def finding_states(
+    uow: UnitOfWork,
+    actor: Principal,
+    resource: Resource,
+    opportunity_id: UUID,
+    review: ReviewRecord,
+    findings: Sequence[FindingRecord],
+) -> dict[UUID, FindingState]:
+    """Each Finding's status, resolution, overrides and what the caller may do with it."""
+    decisions = await finding_decisions(uow, opportunity_id, findings)
+    current = review.status == ReviewStatus.CURRENT
+    may_resolve = current and identity.can(actor, Action.FINDING_RESOLVE, resource)
+    states: dict[UUID, FindingState] = {}
+    for f in findings:
+        is_open = f.status == FindingStatus.OPEN
+        decided = decisions[f.id]
+        states[f.id] = FindingState(
+            id=str(f.id),
+            status=FindingStatus(f.status),
+            resolution=decided.resolution,
+            override=decided.override,
+            previous_override=decided.previous_override,
             policy_ref=None if f.policy_ref is None else PolicyRef.model_validate(f.policy_ref),
             overridable=f.policy_ref is None,
             can_resolve=is_open and may_resolve,

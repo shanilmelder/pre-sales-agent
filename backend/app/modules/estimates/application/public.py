@@ -1,6 +1,7 @@
 """estimates' public API. Other modules import estimates only from here. Story 9.4:
 `create_version` (a person's **New version** from a rejected or approved version). Story 9.7:
-`set_baseline`, `version_approvers` and `list_versions`."""
+`set_baseline`, `version_approvers` and `list_versions`. Story 9.9: `get_line_lineage`,
+`get_assumption_lineage` and `compare_any`."""
 
 from uuid import UUID
 
@@ -14,7 +15,11 @@ from app.modules.estimates.application.blockers import (
     get_submission_blockers,
     submission_blocker_counts,
 )
-from app.modules.estimates.application.compare import compare_versions, version_detail
+from app.modules.estimates.application.compare import (
+    compare_any,
+    compare_versions,
+    version_detail,
+)
 from app.modules.estimates.application.estimates import (
     accept_all_assumptions,
     accept_assumption,
@@ -38,6 +43,7 @@ from app.modules.estimates.application.line_refs import (
     current_version_lines,
     version_lines,
 )
+from app.modules.estimates.application.lineage import get_assumption_lineage, get_line_lineage
 from app.modules.estimates.application.models import (
     AcceptAllResult,
     Assumption,
@@ -45,6 +51,7 @@ from app.modules.estimates.application.models import (
     AssumptionCounts,
     AssumptionGroups,
     AssumptionLine,
+    AssumptionLineage,
     BaselineApproval,
     BaselineRef,
     BaselineSet,
@@ -59,6 +66,7 @@ from app.modules.estimates.application.models import (
     EstimateView,
     LineConflict,
     LineDiff,
+    LineLineage,
     LineRequirement,
     NewVersionCreate,
     OriginGap,
@@ -73,6 +81,7 @@ from app.modules.estimates.application.models import (
     SubmittedVersion,
     Totals,
     UnconvertedGap,
+    VersionComparison,
     VersionDiff,
     VersionGate,
     VersionListItem,
@@ -111,6 +120,7 @@ __all__ = [
     "AssumptionCounts",
     "AssumptionGroups",
     "AssumptionLine",
+    "AssumptionLineage",
     "BaselineApproval",
     "BaselineRef",
     "BaselineSet",
@@ -127,6 +137,7 @@ __all__ = [
     "ExportFormat",
     "LineConflict",
     "LineDiff",
+    "LineLineage",
     "LineRef",
     "LineRequirement",
     "NewVersionCreate",
@@ -144,6 +155,7 @@ __all__ = [
     "SubmittedVersion",
     "Totals",
     "UnconvertedGap",
+    "VersionComparison",
     "VersionDiff",
     "VersionGate",
     "VersionLines",
@@ -153,6 +165,7 @@ __all__ = [
     "accept_assumption",
     "apply_decision",
     "build_from_assessments",
+    "compare_any",
     "compare_versions",
     "create_risk",
     "create_version",
@@ -164,7 +177,9 @@ __all__ = [
     "edit_risk",
     "enqueue_draft",
     "export_estimate",
+    "get_assumption_lineage",
     "get_estimate",
+    "get_line_lineage",
     "get_submission_blockers",
     "list_versions",
     "lock_for_decision",

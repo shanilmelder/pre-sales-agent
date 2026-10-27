@@ -633,3 +633,39 @@ describe("TraceSection", () => {
     ).toBe(`/opportunities/${OPP_ID}/trace?actor=agent&page=3`);
   });
 });
+
+describe("TraceSection, one line's events (Story 9.9)", () => {
+  const LINE = "00000000-0000-7000-8000-0000000000d2";
+
+  it("a subject_id filter is a visible, removable Line {title} chip", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ShellProviders singleKeyShortcuts>
+        <TraceSection
+          opportunityId={OPP_ID}
+          page={page([LINE_EDITED])}
+          filters={{ subject: "estimates.estimate_line", subject_id: LINE }}
+          now={NOW}
+          subjectTitle="Connect to SAP."
+        />
+      </ShellProviders>,
+    );
+    const group = screen.getByRole("group", { name: "Filters" });
+    const lineChip = container.querySelector("[data-subject-id-chip]") as HTMLElement;
+    expect(lineChip.textContent).toBe("Line Connect to SAP.");
+    expect(lineChip.className).toContain("bg-primary-tint");
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(within(group).getByRole("button", { name: "Remove the Line Connect to SAP. filter" }));
+
+    expect(replace).toHaveBeenCalledWith(
+      `/opportunities/${OPP_ID}/trace?subject=estimates.estimate_line`,
+      { scroll: false },
+    );
+  });
+
+  it("without a known title the chip reads Line", () => {
+    renderSection(page([LINE_EDITED]), { subject_id: LINE });
+    expect(screen.getByRole("button", { name: "Remove the Line filter" })).toBeTruthy();
+  });
+});
