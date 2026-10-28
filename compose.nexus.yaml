@@ -25,6 +25,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       PSA_APP_DB_PASSWORD: ${PSA_APP_DB_PASSWORD:?set PSA_APP_DB_PASSWORD in .env}
+      PSA_PURGE_DB_PASSWORD: ${PSA_PURGE_DB_PASSWORD:-}
     volumes:
       - pgdata:/var/lib/postgresql
       - ./ops/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -93,6 +94,8 @@ services:
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
       PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
       PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
+      # Story 10.6: the purge role's URL, worker only (blank: the purge deletes nothing).
+      PSA_PURGE_DATABASE_URL: ${PSA_PURGE_DATABASE_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

@@ -21,6 +21,12 @@ class TraceEvent(Base):
         CheckConstraint("actor_type IN ('user', 'agent', 'system')", name="actor_type"),
         Index(None, "opportunity_id", "occurred_at"),
         Index(None, "subject_type", "subject_id"),
+        # Story 10.6: Admin > Retention lists the recent purges.
+        Index(
+            "ix_platform_trace_events_purge_completed",
+            "occurred_at",
+            postgresql_where=text("event_type = 'platform.purge.completed'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)

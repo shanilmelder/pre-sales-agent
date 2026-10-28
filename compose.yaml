@@ -23,6 +23,8 @@ services:
       # Password of the `psa_app` login role the api connects as; created by the init
       # script on first start of an empty volume (existing volumes: `down -v` once).
       PSA_APP_DB_PASSWORD: ${PSA_APP_DB_PASSWORD:?set PSA_APP_DB_PASSWORD in .env}
+      # Story 10.6: password of the `psa_purge` role the init script creates (blank: no login).
+      PSA_PURGE_DB_PASSWORD: ${PSA_PURGE_DB_PASSWORD:-}
     volumes:
       - pgdata:/var/lib/postgresql
       - ./ops/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -143,6 +145,9 @@ services:
       PSA_WEB_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       # Days between Inbox reminders about a pending Review Request (Story 9.2).
       PSA_REVIEW_REMINDER_DAYS: ${PSA_REVIEW_REMINDER_DAYS:-3}
+      # Story 10.6: the privileged purge role's URL, for the daily `platform.purge` job only.
+      # Set here on the worker, never on the api. Blank: the job deletes nothing.
+      PSA_PURGE_DATABASE_URL: ${PSA_PURGE_DATABASE_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

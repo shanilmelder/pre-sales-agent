@@ -269,7 +269,8 @@ session and the Auth0 session.
    `assessments.finding.override`, `notifications.notification.read`,
    `reporting.report.read` (Story 10.3: Reports), `opportunities.outcome.record`,
    `opportunities.contract_end_date.update`, `opportunities.outcome.reopen` (Story 10.5: the
-   Opportunity outcome). Actions that come
+   Opportunity outcome), `platform.retention.read` (Story 10.6: Admin > Retention). Actions
+   that come
    only from being an Opportunity's owner or collaborator need no permission here (e.g.
    `estimates.assumption.accept` and `estimates.estimate_version.submit`, Story 8.6, and
    `reviews.review_request.create` / `reviews.review_request.cancel`, Story 9.1: owner and
@@ -286,7 +287,7 @@ session and the Auth0 session.
 
    | Role | Permissions |
    | --- | --- |
-   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and three `registry.*` permissions, `reporting.report.read`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen` |
+   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and three `registry.*` permissions, `reporting.report.read`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen`, `platform.retention.read` |
    | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
    | `head_of_delivery` | `opportunities.opportunity.read`, `assessments.finding.override`, `reporting.report.read`, `opportunities.outcome.record`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen` |
    | `engineering_reviewer`, `pm_reviewer` | the four `knowledge.checklist.*` permissions (author Checklists) |

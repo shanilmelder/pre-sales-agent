@@ -315,3 +315,19 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-9-trace-and-compare.md`
   summary: `web/src/components/opportunities/estimate-export.test.tsx` fails two tests with `TypeError: object.stream is not a function` (jsdom Blob in the local Node), independent of 9.9.
   evidence: Reproduced on `main` (455831d) in `D:\pre-sales-agent\web` with the same error; 9.9 does not touch the export component or its test. Other full-suite failures seen during 9.9 verification (checklist-inspector, finding-decisions, requirement-lifecycle, specialist-assessments) were load-related timeouts/duplicates and pass when run alone.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: Make export blobs (gaps question export, actuals error report) reference-counted per Opportunity so the retention purge can delete them.
+  evidence: They are written with `put_stream` and no `platform_files` row (`gaps/application/question_export.py:103`, `actuals/application/imports.py:246`), so Story 10.6 cannot find them; split out at planning on 2026-10-28.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: `opportunities_imports` rows (filename, suggestions JSONB, counted file reference) are never purged because they carry no `opportunity_id`.
+  evidence: The import is linked to the Opportunity it created only by `consumed_at` (`opportunities/adapters/models.py:88`); the retention purge cannot attribute it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: An upload of identical bytes racing the purge's blob unlink can leave a reference to a deleted file.
+  evidence: Uploads call `put_stream` before `files.add_reference`; the purge's row lock in `_delete_blobs` guards the count, not the file on disk.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: A blob whose unlink failed after the purge committed stays on disk at `ref_count = 0`; add a sweep of zero-ref blobs.
+  evidence: `_delete_blobs` logs `purge.blob_delete_failed` and no later run revisits that sha256.

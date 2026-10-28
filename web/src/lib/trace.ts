@@ -34,6 +34,7 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "opportunities.opportunity.closed": "Outcome recorded",
   "opportunities.contract_end_date.updated": "Contract end date changed",
   "opportunities.opportunity.reopened": "Opportunity reopened",
+  "platform.purge.completed": "Opportunity data purged",
   "intake.source.added": "Source added",
   "intake.source.parsed": "Source parsed",
   "intake.source.parse_retried": "Source parse retried",
