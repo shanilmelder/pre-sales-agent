@@ -33,6 +33,9 @@ function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
     can_manage_collaborators: true,
     can_edit: true,
     can_add_sources: true,
+    can_record_outcome: false,
+    can_change_contract_end: false,
+    can_reopen_outcome: false,
     ...overrides,
   };
 }

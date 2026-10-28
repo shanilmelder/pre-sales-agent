@@ -202,6 +202,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/outcome": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Opportunity Outcome
+         * @description Story 10.5: close the Opportunity as `lost` (with a reason) or mark it `won` (with a
+         *     contract end date; needs a Baseline). The owner (not as a sales representative alone) or
+         *     a Head of Delivery. Sets the retention date: lost, today plus 3 years; won, contract end
+         *     plus 7 years.
+         */
+        post: operations["record_opportunity_outcome"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/contract-end-date": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change Opportunity Contract End Date
+         * @description Story 10.5: change a won Opportunity's contract end date, with a reason; the
+         *     retention date follows. Head of Delivery and platform administrators only.
+         */
+        patch: operations["change_opportunity_contract_end_date"];
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/outcome/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Opportunity Outcome
+         * @description Story 10.5: reopen an Opportunity with an outcome, with a reason. Clears the outcome
+         *     and contract end date, so it has no retention date. Head of Delivery and platform
+         *     administrators only.
+         */
+        post: operations["reopen_opportunity_outcome"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/trace": {
         parameters: {
             query?: never;
@@ -4961,6 +5027,20 @@ export interface components {
             reviewers: components["schemas"]["Person"][];
         };
         /**
+         * ContractEndDateChange
+         * @description Story 10.5: change a won Opportunity's contract end date, with a reason (trimmed, 1 to
+         *     1,000 characters).
+         */
+        ContractEndDateChange: {
+            /**
+             * Contract End Date
+             * Format: date
+             */
+            contract_end_date: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * ConvertedTo
          * @description What a converted Gap became: an Assumption of either kind (Story 8.4) or a Risk
          *     (Story 8.5).
@@ -7453,6 +7533,41 @@ export interface components {
             can_edit: boolean;
             /** Can Add Sources */
             can_add_sources: boolean;
+            /** @description Story 10.5: `won` or `lost`; null while the Opportunity is open. */
+            outcome?: components["schemas"]["Outcome"] | null;
+            /**
+             * Outcome Recorded At
+             * @description Story 10.5: when the outcome was recorded.
+             */
+            outcome_recorded_at?: string | null;
+            /**
+             * Contract End Date
+             * @description Story 10.5: when the customer contract ends (won only).
+             */
+            contract_end_date?: string | null;
+            /**
+             * Retention Until
+             * @description Story 10.5: the last day the Opportunity's data is kept: lost, the day the outcome was recorded plus 3 years; won, the contract end date plus 7 years; null while open (never purged).
+             */
+            retention_until?: string | null;
+            /**
+             * Can Record Outcome
+             * @description Story 10.5: the caller may close it as lost or mark it won (no outcome yet). Marking won also needs a Baseline, which the API checks.
+             * @default false
+             */
+            can_record_outcome: boolean;
+            /**
+             * Can Change Contract End
+             * @description Story 10.5: the caller may change the contract end date (won only).
+             * @default false
+             */
+            can_change_contract_end: boolean;
+            /**
+             * Can Reopen Outcome
+             * @description Story 10.5: the caller may reopen it (it has an outcome).
+             * @default false
+             */
+            can_reopen_outcome: boolean;
         };
         /**
          * OpportunityChanges
@@ -7608,6 +7723,40 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "superseded" | "converted";
+        };
+        /**
+         * Outcome
+         * @description Story 10.5: how an Opportunity ended. Null (no outcome) while it is open.
+         * @enum {string}
+         */
+        Outcome: "won" | "lost";
+        /**
+         * OutcomeRecord
+         * @description Story 10.5: record the Opportunity's outcome. `lost` needs a `reason` (trimmed, 1 to
+         *     1,000 characters); `won` needs a `contract_end_date` and a Baseline. The other field is
+         *     ignored.
+         */
+        OutcomeRecord: {
+            outcome: components["schemas"]["Outcome"];
+            /**
+             * Reason
+             * @description `lost` only, required: why. Trimmed, 1 to 1,000 characters.
+             */
+            reason?: string | null;
+            /**
+             * Contract End Date
+             * @description `won` only, required: when the customer contract ends.
+             */
+            contract_end_date?: string | null;
+        };
+        /**
+         * OutcomeReopen
+         * @description Story 10.5: reopen an Opportunity with an outcome, with a reason (trimmed, 1 to 1,000
+         *     characters).
+         */
+        OutcomeReopen: {
+            /** Reason */
+            reason: string;
         };
         /**
          * OutdatedAssessment
@@ -10014,7 +10163,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10106,7 +10255,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner, or an outcome command the caller may not take */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10194,7 +10343,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10370,7 +10519,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10467,7 +10616,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner, or an outcome command the caller may not take */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10533,7 +10682,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10649,7 +10798,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner, or an outcome command the caller may not take */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10715,7 +10864,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10831,7 +10980,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner */
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner, or an outcome command the caller may not take */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10897,7 +11046,628 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    record_opportunity_outcome: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Opportunity as last read, e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutcomeRecord"];
+            };
+        };
+        responses: {
+            /** @description The Opportunity after the change */
+            200: {
+                headers: {
+                    /** @description The Opportunity's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opportunity"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner, or an outcome command the caller may not take */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Story 10.5: the outcome can't change this way (`outcome_already_recorded`, `baseline_required`, `outcome_not_won`, `outcome_not_recorded`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity changed since it was read (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    change_opportunity_contract_end_date: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Opportunity as last read, e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContractEndDateChange"];
+            };
+        };
+        responses: {
+            /** @description The Opportunity after the change */
+            200: {
+                headers: {
+                    /** @description The Opportunity's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opportunity"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner, or an outcome command the caller may not take */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Story 10.5: the outcome can't change this way (`outcome_already_recorded`, `baseline_required`, `outcome_not_won`, `outcome_not_recorded`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity changed since it was read (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The write has no `If-Match` header (`if_match_required`) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    reopen_opportunity_outcome: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the Opportunity as last read, e.g. `"3"`. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutcomeReopen"];
+            };
+        };
+        responses: {
+            /** @description The Opportunity after the change */
+            200: {
+                headers: {
+                    /** @description The Opportunity's row version, for `If-Match`. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opportunity"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Not allowed (`forbidden`): creating without the `opportunities.opportunity.create` permission, or editing the Opportunity or changing collaborators without being the owner, or an outcome command the caller may not take */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No Opportunity with this id, or the caller may not see it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Story 10.5: the outcome can't change this way (`outcome_already_recorded`, `baseline_required`, `outcome_not_won`, `outcome_not_recorded`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The Opportunity changed since it was read (`row_version_mismatch`) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -11040,7 +11810,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`) */
+            /** @description Invalid fields (`validation_error`), e.g. a target proposal date in the past, or collaborator (`invalid_collaborator`), or an outcome rule (`outcome_invalid`, with `errors` naming each field) */
             422: {
                 headers: {
                     [name: string]: unknown;

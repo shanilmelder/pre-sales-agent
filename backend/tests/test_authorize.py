@@ -76,6 +76,7 @@ ACTUALS = (
     Action.DELIVERY_CLOSE,
     Action.ACTUAL_IMPORT,
 )
+OUTCOME = (Action.OUTCOME_RECORD, Action.CONTRACT_END_DATE_UPDATE, Action.OUTCOME_REOPEN)
 
 
 def _user(
@@ -133,7 +134,7 @@ def test_role_admin_writes_are_gone_from_the_catalogue() -> None:
 
 
 def test_setting_the_baseline_is_people_only() -> None:
-    assert HUMAN_ONLY_ACTIONS == {Action.ESTIMATE_BASELINE_SET, *ACTUALS}
+    assert HUMAN_ONLY_ACTIONS == {Action.ESTIMATE_BASELINE_SET, *ACTUALS, *OUTCOME}
 
 
 @pytest.mark.parametrize("actor_type", ["agent", "system"])
@@ -238,6 +239,7 @@ def test_resource_scoped_grants() -> None:
         Action.CHALLENGE_CONFIRM,
         Action.CHALLENGE_DECLINE,
         *ACTUALS,
+        Action.OUTCOME_RECORD,
     }
     assert MEMBER_GRANTS == {
         Action.OPPORTUNITY_READ,
@@ -304,6 +306,7 @@ def test_resource_scoped_grants() -> None:
         Action.CHALLENGE_RAISE: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CHALLENGE_CONFIRM: frozenset({Role.SALES_REPRESENTATIVE}),
         Action.CHALLENGE_DECLINE: frozenset({Role.SALES_REPRESENTATIVE}),
+        Action.OUTCOME_RECORD: frozenset({Role.SALES_REPRESENTATIVE}),
     }
 
 
@@ -694,4 +697,51 @@ def test_no_agent_or_system_records_actuals(actor_type: str) -> None:
         frozenset(Action),
     )
     for action in ACTUALS:
+        assert not can(principal, action, _opportunity(some_id, some_id))
+
+
+# --- the Opportunity outcome (Story 10.5) -----------------------------------------------------
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_the_owner_records_the_outcome_except_as_a_sales_representative(role: Role) -> None:
+    """By relation alone, and with the seeded permissions. Collaborators may not."""
+    for permissions in (set(), None):
+        owner, owner_id = _user({role}, permissions=permissions)
+        member, member_id = _user({role}, permissions=permissions)
+        opportunity = _opportunity(owner_id, member_id)
+        hod = role is Role.HEAD_OF_DELIVERY and permissions is None
+        assert can(owner, Action.OUTCOME_RECORD, opportunity) is (
+            role is not Role.SALES_REPRESENTATIVE
+        ), role
+        assert can(member, Action.OUTCOME_RECORD, opportunity) is hod, role
+
+
+def test_outcome_permissions_are_seeded_to_the_head_of_delivery_and_admin() -> None:
+    assert set(OUTCOME) <= _seeded({Role.HEAD_OF_DELIVERY})
+    admin = _seeded({Role.PLATFORM_ADMINISTRATOR})
+    assert Action.CONTRACT_END_DATE_UPDATE in admin
+    assert Action.OUTCOME_REOPEN in admin
+    assert Action.OUTCOME_RECORD not in admin
+    for role in set(Role) - {Role.HEAD_OF_DELIVERY, Role.PLATFORM_ADMINISTRATOR}:
+        assert not set(OUTCOME) & _seeded({role}), role
+
+
+@pytest.mark.parametrize("role", list(Role))
+def test_only_permissions_change_the_contract_end_or_reopen(role: Role) -> None:
+    """No relation grants them: an owner without the permission may not."""
+    owner, owner_id = _user({role}, permissions=set())
+    for action in (Action.CONTRACT_END_DATE_UPDATE, Action.OUTCOME_REOPEN):
+        assert not can(owner, action, _opportunity(owner_id)), (role, action)
+
+
+@pytest.mark.parametrize("actor_type", ["agent", "system"])
+def test_no_agent_or_system_changes_the_outcome(actor_type: str) -> None:
+    some_id = uuid4()
+    principal = Principal(
+        Actor(actor_type, str(some_id)),  # type: ignore[arg-type]
+        frozenset({Role.HEAD_OF_DELIVERY}),
+        frozenset(Action),
+    )
+    for action in OUTCOME:
         assert not can(principal, action, _opportunity(some_id, some_id))

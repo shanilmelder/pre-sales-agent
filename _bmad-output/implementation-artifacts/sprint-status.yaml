@@ -143,7 +143,7 @@ development_status:
   10-2-import-actuals-from-a-file: review
   10-3-variance-reporting-views-and-the-reports-table: review
   10-4-drill-down-from-variance-to-the-failed-assumption: review
-  10-5-record-the-opportunity-outcome-and-retention-dates: backlog
+  10-5-record-the-opportunity-outcome-and-retention-dates: review
   10-6-controlled-retention-purge: backlog
   10-7-pipeline-report: backlog
   epic-10-retrospective: optional

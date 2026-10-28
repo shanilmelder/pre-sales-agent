@@ -187,6 +187,9 @@ const OPPORTUNITY: Opportunity = {
   can_manage_collaborators: false,
   can_edit: false,
   can_add_sources: false,
+  can_record_outcome: false,
+  can_change_contract_end: false,
+  can_reopen_outcome: false,
 };
 
 const FACETS = {
@@ -971,6 +974,7 @@ describe("/opportunities/[id] workspace", () => {
         "Recent activity",
         "Latest agent decision",
         "Agent run",
+        "Outcome",
         "Details",
       ]);
 

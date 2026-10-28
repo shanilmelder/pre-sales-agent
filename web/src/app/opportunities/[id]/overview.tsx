@@ -12,6 +12,7 @@ import {
 } from "@/app/opportunities/data";
 import { hasAccess } from "@/components/access-gate";
 import { Collaborators } from "@/components/opportunities/collaborators";
+import { OutcomeCard } from "@/components/opportunities/outcome-card";
 import { OverviewLiveRefresh } from "@/components/opportunities/overview-live-refresh";
 import { OverviewSummary, type OverviewData } from "@/components/opportunities/overview-summary";
 import { StatusPill } from "@/components/opportunities/status-pill";
@@ -70,7 +71,9 @@ async function loadSummary(id: string): Promise<OverviewData> {
 }
 
 /** Tab 1: a read-only summary of where the Opportunity stands (Story 1.8, redesigned to the
- * new mockups), then a Details card with its fields, derived status and collaborators.
+ * new mockups), the Outcome card (Story 10.5: won or lost, the retention date and, for those
+ * the API allows, the outcome actions), then a Details card with its fields, derived status
+ * and collaborators.
  * Renders nothing when the user may not read it; the workspace layout shows why. */
 export async function OverviewTab({ id }: { id: string }) {
   const result = await getMe();
@@ -90,6 +93,7 @@ export async function OverviewTab({ id }: { id: string }) {
         proposalDate={opportunity.target_proposal_date}
         today={utcToday()}
       />
+      <OutcomeCard key={opportunity.id} initial={opportunity} />
       <Card role="region" aria-labelledby="overview-details">
         <div className="border-b border-border px-5 py-[18px]">
           <h3 id="overview-details" className="text-section">

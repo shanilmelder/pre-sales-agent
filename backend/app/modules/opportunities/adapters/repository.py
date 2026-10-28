@@ -29,6 +29,7 @@ from app.modules.opportunities.adapters.models import CollaboratorRow, Opportuni
 from app.modules.opportunities.domain.opportunity import (
     SUBJECT_TYPE,
     OpportunityStatus,
+    Outcome,
     derived_status,
 )
 from app.platform.trace.models import TraceEvent
@@ -50,6 +51,9 @@ class OpportunityRecord:
     row_version: int
     created_at: datetime
     status: OpportunityStatus
+    outcome: Outcome | None = None
+    outcome_recorded_at: datetime | None = None
+    contract_end_date: date | None = None
 
 
 _BASELINES = table("estimates_baselines", column("opportunity_id"))
@@ -70,18 +74,40 @@ def _exists_for(rows: TableClause) -> ColumnElement[bool]:
 
 def status_expression() -> ColumnElement[str]:
     """The derived status (AD-26) as SQL, mirroring `domain.opportunity.derived_status()`.
-    Lists select it and filter on it, so the column and the filter can't disagree. Story 10.1:
-    `delivered` when `EXISTS (SELECT 1 FROM actuals_deliveries WHERE opportunity_id = id)`;
-    Story 9.7: otherwise `baselined` when `EXISTS (SELECT 1 FROM estimates_baselines WHERE
-    opportunity_id = id)`; otherwise `intake`. Later stories add the other statuses here and in
-    the domain together."""
+    Lists select it and filter on it, so the column and the filter can't disagree. Story 10.5:
+    `closed` when `outcome = 'lost'`; Story 10.1: otherwise `delivered` when
+    `EXISTS (SELECT 1 FROM actuals_deliveries WHERE opportunity_id = id)`; Story 9.7: otherwise
+    `baselined` when `EXISTS (SELECT 1 FROM estimates_baselines WHERE opportunity_id = id)`;
+    otherwise `intake`. Later stories add the other statuses here and in the domain
+    together."""
+
+    def status(value: OpportunityStatus) -> ColumnElement[str]:
+        return cast(literal(value.value, Text), Text)
+
     return case(
         (
-            _exists_for(_DELIVERIES),
-            cast(literal(derived_status(True, delivered=True).value, Text), Text),
+            OpportunityRow.outcome == Outcome.LOST.value,
+            status(derived_status(outcome=Outcome.LOST)),
         ),
-        (_exists_for(_BASELINES), cast(literal(derived_status(True).value, Text), Text)),
-        else_=cast(literal(derived_status(False).value, Text), Text),
+        (_exists_for(_DELIVERIES), status(derived_status(True, delivered=True))),
+        (_exists_for(_BASELINES), status(derived_status(True))),
+        else_=status(derived_status(False)),
+    )
+
+
+async def has_baseline(uow: UnitOfWork, opportunity_id: UUID) -> bool:
+    """Story 10.5: whether a Baseline was ever set on the Opportunity."""
+    return bool(
+        (
+            await uow.session.execute(
+                select(
+                    select(literal(1))
+                    .select_from(_BASELINES)
+                    .where(_BASELINES.c.opportunity_id == opportunity_id)
+                    .exists()
+                )
+            )
+        ).scalar_one()
     )
 
 
@@ -95,6 +121,9 @@ _COLUMNS = (
     OpportunityRow.target_proposal_date,
     OpportunityRow.row_version,
     OpportunityRow.created_at,
+    OpportunityRow.outcome,
+    OpportunityRow.outcome_recorded_at,
+    OpportunityRow.contract_end_date,
     status_expression().label("status"),
 )
 
@@ -111,6 +140,9 @@ def _record(row: Any) -> OpportunityRecord:
         row_version=row.row_version,
         created_at=row.created_at,
         status=OpportunityStatus(row.status),
+        outcome=None if row.outcome is None else Outcome(row.outcome),
+        outcome_recorded_at=row.outcome_recorded_at,
+        contract_end_date=row.contract_end_date,
     )
 
 
@@ -337,6 +369,40 @@ async def update_fields(
         update(OpportunityRow)
         .where(OpportunityRow.id == opportunity_id)
         .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def write_outcome(
+    uow: UnitOfWork,
+    opportunity_id: UUID,
+    *,
+    outcome: Outcome | None,
+    recorded_at: datetime | None,
+    contract_end_date: date | None,
+) -> None:
+    """Story 10.5: set (or, with all None, clear) the outcome, when it was recorded and the
+    contract end date. Call after `bump_row_version`, which holds the row lock and moves the
+    version; this never touches `row_version`."""
+    await uow.session.execute(
+        update(OpportunityRow)
+        .where(OpportunityRow.id == opportunity_id)
+        .values(
+            outcome=None if outcome is None else outcome.value,
+            outcome_recorded_at=recorded_at,
+            contract_end_date=contract_end_date,
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def write_contract_end_date(uow: UnitOfWork, opportunity_id: UUID, value: date) -> None:
+    """Story 10.5: change a won Opportunity's contract end date. Call after
+    `bump_row_version`, as above."""
+    await uow.session.execute(
+        update(OpportunityRow)
+        .where(OpportunityRow.id == opportunity_id)
+        .values(contract_end_date=value)
         .execution_options(synchronize_session=False)
     )
 

@@ -1,6 +1,7 @@
 """opportunities' public API. Other modules import opportunities only from here."""
 
 from app.modules.opportunities.application.models import (
+    ContractEndDateChange,
     ImportSuggestions,
     NewOpportunity,
     Opportunity,
@@ -10,6 +11,8 @@ from app.modules.opportunities.application.models import (
     OpportunityImport,
     OpportunityPage,
     OpportunitySummary,
+    OutcomeRecord,
+    OutcomeReopen,
     SuggestedValue,
     TraceActor,
     TraceEventItem,
@@ -41,13 +44,23 @@ from app.modules.opportunities.application.opportunities import (
     revoke_reviewer_access,
     update,
 )
+from app.modules.opportunities.application.outcome import (
+    change_contract_end_date,
+    record_outcome,
+    reopen_outcome,
+)
 from app.modules.opportunities.application.trace import (
     TRACE_DEFAULT_PAGE_SIZE,
     TRACE_MAX_PAGE_SIZE,
     agent_name,
     trace_page,
 )
-from app.modules.opportunities.domain.opportunity import OpportunityStatus, derived_status
+from app.modules.opportunities.domain.opportunity import (
+    OpportunityStatus,
+    Outcome,
+    derived_status,
+    retention_until,
+)
 
 __all__ = [
     "DEFAULT_PAGE_SIZE",
@@ -56,6 +69,7 @@ __all__ = [
     "NOT_FOUND_DETAIL",
     "TRACE_DEFAULT_PAGE_SIZE",
     "TRACE_MAX_PAGE_SIZE",
+    "ContractEndDateChange",
     "ImportSuggestions",
     "NewOpportunity",
     "Opportunity",
@@ -67,6 +81,9 @@ __all__ = [
     "OpportunityScope",
     "OpportunityStatus",
     "OpportunitySummary",
+    "Outcome",
+    "OutcomeRecord",
+    "OutcomeReopen",
     "ReadableOpportunities",
     "SuggestedValue",
     "TraceActor",
@@ -77,6 +94,7 @@ __all__ = [
     "UserRef",
     "add_collaborator",
     "agent_name",
+    "change_contract_end_date",
     "create",
     "derived_status",
     "facets",
@@ -89,7 +107,10 @@ __all__ = [
     "opportunity_titles",
     "readable_opportunities",
     "readable_resource",
+    "record_outcome",
     "remove_collaborator",
+    "reopen_outcome",
+    "retention_until",
     "revoke_reviewer_access",
     "trace_page",
     "update",

@@ -94,6 +94,7 @@ import {
   startRedTeamReview,
   submitEstimateVersion,
   updateOpportunity,
+  changeOutcome,
 } from "./actions";
 
 const OPP_ID = "00000000-0000-7000-8000-000000000001";
@@ -114,6 +115,9 @@ const OPPORTUNITY: Opportunity = {
   can_manage_collaborators: true,
   can_edit: true,
   can_add_sources: true,
+  can_record_outcome: false,
+  can_change_contract_end: false,
+  can_reopen_outcome: false,
 };
 const INPUT = {
   title: "  ",
@@ -3338,5 +3342,100 @@ describe("Import Actuals from a file (Story 10.2)", () => {
     expect(await apply({ importId: "x" })).toEqual({ kind: "error" });
     expect(await uploadActualsImport({})).toEqual({ kind: "error" });
     expect(api.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("changeOutcome", () => {
+  const params = { path: { opportunity_id: OPP_ID }, header: { "If-Match": '"4"' } };
+  const base = { opportunityId: OPP_ID, rowVersion: 4 };
+
+  it("sends each command to its endpoint with If-Match", async () => {
+    api.POST.mockResolvedValue({ data: OPPORTUNITY, response: status(200) });
+    api.PATCH.mockResolvedValue({ data: OPPORTUNITY, response: status(200) });
+    expect(await changeOutcome({ ...base, command: "lost", reason: "Price" })).toEqual({
+      kind: "ok",
+      opportunity: OPPORTUNITY,
+    });
+    expect(api.POST).toHaveBeenLastCalledWith("/api/v1/opportunities/{opportunity_id}/outcome", {
+      params,
+      body: { outcome: "lost", reason: "Price" },
+    });
+    await changeOutcome({ ...base, command: "won", contractEndDate: "2028-06-30" });
+    expect(api.POST).toHaveBeenLastCalledWith("/api/v1/opportunities/{opportunity_id}/outcome", {
+      params,
+      body: { outcome: "won", contract_end_date: "2028-06-30" },
+    });
+    await changeOutcome({
+      ...base,
+      command: "contract_end",
+      contractEndDate: "2029-12-31",
+      reason: "Extended",
+    });
+    expect(api.PATCH).toHaveBeenLastCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/contract-end-date",
+      { params, body: { contract_end_date: "2029-12-31", reason: "Extended" } },
+    );
+    await changeOutcome({ ...base, command: "reopen", reason: "Back" });
+    expect(api.POST).toHaveBeenLastCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/outcome/reopen",
+      { params, body: { reason: "Back" } },
+    );
+  });
+
+  it("on 412 reports who changed it last and does not retry", async () => {
+    api.POST.mockResolvedValue({ error: { code: "row_version_mismatch" }, response: status(412) });
+    api.GET.mockResolvedValue({ data: OPPORTUNITY, response: status(200) });
+    expect(await changeOutcome({ ...base, command: "lost", reason: "Price" })).toEqual({
+      kind: "stale",
+      changedBy: "[OTHER]",
+    });
+    expect(api.POST).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps 409 and 422 to the API's sentence, and 403, 404 and failures", async () => {
+    const input = { ...base, command: "won", contractEndDate: "2028-06-30" };
+    api.POST.mockResolvedValueOnce({
+      error: { code: "baseline_required", detail: "Needs a Baseline." },
+      response: status(409),
+    });
+    expect(await changeOutcome(input)).toEqual({
+      kind: "invalid",
+      code: "baseline_required",
+      detail: "Needs a Baseline.",
+    });
+    api.POST.mockResolvedValueOnce({
+      error: { code: "validation_error", detail: "Invalid fields: body.contract_end_date" },
+      response: status(422),
+    });
+    expect(await changeOutcome(input)).toEqual({
+      kind: "invalid",
+      code: "validation_error",
+      detail: "The change was not accepted.",
+    });
+    api.POST.mockResolvedValueOnce({ error: {}, response: status(403) });
+    expect(await changeOutcome(input)).toEqual({ kind: "forbidden" });
+    api.POST.mockResolvedValueOnce({ error: {}, response: status(404) });
+    expect(await changeOutcome(input)).toEqual({ kind: "not-found" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    api.POST.mockRejectedValueOnce(new Error("network"));
+    expect(await changeOutcome(input)).toEqual({ kind: "error" });
+  });
+
+  it("rejects malformed input without calling the API", async () => {
+    for (const bad of [
+      { ...base, command: "lost" }, // no reason
+      { ...base, command: "won" }, // no date
+      { ...base, command: "won", contractEndDate: "30/06/2028" },
+      { ...base, command: "contract_end", reason: "x" }, // no date
+      { ...base, command: "reopen", reason: 3 },
+      { ...base, command: "drawn", reason: "x" },
+      { ...base, opportunityId: "x", command: "lost", reason: "x" },
+      { ...base, rowVersion: -1, command: "lost", reason: "x" },
+      null,
+    ]) {
+      expect(await changeOutcome(bad)).toEqual({ kind: "error" });
+    }
+    expect(api.POST).not.toHaveBeenCalled();
+    expect(api.PATCH).not.toHaveBeenCalled();
   });
 });
