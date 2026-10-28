@@ -1,0 +1,20 @@
+{{- if not .Values.files.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "psa.filesClaim" . }}
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+  annotations:
+    # Uploaded customer documents: never delete them with the release.
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  accessModes: [{{ .Values.files.accessMode }}]
+  {{- with .Values.files.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.files.size }}
+{{- end }}

@@ -1,0 +1,84 @@
+{{- $c := .Values.web }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "psa.fullname" . }}-web
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: {{ $c.replicas }}
+  selector:
+    matchLabels:
+      {{- include "psa.selector" (list . "web") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "psa.selector" (list . "web") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "psa.podSecurityContext" .Values.webSecurity | nindent 8 }}
+      containers:
+        - name: web
+          image: {{ include "psa.image" (list . $c.image) }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: {{ include "psa.fullname" . }}-web
+            - secretRef:
+                name: {{ .Values.auth.existingSecret }}
+          {{- with $c.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          securityContext:
+            {{- include "psa.containerSecurityContext" . | nindent 12 }}
+      {{- with $c.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "psa.fullname" . }}-web
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  selector:
+    {{- include "psa.selector" (list . "web") | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

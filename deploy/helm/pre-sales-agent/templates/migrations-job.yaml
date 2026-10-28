@@ -1,0 +1,53 @@
+{{- if .Values.migrations.enabled }}
+# Alembic migrations as the schema owner, before api and worker roll out.
+# Argo CD: a Sync hook in wave 1 (after ConfigMaps/PVC, before the Deployments in wave 2+),
+# recreated on every sync. Plain Helm: a post-install/pre-upgrade hook.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "psa.fullname" . }}-migrations
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrations
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+    helm.sh/hook: post-install,pre-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "psa.selector" (list . "migrations") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "psa.podSecurityContext" .Values.backendSecurity | nindent 8 }}
+      containers:
+        - name: migrations
+          image: {{ include "psa.image" (list . .Values.api.image) }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            {{- include "psa.backendEnvFrom" . | nindent 12 }}
+          env:
+            {{- include "psa.dbEnv" (list . "PSA_DATABASE_URL" .Values.database.appSecret) | nindent 12 }}
+            {{- include "psa.dbEnv" (list . "PSA_MIGRATIONS_DATABASE_URL" .Values.database.ownerSecret) | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+          securityContext:
+            {{- include "psa.containerSecurityContext" . | nindent 12 }}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

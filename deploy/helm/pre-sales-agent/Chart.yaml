@@ -1,0 +1,10 @@
+apiVersion: v2
+name: pre-sales-agent
+description: Agentic AI Presales Platform (api, worker, web, database migrations)
+type: application
+# Chart version: bump on every chart change and tag the commit
+# `pre-sales-agent-chart-v<version>`; the GitOps repo pins stages to that tag.
+version: 0.1.0
+# Default image tag when a component's image.tag is empty. Deployments set tags
+# explicitly (Image Updater writes them in test).
+appVersion: "latest"

@@ -1,0 +1,83 @@
+{{- $c := .Values.worker }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "psa.fullname" . }}-worker
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: {{ $c.replicas }}
+  selector:
+    matchLabels:
+      {{- include "psa.selector" (list . "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "psa.selector" (list . "worker") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "psa.podSecurityContext" .Values.backendSecurity | nindent 8 }}
+      # A running job keeps its lease for PSA_JOB_LEASE_S; give it time to finish or hand back.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: {{ include "psa.image" (list . $c.image) }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          command: ["python", "-m", "app.main_worker"]
+          envFrom:
+            {{- include "psa.backendEnvFrom" . | nindent 12 }}
+          env:
+            {{- include "psa.dbEnv" (list . "PSA_DATABASE_URL" .Values.database.appSecret) | nindent 12 }}
+            {{- with $c.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          # The worker serves no HTTP; it touches PSA_WORKER_ALIVE_FILE every 10 s, so a
+          # stale file means a hung or stopped event loop.
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os,sys,time; p='/tmp/worker-alive'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 60 else 1)"
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          securityContext:
+            {{- include "psa.containerSecurityContext" . | nindent 12 }}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: files, mountPath: /var/lib/psa/files }
+            - { name: research, mountPath: /etc/psa, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ include "psa.filesClaim" . }}
+        - name: research
+          configMap:
+            name: {{ include "psa.fullname" . }}-research
+        - name: tmp
+          emptyDir: {}
+      {{- with $c.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

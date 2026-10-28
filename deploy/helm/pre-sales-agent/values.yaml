@@ -1,0 +1,165 @@
+# Pre-Sales Agent chart. No dependency charts: Postgres comes from the platform
+# (CloudNativePG), ingress from Traefik, certificates from cert-manager.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Registry credentials, e.g. [{ name: registry-nexus }] (a dockerconfigjson secret in the namespace).
+imagePullSecrets: []
+
+# Public URL of the web app. Used for links in emails (PSA_WEB_BASE_URL), Auth0 callbacks
+# (APP_BASE_URL) and the ingress host.
+host: pre-sales-agent.example.com
+
+api:
+  image:
+    repository: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-api
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+worker:
+  image:
+    repository: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-worker
+    tag: ""
+    pullPolicy: IfNotPresent
+  # The job queue supports more than one worker process; PSA_WORKER_CONCURRENCY must stay 1.
+  replicas: 1
+  resources:
+    # Source parsing runs in a child process capped at PSA_PARSE_MAX_MEMORY_MB.
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: "1", memory: 2Gi }
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+web:
+  image:
+    repository: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  extraEnv: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+ingress:
+  enabled: true
+  className: traefik
+  # cert-manager ClusterIssuer; empty = bring your own TLS secret (tls.secretName).
+  clusterIssuer: letsencrypt
+  annotations: {}
+  tls:
+    secretName: ""   # default: <fullname>-tls
+
+# Database migrations (Alembic, as the schema owner) run before api/worker roll out.
+migrations:
+  enabled: true
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# Postgres. Credentials come from secrets with keys `username` and `password`
+# (GitOps: scripts/new-db-credentials.sh). Passwords must be URL-safe.
+database:
+  host: pg-rw.postgres-test.svc.cluster.local
+  port: 5432
+  name: psa
+  appSecret: db-psa-app      # role psa_app: least privilege, used by api and worker
+  ownerSecret: db-psa        # role psa: schema owner, used only by migrations
+
+# Uploaded files (PSA_STORAGE_DIR), shared by api and worker, so ReadWriteMany.
+files:
+  existingClaim: ""
+  storageClass: longhorn
+  accessMode: ReadWriteMany
+  size: 10Gi
+
+# Auth0 (README "Auth0 tenant setup"). Non-secret parts here; secrets in auth.existingSecret.
+auth:
+  domain: your-tenant.eu.auth0.com
+  audience: https://api.pre-sales-agent
+  clientId: ""
+  # Secret with AUTH0_CLIENT_SECRET and AUTH0_SECRET (session cookie key, openssl rand -hex 32).
+  existingSecret: pre-sales-agent-auth0
+
+# Secret with the backend's secret settings. Keys (missing keys are fine where optional):
+#   PSA_DOWNLOAD_SIGNING_KEY  required in prod (16+ random characters)
+#   PSA_OPENAI_API_KEY        cloud model API key
+#   PSA_RESEND_API_KEY        alert emails (optional)
+backendSecret: pre-sales-agent
+
+# Non-secret backend settings (api and worker). See .env.example for every option.
+config:
+  PSA_ENV: prod
+  PSA_LOG_LEVEL: INFO
+  PSA_UPLOAD_MAX_BYTES: "52428800"
+  PSA_KNOWLEDGE_STALE_MONTHS: "12"
+  PSA_KNOWLEDGE_CHUNK_CHARS: "1500"
+  PSA_KNOWLEDGE_CHUNK_OVERLAP_CHARS: "200"
+  PSA_WORKER_POLL_S: "1"
+  PSA_WORKER_CONCURRENCY: "1"
+  PSA_JOB_LEASE_S: "30"
+  PSA_JOB_HEARTBEAT_S: "10"
+  PSA_PARSE_TIMEOUT_S: "120"
+  PSA_PARSE_MAX_MEMORY_MB: "1024"
+  # Models: cloud only on this platform. openai-chat = an OpenAI-compatible cloud API.
+  PSA_MODEL_PROFILE_CHAT: openai-chat
+  PSA_OPENAI_BASE_URL: https://api.openai.com/v1
+  PSA_OPENAI_MODEL: ""
+  PSA_OPENAI_REASONING_EFFORT: ""
+  # Knowledge embeddings (bge-m3) still call an Ollama server; point this at one you run
+  # or a hosted endpoint.
+  PSA_OLLAMA_URL: ""
+  PSA_MODEL_PROFILE_EMBED: bge-m3
+  PSA_MODEL_SLOTS: "3"
+  PSA_MODEL_MAX_RETRIES: "2"
+  PSA_MODEL_TIMEOUT_S: "120"
+  PSA_RESEARCH_FETCH_TIMEOUT_S: "10"
+  PSA_RESEARCH_MAX_BYTES: "2097152"
+  PSA_TOOL_DENIAL_ALERT_THRESHOLD: "3"
+  PSA_ALERT_EMAIL_FROM: ""
+  PSA_ALERT_EMAIL_TO: ""
+  PSA_REVIEW_REMINDER_DAYS: "3"
+  PSA_COST_PER_GPU_SECOND_MINOR: "0"
+  PSA_COST_PER_1K_TOKENS_MINOR: "0"
+  PSA_COST_CURRENCY: EUR
+
+# ToolGateway research fetch allowlist, mounted at PSA_RESEARCH_ALLOWLIST_PATH.
+researchAllowlist: |
+  version: 1
+  topics:
+    standards:
+      - owasp.org
+      - nist.gov
+    cloud_platforms:
+      - learn.microsoft.com
+      - docs.aws.amazon.com
+      - cloud.google.com
+    integration:
+      - help.sap.com
+      - www.rfc-editor.org
+
+# Pod security: the backend image runs as system user `app` (uid 999), web as `node` (1000).
+backendSecurity:
+  runAsUser: 999
+  runAsGroup: 999
+  fsGroup: 999
+webSecurity:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000

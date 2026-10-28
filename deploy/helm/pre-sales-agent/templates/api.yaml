@@ -1,0 +1,99 @@
+{{- $c := .Values.api }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "psa.fullname" . }}-api
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: {{ $c.replicas }}
+  selector:
+    matchLabels:
+      {{- include "psa.selector" (list . "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "psa.selector" (list . "api") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "psa.podSecurityContext" .Values.backendSecurity | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "psa.image" (list . $c.image) }}
+          imagePullPolicy: {{ $c.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            {{- include "psa.backendEnvFrom" . | nindent 12 }}
+          env:
+            {{- include "psa.dbEnv" (list . "PSA_DATABASE_URL" .Values.database.appSecret) | nindent 12 }}
+            {{- with $c.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          # Ready only when the database answers too (the health check includes it);
+          # alive as long as the process serves HTTP, so a database outage doesn't
+          # restart every pod.
+          readinessProbe:
+            httpGet: { path: /api/v1/health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          securityContext:
+            {{- include "psa.containerSecurityContext" . | nindent 12 }}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: files, mountPath: /var/lib/psa/files }
+            - { name: research, mountPath: /etc/psa, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ include "psa.filesClaim" . }}
+        - name: research
+          configMap:
+            name: {{ include "psa.fullname" . }}-research
+        - name: tmp
+          emptyDir: {}
+      {{- with $c.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "psa.fullname" . }}-api
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    {{- include "psa.selector" (list . "api") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

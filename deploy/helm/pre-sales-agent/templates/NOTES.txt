@@ -1,0 +1,7 @@
+pre-sales-agent {{ .Chart.Version }} deployed as {{ include "psa.fullname" . }} in {{ .Release.Namespace }}.
+
+Web: https://{{ .Values.host }}
+API (in cluster): http://{{ include "psa.fullname" . }}-api:8000/api/v1/health
+
+Secrets this release reads (create them before the first sync):
+  {{ .Values.database.appSecret }}, {{ .Values.database.ownerSecret }}, {{ .Values.backendSecret }}, {{ .Values.auth.existingSecret }}

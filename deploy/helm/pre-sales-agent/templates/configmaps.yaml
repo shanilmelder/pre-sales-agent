@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "psa.fullname" . }}-backend
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.config }}
+  {{- /* Empty values are left out so the application's own defaults apply. */}}
+  {{- if ne (toString $value) "" }}
+  {{ $key }}: {{ toString $value | quote }}
+  {{- end }}
+  {{- end }}
+  PSA_STORAGE_DIR: /var/lib/psa/files
+  PSA_RESEARCH_ALLOWLIST_PATH: /etc/psa/research-allowlist.yaml
+  PSA_WEB_BASE_URL: {{ printf "https://%s" .Values.host | quote }}
+  PSA_AUTH0_DOMAIN: {{ .Values.auth.domain | quote }}
+  PSA_AUTH0_AUDIENCE: {{ .Values.auth.audience | quote }}
+  PSA_WORKER_ALIVE_FILE: /tmp/worker-alive
+  # LangGraph checkpoints deserialize known types only (AD-6).
+  LANGGRAPH_STRICT_MSGPACK: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "psa.fullname" . }}-research
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+data:
+  research-allowlist.yaml: |
+    {{- .Values.researchAllowlist | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "psa.fullname" . }}-web
+  labels:
+    {{- include "psa.labels" . | nindent 4 }}
+data:
+  PSA_API_URL: {{ printf "http://%s-api:8000" (include "psa.fullname" .) | quote }}
+  APP_BASE_URL: {{ printf "https://%s" .Values.host | quote }}
+  AUTH0_DOMAIN: {{ .Values.auth.domain | quote }}
+  AUTH0_AUDIENCE: {{ .Values.auth.audience | quote }}
+  AUTH0_CLIENT_ID: {{ .Values.auth.clientId | quote }}

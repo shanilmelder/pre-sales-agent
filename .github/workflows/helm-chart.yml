@@ -1,0 +1,51 @@
+name: Helm chart
+
+# Lints the chart on every change, and on main tags each new chart version as
+# pre-sales-agent-chart-v<version> (the GitOps repo pins stages to these tags).
+
+on:
+  pull_request:
+    paths: ["deploy/helm/**"]
+  push:
+    branches: [main]
+    paths: ["deploy/helm/**"]
+
+permissions:
+  contents: write
+
+env:
+  CHART_DIR: deploy/helm/pre-sales-agent
+
+jobs:
+  chart:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.1
+
+      - name: Lint and render
+        run: |
+          helm lint "$CHART_DIR"
+          helm template pre-sales-agent "$CHART_DIR" > /tmp/rendered.yaml
+
+      - name: Validate against Kubernetes schemas
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary -kubernetes-version 1.35.0 /tmp/rendered.yaml
+
+      - name: Tag a new chart version
+        if: github.event_name == 'push'
+        run: |
+          version=$(awk '/^version:/ {print $2}' "$CHART_DIR/Chart.yaml")
+          tag="pre-sales-agent-chart-v${version}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "${tag} exists; bump version in Chart.yaml to release a chart change"
+          else
+            git tag "${tag}"
+            git push origin "${tag}"
+          fi
