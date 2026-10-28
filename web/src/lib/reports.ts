@@ -4,6 +4,7 @@
 import type { components } from "@/lib/api/client";
 import { isCalendarDate } from "@/app/opportunities/filters";
 import { UUID_RE } from "@/lib/opportunities";
+import { tabHref } from "@/lib/workspace";
 
 export type EstimateVsActualReport = components["schemas"]["EstimateVsActualReport"];
 export type VarianceGroup = components["schemas"]["VarianceGroup"];
@@ -13,6 +14,8 @@ export type VarianceKpis = components["schemas"]["VarianceKpis"];
 export type ReportOptions = components["schemas"]["ReportOptions"];
 export type GroupBy = components["schemas"]["GroupBy"];
 export type ReportCause = components["schemas"]["VarianceCause"];
+export type FailedAssumptionItem = components["schemas"]["FailedAssumptionItem"];
+export type FailedAssumptionList = components["schemas"]["FailedAssumptionList"];
 
 export const REPORTS_HREF = "/reports";
 export const PIPELINE_HREF = "/reports/pipeline";
@@ -63,6 +66,8 @@ export type ReportParams = {
   groupBy: GroupBy;
   product?: string;
   workPackageId?: string;
+  /** Story 10.4: only Actuals tagged with this Integration Type. */
+  integrationTypeId?: string;
   cause?: ReportCause;
   closedFrom?: string;
   closedTo?: string;
@@ -90,6 +95,8 @@ export function parseReportParams(params: SearchParams | undefined): ReportParam
   if (product && Array.from(product).length <= 100) result.product = product;
   const wp = first(params, "work_package_id");
   if (wp && UUID_RE.test(wp)) result.workPackageId = wp.toLowerCase();
+  const it = first(params, "integration_type_id");
+  if (it && UUID_RE.test(it)) result.integrationTypeId = it.toLowerCase();
   const cause = first(params, "cause");
   if (cause && (CAUSES as readonly string[]).includes(cause)) result.cause = cause as ReportCause;
   const from = first(params, "closed_from");
@@ -109,6 +116,7 @@ export function reportQuery(params: ReportParams) {
     group_by: params.groupBy,
     product: params.product,
     work_package_id: params.workPackageId,
+    integration_type_id: params.integrationTypeId,
     cause: params.cause,
     closed_from: params.closedFrom,
     closed_to: params.closedTo,
@@ -122,6 +130,7 @@ export function reportHref(params: ReportParams): string {
   if (params.groupBy !== DEFAULT_GROUP_BY) query.set("group_by", params.groupBy);
   if (params.product) query.set("product", params.product);
   if (params.workPackageId) query.set("work_package_id", params.workPackageId);
+  if (params.integrationTypeId) query.set("integration_type_id", params.integrationTypeId);
   if (params.cause) query.set("cause", params.cause);
   if (params.closedFrom) query.set("closed_from", params.closedFrom);
   if (params.closedTo) query.set("closed_to", params.closedTo);
@@ -149,12 +158,45 @@ export function plural(count: number, one: string, many: string): string {
 
 /** A group's muted subline: "3 Opportunities · 2 failed Assumptions". */
 export function groupSubline(group: VarianceGroup): string {
-  return `${plural(group.opportunity_count, "Opportunity", "Opportunities")} · ${plural(
-    group.failed_assumptions,
-    "failed Assumption",
-    "failed Assumptions",
-  )}`;
+  return `${opportunityCount(group)} · ${failedCount(group)}`;
 }
+
+/** "3 Opportunities" (the subline's first half). */
+export function opportunityCount(group: Pick<VarianceGroup, "opportunity_count">): string {
+  return plural(group.opportunity_count, "Opportunity", "Opportunities");
+}
+
+/** "2 failed Assumptions" (the subline's second half; a button when above 0, Story 10.4). */
+export function failedCount(group: Pick<VarianceGroup, "failed_assumptions">): string {
+  return plural(group.failed_assumptions, "failed Assumption", "failed Assumptions");
+}
+
+// --- the drill-down (Story 10.4) ------------------------------------------------------------
+
+/** `/opportunities/{id}/actuals?sort=variance_desc`, plus `&integration_type={key}` when the
+ * report is grouped by Integration Type (`none` for "No Integration Type"), or else the
+ * report's own Integration Type filter when one is set: an Opportunity row's title and main
+ * cause. */
+export function actualsDrillHref(
+  opportunityId: string,
+  groupBy: GroupBy,
+  groupKey: string,
+  integrationTypeId?: string,
+): string {
+  const query = new URLSearchParams({ sort: "variance_desc" });
+  if (groupBy === "integration_type") query.set("integration_type", groupKey);
+  else if (integrationTypeId) query.set("integration_type", integrationTypeId);
+  return `${tabHref(opportunityId, "actuals")}?${query.toString()}`;
+}
+
+/** "Failed Assumptions · SAP EWM" (the group list's dialog title). */
+export function failedDialogTitle(groupLabel: string): string {
+  return `Failed Assumptions · ${groupLabel}`;
+}
+
+export const FAILED_LIST_EMPTY = "No failed Assumptions in this group.";
+export const FAILED_LIST_FAILED = "The failed Assumptions could not be loaded. Try again in a moment.";
+export const LOADING_FAILED_LIST = "Loading failed Assumptions";
 
 /** The variance figure's colour (the API's tone): red above +10 %, green below −5 %. */
 export function toneClass(variance: ReportVariance): string {

@@ -149,6 +149,7 @@ export function assumptionLineage(overrides: Partial<AssumptionLineage> = {}): A
     version_id: "00000000-0000-7000-8000-0000000000d3",
     version: 3,
     kind: "condition",
+    position: 2,
     wording: "[WORDING]",
     steps: [
       {
@@ -229,6 +230,38 @@ export function assumptionLineage(overrides: Partial<AssumptionLineage> = {}): A
         passage: null,
       },
     ],
+    ...overrides,
+  };
+}
+
+/** Story 10.4: an `actual` step, a delivery manager's final Actual naming the Assumption as
+ * failed. */
+export function actualStep(
+  overrides: Partial<AssumptionLineage["steps"][number]> = {},
+): AssumptionLineage["steps"][number] {
+  return {
+    kind: "actual",
+    id: "00000000-0000-7000-8000-0000000000c9",
+    title: "L2 · Final Actual · 48.0 h",
+    detail: "Integration complexity",
+    actor: { type: "user", id: "00000000-0000-7000-8000-0000000000u9", name: "Dana Delivery" },
+    at: "2026-10-26T09:00:00Z",
+    version: 1,
+    superseded: false,
+    evidence: [],
+    passage: null,
+    actual: {
+      actual_id: "00000000-0000-7000-8000-0000000000c9",
+      version: 1,
+      corrected: false,
+      line_id: "00000000-0000-7000-8000-0000000000d2",
+      line_label: "L2",
+      line_title: "[LINE 2]",
+      kind: "final",
+      effort_hours: 48,
+      variance_cause: "integration_complexity",
+      cause_label: "Integration complexity",
+    },
     ...overrides,
   };
 }

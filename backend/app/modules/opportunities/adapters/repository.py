@@ -512,11 +512,24 @@ async def trace_page(
     """One page of the Opportunity's trace events, newest first (`occurred_at desc, id
     desc`, served by the `(opportunity_id, occurred_at)` index), and the total matching.
     Filters are exact matches on the stored values (None: any); Story 9.9 adds the subject
-    id."""
+    id. Story 10.4: a subject id also matches the events that name it as a failed Assumption
+    (payload `failed_assumptions` contains `{"assumption_id": id}`, e.g. an Actual's
+    recorded and corrected events), whatever their subject type; `subject_type` then narrows
+    only the events about the subject itself."""
     conditions: list[ColumnElement[bool]] = [TraceEvent.opportunity_id == opportunity_id]
     if subject_id is not None:
-        conditions.append(TraceEvent.subject_id == subject_id)
-    if subject_type is not None:
+        own: ColumnElement[bool] = TraceEvent.subject_id == subject_id
+        if subject_type is not None:
+            own = and_(own, TraceEvent.subject_type == subject_type)
+        conditions.append(
+            or_(
+                own,
+                TraceEvent.payload.contains(
+                    {"failed_assumptions": [{"assumption_id": str(subject_id)}]}
+                ),
+            )
+        )
+    elif subject_type is not None:
         conditions.append(TraceEvent.subject_type == subject_type)
     if actor_type is not None:
         conditions.append(TraceEvent.actor_type == actor_type)

@@ -2,7 +2,8 @@
 `create_version` (a person's **New version** from a rejected or approved version). Story 9.7:
 `set_baseline`, `version_approvers` and `list_versions`. Story 9.9: `get_line_lineage`,
 `get_assumption_lineage` and `compare_any`. Story 10.1: `current_baseline_ref`, `version_lines`
-and `version_assumptions`, for Actuals."""
+and `version_assumptions`, for Actuals. Story 10.4: `assumption_details` (a failed Assumption's
+number, hours, acceptance and Evidence) and `LineageEvidence`, for the Actuals Inspector."""
 
 from uuid import UUID
 
@@ -47,7 +48,12 @@ from app.modules.estimates.application.line_refs import (
     version_assumptions,
     version_lines,
 )
-from app.modules.estimates.application.lineage import get_assumption_lineage, get_line_lineage
+from app.modules.estimates.application.lineage import (
+    AssumptionDetail,
+    assumption_details,
+    get_assumption_lineage,
+    get_line_lineage,
+)
 from app.modules.estimates.application.models import (
     AcceptAllResult,
     Assumption,
@@ -68,6 +74,7 @@ from app.modules.estimates.application.models import (
     EstimateSection,
     EstimateVersion,
     EstimateView,
+    LineageEvidence,
     LineConflict,
     LineDiff,
     LineLineage,
@@ -122,6 +129,7 @@ __all__ = [
     "Assumption",
     "AssumptionChanges",
     "AssumptionCounts",
+    "AssumptionDetail",
     "AssumptionGroups",
     "AssumptionLine",
     "AssumptionLineage",
@@ -145,6 +153,7 @@ __all__ = [
     "LineLineage",
     "LineRef",
     "LineRequirement",
+    "LineageEvidence",
     "NewVersionCreate",
     "OriginGap",
     "ReviewableVersion",
@@ -169,6 +178,7 @@ __all__ = [
     "accept_all_assumptions",
     "accept_assumption",
     "apply_decision",
+    "assumption_details",
     "build_from_assessments",
     "compare_any",
     "compare_versions",

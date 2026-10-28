@@ -304,11 +304,64 @@ def test_failed_assumptions_come_from_the_actuals_own_version(
             "version": 2,
             "kind": "condition",
             "wording": "Volumes as stated",
+            "position": 1,
+            "amount_hours": None,
+            "accepted_by": None,
+            "accepted_at": None,
+            "evidence": [],
         }
     ]
     (event,) = _events(sync_engine, s.opp_id, RECORDED)
     assert event["payload"]["failed_assumptions"] == [{"assumption_id": s.assumption, "version": 2}]
     assert [a["id"] for a in resp.json()["view"]["assumptions"]] == [s.assumption]
+
+
+def test_failed_assumptions_carry_their_number_hours_and_acceptance(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    """Story 10.4: the Inspector's read-only list gets each failed Assumption's register number,
+    a Contingency's hours and who accepted it and when, for every reader (here the Head of
+    Delivery, who doesn't collaborate) and in the correction history too."""
+    s = _scene(client, sync_engine)
+    contingency = uuid4()
+    with sync_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO estimates_assumptions (id, version_id, position, kind, wording, "
+                "amount_hours, line_id, origin_ref, accepted_by, accepted_at, row_version) "
+                "VALUES (:i, :v, 2, 'contingency', 'Interface spec arrives late', 12.0, :l, "
+                "CAST(:o AS jsonb), :b, '2026-10-05T09:00:00Z', 3)"
+            ),
+            {"i": contingency, "v": s.v3, "l": s.l1, "o": '{"kind": "gap"}', "b": s.owner_id},
+        )
+    item = {
+        "line_id": s.l1,
+        "effort_hours": 50,
+        "variance_cause": "integration_complexity",
+        "failed_assumption_ids": [str(contingency), s.assumption],
+    }
+    assert _save(client, s.dm, s.opp_id, [item]).status_code == 200
+    hod, _ = _user(client, sync_engine, "Hana Head", HOD)
+
+    actual = _line_view(_view(client, hod, s.opp_id), s.l1)["actual"]
+
+    by_id = {f["assumption_id"]: f for f in actual["failed_assumptions"]}
+    got = by_id[str(contingency)]
+    assert (got["kind"], got["position"], got["amount_hours"], got["version"]) == (
+        "contingency",
+        2,
+        12.0,
+        3,
+    )
+    assert got["accepted_by"] == {"id": str(s.owner_id), "name": "Owner Person"}
+    assert got["accepted_at"].startswith("2026-10-05T09:00:00")
+    assert (by_id[s.assumption]["position"], by_id[s.assumption]["accepted_by"]) == (1, None)
+
+    resp = _save(client, s.dm, s.opp_id, [{**item, "effort_hours": 52}], reason="Late timesheets")
+    assert resp.status_code == 200, resp.text
+    corrected = _line_view(_view(client, hod, s.opp_id), s.l1)["actual"]
+    (past,) = corrected["history"]
+    assert {f["position"] for f in past["failed_assumptions"]} == {1, 2}
 
 
 def test_unplanned_work(client: TestClient, sync_engine: Engine) -> None:

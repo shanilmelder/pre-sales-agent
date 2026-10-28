@@ -88,13 +88,17 @@ _ACTUAL_IF_MATCH = Annotated[
     responses={**_responses(404, 422), 200: {"description": "The tab", "headers": _ETAG}},
 )
 async def get_actuals(
-    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW, response: Response
+    opportunity_id: UUID, actor: CurrentPrincipal, uow: UoW, request: Request, response: Response
 ) -> ActualsView:
     """The Actuals tab: every Baseline line with its estimate, current Actual and
     server-calculated variance, Unplanned work, totals, the Baseline version's Assumptions
-    Register, and whether the caller may record Actuals or close delivery. Anyone who can
+    Register, and whether the caller may record Actuals or close delivery. Story 10.4: each
+    failed Assumption with its number, hours, who accepted it and its Evidence. Anyone who can
     read the Opportunity."""
-    view = await actuals.get_actuals(uow, actor, opportunity_id)
+    settings: Settings = request.app.state.settings
+    view = await actuals.get_actuals(
+        uow, actor, opportunity_id, store=BlobStore(settings.storage_dir)
+    )
     response.headers["ETag"] = etag(view.row_version)
     return view
 

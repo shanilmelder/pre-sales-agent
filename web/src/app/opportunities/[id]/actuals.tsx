@@ -3,13 +3,23 @@ import { hasAccess } from "@/components/access-gate";
 import { ActualsSection } from "@/components/opportunities/actuals-table";
 import { PAGE_PADDING } from "@/components/shell/page-header";
 import { getMe } from "@/lib/api/server";
-import { LOAD_FAILED } from "@/lib/actuals";
+import { LOAD_FAILED, parseActualsDrill } from "@/lib/actuals";
+
+type SearchParams = Record<string, string | string[] | undefined>;
 
 /** Tab 8: Actuals per Baseline Estimate line (Story 10.1), with server-calculated variance.
  * Delivery managers record and correct them; everyone else who can read the Opportunity sees
  * them read only (the API decides, through `can_record`). Renders nothing when the user may
- * not read the Opportunity; the workspace layout shows why. */
-export async function ActualsTab({ id }: { id: string }) {
+ * not read the Opportunity; the workspace layout shows why. Story 10.4: the URL's `sort`
+ * (`variance_desc|variance_asc`) and `integration_type` (an id, or `none`) from a Reports
+ * link seed the table's sort and Integration Type filter. */
+export async function ActualsTab({
+  id,
+  searchParams = {},
+}: {
+  id: string;
+  searchParams?: SearchParams;
+}) {
   const result = await getMe();
   if (!hasAccess(result)) return null;
   const loaded = await getOpportunity(id);
@@ -29,6 +39,7 @@ export async function ActualsTab({ id }: { id: string }) {
           opportunityId={opportunity.id}
           initial={actuals.actuals}
           catalogue={catalogue}
+          drill={parseActualsDrill(searchParams)}
         />
       ) : (
         <>

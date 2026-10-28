@@ -2986,7 +2986,8 @@ export interface paths {
          * Get Actuals
          * @description The Actuals tab: every Baseline line with its estimate, current Actual and
          *     server-calculated variance, Unplanned work, totals, the Baseline version's Assumptions
-         *     Register, and whether the caller may record Actuals or close delivery. Anyone who can
+         *     Register, and whether the caller may record Actuals or close delivery. Story 10.4: each
+         *     failed Assumption with its number, hours, who accepted it and its Evidence. Anyone who can
          *     read the Opportunity.
          */
         get: operations["get_actuals"];
@@ -3191,6 +3192,29 @@ export interface paths {
          *     computed on the server.
          */
         get: operations["get_estimate_vs_actual_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/failed-assumptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Failed Assumptions Report
+         * @description Story 10.4: the distinct failed Assumptions the group's Actuals name (the report's
+         *     "N failed Assumptions"), under the same filters and visibility as the report: each with
+         *     its Opportunity, line, kind, "A{n}", wording, Assumption version and Actual. An unknown
+         *     group gives an empty list.
+         */
+        get: operations["get_failed_assumptions_report"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3803,6 +3827,8 @@ export interface components {
             product: string | null;
             /** Work Package Id */
             work_package_id: string | null;
+            /** Integration Type Id */
+            integration_type_id: string | null;
             cause: components["schemas"]["VarianceCause"] | null;
             /** Closed From */
             closed_from: string | null;
@@ -4157,8 +4183,10 @@ export interface components {
          * AssumptionLineage
          * @description Story 9.9 (`estimates.get_assumption_lineage`): an Assumption's chain, oldest first:
          *     its origin (a Gap, an Unknown or a Finding), the Clarification Question, the recorded
-         *     answer with its Source passage, the conversion and the acceptance. A step that never
-         *     happened (or a question a sales representative may not see) is left out.
+         *     answer with its Source passage, the conversion and the acceptance, then (Story 10.4)
+         *     each Actual version that named it as failed. A step that never happened (or a question
+         *     a sales representative may not see) is left out. `position`: its register number
+         *     ("A{n}"); `amount_hours`: a Contingency's hours.
          */
         AssumptionLineage: {
             /** Assumption Id */
@@ -4168,8 +4196,12 @@ export interface components {
             /** Version */
             version: number;
             kind: components["schemas"]["AssumptionKind"];
+            /** Position */
+            position: number;
             /** Wording */
             wording: string;
+            /** Amount Hours */
+            amount_hours?: number | null;
             /** Steps */
             steps: components["schemas"]["LineageStep"][];
         };
@@ -5847,7 +5879,10 @@ export interface components {
         /**
          * FailedAssumption
          * @description A failed Assumption an Actual names, at the version it was named at, with its kind and
-         *     wording from the Actual's Baseline version register.
+         *     wording from the Actual's Baseline version register. Story 10.4 (the Inspector's read-only
+         *     list): its register number (`position`, "A{n}"; null when it is no longer on the
+         *     register), a Contingency's hours, who accepted it and when (null while unaccepted), and its
+         *     Evidence chips (the Source passage of its Gap's answer).
          */
         FailedAssumption: {
             /** Assumption Id */
@@ -5858,6 +5893,59 @@ export interface components {
             kind: string;
             /** Wording */
             wording: string;
+            /** Position */
+            position?: number | null;
+            /** Amount Hours */
+            amount_hours?: number | null;
+            accepted_by?: components["schemas"]["UserRef"] | null;
+            /** Accepted At */
+            accepted_at?: string | null;
+            /** Evidence */
+            evidence?: components["schemas"]["LineageEvidence"][];
+        };
+        /**
+         * FailedAssumptionItem
+         * @description One failed Assumption of a group (Story 10.4): the Opportunity it belongs to, the line
+         *     whose Actual names it (`line_label` "L{n}", null for Unplanned work), its kind, register
+         *     number (`label` "A{n}"), wording and Contingency hours (null for a Condition), the
+         *     Assumption version the Actual stored with the reference, and that Actual's id.
+         */
+        FailedAssumptionItem: {
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Opportunity Title */
+            opportunity_title: string;
+            /** Line Label */
+            line_label: string | null;
+            /** Kind */
+            kind: ("condition" | "contingency") | null;
+            /** Position */
+            position: number | null;
+            /** Label */
+            label: string;
+            /** Wording */
+            wording: string;
+            /** Amount Hours */
+            amount_hours: number | null;
+            /** Assumption Id */
+            assumption_id: string;
+            /** Assumption Version */
+            assumption_version: number;
+            /** Actual Id */
+            actual_id: string;
+        };
+        /**
+         * FailedAssumptionList
+         * @description Reports > Estimate vs actual, a group's "N failed Assumptions" (Story 10.4): each
+         *     distinct failed Assumption the group's Actuals name, under the report's filters.
+         */
+        FailedAssumptionList: {
+            group_by: components["schemas"]["GroupBy"];
+            /** Group Key */
+            group_key: string;
+            filters: components["schemas"]["AppliedFilters"];
+            /** Items */
+            items: components["schemas"]["FailedAssumptionItem"][];
         };
         /** FailedKindCount */
         FailedKindCount: {
@@ -6517,6 +6605,13 @@ export interface components {
             /** Unread */
             unread: number;
         };
+        /** IntegrationTypeOption */
+        IntegrationTypeOption: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /**
          * IntegrationTypeTag
          * @description An Integration Type a Source is tagged with. `retired` tags keep resolving.
@@ -6882,6 +6977,38 @@ export interface components {
             version?: string | null;
         };
         /**
+         * LineageActual
+         * @description Story 10.4: an Actual version that named the Assumption as failed, from its
+         *     `actuals.actual.recorded` or `.corrected` trace event: the Actual (`actual_id`, its
+         *     `version`), the line it was recorded against (`line_label` "L{n}" in grid order, null for
+         *     Unplanned work), its kind and effort, and its variance cause with its words.
+         */
+        LineageActual: {
+            /** Actual Id */
+            actual_id: string;
+            /** Version */
+            version: number;
+            /** Corrected */
+            corrected: boolean;
+            /** Line Id */
+            line_id: string | null;
+            /** Line Label */
+            line_label: string | null;
+            /** Line Title */
+            line_title: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "milestone" | "final";
+            /** Effort Hours */
+            effort_hours: number;
+            /** Variance Cause */
+            variance_cause: string | null;
+            /** Cause Label */
+            cause_label: string | null;
+        };
+        /**
          * LineageAssumption
          * @description A Contingency Assumption linked to the line: its register number, wording, hours,
          *     and who accepted it and when (null while unaccepted).
@@ -7124,7 +7251,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "gap" | "unknown" | "finding" | "question" | "answer" | "conversion" | "acceptance";
+            kind: "gap" | "unknown" | "finding" | "question" | "answer" | "conversion" | "acceptance" | "actual";
             /** Id */
             id: string;
             /** Title */
@@ -7141,6 +7268,8 @@ export interface components {
             /** Evidence */
             evidence?: components["schemas"]["LineageEvidence"][];
             passage?: components["schemas"]["LineagePassage"] | null;
+            /** @description Story 10.4: an `actual` step's Actual. */
+            actual?: components["schemas"]["LineageActual"] | null;
         };
         /**
          * LinkedRequest
@@ -8041,6 +8170,8 @@ export interface components {
             products: string[];
             /** Work Packages */
             work_packages: components["schemas"]["WorkPackageOption"][];
+            /** Integration Types */
+            integration_types: components["schemas"]["IntegrationTypeOption"][];
             /** Causes */
             causes: components["schemas"]["CauseRef"][];
         };
@@ -11615,7 +11746,7 @@ export interface operations {
                 actor_type?: string | null;
                 /** @description Only events of this type, e.g. `estimates.assumption.accepted`. */
                 event_type?: string | null;
-                /** @description Story 9.9: only events about this subject id (e.g. an Estimate line's, for **Open in Trace**). An unknown id, or one that isn't a UUID, gives an empty page. */
+                /** @description Story 9.9: only events about this subject id (e.g. an Estimate line's, for **Open in Trace**). Story 10.4: also the events whose payload names it as a failed Assumption (an Actual's recorded and corrected events), whatever `subject_type` says. An unknown id, or one that isn't a UUID, gives an empty page. */
                 subject_id?: string | null;
             };
             header?: never;
@@ -33753,6 +33884,8 @@ export interface operations {
                 product?: string | null;
                 /** @description Only Actuals tagged with this Work Package. */
                 work_package_id?: string | null;
+                /** @description Story 10.4: only Actuals tagged with this Integration Type. */
+                integration_type_id?: string | null;
                 /** @description Only Actuals with this variance cause. */
                 cause?: components["schemas"]["VarianceCause"] | null;
                 /** @description Only Opportunities whose delivery closed on or after this date. */
@@ -33775,6 +33908,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EstimateVsActualReport"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller lacks `reporting.report.read` (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description An invalid parameter (`validation_error`), e.g. `closed_from` after `closed_to` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_failed_assumptions_report: {
+        parameters: {
+            query: {
+                /** @description The group's `key` from the report (`none`: the rows without a value). */
+                group_key: string;
+                /** @description How the report's rows are grouped. */
+                group_by?: components["schemas"]["GroupBy"];
+                /** @description Only Opportunities with this product (trimmed, ignoring case). Blank is ignored. */
+                product?: string | null;
+                /** @description Only Actuals tagged with this Work Package. */
+                work_package_id?: string | null;
+                /** @description Story 10.4: only Actuals tagged with this Integration Type. */
+                integration_type_id?: string | null;
+                /** @description Only Actuals with this variance cause. */
+                cause?: components["schemas"]["VarianceCause"] | null;
+                /** @description Only Opportunities whose delivery closed on or after this date. */
+                closed_from?: string | null;
+                /** @description Only Opportunities whose delivery closed on or before this date. */
+                closed_to?: string | null;
+                /** @description Count milestone Actuals too (default: final Actuals only). */
+                include_milestones?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FailedAssumptionList"];
                 };
             };
             /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */

@@ -55,7 +55,7 @@ context:
 - `backend/app/modules/opportunities/api/routes.py` -- `IfMatchHeader` :70, `_with_etag` :76, `_responses`, PATCH pattern :261.
 - `backend/app/modules/identity/actions.py` (`Action`, `ACTION_CATEGORIES`), `identity/domain/policy.py` (`OWNER_GRANTS` :127, `RELATION_EXCLUDED_ROLES` :84, `HUMAN_ONLY_ACTIONS`), `backend/scripts/seed_auth0.py:50` (HoD :82, admin :51).
 - `backend/app/platform/trace/catalogue.py:96-113` (opportunities payloads, `OpportunitiesOpportunityUpdated` pattern); web labels `web/src/lib/trace.ts`.
-- Migration `backend/migrations/versions/20261027_0056_opportunities_outcome.py`, down revision `0055_reporting_views`; check constraint `outcome IN ('won','lost')`, won ⇒ contract_end_date not null.
+- Migration `backend/migrations/versions/20261027_0057_opportunities_outcome.py`, down revision `0055_reporting_views`; check constraint `outcome IN ('won','lost')`, won ⇒ contract_end_date not null.
 - Web: `web/src/app/opportunities/[id]/overview.tsx`, `components/opportunities/overview-summary.tsx`, `lib/overview.ts`; `workspace-header.tsx`; dialog `components/ui/dialog.tsx` + `opportunities/reason-input.tsx` (model: Close delivery dialog in `actuals-table.tsx`); date input `inline-field.tsx:447`; server actions `app/opportunities/actions.ts` (`updateOpportunity` :481 If-Match); pill `lib/opportunities.ts:60`. Run `npm run gen:api`.
 - Tests: `backend/tests/test_opportunities.py` helpers (`_create`, `_events`, `_if_match`, `_user`), baseline helpers `tests/test_estimates_baseline.py`; new `tests/test_opportunities_domain.py`, `tests/test_opportunities_outcome.py`; web vitest beside files (`workspace-header.test.tsx`, `actions.test.ts`).
 

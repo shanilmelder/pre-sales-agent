@@ -233,6 +233,12 @@ def test_each_filter(client: TestClient, sync_engine: Engine) -> None:
     by_cause = _report(client, hod, product=w.product, cause="estimation_error")
     assert [g["key"] for g in by_cause["groups"]] == [str(w.sso)]
 
+    # Story 10.4: one Integration Type (multi-tagged rows keep their other groups).
+    by_it = _report(client, hod, product=w.product, integration_type_id=str(w.crm))
+    assert by_it["filters"]["integration_type_id"] == str(w.crm)
+    assert {g["key"] for g in by_it["groups"]} == {str(w.crm), str(w.mig)}
+    assert by_it["kpis"]["estimate_hours"] == 300.0
+
     today = time.strftime("%Y-%m-%d", time.gmtime())
     closed = _report(client, hod, product=w.product, closed_from=today, closed_to=today)
     assert closed["kpis"]["opportunities"] == 1  # Beta isn't closed
@@ -246,6 +252,9 @@ def test_each_filter(client: TestClient, sync_engine: Engine) -> None:
     assert {"id": str(w.wp), "name": f"Go-live support {w.product[5:]}"} in none["options"][
         "work_packages"
     ]
+    assert {"id": str(w.ewm), "name": f"SAP EWM {w.product[5:]}"} in none["options"][
+        "integration_types"
+    ]
     assert [c["value"] for c in none["options"]["causes"]][:2] == [
         "unknown_requirement",
         "integration_complexity",
@@ -258,6 +267,7 @@ def test_each_filter(client: TestClient, sync_engine: Engine) -> None:
         {"group_by": "customer"},
         {"cause": "bad_luck"},
         {"work_package_id": "nope"},
+        {"integration_type_id": "nope"},
         {"closed_from": "2026-13-01"},
         {"closed_from": "2026-10-02", "closed_to": "2026-10-01"},
     ],

@@ -1387,6 +1387,30 @@ async def payload_events(
     return [_trace(row) for row in rows]
 
 
+ACTUAL_EVENTS = ("actuals.actual.recorded", "actuals.actual.corrected")
+
+
+async def failed_assumption_events(
+    uow: UnitOfWork, opportunity_id: UUID, assumption_id: UUID
+) -> list[TraceRecord]:
+    """Story 10.4: the Opportunity's `actuals.actual.recorded` and `.corrected` events whose
+    payload `failed_assumptions` names this Assumption (jsonb containment), oldest first:
+    every version of every Actual that recorded it as failed, current or past. Actuals'
+    tables are never read; the trace is the record."""
+    rows = await uow.session.execute(
+        select(*_TRACE_COLUMNS)
+        .where(
+            TraceEvent.opportunity_id == opportunity_id,
+            TraceEvent.event_type.in_(ACTUAL_EVENTS),
+            TraceEvent.payload.contains(
+                {"failed_assumptions": [{"assumption_id": str(assumption_id)}]}
+            ),
+        )
+        .order_by(*_OLDEST_FIRST)
+    )
+    return [_trace(row) for row in rows]
+
+
 async def events_between(
     uow: UnitOfWork,
     opportunity_id: UUID,

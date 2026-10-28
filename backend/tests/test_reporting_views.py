@@ -276,6 +276,11 @@ def test_row_shape_planned_unplanned_and_multi_tag(sync_engine: Engine) -> None:
         (s.actual_ids[0], s.assumptions["a1"], 2, "condition"),
         (s.actual_ids[0], s.assumptions["a2"], 2, "contingency"),
     ]
+    # Story 10.4: the register number, wording and a Contingency's hours.
+    assert [
+        (f["assumption_position"], f["assumption_wording"], f["assumption_amount_hours"])
+        for f in failed
+    ] == [(1, "Wording", None), (2, "Wording", Decimal("4.0"))]
 
 
 def test_labels_follow_the_grid_order_and_flags(sync_engine: Engine) -> None:
@@ -379,6 +384,39 @@ def test_psa_app_may_only_select(sync_engine: Engine, view: str) -> None:
         with pytest.raises(sa.exc.DBAPIError):
             with sync_engine.begin() as conn:
                 conn.execute(sa.text(statement))
+
+
+def _failed_columns(engine: Engine) -> list[str]:
+    found = rows(
+        engine,
+        "SELECT column_name FROM information_schema.columns WHERE table_name = :v "
+        "ORDER BY ordinal_position",
+        v=FAILED_VIEW,
+    )
+    return [c["column_name"] for c in found]
+
+
+def test_0056_adds_the_wording_columns_and_keeps_the_grants(sync_engine: Engine) -> None:
+    """Story 10.4: 0056 recreates `reporting_failed_assumptions` with the register number,
+    wording and hours; its downgrade restores the 0055 view; both keep SELECT-only grants."""
+    old = [
+        "actual_id",
+        "opportunity_id",
+        "estimate_version_id",
+        "assumption_id",
+        "assumption_version",
+        "assumption_kind",
+    ]
+    new = [*old, "assumption_position", "assumption_wording", "assumption_amount_hours"]
+    assert _failed_columns(sync_engine) == new
+    _alembic("downgrade", "0055_reporting_views")
+    try:
+        assert _failed_columns(sync_engine) == old
+        test_psa_app_may_only_select(sync_engine, FAILED_VIEW)
+    finally:
+        _alembic("upgrade", "head")
+    assert _failed_columns(sync_engine) == new
+    test_psa_app_may_only_select(sync_engine, FAILED_VIEW)
 
 
 def test_the_migration_goes_down_and_up(sync_engine: Engine) -> None:

@@ -64,6 +64,7 @@ export function report(overrides: Partial<EstimateVsActualReport> = {}): Estimat
     filters: {
       product: null,
       work_package_id: null,
+      integration_type_id: null,
       cause: null,
       closed_from: null,
       closed_to: null,
@@ -116,6 +117,7 @@ export function report(overrides: Partial<EstimateVsActualReport> = {}): Estimat
     options: {
       products: ["Payments", "Logistics"],
       work_packages: [{ id: "0190c000-0000-7000-8000-000000000001", name: "Discovery" }],
+      integration_types: [{ id: "0190c000-0000-7000-8000-0000000000a1", name: "REST API" }],
       causes: [
         { value: "integration_complexity", label: "Integration complexity" },
         { value: "scope_change", label: "Scope change" },

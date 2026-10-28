@@ -2328,6 +2328,54 @@ describe("/opportunities/[id] workspace", () => {
     expect(screen.queryByRole("grid")).toBeNull();
   });
 
+  it("tab URL /trace?subject=estimates.assumption&subject_id=…: the chip and the Chain card", async () => {
+    // Story 10.4: Open in Trace from a failed Assumption.
+    signedIn(["head_of_delivery"]);
+    const ASSUMPTION = "00000000-0000-7000-8000-0000000000aa";
+    const lineage = {
+      assumption_id: ASSUMPTION,
+      version_id: "00000000-0000-7000-8000-0000000000e3",
+      version: 3,
+      kind: "condition",
+      position: 2,
+      wording: "[WORDING]",
+      amount_hours: null,
+      steps: [
+        {
+          kind: "acceptance",
+          id: ASSUMPTION,
+          title: "Accepted",
+          detail: null,
+          actor: { type: "user", id: "00000000-0000-7000-8000-0000000000a1", name: "[OWNER]" },
+          at: "2026-10-20T09:00:00Z",
+          version: 3,
+          superseded: false,
+          evidence: [],
+          passage: null,
+        },
+      ],
+    };
+    apiGet.mockImplementation(async (path: string) =>
+      path.endsWith("/trace")
+        ? { data: TRACE_PAGE, response: new Response(null, { status: 200 }) }
+        : path.endsWith("/lineage")
+          ? { data: lineage, response: new Response(null, { status: 200 }) }
+          : { data: OPPORTUNITY, response: new Response(null, { status: 200 }) },
+    );
+    const { container } = await renderWorkspace("trace", OPP_ID, {
+      subject: "estimates.assumption",
+      subject_id: ASSUMPTION,
+    });
+    expect(apiGet).toHaveBeenCalledWith(
+      "/api/v1/opportunities/{opportunity_id}/assumptions/{assumption_id}/lineage",
+      { params: { path: { opportunity_id: OPP_ID, assumption_id: ASSUMPTION } } },
+    );
+    const chip = container.querySelector("[data-subject-id-chip]") as HTMLElement;
+    expect(chip.textContent).toBe("Assumption A2 · [WORDING]");
+    const card = screen.getByRole("region", { name: "Chain" });
+    expect(within(card).getByText("Accepted")).toBeTruthy();
+  });
+
   /** Story 10.1: `GET …/actuals` with a Baseline v3 and one recorded line. */
   function actualsView(canRecord: boolean) {
     const variance = {
@@ -2426,6 +2474,35 @@ describe("/opportunities/[id] workspace", () => {
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("textbox", { name: /Actual hours, L2/ })).toBeTruthy();
     expect(within(panel).getByRole("button", { name: "Save Actuals" })).toBeTruthy();
+  });
+
+  it("tab URL /actuals?sort=variance_desc&integration_type=…: the Reports drill-down", async () => {
+    // Story 10.4: the URL's sort and Integration Type reach the table through the page.
+    signedIn(["head_of_delivery"]);
+    const EWM = { id: "00000000-0000-7000-8000-0000000000a1", kind: "integration_type", name: "SAP EWM" };
+    const base = actualsView(false);
+    const recorded = base.lines[0]!;
+    const big = { ...recorded.variance, hours: 12, label: "+12.0 h (25.0%)" };
+    const lines = [
+      { ...recorded, integration_types: [EWM] },
+      {
+        ...recorded,
+        line_id: "00000000-0000-7000-8000-0000000000b3",
+        label: "L3",
+        title: "Pick station interface",
+        integration_types: [EWM],
+        actual: { ...recorded.actual, id: "00000000-0000-7000-8000-0000000000c3", variance: big },
+        variance: big,
+      },
+      { ...recorded, line_id: "00000000-0000-7000-8000-0000000000b4", label: "L4", title: "Untagged" },
+    ];
+    found(OPPORTUNITY, { "/actuals": { ...base, lines } });
+    await renderWorkspace("actuals", OPP_ID, { sort: "variance_desc", integration_type: EWM.id });
+    const panel = screen.getByRole("tabpanel");
+    expect(
+      Array.from(panel.querySelectorAll("[data-line-id]")).map((el) => el.getAttribute("data-line-id")),
+    ).toEqual(["00000000-0000-7000-8000-0000000000b3", "00000000-0000-7000-8000-0000000000b2"]);
+    expect(within(panel).getByText("Integration Type: SAP EWM")).toBeTruthy();
   });
 
   it("tab URL /actuals: a failed read says so", async () => {

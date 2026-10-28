@@ -586,8 +586,9 @@ def test_an_assumption_from_an_answered_gap_traces_its_whole_chain(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert (body["kind"], body["version"]) == ("condition", 1)
+    assert body["position"] == 1
     kinds = [s["kind"] for s in body["steps"]]
-    assert kinds == ["gap", "question", "answer", "conversion", "acceptance"]
+    assert kinds == ["gap", "question", "answer", "conversion", "acceptance"]  # no Actual yet
     origin, question, answer, conversion, acceptance = body["steps"]
     assert origin["title"] == WMS
     assert origin["actor"]["type"] == "agent"
@@ -603,6 +604,52 @@ def test_an_assumption_from_an_answered_gap_traces_its_whole_chain(
     assert conversion["title"] == "Converted to a Condition"
     assert conversion["actor"]["name"] == "Owner Person"
     assert (acceptance["actor"]["name"], acceptance["version"]) == ("Owner Person", 1)
+
+
+def test_the_actuals_that_named_the_assumption_as_failed_end_its_chain(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    """Story 10.4: one `actual` step per Actual version citing the Assumption, after the
+    acceptance; a corrected version is superseded, and a correction that drops the Assumption
+    adds no step but supersedes the last one."""
+    from tests.fixtures.drilldown import CAUSE, drilled  # it builds on this module
+    from tests.test_actuals_api import _save
+
+    w = drilled(client, sync_engine, db_url, gateway)
+    item: dict[str, Any] = {
+        "line_id": w.line_id,
+        "effort_hours": 52,
+        "variance_cause": CAUSE,
+        "failed_assumption_ids": [w.condition_id],
+    }
+    assert _save(client, w.dm, w.opp_id, [item], reason="Late timesheets").status_code == 200
+
+    body = chain(client, w.hod, w.opp_id, w.condition_id).json()
+
+    assert body["position"] == 1
+    assert body["amount_hours"] is None
+    steps = body["steps"]
+    assert [s["kind"] for s in steps][-3:] == ["acceptance", "actual", "actual"]
+    first, second = steps[-2:]
+    assert (first["actual"]["effort_hours"], first["superseded"]) == (48.0, True)
+    assert (first["actual"]["corrected"], first["version"]) == (False, 1)
+    assert (second["actual"]["effort_hours"], second["superseded"]) == (52.0, False)
+    assert (second["actual"]["corrected"], second["version"]) == (True, 2)
+    assert second["title"].endswith("Final Actual · 52.0 h")
+    assert second["actual"]["line_title"] == SAP
+
+    dropped = {**item, "effort_hours": 53, "failed_assumption_ids": []}
+    assert _save(client, w.dm, w.opp_id, [dropped], reason="Not the Condition").status_code == 200
+    after = chain(client, w.hod, w.opp_id, w.condition_id).json()["steps"]
+    assert [s["kind"] for s in after].count("actual") == 2
+    assert after[-1]["superseded"] is True
+
+
+def test_the_actual_cause_words_match_actuals() -> None:
+    from app.modules.actuals.domain.actuals import CAUSE_LABELS
+    from app.modules.estimates.application.lineage import ACTUAL_CAUSE_LABELS
+
+    assert ACTUAL_CAUSE_LABELS == {c.value: label for c, label in CAUSE_LABELS.items()}
 
 
 def test_a_sales_representative_reads_lineage_without_unapproved_questions(

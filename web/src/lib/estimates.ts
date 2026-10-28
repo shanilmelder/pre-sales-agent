@@ -752,6 +752,44 @@ export function lineTraceHref(opportunityId: string, lineId: string): string {
   return `/opportunities/${opportunityId}/trace?${query.toString()}`;
 }
 
+/** `/opportunities/{id}/trace?subject=estimates.assumption&subject_id={assumption}`: the
+ * Assumption's own trace events and the Actuals that recorded it as failed (Story 10.4,
+ * **Open in Trace** from a failed Assumption). */
+export function assumptionTraceHref(opportunityId: string, assumptionId: string): string {
+  const query = new URLSearchParams({ subject: "estimates.assumption", subject_id: assumptionId });
+  return `/opportunities/${opportunityId}/trace?${query.toString()}`;
+}
+
+/** "Condition · A2" / "Contingency · A3" (a failed Assumption's label); "Condition" when its
+ * number isn't known. */
+export function failedKindLabel(kind: string, position: number | null | undefined): string {
+  const name = kind === "contingency" ? "Contingency" : "Condition";
+  return position == null ? name : `${name} · A${position}`;
+}
+
+/** A failed Assumption's text: the wording, or for a Contingency "{h} h · wording". */
+export function failedAssumptionText(assumption: {
+  kind: string;
+  wording: string;
+  amount_hours?: number | null;
+}): string {
+  return assumption.kind === "contingency" && assumption.amount_hours != null
+    ? `${hours(assumption.amount_hours)} h · ${assumption.wording}`
+    : assumption.wording;
+}
+
+/** "Accepted by {name} · {date}", or "Not accepted". */
+export function failedAcceptedLabel(assumption: {
+  accepted_by?: { name: string } | null;
+  accepted_at?: string | null;
+}): string {
+  if (!assumption.accepted_by) return NOT_ACCEPTED;
+  const name = assumption.accepted_by.name;
+  return assumption.accepted_at
+    ? `Accepted by ${name} · ${registerDate(assumption.accepted_at)}`
+    : `Accepted by ${name}`;
+}
+
 /** A delta in hours for a Total cell: "+4.0 h", "−4.0 h" (a minus sign), or "no change". */
 export function deltaText(delta: number): string {
   const rounded = Math.round(delta * 10) / 10;

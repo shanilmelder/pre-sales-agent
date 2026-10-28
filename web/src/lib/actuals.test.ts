@@ -6,7 +6,10 @@ import {
   currencyExponent,
   changedItems,
   errorsByLine,
+  filterByIntegrationType,
+  integrationTypeChipLabel,
   invalidLines,
+  parseActualsDrill,
   needsReason,
   nextSort,
   parseHours,
@@ -144,5 +147,37 @@ describe("costText", () => {
     expect(costText(480000, "EUR")).toBe("EUR 4,800.00");
     expect(costText(4800, "JPY")).toBe("JPY 4,800");
     expect(costText(null, "EUR")).toBe("—");
+  });
+});
+
+describe("the drill-down from Reports (Story 10.4)", () => {
+  const IT = "0190C000-0000-7000-8000-0000000000A1";
+  const tagged = { ...line("L1", 10, 12), integration_types: [{ id: IT.toLowerCase(), kind: "integration_type" as const, name: "SAP EWM" }] };
+  const bare = line("L2", 10, null);
+
+  it("reads the sort and the Integration Type from the URL, ignoring anything else", () => {
+    expect(parseActualsDrill({ sort: "variance_desc", integration_type: IT })).toEqual({
+      sort: "descending",
+      integrationType: IT.toLowerCase(),
+    });
+    expect(parseActualsDrill({ sort: "variance_asc", integration_type: "none" })).toEqual({
+      sort: "ascending",
+      integrationType: "none",
+    });
+    expect(parseActualsDrill({ sort: "title", integration_type: "nope" })).toEqual({
+      sort: "none",
+      integrationType: null,
+    });
+    expect(parseActualsDrill(undefined)).toEqual({ sort: "none", integrationType: null });
+  });
+
+  it("filters lines by their Integration Types and names the chip", () => {
+    const lines = [tagged, bare];
+    expect(filterByIntegrationType(lines, null)).toEqual(lines);
+    expect(filterByIntegrationType(lines, IT.toLowerCase())).toEqual([tagged]);
+    expect(filterByIntegrationType(lines, "none")).toEqual([bare]);
+    expect(integrationTypeChipLabel(lines, IT.toLowerCase())).toBe("Integration Type: SAP EWM");
+    expect(integrationTypeChipLabel(lines, "none")).toBe("Integration Type: No Integration Type");
+    expect(integrationTypeChipLabel(lines, "other")).toBe("Integration Type: Unknown");
   });
 });

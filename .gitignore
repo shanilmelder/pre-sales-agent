@@ -30,3 +30,6 @@ next-env.d.ts
 # OS / editors
 .DS_Store
 Thumbs.db
+
+# Windows writes shell caches here when a tool runs with an unexpanded %SystemDrive%
+%SystemDrive%/

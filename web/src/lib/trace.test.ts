@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assumptionChipTitle,
   parseTraceFilters as parseFilters99,
   removeSubjectLabel,
   subjectChipLabel,
@@ -269,5 +270,20 @@ describe("one subject's events (Story 9.9)", () => {
     expect(subjectChipLabel("Connect to SAP.")).toBe("Line Connect to SAP.");
     expect(subjectChipLabel(null)).toBe("Line");
     expect(removeSubjectLabel("A")).toBe("Remove the Line A filter");
+  });
+
+  it("Story 10.4: an Assumption's chip reads Assumption A{n} · {wording}, truncated", () => {
+    expect(subjectChipLabel("A2 · Volumes as stated", "estimates.assumption")).toBe(
+      "Assumption A2 · Volumes as stated",
+    );
+    expect(subjectChipLabel(null, "estimates.assumption")).toBe("Assumption");
+    expect(removeSubjectLabel("A2 · x", "estimates.assumption")).toBe(
+      "Remove the Assumption A2 · x filter",
+    );
+    expect(assumptionChipTitle({ position: 2, wording: " Volumes as stated " })).toBe(
+      "A2 · Volumes as stated",
+    );
+    const long = assumptionChipTitle({ position: 1, wording: "w".repeat(80) });
+    expect(long).toBe(`A1 · ${"w".repeat(47)}…`);
   });
 });

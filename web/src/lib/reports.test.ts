@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { group, variance } from "@/test/report-fixtures";
 
 import {
+  actualsDrillHref,
+  failedDialogTitle,
   groupSubline,
   nextSort,
   parseReportParams,
@@ -119,5 +121,36 @@ describe("groupSubline", () => {
       "3 Opportunities · 0 failed Assumptions",
     );
     expect(groupSubline(group())).toBe("1 Opportunity · 1 failed Assumption");
+  });
+});
+
+// --- Story 10.4 -----------------------------------------------------------------------------
+
+describe("the drill-down", () => {
+  it("keeps an Integration Type filter in the URL and the query", () => {
+    const params = parseReportParams({ integration_type_id: WP });
+    expect(params.integrationTypeId).toBe(WP.toLowerCase());
+    expect(reportQuery(params).integration_type_id).toBe(WP.toLowerCase());
+    expect(reportHref(params)).toBe(`/reports?integration_type_id=${WP.toLowerCase()}`);
+    expect(parseReportParams({ integration_type_id: "nope" }).integrationTypeId).toBeUndefined();
+  });
+
+  it("an Opportunity row opens its Actuals by variance, with the Integration Type group", () => {
+    expect(actualsDrillHref("o1", "integration_type", WP)).toBe(
+      `/opportunities/o1/actuals?sort=variance_desc&integration_type=${WP}`,
+    );
+    expect(actualsDrillHref("o1", "integration_type", "none")).toBe(
+      "/opportunities/o1/actuals?sort=variance_desc&integration_type=none",
+    );
+    expect(actualsDrillHref("o1", "cause", "scope_change")).toBe(
+      "/opportunities/o1/actuals?sort=variance_desc",
+    );
+    expect(actualsDrillHref("o1", "cause", "scope_change", WP)).toBe(
+      `/opportunities/o1/actuals?sort=variance_desc&integration_type=${WP}`,
+    );
+  });
+
+  it("names the group list's dialog", () => {
+    expect(failedDialogTitle("SAP EWM")).toBe("Failed Assumptions · SAP EWM");
   });
 });

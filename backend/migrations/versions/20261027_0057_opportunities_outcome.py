@@ -5,8 +5,8 @@ open), `outcome_recorded_at` (set exactly when there is an outcome) and `contrac
 (set exactly when it was won). The retention date is derived from them in domain code, never
 stored. `psa_app` already has SELECT, INSERT, UPDATE and DELETE on the table.
 
-Revision ID: 0056_opportunities_outcome
-Revises: 0055_reporting_views
+Revision ID: 0057_opportunities_outcome
+Revises: 0056_reporting_failed_wording
 Create Date: 2026-10-27
 """
 
@@ -15,8 +15,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0056_opportunities_outcome"
-down_revision: str | None = "0055_reporting_views"
+revision: str = "0057_opportunities_outcome"
+down_revision: str | None = "0056_reporting_failed_wording"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
