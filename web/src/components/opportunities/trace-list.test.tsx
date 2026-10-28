@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TraceEvent, TracePage } from "@/lib/trace";
 import { axeViolations } from "@/test/axe";
+import { actualStep, assumptionLineage } from "@/test/lineage-fixtures";
 
 const replace = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({
@@ -14,6 +15,12 @@ vi.mock("next/navigation", () => ({
     back: vi.fn(),
   }),
   usePathname: () => "/opportunities/x/trace",
+}));
+
+vi.mock("@/app/opportunities/actions", () => ({
+  loadLineLineage: vi.fn(),
+  loadAssumptionLineage: vi.fn(),
+  getPassage: vi.fn(),
 }));
 
 import { KeyboardShortcuts } from "../shell/keyboard-shortcuts";
@@ -660,6 +667,40 @@ describe("TraceSection, one line's events (Story 9.9)", () => {
 
     expect(replace).toHaveBeenCalledWith(
       `/opportunities/${OPP_ID}/trace?subject=estimates.estimate_line`,
+      { scroll: false },
+    );
+  });
+
+  it("Story 10.4: filtered to an Assumption, the chip names it and the Chain card leads", async () => {
+    const user = userEvent.setup();
+    const ASSUMPTION = "00000000-0000-7000-8000-0000000000aa";
+    const lineage = assumptionLineage({ steps: [...assumptionLineage().steps, actualStep()] });
+    const { container } = render(
+      <ShellProviders singleKeyShortcuts>
+        <TraceSection
+          opportunityId={OPP_ID}
+          page={page([LINE_EDITED])}
+          filters={{ subject: "estimates.assumption", subject_id: ASSUMPTION }}
+          now={NOW}
+          subjectTitle="A2 · [WORDING]"
+          chain={lineage}
+        />
+      </ShellProviders>,
+    );
+    const chip = container.querySelector("[data-subject-id-chip]") as HTMLElement;
+    expect(chip.textContent).toBe("Assumption A2 · [WORDING]");
+    const card = screen.getByRole("region", { name: "Chain" });
+    expect(
+      Array.from(card.querySelectorAll("[data-lineage-step]")).map((li) => li.getAttribute("data-lineage-step")),
+    ).toEqual(["gap", "question", "answer", "conversion", "acceptance", "actual"]);
+    // The card sits above the events.
+    const table = screen.getByRole("grid");
+    expect(card.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Remove the Assumption A2 · [WORDING] filter" }));
+    expect(replace).toHaveBeenCalledWith(
+      `/opportunities/${OPP_ID}/trace?subject=estimates.assumption`,
       { scroll: false },
     );
   });

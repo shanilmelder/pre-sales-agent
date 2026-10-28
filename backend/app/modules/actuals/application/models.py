@@ -13,6 +13,8 @@ from app.modules.actuals.domain.actuals import (
     VarianceCause,
     VarianceDirection,
 )
+from app.modules.estimates.application.public import LineageEvidence
+from app.modules.opportunities.application.public import UserRef
 
 BATCH_MAX = 500
 
@@ -39,12 +41,20 @@ class VarianceView(BaseModel):
 
 class FailedAssumption(BaseModel):
     """A failed Assumption an Actual names, at the version it was named at, with its kind and
-    wording from the Actual's Baseline version register."""
+    wording from the Actual's Baseline version register. Story 10.4 (the Inspector's read-only
+    list): its register number (`position`, "A{n}"; null when it is no longer on the
+    register), a Contingency's hours, who accepted it and when (null while unaccepted), and its
+    Evidence chips (the Source passage of its Gap's answer)."""
 
     assumption_id: str
     version: int
     kind: str
     wording: str
+    position: int | None = None
+    amount_hours: float | None = None
+    accepted_by: UserRef | None = None
+    accepted_at: datetime | None = None
+    evidence: list[LineageEvidence] = Field(default_factory=list)
 
 
 class ActualVersionView(BaseModel):

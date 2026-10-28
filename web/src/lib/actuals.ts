@@ -18,6 +18,7 @@ export type ActualsImportView = components["schemas"]["ActualsImportView"];
 export type ImportRowView = components["schemas"]["ImportRowView"];
 export type ActualsImportLatest = components["schemas"]["ActualsImportLatest"];
 export type AppliedImport = components["schemas"]["AppliedImport"];
+export type FailedAssumption = components["schemas"]["FailedAssumption"];
 
 /** One rule an Actual broke, as the API's 422 `actual_invalid` lists it. */
 export type ActualError = { item: number | null; field: string; message: string };
@@ -99,6 +100,63 @@ export function sortLines(lines: readonly ActualsLine[], order: SortOrder): Actu
     return sign * (a.variance.hours - b.variance.hours);
   });
 }
+
+// --- the drill-down from Reports (Story 10.4) ----------------------------------------------
+
+/** The Integration Type of the "No Integration Type" Reports group. */
+export const NO_INTEGRATION_TYPE = "none";
+export const NO_INTEGRATION_TYPE_LABEL = "No Integration Type";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** What a Reports link carries to the Actuals tab: `sort=variance_desc|variance_asc` and
+ * `integration_type={id}|none`. Anything else is ignored. */
+export type ActualsDrill = { sort: SortOrder; integrationType: string | null };
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export function parseActualsDrill(params: SearchParams | undefined): ActualsDrill {
+  const sort = firstParam(params?.sort);
+  const it = firstParam(params?.integration_type)?.trim();
+  return {
+    sort: sort === "variance_desc" ? "descending" : sort === "variance_asc" ? "ascending" : "none",
+    integrationType:
+      it && (it === NO_INTEGRATION_TYPE || UUID_PATTERN.test(it)) ? it.toLowerCase() : null,
+  };
+}
+
+/** The lines tagged with the Integration Type (`none`: the lines with none); all of them
+ * without a filter. Totals stay the server's. */
+export function filterByIntegrationType(
+  lines: readonly ActualsLine[],
+  integrationType: string | null,
+): ActualsLine[] {
+  if (integrationType === null) return [...lines];
+  if (integrationType === NO_INTEGRATION_TYPE) {
+    return lines.filter((line) => line.integration_types.length === 0);
+  }
+  return lines.filter((line) =>
+    line.integration_types.some((t) => t.id.toLowerCase() === integrationType),
+  );
+}
+
+/** "Integration Type: SAP EWM" (the removable filter chip); "Integration Type: No Integration
+ * Type" for `none`; "Integration Type: Unknown" when no line carries it. */
+export function integrationTypeChipLabel(
+  lines: readonly ActualsLine[],
+  integrationType: string,
+): string {
+  if (integrationType === NO_INTEGRATION_TYPE) return `Integration Type: ${NO_INTEGRATION_TYPE_LABEL}`;
+  const found = lines
+    .flatMap((line) => line.integration_types)
+    .find((t) => t.id.toLowerCase() === integrationType);
+  return `Integration Type: ${found?.name ?? "Unknown"}`;
+}
+
+export const NO_LINES_FOR_TYPE = "No Baseline lines carry this Integration Type.";
 
 /** Hours as typed: a number of 0 or more with at most one decimal place, null when blank,
  * "invalid" otherwise. */

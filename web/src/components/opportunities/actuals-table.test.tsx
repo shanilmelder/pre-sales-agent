@@ -20,6 +20,9 @@ vi.mock("@/app/opportunities/actions", () => ({
   saveActuals,
   correctActual,
   closeDelivery,
+  loadLineLineage: vi.fn(),
+  loadAssumptionLineage: vi.fn(),
+  getPassage: vi.fn(),
 }));
 
 import { RightPane } from "../shell/right-pane";
@@ -125,10 +128,14 @@ function view(overrides: Partial<ActualsView> = {}): ActualsView {
   };
 }
 
-function renderSection(initial: ActualsView, catalogue = CATALOGUE) {
+function renderSection(
+  initial: ActualsView,
+  catalogue = CATALOGUE,
+  drill?: Parameters<typeof ActualsSection>[0]["drill"],
+) {
   return render(
     <ShellProviders singleKeyShortcuts>
-      <ActualsSection opportunityId={OPP_ID} initial={initial} catalogue={catalogue} />
+      <ActualsSection opportunityId={OPP_ID} initial={initial} catalogue={catalogue} drill={drill} />
       <RightPane />
     </ShellProviders>,
   );
@@ -473,5 +480,141 @@ describe("live re-read", () => {
     await user.type(within(row(L1)).getByRole("textbox", { name: /Actual hours, L1/ }), "5");
     await act(async () => source.emit("actuals.actual.recorded"));
     expect(loadActuals).not.toHaveBeenCalled();
+  });
+});
+
+// --- the drill-down from Reports (Story 10.4) ---------------------------------------------
+
+const EWM = { id: "00000000-0000-7000-8000-0000000000a1", kind: "integration_type" as const, name: "SAP EWM" };
+const L3 = "00000000-0000-7000-8000-0000000000b3";
+const A2 = "00000000-0000-7000-8000-0000000000f2";
+const A3 = "00000000-0000-7000-8000-0000000000f3";
+const BIG: VarianceView = { ...OVER, hours: 12, label: "+12.0 h (25.0%)" };
+
+function drillView(overrides: Partial<ActualsView> = {}): ActualsView {
+  const failed = {
+    ...actual(L3, 60, BIG),
+    failed_assumptions: [
+      {
+        assumption_id: A2,
+        version: 2,
+        kind: "condition",
+        wording: "[CONDITION WORDING]",
+        position: 2,
+        amount_hours: null,
+        accepted_by: { id: "00000000-0000-7000-8000-0000000000u1", name: "Owner Person" },
+        accepted_at: "2026-10-05T09:00:00Z",
+        evidence: [
+          {
+            kind: "source_document" as const,
+            id: "00000000-0000-7000-8000-0000000000s1",
+            version: 1,
+            label: "S1 · answers.eml",
+            superseded: false,
+            passage_id: "00000000-0000-7000-8000-0000000000p1",
+            excerpt: "[EXCERPT]",
+          },
+        ],
+      },
+      {
+        assumption_id: A3,
+        version: 1,
+        kind: "contingency",
+        wording: "[CONTINGENCY WORDING]",
+        position: 3,
+        amount_hours: 12,
+        accepted_by: null,
+        accepted_at: null,
+        evidence: [],
+      },
+    ],
+  };
+  return view({
+    lines: [
+      { ...line(L1, "L1", "WMS to SAP EWM interface", 122, null), integration_types: [EWM] },
+      line(L2, "L2", "CRM data migration", 36, actual(L2, 41, OVER)),
+      { ...line(L3, "L3", "Pick station interface", 48, failed), integration_types: [EWM] },
+    ],
+    ...overrides,
+  });
+}
+
+const lineOrder = () =>
+  Array.from(document.querySelectorAll("[data-line-id]")).map((el) => el.getAttribute("data-line-id"));
+
+describe("ActualsSection drilled from Reports", () => {
+  it("sorts by variance and filters to the Integration Type, shown as a removable chip", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", `/opportunities/${OPP_ID}/actuals?sort=variance_desc&integration_type=${EWM.id}`);
+    const { container } = renderSection(drillView({ can_record: false }), CATALOGUE, {
+      sort: "descending",
+      integrationType: EWM.id,
+    });
+
+    // Highest variance first; the unrecorded line last; only the tagged lines.
+    expect(lineOrder()).toEqual([L3, L1]);
+    expect(screen.getByRole("columnheader", { name: /^Variance, sort/ }).getAttribute("aria-sort")).toBe(
+      "descending",
+    );
+    expect(screen.getByText("Integration Type: SAP EWM")).toBeTruthy();
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Remove the Integration Type: SAP EWM filter" }));
+    expect(screen.queryByText("Integration Type: SAP EWM")).toBeNull();
+    expect(lineOrder()).toEqual([L3, L2, L1]);
+    expect(window.location.search).toBe("?sort=variance_desc");
+  });
+
+  it("the No Integration Type group, and an unknown one", () => {
+    const { unmount } = renderSection(drillView(), CATALOGUE, { sort: "none", integrationType: "none" });
+    expect(lineOrder()).toEqual([L2]);
+    expect(screen.getByText("Integration Type: No Integration Type")).toBeTruthy();
+    unmount();
+
+    renderSection(drillView(), CATALOGUE, {
+      sort: "none",
+      integrationType: "00000000-0000-7000-8000-0000000000a9",
+    });
+    expect(lineOrder()).toEqual([]);
+    expect(screen.getByText("No Baseline lines carry this Integration Type.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove the Integration Type: Unknown filter" })).toBeTruthy();
+  });
+
+  it("the Inspector lists the failed Assumptions read only, each with Open in Trace", async () => {
+    const user = userEvent.setup();
+    renderSection(drillView({ can_record: false }));
+    await user.click(within(row(L3)).getByRole("button", { name: "L3 Pick station interface" }));
+    const pane = screen.getByRole("complementary", { name: "Details" });
+    const list = within(pane).getByRole("region", { name: "Failed Assumptions" });
+
+    expect(within(list).getByText("Condition · A2")).toBeTruthy();
+    expect(within(list).getByText("[CONDITION WORDING]")).toBeTruthy();
+    expect(within(list).getByText("Accepted by Owner Person · 5 Oct 2026")).toBeTruthy();
+    expect(within(list).getByRole("button", { name: "S1 · answers.eml" })).toBeTruthy();
+    expect(within(list).getByText("Contingency · A3")).toBeTruthy();
+    expect(within(list).getByText("12.0 h · [CONTINGENCY WORDING]")).toBeTruthy();
+    expect(within(list).getByText("Not accepted")).toBeTruthy();
+    expect(
+      within(list).getByRole("link", { name: "Open in Trace: Condition · A2" }).getAttribute("href"),
+    ).toBe(`/opportunities/${OPP_ID}/trace?subject=estimates.assumption&subject_id=${A2}`);
+    // Read only: no checkbox, no form control in the list, and no edit action in the pane.
+    expect(within(list).queryByRole("checkbox")).toBeNull();
+    expect(within(pane).queryByRole("button", { name: /Save|Record/ })).toBeNull();
+    expect(await axeViolations(pane)).toEqual([]);
+  });
+
+  it("a delivery manager keeps the checkbox form, with the read-only list beside it", async () => {
+    const user = userEvent.setup();
+    renderSection(
+      drillView({
+        assumptions: [
+          { id: A2, kind: "condition", wording: "[CONDITION WORDING]", version: 2, line_id: null },
+        ],
+      }),
+    );
+    await user.click(within(row(L3)).getByRole("button", { name: "L3 Pick station interface" }));
+    const pane = screen.getByRole("complementary", { name: "Details" });
+    expect(within(pane).getByRole("checkbox", { name: /CONDITION WORDING/ })).toBeTruthy();
+    expect(within(pane).getByRole("region", { name: "Failed Assumptions" })).toBeTruthy();
   });
 });

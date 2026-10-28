@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 2026-10-27
+last_updated: 2026-10-28
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -142,7 +142,7 @@ development_status:
   10-1-record-actuals-per-estimate-line: review
   10-2-import-actuals-from-a-file: review
   10-3-variance-reporting-views-and-the-reports-table: review
-  10-4-drill-down-from-variance-to-the-failed-assumption: backlog
+  10-4-drill-down-from-variance-to-the-failed-assumption: review
   10-5-record-the-opportunity-outcome-and-retention-dates: backlog
   10-6-controlled-retention-purge: backlog
   10-7-pipeline-report: backlog

@@ -359,8 +359,9 @@ async def list_opportunity_trace(
         Query(
             max_length=TRACE_FILTER_MAX,
             description="Story 9.9: only events about this subject id (e.g. an Estimate "
-            "line's, for **Open in Trace**). An unknown id, or one that isn't a UUID, gives an "
-            "empty page.",
+            "line's, for **Open in Trace**). Story 10.4: also the events whose payload names it "
+            "as a failed Assumption (an Actual's recorded and corrected events), whatever "
+            "`subject_type` says. An unknown id, or one that isn't a UUID, gives an empty page.",
         ),
     ] = None,
 ) -> TracePage:

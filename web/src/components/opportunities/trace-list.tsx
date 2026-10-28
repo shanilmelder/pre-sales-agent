@@ -15,6 +15,8 @@ import {
 } from "react";
 
 import { ActorTile } from "@/components/opportunities/actor-tile";
+import { PaneLabel } from "@/components/opportunities/estimate-item-parts";
+import { AssumptionLineageBody } from "@/components/opportunities/lineage-section";
 import { clearFiltersClass, FilterChip } from "@/components/opportunities/filter-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +30,7 @@ import {
   absoluteTime,
   actorText,
   actorTypeLabel,
+  CHAIN,
   CLEAR_FILTERS,
   eventLabel,
   fieldLabel,
@@ -55,6 +58,7 @@ import {
   type TraceFilters,
   type TracePage,
 } from "@/lib/trace";
+import type { AssumptionLineage } from "@/lib/estimates";
 import { tabHref } from "@/lib/workspace";
 
 const controlClass =
@@ -387,10 +391,10 @@ export function TraceFilterBar({
           data-subject-id-chip=""
           className="inline-flex items-center gap-1 rounded-md border border-primary-tint bg-primary-tint py-[3px] pr-1 pl-2.5 text-[13px] leading-[1.4] text-primary-text"
         >
-          <span className="max-w-60 truncate">{subjectChipLabel(subjectTitle)}</span>
+          <span className="max-w-72 truncate">{subjectChipLabel(subjectTitle, values.subject)}</span>
           <button
             type="button"
-            aria-label={removeSubjectLabel(subjectTitle)}
+            aria-label={removeSubjectLabel(subjectTitle, values.subject)}
             onClick={() => navigate(withTraceFilter(values, "subject_id", ""))}
             className="inline-flex size-5 items-center justify-center rounded-sm outline-none hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-primary"
           >
@@ -469,13 +473,17 @@ export function TraceSection({
   filters,
   now,
   subjectTitle = null,
+  chain = null,
 }: {
   opportunityId: string;
   page: TracePage;
   filters: TraceFilters;
   now?: number;
-  /** Story 9.9: the `subject_id` filter's line title, when known. */
+  /** Story 9.9: the `subject_id` filter's line title (Story 10.4: or Assumption), when known. */
   subjectTitle?: string | null;
+  /** Story 10.4: filtered to an Assumption, its lineage, shown as the Chain card above the
+   * events (origin to the Actuals that recorded it as failed). */
+  chain?: AssumptionLineage | null;
 }) {
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -516,6 +524,7 @@ export function TraceSection({
   }
 
   const filtered = hasTraceFilters(filters);
+  const chainId = useId();
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -529,6 +538,18 @@ export function TraceSection({
           />
         ) : null}
       </div>
+      {chain ? (
+        <section
+          aria-labelledby={`${chainId}-title`}
+          className="flex flex-col gap-3 rounded-[12px] border border-border bg-surface p-5 shadow-card"
+          data-trace-chain=""
+        >
+          <PaneLabel>
+            <span id={`${chainId}-title`}>{CHAIN}</span>
+          </PaneLabel>
+          <AssumptionLineageBody opportunityId={opportunityId} lineage={chain} />
+        </section>
+      ) : null}
       {page.items.length > 0 ? (
         <>
           <TraceList

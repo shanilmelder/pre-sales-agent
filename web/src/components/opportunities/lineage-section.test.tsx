@@ -6,6 +6,7 @@ import type { AssumptionLineageResult, LineLineageResult } from "@/app/opportuni
 import { SKELETON_MIN_MS } from "@/lib/opportunities";
 import { axeViolations } from "@/test/axe";
 import {
+  actualStep,
   assumptionLineage,
   LINEAGE_LINE,
   LINEAGE_OPP,
@@ -275,6 +276,37 @@ describe("AssumptionLineageSection", () => {
 
     expect(getPassage).toHaveBeenCalledWith(LINEAGE_OPP, PASSAGE_ID);
     expect((await within(chain).findByText("[ANSWER]")).tagName).toBe("MARK");
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("Story 10.4: the chain ends with the Actuals that recorded it as failed", async () => {
+    const base = assumptionLineage();
+    loadAssumptionLineage.mockResolvedValue({
+      kind: "ok",
+      lineage: assumptionLineage({
+        steps: [...base.steps, actualStep({ superseded: true }), actualStep({ id: "c2", title: "L2 · Final Actual · 52.0 h" })],
+      }),
+    });
+    const { container } = render(
+      <AssumptionLineageSection
+        opportunityId={LINEAGE_OPP}
+        assumptionId="00000000-0000-7000-8000-0000000000aa"
+      />,
+    );
+    const chain = await screen.findByRole("list", { name: "Chain of origin" });
+    const steps = Array.from(chain.querySelectorAll("[data-lineage-step]"));
+    expect(steps.map((li) => li.getAttribute("data-lineage-step")).slice(-3)).toEqual([
+      "acceptance",
+      "actual",
+      "actual",
+    ]);
+    expect(headings(container).slice(-2)).toEqual(["Actual", "Actual"]);
+    const [first, second] = steps.slice(-2) as HTMLElement[];
+    expect(first!.querySelector("s")?.textContent).toBe("L2 · Final Actual · 48.0 h");
+    expect(within(first!).getByText("(superseded)")).toBeTruthy();
+    expect(within(second!).getByText("L2 · Final Actual · 52.0 h")).toBeTruthy();
+    expect(within(second!).getByText("Integration complexity")).toBeTruthy();
+    expect(within(second!).getByText("Dana Delivery · 26 Oct 2026")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 

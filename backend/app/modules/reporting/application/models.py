@@ -104,17 +104,24 @@ class WorkPackageOption(BaseModel):
     name: str
 
 
+class IntegrationTypeOption(BaseModel):
+    id: str
+    name: str
+
+
 class ReportOptions(BaseModel):
     """The filter choices, from every readable Actual (filters ignored)."""
 
     products: list[str]
     work_packages: list[WorkPackageOption]
+    integration_types: list[IntegrationTypeOption]
     causes: list[CauseRef]
 
 
 class AppliedFilters(BaseModel):
     product: str | None
     work_package_id: str | None
+    integration_type_id: str | None
     cause: VarianceCause | None
     closed_from: date | None
     closed_to: date | None
@@ -140,3 +147,32 @@ class EstimateVsActualReport(BaseModel):
     groups: list[VarianceGroup]
     calibration: Calibration
     options: ReportOptions
+
+
+class FailedAssumptionItem(BaseModel):
+    """One failed Assumption of a group (Story 10.4): the Opportunity it belongs to, the line
+    whose Actual names it (`line_label` "L{n}", null for Unplanned work), its kind, register
+    number (`label` "A{n}"), wording and Contingency hours (null for a Condition), the
+    Assumption version the Actual stored with the reference, and that Actual's id."""
+
+    opportunity_id: str
+    opportunity_title: str
+    line_label: str | None
+    kind: Literal["condition", "contingency"] | None
+    position: int | None
+    label: str
+    wording: str
+    amount_hours: float | None
+    assumption_id: str
+    assumption_version: int
+    actual_id: str
+
+
+class FailedAssumptionList(BaseModel):
+    """Reports > Estimate vs actual, a group's "N failed Assumptions" (Story 10.4): each
+    distinct failed Assumption the group's Actuals name, under the report's filters."""
+
+    group_by: GroupBy
+    group_key: str
+    filters: AppliedFilters
+    items: list[FailedAssumptionItem]

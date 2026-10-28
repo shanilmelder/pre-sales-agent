@@ -112,7 +112,7 @@ function requirementPassage(evidence: LineageEvidence, text: string): Passage {
 
 /** A row of Evidence chips; the chosen one shows the cited Requirement version's text in a
  * `PassageView` under them. */
-function EvidenceChips({
+export function EvidenceChips({
   evidence,
   texts,
 }: {
@@ -447,10 +447,38 @@ const STEP_LABELS: Record<LineageStep["kind"], string> = {
   answer: "Answer",
   conversion: "Conversion",
   acceptance: "Acceptance",
+  actual: "Actual",
 };
 
+/** Evidence chips as the chain shows them: a Source passage chip loads its passage, a
+ * Requirement chip shows the cited version's text (Story 10.4: also the failed Assumptions'
+ * Evidence in the Actuals Inspector). */
+export function EvidenceList({
+  opportunityId,
+  evidence,
+}: {
+  opportunityId: string;
+  evidence: readonly LineageEvidence[];
+}) {
+  return (
+    <>
+      {evidence.map((item) =>
+        item.kind === "source_document" ? (
+          <PassageChip
+            key={`${item.id}-${item.passage_id}`}
+            opportunityId={opportunityId}
+            evidence={item}
+          />
+        ) : (
+          <EvidenceChips key={`${item.id}-${item.version}`} evidence={[item]} />
+        ),
+      )}
+    </>
+  );
+}
+
 /** The answer step's Source passage chip: it loads and shows the passage. */
-function PassageChip({
+export function PassageChip({
   opportunityId,
   evidence,
 }: {
@@ -491,7 +519,10 @@ function PassageChip({
   );
 }
 
-function AssumptionLineageBody({
+/** The Assumption's chain of origin as a vertical list (Story 10.4: also the Trace tab's
+ * Chain card): origin, question, answer, conversion, acceptance, then each Actual that
+ * recorded it as failed. */
+export function AssumptionLineageBody({
   opportunityId,
   lineage,
 }: {
@@ -516,17 +547,7 @@ function AssumptionLineageBody({
               </p>
               {step.detail ? <Meta>{step.detail}</Meta> : null}
               {step.actor || step.at ? <Meta>{actorAndDate(step.actor, step.at)}</Meta> : null}
-              {(step.evidence ?? []).map((evidence) =>
-                evidence.kind === "source_document" ? (
-                  <PassageChip
-                    key={`${evidence.id}-${evidence.passage_id}`}
-                    opportunityId={opportunityId}
-                    evidence={evidence}
-                  />
-                ) : (
-                  <EvidenceChips key={`${evidence.id}-${evidence.version}`} evidence={[evidence]} />
-                ),
-              )}
+              <EvidenceList opportunityId={opportunityId} evidence={step.evidence ?? []} />
             </div>
           </li>
         );
@@ -537,7 +558,8 @@ function AssumptionLineageBody({
 
 /** Story 9.9: the **Lineage** section of the Assumption inspector, as a vertical chain: its
  * origin (Gap, Unknown or Finding), the Clarification Question, the recorded answer with its
- * Source passage, the conversion and the acceptance. A step that never happened is left out.
+ * Source passage, the conversion and the acceptance (Story 10.4: then each Actual that
+ * recorded it as failed). A step that never happened is left out.
  * A skeleton shows for at least 150 ms while it loads. */
 export function AssumptionLineageSection({
   opportunityId,

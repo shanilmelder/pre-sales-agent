@@ -6,6 +6,7 @@ import {
   ArrowUpIcon,
   InfoIcon,
   TriangleAlertIcon,
+  XIcon,
 } from "lucide-react";
 import { useCallback, useId, useState } from "react";
 
@@ -57,6 +58,9 @@ import {
   causeLabel,
   changedItems,
   draftOf,
+  filterByIntegrationType,
+  integrationTypeChipLabel,
+  NO_LINES_FOR_TYPE,
   errorsByLine,
   formatLocalDate,
   hasNoActuals,
@@ -68,6 +72,7 @@ import {
   sortLines,
   varianceTone,
   type ActualError,
+  type ActualsDrill,
   type ActualsLine,
   type ActualsView,
   type LineDraft,
@@ -96,22 +101,27 @@ function VarianceText({ line }: { line: ActualsLine }) {
 /** Tab 8: the Actuals of the Opportunity's Baseline lines (Story 10.1), as the mockup draws it:
  * a header with **Import from file** (Story 10.2) and **Save Actuals**, a five-column table where a
  * delivery manager edits hours and cause inline, the footnote, and the Inspector's full form.
- * Everyone else sees it read only. Variance always comes from the server. */
+ * Everyone else sees it read only. Variance always comes from the server. Story 10.4: a
+ * Reports link (`drill`) seeds the variance sort and an Integration Type filter on the lines,
+ * shown as a removable chip (the totals stay the server's). */
 export function ActualsSection({
   opportunityId,
   initial,
   catalogue,
+  drill = { sort: "none", integrationType: null },
 }: {
   opportunityId: string;
   initial: ActualsView;
   catalogue: CatalogueOptions;
+  drill?: ActualsDrill;
 }) {
   const announce = useAnnounce();
   const { rightPaneOpen, setRightPaneOpen } = useShell();
   const ids = useId();
   const [view, setView] = useState(initial);
   const [drafts, setDrafts] = useState<Record<string, LineDraft>>({});
-  const [sort, setSort] = useState<SortOrder>("none");
+  const [sort, setSort] = useState<SortOrder>(drill.sort);
+  const [integrationType, setIntegrationType] = useState<string | null>(drill.integrationType);
   const [recording, setRecording] = useState(false);
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
@@ -327,7 +337,35 @@ export function ActualsSection({
   }
 
   const empty = hasNoActuals(view) && !recording && !dirty;
-  const lines = sortLines(view.lines, sort);
+  const lines = sortLines(filterByIntegrationType(view.lines, integrationType), sort);
+
+  function removeIntegrationType() {
+    setIntegrationType(null);
+    // Keep the URL honest without a navigation (the tab's state stays).
+    const url = new URL(window.location.href);
+    url.searchParams.delete("integration_type");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }
+
+  const chipLabel = integrationType ? integrationTypeChipLabel(view.lines, integrationType) : null;
+  const filterChip = chipLabel ? (
+    <div role="group" aria-label="Filters" className="flex flex-wrap items-center gap-2">
+      <span
+        data-integration-type-chip=""
+        className="inline-flex items-center gap-1 rounded-md border border-dashed border-primary bg-primary-tint py-[3px] pr-1 pl-2.5 text-[13px] leading-[1.4] text-primary-text"
+      >
+        <span className="max-w-72 truncate">{chipLabel}</span>
+        <button
+          type="button"
+          aria-label={`Remove the ${chipLabel} filter`}
+          onClick={removeIntegrationType}
+          className="inline-flex size-5 items-center justify-center rounded-sm outline-none hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <XIcon aria-hidden="true" className="size-3" />
+        </button>
+      </span>
+    </div>
+  ) : null;
   const SortIcon = sort === "descending" ? ArrowDownIcon : sort === "ascending" ? ArrowUpIcon : ArrowUpDownIcon;
 
   return (
@@ -392,6 +430,7 @@ export function ActualsSection({
         />
       ) : (
         <>
+          {filterChip}
           <div className="overflow-hidden rounded-[12px] border border-border bg-surface shadow-card">
             <div className="overflow-x-auto">
               <div role="table" aria-label="Actuals per Estimate line" className="min-w-[680px]">
@@ -426,6 +465,13 @@ export function ActualsSection({
                   </div>
                 </div>
                 <div role="rowgroup">
+                  {lines.length === 0 ? (
+                    <div role="row" className={`${ROW} ${BODY_PAD} border-t border-border`}>
+                      <span role="cell" className="col-span-5 text-meta text-text-secondary">
+                        {NO_LINES_FOR_TYPE}
+                      </span>
+                    </div>
+                  ) : null}
                   {lines.map((line) => {
                     const draft = draftFor(line);
                     const lineErrors = errors.byLine[line.line_id] ?? [];

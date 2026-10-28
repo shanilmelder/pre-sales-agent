@@ -5,17 +5,19 @@ import Link from "next/link";
 import { Fragment, useId, useState } from "react";
 
 import { BaselinePill } from "@/components/opportunities/set-baseline";
+import { FailedAssumptionsButton } from "@/components/reports/failed-assumptions-dialog";
 import { VarianceBar } from "@/components/reports/variance-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   EXPORT_LATER,
+  actualsDrillHref,
   ariaSort,
   formatHours,
   groupByLabel,
-  groupSubline,
   nextSort,
+  opportunityCount,
   plural,
   reportHref,
   sortGroups,
@@ -26,7 +28,6 @@ import {
   type VarianceGroup,
 } from "@/lib/reports";
 import { cn } from "@/lib/utils";
-import { tabHref } from "@/lib/workspace";
 
 const GRID = "grid grid-cols-[minmax(0,1fr)_90px_90px_220px_minmax(0,1fr)] items-center gap-4 px-5";
 /** Row padding: the density's 12px (6px compact) plus 6px, as the mockup. */
@@ -167,7 +168,10 @@ export function VarianceTable({
                     </button>
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate font-medium">{group.label}</span>
-                      <span className="text-meta text-text-secondary">{groupSubline(group)}</span>
+                      <span className="text-meta text-text-secondary">
+                        {`${opportunityCount(group)} · `}
+                        <FailedAssumptionsButton group={group} groupBy={groupBy} params={params} />
+                      </span>
                     </span>
                   </span>
                   <span role="cell" className="text-right text-numeric">
@@ -203,7 +207,10 @@ export function VarianceTable({
                         data-opportunity={opp.opportunity_id}
                       >
                         <span role="cell" className="flex min-w-0 items-center gap-2 pl-6">
-                          <Link href={tabHref(opp.opportunity_id, "overview")} className={cn(LINK, "truncate")}>
+                          <Link
+                            href={actualsDrillHref(opp.opportunity_id, groupBy, group.key, params.integrationTypeId)}
+                            className={cn(LINK, "truncate")}
+                          >
                             {opp.title}
                           </Link>
                           <span className="shrink-0 text-meta text-text-secondary text-numeric">{`v${opp.estimate_version}`}</span>
@@ -221,7 +228,7 @@ export function VarianceTable({
                         <span role="cell" className="min-w-0 truncate text-[13px]">
                           {opp.main_cause ? (
                             <Link
-                              href={tabHref(opp.opportunity_id, "actuals")}
+                              href={actualsDrillHref(opp.opportunity_id, groupBy, group.key, params.integrationTypeId)}
                               className={LINK}
                               aria-label={`${opp.main_cause.label}: open the Actuals of ${opp.title}`}
                             >

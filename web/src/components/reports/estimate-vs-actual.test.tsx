@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,6 +16,8 @@ import { axeViolations } from "@/test/axe";
 import { ALPHA_ID, group, report, variance } from "@/test/report-fixtures";
 
 vi.mock("server-only", () => ({}));
+const loadFailedAssumptions = vi.hoisted(() => vi.fn());
+vi.mock("@/app/reports/actions", () => ({ loadFailedAssumptions }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
 }));
@@ -92,14 +94,16 @@ describe("EstimateVsActual", () => {
     const panel = document.getElementById(hide.getAttribute("aria-controls")!);
     expect(panel?.getAttribute("data-opportunity")).toBe(ALPHA_ID);
     const title = within(panel!).getByRole("link", { name: "Acme payments" });
-    expect(title.getAttribute("href")).toBe(`/opportunities/${ALPHA_ID}/overview`);
+    // Story 10.4: the title drills into the Actuals, highest variance first, the group kept.
+    const drill = `/opportunities/${ALPHA_ID}/actuals?sort=variance_desc&integration_type=rest_api`;
+    expect(title.getAttribute("href")).toBe(drill);
     expect(within(panel!).getByText("v3")).toBeTruthy();
     expect(within(panel!).getByText("Baseline")).toBeTruthy();
     expect(
       within(panel!)
         .getByRole("link", { name: "Integration complexity: open the Actuals of Acme payments" })
         .getAttribute("href"),
-    ).toBe(`/opportunities/${ALPHA_ID}/actuals`);
+    ).toBe(drill);
     expect(await axeViolations(container)).toEqual([]);
 
     // Not the Baseline: the version only.
@@ -178,5 +182,82 @@ describe("EstimateVsActual", () => {
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByRole("region", { name: "Estimate accuracy" })).toBeNull();
     expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("a group's failed Assumptions open in a dialog, each linking to its Trace", async () => {
+    const u = userEvent.setup();
+    loadFailedAssumptions.mockResolvedValue({
+      kind: "ok",
+      list: {
+        group_by: "integration_type",
+        group_key: "rest_api",
+        filters: report().filters,
+        items: [
+          {
+            opportunity_id: ALPHA_ID,
+            opportunity_title: "Acme payments",
+            line_label: "L2",
+            kind: "condition",
+            position: 2,
+            label: "A2",
+            wording: "[CONDITION WORDING]",
+            amount_hours: null,
+            assumption_id: "0190a000-0000-7000-8000-0000000000a2",
+            assumption_version: 2,
+            actual_id: "0190a000-0000-7000-8000-0000000000f1",
+          },
+          {
+            opportunity_id: ALPHA_ID,
+            opportunity_title: "Acme payments",
+            line_label: null,
+            kind: "contingency",
+            position: 3,
+            label: "A3",
+            wording: "[CONTINGENCY WORDING]",
+            amount_hours: 12,
+            assumption_id: "0190a000-0000-7000-8000-0000000000a3",
+            assumption_version: 1,
+            actual_id: "0190a000-0000-7000-8000-0000000000f2",
+          },
+        ],
+      },
+    });
+    renderReport(
+      report({ groups: [group({ failed_assumptions: 2 })] }),
+      parseReportParams({ product: "Payments" }),
+    );
+
+    await u.click(screen.getByRole("button", { name: "2 failed Assumptions in REST API: show them" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Failed Assumptions · REST API" });
+    await waitFor(() => expect(dialog.querySelectorAll("[data-failed-item]")).toHaveLength(2));
+    expect(loadFailedAssumptions).toHaveBeenCalledWith("product=Payments", "integration_type", "rest_api");
+    expect(within(dialog).getByText("Condition · A2")).toBeTruthy();
+    expect(within(dialog).getByText("[CONDITION WORDING]")).toBeTruthy();
+    expect(within(dialog).getByText("Acme payments · L2")).toBeTruthy();
+    expect(within(dialog).getByText("12.0 h · [CONTINGENCY WORDING]")).toBeTruthy();
+    expect(within(dialog).getByText("Acme payments · Unplanned work")).toBeTruthy();
+    const trace = within(dialog).getByRole("link", { name: "Open in Trace: Condition · A2, Acme payments" });
+    expect(trace.getAttribute("href")).toBe(
+      `/opportunities/${ALPHA_ID}/trace?subject=estimates.assumption&subject_id=0190a000-0000-7000-8000-0000000000a2`,
+    );
+    expect(await axeViolations(dialog)).toEqual([]);
+  });
+
+  it("no failed Assumptions: the count stays text", () => {
+    renderReport(report({ groups: [group({ failed_assumptions: 0 })] }));
+    expect(screen.getByText("0 failed Assumptions")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /failed Assumptions/ })).toBeNull();
+  });
+
+  it("a failed list that can't load says so", async () => {
+    const u = userEvent.setup();
+    loadFailedAssumptions.mockResolvedValue({ kind: "error" });
+    renderReport();
+    await u.click(screen.getByRole("button", { name: "1 failed Assumption in REST API: show them" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText("The failed Assumptions could not be loaded. Try again in a moment."),
+    ).toBeTruthy();
   });
 });

@@ -33,7 +33,8 @@ export default async function WorkspaceTabPage({
   if (tab === "conflicts") return await ConflictsTab({ id });
   if (tab === "estimate")
     return await EstimateTab({ id, searchParams: (await searchParams) ?? {} });
-  if (tab === "actuals") return await ActualsTab({ id });
+  if (tab === "actuals")
+    return await ActualsTab({ id, searchParams: (await searchParams) ?? {} });
   if (tab === "trace") return await TraceTab({ id, searchParams: (await searchParams) ?? {} });
   return (
     <div className={PAGE_PADDING}>

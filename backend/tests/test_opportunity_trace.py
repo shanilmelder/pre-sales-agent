@@ -317,6 +317,69 @@ def test_a_subject_id_shows_only_that_subjects_events(
     assert _trace(client, headers, opp["id"], subject_id="x" * 201).status_code == 422
 
 
+def test_an_assumption_id_also_shows_the_actuals_that_name_it_as_failed(
+    client: TestClient, sync_engine: Engine
+) -> None:
+    """Story 10.4 (**Open in Trace** from a failed Assumption): the Assumption's own events plus
+    every Actual recorded or corrected with it in `failed_assumptions`, even with
+    `subject_type=estimates.assumption` (it narrows only the Assumption's own events); an
+    Actual naming another Assumption, and other filters, still apply."""
+    headers, _ = _user(client, sync_engine, "Owner Person", PSE)
+    opp = _create(client, headers)
+    _agent_and_system(sync_engine, opp["id"])
+    assumption_id, other = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    owner = opp["owner"]["id"]
+
+    def event(n: int, event_type: str, subject_type: str, payload: dict[str, Any]) -> None:
+        _insert(
+            sync_engine,
+            opportunity_id=opp["id"],
+            actor_type="user",
+            actor_id=owner,
+            event_type=event_type,
+            subject_type=subject_type,
+            payload=payload,
+            at=now + timedelta(seconds=30 + n),
+            subject_id=assumption_id if subject_type == "estimates.assumption" else None,
+        )
+
+    def refs(*ids: UUID) -> dict[str, Any]:
+        return {"failed_assumptions": [{"assumption_id": str(i), "version": 2} for i in ids]}
+
+    event(1, "estimates.assumption.accepted", "estimates.assumption", {"version": 1})
+    event(2, "actuals.actual.recorded", "actuals.actual", refs(other, assumption_id))
+    event(3, "actuals.actual.corrected", "actuals.actual", refs(assumption_id))
+    event(4, "actuals.actual.recorded", "actuals.actual", refs(other))
+
+    resp = _trace(
+        client,
+        headers,
+        opp["id"],
+        subject_id=str(assumption_id),
+        subject_type="estimates.assumption",
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [i["event_type"] for i in body["items"]] == [
+        "actuals.actual.corrected",
+        "actuals.actual.recorded",
+        "estimates.assumption.accepted",
+    ]
+    assert body["total"] == 3
+    unfiltered = _trace(client, headers, opp["id"], subject_id=str(assumption_id))
+    assert unfiltered.json()["total"] == 3
+    narrowed = _trace(
+        client,
+        headers,
+        opp["id"],
+        subject_id=str(assumption_id),
+        event_type="actuals.actual.recorded",
+    )
+    assert narrowed.json()["total"] == 1
+
+
 def test_an_empty_filter_value_is_no_filter(client: TestClient, sync_engine: Engine) -> None:
     headers, _ = _user(client, sync_engine, "Owner Person", PSE)
     opp = _create(client, headers)

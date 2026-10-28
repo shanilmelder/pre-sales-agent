@@ -27,19 +27,35 @@ effort entries that cite those Requirements:
 
 **An Assumption** (`get_assumption_lineage`): origin (Gap, or Unknown by `is_unknown`) ->
 Clarification Question -> answer with its Source passage -> conversion (`gaps.gap.converted`)
--> acceptance. A step that never happened is left out; a sales representative sees a
-question only once it was approved or sent (`gaps.gap_lineage`).
+-> acceptance -> (Story 10.4) each Actual version that named it as failed (`actual`, from
+the `actuals.actual.recorded`/`.corrected` trace payloads by jsonb containment; actuals'
+tables are never read). A step that never happened is left out; a sales representative sees
+a question only once it was approved or sent (`gaps.gap_lineage`).
+
+**Assumption details** (`assumption_details`, Story 10.4): for the failed Assumptions an
+Actual names, each one's register number, hours, who accepted it and when, and its Evidence
+(the Source passage of its Gap's recorded answer).
 """
 
 from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
 from app.modules.estimates.adapters import repository as repo
-from app.modules.estimates.adapters.repository import LineRecord, TraceRecord, VersionRecord
+from app.modules.estimates.adapters.repository import (
+    AssumptionRecord,
+    LineRecord,
+    TraceRecord,
+    VersionRecord,
+)
+from app.modules.estimates.application.line_refs import version_lines
 from app.modules.estimates.application.models import (
     AssumptionLineage,
     LineageActor,
+    LineageActual,
     LineageAssumption,
     LineageDecision,
     LineageEdit,
@@ -58,6 +74,7 @@ from app.modules.identity.application import public as identity
 from app.modules.identity.application.public import Principal
 from app.modules.intake.application import public as intake
 from app.modules.opportunities.application import public as opportunities
+from app.modules.opportunities.application.public import UserRef
 from app.platform.errors import NotFoundError
 from app.platform.storage import BlobStore
 from app.platform.uow import UnitOfWork
@@ -75,6 +92,19 @@ GAP_RAISED = "gaps.gap.raised"
 GAP_CONVERTED = "gaps.gap.converted"
 GAP_SUBJECT = "gaps.gap"
 EXCERPT_MAX = 280
+ACTUAL_CORRECTED = "actuals.actual.corrected"
+UNPLANNED_LABEL = "Unplanned work"
+# The words of an Actual's variance cause, as actuals shows them (`actuals.domain.actuals.
+# CAUSE_LABELS`; estimates may not import actuals, and a test keeps the two equal).
+ACTUAL_CAUSE_LABELS = {
+    "unknown_requirement": "Unknown requirement",
+    "integration_complexity": "Integration complexity",
+    "customer_delay": "Customer delay",
+    "scope_change": "Scope change",
+    "estimation_error": "Estimation error",
+    "other": "Other",
+}
+ACTUAL_KIND_LABELS = {"final": "Final", "milestone": "Milestone"}
 CONVERSION_LABELS = {
     "condition": "Converted to a Condition",
     "contingency": "Converted to a Contingency",
@@ -544,6 +574,24 @@ def _passage(passage: Any) -> LineagePassage:
     )
 
 
+def _answer_evidence(gap: Any) -> list[LineageEvidence]:
+    """The Source passage chip of the Gap's recorded answer (none without one)."""
+    passage = None if gap.answer is None else gap.answer.passage
+    if passage is None:
+        return []
+    return [
+        LineageEvidence(
+            kind=SOURCE_KIND,
+            id=passage.source_id,
+            version=passage.source_version,
+            label=passage.label,
+            superseded=False,
+            passage_id=passage.passage_id,
+            excerpt=passage.excerpt,
+        )
+    ]
+
+
 async def _finding_origin(
     uow: UnitOfWork, origin: dict[str, Any], finding_id: UUID
 ) -> LineageStep | None:
@@ -627,19 +675,7 @@ async def _gap_steps(
                 at=None,
                 version=None if passage is None else passage.source_version,
                 superseded=False,
-                evidence=[]
-                if passage is None
-                else [
-                    LineageEvidence(
-                        kind=SOURCE_KIND,
-                        id=passage.source_id,
-                        version=passage.source_version,
-                        label=passage.label,
-                        superseded=False,
-                        passage_id=passage.passage_id,
-                        excerpt=passage.excerpt,
-                    )
-                ],
+                evidence=_answer_evidence(gap),
                 passage=None if passage is None else _passage(passage),
             )
         )
@@ -704,11 +740,167 @@ async def get_assumption_lineage(
                 superseded=False,
             )
         )
+    steps.extend(await _actual_steps(uow, opportunity_id, assumption.id))
     return AssumptionLineage(
         assumption_id=str(assumption.id),
         version_id=str(version.id),
         version=version.version,
         kind=AssumptionKind(assumption.kind),
+        position=assumption.position,
         wording=assumption.wording,
+        amount_hours=None if assumption.amount_hours is None else float(assumption.amount_hours),
         steps=steps,
     )
+
+
+# --- the Actuals that named an Assumption as failed (Story 10.4) ----------------------------
+
+
+def _hours_text(value: object) -> float:
+    try:
+        return float(Decimal(str(value)))
+    except (ArithmeticError, InvalidOperation):
+        return 0.0
+
+
+async def _line_labels(
+    uow: UnitOfWork, opportunity_id: UUID, version_ids: set[UUID]
+) -> dict[UUID, tuple[str, str]]:
+    """Each line of these Estimate Versions: its "L{n}" label in grid order and its title."""
+    labels: dict[UUID, tuple[str, str]] = {}
+    for version_id in sorted(version_ids, key=str):
+        found = await version_lines(uow, opportunity_id, version_id)
+        if found is None:
+            continue
+        for n, line in enumerate(found.lines, start=1):
+            labels[line.id] = (f"L{n}", line.title)
+    return labels
+
+
+async def _actual_steps(
+    uow: UnitOfWork, opportunity_id: UUID, assumption_id: UUID
+) -> list[LineageStep]:
+    """One `actual` step per Actual version (recorded or corrected) whose failed Assumptions
+    cite this one, oldest first; superseded once a correction replaced that version."""
+    events = await repo.failed_assumption_events(uow, opportunity_id, assumption_id)
+    if not events:
+        return []
+    ids = [a for e in events if (a := _text(e.payload, "actual_id")) is not None]
+    corrections = await repo.payload_events(
+        uow, opportunity_id, event_type=ACTUAL_CORRECTED, key="previous_actual_id", values=ids
+    )
+    replaced = {_text(e.payload, "previous_actual_id") for e in corrections}
+    version_ids = {
+        v for e in events if (v := _uuid(e.payload.get("estimate_version_id"))) is not None
+    }
+    labels = await _line_labels(uow, opportunity_id, version_ids)
+    actors = await trace_actors(uow, events)
+    steps: list[LineageStep] = []
+    for event in events:
+        payload = event.payload
+        actual_id = _text(payload, "actual_id") or str(event.subject_id)
+        line_id = _uuid(payload["line_id"]) if payload.get("line_id") else None
+        label, title = labels.get(line_id, (None, None)) if line_id is not None else (None, None)
+        kind = "milestone" if payload.get("kind") == "milestone" else "final"
+        effort = _hours_text(payload.get("effort_hours"))
+        cause = _text(payload, "variance_cause")
+        cause_label = None if cause is None else ACTUAL_CAUSE_LABELS.get(cause, cause)
+        where = UNPLANNED_LABEL if line_id is None else (label or "Line")
+        version = _int(payload, "version")
+        steps.append(
+            LineageStep(
+                kind="actual",
+                id=actual_id,
+                title=f"{where} · {ACTUAL_KIND_LABELS[kind]} Actual · {effort:.1f} h",
+                detail=cause_label,
+                actor=actors[f"{event.actor_type}:{event.actor_id}"],
+                at=event.occurred_at,
+                version=version,
+                superseded=actual_id in replaced,
+                actual=LineageActual(
+                    actual_id=actual_id,
+                    version=version or 1,
+                    corrected=event.event_type == ACTUAL_CORRECTED,
+                    line_id=None if line_id is None else str(line_id),
+                    line_label=label,
+                    line_title=title,
+                    kind=kind,
+                    effort_hours=effort,
+                    variance_cause=cause,
+                    cause_label=cause_label,
+                ),
+            )
+        )
+    return steps
+
+
+# --- Assumption details for Actuals (Story 10.4) --------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class AssumptionDetail:
+    """An Assumption as the Actuals Inspector lists a failed one: its register number
+    (`position`, "A{n}"), kind, wording and Contingency hours, who accepted it and when (None
+    while unaccepted), and its Evidence chips."""
+
+    id: UUID
+    position: int
+    kind: str
+    wording: str
+    amount_hours: float | None
+    accepted_by: UserRef | None
+    accepted_at: datetime | None
+    evidence: list[LineageEvidence]
+
+
+async def _evidence(
+    uow: UnitOfWork,
+    actor: Principal,
+    opportunity_id: UUID,
+    assumption: AssumptionRecord,
+    store: BlobStore | None,
+) -> list[LineageEvidence]:
+    origin = assumption.origin_ref
+    gap_id = _uuid(origin.get("id"))
+    if gap_id is None or origin.get("kind") == "finding":
+        return []
+    gap = await gaps.gap_lineage(uow, actor, opportunity_id, gap_id, store=store)
+    return [] if gap is None else _answer_evidence(gap)
+
+
+async def assumption_details(
+    uow: UnitOfWork,
+    version_id: UUID,
+    ids: Iterable[UUID],
+    *,
+    actor: Principal,
+    store: BlobStore | None = None,
+) -> dict[UUID, AssumptionDetail]:
+    """`estimates.assumption_details`: these Assumptions of the Estimate Version, by id (ids
+    not on it are left out). No authorization: the caller has checked that `actor` may read
+    the version's Opportunity; `actor` only decides what of a Gap they may see."""
+    wanted = set(ids)
+    if not wanted:
+        return {}
+    version = await repo.get_version(uow, version_id)
+    if version is None:
+        return {}
+    found = [a for a in await repo.assumptions_of(uow, version_id) if a.id in wanted]
+    names = await identity.user_names(
+        uow, {a.accepted_by for a in found if a.accepted_by is not None}
+    )
+    details: dict[UUID, AssumptionDetail] = {}
+    for a in found:
+        details[a.id] = AssumptionDetail(
+            id=a.id,
+            position=a.position,
+            kind=a.kind,
+            wording=a.wording,
+            amount_hours=None if a.amount_hours is None else float(a.amount_hours),
+            accepted_by=None
+            if a.accepted_by is None
+            else UserRef(id=str(a.accepted_by), name=names.get(a.accepted_by, UNKNOWN_USER)),
+            accepted_at=a.accepted_at,
+            evidence=await _evidence(uow, actor, version.opportunity_id, a, store),
+        )
+    return details
