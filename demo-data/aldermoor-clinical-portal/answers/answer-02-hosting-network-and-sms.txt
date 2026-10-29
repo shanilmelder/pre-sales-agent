@@ -1,0 +1,12 @@
+From Owen Hartley, 12 Nov 2026 - more answers
+
+Hosting: the portal runs in the Trust's own Azure tenant (UK South and UK West). We provide
+the subscription, landing zone, private networking and the connection to the integration
+engine. You deploy and run the application in it.
+
+SMS: keep our existing SMS gateway contract; the Trust pays the per-message charges.
+
+Translations: we will supply translated text for the five extra languages; you load it.
+
+Acceptance testing: our outpatients team writes the test scripts, you supply the test
+plan template. We expect two rounds of user acceptance testing.

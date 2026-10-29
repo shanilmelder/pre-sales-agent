@@ -1,0 +1,65 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Length 2282 >>
+stream
+BT
+50 800 Td
+/F1 16 Tf 0 -20 Td (Larkspur Mutual - Outsourcing, Security and Resilience Requirements) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 10 Tf 0 -14 Td (Appendix D to the Claims Platform RFP. Applies to the supplier and its subcontractors.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Outsourcing and regulation) Tj
+/F1 10 Tf 0 -14 Td (- The claims platform is a critical or important function. Larkspur will notify the regulator) Tj
+/F1 10 Tf 0 -14 Td (  before contract signature; the supplier supports the notification with its own) Tj
+/F1 10 Tf 0 -14 Td (  documentation.) Tj
+/F1 10 Tf 0 -14 Td (- Larkspur and the regulator have unrestricted rights to audit the supplier, including on-) Tj
+/F1 10 Tf 0 -14 Td (  site.) Tj
+/F1 10 Tf 0 -14 Td (- An exit plan must allow Larkspur to move to another provider within 12 months, with all data) Tj
+/F1 10 Tf 0 -14 Td (  returned in an open format.) Tj
+/F1 10 Tf 0 -14 Td (- Subcontracting of any part of the service needs Larkspur's prior written approval.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Information security) Tj
+/F1 10 Tf 0 -14 Td (- ISO 27001 certified supplier, or SOC 2 Type II report no older than 12 months.) Tj
+/F1 10 Tf 0 -14 Td (- Annual penetration test by an independent firm; results shared with Larkspur.) Tj
+/F1 10 Tf 0 -14 Td (- Card data is never stored. If members pay excess by card, a PCI DSS compliant payment page) Tj
+/F1 10 Tf 0 -14 Td (  hosted by the payment provider is used.) Tj
+/F1 10 Tf 0 -14 Td (- Privileged access through Larkspur's bastion with session recording.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Resilience) Tj
+/F1 10 Tf 0 -14 Td (- Recovery time objective 4 hours, recovery point objective 15 minutes.) Tj
+/F1 10 Tf 0 -14 Td (- Annual disaster recovery test with Larkspur observing.) Tj
+/F1 10 Tf 0 -14 Td (- ICT incidents classified and reported to Larkspur within 4 hours for major incidents.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Data protection) Tj
+/F1 10 Tf 0 -14 Td (- Supplier acts as processor under GDPR. Data stays in the EU, including support access from) Tj
+/F1 10 Tf 0 -14 Td (  outside the EU \(none allowed without approval\).) Tj
+/F1 10 Tf 0 -14 Td (- Personal data in test environments must be anonymised.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000002546 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2672
+%%EOF

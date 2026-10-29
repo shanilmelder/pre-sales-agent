@@ -1,0 +1,40 @@
+WEBVTT
+
+00:00:02.000 --> 00:00:12.000
+<v Alex Chen>Thanks all. Let's cover volumes, the mainframe, payments, compliance and timing, and be clear on what's still open.
+
+00:00:13.000 --> 00:00:38.000
+<v Martina Kelly>Volumes first. We handle about 18,000 claims a month, motor is half of that. Peak is storm season, October to February, when home claims can triple in a week. We have 85 claim handlers and 12 in the fraud team.
+
+00:00:39.000 --> 00:01:02.000
+<v Aoife Brennan>The business goal is straight-through processing. We want 40% of motor glass and travel cancellation claims settled automatically, with no handler touching them, within a year of go-live.
+
+00:01:03.000 --> 00:01:30.000
+<v Ronan Gallagher>On the mainframe: the policy system exposes a set of CICS transactions we can wrap as REST services. Policy lookup and cover check are documented. ClaimsOne itself, though, is undocumented. It has claim status codes nobody fully understands. We think around forty, there may be more. Nobody can tell you until someone traces the code during migration.
+
+00:01:31.000 --> 00:01:50.000
+<v Alex Chen>So the status mapping is an unknown for both of us. What about the data itself?
+
+00:01:51.000 --> 00:02:20.000
+<v Ronan Gallagher>About 9,000 open claims and seven years of closed ones, roughly 1.4 million. Quality is patchy before 2015: free-text reserves, missing loss dates. We honestly can't say how much will need manual correction until a trial migration runs.
+
+00:02:21.000 --> 00:02:45.000
+<v Martina Kelly>Fraud: we're tendering for a fraud scoring service right now, two vendors shortlisted. That decision is ours; we'll tell you which one in January.
+
+00:02:46.000 --> 00:03:10.000
+<v Ronan Gallagher>Payments go out through our bank as SEPA credit transfers, in a daily file. We'd like instant payments for small claims, but we haven't agreed it with the bank yet. And the bank's test environment for payment files, that's ours to request; it takes them a few weeks.
+
+00:03:11.000 --> 00:03:34.000
+<v Aoife Brennan>Compliance: the regulator expects us to treat claimants fairly and keep a full audit of every decision. Any automated settlement must be explainable to a member who complains. And because this goes to the cloud, we file an outsourcing notification with the regulator. What they come back with, nobody knows until they review it.
+
+00:03:35.000 --> 00:03:55.000
+<v Alex Chen>Sign-in for staff and members?
+
+00:03:56.000 --> 00:04:15.000
+<v Ronan Gallagher>Staff use Okta single sign-on. Members already have accounts on our member portal; we want the same login. Brokers, we haven't decided whether they get their own accounts or come through the broker hub.
+
+00:04:16.000 --> 00:04:40.000
+<v Aoife Brennan>Timing: go-live for motor and travel by 1 September 2027, home after the storm season, so March 2028. Letters must be in English and Irish.
+
+00:04:41.000 --> 00:04:55.000
+<v Alex Chen>Thanks. I'll send a summary with the open points and who owns each one.

@@ -1,0 +1,29 @@
+From: Owen Hartley <owen.hartley@aldermoor-health.example>
+To: Alex Chen <alex.chen@vendor.example>
+Cc: Sam Whitlock <sam.whitlock@aldermoor-health.example>
+Subject: Portal - two changes after the board meeting
+Date: Wed, 4 Nov 2026 16:05:37 +0000
+Message-ID: <aldermoor-change-1104@aldermoor-health.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+Two changes from yesterday's board, sorry for the late notice:
+
+1. Availability: the board wants the portal at 99.9% between 06:00 and 23:00, seven days
+   a week, not 99.5% from 07:00 to 22:00. They accepted that 24/7 is not needed, so
+   please ignore the 24/7 line in Priya's commercial email.
+
+2. Scope: add video consultations. Clinicians start a video appointment from the
+   worklist and patients join from the portal without installing anything. About 8% of
+   outpatient appointments, mostly follow-ups. We already licence a video platform
+   (browser based); you'd integrate with it, not build one.
+
+3. Maternity: Fenwick's maternity unit wants its antenatal appointments in the portal from
+   day one. That adds about 9,000 appointments a year and a separate questionnaire set.
+
+Patient numbers: please size for 600,000 as Priya said; the 450,000 figure is today's.
+
+Owen

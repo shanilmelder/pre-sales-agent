@@ -1,9 +1,9 @@
-# Runs the stack from images pushed to Nexus (no local build).
-#   docker login nexus.shanilmelder.com
-#   cp .env.example .env
-#   docker compose -f compose.nexus.yaml pull
-#   docker compose -f compose.nexus.yaml up --wait -d
-# Pick another tag with PSA_IMAGE_TAG (default: latest).
+# Runs the stack from images pushed to Nexus (no local build, no bind mounts), so it works
+# as a Portainer stack (Stacks > Add stack > paste this file).
+#   1. Portainer > Registries > Add custom registry: nexus.shanilmelder.com + credentials.
+#   2. Set the variables from .env.example in the stack's "Environment variables".
+#   3. Deploy. Pick another tag with PSA_IMAGE_TAG (default: latest).
+# CLI: docker login nexus.shanilmelder.com; docker compose -f compose.nexus.yaml --env-file .env up -d
 name: pre-sales-agent
 
 x-restart: &restart
@@ -25,9 +25,31 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       PSA_APP_DB_PASSWORD: ${PSA_APP_DB_PASSWORD:?set PSA_APP_DB_PASSWORD in .env}
+    # Portainer has no repo checkout to bind-mount, so the psa_app role init script is
+    # written into the container at start (first start of an empty volume runs it).
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        cat > /docker-entrypoint-initdb.d/10-app-role.sh <<'EOF'
+        set -e
+        if [ -z "$${PSA_APP_DB_PASSWORD:-}" ]; then
+          echo "10-app-role.sh: PSA_APP_DB_PASSWORD must be set" >&2
+          exit 1
+        fi
+        psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" \
+          -v app_password="$$PSA_APP_DB_PASSWORD" -v db_name="$$POSTGRES_DB" <<'EOSQL'
+        SELECT format('CREATE ROLE psa_app LOGIN PASSWORD %L', :'app_password')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'psa_app')
+        \gexec
+        SELECT format('ALTER ROLE psa_app WITH LOGIN PASSWORD %L', :'app_password')
+        \gexec
+        GRANT CONNECT, TEMPORARY ON DATABASE :"db_name" TO psa_app;
+        EOSQL
+        EOF
+        exec docker-entrypoint.sh postgres
     volumes:
       - pgdata:/var/lib/postgresql
-      - ./ops/postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:${PSA_POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -36,6 +58,21 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # One-shot: applies Alembic migrations as the schema owner on every deploy, then exits.
+  # api and worker wait for it, so they never start against an unmigrated schema.
+  migrate:
+    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-api:${PSA_IMAGE_TAG:-latest}
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *backend-env
+      PSA_MIGRATIONS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    healthcheck:
+      disable: true
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   api:
     <<: *restart
@@ -56,8 +93,8 @@ services:
     volumes:
       - files:/var/lib/psa/files
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${PSA_API_PORT:-8000}:8000"
     healthcheck:
@@ -68,8 +105,8 @@ services:
         - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)"
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 10s
+      retries: 6
+      start_period: 40s
 
   worker:
     <<: *restart
@@ -98,8 +135,8 @@ services:
     volumes:
       - files:/var/lib/psa/files
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -126,7 +163,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${PSA_WEB_PORT:-3000}:3000"
+      - "${PSA_WEB_BIND:-0.0.0.0}:${PSA_WEB_PORT:-8192}:3000"
     healthcheck:
       test:
         - CMD

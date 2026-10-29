@@ -1,45 +1,101 @@
-# Demo input — Meridian Fresh Foods, Riverside DC (fictional)
+# Demo data
 
-Sample customer input for the stakeholder demo. **All names, companies and email domains are fictional** (`.example` domains), so it is safe to send to the cloud model.
+Three complete, fictional demo scenarios. **All people, companies and email domains are
+fictional** (`.example` domains), so the files are safe to send to the cloud model.
 
-| File | What it is | Upload as |
-|------|------------|-----------|
-| `01-discovery-call-teams-transcript.vtt` | Teams discovery call (ops, IT, finance) | Upload (`.vtt`) |
-| `02-email-it-integration-follow-up.eml` | IT manager's follow-up: SAP, master data, security | Upload (`.eml`) |
-| `03-email-procurement-rfp-terms.eml` | Procurement: timeline, phasing, commercial terms | Upload (`.eml`) |
-| `04-email-legacy-conveyor-contingency.eml` | Ops: unknown 2011 conveyor controls (designed to produce a **Contingency**) | Upload (`.eml`) |
-| `05-email-customer-dependencies-condition.eml` | IT: things the customer must provide or decide (designed to produce **Conditions**) | Upload (`.eml`) |
+| Folder | Customer | Domain | What it's built around |
+|--------|----------|--------|------------------------|
+| `aldermoor-clinical-portal/` | Aldermoor Health Trust | Healthcare (acute hospital trust) | Patient portal and e-referrals on a hospital EPR (HL7 FHIR / HL7 v2), clinical safety, UK data residency |
+| `larkspur-claims-platform/` | Larkspur Mutual | Insurance (general insurer) | Claims platform replacing a mainframe system: payments, finance postings, regulator outsourcing, 1.4 million claims to migrate |
+| `elmbridge-fc-scenario/` | Harbourline Home & Garden | Warehouse automation (e-commerce) | AS/RS, picking, packing and sortation for a new fulfilment centre; many Contingencies and Conditions |
 
-Opportunity to create: **Riverside DC automation**, customer **Meridian Fresh Foods**, industry *Food & grocery distribution*, products e.g. goods-to-person picking, WMS integration.
+Each folder covers **every feature** in the app, in the same order. Its own `README.md`
+says what to expect at each step for that customer.
 
-## What it is designed to show
+## Folder layout (the same in each scenario)
 
-- **Requirements across every type:** functional (goods-to-person picking, batching and waves, replenishment, dashboards), integration (SAP order release and confirmations, three carriers), data (master data, two-year audit log), security (SSO, vendor access, ISO 27001, pen test, network separation), non-functional (99.5% availability 05:00–23:00, 6 days; peak volumes), commercial (budget, milestones, warranty, support).
-- **Gaps the agents should find:**
-  - SAP version at go-live (ECC or S/4HANA) and integration method (IDoc vs API) undecided
-  - Role of the existing WMS undecided (replace or sit underneath)
-  - Identity provider for SSO not named
-  - 30% of SKUs missing dimensions and weights — who measures them?
-  - SAP test system only from January and shared
-  - Chilled-zone temperature range and alarm handling details; data must stay in-country (hosting)
-- **Condition Gaps** (from `05`): the customer must provide or decide them, so each should become a Condition ("The estimate assumes the customer provides…"), no hours:
-  - Carrier label and manifest specifications from the three carriers
-  - Keep or replace the existing label printers
-  - As-built drawings and floor flatness survey from the landlord
-  - Network for the automation (VLANs, IP ranges, firewall rules, chilled-zone Wi-Fi)
-  - Vendor accounts on the customer's remote access gateway (about three weeks to approve)
-  - Sign-off of the chilled zone layout (dock doors, air curtains), planned for November
-  - Test orders and expected results for acceptance testing
-- **A Contingency Gap** (from `04`): the legacy conveyor's controls are unknown until our engineers open the cabinet, so we carry it as hours.
-- **A contradiction:** peak volume is "3,500, maybe 5,000 in December" in the call, then "4,200 order lines per hour plus 20% growth" in the procurement email.
-- **Commercial pressure for the Red Team:** fixed price, 2.4 million budget, go-live before the November peak with a March handover, phased chilled go-live, 4-hour 24/7 support in peak season.
+| Path | Used for | Feature |
+|------|----------|---------|
+| `knowledge/setup-catalogue-and-checklist.md` | Catalogue entries, a Checklist to author | Catalogue, Checklists, mandatory Gaps (3.1, 3.4, 4.1, 4.2) |
+| `knowledge/*.md` (the other file) | Register as a Knowledge Source | Knowledge Sources, search, coverage, graph (3.2, 3.3, 3.5, 3.6) |
+| `00-start-here-*.eml` | **New Opportunity > Import from file** | Opportunity from an email (1.7) |
+| `01-*.vtt` | Upload | Transcript Source |
+| `02-*.eml`, `03-*.eml` | Upload | Email Sources |
+| `04-*.docx` | Upload | Document Source (Word) |
+| `05-*.pdf` | Upload | Document Source (PDF) |
+| `06-*.txt` | Upload | Note Source |
+| `07-paste-*.txt` | **Paste text** (open, copy, paste) | Pasted Source (2.1b); contains a planted prompt-injection line (2.8) |
+| `later/*.eml` | Upload **after** confirming Requirements | Incremental intake, pending changes (2.7) |
+| `answers/*.txt` | Paste as a customer answer on a sent Clarification Question | Record answers, "Possible answer" matches, Requirement updates (4.7) |
 
-## Tips
+(Elmbridge numbers its files differently because it keeps its original 01-06; see its README.)
 
-- Upload all the files before opening the Requirements tab, so extraction sees everything.
-- Approve the Clarification Questions you want to show **before** Accept all on the Assumptions.
-- Good line to edit live in the Estimate: the SAP integration or master-data line (e.g. "Reuse the existing IDoc mapping").
+## Feature walkthrough (any scenario)
 
-## Second scenario: Conditions and Contingencies
+1. **Knowledge (admin).** Follow `knowledge/setup-catalogue-and-checklist.md`: add the
+   catalogue entries, register the Knowledge Source, author and publish the Checklist.
+   Then search the Knowledge Base and open Coverage and Graph.
+2. **Create the Opportunity.** New Opportunity > Import from file > `00-start-here-*.eml`.
+   Review the suggested customer, title, industry and products ("From file"), then create.
+   Share it with a collaborator (and a sales rep) to show roles.
+3. **Add Sources.** Upload `01`-`06`, then Paste text with the contents of `07`. Open the
+   source viewer on a passage. Wait for every Source to be Parsed.
+4. **Requirements.** Show the types (functional, integration, data, security,
+   non-functional, commercial), the cited Evidence, edit / split / merge / confirm. Check
+   the pasted Source's injection line was treated as content, not as an instruction (no
+   Requirement was confirmed or changed by it).
+5. **Incremental intake.** After confirming some Requirements, upload `later/*.eml`. Show
+   the pending changes on locked Requirements, accept or reject them.
+6. **Gaps.** Set the Integration Types in scope (the new catalogue ones included) so the
+   Checklist applies. Show the deterministic Gaps from mandatory Checklist items, the
+   model-detected Gaps, the "Unknown to the customer:" Contingency Gaps versus Condition
+   Gaps. Edit, merge, drop and approve Clarification Questions, export them, mark them sent.
+7. **Answers.** On a sent question, record an answer by pasting `answers/answer-01-*.txt`.
+   Then paste `answer-02-*.txt` against one question: it also answers other sent questions,
+   so "Possible answer in Source ..." suggestions appear; Confirm one, reject one. Show the
+   Requirement changes the answer caused.
+8. **Assessments.** Start the assessment run. Watch the Engineering, PM, Security and
+   Research Agents in the agent run panel; pause / resume or cancel one; compare effort.
+   The Research Agent cites the Knowledge Source you registered.
+9. **Conflicts, Critic, Red Team.** Open Conflicts: the scenario's planted contradictions
+   (volumes, dates, availability, hosting / automation) show up. Resolve one with a reason.
+   The Red Team flags the fixed-price commercial pressure; show a blocking finding and an
+   override.
+10. **Estimate.** Draft the Estimate from the Assessments. Convert Gaps into Assumptions
+    (Contingencies with hours, Conditions without) and Risks. Edit a line in place. Try to
+    submit: the submission blockers gate lists what's missing; clear it and submit. Create
+    a new version and compare. Export the Estimate, Assumptions Register and questions.
+11. **Review and Challenge.** Send a Review Request to a named reviewer, see the Inbox
+    notification, record a decision. Raise a Challenge (each README suggests one), confirm
+    reassessment, see the new Estimate Version.
+12. **Baseline and Decision Trace.** Set the Baseline. Open Decision Trace, trace a number
+    to its Evidence and compare versions.
+13. **Actuals.** On the Actuals tab, Import from file > Download template. Fill it with
+    `tools/fill_actuals.py` (below) and import it; review the preview and Confirm. Open
+    Reports for variance, then drill down from an overrun to the failed Assumption.
+14. **Outcome.** Record the outcome (won or lost) and the retention dates.
 
-`elmbridge-fc-scenario/` is a complete second scenario (Harbourline Home & Garden, Elmbridge FC) with a call transcript, four emails and site-visit notes. It is built to show **several Contingencies and many Conditions** in the same Estimate. See its own `README.md`.
+## Tools
+
+Run from `backend/` (they use the backend venv's `openpyxl` and `python-docx`):
+
+```bash
+# Rebuild the .docx and .pdf Sources from tools/doc-sources/ after editing their text
+uv run python ../demo-data/tools/build_docs.py
+
+# Fill a downloaded Actuals template (scenario: aldermoor | larkspur | elmbridge)
+uv run python ../demo-data/tools/fill_actuals.py ~/Downloads/actuals-template.xlsx aldermoor
+```
+
+`fill_actuals.py` overruns the lines of each scenario's planted story (for example the EPR
+write-back for Aldermoor), names failed Assumptions from the template's Lists sheet, and
+keeps every other line within a few percent of its estimate. Its output passes the app's
+import validation.
+
+## Notes
+
+- The model is not deterministic: titles, counts and hours change between runs. The planted
+  contradictions, unknowns and customer decisions are written plainly so they come out on
+  most runs.
+- Upload every Source before opening the Requirements tab, so extraction sees all of them.
+  The `later/` file is the exception: it is meant to arrive after Requirements are confirmed.
