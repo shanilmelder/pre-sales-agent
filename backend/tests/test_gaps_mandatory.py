@@ -28,6 +28,7 @@ from app.platform.uow import unit_of_work
 from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
+from tests.test_gaps_context import _requirement, _tag
 from tests.test_gaps_detection import (
     ITEMS,
     NOTE,
@@ -638,3 +639,46 @@ def test_an_opportunity_no_checklist_matches_gets_no_mandatory_gap(
     assert detect(db_url, gateway) == ["succeeded"]
 
     assert mandatory_rows(sync_engine, opp["id"]) == []
+
+
+def test_a_checklist_scoped_by_integration_type_raises_its_gaps_for_tagged_requirements(
+    client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
+) -> None:
+    """The Integration Types on the active Requirements select Checklists too, as on the Gaps
+    tab: a Checklist scoped only by a tagged type raises its mandatory Gap, one scoped by a
+    type no Requirement carries doesn't, and removing the tag flags the Gap as no longer
+    applying."""
+    headers, opp, _, _ = scoped(client, sync_engine, db_url, gateway, extract=False)
+    admin, _ = _admin(client)
+    author = _author(client)
+    tagged_type, other_type = _entry(client, admin), _entry(client, admin)
+    publish(
+        client,
+        author,
+        integration_type_ids=[tagged_type],
+        items=[_item(text="Is a bank test environment booked?", mandatory=True)],
+    )
+    publish(
+        client,
+        author,
+        integration_type_ids=[other_type],
+        items=[_item(text="Which ERP posting format?", mandatory=True)],
+    )
+    requirement = _tag(
+        client, headers, opp["id"], _requirement(client, headers, opp["id"]), [tagged_type]
+    )
+
+    rerun(db_url, gateway, opp["id"])
+
+    (raised,) = mandatory_rows(sync_engine, opp["id"])
+    assert (raised["title"], raised["status"], raised["checklist_applies"]) == (
+        "Is a bank test environment booked?",
+        "open",
+        True,
+    )
+
+    _tag(client, headers, opp["id"], requirement, [])
+    rerun(db_url, gateway, opp["id"])
+
+    (kept,) = mandatory_rows(sync_engine, opp["id"])
+    assert (kept["id"], kept["status"], kept["checklist_applies"]) == (raised["id"], "open", False)

@@ -5,9 +5,10 @@ of Work (after the detection is confirmed still queued or running, before the Ag
 check), so its Gaps are committed even when the agent is disabled, fails, or there are no
 Requirements. No model output is read:
 
-1. The Opportunity's products and industry (`opportunities.opportunity_scope`) select the
-   applicable Checklists (`knowledge.find_applicable_checklists`; Integration Types come with
-   Story 4.1).
+1. The Opportunity's products and industry (`opportunities.opportunity_scope`) and the
+   Integration Types on its active Requirements (`intake.integration_scope`, Story 4.1)
+   select the applicable Checklists (`knowledge.find_applicable_checklists`), the same ones
+   the Gaps tab lists.
 2. `rules.mandatory_gaps` plans one Gap per mandatory item that has no Gap yet in any status
    (an answered, converted or dismissed one blocks a new one and is never reopened).
 3. Each Gap is inserted with `ON CONFLICT DO NOTHING` on `uq_gaps_gaps_mandatory_item`, so
@@ -28,6 +29,7 @@ from uuid import UUID
 from app.modules.gaps.adapters import repository as repo
 from app.modules.gaps.domain import gaps as rules
 from app.modules.gaps.domain.gaps import GAP_SUBJECT_TYPE, QUESTION_SUBJECT_TYPE, GapOrigin
+from app.modules.intake.application import public as intake
 from app.modules.knowledge.application import public as knowledge
 from app.modules.opportunities.application import public as opportunities
 from app.platform import trace
@@ -80,13 +82,16 @@ async def raise_mandatory_gaps(
     """Raise the Opportunity's missing mandatory Gaps and refresh `checklist_applies`, in the
     caller's Unit of Work (which holds the Opportunity's detection lock)."""
     scope = await opportunities.opportunity_scope(uow, opportunity_id)
-    applicable = (
-        []
-        if scope is None
-        else await knowledge.find_applicable_checklists(
-            uow, products=scope.products, industry=scope.industry, integration_type_ids=[]
+    if scope is None:
+        applicable = []
+    else:
+        tag_ids, _ = await intake.integration_scope(uow, opportunity_id)
+        applicable = await knowledge.find_applicable_checklists(
+            uow,
+            products=scope.products,
+            industry=scope.industry,
+            integration_type_ids=tag_ids,
         )
-    )
     plan = rules.mandatory_gaps(_inputs(applicable), await repo.mandatory_keys(uow, opportunity_id))
     raised = 0
     for gap in plan.new:
