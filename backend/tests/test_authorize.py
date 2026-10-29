@@ -54,6 +54,8 @@ ADMIN_ONLY = (
 )
 MODULES = {
     "actuals",
+    # Story 10.6: `platform.retention.read` (Admin > Retention; the purge is platform's).
+    "platform",
     "reporting",
     "identity",
     "notifications",

@@ -78,6 +78,8 @@ _ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             # date and reopening one, with the Head of Delivery.
             Action.CONTRACT_END_DATE_UPDATE,
             Action.OUTCOME_REOPEN,
+            # Admin > Retention (Story 10.6): platform administrators only, read only.
+            Action.RETENTION_READ,
         }
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),
@@ -153,6 +155,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.OUTCOME_RECORD: "Close any Opportunity as lost or mark it won",
     Action.CONTRACT_END_DATE_UPDATE: "Change a won Opportunity's contract end date",
     Action.OUTCOME_REOPEN: "Reopen an Opportunity that has an outcome",
+    Action.RETENTION_READ: "Read the Opportunities due for purge and the recent purges",
 }
 
 TIMEOUT = 30.0

@@ -29,6 +29,15 @@ class Settings(BaseSettings):
             "unset. The app itself connects as the least-privileged psa_app role."
         ),
     )
+    purge_database_url: str | None = Field(
+        default=None,
+        description=(
+            "Story 10.6: URL of the privileged `psa_purge` role, which may DELETE Opportunity "
+            "data. Set on the worker only and read only by the daily `platform.purge` job; the "
+            "api and every other job use database_url. Unset or blank: the job logs "
+            "`purge.not_configured` and deletes nothing."
+        ),
+    )
     db_connect_timeout_s: float = Field(default=2.0, gt=0)
     auth0_domain: str = Field(
         default="",
@@ -321,7 +330,7 @@ class Settings(BaseSettings):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
-    @field_validator("openai_model", "openai_reasoning_effort", mode="before")
+    @field_validator("openai_model", "openai_reasoning_effort", "purge_database_url", mode="before")
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         # An empty value in `.env` (`PSA_OPENAI_MODEL=`) means "use the profile's own".

@@ -124,6 +124,10 @@ class Action(StrEnum):
     REPORTING_REPORT_READ = "reporting.report.read"
     """Story 10.3: read Reports (estimate versus actual across the Opportunities one can
     read). Head of Delivery and platform administrators only (a permission, no relation)."""
+    RETENTION_READ = "platform.retention.read"
+    """Story 10.6: read Admin > Retention (the Opportunities due for purge in the next 30 days
+    and the recent purges; ids, outcomes and dates only). Platform administrators only (a
+    permission, no relation). Nothing can be deleted through the API."""
     NOTIFICATION_READ = "notifications.notification.read"
     """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
@@ -225,6 +229,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.CONTRACT_END_DATE_UPDATE: _W,
         Action.OUTCOME_REOPEN: _W,
         Action.REPORTING_REPORT_READ: _R,
+        Action.RETENTION_READ: _R,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,

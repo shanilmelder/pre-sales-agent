@@ -60,6 +60,22 @@ _JOB_MODULES: tuple[str, ...] = (
     "app.modules.reviews.application.reminders",
     "app.modules.actuals.application.imports",
     "app.platform.alerts.jobs",
+    "app.platform.purge.job",
+)
+# Story 10.6: modules whose import registers their retention purge step (and, for
+# opportunities, the retention selector; for workflows, the run ids). Worker only.
+_PURGE_MODULES: tuple[str, ...] = (
+    "app.modules.notifications.application.purge",
+    "app.modules.reviews.application.purge",
+    "app.modules.actuals.application.purge",
+    "app.modules.conflicts.application.purge",
+    "app.modules.assessments.application.purge",
+    "app.modules.estimates.application.purge",
+    "app.modules.gaps.application.purge",
+    "app.modules.intake.application.purge",
+    "app.modules.knowledge.application.purge",
+    "app.modules.workflows.application.purge",
+    "app.modules.opportunities.application.purge",
 )
 _JITTER = 0.2
 EXECUTE_JOB_TYPE = "workflows.execute"
@@ -70,7 +86,7 @@ SCHEDULE_CHECK_S = 60.0
 
 
 def load_job_types() -> None:
-    for name in _JOB_MODULES:
+    for name in (*_JOB_MODULES, *_PURGE_MODULES):
         importlib.import_module(name)
 
 
