@@ -84,6 +84,7 @@ describe("/admin/users", () => {
       "Agents",
       "Catalogue",
       "Evals",
+      "Retention",
     ]);
     expect(
       within(sections).getByRole("link", { name: "Users and roles" }).getAttribute("aria-current"),

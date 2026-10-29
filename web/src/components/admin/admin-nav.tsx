@@ -7,6 +7,7 @@ const SECTIONS = [
   { href: "/admin/agents", label: "Agents" },
   { href: "/admin/catalogue", label: "Catalogue" },
   { href: "/admin/evals", label: "Evals" },
+  { href: "/admin/retention", label: "Retention" },
 ] as const;
 
 export type AdminSection = (typeof SECTIONS)[number]["href"];

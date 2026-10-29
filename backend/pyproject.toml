@@ -90,6 +90,25 @@ source_modules = ["app.main_api"]
 forbidden_modules = ["app.platform.jobs.runner", "app.main_worker"]
 
 [[tool.importlinter.contracts]]
+name = "The api process never imports the retention purge job or its steps (Story 10.6)"
+type = "forbidden"
+source_modules = ["app.main_api"]
+forbidden_modules = [
+    "app.platform.purge.job",
+    "app.modules.notifications.application.purge",
+    "app.modules.reviews.application.purge",
+    "app.modules.actuals.application.purge",
+    "app.modules.conflicts.application.purge",
+    "app.modules.assessments.application.purge",
+    "app.modules.estimates.application.purge",
+    "app.modules.gaps.application.purge",
+    "app.modules.intake.application.purge",
+    "app.modules.knowledge.application.purge",
+    "app.modules.workflows.application.purge",
+    "app.modules.opportunities.application.purge",
+]
+
+[[tool.importlinter.contracts]]
 name = "The api process never calls a chat model (AD-8)"
 type = "forbidden"
 source_modules = ["app.main_api"]

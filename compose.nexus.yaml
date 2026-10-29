@@ -25,8 +25,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       PSA_APP_DB_PASSWORD: ${PSA_APP_DB_PASSWORD:?set PSA_APP_DB_PASSWORD in .env}
-    # Portainer has no repo checkout to bind-mount, so the psa_app role init script is
-    # written into the container at start (first start of an empty volume runs it).
+      PSA_PURGE_DB_PASSWORD: ${PSA_PURGE_DB_PASSWORD:-}
+    # Portainer has no repo checkout to bind-mount, so the role init scripts (psa_app, and
+    # psa_purge for Story 10.6) are written into the container at start (first start of an
+    # empty volume runs them). Keep in step with ops/postgres/init/.
     entrypoint:
       - /bin/sh
       - -c
@@ -45,6 +47,19 @@ services:
         SELECT format('ALTER ROLE psa_app WITH LOGIN PASSWORD %L', :'app_password')
         \gexec
         GRANT CONNECT, TEMPORARY ON DATABASE :"db_name" TO psa_app;
+        EOSQL
+        EOF
+        cat > /docker-entrypoint-initdb.d/20-purge-role.sh <<'EOF'
+        set -e
+        psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" \
+          -v purge_password="$${PSA_PURGE_DB_PASSWORD:-}" -v db_name="$$POSTGRES_DB" <<'EOSQL'
+        SELECT 'CREATE ROLE psa_purge NOLOGIN'
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'psa_purge')
+        \gexec
+        SELECT format('ALTER ROLE psa_purge WITH LOGIN PASSWORD %L', :'purge_password')
+        WHERE :'purge_password' <> ''
+        \gexec
+        GRANT CONNECT ON DATABASE :"db_name" TO psa_purge;
         EOSQL
         EOF
         exec docker-entrypoint.sh postgres
@@ -130,6 +145,8 @@ services:
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
       PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
       PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
+      # Story 10.6: the purge role's URL, worker only (blank: the purge deletes nothing).
+      PSA_PURGE_DATABASE_URL: ${PSA_PURGE_DATABASE_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

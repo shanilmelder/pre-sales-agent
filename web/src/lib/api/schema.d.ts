@@ -334,6 +334,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Retention Overview
+         * @description The Opportunities whose retention date is within the next 30 days (overdue ones not
+         *     yet purged included), earliest first, and the last 20 purges, newest first. Ids,
+         *     outcomes, dates and counts only.
+         */
+        get: operations["get_retention_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/sources": {
         parameters: {
             query?: never;
@@ -7922,6 +7944,36 @@ export interface components {
          */
         ProposalStatus: "queued" | "running" | "succeeded" | "failed";
         /**
+         * PurgeEventItem
+         * @description One `platform.purge.completed` event: what the purge deleted. Ids and counts only.
+         */
+        PurgeEventItem: {
+            /** Purged Opportunity Id */
+            purged_opportunity_id: string;
+            /**
+             * Rule
+             * @enum {string}
+             */
+            rule: "lost_3y" | "won_7y";
+            /**
+             * Rows By Module
+             * @description Rows deleted, per module.
+             */
+            rows_by_module: {
+                [key: string]: number;
+            };
+            /**
+             * Files Deleted
+             * @description Stored files whose last reference went with it.
+             */
+            files_deleted: number;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
+        /**
          * QuestionChanges
          * @description A person's edit of a Clarification Question (Story 4.5). Fields left out stay as they
          *     are.
@@ -8414,6 +8466,38 @@ export interface components {
          * @enum {string}
          */
         ResolutionKind: "evidence_supplied" | "addressed";
+        /**
+         * RetentionDueItem
+         * @description An Opportunity whose data is due for purge: ids, outcome and dates only.
+         */
+        RetentionDueItem: {
+            /** Opportunity Id */
+            opportunity_id: string;
+            outcome: components["schemas"]["Outcome"];
+            /**
+             * Rule
+             * @description `lost_3y`: lost, kept 3 years after the outcome; `won_7y`: won, kept 7 years after the contract end date.
+             * @enum {string}
+             */
+            rule: "lost_3y" | "won_7y";
+            /**
+             * Retention Until
+             * Format: date
+             * @description The last day the data is kept; the daily purge deletes it the day after.
+             */
+            retention_until: string;
+        };
+        /**
+         * RetentionOverview
+         * @description Admin > Retention. `due`: retention date on or before today plus 30 days (overdue ones
+         *     not yet purged included), earliest first. `recent`: the last 20 purges, newest first.
+         */
+        RetentionOverview: {
+            /** Due */
+            due: components["schemas"]["RetentionDueItem"][];
+            /** Recent */
+            recent: components["schemas"]["PurgeEventItem"][];
+        };
         /**
          * RetireChecklist
          * @description Why the Checklist is retired (1-500 characters, trimmed).
@@ -12128,6 +12212,92 @@ export interface operations {
             };
             /** @description Rejected file: `file_content_mismatch`, `file_empty` (the `detail` is the sentence to show), or `validation_error` (no `file` part, an unusable file name, or an id that is not a UUID) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    get_retention_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionOverview"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller lacks `platform.retention.read` (`forbidden`) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

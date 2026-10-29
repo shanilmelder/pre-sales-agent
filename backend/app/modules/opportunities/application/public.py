@@ -13,6 +13,9 @@ from app.modules.opportunities.application.models import (
     OpportunitySummary,
     OutcomeRecord,
     OutcomeReopen,
+    PurgeEventItem,
+    RetentionDueItem,
+    RetentionOverview,
     SuggestedValue,
     TraceActor,
     TraceEventItem,
@@ -49,6 +52,7 @@ from app.modules.opportunities.application.outcome import (
     record_outcome,
     reopen_outcome,
 )
+from app.modules.opportunities.application.retention import retention_due, retention_overview
 from app.modules.opportunities.application.trace import (
     TRACE_DEFAULT_PAGE_SIZE,
     TRACE_MAX_PAGE_SIZE,
@@ -84,7 +88,10 @@ __all__ = [
     "Outcome",
     "OutcomeRecord",
     "OutcomeReopen",
+    "PurgeEventItem",
     "ReadableOpportunities",
+    "RetentionDueItem",
+    "RetentionOverview",
     "SuggestedValue",
     "TraceActor",
     "TraceEventItem",
@@ -110,6 +117,8 @@ __all__ = [
     "record_outcome",
     "remove_collaborator",
     "reopen_outcome",
+    "retention_due",
+    "retention_overview",
     "retention_until",
     "revoke_reviewer_access",
     "trace_page",

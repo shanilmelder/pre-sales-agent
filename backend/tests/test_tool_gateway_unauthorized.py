@@ -457,7 +457,7 @@ def resend(monkeypatch: pytest.MonkeyPatch) -> Iterator[Recorder]:
 
 def _handle(payload: alert_jobs.ToolDenialAlert) -> None:
     ctx: Any = None  # the handler doesn't read its context
-    run_async(alert_jobs.alert_email(ctx, payload))
+    run_async(alert_jobs.alert_email(ctx, alert_jobs.AlertEmailJob(alert=payload)))
 
 
 def test_the_alert_job_sends_one_resend_email_with_ids_only(resend: Recorder) -> None:
@@ -495,7 +495,7 @@ def _queued_alert(db_url: str) -> UUID:
         engine = create_engine(Settings(database_url=db_url))
         try:
             async with unit_of_work(engine) as uow:
-                return await enqueue(uow, _payload())
+                return await enqueue(uow, alert_jobs.AlertEmailJob(alert=_payload()))
         finally:
             await engine.dispose()
 
@@ -721,3 +721,14 @@ def test_the_agent_index_migration_downgrades_and_upgrades(sync_engine: Engine) 
     )
     assert "WHERE (outcome = 'denied'::text)" in partial["indexdef"]
     assert versions() == before  # config versions are never rewritten
+
+
+def test_a_legacy_flat_denial_alert_payload_still_loads_and_dumps_flat() -> None:
+    """Story 10.6: rows queued before the alert union hold a flat `ToolDenialAlert` (no
+    `alert` key); they load into `AlertEmailJob` and dump back to the same flat form."""
+    legacy = _payload().model_dump(mode="json")
+    assert "alert" not in legacy and legacy["kind"] == "tool_denial_threshold"
+    job = alert_jobs.AlertEmailJob.model_validate(legacy)
+    assert isinstance(job.alert, alert_jobs.ToolDenialAlert)
+    assert job.alert.run_id == UUID(legacy["run_id"])
+    assert job.model_dump(mode="json") == legacy

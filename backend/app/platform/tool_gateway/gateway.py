@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.platform import trace
 from app.platform.actor import Actor
-from app.platform.alerts.jobs import ToolDenialAlert
+from app.platform.alerts.jobs import AlertEmailJob, ToolDenialAlert
 from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs.queue import enqueue
@@ -311,15 +311,17 @@ class ToolGateway:
         )
         await enqueue(
             uow,
-            ToolDenialAlert(
-                run_id=run_id,
-                opportunity_id=ctx.opportunity_id,
-                agent_id=ctx.agent_id,
-                semver=ctx.semver,
-                denial_count=count,
-                threshold=threshold,
-                day_from=day_from,
-                day_to=day_to,
+            AlertEmailJob(
+                alert=ToolDenialAlert(
+                    run_id=run_id,
+                    opportunity_id=ctx.opportunity_id,
+                    agent_id=ctx.agent_id,
+                    semver=ctx.semver,
+                    denial_count=count,
+                    threshold=threshold,
+                    day_from=day_from,
+                    day_to=day_to,
+                )
             ),
         )
         _log.warning(

@@ -1808,3 +1808,22 @@ class PlatformToolCallDenialThresholdExceeded(TracePayload):
     actor_id: str
     denial_count: int
     threshold: int
+
+
+@register
+class PlatformPurgeCompleted(TracePayload):
+    """Story 10.6: the retention purge deleted one Opportunity's data, in the same transaction.
+    Appended with `opportunity_id = null` (the Opportunity is gone). Subject: the purged
+    Opportunity (`opportunities.opportunity`, `subject_id` = its UUID). Actor: the system
+    (`platform.purge`). `rule`: `lost_3y` or `won_7y`; `rows_by_module`: rows deleted per
+    module; `files_deleted`: blobs whose last reference went with it. Ids and counts only:
+    no name, title or content."""
+
+    event_type: ClassVar[str] = "platform.purge.completed"
+
+    purged_opportunity_id: str
+    rule: Literal["lost_3y", "won_7y"]
+    retention_until: str
+    """The retention date that passed (ISO `YYYY-MM-DD`)."""
+    rows_by_module: dict[str, int]
+    files_deleted: int
