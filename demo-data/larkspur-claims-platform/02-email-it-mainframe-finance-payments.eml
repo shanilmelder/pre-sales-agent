@@ -1,0 +1,44 @@
+From: Ronan Gallagher <ronan.gallagher@larkspur-mutual.example>
+To: Alex Chen <alex.chen@vendor.example>
+Subject: RE: Claims platform - integration details
+Date: Mon, 19 Oct 2026 15:48:30 +0100
+Message-ID: <larkspur-it-1019@larkspur-mutual.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+Integration details as promised.
+
+Known:
+
+- Policy administration: mainframe (z/OS), CICS transactions for policy lookup, cover
+  check and excess calculation. Our mainframe team will expose them as REST services
+  through our API gateway; that work is ours and is planned for Q1 2027.
+- Finance ERP: Microsoft Dynamics 365 Finance. Claim reserves and payments are posted
+  daily to the general ledger as journal lines (about 2,500 a day, 9,000 in storm weeks).
+- Bank: daily SEPA credit transfer file (pain.001) and a return file (pain.002). Around
+  6,000 payments a month.
+- Documents: letters are produced today from 140 Word templates in our document system.
+  Members can choose post or email.
+- Hosting: AWS, Dublin region. Data must stay in the EU.
+
+Unknown, nobody can answer before the work starts (please price allowances):
+
+- The full list of ClaimsOne status codes and their meaning (we think about 40).
+- How much of the pre-2015 claims history needs manual correction after migration.
+- What the regulator asks for after reviewing our cloud outsourcing notification.
+
+Ours to decide or provide:
+
+- Fraud scoring vendor (decision in January 2027).
+- Instant payments for claims under EUR 1,000: we decide with the bank by March.
+- Bank test environment for payment files: we request it, about four weeks lead time.
+- Broker access: own accounts or through the broker hub.
+- Irish-language translations of the letter templates: our translation partner.
+- Anonymised claims data for testing: our data team prepares it.
+
+Regards,
+Ronan Gallagher
+Head of IT, Larkspur Mutual

@@ -1,0 +1,68 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Length 2567 >>
+stream
+BT
+50 800 Td
+/F1 16 Tf 0 -20 Td (Aldermoor Health Trust - Supplier Information Security Requirements) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 10 Tf 0 -14 Td (Appendix C to the Invitation to Tender. Every item is mandatory unless stated.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Identity and access) Tj
+/F1 10 Tf 0 -14 Td (- Staff sign in through single sign-on with Microsoft Entra ID \(OIDC or SAML 2.0\). No local) Tj
+/F1 10 Tf 0 -14 Td (  staff passwords.) Tj
+/F1 10 Tf 0 -14 Td (- Multi-factor authentication for every administrative account, including supplier support) Tj
+/F1 10 Tf 0 -14 Td (  staff.) Tj
+/F1 10 Tf 0 -14 Td (- Role-based access: booking clerk, clinician, service lead, administrator. Least privilege by) Tj
+/F1 10 Tf 0 -14 Td (  default.) Tj
+/F1 10 Tf 0 -14 Td (- Patient sign-in method is not yet decided \(national citizen login or Trust-managed accounts) Tj
+/F1 10 Tf 0 -14 Td (  with SMS one-time codes\). The supplier must price both or state an assumption.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Data protection) Tj
+/F1 10 Tf 0 -14 Td (- Patient data is special category personal data. The supplier acts as processor and signs the) Tj
+/F1 10 Tf 0 -14 Td (  Trust's data processing agreement.) Tj
+/F1 10 Tf 0 -14 Td (- All data at rest encrypted with AES-256; in transit with TLS 1.2 or higher.) Tj
+/F1 10 Tf 0 -14 Td (- Data residency: United Kingdom only, including backups and logs.) Tj
+/F1 10 Tf 0 -14 Td (- Data retention follows the Trust records management policy; portal audit logs 8 years.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Assurance) Tj
+/F1 10 Tf 0 -14 Td (- ISO 27001 certification of the supplier's hosting and support, or equivalent evidence.) Tj
+/F1 10 Tf 0 -14 Td (- Independent penetration test before go-live and annually; critical and high findings fixed) Tj
+/F1 10 Tf 0 -14 Td (  before go-live at the supplier's cost.) Tj
+/F1 10 Tf 0 -14 Td (- Supplier staff with access to patient data complete data security training every year.) Tj
+/F1 10 Tf 0 -14 Td (- Vulnerability patching: critical within 14 days, high within 30 days.) Tj
+/F1 10 Tf 0 -14 Td () Tj
+/F1 12 Tf 0 -16 Td (Operations) Tj
+/F1 10 Tf 0 -14 Td (- Security incidents reported to the Trust within 24 hours of detection.) Tj
+/F1 10 Tf 0 -14 Td (- Remote support access only through the Trust's privileged access gateway; accounts take) Tj
+/F1 10 Tf 0 -14 Td (  about four weeks to approve.) Tj
+/F1 10 Tf 0 -14 Td (- Logs forwarded to the Trust security operations centre \(syslog or Azure Monitor\).) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000002831 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2957
+%%EOF

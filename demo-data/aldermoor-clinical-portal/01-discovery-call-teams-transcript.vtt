@@ -1,0 +1,49 @@
+WEBVTT
+
+00:00:03.000 --> 00:00:11.000
+<v Alex Chen>Thanks for joining, everyone. I'd like to walk through scope, the EPR, security and the timeline, and note what's still open.
+
+00:00:12.000 --> 00:00:31.000
+<v Owen Hartley>Sure. Big picture: we have about 450,000 registered patients and roughly 1.2 million outpatient appointments a year across the three sites. We want patients to manage those appointments themselves, and we want the fax referrals gone.
+
+00:00:32.000 --> 00:00:52.000
+<v Sam Whitlock>From outpatients: today patients ring the booking office. We get about 2,000 calls a day and a 9% did-not-attend rate. The target is to get DNAs under 6% with reminders and easy rebooking.
+
+00:00:53.000 --> 00:01:15.000
+<v Alex Chen>On the EPR: CarePoint. Which version, and does it expose FHIR?
+
+00:01:16.000 --> 00:01:44.000
+<v Owen Hartley>We're on CarePoint 11.4. It has a FHIR R4 API for reading Patient and Appointment. Whether it supports writing appointments back, honestly, nobody knows. CarePoint won't confirm until there's a signed engagement and they've scoped it. If it can't, we'd need the old HL7 version 2 interface through our integration engine. Nobody can tell you that today.
+
+00:01:45.000 --> 00:02:05.000
+<v Alex Chen>Understood, so that's an unknown for both of us. What about the EPR test environment?
+
+00:02:06.000 --> 00:02:24.000
+<v Owen Hartley>That one's ours to sort out. We have one CarePoint test system shared with two other projects. Whether you get a dedicated copy is our decision; we'll come back to you.
+
+00:02:25.000 --> 00:02:50.000
+<v Leah Okafor>Clinical safety: any system touching appointments and letters is a clinical system for us. The supplier must produce a clinical safety case and hazard log under the clinical risk management standard, and I sign off on our side. I can give you about two days a month, not more.
+
+00:02:51.000 --> 00:03:15.000
+<v Alex Chen>And patient sign-in?
+
+00:03:16.000 --> 00:03:40.000
+<v Owen Hartley>Staff sign in with single sign-on through Microsoft Entra ID. For patients we haven't decided: the national citizen login, or our own accounts with SMS verification. That's a Trust decision, due in December.
+
+00:03:41.000 --> 00:04:02.000
+<v Sam Whitlock>Clinic templates are the other thing. We think there are somewhere between 300 and 900 clinic codes, and nobody has a clean list. Some are duplicates, some dead. We'll only know when someone goes through them with the service leads.
+
+00:04:03.000 --> 00:04:25.000
+<v Owen Hartley>Hosting: patient data must stay in the UK. Our preference is that it runs in our own Azure tenant, so no patient data ever leaves the Trust. We haven't finally decided between our tenant and your hosted service.
+
+00:04:26.000 --> 00:04:46.000
+<v Alex Chen>Availability and timeline?
+
+00:04:47.000 --> 00:05:10.000
+<v Owen Hartley>99.5% availability between 07:00 and 22:00, every day. Go-live for the patient portal in April 2027, referrals after that. Accessibility to WCAG 2.2 AA is mandatory; about 18% of our patients have a disability or long-term condition.
+
+00:05:11.000 --> 00:05:30.000
+<v Sam Whitlock>And letters: we produce about 60,000 clinic letters a month. Patients should get them in the portal, with paper only for people who opt out.
+
+00:05:31.000 --> 00:05:45.000
+<v Alex Chen>Thanks. I'll send a summary with the open points and who owns each one.

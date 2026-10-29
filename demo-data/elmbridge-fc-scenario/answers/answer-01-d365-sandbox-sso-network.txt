@@ -1,0 +1,11 @@
+From Marcus Bell, 20 Oct 2026 - answers to your clarification questions
+
+Dynamics 365 integration: we've decided on the standard data entities over OData. No
+file-based batch.
+
+Sandbox: you get a dedicated Dynamics 365 Tier-2 sandbox, available from 1 March 2027.
+
+Single sign-on: the automation goes on Microsoft Entra ID from day one; Okta is out.
+
+Network: the automation gets its own dedicated VLAN, separated from the warehouse VLAN by
+our firewall. Please send your port and IP requirements by 30 November.

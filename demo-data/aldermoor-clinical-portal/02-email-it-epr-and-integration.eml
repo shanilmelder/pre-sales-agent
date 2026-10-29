@@ -1,0 +1,48 @@
+From: Owen Hartley <owen.hartley@aldermoor-health.example>
+To: Alex Chen <alex.chen@vendor.example>
+Cc: Priya Natarajan <priya.natarajan@aldermoor-health.example>
+Subject: RE: Portal - EPR, integration engine and environments
+Date: Fri, 23 Oct 2026 14:22:05 +0100
+Message-ID: <aldermoor-it-1023@aldermoor-health.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hi Alex,
+
+Following the call, here is the integration picture in writing.
+
+What we know:
+
+- EPR: CarePoint 11.4. FHIR R4 read for Patient, Practitioner, Appointment and Schedule.
+  Clinic letters are held as PDF documents in CarePoint and can be read as
+  DocumentReference.
+- Integration engine: Rhapsody-style engine run by our integration team (two people). It
+  already sends HL7 v2 ADT messages (A04, A08, A40 merges) to eleven downstream systems.
+- GP practices: 64 practices refer to us. They use two GP systems; both can send a
+  referral as a structured message plus a PDF attachment.
+- Notifications: we have an existing SMS contract with a gateway provider, 3.2p per
+  message, and send about 40,000 reminders a month today from a home-grown script.
+
+What nobody can know yet (please carry these as allowances):
+
+- Whether CarePoint's FHIR API can write appointments back. If not, bookings go back
+  through HL7 v2 SIU messages via the engine. CarePoint will only scope this after award.
+- How many clinic codes are real. Between 300 and 900; it takes a walk-through with each
+  service lead.
+
+What is ours to decide or provide:
+
+- A dedicated or shared CarePoint test system (we decide by end of November).
+- Patient identity: national citizen login or our own accounts (December).
+- Hosting: our Azure tenant or your hosted service. If it's our tenant, we provide the
+  subscription, landing zone and network; if it's yours, it must be UK-hosted.
+- Integration engine changes are done by our team, not yours; we need your message
+  specifications at least six weeks before integration testing.
+- Test patients: we will provide 200 synthetic test patients with appointment history.
+
+Peak load: Monday mornings, when about 15,000 patients log in between 07:00 and 10:00.
+
+Regards,
+Owen Hartley
+Chief Information Officer, Aldermoor Health Trust

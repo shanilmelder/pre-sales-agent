@@ -1,0 +1,349 @@
+WEBVTT
+
+1
+00:00:03.850 --> 00:00:06.685
+Welcome to the Pre Sales Agent Framework.
+
+2
+00:00:06.685 --> 00:00:20.171
+It turns the emails, call transcripts and tender documents you get from a customer into confirmed requirements, clarification questions, specialist assessments and a traceable, reviewed estimate.
+
+3
+00:00:20.171 --> 00:00:29.299
+In this tour we follow one real opportunity from start to finish: Larkspur Mutual, an insurer replacing its mainframe claims system.
+
+4
+00:00:30.399 --> 00:00:35.598
+The sidebar takes you to your Inbox, Opportunities, Knowledge and Admin.
+
+5
+00:00:35.598 --> 00:00:44.842
+Press Control K anywhere to open the command palette: jump to any page, or create a new opportunity, without touching the mouse.
+
+6
+00:00:45.942 --> 00:00:51.292
+Before the first bid, an administrator prepares the knowledge the agents rely on.
+
+7
+00:00:51.292 --> 00:00:57.963
+Knowledge Sources are your own delivery guides and playbooks, tagged by product and integration type.
+
+8
+00:00:57.963 --> 00:01:02.521
+Here, an insurance claims migration playbook is registered and ready.
+
+9
+00:01:03.621 --> 00:01:08.869
+Checklists hold the questions you must always ask for a type of integration.
+
+10
+00:01:08.869 --> 00:01:16.810
+Mandatory items become gaps automatically whenever that integration is in scope, so nothing important is forgotten.
+
+11
+00:01:17.910 --> 00:01:28.498
+The Coverage matrix shows, for every product and integration type, whether you have documentation and checklists, so you can see where gap detection may be weak.
+
+12
+00:01:29.598 --> 00:01:33.537
+And the Knowledge Graph draws the same picture as a map.
+
+13
+00:01:33.537 --> 00:01:41.626
+Solid lines are documented links, dashed lines show missing coverage, and red rings flag stale or missing material.
+
+14
+00:01:42.726 --> 00:01:45.547
+To start a bid, choose New Opportunity.
+
+15
+00:01:45.547 --> 00:01:50.249
+You can type the customer, title, products and industry yourself.
+
+16
+00:01:51.349 --> 00:01:56.489
+Or choose Import from file and drop in the customer's invitation email.
+
+17
+00:01:56.489 --> 00:02:05.176
+The Opportunity Intake Agent reads it and fills in the fields, each one marked From file with the sentence it came from.
+
+18
+00:02:05.176 --> 00:02:08.506
+Check them, set the proposal date, and create.
+
+19
+00:02:08.506 --> 00:02:11.040
+The file becomes your first source.
+
+20
+00:02:12.140 --> 00:02:14.903
+Every opportunity opens on its Overview.
+
+21
+00:02:14.903 --> 00:02:21.120
+The tiles show confirmed requirements, open gaps, open conflicts and the current estimate.
+
+22
+00:02:21.120 --> 00:02:31.413
+The submission pipeline tracks each stage from sources added to baseline, and Needs you lists the items waiting for your decision, most severe first.
+
+23
+00:02:32.513 --> 00:02:40.580
+Further down you'll find the submission blockers, recent activity, and the latest agent decision with its reasoning.
+
+24
+00:02:40.580 --> 00:02:45.934
+For Larkspur, all eight stages are complete and version four is the baseline.
+
+25
+00:02:47.034 --> 00:02:56.741
+On the Sources tab, drop in everything the customer sent: emails, Teams transcripts, Word and PDF documents, notes, or pasted text.
+
+26
+00:02:56.741 --> 00:03:06.818
+Larkspur has eleven sources, including an RFP schedule, an IT email about the mainframe and payments, and two recorded customer answers.
+
+27
+00:03:06.818 --> 00:03:10.300
+Every source is stored unchanged and versioned.
+
+28
+00:03:11.400 --> 00:03:13.962
+Select a source to open the Inspector.
+
+29
+00:03:13.962 --> 00:03:21.245
+You'll see who added it and when, download the original, and read the extracted text the agents worked from.
+
+30
+00:03:22.345 --> 00:03:33.578
+The Intake Agent extracts requirements from every source and groups them by category: functional, integration, data, security, non-functional and commercial.
+
+31
+00:03:33.578 --> 00:03:39.659
+Each requirement carries evidence chips that point to the exact sources it came from.
+
+32
+00:03:39.659 --> 00:03:42.593
+Larkspur has eighty-seven, all confirmed.
+
+33
+00:03:43.693 --> 00:03:49.014
+Open a requirement to see the quoted passage highlighted in its source.
+
+34
+00:03:49.014 --> 00:03:53.735
+From here you can edit, split, merge, reclassify or confirm it.
+
+35
+00:03:53.735 --> 00:04:02.429
+Confirmed requirements are locked; if a later email changes one, you see it as a pending change to accept or reject.
+
+36
+00:04:02.429 --> 00:04:08.724
+Instructions hidden inside customer content are treated as content and never obeyed.
+
+37
+00:04:09.824 --> 00:04:17.888
+Next, the Clarification Agent looks for what's missing, and mandatory checklist items add gaps of their own.
+
+38
+00:04:17.888 --> 00:04:33.044
+Here is a second opportunity, Aldermoor Health Trust, still in progress: nine open gaps ranked by impact, each with a drafted clarification question you can edit, merge, approve, export and mark as sent.
+
+39
+00:04:34.144 --> 00:04:39.136
+When the customer replies, paste the answer as a source against the question.
+
+40
+00:04:39.136 --> 00:04:43.998
+The gap is marked answered, and the answer can update related requirements.
+
+41
+00:04:43.998 --> 00:04:50.026
+If one answer also covers other questions, the app suggests those matches for you to confirm.
+
+42
+00:04:51.126 --> 00:04:58.082
+Some things the customer simply can't know yet, like how much pre-2015 data needs correcting.
+
+43
+00:04:58.082 --> 00:05:04.888
+Those are marked Unknown to the customer and converted into a contingency, priced in hours.
+
+44
+00:05:04.888 --> 00:05:09.450
+Things the customer must decide or provide become conditions.
+
+45
+00:05:09.450 --> 00:05:12.442
+Either way, nothing is silently dropped.
+
+46
+00:05:13.542 --> 00:05:15.583
+Now start the assessment run.
+
+47
+00:05:15.583 --> 00:05:28.248
+Specialist agents work in parallel: Engineering for feasibility and per-integration effort, the PM Agent for phases and dependencies, and the Security Agent for mandatory controls.
+
+48
+00:05:28.248 --> 00:05:36.762
+Then the Critic checks their coverage and timelines, and the Red Team argues that integrations are harder than they look.
+
+49
+00:05:37.862 --> 00:05:47.878
+Each agent returns a verdict, such as proceed with conditions, with a confidence level, the effort behind it, and the requirements it relied on.
+
+50
+00:05:47.878 --> 00:05:53.512
+If you disagree, raise a Challenge with new information and the agent reassesses.
+
+51
+00:05:54.612 --> 00:05:58.271
+All findings land in one table, ranked by severity.
+
+52
+00:05:58.271 --> 00:06:05.804
+Critical findings block submission until someone resolves them, or overrides them with a recorded reason.
+
+53
+00:06:06.904 --> 00:06:19.438
+The Conflict Agent compares sources and assessments, and flags contradictions: different dates, different volumes, or one agent sizing a requirement the other skipped.
+
+54
+00:06:19.438 --> 00:06:22.740
+Pick a position, give a reason, and resolve.
+
+55
+00:06:23.840 --> 00:06:31.131
+For Larkspur, all thirty-eight conflicts are resolved, and each resolution records who decided and why.
+
+56
+00:06:32.231 --> 00:06:36.371
+The Estimating Agent drafts the estimate from the assessments.
+
+57
+00:06:36.371 --> 00:06:44.584
+Every line covers named requirements, with the role mix and effort hours, and you can edit any line in place with a reason.
+
+58
+00:06:45.684 --> 00:06:49.354
+Submit stays locked while anything is unfinished.
+
+59
+00:06:49.354 --> 00:07:00.963
+The blockers panel lists exactly what's missing: open gaps, assumptions not yet accepted, open conflicts and critical findings, each with a link to fix it.
+
+60
+00:07:02.063 --> 00:07:06.395
+Larkspur's estimate is twelve thousand and seventy-two hours.
+
+61
+00:07:06.395 --> 00:07:11.934
+The version lifecycle runs from draft, to in review, to approved, to baseline.
+
+62
+00:07:11.934 --> 00:07:19.106
+A review request was sent to a named engineering reviewer, and their approval is recorded right here.
+
+63
+00:07:20.206 --> 00:07:30.423
+The Assumptions Register lists every condition the estimate depends on, each linked back to the gap it came from, and each accepted by a named person.
+
+64
+00:07:31.523 --> 00:07:35.301
+Contingencies are shown separately with their hours.
+
+65
+00:07:35.301 --> 00:07:46.198
+Larkspur carries one thousand one hundred and forty hours of contingency, for unknowns like undocumented status codes and late regulator requirements.
+
+66
+00:07:47.298 --> 00:07:49.677
+Every change creates a new version.
+
+67
+00:07:49.677 --> 00:07:58.444
+Diff against any earlier version to see which lines and assumptions changed, were added or were removed, and how the total moved.
+
+68
+00:07:59.544 --> 00:08:03.816
+All versions keeps the full history, with the baseline first.
+
+69
+00:08:04.916 --> 00:08:14.668
+And Export produces the estimate, the assumptions register and the clarification questions as Excel or Word, ready for the proposal.
+
+70
+00:08:15.768 --> 00:08:18.997
+Reviewers and owners are notified in the Inbox.
+
+71
+00:08:18.997 --> 00:08:27.378
+Review requests and decisions arrive here, so a reviewer can open the estimate, approve it, or send it back with comments.
+
+72
+00:08:28.478 --> 00:08:35.852
+Once the project is delivered, record actual hours against each estimate line, with a variance cause.
+
+73
+00:08:35.852 --> 00:08:42.642
+Overruns can name the assumption that failed, which feeds the estimate-versus-actual reports.
+
+74
+00:08:43.742 --> 00:08:48.755
+To import actuals, download the template, fill it in, and upload it.
+
+75
+00:08:48.755 --> 00:08:53.030
+You see a preview, and nothing is saved until you confirm.
+
+76
+00:08:54.130 --> 00:09:00.912
+And the Trace tab is the append-only audit log of every action, by people and agents alike.
+
+77
+00:09:00.912 --> 00:09:06.576
+Filter by subject, actor or event to follow any number back to its evidence.
+
+78
+00:09:07.676 --> 00:09:11.149
+Administrators manage the platform under Admin.
+
+79
+00:09:11.149 --> 00:09:22.676
+Users and roles shows each person's roles, which are managed in Auth0: presales engineer, delivery manager, engineering reviewer and platform administrator.
+
+80
+00:09:23.776 --> 00:09:32.135
+The Catalogue defines the integration types and work packages that checklists, assessments and estimate lines share.
+
+81
+00:09:33.235 --> 00:09:38.917
+The Agent Registry shows every agent, its version, model and tool permissions.
+
+82
+00:09:38.917 --> 00:09:43.870
+Any tool call an agent isn't allowed to make is blocked and audited.
+
+83
+00:09:44.970 --> 00:09:56.951
+And Evals runs the agents against reference sets, checking release bars like extraction recall, citation validity and gap recall before a new configuration is accepted.
+
+84
+00:09:58.051 --> 00:10:07.200
+In Settings, choose a light, dark or system theme, a comfortable or compact density, and turn on single-key shortcuts.
+
+85
+00:10:08.300 --> 00:10:21.229
+That's the full journey: from a customer's first email, to evidence-backed requirements, answered questions, specialist assessments, and a reviewed, baselined estimate you can trace and measure.
+
+86
+00:10:21.229 --> 00:10:24.428
+Open the user guide for every feature in detail.
+
+87
+00:10:24.428 --> 00:10:25.761
+Thanks for watching.

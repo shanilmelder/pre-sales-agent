@@ -4,3 +4,5 @@
 backend/tests/fixtures/sources/** -text
 # The eval reference set is hashed into its version (Story 7.6): keep LF on every checkout.
 evals/reference/** text eol=lf
+# Generated demo PDFs are plain ASCII but byte-offset sensitive: never convert line endings.
+*.pdf binary
