@@ -22,6 +22,7 @@ import type {
   AssessmentsView,
   AssessmentTask,
   RunDecision,
+  TaskAgent,
 } from "@/lib/assessments";
 import type { RedTeamView, Severity } from "@/lib/red-team";
 import { axeViolations } from "@/test/axe";
@@ -194,7 +195,7 @@ const at = (s: number) => new Date(T0 + s * 1000).toISOString();
 /** A task. Started tasks start 5 s in; finished ones (succeeded or failed) by default after
  * 40 s. */
 function task(
-  agent: AssessmentAgent,
+  agent: TaskAgent,
   status: AssessmentTask["status"],
   code: AssessmentTask["error_code"] = null,
   times: Partial<Pick<AssessmentTask, "started_at" | "finished_at">> = {},
@@ -220,6 +221,7 @@ function run(
   return {
     id: RUN_ID,
     status,
+    run_type: "assessment",
     created_at: at(0),
     queued_at: at(0),
     finished_at: finished,
@@ -1145,6 +1147,37 @@ describe("SpecialistAssessmentsHeader", () => {
       "the model took too long to answer",
     ]);
     expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("a Challenge's reassessment run (Story 9.6)", () => {
+  it("labels the run and shows Conflict detection and New version as task rows", async () => {
+    const challenge = {
+      ...run("failed", [
+        task("engineering_agent", "succeeded"),
+        task("conflict_detection", "succeeded"),
+        task("critic_agent", "succeeded"),
+        task("new_version", "failed", "estimate_changed"),
+      ]),
+      run_type: "challenge" as const,
+    };
+    const { container } = render(<HeaderAndTasks run={challenge} canStart />);
+    expect(screen.getByTestId("run-type").textContent).toBe("Challenge reassessment");
+    expect(panelRows().map((r) => r[0])).toEqual([
+      "Engineering Agent",
+      "Conflict detection",
+      "Critic",
+      "New version",
+    ]);
+    expect(panelRows()[3]).toContain("a newer Estimate Version was created while the run worked");
+    // A Challenge's run is never retried.
+    expect(screen.queryByRole("button", { name: /^Retry/ })).toBeNull();
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it("an assessment run has no run-type label", () => {
+    render(<HeaderAndTasks run={run("succeeded", [task("engineering_agent", "succeeded")])} />);
+    expect(screen.queryByTestId("run-type")).toBeNull();
   });
 });
 

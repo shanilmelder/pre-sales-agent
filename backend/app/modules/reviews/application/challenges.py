@@ -37,11 +37,14 @@ idempotency_key=run:<opp>:challenge:<id>)`: the confirmed Assessments, then the 
 is traced and the challenger gets a `challenge_declined` Inbox item (key
 `challenge:{id}:declined`). Nothing is written on any error.
 
-Only Story 9.6's run writes `completed` or `failed`.
+Only Story 9.6's run writes `completed` or `failed`: `complete_challenge` (the run's
+`new_version` node stored the new Estimate Version) and `fail_challenge` (the run failed or
+was cancelled), each traced and sent to the owner and the challenger as an Inbox item. A
+rerun specialist reads the Challenge through `challenge_brief`.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -99,6 +102,7 @@ from app.modules.reviews.domain.requests import (
     transition as request_transition,
 )
 from app.platform import trace
+from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
 from app.platform.errors import (
     ChallengeNeedsEstimateError,
@@ -115,8 +119,11 @@ from app.platform.ids import new_id
 from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.trace.catalogue import (
+    ChallengeLineDelta,
+    ReviewsChallengeCompleted,
     ReviewsChallengeConfirmed,
     ReviewsChallengeDeclined,
+    ReviewsChallengeFailed,
     ReviewsChallengeRaised,
     ReviewsReviewDecisionRecorded,
 )
@@ -895,3 +902,283 @@ async def challenges_for(
         )
         for r in records
     ]
+
+
+# --- the reassessment's outcome (Story 9.6) ---------------------------------------------------
+
+RUN_SYSTEM = Actor(type="system", id="workflows.execute")
+"""The actor of a Challenge's completion or failure when its run ends it."""
+VERSION_SUBJECT_TYPE = "estimates.estimate_version"
+"""The subject of a `challenge_completed` (the new version) or `challenge_failed` (the
+challenged version) Inbox item."""
+MINUS = chr(0x2212)
+
+
+def hours_text(delta: float) -> str:
+    """E.g. "+14.0 h", or "-3.5 h" with a real minus sign (U+2212)."""
+    sign = MINUS if delta < 0 else "+"
+    return f"{sign}{abs(delta):.1f} h"
+
+
+def completed_summary(
+    new_version: int, challenger: str, lines: Sequence[estimates.LineDelta], total: float
+) -> str:
+    """E.g. "v4 created from Ana's Challenge (+14.0 h on L1 WMS to SAP EWM interface)", or
+    "(+22.0 h across 3 lines)" (`total`, the versions' total delta) when several lines'
+    hours changed."""
+    head = f"v{new_version} created from {challenger}'s Challenge"
+    changed = [line for line in lines if line.delta_h != 0]
+    if not changed:
+        return f"{head} (no line changed)"
+    if len(changed) == 1:
+        (line,) = changed
+        return f"{head} ({hours_text(line.delta_h)} on L{line.position} {line.title})"
+    return f"{head} ({hours_text(total)} across {len(changed)} lines)"
+
+
+def failed_summary(challenger: str, version: int) -> str:
+    """E.g. "Reassessment for Ana's Challenge failed. v3 is unchanged."."""
+    return f"Reassessment for {challenger}'s Challenge failed. v{version} is unchanged."
+
+
+@dataclass(frozen=True, slots=True)
+class ChallengeBrief:
+    """What a rerun specialist is told about the Challenge (a fenced data block)."""
+
+    id: UUID
+    reason: str = field(repr=False)
+    target_kind: str
+    target_label: str = field(repr=False)
+    estimate_version: int
+
+
+async def challenge_brief(uow: UnitOfWork, challenge_id: UUID) -> ChallengeBrief | None:
+    """`reviews.public.challenge_brief` (Story 9.6, a challenge run's specialist tasks): the
+    reason, the target and the challenged version's number; None when unknown. No
+    authorization."""
+    record = await repo.get_challenge(uow, challenge_id)
+    if record is None:
+        return None
+    version = await estimates.reviewable_version(uow, record.estimate_version_id)
+    target = await _target_view(uow, record)
+    return ChallengeBrief(
+        id=record.id,
+        reason=record.reason,
+        target_kind=record.target_kind,
+        target_label=target.label,
+        estimate_version=0 if version is None else version.version,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ChallengeRun:
+    """A Challenge as its reassessment run's `new_version` node sees it."""
+
+    id: UUID
+    opportunity_id: UUID
+    status: ChallengeStatus
+    estimate_version_id: UUID
+    challenger_id: UUID
+    reason: str = field(repr=False)
+    confirmed: tuple[str, ...]
+    workflow_run_id: UUID | None
+    new_version_id: UUID | None
+
+
+async def challenge_run(uow: UnitOfWork, challenge_id: UUID) -> ChallengeRun | None:
+    """`reviews.public.challenge_run` (Story 9.6): the Challenge behind a challenge run, or
+    None when unknown. No authorization."""
+    record = await repo.get_challenge(uow, challenge_id)
+    if record is None:
+        return None
+    return ChallengeRun(
+        id=record.id,
+        opportunity_id=record.opportunity_id,
+        status=ChallengeStatus(record.status),
+        estimate_version_id=record.estimate_version_id,
+        challenger_id=record.challenger_id,
+        reason=record.reason,
+        confirmed=tuple(record.confirmed or ()),
+        workflow_run_id=record.workflow_run_id,
+        new_version_id=record.new_version_id,
+    )
+
+
+async def _people(uow: UnitOfWork, record: ChallengeRecord) -> tuple[list[UUID], str]:
+    """The owner and the challenger (once each), and the challenger's name."""
+    owner = await opportunities.opportunity_owner(uow, record.opportunity_id)
+    recipients = list(dict.fromkeys(r for r in (owner, record.challenger_id) if r is not None))
+    names = await identity.user_names(uow, {record.challenger_id})
+    return recipients, names.get(record.challenger_id, UNKNOWN_USER)
+
+
+async def complete_challenge(
+    uow: UnitOfWork, challenge_id: UUID, *, run_id: UUID, new_version_id: UUID
+) -> bool:
+    """`reviews.public.complete_challenge` (Story 9.6; the run's `new_version` node, as the
+    system): a `reassessing` Challenge becomes `completed` with `new_version_id`; the
+    challenged version's open Review Requests are superseded by the new version;
+    `reviews.challenge.completed` is traced with each changed line's delta in hours; the
+    owner and the challenger get a `challenge_completed` Inbox item opening the new version's
+    diff against the challenged one. False, writing nothing, when it is not `reassessing`
+    (e.g. a replay after it completed). The caller holds the Opportunity's lock."""
+    # Imported here: supersede imports this module's neighbours, which import this module.
+    from app.modules.reviews.application.supersede import supersede_open_requests
+
+    record = await repo.get_challenge(uow, challenge_id, for_update=True)
+    if record is None or record.status != ChallengeStatus.REASSESSING:
+        return False
+    status = transition(ChallengeStatus(record.status), ChallengeStatus.COMPLETED)
+    updated = await repo.update_challenge(
+        uow,
+        record.id,
+        from_status=ChallengeStatus.REASSESSING.value,
+        expected_row_version=record.row_version,
+        status=status.value,
+        new_version_id=new_version_id,
+    )
+    if updated is None:  # pragma: no cover - the row lock serialises changes
+        return False
+    superseded = await supersede_open_requests(
+        uow, record.estimate_version_id, new_version_id, actor=RUN_SYSTEM
+    )
+    delta = await estimates.challenge_delta(uow, record.estimate_version_id, new_version_id)
+    await trace.append(
+        uow,
+        actor=RUN_SYSTEM,
+        payload=ReviewsChallengeCompleted(
+            challenge_id=str(record.id),
+            workflow_run_id=str(run_id),
+            previous_version_id=str(delta.previous_version_id),
+            previous_version=delta.previous_version,
+            new_version_id=str(delta.new_version_id),
+            new_version=delta.new_version,
+            lines=[
+                ChallengeLineDelta(
+                    line_id=str(line.line_id),
+                    title=line.title,
+                    before_h=line.before_h,
+                    after_h=line.after_h,
+                    delta_h=line.delta_h,
+                )
+                for line in delta.lines
+            ],
+            total_delta_h=delta.total_delta_h,
+        ),
+        subject_type=SUBJECT_TYPE,
+        subject_id=record.id,
+        opportunity_id=record.opportunity_id,
+        subject_version=updated.row_version,
+    )
+    recipients, challenger = await _people(uow, record)
+    summary = completed_summary(delta.new_version, challenger, delta.lines, delta.total_delta_h)
+    for recipient in recipients:
+        await notifications.notify(
+            uow,
+            recipient_id=recipient,
+            kind=NotificationKind.CHALLENGE_COMPLETED,
+            opportunity_id=record.opportunity_id,
+            subject_type=VERSION_SUBJECT_TYPE,
+            subject_id=new_version_id,
+            subject_version=delta.new_version,
+            summary=summary,
+            dedupe_key=f"challenge:{record.id}:completed:{recipient}",
+        )
+    _log.info(
+        "reviews.challenge_completed",
+        extra={
+            "opportunity_id": str(record.opportunity_id),
+            "challenge_id": str(record.id),
+            "run_id": str(run_id),
+            "new_version_id": str(new_version_id),
+            "changed_line_count": len(delta.lines),
+            "superseded_count": superseded,
+        },
+    )
+    return True
+
+
+async def fail_challenge(
+    uow: UnitOfWork,
+    challenge_id: UUID,
+    *,
+    run_id: UUID,
+    run_status: str,
+    error_code: str | None = None,
+    actor: Actor = RUN_SYSTEM,
+) -> bool:
+    """`reviews.public.fail_challenge` (Story 9.6; the run ended without a new version: it
+    failed, or a person cancelled it): a `reassessing` Challenge becomes `failed`,
+    `reviews.challenge.failed` is traced and the owner and the challenger get a
+    `challenge_failed` Inbox item opening the challenged version, which is unchanged. False,
+    writing nothing, when it is not `reassessing`."""
+    record = await repo.get_challenge(uow, challenge_id, for_update=True)
+    if record is None or record.status != ChallengeStatus.REASSESSING:
+        return False
+    status = transition(ChallengeStatus(record.status), ChallengeStatus.FAILED)
+    updated = await repo.update_challenge(
+        uow,
+        record.id,
+        from_status=ChallengeStatus.REASSESSING.value,
+        expected_row_version=record.row_version,
+        status=status.value,
+    )
+    if updated is None:  # pragma: no cover - the row lock serialises changes
+        return False
+    await trace.append(
+        uow,
+        actor=actor,
+        payload=ReviewsChallengeFailed(
+            challenge_id=str(record.id),
+            workflow_run_id=str(run_id),
+            run_status=run_status,
+            error_code=error_code,
+        ),
+        subject_type=SUBJECT_TYPE,
+        subject_id=record.id,
+        opportunity_id=record.opportunity_id,
+        subject_version=updated.row_version,
+    )
+    version = await estimates.reviewable_version(uow, record.estimate_version_id)
+    number = 0 if version is None else version.version
+    recipients, challenger = await _people(uow, record)
+    for recipient in recipients:
+        await notifications.notify(
+            uow,
+            recipient_id=recipient,
+            kind=NotificationKind.CHALLENGE_FAILED,
+            opportunity_id=record.opportunity_id,
+            subject_type=VERSION_SUBJECT_TYPE,
+            subject_id=record.estimate_version_id,
+            subject_version=number,
+            summary=failed_summary(challenger, number),
+            dedupe_key=f"challenge:{record.id}:failed:{recipient}",
+        )
+    _log.info(
+        "reviews.challenge_failed",
+        extra={
+            "opportunity_id": str(record.opportunity_id),
+            "challenge_id": str(record.id),
+            "run_id": str(run_id),
+            "run_status": run_status,
+            "error_code": error_code,
+        },
+    )
+    return True
+
+
+async def challenge_version_link(
+    uow: UnitOfWork, version_id: UUID
+) -> tuple[int, int | None] | None:
+    """`reviews.public.challenge_version_link` (Story 9.6, a Challenge outcome Inbox item's
+    link): the Estimate Version's number and, when a Challenge's reassessment created it, the
+    number of the version it was created from; None when the version is unknown. No
+    authorization."""
+    version = await estimates.reviewable_version(uow, version_id)
+    if version is None:
+        return None
+    record = await repo.challenge_by_new_version(uow, version_id)
+    if record is None:
+        return version.version, None
+    base = await estimates.reviewable_version(uow, record.estimate_version_id)
+    return version.version, None if base is None else base.version

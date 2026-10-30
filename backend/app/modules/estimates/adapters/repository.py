@@ -282,9 +282,11 @@ async def insert_version(
     source: str = "model",
     source_run_id: UUID | None = None,
     created_by: UUID | None = None,
+    idempotency_key: str | None = None,
 ) -> None:
     """A `draft` Estimate Version with its lines and their Requirement links. `created_by`
-    (Story 9.1): the person who triggered it, if known."""
+    (Story 9.1): the person who triggered it, if known. `idempotency_key` (Story 9.6): the
+    node key of the Challenge run that wrote it."""
     await uow.session.execute(
         insert(EstimateVersionRow).values(
             id=version_id,
@@ -298,6 +300,7 @@ async def insert_version(
             source=source,
             source_run_id=source_run_id,
             created_by=created_by,
+            idempotency_key=idempotency_key,
             row_version=1,
         )
     )
@@ -642,6 +645,21 @@ async def links_for(uow: UnitOfWork, line_ids: list[UUID]) -> list[LineLinkRecor
         )
         for row in rows.scalars()
     ]
+
+
+async def challenge_version_of(uow: UnitOfWork, run_id: UUID) -> VersionRecord | None:
+    """Story 9.6: the version a Challenge's run stored (at most one: a unique index)."""
+    row = (
+        await uow.session.execute(
+            select(EstimateVersionRow)
+            .where(
+                EstimateVersionRow.source == "challenge",
+                EstimateVersionRow.source_run_id == run_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _version(row)
 
 
 async def version_by_number(

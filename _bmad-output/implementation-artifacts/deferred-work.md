@@ -331,3 +331,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
   summary: A blob whose unlink failed after the purge committed stays on disk at `ref_count = 0`; add a sweep of zero-ref blobs.
   evidence: `_delete_blobs` logs `purge.blob_delete_failed` and no later run revisits that sha256.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-6-challenge-reassessment.md`
+  summary: A Challenge run's Conflict detection runs before the new Estimate Version exists, so any Conflict rule that reads Estimate lines checks the challenged version, not the new one (unverified, medium if true).
+  evidence: The frozen plan order is specialists → conflict_detection → Critic → new_version. Settle it by checking whether `conflicts.detect_for_run`'s rules read Estimate lines.

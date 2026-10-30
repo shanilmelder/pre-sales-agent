@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-21-2026 19:00
-last_updated: 2026-10-28
+last_updated: 2026-10-30
 project: pre-sales-agent
 project_key: NOKEY
 tracking_system: file-system
@@ -131,7 +131,7 @@ development_status:
   9-3-reviewers-record-decisions-in-the-review-panel: review
   9-4-author-side-review-outcomes-and-superseded-requests: review
   9-5-raise-a-challenge-and-confirm-reassessment: review
-  9-6-challenge-reassessment-run-creates-a-new-estimate-version: in-progress
+  9-6-challenge-reassessment-run-creates-a-new-estimate-version: review
   9-7-set-the-baseline: review
   9-8-decision-trace-tab: done
   9-9-trace-any-number-to-its-evidence-and-compare-versions: review

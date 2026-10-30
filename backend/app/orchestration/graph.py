@@ -31,7 +31,7 @@ Logs carry ids and codes only.
 
 import operator
 from collections.abc import Callable, Coroutine, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, TypedDict
 from uuid import UUID
 
@@ -148,6 +148,8 @@ async def run_task(invocation: Invocation, task_id: UUID) -> RunState:
                 started = await workflows.begin_task(uow, task_id)
                 if started is None:
                     return {}
+                # Story 9.6: the job attempt (a non-agent node's idempotency key holds it).
+                started = replace(started, attempt=invocation.run.attempt)
                 prepared = await executor.prepare(uow, started)
     except Exception as exc:  # e.g. the database: the task stays pending for the handler
         invocation.errors.append(exc)

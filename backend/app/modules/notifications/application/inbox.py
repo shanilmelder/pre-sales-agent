@@ -10,7 +10,9 @@ those modules import `notifications.public` to create items. When the subject is
 open the item has no `href` and shows its status. Story 9.3: a Review Request item is
 closed for a reader who is no longer the request's reviewer (it was escalated). Story 9.4: an
 outcome item is open while its request is pending, and a superseded request reads
-"Superseded by v4".
+"Superseded by v4". Story 9.6: a Challenge's outcome item (subject: an Estimate Version) is
+never open and always links: `challenge_completed` to the new version's diff against the
+challenged one (`?version=4&diff=3`), `challenge_failed` to the unchanged version.
 """
 
 from dataclasses import dataclass
@@ -39,6 +41,7 @@ REVIEW_SUBJECT = "reviews.review_request"
 CHALLENGE_SUBJECT = "reviews.challenge"
 DECISION_SUBJECT = "workflows.decision"
 CONFLICT_SUBJECT = "conflicts.conflict"
+VERSION_SUBJECT = "estimates.estimate_version"
 NOT_FOUND = "No Inbox item with this id."
 USERS_ONLY = "Only a signed-in user has an Inbox."
 DECISION_LABELS = {"open": "Waiting", "resolved": "Resolved", "cancelled": "Cancelled"}
@@ -132,6 +135,17 @@ async def _subject(uow: UnitOfWork, record: NotificationRecord) -> _Subject:
             href if is_open else None,
             sender,
         )
+    if record.subject_type == VERSION_SUBJECT:
+        from app.modules.reviews.application import public as reviews
+
+        found = await reviews.challenge_version_link(uow, record.subject_id)
+        if found is None:
+            return _Subject(None, None, False, None)
+        number, base = found
+        query = f"?version={number}"
+        if NotificationKind(record.kind) == NotificationKind.CHALLENGE_COMPLETED and base:
+            query += f"&diff={base}"
+        return _Subject(None, None, False, _tab(record.opportunity_id, "estimate", query))
     if record.subject_type == DECISION_SUBJECT:
         from app.modules.workflows.application import public as workflows
 

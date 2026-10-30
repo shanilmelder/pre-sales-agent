@@ -17,6 +17,7 @@ from app.modules.workflows.domain.runs import (
     DecisionChoice,
     DecisionKind,
     DecisionStatus,
+    RunType,
     TaskAgent,
     TaskSkipReason,
 )
@@ -60,10 +61,11 @@ class RunDecision(BaseModel):
 
 class PlanVersionTask(BaseModel):
     """One task of a plan version: its Agent and the config version it was pinned to
-    (`config_version`: that version's number for the Agent)."""
+    (`config_version`: that version's number for the Agent). Story 9.6: a non-agent node
+    (`conflict_detection`, `new_version`) pins none."""
 
     agent: TaskAgent
-    config_version_id: str
+    config_version_id: str | None
     config_version: int | None
 
 
@@ -90,6 +92,8 @@ class AssessmentRun(BaseModel):
     queued_at: datetime
     finished_at: datetime | None
     tasks: list[AssessmentTask]
+    run_type: RunType = RunType.ASSESSMENT
+    """Story 9.6: `challenge` for a Challenge's reassessment ("Challenge reassessment")."""
     plan_version: int = 1
     decisions: list[RunDecision] = []
     plan_versions: list[PlanVersion] = []

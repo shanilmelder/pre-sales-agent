@@ -13,6 +13,12 @@ A `TaskExecutor` has three steps, which the node wrapper (`graph.py`) calls in o
 The specialist Agents' executors and (Story 6.4) the Critic's are registered here; tests swap
 in fixture ones. The Critic's executor reads its inputs through `assessments`' public query
 (the ToolGateway is not wired into its call yet).
+
+Story 9.6: a Challenge's reassessment run adds two non-agent nodes under their task's
+`agent` key, `conflict_detection` and `new_version`, with the same steps and no model call:
+`run` does nothing, and `accept` does the work through `workflows`' public API in the node's
+Unit of Work. A specialist task of such a run also gets the Challenge as a fenced data block
+(`SpecialistTask.challenge`).
 """
 
 from collections.abc import Callable, MutableMapping, Sequence
@@ -24,7 +30,13 @@ from app.agents.critic_agent.agent import CriticAgent
 from app.agents.engineering_agent.agent import EngineeringAgent
 from app.agents.pm_agent.agent import PmAgent
 from app.agents.security_agent.agent import SecurityAgent
-from app.agents.specialist.agent import GapBlock, RequirementBlock, SpecialistAgent, SpecialistTask
+from app.agents.specialist.agent import (
+    ChallengeBlock,
+    GapBlock,
+    RequirementBlock,
+    SpecialistAgent,
+    SpecialistTask,
+)
 from app.modules.assessments.application import public as assessments
 from app.modules.assessments.application.public import (
     CRITIC_AGENT,
@@ -33,7 +45,8 @@ from app.modules.assessments.application.public import (
     CriticInputs,
 )
 from app.modules.registry.application import public as registry
-from app.modules.workflows.application.public import NodeTask
+from app.modules.workflows.application import public as workflows
+from app.modules.workflows.application.public import NodeTask, RunType, TaskAgent
 from app.platform.actor import Actor
 from app.platform.config import Settings, get_settings
 from app.platform.model_gateway import provider
@@ -66,6 +79,25 @@ class SpecialistPrepared:
     task: NodeTask
     inputs: AssessmentInputs = field(repr=False)
     config: AgentConfig
+    challenge: ChallengeBlock | None = field(default=None, repr=False)
+
+
+async def _challenge(uow: UnitOfWork, task: NodeTask) -> ChallengeBlock | None:
+    """Story 9.6: the Challenge a task of a challenge run answers; None for any other run."""
+    if task.run_type != RunType.CHALLENGE or task.trigger_ref is None:
+        return None
+    # Imported here: reviews imports workflows' public API, which this module imports.
+    from app.modules.reviews.application import public as reviews
+
+    brief = await reviews.challenge_brief(uow, task.trigger_ref)
+    if brief is None:  # pragma: no cover - Challenges are never deleted
+        return None
+    return ChallengeBlock(
+        reason=brief.reason,
+        target_kind=brief.target_kind,
+        target_label=brief.target_label,
+        challenged_version=brief.estimate_version,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,8 +112,8 @@ class SpecialistExecutor:
         """Read the Requirements and open Gaps through the ToolGateway as the task's Agent at
         its pinned config version (Story 5.4), in the node's Unit of Work. A denied read
         reads nothing: no Requirements means no model call; no Gaps, a prompt without."""
-        versions = await registry.get_config_versions(uow, [task.config_version_id])
-        version = versions[task.config_version_id]
+        versions = await registry.get_config_versions(uow, [task.pinned])
+        version = versions[task.pinned]
         settings = executor_settings()
         config = registry.agent_config(version, settings)
         context = ToolContext(
@@ -97,7 +129,9 @@ class SpecialistExecutor:
         requirements = await tools.call(context, REQUIREMENT_LIST, uow=uow)
         open_gaps = await tools.call(context, GAP_LIST, uow=uow)
         inputs = assessments.build_inputs(_items(requirements), _items(open_gaps))
-        return SpecialistPrepared(task=task, inputs=inputs, config=config)
+        return SpecialistPrepared(
+            task=task, inputs=inputs, config=config, challenge=await _challenge(uow, task)
+        )
 
     async def run(self, prepared: SpecialistPrepared) -> AgentResult | None:
         if not prepared.inputs.requirements:  # nothing to assess: no model call
@@ -121,6 +155,7 @@ class SpecialistExecutor:
                     )
                     for g in prepared.inputs.gaps
                 ],
+                challenge=prepared.challenge,
             )
         )
 
@@ -132,7 +167,7 @@ class SpecialistExecutor:
             opportunity_id=task.opportunity_id,
             run_id=task.run_id,
             agent=self.agent,
-            config_version_id=task.config_version_id,
+            config_version_id=task.pinned,
             result=result,
             inputs=prepared.inputs,
             actor=Actor(type="agent", id=prepared.config.actor_id),
@@ -159,8 +194,8 @@ class CriticExecutor:
     async def prepare(self, uow: UnitOfWork, task: NodeTask) -> CriticPrepared:
         """Read the run's Assessments, the active Requirements and the uncovered ones, in the
         node's Unit of Work, with the task's pinned config version."""
-        versions = await registry.get_config_versions(uow, [task.config_version_id])
-        config = registry.agent_config(versions[task.config_version_id], executor_settings())
+        versions = await registry.get_config_versions(uow, [task.pinned])
+        config = registry.agent_config(versions[task.pinned], executor_settings())
         inputs = await assessments.load_critic_inputs(uow, task.opportunity_id, task.run_id)
         return CriticPrepared(task=task, inputs=inputs, config=config)
 
@@ -188,6 +223,39 @@ class CriticExecutor:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ConflictDetectionExecutor:
+    """Story 9.6: a challenge run's `conflict_detection` node (no model call)."""
+
+    async def prepare(self, uow: UnitOfWork, task: NodeTask) -> NodeTask:
+        return task
+
+    async def run(self, prepared: NodeTask) -> bool:
+        return True  # nothing to call; `accept` does the work
+
+    async def accept(
+        self, uow: UnitOfWork, task: NodeTask, prepared: NodeTask, result: bool
+    ) -> None:
+        await workflows.detect_challenge_conflicts(uow, task)
+
+
+@dataclass(frozen=True, slots=True)
+class NewVersionExecutor:
+    """Story 9.6: a challenge run's `new_version` node (no model call): the new Estimate
+    Version, the Challenge completed. `prepared` keeps the job attempt for the node key."""
+
+    async def prepare(self, uow: UnitOfWork, task: NodeTask) -> NodeTask:
+        return task
+
+    async def run(self, prepared: NodeTask) -> bool:
+        return True  # nothing to call; `accept` does the work
+
+    async def accept(
+        self, uow: UnitOfWork, task: NodeTask, prepared: NodeTask, result: bool
+    ) -> None:
+        await workflows.write_challenge_version(uow, prepared)
+
+
 EXECUTORS: MutableMapping[str, TaskExecutor] = {
     AssessmentAgent.ENGINEERING.value: SpecialistExecutor(
         AssessmentAgent.ENGINEERING,
@@ -200,6 +268,8 @@ EXECUTORS: MutableMapping[str, TaskExecutor] = {
         AssessmentAgent.SECURITY, lambda gateway, config: SecurityAgent(gateway, config=config)
     ),
     CRITIC_AGENT: CriticExecutor(),
+    TaskAgent.CONFLICT_DETECTION.value: ConflictDetectionExecutor(),
+    TaskAgent.NEW_VERSION.value: NewVersionExecutor(),
 }
 """The executor of each Agent id a plan may contain."""
 

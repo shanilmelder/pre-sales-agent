@@ -105,10 +105,12 @@ DECIDED = frozenset({VersionStatus.REJECTED, VersionStatus.APPROVED})
 
 class VersionSource(StrEnum):
     """Where an Estimate Version's lines came from (Story 8.3): an accepted model draft, or
-    the specialist Assessments when an assessment run finished."""
+    the specialist Assessments when an assessment run finished; Story 9.6: a Challenge's
+    reassessment run (the challenged version's lines, with the rerun ones rebuilt)."""
 
     MODEL = "model"
     ASSESSMENTS = "assessments"
+    CHALLENGE = "challenge"
 
 
 class DraftStatus(StrEnum):

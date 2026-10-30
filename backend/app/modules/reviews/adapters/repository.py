@@ -533,6 +533,7 @@ class ChallengeRecord:
     confirmed: list[str] | None = None
     decline_reason: str | None = field(default=None, repr=False)
     workflow_run_id: UUID | None = None
+    new_version_id: UUID | None = None
     status: str = "awaiting_confirmation"
     row_version: int = 1
     created_at: datetime | None = None
@@ -555,6 +556,7 @@ def _challenge(row: ChallengeRow) -> ChallengeRecord:
         confirmed=None if row.confirmed is None else list(row.confirmed),
         decline_reason=row.decline_reason,
         workflow_run_id=row.workflow_run_id,
+        new_version_id=row.new_version_id,
         status=row.status,
         row_version=row.row_version,
         created_at=row.created_at,
@@ -641,6 +643,18 @@ async def challenges_for(
     return [_challenge(row) for row in rows.scalars()]
 
 
+async def challenge_by_new_version(uow: UnitOfWork, version_id: UUID) -> ChallengeRecord | None:
+    """Story 9.6: the completed Challenge whose reassessment created this Estimate Version."""
+    row = (
+        await uow.session.execute(
+            select(ChallengeRow)
+            .where(ChallengeRow.new_version_id == version_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _challenge(row)
+
+
 async def update_challenge(
     uow: UnitOfWork,
     challenge_id: UUID,
@@ -651,6 +665,7 @@ async def update_challenge(
     confirmed: list[str] | None = None,
     workflow_run_id: UUID | None = None,
     decline_reason: str | None = None,
+    new_version_id: UUID | None = None,
 ) -> ChallengeRecord | None:
     """Move the Challenge from `from_status` at `expected_row_version` to `status` with the
     values given, bumping `row_version`; None (and no change) otherwise."""
@@ -665,6 +680,8 @@ async def update_challenge(
         values["workflow_run_id"] = workflow_run_id
     if decline_reason is not None:
         values["decline_reason"] = decline_reason
+    if new_version_id is not None:
+        values["new_version_id"] = new_version_id
     changed = (
         await uow.session.execute(
             update(ChallengeRow)

@@ -13,7 +13,7 @@ _NOW = text("now()")
 KINDS = (
     "('review_requested', 'review_reminder', 'review_cancelled', 'run_waiting', "
     "'conflict_escalated', 'review_outcome', 'review_replied', 'challenge_raised', "
-    "'challenge_declined')"
+    "'challenge_declined', 'challenge_completed', 'challenge_failed')"
 )
 
 

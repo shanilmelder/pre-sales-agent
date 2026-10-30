@@ -82,6 +82,7 @@ describe("assessment labels", () => {
     ) => ({
       id: "x",
       status,
+      run_type: "assessment" as const,
       created_at: "2026-10-05T09:00:00Z",
       queued_at: "2026-10-05T09:00:00Z",
       finished_at: null,

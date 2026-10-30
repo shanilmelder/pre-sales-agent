@@ -18,6 +18,7 @@ from app.modules.assessments.application.assessment import (
     load_inputs,
     run_assessment_snapshots,
     run_finding_snapshots,
+    run_sizing_pairs,
 )
 from app.modules.assessments.application.assessments import (
     AssessmentCitations,
@@ -163,6 +164,7 @@ __all__ = [
     "run_assessment_reads",
     "run_assessment_snapshots",
     "run_finding_snapshots",
+    "run_sizing_pairs",
     "start_review",
     "supply_evidence",
 ]

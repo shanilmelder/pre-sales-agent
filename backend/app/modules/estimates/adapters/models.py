@@ -90,9 +90,16 @@ class EstimateVersionRow(RowVersioned, Base):
             "('queued', 'running', 'succeeded', 'failed')",
             name="proposal_status",
         ),
-        CheckConstraint("source IN ('model', 'assessments')", name="source"),
+        CheckConstraint("source IN ('model', 'assessments', 'challenge')", name="source"),
         CheckConstraint(
-            "(source = 'assessments') = (source_run_id IS NOT NULL)", name="source_has_run"
+            "(source IN ('assessments', 'challenge')) = (source_run_id IS NOT NULL)",
+            name="source_has_run",
+        ),
+        Index(
+            "uq_estimates_estimate_versions_challenge_run",
+            "source_run_id",
+            unique=True,
+            postgresql_where=text("source = 'challenge'"),
         ),
     )
 
@@ -115,6 +122,9 @@ class EstimateVersionRow(RowVersioned, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     """Story 8.6: when it was submitted; null for a version never submitted."""
+    idempotency_key: Mapped[str | None] = mapped_column(Text)
+    """Story 9.6: the `node:<run>:<task>:<attempt>` key of the Challenge run node that wrote
+    it (a replay finds the version by `source_run_id`); null otherwise."""
     created_by: Mapped[UUID | None] = mapped_column(Uuid)
     """Story 9.1: the person (an identity user id) who triggered the version (for one from the
     Assessments, the user who started the run); null when unknown, and then no author check
