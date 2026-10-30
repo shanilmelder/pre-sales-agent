@@ -2,7 +2,9 @@
 // be tested without constructing it (the SDK reads its environment on construction).
 export const DEFAULT_SCOPE = "openid profile email offline_access";
 
-export function authorizationParameters(env: NodeJS.ProcessEnv = process.env) {
+export function authorizationParameters(
+  env: Record<string, string | undefined> = process.env,
+) {
   const audience = env.AUTH0_AUDIENCE?.trim();
   return {
     ...(audience ? { audience } : {}),

@@ -27,11 +27,28 @@ worker (wave 2) → web (wave 3).
 | `database.appSecret` (`db-psa-app`) | `username`, `password`: role `psa_app` |
 | `database.ownerSecret` (`db-psa`) | `username`, `password`: schema owner `psa` (migrations only) |
 | `backendSecret` (`pre-sales-agent`) | `PSA_DOWNLOAD_SIGNING_KEY` (required with `PSA_ENV=prod`), `PSA_OPENAI_API_KEY`, `PSA_RESEND_API_KEY` |
-| `auth.existingSecret` (`pre-sales-agent-auth0`) | `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET` |
+| `auth.existingSecret` (`pre-sales-agent-auth0`) | `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`; may also hold `AUTH0_CLIENT_ID` (it overrides `auth.clientId`) |
+| `auth.backendSecret` (optional) | Settings the identity provider generates for the api/worker, e.g. `PSA_AUTH0_AUDIENCE` |
 | `imagePullSecrets` | Registry credentials if the images are private |
 
 On the Tiqri platform, `scripts/new-db-credentials.sh` in tiqri-k8s-gitops creates the two
 database secrets together with the matching Postgres role passwords.
+
+## Identity provider
+
+Auth0 by default; any OIDC provider works (Zitadel on the Tiqri platform). For a non-Auth0
+provider set, in `config` (backend, `PSA_AUTH_*`): `ISSUER`, `JWKS_URL`, optionally
+`USERINFO_URL` (when access tokens carry no email/name), `EMAIL_CLAIM`, `NAME_CLAIM`,
+`ROLES_CLAIM`, `ROLES_FORMAT` (`list` or `keys`) and `PERMISSIONS_FROM_ROLES`; and in `auth`
+(web): `domain` (the provider's host), `scope`, and the client id and secret. The token `aud`
+must equal `PSA_AUTH0_AUDIENCE`. User roles must equal the platform role names
+(`presales_engineer`, `platform_administrator`, ...). The tiqri-k8s-gitops repo has a worked
+example in `projects/pre-sales-agent/*/values/`.
+
+## Demo data
+
+`python -m scripts.seed_demo` (in the api image, as the app role) adds a demo presales
+engineer and five demo Opportunities; it is idempotent. `--dry-run` lists what it would do.
 
 ## Key values
 
