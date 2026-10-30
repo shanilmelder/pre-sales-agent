@@ -79,4 +79,10 @@ capabilities:
 - secretRef:
     name: {{ .Values.backendSecret }}
     optional: true
+{{- /* Provider-issued settings (e.g. PSA_AUTH0_AUDIENCE, which Zitadel generates). */}}
+{{- with .Values.auth.backendSecret }}
+- secretRef:
+    name: {{ . }}
+    optional: true
+{{- end }}
 {{- end -}}

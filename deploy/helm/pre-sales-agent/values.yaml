@@ -105,6 +105,9 @@ auth:
   domain: your-tenant.eu.auth0.com
   audience: https://api.pre-sales-agent
   clientId: ""
+  # Optional secret loaded into the api/worker environment after the settings above, for
+  # values the identity provider generates (Zitadel: PSA_AUTH0_AUDIENCE, the project id).
+  backendSecret: ""
   # OIDC scopes the web app requests; empty = openid profile email offline_access.
   # Zitadel also needs urn:zitadel:iam:org:project:roles to put roles in the token.
   scope: ""
