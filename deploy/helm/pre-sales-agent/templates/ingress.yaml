@@ -15,9 +15,11 @@ metadata:
     {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
   tls:
     - hosts: [{{ .Values.host | quote }}]
       secretName: {{ default (printf "%s-tls" (include "psa.fullname" .)) .Values.ingress.tls.secretName }}
+  {{- end }}
   rules:
     - host: {{ .Values.host | quote }}
       http:

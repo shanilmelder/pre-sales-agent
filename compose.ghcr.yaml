@@ -1,8 +1,8 @@
-# Runs the stack from images pushed to Nexus (no local build).
-#   docker login nexus.shanilmelder.com
+# Runs the stack from images pushed to GHCR (no local build).
+#   echo $GHCR_TOKEN | docker login ghcr.io -u <github-user> --password-stdin   # token: read:packages
 #   cp .env.example .env
-#   docker compose -f compose.nexus.yaml pull
-#   docker compose -f compose.nexus.yaml up --wait -d
+#   docker compose -f compose.ghcr.yaml pull
+#   docker compose -f compose.ghcr.yaml up --wait -d
 # Pick another tag with PSA_IMAGE_TAG (default: latest).
 name: pre-sales-agent
 
@@ -39,7 +39,7 @@ services:
 
   api:
     <<: *restart
-    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-api:${PSA_IMAGE_TAG:-latest}
+    image: ghcr.io/shanilmelder/pre-sales-agent/pre-sales-agent-api:${PSA_IMAGE_TAG:-latest}
     environment:
       <<: *backend-env
       PSA_AUTH0_DOMAIN: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env}
@@ -73,7 +73,7 @@ services:
 
   worker:
     <<: *restart
-    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-worker:${PSA_IMAGE_TAG:-latest}
+    image: ghcr.io/shanilmelder/pre-sales-agent/pre-sales-agent-worker:${PSA_IMAGE_TAG:-latest}
     command: ["python", "-m", "app.main_worker"]
     environment:
       <<: *backend-env
@@ -113,7 +113,7 @@ services:
 
   web:
     <<: *restart
-    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-web:${PSA_IMAGE_TAG:-latest}
+    image: ghcr.io/shanilmelder/pre-sales-agent/pre-sales-agent-web:${PSA_IMAGE_TAG:-latest}
     environment:
       PSA_API_URL: http://api:8000
       AUTH0_DOMAIN: ${AUTH0_DOMAIN:?set AUTH0_DOMAIN in .env}

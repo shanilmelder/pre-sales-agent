@@ -4,7 +4,7 @@
 nameOverride: ""
 fullnameOverride: ""
 
-# Registry credentials, e.g. [{ name: registry-nexus }] (a dockerconfigjson secret in the namespace).
+# Registry credentials, e.g. [{ name: registry-ghcr }] (a dockerconfigjson secret in the namespace).
 imagePullSecrets: []
 
 # Public URL of the web app. Used for links in emails (PSA_WEB_BASE_URL), Auth0 callbacks
@@ -13,7 +13,7 @@ host: pre-sales-agent.example.com
 
 api:
   image:
-    repository: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-api
+    repository: ghcr.io/shanilmelder/pre-sales-agent/pre-sales-agent-api
     tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
@@ -27,7 +27,7 @@ api:
 
 worker:
   image:
-    repository: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-worker
+    repository: ghcr.io/shanilmelder/pre-sales-agent/pre-sales-agent-worker
     tag: ""
     pullPolicy: IfNotPresent
   # The job queue supports more than one worker process; PSA_WORKER_CONCURRENCY must stay 1.
@@ -43,7 +43,7 @@ worker:
 
 web:
   image:
-    repository: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-web
+    repository: ghcr.io/shanilmelder/pre-sales-agent/pre-sales-agent-web
     tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
@@ -58,10 +58,13 @@ web:
 ingress:
   enabled: true
   className: traefik
-  # cert-manager ClusterIssuer; empty = bring your own TLS secret (tls.secretName).
-  clusterIssuer: letsencrypt
+  # On the k3s platform TLS ends at the Cloudflare edge and Traefik receives plain HTTP, so
+  # in-cluster TLS is off. For in-cluster certificates set tls.enabled and either a
+  # cert-manager clusterIssuer or your own TLS secret (tls.secretName).
+  clusterIssuer: ""
   annotations: {}
   tls:
+    enabled: false
     secretName: ""   # default: <fullname>-tls
 
 # Database migrations (Alembic, as the schema owner) run before api/worker roll out.
