@@ -63,6 +63,7 @@ from app.modules.assessments.application import public as assessments
 from app.modules.assessments.application.public import RunErrorCode
 from app.modules.conflicts.application import public as conflicts
 from app.modules.estimates.application import public as estimates
+from app.modules.intake.application import public as intake
 from app.modules.notifications.application import public as notifications
 from app.modules.notifications.application.public import NotificationKind
 from app.modules.opportunities.application import public as opportunities
@@ -78,6 +79,7 @@ from app.modules.workflows.adapters.repository import (
 from app.modules.workflows.application import progress
 from app.modules.workflows.domain.runs import (
     DECISION_SUBJECT_TYPE,
+    NON_AGENT_NODES,
     PLAN_VERSION,
     RUN_ACTIVE,
     RUN_IN_PROGRESS,
@@ -88,6 +90,7 @@ from app.modules.workflows.domain.runs import (
     DecisionKind,
     DecisionStatus,
     RunType,
+    TaskAgent,
     chosen_skip,
     decision_summary,
     run_status,
@@ -198,7 +201,12 @@ async def queue_run(
     Agent is not active asks a person when its node starts (Story 5.5). Story 9.5: with
     `agents`, only those specialists are planned (a Challenge's confirmed Assessments), still
     followed by the Critic; `run_type`, `trigger_ref` and `idempotency_key` are stored on the
-    run. The caller holds the Opportunity's run lock."""
+    run. The caller holds the Opportunity's run lock.
+
+    Story 9.6: a `challenge` run plans the confirmed specialists, then `conflict_detection`
+    (after them all), the Critic (after it) and `new_version` (after the Critic; it requires
+    every specialist and Conflict detection to have succeeded), and its plan v1 records the
+    pins (`challenge_pins`)."""
     run_id = new_id()
     tasks: list[NewTask] = []
     planned = set(agents) if agents is not None else None
@@ -207,15 +215,36 @@ async def queue_run(
             continue
         current = await registry.current_config(uow, agent.value)
         tasks.append(NewTask(id=new_id(), agent=agent.value, config_version_id=current.current.id))
-    critic = await registry.current_config(uow, assessments.CRITIC_AGENT)
-    tasks.append(
-        NewTask(
-            id=new_id(),
-            agent=assessments.CRITIC_AGENT,
-            config_version_id=critic.current.id,
-            after=tuple(t.id for t in tasks),
+    specialists = tuple(t.id for t in tasks)
+    challenge = run_type == RunType.CHALLENGE
+    if challenge:
+        tasks.append(
+            NewTask(
+                id=new_id(),
+                agent=TaskAgent.CONFLICT_DETECTION.value,
+                config_version_id=None,
+                after=specialists,
+            )
         )
+    conflict_ids = tuple(t.id for t in tasks if t.agent == TaskAgent.CONFLICT_DETECTION.value)
+    critic = await registry.current_config(uow, assessments.CRITIC_AGENT)
+    critic_task = NewTask(
+        id=new_id(),
+        agent=assessments.CRITIC_AGENT,
+        config_version_id=critic.current.id,
+        after=(tasks[-1].id,) if challenge else specialists,
     )
+    tasks.append(critic_task)
+    if challenge:
+        tasks.append(
+            NewTask(
+                id=new_id(),
+                agent=TaskAgent.NEW_VERSION.value,
+                config_version_id=None,
+                requires=(*specialists, *conflict_ids),
+                after=(critic_task.id,),
+            )
+        )
     await repo.insert_run(
         uow,
         run_id=run_id,
@@ -232,13 +261,28 @@ async def queue_run(
         version=PLAN_VERSION,
         tasks=[PlanTask(t.id, t.agent, t.config_version_id, t.after) for t in tasks],
         actor=actor,
+        pins=await challenge_pins(uow, opportunity_id) if challenge else None,
     )
     await enqueue(uow, ExecuteRun(run_id=run_id), opportunity_id=opportunity_id)
-    await _trace_started(uow, run_id, opportunity_id, actor, agent_count=len(tasks))
+    agent_count = sum(1 for t in tasks if t.agent not in NON_AGENT_NODES)
+    await _trace_started(uow, run_id, opportunity_id, actor, agent_count=agent_count)
     await progress.run_changed(
         uow, opportunity_id=opportunity_id, run_id=run_id, status=AssessmentRunStatus.QUEUED
     )
     return run_id
+
+
+async def challenge_pins(uow: UnitOfWork, opportunity_id: UUID) -> dict[str, Any]:
+    """Story 9.6: what a challenge run's plan is made against: the active Requirements and
+    the Sources at their versions, and the latest Estimate Version number (a newer one when
+    the `new_version` node runs means the Estimate changed meanwhile)."""
+    requirements = await intake.active_requirement_snapshots(uow, opportunity_id)
+    sources = await intake.source_version_pins(uow, opportunity_id)
+    return {
+        "requirements": [{"id": str(r.id), "version": r.version} for r in requirements],
+        "sources": [{"id": str(sid), "version": version} for sid, version in sources],
+        "latest_estimate_version": await estimates.latest_version_number(uow, opportunity_id),
+    }
 
 
 async def enqueue_run(uow: UnitOfWork, opportunity_id: UUID) -> UUID:
@@ -397,6 +441,10 @@ async def cancel(uow: UnitOfWork, run: RunRecord, actor: Actor) -> tuple[int, in
         run_id=run.id,
         status=AssessmentRunStatus.CANCELLED,
     )
+    if run.run_type == RunType.CHALLENGE:
+        # Story 9.6: no Estimate is built; the Challenge fails and its version stays as it is.
+        await _end_challenge(uow, run, tasks, AssessmentRunStatus.CANCELLED, actor=actor)
+        return skipped, succeeded
     if assessed:
         # Story 8.3: the Assessments that completed before the cancel are current, so the
         # Estimate is built from them and the Conflicts re-checked, as `finish_run` does.
@@ -490,6 +538,10 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
             **completed.model_dump(),
         },
     )
+    if record.run_type == RunType.CHALLENGE:
+        # Story 9.6: the run's own nodes detected the Conflicts and stored the new version.
+        await _end_challenge(uow, record, tasks, status)
+        return status
     if not specialists_changed:
         return status
     if _specialists_succeeded(tasks):
@@ -506,13 +558,45 @@ async def finish_run(uow: UnitOfWork, run_id: UUID) -> AssessmentRunStatus | Non
     return status
 
 
+async def _end_challenge(
+    uow: UnitOfWork,
+    run: RunRecord,
+    tasks: Sequence[TaskRecord],
+    status: AssessmentRunStatus,
+    *,
+    actor: Actor = SYSTEM,
+) -> None:
+    """Story 9.6: a challenge run ended. Unless its `new_version` node succeeded (which
+    completed the Challenge), the Challenge fails: the run's status and the first error code
+    (the node's first) are traced, and the owner and the challenger are told."""
+    # Imported here: reviews starts challenge runs through this module's public API.
+    from app.modules.reviews.application import public as reviews
+
+    if run.trigger_ref is None:  # pragma: no cover - a challenge run always has its Challenge
+        return
+    node = next((t for t in tasks if t.agent == TaskAgent.NEW_VERSION.value), None)
+    if node is not None and node.status == AssessmentTaskStatus.SUCCEEDED:
+        return
+    ordered = [t for t in (node, *tasks) if t is not None]
+    code = next((t.error_code for t in ordered if t.error_code is not None), None)
+    await reviews.fail_challenge(
+        uow,
+        run.trigger_ref,
+        run_id=run.id,
+        run_status=status.value,
+        error_code=code,
+        actor=actor,
+    )
+
+
 def _specialists_succeeded(tasks: Sequence[TaskRecord]) -> int:
     """How many specialist tasks succeeded (each stored an Assessment); the Critic's task is
     not one."""
     return sum(
         1
         for t in tasks
-        if t.status == AssessmentTaskStatus.SUCCEEDED and t.agent != assessments.CRITIC_AGENT
+        if t.status == AssessmentTaskStatus.SUCCEEDED
+        and t.agent not in (assessments.CRITIC_AGENT, *NON_AGENT_NODES)
     )
 
 

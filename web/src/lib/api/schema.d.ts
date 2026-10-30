@@ -3975,6 +3975,8 @@ export interface components {
             finished_at: string | null;
             /** Tasks */
             tasks: components["schemas"]["AssessmentTask"][];
+            /** @default assessment */
+            run_type: components["schemas"]["RunType"];
             /**
              * Plan Version
              * @default 1
@@ -7504,7 +7506,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "review_requested" | "review_reminder" | "review_cancelled" | "run_waiting" | "conflict_escalated" | "review_outcome" | "review_replied" | "challenge_raised" | "challenge_declined";
+        NotificationKind: "review_requested" | "review_reminder" | "review_cancelled" | "run_waiting" | "conflict_escalated" | "review_outcome" | "review_replied" | "challenge_raised" | "challenge_declined" | "challenge_completed" | "challenge_failed";
         /**
          * Opportunity
          * @description One Opportunity as a reader sees it. `row_version` is also the `ETag`.
@@ -7891,12 +7893,13 @@ export interface components {
         /**
          * PlanVersionTask
          * @description One task of a plan version: its Agent and the config version it was pinned to
-         *     (`config_version`: that version's number for the Agent).
+         *     (`config_version`: that version's number for the Agent). Story 9.6: a non-agent node
+         *     (`conflict_detection`, `new_version`) pins none.
          */
         PlanVersionTask: {
             agent: components["schemas"]["TaskAgent"];
             /** Config Version Id */
-            config_version_id: string;
+            config_version_id: string | null;
             /** Config Version */
             config_version: number | null;
         };
@@ -8954,12 +8957,20 @@ export interface components {
          * RunErrorCode
          * @enum {string}
          */
-        RunErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled";
+        RunErrorCode: "model_unavailable" | "model_timeout" | "output_invalid" | "registry_agent_disabled" | "estimate_changed";
         /**
          * RunStatus
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "succeeded" | "failed";
+        /**
+         * RunType
+         * @description What started a run (Story 9.5): an assessment of every agent, or a Challenge's
+         *     reassessment of the Assessments its owner confirmed (Story 9.6: then Conflict detection,
+         *     the Critic and the new Estimate Version).
+         * @enum {string}
+         */
+        RunType: "assessment" | "challenge";
         /**
          * SavedActuals
          * @description What **Save Actuals** wrote: how many Actuals were recorded and corrected, and the tab
@@ -9197,11 +9208,13 @@ export interface components {
         TargetKind: "estimate_version" | "assessment";
         /**
          * TaskAgent
-         * @description The Agents a run plans a task for, in the order they are listed: the specialists, then
-         *     the Critic (Story 6.4).
+         * @description What a run plans a task for, in the order they are listed: the specialists, then (Story
+         *     9.6, a challenge run) Conflict detection, then the Critic (Story 6.4), then (Story 9.6)
+         *     the new Estimate Version. `conflict_detection` and `new_version` are non-agent nodes: no
+         *     config version, no model call.
          * @enum {string}
          */
-        TaskAgent: "engineering_agent" | "pm_agent" | "security_agent" | "critic_agent";
+        TaskAgent: "engineering_agent" | "pm_agent" | "security_agent" | "conflict_detection" | "critic_agent" | "new_version";
         /**
          * TaskSkipReason
          * @description Why a task was skipped other than by a cancel (Story 7.1).
@@ -9664,10 +9677,11 @@ export interface components {
         /**
          * VersionSource
          * @description Where an Estimate Version's lines came from (Story 8.3): an accepted model draft, or
-         *     the specialist Assessments when an assessment run finished.
+         *     the specialist Assessments when an assessment run finished; Story 9.6: a Challenge's
+         *     reassessment run (the challenged version's lines, with the rerun ones rebuilt).
          * @enum {string}
          */
-        VersionSource: "model" | "assessments";
+        VersionSource: "model" | "assessments" | "challenge";
         /**
          * VersionStatus
          * @description Story 8.6 adds `submitted`: a draft whose submission blockers were clear when it was

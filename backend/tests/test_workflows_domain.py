@@ -120,15 +120,19 @@ def test_requires_and_after_combine() -> None:
     assert readiness((), {}, (uuid4(),)) == "ready"  # outside the run: ignored
 
 
-def test_the_critic_is_planned_last() -> None:
+def test_the_critic_is_planned_after_the_specialists() -> None:
+    # Story 9.6: a challenge run's non-agent nodes, Conflict detection before the Critic and
+    # the new version last.
     assert [a.value for a in TASK_AGENTS] == [
         "engineering_agent",
         "pm_agent",
         "security_agent",
+        "conflict_detection",
         "critic_agent",
+        "new_version",
     ]
-    assert task_agent_rank("critic_agent") == 3
-    assert task_agent_rank("red_team_agent") == 4
+    assert task_agent_rank("critic_agent") == 4
+    assert task_agent_rank("red_team_agent") == 6
 
 
 def test_progress_summaries_carry_agent_ids_and_statuses_only() -> None:

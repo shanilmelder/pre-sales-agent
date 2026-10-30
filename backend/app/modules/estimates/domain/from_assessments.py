@@ -172,3 +172,103 @@ def build_lines(
         )
     built.sort(key=lambda item: (item[0], item[1]))
     return BuiltLines(lines=tuple(line for _, _, line in built), uncovered=uncovered)
+
+
+# --- a Challenge's reassessment (Story 9.6) ---------------------------------------------------
+
+
+def _hours_by_requirement(sizing: AgentSizing | None) -> dict[UUID, Decimal]:
+    found: dict[UUID, Decimal] = {}
+    for row in () if sizing is None else sizing.rows:
+        found[row.requirement_id] = found.get(row.requirement_id, Decimal(0)) + row.hours
+    return found
+
+
+def changed_requirements(
+    pairs: Sequence[tuple[AgentSizing | None, AgentSizing]],
+) -> frozenset[UUID]:
+    """The Requirements whose sizing a rerun changed: for each (previous, rerun) Assessment of
+    one agent, every Requirement the two size with different hours (or only one sizes)."""
+    changed: set[UUID] = set()
+    for previous, rerun in pairs:
+        before = _hours_by_requirement(previous)
+        after = _hours_by_requirement(rerun)
+        changed.update(r for r in before.keys() | after.keys() if before.get(r) != after.get(r))
+    return frozenset(changed)
+
+
+type Line = ValidLine[tuple[UUID, int]]
+
+
+@dataclass(frozen=True, slots=True)
+class ChallengeLines:
+    lines: tuple[Line, ...]
+    rebuilt: frozenset[tuple[str, str]]
+    """The (section, title) of every line that took rebuilt hours: a person's edit of the
+    challenged version's line is not carried onto it."""
+
+
+def _merged(base: Line, sources: Sequence[Line]) -> Line:
+    """`base` with the rebuilt hours, role mix and basis of the rebuilt `sources` (one per
+    Requirement it covers that is still sized), its covers at their rebuilt versions."""
+    role_hours: dict[EstimateRole, Decimal] = {role: Decimal(0) for role in ROLES}
+    for source in sources:
+        for role, share in source.role_mix.items():
+            role_hours[role] += source.effort_hours * share / MIX_TOTAL
+    versions = {rid: at for source in sources for rid, at in source.covers}
+    basis = BASIS_SEPARATOR.join(source.basis for source in sources)
+    return ValidLine(
+        section=base.section,
+        title=base.title,
+        covers=tuple((rid, versions.get(rid, at)) for rid, at in base.covers),
+        effort_hours=sum((s.effort_hours for s in sources), Decimal(0)),
+        role_mix=role_mix(role_hours),
+        basis=cut(basis, BASIS_MAX),
+    )
+
+
+def rebuild_changed(
+    base: Sequence[Line], rebuilt: Sequence[Line], changed: frozenset[UUID]
+) -> ChallengeLines:
+    """The lines of a Challenge's new version (Story 9.6): every line of the challenged
+    version (`base`) that covers no `changed` Requirement, verbatim (edits included); each
+    one that does takes the `rebuilt` hours, role mix and basis of the Requirements it covers
+    (`build_lines` over the current Assessments: one line per Requirement), keeping its
+    section and title; one whose Requirements no Assessment sizes any more is dropped. Each
+    rebuilt line goes to the first base line covering its Requirement only (no double count):
+    a later line whose rebuilt lines are all taken is copied verbatim. A changed Requirement
+    no line of `base` covers gets its rebuilt line, at the end."""
+    by_requirement = {rid: line for line in rebuilt for rid, _ in line.covers}
+    lines: list[Line] = []
+    touched: set[tuple[str, str]] = set()
+    covered: set[UUID] = set()
+    used: list[Line] = []
+    for line in base:
+        ids = [rid for rid, _ in line.covers]
+        covered.update(ids)
+        if not changed.intersection(ids):
+            lines.append(line)
+            continue
+        found_any = False
+        sources: list[Line] = []
+        for rid in ids:
+            found = by_requirement.get(rid)
+            if found is None:
+                continue
+            found_any = True
+            if all(found is not s for s in (*sources, *used)):
+                sources.append(found)
+        if not found_any:
+            continue
+        if not sources:  # another line already took these rebuilt hours
+            lines.append(line)
+            continue
+        used.extend(sources)
+        lines.append(_merged(line, sources))
+        touched.add((line.section.value, line.title))
+    for line in rebuilt:
+        ids = [rid for rid, _ in line.covers]
+        if changed.intersection(ids) and not covered.intersection(ids):
+            lines.append(line)
+            touched.add((line.section.value, line.title))
+    return ChallengeLines(lines=tuple(lines), rebuilt=frozenset(touched))

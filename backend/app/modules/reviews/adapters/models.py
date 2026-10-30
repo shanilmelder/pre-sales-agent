@@ -153,8 +153,8 @@ class ChallengeRow(Base):
     with a reason, while `estimate_version_id` is the version in context. `suggested`: the
     Assessments the platform proposed rerunning, stored at raise (`[{agent, why, tag}]`);
     `confirmed`: the agents the owner confirmed. Only its status, `confirmed`,
-    `decline_reason` and `workflow_run_id` ever change, bumping `row_version`. Never
-    deleted."""
+    `decline_reason`, `workflow_run_id` and (Story 9.6) `new_version_id` ever change, bumping
+    `row_version`. Never deleted."""
 
     __tablename__ = "reviews_challenges"
     __table_args__ = (
@@ -183,6 +183,14 @@ class ChallengeRow(Base):
             name="run_when_confirmed",
         ),
         CheckConstraint("target_version >= 1", name="target_version"),
+        CheckConstraint(
+            "new_version_id IS NULL OR status = 'completed'", name="new_version_when_completed"
+        ),
+        Index(
+            "ix_reviews_challenges_new_version_id",
+            "new_version_id",
+            postgresql_where=text("new_version_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -204,6 +212,9 @@ class ChallengeRow(Base):
     confirmed: Mapped[list[str] | None] = mapped_column(JSONB)
     decline_reason: Mapped[str | None] = mapped_column(Text)
     workflow_run_id: Mapped[UUID | None] = mapped_column(Uuid)
+    new_version_id: Mapped[UUID | None] = mapped_column(Uuid)
+    """Story 9.6: the Estimate Version the reassessment created (an estimates id, no foreign
+    key, AD-2); set when it is `completed`."""
     status: Mapped[str] = mapped_column(Text)
     row_version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

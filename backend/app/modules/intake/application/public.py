@@ -67,6 +67,7 @@ from app.modules.intake.application.requirement_refs import (
     active_requirement_ids,
     active_requirement_snapshots,
     requirement_version_texts,
+    source_version_pins,
 )
 from app.modules.intake.application.requirements import (
     integration_scope,
@@ -174,6 +175,7 @@ __all__ = [
     "retry_parse",
     "source_download_link",
     "source_text",
+    "source_version_pins",
     "split_requirement",
     "start_extraction",
     "store_upload",

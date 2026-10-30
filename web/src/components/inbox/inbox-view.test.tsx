@@ -145,6 +145,64 @@ beforeEach(() => {
   reviewActions.confirmChallenge.mockReset();
 });
 
+describe("a Challenge's outcome items (Story 9.6)", () => {
+  const completed = item(4, {
+    kind: "challenge_completed",
+    group: "challenges",
+    summary: "v4 created from Ana's Challenge (+14.0 h on L1 WMS to SAP EWM interface)",
+    subject_type: "estimates.estimate_version",
+    subject_version: 4,
+    subject_status: null,
+    subject_status_label: null,
+    subject_open: false,
+    sender: null,
+    href: `/opportunities/${OPP}/estimate?version=4&diff=3`,
+  });
+  const failed = item(5, {
+    kind: "challenge_failed",
+    group: "challenges",
+    summary: "Reassessment for Ana's Challenge failed. v3 is unchanged.",
+    subject_type: "estimates.estimate_version",
+    subject_version: 3,
+    subject_status: null,
+    subject_status_label: null,
+    subject_open: false,
+    sender: null,
+    href: `/opportunities/${OPP}/estimate?version=3`,
+  });
+
+  it("lists them under Challenges and opens the new version's diff, with no violations", async () => {
+    const items = [completed, failed];
+    actions.getInbox.mockResolvedValue({ kind: "ok", page: page(items) });
+    actions.markInboxItemRead.mockImplementation(async (id: string) => ({
+      kind: "ok",
+      item: { ...items.find((i) => i.id === id)!, read: true },
+    }));
+    const { user, container } = renderView(page(items));
+    const list = await screen.findByRole("region", { name: "Inbox items" });
+    expect(
+      within(list)
+        .getAllByRole("heading", { level: 2 })
+        .map((h) => h.textContent),
+    ).toEqual(["Challenges"]);
+    expect(row(completed.summary).textContent).toContain("Challenge");
+
+    await user.click(row(completed.summary));
+    expect(within(detail()).getByText(/created a new Estimate Version/)).toBeTruthy();
+    expect(within(detail()).getByRole("link", { name: "Open" }).getAttribute("href")).toBe(
+      `/opportunities/${OPP}/estimate?version=4&diff=3`,
+    );
+    expect(await axeViolations(container)).toEqual([]);
+
+    await user.click(row(failed.summary));
+    expect(within(detail()).getByText(/no new version was created/)).toBeTruthy();
+    expect(within(detail()).getByRole("link", { name: "Open" }).getAttribute("href")).toBe(
+      `/opportunities/${OPP}/estimate?version=3`,
+    );
+    expect(await axeViolations(container)).toEqual([]);
+  });
+});
+
 describe("InboxView", () => {
   it("shows skeleton rows first, then the grouped list with no violations", async () => {
     const { container } = renderView();

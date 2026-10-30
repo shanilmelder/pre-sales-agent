@@ -9,6 +9,8 @@ use workflows only from here.
   `complete_task`, `fail_task`, `skip_blocked_task`, `plan_of`, `error_code`; for pausing
   (Story 5.5) `escalation`, `skip_disabled_task` and, for the runner, `decision_choices`.
 - The worker: `install_runner` (the graph runner hook) and the job type names.
+- Story 9.6, a challenge run's non-agent nodes (`app.orchestration`):
+  `detect_challenge_conflicts` and `write_challenge_version`.
 """
 
 from uuid import UUID
@@ -23,6 +25,10 @@ from app.modules.workflows.application.assessment_runs import (
     resolve_decision,
     retry_task,
     start_run,
+)
+from app.modules.workflows.application.challenge_runs import (
+    detect_challenge_conflicts,
+    write_challenge_version,
 )
 from app.modules.workflows.application.models import (
     AssessmentRun,
@@ -58,6 +64,7 @@ from app.modules.workflows.application.tasks import (
     skip_disabled_task,
 )
 from app.modules.workflows.domain.runs import (
+    NON_AGENT_NODES,
     TASK_AGENTS,
     AssessmentRunStatus,
     AssessmentTaskStatus,
@@ -119,6 +126,7 @@ async def plan_of(uow: UnitOfWork, run_id: UUID) -> list[tuple[UUID, tuple[UUID,
 
 __all__ = [
     "EXECUTE",
+    "NON_AGENT_NODES",
     "PRUNE_PROGRESS",
     "RESUME",
     "TASK_AGENTS",
@@ -147,6 +155,7 @@ __all__ = [
     "complete_task",
     "decision_choices",
     "decision_status",
+    "detect_challenge_conflicts",
     "enqueue_run",
     "error_code",
     "escalation",
@@ -165,4 +174,5 @@ __all__ = [
     "skip_blocked_task",
     "skip_disabled_task",
     "start_run",
+    "write_challenge_version",
 ]

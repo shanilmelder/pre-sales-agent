@@ -23,6 +23,7 @@ new version; they stay in the superseded version and the Trace.
 Logs carry ids, versions and counts only, never the reason or line text.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -227,12 +228,22 @@ class CarriedEdits:
 
 
 async def carry_edits(
-    uow: UnitOfWork, *, source: VersionRecord, target_version_id: UUID
+    uow: UnitOfWork,
+    *,
+    source: VersionRecord,
+    target_version_id: UUID,
+    skip: Collection[tuple[str, str]] = (),
 ) -> CarriedEdits:
     """Carry the edited lines of `source` (the draft a re-draft supersedes) onto their
     matching lines in `target_version_id` (the new draft, its lines stored), and record how
-    many found no match on it. The caller holds the Opportunity's draft lock."""
-    edited = [line for line in await repo.lines_of(uow, source.id) if line.edited_at is not None]
+    many found no match on it. The caller holds the Opportunity's draft lock. Story 9.6: an
+    edited line whose (section, title) is in `skip` is not carried (a Challenge's rerun
+    rebuilt that line's hours)."""
+    edited = [
+        line
+        for line in await repo.lines_of(uow, source.id)
+        if line.edited_at is not None and (line.section, line.title) not in skip
+    ]
     if not edited:
         return CarriedEdits(0, 0)
     candidates = [

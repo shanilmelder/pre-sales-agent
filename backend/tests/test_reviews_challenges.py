@@ -450,14 +450,28 @@ def test_the_owner_confirms_and_the_run_starts(client: TestClient, sync_engine: 
         f"run:{opp_id}:challenge:{challenge['id']}",
     )
     tasks = rows(sync_engine, "SELECT agent FROM workflows_tasks WHERE run_id = :r", r=run["id"])
-    assert sorted(t["agent"] for t in tasks) == ["critic_agent", ENGINEERING, "pm_agent"]
+    # Story 9.6: then Conflict detection, the Critic and the new version.
+    assert sorted(t["agent"] for t in tasks) == [
+        "conflict_detection",
+        "critic_agent",
+        ENGINEERING,
+        "new_version",
+        "pm_agent",
+    ]
     (confirmed,) = _events(sync_engine, opp_id, CONFIRMED)
     assert confirmed["payload"]["workflow_run_id"] == body["workflow_run_id"]
 
     # The run shows in the Assessments tab's run header.
     latest = client.get(f"{BASE}/{opp_id}/assessments", headers=scene.headers).json()["run"]
     assert latest["id"] == body["workflow_run_id"]
-    assert sorted(t["agent"] for t in latest["tasks"]) == ["critic_agent", ENGINEERING, "pm_agent"]
+    assert [t["agent"] for t in latest["tasks"]] == [
+        ENGINEERING,
+        "pm_agent",
+        "conflict_detection",
+        "critic_agent",
+        "new_version",
+    ]
+    assert latest["run_type"] == "challenge"
 
     # Confirming again returns the same run: no new run, no new event.
     again = _confirm(client, scene.headers, opp_id, challenge, [ENGINEERING])

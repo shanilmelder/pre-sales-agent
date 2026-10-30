@@ -157,6 +157,7 @@ def run_view(
         queued_at=record.queued_at,
         finished_at=record.finished_at,
         tasks=views,
+        run_type=RunType(record.run_type),
         plan_version=record.plan_version,
         decisions=list(decisions),
         plan_versions=list(plan_versions),
@@ -212,7 +213,11 @@ async def _plan_views(
     uow: UnitOfWork, plans: Sequence[PlanVersionRecord], names: dict[UUID, str]
 ) -> list[PlanVersion]:
     versions = await registry.get_config_versions(
-        uow, sorted({t.config_version_id for p in plans for t in p.tasks})
+        uow,
+        sorted(
+            {t.config_version_id for p in plans for t in p.tasks if t.config_version_id},
+            key=str,
+        ),
     )
     views: list[PlanVersion] = []
     for plan in plans:
@@ -229,10 +234,12 @@ async def _plan_views(
                 tasks=[
                     PlanVersionTask(
                         agent=TaskAgent(t.agent),
-                        config_version_id=str(t.config_version_id),
+                        config_version_id=(
+                            None if t.config_version_id is None else str(t.config_version_id)
+                        ),
                         config_version=(
                             versions[t.config_version_id].version
-                            if t.config_version_id in versions
+                            if t.config_version_id is not None and t.config_version_id in versions
                             else None
                         ),
                     )
@@ -362,6 +369,9 @@ async def retry_task(
         # A cancelled run is final: re-queueing a task that failed before the cancel would
         # revive it.
         or latest.status == AssessmentRunStatus.CANCELLED
+        # Story 9.6: a Challenge's run ends its Challenge (completed or failed) when it
+        # finishes; a retry could not reopen it, so its tasks are never retried.
+        or latest.run_type == RunType.CHALLENGE
         or task is None
         or task.status != AssessmentTaskStatus.FAILED
     ):
@@ -482,6 +492,7 @@ async def resolve_decision(
         raise await _stale(uow, decision)
     if choice == DecisionChoice.REPLAN:
         plan_version = run.plan_version + 1
+        assert config_version_id is not None  # the Agent's current config version, above
         await repo.repin_task(uow, task.id, config_version_id)
         await repo.set_plan_version(uow, run.id, plan_version)
         await repo.insert_plan_version(
