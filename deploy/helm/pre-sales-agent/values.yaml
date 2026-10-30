@@ -94,9 +94,20 @@ files:
 
 # Auth0 (README "Auth0 tenant setup"). Non-secret parts here; secrets in auth.existingSecret.
 auth:
+  # Auth0 by default. For another OIDC provider (Zitadel, Keycloak, ...): `domain` is the
+  # provider's host (no scheme or path; the web app discovers the rest from
+  # /.well-known/openid-configuration), `audience` is what its access tokens carry in `aud`
+  # (Zitadel: the project id), and the backend is told the issuer, key set and claims through
+  # `config` (PSA_AUTH_ISSUER, PSA_AUTH_JWKS_URL, PSA_AUTH_USERINFO_URL, PSA_AUTH_EMAIL_CLAIM,
+  # PSA_AUTH_NAME_CLAIM, PSA_AUTH_ROLES_CLAIM, PSA_AUTH_ROLES_FORMAT,
+  # PSA_AUTH_PERMISSIONS_FROM_ROLES). See projects/pre-sales-agent in the GitOps repo for a
+  # Zitadel example.
   domain: your-tenant.eu.auth0.com
   audience: https://api.pre-sales-agent
   clientId: ""
+  # OIDC scopes the web app requests; empty = openid profile email offline_access.
+  # Zitadel also needs urn:zitadel:iam:org:project:roles to put roles in the token.
+  scope: ""
   # Secret with AUTH0_CLIENT_SECRET and AUTH0_SECRET (session cookie key, openssl rand -hex 32).
   existingSecret: pre-sales-agent-auth0
 

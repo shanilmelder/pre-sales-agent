@@ -46,6 +46,52 @@ class Settings(BaseSettings):
     auth0_jwks_timeout_s: float = Field(
         default=5, gt=0, description="Timeout for one JWKS fetch from Auth0."
     )
+    # Any OIDC provider (Zitadel, Keycloak, Entra ID, ...) can replace Auth0: set the issuer and
+    # JWKS URL explicitly and say which claims carry the profile and roles. Everything below
+    # defaults to the Auth0 conventions, so an Auth0 deployment sets nothing here.
+    auth_issuer: str = Field(
+        default="",
+        description="Expected `iss` of access tokens. Default: `https://{auth0_domain}/`.",
+    )
+    auth_jwks_url: str = Field(
+        default="",
+        description="Signing keys (JWKS). Default: `https://{auth0_domain}/.well-known/jwks.json`.",
+    )
+    auth_userinfo_url: str = Field(
+        default="",
+        description=(
+            "OIDC userinfo endpoint. When set, a token without the email claim is completed "
+            "from it (name, email, roles), for providers whose access tokens carry no profile "
+            "(Zitadel). Responses are cached per token until it expires."
+        ),
+    )
+    auth_email_claim: str = Field(
+        default="", description="Claim holding the email. Default: the Auth0 namespaced claim."
+    )
+    auth_name_claim: str = Field(
+        default="", description="Claim holding the name. Default: the Auth0 namespaced claim."
+    )
+    auth_roles_claim: str = Field(
+        default="", description="Claim holding the roles. Default: the Auth0 namespaced claim."
+    )
+    auth_roles_format: Literal["list", "keys"] = Field(
+        default="list",
+        description=(
+            "`list`: the roles claim is a list of role names (Auth0). `keys`: it is an object "
+            "keyed by role name (Zitadel: `urn:zitadel:iam:org:project:roles`)."
+        ),
+    )
+    auth_permissions_claim: str = Field(
+        default="", description="Claim holding RBAC permissions. Default: `permissions`."
+    )
+    auth_permissions_from_roles: bool = Field(
+        default=False,
+        description=(
+            "Derive permissions from the roles (the map in `identity.domain.role_permissions`) "
+            "instead of, or as well as, a permissions claim. For providers with no RBAC "
+            "permissions of their own."
+        ),
+    )
     storage_dir: Path = Field(
         default=Path("var/files"),
         description=(

@@ -42,3 +42,6 @@ data:
   AUTH0_DOMAIN: {{ .Values.auth.domain | quote }}
   AUTH0_AUDIENCE: {{ .Values.auth.audience | quote }}
   AUTH0_CLIENT_ID: {{ .Values.auth.clientId | quote }}
+  {{- with .Values.auth.scope }}
+  AUTH_SCOPE: {{ . | quote }}
+  {{- end }}
