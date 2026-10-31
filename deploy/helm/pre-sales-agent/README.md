@@ -47,8 +47,13 @@ example in `projects/pre-sales-agent/*/values/`.
 
 ## Demo data
 
-`python -m scripts.seed_demo` (in the api image, as the app role) adds a demo presales
-engineer and five demo Opportunities; it is idempotent. `--dry-run` lists what it would do.
+`backend/scripts/seed_demo.py` adds a demo presales engineer and five demo Opportunities, as
+the app role; it is idempotent, and `--dry-run` lists what it would do. The image holds only
+`app/` (no `scripts/`), so run it by piping the file into the api pod:
+
+```bash
+kubectl -n <namespace> exec -i deploy/<release>-api -- python - < backend/scripts/seed_demo.py
+```
 
 ## Key values
 

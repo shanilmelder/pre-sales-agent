@@ -8,10 +8,14 @@ name), so re-running is safe. The Opportunities are owned by a seeded "Demo Pres
 (platform_administrator, ...) see them, and can be added as collaborators on any.
 
 It talks to the database as the app does (PSA_DATABASE_URL, the least-privileged app role),
-through the same application services the API uses. From `backend/`, or in the api image:
+through the same application services the API uses. From `backend/`:
 
-    uv run python -m scripts.seed_demo           # or: python -m scripts.seed_demo
-    uv run python -m scripts.seed_demo --dry-run # list what would be created
+    uv run python -m scripts.seed_demo
+    uv run python -m scripts.seed_demo --dry-run   # list what would be created
+
+The api image holds only `app/` and `migrations/`, so on a cluster pipe the file into the pod:
+
+    kubectl -n <ns> exec -i deploy/<release>-api -- python - [--dry-run] < scripts/seed_demo.py
 """
 
 import argparse
