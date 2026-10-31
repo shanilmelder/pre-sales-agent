@@ -5,11 +5,12 @@ import asyncio
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
 from app.modules.identity.application.authentication import (
+    USER_AGENT,
     ClaimMap,
     HttpUserinfo,
     TokenValidator,
@@ -168,9 +169,11 @@ def test_claim_map_from_settings_overrides() -> None:
 
 class _Userinfo(BaseHTTPRequestHandler):
     hits = 0
+    agents: ClassVar[list[str]] = []
 
     def do_GET(self) -> None:
         type(self).hits += 1
+        type(self).agents.append(self.headers.get("User-Agent", ""))
         if self.headers.get("Authorization") == "Bearer rejected":
             self.send_response(401)
             self.end_headers()
@@ -201,6 +204,18 @@ def test_http_userinfo_caches_per_token(userinfo_url: str) -> None:
     assert _Userinfo.hits == 1
     source.fetch("tok-b")
     assert _Userinfo.hits == 2
+
+
+def test_provider_calls_send_an_explicit_user_agent(userinfo_url: str) -> None:
+    """Cloudflare blocks urllib's default user-agent (error 1010) on the provider's
+    userinfo and key endpoints, so both calls must send our own."""
+    _Userinfo.agents.clear()
+    HttpUserinfo(userinfo_url, timeout_s=2).fetch("tok-ua")
+    assert _Userinfo.agents == [USER_AGENT]
+    validator = TokenValidator.from_settings(
+        Settings(auth0_domain="idp.example.test", auth0_audience="aud")
+    )
+    assert validator._keys.headers["User-Agent"] == USER_AGENT  # type: ignore[attr-defined]
 
 
 def test_http_userinfo_rejection_is_an_invalid_token(userinfo_url: str) -> None:

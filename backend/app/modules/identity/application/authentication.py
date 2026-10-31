@@ -59,6 +59,9 @@ PERMISSIONS_CLAIM = "permissions"
 REQUIRED_CLAIMS = ["exp", "iss", "aud", "sub"]
 USERINFO_CACHE_TTL_S = 300
 USERINFO_CACHE_MAX = 1024
+USER_AGENT = "pre-sales-agent"
+"""Sent on every call to the identity provider. urllib's default (`Python-urllib/3.x`) is
+blocked outright by Cloudflare (error 1010), which fronts many providers."""
 
 _log = get_logger(__name__)
 _ROLES_BY_VALUE = {role.value: role for role in Role}
@@ -133,7 +136,12 @@ class HttpUserinfo:
             if hit is not None and hit[0] > now:
                 return hit[1]
         request = urllib.request.Request(  # noqa: S310 - operator-configured https URL
-            self._url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"}
+            self._url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "User-Agent": USER_AGENT,
+            },
         )
         try:
             with urllib.request.urlopen(request, timeout=self._timeout_s) as response:  # noqa: S310
@@ -183,6 +191,7 @@ class TokenValidator:
             cache_jwk_set=True,
             lifespan=settings.auth0_jwks_cache_lifespan_s,
             timeout=settings.auth0_jwks_timeout_s,
+            headers={"User-Agent": USER_AGENT},
         )
         userinfo = (
             HttpUserinfo(settings.auth_userinfo_url, timeout_s=settings.auth0_jwks_timeout_s)
