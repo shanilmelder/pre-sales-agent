@@ -667,7 +667,12 @@ def test_profiles_are_defined() -> None:
     assert MODEL_PROFILES["ollama-cloud-chat"].provider == "ollama"
     cloud = MODEL_PROFILES["openai-chat"]
     assert (cloud.model, cloud.provider) == ("gpt-4.1-mini", "openai")
-    assert set(MODEL_PROFILES) == {"ollama-cloud-chat", "openai-chat"}
+    assert set(MODEL_PROFILES) == {"ollama-cloud-chat", "openai-chat", "anthropic-chat"}
+    claude = MODEL_PROFILES["anthropic-chat"]
+    assert (claude.model, claude.provider) == ("claude-opus-5-5", "anthropic")
+    assert (claude.num_ctx, claude.max_tokens) == (32768, 16000)
+    assert (claude.reasoning_effort, claude.refusal_fallback) == ("medium", True)
+    assert not any(p.refusal_fallback for p in MODEL_PROFILES.values() if p.provider != "anthropic")
     assert all(p.temperature == 0.1 for p in MODEL_PROFILES.values())
     with pytest.raises(UnknownModelProfileError):
         get_profile("nope")

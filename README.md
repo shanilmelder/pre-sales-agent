@@ -168,6 +168,17 @@ on GPT-5): requests then send it and no `temperature`, which those models reject
 calls are slower, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if they time out; their
 `output_tokens` include the reasoning tokens.
 
+`anthropic-chat` (`claude-opus-5-5`) is Anthropic's API, through the official SDK: set
+`PSA_ANTHROPIC_API_KEY=sk-ant-...`, restart `worker` (the only service that gets the key, as
+the `api` never makes a chat call), then pin the profile on an Agent's config version in Admin
+> Agents. It is a built-in, not an admin-managed custom profile. Like `ollama-cloud-chat` it
+sends prompt text to a cloud: sample or anonymised Opportunities only until IT
+approves it. Without a key other profiles are unaffected, and a call on this one fails with
+`missing_api_key`. It serves chat only (`bge-m3` stays on Ollama) and its digest is recorded
+as `unknown`. A declined request is rerun on Anthropic's default fallback model, and call
+records and logs name the model that served the reply. Claude calls can run long, so raise
+`PSA_MODEL_TIMEOUT_S` (default 120) if they time out.
+
 Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
 `api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama
 must listen beyond loopback for that (`OLLAMA_HOST=0.0.0.0`). Host-side commands (smoke,
@@ -182,6 +193,8 @@ PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost
   uv run python -m app.platform.model_gateway.smoke   # prints `ok` with tokens and latency
 # OpenAI's cloud API (prints `ok ... digest=unknown`):
 PSA_MODEL_PROFILE_CHAT=openai-chat PSA_OPENAI_BASE_URL=https://api.openai.com/v1 PSA_OPENAI_API_KEY=sk-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke
+# Anthropic's API (prints `ok ... digest=unknown`):
+PSA_MODEL_PROFILE_CHAT=anthropic-chat PSA_ANTHROPIC_API_KEY=sk-ant-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke
 ```
 
 ## Authentication (Auth0)

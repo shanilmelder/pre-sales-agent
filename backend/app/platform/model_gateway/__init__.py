@@ -6,6 +6,8 @@
 - `ollama` — the Ollama adapter (native `/api/chat` with `format` = the JSON Schema).
 - `openai_compat` — the OpenAI-compatible adapter (`/chat/completions` with `response_format`
   = the JSON Schema), for vLLM or any `/v1` server; a profile picks it with provider `openai`.
+- `anthropic_adapter` — the Anthropic adapter (the official SDK, with `output_config.format` =
+  the JSON Schema); a profile picks it with provider `anthropic`. Chat only, no embeddings.
 - `profiles` — named model profiles; each Agent's config version pins one.
 - `semaphore` — the per-process, priority-aware slot limit.
 

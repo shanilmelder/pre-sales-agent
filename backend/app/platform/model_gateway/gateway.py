@@ -1,11 +1,13 @@
 """`ModelGateway`: the governed path to a model (AD-8).
 
 One call = wait for a slot on the priority semaphore, then up to `1 + PSA_MODEL_MAX_RETRIES`
-attempts against the profile's adapter (`ModelProfile.provider`: `ollama` or `openai`),
+attempts against the profile's adapter (`ModelProfile.provider`: `ollama`, `openai` or
+`anthropic`),
 validating each reply with `T.model_validate_json`. An invalid reply is retried with that
 reply (as the assistant turn) plus a corrective user message naming only the failing field
 paths; neither is logged or stored. A truncated reply (`done_reason` / `finish_reason`
-`length`) fails at once as `invalid_output` / `truncated`. The slot is released, then the
+`length`, `stop_reason` `max_tokens`) fails at once as `invalid_output` / `truncated`, as a
+refusal does as `invalid_output` / `refusal`. The slot is released, then the
 `platform_model_calls` row is written in its own Unit of Work (none is open during the HTTP
 call, AD-25), then the result is returned or the typed error raised. If the row write fails
 it is logged (`model_call.record_failed`) and the call's own result or error still wins.
@@ -33,6 +35,8 @@ from typing import Self
 from uuid import UUID
 
 import httpx
+import httpx2
+from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -41,6 +45,7 @@ from app.platform.ids import new_id
 from app.platform.jobs.registry import Priority
 from app.platform.logging import get_logger
 from app.platform.model_gateway.adapter import ChatAdapter
+from app.platform.model_gateway.anthropic_adapter import AnthropicAdapter
 from app.platform.model_gateway.models import PlatformModelCall
 from app.platform.model_gateway.ollama import OllamaAdapter
 from app.platform.model_gateway.openai_compat import OpenAICompatAdapter
@@ -111,6 +116,7 @@ class _Run[T: BaseModel]:
     output_tokens: int = 0
     attempts: int = 0
     latency_ms: int = 0
+    model: str | None = None
 
 
 class ModelGateway:
@@ -121,8 +127,10 @@ class ModelGateway:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
         resolve_profile: ProfileResolver | None = None,
+        anthropic_transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
-        """`transport` replaces the network (tests pass an `httpx.MockTransport`).
+        """`transport` replaces the network (tests pass an `httpx.MockTransport`);
+        `anthropic_transport` does the same for the Anthropic SDK, which is built on `httpx2`.
         `resolve_profile` finds chat profiles that aren't built in; without it, only the
         built-ins resolve."""
         self._settings = settings
@@ -139,9 +147,27 @@ class ModelGateway:
             transport=transport,
         )
         self._clients = (ollama_client, openai_client)
+        anthropic_secret = settings.anthropic_api_key
+        anthropic_key = anthropic_secret.get_secret_value().strip() if anthropic_secret else ""
+        self._anthropic_client = (
+            AsyncAnthropic(
+                api_key=anthropic_key,
+                # Explicit, so `ANTHROPIC_BASE_URL` can't redirect prompts and the key.
+                base_url="https://api.anthropic.com",
+                # None keeps the SDK's own client: passing `transport` drops its TCP keepalive.
+                http_client=(
+                    DefaultAsyncHttpxClient(transport=anthropic_transport)
+                    if anthropic_transport
+                    else None
+                ),
+            )
+            if anthropic_key
+            else None
+        )
         self._adapters: dict[Provider, ChatAdapter] = {
             "ollama": OllamaAdapter(ollama_client),
             "openai": OpenAICompatAdapter(openai_client),
+            "anthropic": AnthropicAdapter(self._anthropic_client),
         }
         self._semaphore = PrioritySemaphore(settings.model_slots)
 
@@ -152,6 +178,8 @@ class ModelGateway:
     async def aclose(self) -> None:
         for client in self._clients:
             await client.aclose()
+        if self._anthropic_client is not None:
+            await self._anthropic_client.close()
 
     async def __aenter__(self) -> Self:
         return self
@@ -173,6 +201,7 @@ class ModelGateway:
         async with self._semaphore.slot(request.priority):
             run = await self._attempt_all(request, profile, timeout_s)
         digest = await self._adapters[profile.provider].digest(profile.model)
+        model = run.model or profile.model
         outcome: Outcome = run.error.outcome if run.error else "ok"
         error_code = run.error.error_code if run.error else None
         log_fields = {
@@ -183,7 +212,7 @@ class ModelGateway:
             "task_id": request.caller.task_id and str(request.caller.task_id),
             "opportunity_id": request.caller.opportunity_id and str(request.caller.opportunity_id),
             "profile": profile.name,
-            "model": profile.model,
+            "model": model,
             "priority": request.priority,
             "input_tokens": run.input_tokens,
             "output_tokens": run.output_tokens,
@@ -196,7 +225,7 @@ class ModelGateway:
             caller=request.caller,
             priority=request.priority,
             profile=profile.name,
-            model=profile.model,
+            model=model,
             call_id=call_id,
             digest=digest,
             run=run,
@@ -213,7 +242,7 @@ class ModelGateway:
             value=run.value,
             call_id=call_id,
             profile=profile.name,
-            model=profile.model,
+            model=model,
             model_digest=digest,
             input_tokens=run.input_tokens,
             output_tokens=run.output_tokens,
@@ -251,6 +280,12 @@ class ModelGateway:
                     return run
                 run.input_tokens += reply.input_tokens
                 run.output_tokens += reply.output_tokens
+                run.model = reply.model or run.model
+                if reply.refused:
+                    run.error = ModelOutputInvalidError(
+                        "The model declined the request.", error_code="refusal"
+                    )
+                    return run
                 if reply.truncated:
                     run.error = ModelOutputInvalidError(
                         "The model's output was cut off (length limit).",

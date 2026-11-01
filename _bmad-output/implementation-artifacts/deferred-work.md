@@ -347,3 +347,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
   summary: A future built-in profile could shadow a stored custom profile of the same name (unverified, medium).
   evidence: Settle by checking whether the gateway resolves built-ins first and whether any release adds a colliding name.
+- source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-model-adapter.md`
+  summary: Make deterministic model failures (refusal, missing_api_key, unsupported_schema, http_400, http_401) permanent job failures.
+  evidence: `jobs/runner.py` retries anything that isn't a `PermanentJobError` until attempts run out, for all providers.
+- source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-model-adapter.md`
+  summary: Assert that `ModelGateway.aclose` closes its HTTP clients.
+  evidence: No test observes closure for any provider's client.
+- source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-model-adapter.md`
+  summary: Check whether tokens from an attempt declined before a fallback are billed but unrecorded (medium, unverified).
+  evidence: Top-level `usage` may cover only the final attempt; a live fallback reply's `usage.iterations` would settle it.
