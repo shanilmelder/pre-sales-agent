@@ -252,6 +252,7 @@ session and the Auth0 session.
    `knowledge.checklist.create`, `knowledge.checklist.edit`, `knowledge.checklist.publish`,
    `knowledge.checklist.retire`, `registry.agent.register`,
    `registry.agent_config.create`, `registry.agent.set_status`,
+   `registry.model_profile.manage`,
    `assessments.finding.override`, `notifications.notification.read`,
    `reporting.report.read` (Story 10.3: Reports), `opportunities.outcome.record`,
    `opportunities.contract_end_date.update`, `opportunities.outcome.reopen` (Story 10.5: the
@@ -273,7 +274,7 @@ session and the Auth0 session.
 
    | Role | Permissions |
    | --- | --- |
-   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and three `registry.*` permissions, `reporting.report.read`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen`, `platform.retention.read` |
+   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and four `registry.*` permissions, `reporting.report.read`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen`, `platform.retention.read` |
    | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
    | `head_of_delivery` | `opportunities.opportunity.read`, `assessments.finding.override`, `reporting.report.read`, `opportunities.outcome.record`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen` |
    | `engineering_reviewer`, `pm_reviewer` | the four `knowledge.checklist.*` permissions (author Checklists) |

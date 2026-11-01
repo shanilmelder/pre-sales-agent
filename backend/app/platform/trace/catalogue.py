@@ -1801,6 +1801,73 @@ class RegistryAgentDisabled(TracePayload):
     to_config_version_id: str
 
 
+# Custom chat model profiles and the approved-model allowlist have no Opportunity either.
+# Subjects: the profile (`registry.model_profile`) and the allowlist entry
+# (`registry.approved_model`). Ids, names, codes and timings only: a test call's prompt and
+# reply are never here.
+
+
+@register
+class RegistryModelProfileCreated(TracePayload):
+    """An administrator created a custom chat model profile; its live test is queued."""
+
+    event_type: ClassVar[str] = "registry.model_profile.created"
+
+    profile_id: str
+    name: str
+    provider: str
+    model: str
+    num_ctx: int
+
+
+@register
+class RegistryModelProfileTested(TracePayload):
+    """A live test call finished. Actor: the system (`registry.test_model_profile`)."""
+
+    event_type: ClassVar[str] = "registry.model_profile.tested"
+
+    profile_id: str
+    name: str
+    state: Literal["verified", "failed"]
+    error_code: str | None = None
+    latency_ms: int
+
+
+@register
+class RegistryModelProfileRetired(TracePayload):
+    """An administrator retired a custom chat model profile. Versions and runs already
+    pinned to it keep using it; no new version can pin it."""
+
+    event_type: ClassVar[str] = "registry.model_profile.retired"
+
+    profile_id: str
+    name: str
+    from_state: str
+
+
+@register
+class RegistryApprovedModelAdded(TracePayload):
+    """An administrator added a provider and model to the approved-model allowlist."""
+
+    event_type: ClassVar[str] = "registry.approved_model.added"
+
+    approved_model_id: str
+    provider: str
+    model: str
+
+
+@register
+class RegistryApprovedModelRemoved(TracePayload):
+    """An administrator removed a model from the allowlist. Existing profiles aren't
+    affected."""
+
+    event_type: ClassVar[str] = "registry.approved_model.removed"
+
+    approved_model_id: str
+    provider: str
+    model: str
+
+
 @register
 class RegistryEvalCompleted(TracePayload):
     """`make eval` finished and stored a result (Story 7.6). Subject: the result

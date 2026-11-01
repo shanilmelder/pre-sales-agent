@@ -335,3 +335,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-6-challenge-reassessment.md`
   summary: A Challenge run's Conflict detection runs before the new Estimate Version exists, so any Conflict rule that reads Estimate lines checks the challenged version, not the new one (unverified, medium if true).
   evidence: The frozen plan order is specialists → conflict_detection → Critic → new_version. Settle it by checking whether `conflicts.detect_for_run`'s rules read Estimate lines.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: A custom profile's `num_ctx` is declared, not proven by the fixed test call.
+  evidence: The probe is tiny, and `openai` never sends `num_ctx`, so an overstated value inflates intake and answer-matching budgets.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: The critic and conflict evals and the gateway smoke test can't resolve custom profiles.
+  evidence: They build gateways with no resolver and abort with `UnknownModelProfileError`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: The pin and retire row lock has no concurrency test.
+  evidence: Only a two-connection test can show a concurrent retire blocks and returns 409.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: A future built-in profile could shadow a stored custom profile of the same name (unverified, medium).
+  evidence: Settle by checking whether the gateway resolves built-ins first and whether any release adds a colliding name.

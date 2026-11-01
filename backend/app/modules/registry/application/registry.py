@@ -14,9 +14,10 @@ the caller's Unit of Work.
 - `set_status`: `active`, `disabled` or `eval_only`; the same status is a 200 no-op.
 
 Every config is checked against the deployed manifest (`app.agents.manifest`): a prompt,
-input or output schema, or model profile it doesn't list is 422
-`registry_config_not_deployed`; an output schema written for another contract version than
-`CONTRACT_VERSION` is 422 `registry_config_incompatible_contract`. Nothing is stored then.
+input or output schema, or model profile it doesn't list (a `verified` custom profile also
+counts) is 422 `registry_config_not_deployed`; an output schema written for another contract
+version than `CONTRACT_VERSION` is 422 `registry_config_incompatible_contract`. Nothing is
+stored then.
 
 Reads (`read_agents`, `read_agent`, `read_versions`, `read_config_options`: what the
 deployed manifest lets a new version reference, and `read_tool_denials`: the ToolGateway's
@@ -72,6 +73,7 @@ from app.modules.registry.application.models import (
 )
 from app.modules.registry.domain import evals as gate
 from app.modules.registry.domain import registry as rules
+from app.modules.registry.domain.model_profiles import CustomProfile, ProfileState
 from app.modules.registry.domain.registry import (
     AgentStatus,
     ConfigVersion,
@@ -93,7 +95,7 @@ from app.platform.errors import (
 )
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
-from app.platform.model_gateway.profiles import UnknownModelProfileError, get_profile
+from app.platform.model_gateway.profiles import MODEL_PROFILES
 from app.platform.tool_gateway import list_denials
 from app.platform.tool_gateway.catalogue import READ_TOOLS
 from app.platform.trace.catalogue import (
@@ -151,17 +153,23 @@ def version_view(
     )
 
 
-def effective_model(version: ConfigVersion) -> EffectiveModel:
-    """What `version` calls: its pinned profile and that profile's model (null for a profile
-    this deployment doesn't define)."""
-    try:
-        model: str | None = get_profile(version.model_profile).model
-    except UnknownModelProfileError:
-        model = None
-    return EffectiveModel(profile=version.model_profile, model=model)
+def effective_model(
+    version: ConfigVersion, custom_models: Mapping[str, str] | None = None
+) -> EffectiveModel:
+    """What `version` calls: its pinned profile and that profile's model. `custom_models` maps
+    custom profile names to models; the model is null for a name neither built in nor there."""
+    name = version.model_profile
+    model = MODEL_PROFILES[name].model if name in MODEL_PROFILES else None
+    if model is None and custom_models is not None:
+        model = custom_models.get(name)
+    return EffectiveModel(profile=name, model=model)
 
 
-def agent_view(agent: RegisteredAgent, names: Mapping[UUID, str] | None = None) -> RegistryAgent:
+def agent_view(
+    agent: RegisteredAgent,
+    names: Mapping[UUID, str] | None = None,
+    custom_models: Mapping[str, str] | None = None,
+) -> RegistryAgent:
     return RegistryAgent(
         id=str(agent.id),
         agent_id=agent.agent_id,
@@ -170,7 +178,7 @@ def agent_view(agent: RegisteredAgent, names: Mapping[UUID, str] | None = None) 
         row_version=agent.row_version,
         created_at=agent.created_at,
         current_config=version_view(agent.current, names),
-        effective_model=effective_model(agent.current),
+        effective_model=effective_model(agent.current, custom_models),
     )
 
 
@@ -217,8 +225,15 @@ async def _names(uow: UnitOfWork, versions: Iterable[ConfigVersion]) -> dict[UUI
     return await identity.user_names(uow, ids) if ids else {}
 
 
+async def _custom_models(uow: UnitOfWork, agents: Iterable[RegisteredAgent]) -> dict[str, str]:
+    """The models of the custom profiles these Agents' current config versions pin."""
+    pinned = {a.current.model_profile for a in agents} - set(MODEL_PROFILES)
+    return await repo.models_of_profiles(uow, pinned)
+
+
 async def _agent_view(uow: UnitOfWork, agent: RegisteredAgent) -> RegistryAgent:
-    return agent_view(agent, await _names(uow, [agent.current]))
+    names = await _names(uow, [agent.current])
+    return agent_view(agent, names, await _custom_models(uow, [agent]))
 
 
 async def _load(uow: UnitOfWork, agent_id: str) -> RegisteredAgent:
@@ -242,9 +257,24 @@ class _CheckedConfig:
     budgets: dict[str, Any]
 
 
-def check_deployed(agent_id: str, new: NewAgentConfig) -> _CheckedConfig:
+async def _profile_problem(uow: UnitOfWork, profile: str) -> str | None:
+    """Why a new config version can't pin `profile`, or None. A custom profile stays locked
+    until commit, so it can't be retired while the version is written."""
+    custom = await repo.model_profile_named(uow, profile, for_share=True)
+    if custom is None:
+        return f"model profile {profile!r}"
+    if custom.state != ProfileState.VERIFIED:
+        raise RegistryConfigNotDeployedError(
+            f"Model profile {profile!r} is {custom.state.value}: only a verified profile can be "
+            "pinned."
+        )
+    return None
+
+
+async def check_deployed(uow: UnitOfWork, agent_id: str, new: NewAgentConfig) -> _CheckedConfig:
     """The field rules, then the manifest: every referenced prompt, schema and profile must
-    be deployed, and the output schema written for `CONTRACT_VERSION`."""
+    be deployed, or the profile a `verified` custom one, and the output schema written for
+    `CONTRACT_VERSION`."""
     semver = _invalid(new.semver, rules.semver)
     try:
         tool_permissions = rules.tool_permissions(new.tool_permissions)
@@ -264,7 +294,9 @@ def check_deployed(agent_id: str, new: NewAgentConfig) -> _CheckedConfig:
     if output is None:
         missing.append(f"output schema v{new.output_schema_version}")
     if not manifest.has_profile(profile):
-        missing.append(f"model profile {profile!r}")
+        problem = await _profile_problem(uow, profile)
+        if problem is not None:
+            missing.append(problem)
     if missing or output is None:
         raise RegistryConfigNotDeployedError(
             f"Not in the deployed manifest for {agent_id}: {', '.join(missing)}."
@@ -339,7 +371,8 @@ async def read_agents(uow: UnitOfWork, actor: Principal) -> RegistryAgentList:
     _require_admin(actor)
     agents = await repo.list_agents(uow)
     names = await _names(uow, [a.current for a in agents])
-    return RegistryAgentList(items=[agent_view(a, names) for a in agents])
+    models = await _custom_models(uow, agents)
+    return RegistryAgentList(items=[agent_view(a, names, models) for a in agents])
 
 
 async def read_agent(uow: UnitOfWork, actor: Principal, agent_id: str) -> RegistryAgent:
@@ -359,16 +392,16 @@ async def read_versions(uow: UnitOfWork, actor: Principal, agent_id: str) -> Age
 async def read_config_options(
     uow: UnitOfWork, actor: Principal, agent_id: str
 ) -> AgentConfigOptions:
-    """What `check_deployed` accepts for a new version of this Agent: the deployed model
-    profiles, its prompt and input schema versions, its output schema versions written for
-    `CONTRACT_VERSION`, and the grantable tools (`read` actions that are ToolGateway tools,
-    each with its category; Story 7.4)."""
+    """What `check_deployed` accepts for a new version of this Agent: the deployed and
+    `verified` custom model profiles, its prompt and input schema versions, its output schema
+    versions written for `CONTRACT_VERSION`, and the grantable tools (`read` actions that are
+    ToolGateway tools, each with its category; Story 7.4)."""
     _require_admin(actor)
     agent = await _load(uow, agent_id)
     manifest = deployed.load()
     outputs = manifest.schemas(agent.agent_id, "output")
     return AgentConfigOptions(
-        model_profiles=manifest.profiles(),
+        model_profiles=sorted({*manifest.profiles(), *await repo.verified_profile_names(uow)}),
         prompt_versions=manifest.prompt_versions(agent.agent_id),
         input_schema_versions=list(manifest.schemas(agent.agent_id, "input")),
         output_schema_versions=[
@@ -435,7 +468,7 @@ async def register_agent(uow: UnitOfWork, actor: Principal, new: NewAgent) -> Re
     user_id = _writer(actor, Action.REGISTRY_AGENT_REGISTER)
     agent_id = _invalid(new.agent_id, rules.agent_id)
     name = _invalid(new.name, rules.agent_name)
-    config = check_deployed(agent_id, new.config)
+    config = await check_deployed(uow, agent_id, new.config)
     await repo.lock_registry(uow)
     if await repo.agent_exists(uow, agent_id):
         raise RegistryAgentDuplicateError(f"An Agent with the id {agent_id} already exists.")
@@ -469,7 +502,7 @@ async def register_agent(uow: UnitOfWork, actor: Principal, new: NewAgent) -> Re
             "actor_id": str(user_id),
         },
     )
-    return agent_view(agent)
+    return agent_view(agent, custom_models=await _custom_models(uow, [agent]))
 
 
 async def create_config_version(
@@ -486,7 +519,7 @@ async def create_config_version(
     reason = _invalid(new.reason, rules.reason)
     expected = _expected(if_match)
     agent = await _load(uow, agent_id)
-    config = check_deployed(agent.agent_id, new)
+    config = await check_deployed(uow, agent.agent_id, new)
     restored = new.restored_from_version
     if restored is not None:
         source = await repo.get_version_number(uow, agent.agent_id, restored)
@@ -786,6 +819,20 @@ async def read_eval(uow: UnitOfWork, actor: Principal, result_id: UUID) -> EvalR
     if row is None:
         raise NotFoundError(EVAL_NOT_FOUND_DETAIL)
     return eval_view(row)
+
+
+async def custom_profiles_of(
+    uow: UnitOfWork, versions: Iterable[ConfigVersion]
+) -> list[CustomProfile]:
+    """The stored profiles these config versions pin (no authorization; the eval harness)."""
+    return await repo.custom_profiles_named(uow, {v.model_profile for v in versions})
+
+
+async def install_eval_profiles(uow: UnitOfWork, profiles: Iterable[CustomProfile]) -> None:
+    """Eval harness only, in the eval database: copy the custom profiles the evaluated config
+    versions pin, read from the main database."""
+    for profile in profiles:
+        await repo.install_model_profile(uow, profile)
 
 
 async def install_eval_config(

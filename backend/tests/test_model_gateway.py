@@ -673,6 +673,32 @@ def test_profiles_are_defined() -> None:
         get_profile("nope")
 
 
+@pytest.mark.parametrize("with_resolver", [True, False])
+def test_an_unknown_profile_raises_with_no_provider_call(db_url: str, with_resolver: bool) -> None:
+    stub = StubOllama([VALID])
+
+    async def nothing(_: str) -> None:
+        return None
+
+    async def scenario() -> None:
+        config = _settings(db_url)
+        engine = create_engine(config)
+        try:
+            async with ModelGateway(
+                config,
+                engine,
+                transport=httpx.MockTransport(stub),
+                resolve_profile=nothing if with_resolver else None,
+            ) as gateway:
+                await gateway.complete_structured(_request(profile="no-such-profile"))
+        finally:
+            await engine.dispose()
+
+    with pytest.raises(UnknownModelProfileError):
+        run_async(scenario())
+    assert stub.chat_bodies == []
+
+
 def test_configured_ollama_profile_sends_its_options(db_url: str, sync_engine: Engine) -> None:
     stub = StubOllama([VALID])
     result = _call(db_url, stub, model_profile_chat="ollama-cloud-chat")

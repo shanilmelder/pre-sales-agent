@@ -10,6 +10,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
@@ -144,6 +145,38 @@ def test_worker_installs_its_gateway_while_running() -> None:
     assert run_async(scenario()) is fake
     with pytest.raises(provider.NoModelGatewayError):
         provider.current()
+
+
+def test_the_workers_gateway_resolves_a_stored_profile(sync_engine: Engine, db_url: str) -> None:
+    from app.platform.model_gateway import provider
+    from app.platform.model_gateway.gateway import ModelGateway
+
+    name = f"t-{uuid4().hex[:12]}"
+    with sync_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO registry_model_profiles "
+                "(id, name, provider, model, num_ctx, temperature, state) "
+                "VALUES (:id, :name, 'ollama', 'gpt-oss:120b-cloud', 24000, 0.2, 'verified')"
+            ),
+            {"id": uuid4(), "name": name},
+        )
+
+    async def scenario() -> int:
+        stop = asyncio.Event()
+        task = asyncio.create_task(
+            run(stop, settings=Settings(database_url=db_url), poll_s=0.01, job_types=())
+        )
+        await asyncio.sleep(0.05)
+        try:
+            gateway = provider.current()
+            assert isinstance(gateway, ModelGateway)
+            return (await gateway._chat_profile(name)).num_ctx
+        finally:
+            stop.set()
+            await asyncio.wait_for(task, timeout=5)
+
+    assert run_async(scenario()) == 24000
 
 
 # --- with a database (Story 5.2) ------------------------------------------------------------

@@ -16,9 +16,13 @@ partial HNSW index, so changing it is a re-embed, not just a config change.
 
 This module has no imports from the app: `app.platform.config` validates the configured
 profile names against `MODEL_PROFILES` and `EMBED_PROFILES` at startup.
+
+`MODEL_PROFILES` holds the built-ins. Platform administrators add custom chat profiles to the
+database (`app.modules.registry`), which this package can't import: the worker injects a
+`ProfileResolver` into its ModelGateway instead. `PSA_MODEL_PROFILE_CHAT` names a built-in.
 """
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
@@ -86,8 +90,12 @@ BGE_M3 = EmbedProfile(name="bge-m3", model="bge-m3", dims=1024)
 EMBED_PROFILES: Mapping[str, EmbedProfile] = MappingProxyType({BGE_M3.name: BGE_M3})
 
 
+type ProfileResolver = Callable[[str], Awaitable[ModelProfile | None]]
+"""Finds a chat profile by name outside `MODEL_PROFILES`; None when there is no such profile."""
+
+
 class UnknownModelProfileError(LookupError):
-    """A profile name that is not defined here. A programming or config error."""
+    """A profile name that is not defined. A programming or config error."""
 
 
 def get_profile(name: str) -> ModelProfile:

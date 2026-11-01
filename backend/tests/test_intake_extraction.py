@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,7 @@ from app.modules.gaps.application import detection as gaps_detection
 from app.modules.intake.application import extraction as intake_extraction
 from app.modules.intake.application import jobs as intake_jobs
 from app.modules.intake.application import public as intake
+from app.modules.registry.application import public as registry
 from app.modules.registry.domain.registry import seed_config_version_id
 from app.modules.workflows.application import runs as workflows_runs
 from app.platform.actor import Actor
@@ -201,6 +203,21 @@ def client(db_url: str, storage_dir: Path) -> Iterator[TestClient]:
 
 
 # --- helpers --------------------------------------------------------------------------------
+
+
+def verified_profile(engine: Engine, num_ctx: int) -> str:
+    """A stored, verified custom profile with this context size; its name."""
+    name = f"t-{uuid4().hex[:12]}"
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO registry_model_profiles "
+                "(id, name, provider, model, num_ctx, temperature, state) "
+                "VALUES (:id, :name, 'ollama', 'gpt-oss:120b-cloud', :ctx, 0.1, 'verified')"
+            ),
+            {"id": uuid4(), "name": name, "ctx": num_ctx},
+        )
+    return name
 
 
 async def _claim_mine(engine: AsyncEngine, job_types: tuple[str, ...]) -> q.ClaimedJob | None:
@@ -732,6 +749,32 @@ def test_input_over_the_budget_fails_without_a_model_call(
         1,
     )
     assert completed_events(sync_engine, extraction["id"]) == []
+
+
+def test_the_budget_is_the_custom_profiles_context_size(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Within `ollama-cloud-chat`'s budget, over the smaller stored one. The pin is patched
+    onto the seeded version: a real new version of `intake_agent` would outlive this test."""
+    num_ctx = 16384
+    name = verified_profile(sync_engine, num_ctx)
+    size = intake_extraction.input_budget_chars(num_ctx) + 10
+    assert size < intake_extraction.input_budget_chars(32768)
+    text = ("Requirement text. " * (size // 18 + 2))[:size]
+    _, opp, _ = parsed(client, sync_engine, db_url, ("big.txt", f"{uuid4()} {text}"))
+    gateway.replies = [out()]
+    pinned = registry.agent_config
+    monkeypatch.setattr(registry, "agent_config", lambda v: replace(pinned(v), profile=name))
+
+    assert drain(db_url, EXTRACT) == ["succeeded"]
+
+    assert gateway.requests == []
+    (extraction,) = extractions(sync_engine, opp["id"])
+    assert (extraction["status"], extraction["error_code"]) == ("failed", "input_too_large")
 
 
 @pytest.mark.parametrize(

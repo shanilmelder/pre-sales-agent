@@ -1,7 +1,9 @@
 """Agent Registry routes (Story 7.1) under `/api/v1/registry/agents`, the read-only
-evaluation results (Story 7.6) under `/api/v1/registry/evals`, and the denied tool calls
-(Story 7.4) under `/api/v1/registry/tool-denials`. Platform administrators only: anyone else
-gets 403. Writes to an existing Agent take its `ETag` back in `If-Match`."""
+evaluation results (Story 7.6) under `/api/v1/registry/evals`, the denied tool calls
+(Story 7.4) under `/api/v1/registry/tool-denials`, custom chat model profiles under
+`/api/v1/registry/model-profiles` and the approved-model allowlist under
+`/api/v1/registry/approved-models`. Platform administrators only: anyone else gets 403. Writes
+to an existing Agent take its `ETag` back in `If-Match`."""
 
 import re
 from datetime import date
@@ -17,10 +19,16 @@ from app.modules.registry.application.public import (
     AgentConfigOptions,
     AgentConfigVersionList,
     AgentStatusChange,
+    ApprovedModelList,
+    ApprovedModelView,
     EvalResult,
     EvalResultList,
+    ModelProfileList,
+    ModelProfileView,
     NewAgent,
     NewAgentConfigVersion,
+    NewApprovedModel,
+    NewModelProfile,
     RegistryAgent,
     RegistryAgentList,
     ToolDenialPage,
@@ -37,7 +45,7 @@ _DESCRIBED: dict[int, str] = {
     409: "An Agent with this id is already registered (`registry_agent_duplicate`)",
     412: "The Agent changed since the caller read it (`row_version_mismatch`)",
     422: "A field is invalid (the `detail` is the sentence to show; `validation_error`), the "
-    "config references a prompt, schema or profile that is not deployed "
+    "config references a prompt, schema or profile that is not deployed or verified "
     "(`registry_config_not_deployed`), its output schema is for another contract version "
     "(`registry_config_incompatible_contract`), or it grants a permission that is not a read "
     "tool (`registry_permission_forbidden_for_agents`)",
@@ -296,3 +304,129 @@ async def list_tool_denials(
     return await registry.read_tool_denials(
         uow, actor, agent_id=agent, date_from=start, date_to=end, page=page, page_size=page_size
     )
+
+
+# --- custom chat model profiles ---------------------------------------------------------------
+
+model_profiles_router = APIRouter(prefix="/registry/model-profiles", tags=["registry"])
+_PROFILE_ID = Annotated[UUID, Path(description="The custom model profile's id.")]
+_PROFILE_DESCRIBED = {
+    **_DESCRIBED,
+    403: "The caller may not manage model profiles (`forbidden`)",
+    404: "No custom model profile with this id (`not_found`)",
+    409: "The name is taken by a custom or built-in profile "
+    "(`registry_model_profile_duplicate`), an Agent's current config version pins the profile "
+    "(`registry_model_profile_in_use`), or it is neither failed nor pending "
+    "(`registry_model_profile_not_retestable`)",
+    422: "A field is invalid (`validation_error`) or the model is not on the approved-model "
+    "allowlist (`registry_model_not_approved`)",
+}
+
+
+def _profile_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    return {
+        code: {"description": _PROFILE_DESCRIBED[code], "content": PROBLEM_CONTENT}
+        for code in (401, 503, *codes)
+    }
+
+
+@model_profiles_router.get(
+    "", operation_id="list_model_profiles", responses=_profile_responses(403)
+)
+async def list_model_profiles(actor: CurrentPrincipal, uow: UoW) -> ModelProfileList:
+    """Every custom chat model profile, newest first, with its latest test result."""
+    return await registry.read_model_profiles(uow, actor)
+
+
+@model_profiles_router.post(
+    "",
+    operation_id="create_model_profile",
+    status_code=201,
+    responses=_profile_responses(403, 409, 422),
+)
+async def create_model_profile(
+    body: NewModelProfile, actor: CurrentPrincipal, uow: UoW
+) -> ModelProfileView:
+    """Create a profile in state `untested` and queue its live test. A profile is immutable:
+    to change one, create another and retire this one."""
+    return await registry.create_model_profile(uow, actor, body)
+
+
+@model_profiles_router.post(
+    "/{profile_id}/test",
+    operation_id="retest_model_profile",
+    responses=_profile_responses(403, 404, 409, 422),
+)
+async def retest_model_profile(
+    profile_id: _PROFILE_ID, actor: CurrentPrincipal, uow: UoW
+) -> ModelProfileView:
+    """Test a `failed` or stuck `untested` profile again: it is `untested` with a test
+    queued."""
+    return await registry.retest_model_profile(uow, actor, profile_id)
+
+
+@model_profiles_router.post(
+    "/{profile_id}/retire",
+    operation_id="retire_model_profile",
+    responses=_profile_responses(403, 404, 409, 422),
+)
+async def retire_model_profile(
+    profile_id: _PROFILE_ID, actor: CurrentPrincipal, uow: UoW
+) -> ModelProfileView:
+    """Retire a profile no Agent's current config version pins. Versions and runs already
+    pinned to it keep using it; no new version can. Retiring it twice changes nothing."""
+    return await registry.retire_model_profile(uow, actor, profile_id)
+
+
+# --- the approved-model allowlist -------------------------------------------------------------
+
+approved_models_router = APIRouter(prefix="/registry/approved-models", tags=["registry"])
+_APPROVED_ID = Annotated[UUID, Path(description="The allowlist entry's id.")]
+_APPROVED_DESCRIBED = {
+    **_DESCRIBED,
+    403: "The caller may not manage model profiles (`forbidden`)",
+    404: "No allowlist entry with this id (`not_found`)",
+    409: "The model is already on the allowlist (`registry_approved_model_duplicate`)",
+    422: "A field is invalid (`validation_error`)",
+}
+
+
+def _approved_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    return {
+        code: {"description": _APPROVED_DESCRIBED[code], "content": PROBLEM_CONTENT}
+        for code in (401, 503, *codes)
+    }
+
+
+@approved_models_router.get(
+    "", operation_id="list_approved_models", responses=_approved_responses(403)
+)
+async def list_approved_models(actor: CurrentPrincipal, uow: UoW) -> ApprovedModelList:
+    """The models a custom profile may name, by provider and model."""
+    return await registry.read_approved_models(uow, actor)
+
+
+@approved_models_router.post(
+    "",
+    operation_id="add_approved_model",
+    status_code=201,
+    responses=_approved_responses(403, 409, 422),
+)
+async def add_approved_model(
+    body: NewApprovedModel, actor: CurrentPrincipal, uow: UoW
+) -> ApprovedModelView:
+    """Add a provider and model to the allowlist."""
+    return await registry.add_approved_model(uow, actor, body)
+
+
+@approved_models_router.delete(
+    "/{approved_id}",
+    operation_id="remove_approved_model",
+    status_code=204,
+    responses=_approved_responses(403, 404, 422),
+)
+async def remove_approved_model(
+    approved_id: _APPROVED_ID, actor: CurrentPrincipal, uow: UoW
+) -> None:
+    """Remove a model from the allowlist. Profiles that already name it are not affected."""
+    await registry.remove_approved_model(uow, actor, approved_id)

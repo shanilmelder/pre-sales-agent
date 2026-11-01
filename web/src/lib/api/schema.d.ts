@@ -2660,6 +2660,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registry/model-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Model Profiles
+         * @description Every custom chat model profile, newest first, with its latest test result.
+         */
+        get: operations["list_model_profiles"];
+        put?: never;
+        /**
+         * Create Model Profile
+         * @description Create a profile in state `untested` and queue its live test. A profile is immutable:
+         *     to change one, create another and retire this one.
+         */
+        post: operations["create_model_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/model-profiles/{profile_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retest Model Profile
+         * @description Test a `failed` or stuck `untested` profile again: it is `untested` with a test
+         *     queued.
+         */
+        post: operations["retest_model_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/model-profiles/{profile_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire Model Profile
+         * @description Retire a profile no Agent's current config version pins. Versions and runs already
+         *     pinned to it keep using it; no new version can. Retiring it twice changes nothing.
+         */
+        post: operations["retire_model_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/approved-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Approved Models
+         * @description The models a custom profile may name, by provider and model.
+         */
+        get: operations["list_approved_models"];
+        put?: never;
+        /**
+         * Add Approved Model
+         * @description Add a provider and model to the allowlist.
+         */
+        post: operations["add_approved_model"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/registry/approved-models/{approved_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Approved Model
+         * @description Remove a model from the allowlist. Profiles that already name it are not affected.
+         */
+        delete: operations["remove_approved_model"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}/review-requests": {
         parameters: {
             query?: never;
@@ -3679,7 +3790,8 @@ export interface components {
         /**
          * AgentConfigOptions
          * @description What a new config version of this Agent may reference, from the deployed manifest
-         *     (Story 7.3): the model profiles, the Agent's deployed prompt versions, its input schema
+         *     (Story 7.3): the model profiles (with `verified` custom ones), the Agent's deployed prompt
+         *     versions, its input schema
          *     versions and its output schema versions written for the deployed contract version, and
          *     the grantable tool permissions (`read` actions that are ToolGateway tools, Story 7.4).
          *     Each list is sorted.
@@ -3882,6 +3994,34 @@ export interface components {
         ApproveSelectedResult: {
             /** Count */
             count: number;
+        };
+        /**
+         * ApprovedModelList
+         * @description The approved-model allowlist, by provider and model.
+         */
+        ApprovedModelList: {
+            /** Items */
+            items: components["schemas"]["ApprovedModelView"][];
+        };
+        /**
+         * ApprovedModelView
+         * @description A provider and model a custom profile may name.
+         */
+        ApprovedModelView: {
+            /** Id */
+            id: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "ollama" | "openai";
+            /** Model */
+            model: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * AssessmentAgent
@@ -5369,7 +5509,7 @@ export interface components {
         /**
          * EffectiveModel
          * @description The model profile an Agent's current config version pins and that profile's model;
-         *     `model` is null when the profile is not defined in this deployment.
+         *     `model` is null when the profile is neither built in nor stored.
          */
         EffectiveModel: {
             /** Profile */
@@ -7347,6 +7487,51 @@ export interface components {
             row_version: number;
         };
         /**
+         * ModelProfileList
+         * @description Custom chat model profiles, newest first.
+         */
+        ModelProfileList: {
+            /** Items */
+            items: components["schemas"]["ModelProfileView"][];
+        };
+        /**
+         * ModelProfileView
+         * @description A custom chat model profile. `state` `untested` means its live test is queued or
+         *     running. `error_code`, `latency_ms` and `tested_at` are its latest test result (null
+         *     before a result). `temperature` is null for a reasoning profile.
+         */
+        ModelProfileView: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "ollama" | "openai";
+            /** Model */
+            model: string;
+            /** Num Ctx */
+            num_ctx: number;
+            /** Temperature */
+            temperature: number | null;
+            /** Reasoning Effort */
+            reasoning_effort: string | null;
+            state: components["schemas"]["ProfileState"];
+            /** Error Code */
+            error_code: string | null;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Tested At */
+            tested_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
          * NewAgent
          * @description Register an Agent with its config version 1. `agent_id`: unique, lowercase snake_case
          *     ending in `_agent`; `name`: 1-120 characters.
@@ -7361,7 +7546,8 @@ export interface components {
         /**
          * NewAgentConfig
          * @description A config version. The prompt, both schema versions and the model profile must be in
-         *     the deployed manifest (422 `registry_config_not_deployed`), and the output schema must be
+         *     the deployed manifest, or the profile a `verified` custom one (422
+         *     `registry_config_not_deployed`), and the output schema must be
          *     written for the deployed `AgentResult` contract version (422
          *     `registry_config_incompatible_contract`). `tool_permissions`: action names
          *     (`<module>.<entity>.<verb>`), at most 50; `budgets`: at most 20 keys.
@@ -7413,6 +7599,16 @@ export interface components {
             /** Restored From Version */
             restored_from_version?: number | null;
         };
+        /** NewApprovedModel */
+        NewApprovedModel: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "ollama" | "openai";
+            /** Model */
+            model: string;
+        };
         /**
          * NewChecklist
          * @description Create a Checklist: a name (1-200 characters, trimmed) and a domain. It starts with an
@@ -7440,6 +7636,30 @@ export interface components {
             name: string;
             /** Definition */
             definition: string;
+        };
+        /**
+         * NewModelProfile
+         * @description A custom chat model profile. `model` must be on the approved-model allowlist for
+         *     `provider`. Set `temperature` or `reasoning_effort`, not both; `reasoning_effort` needs
+         *     provider `openai`, and setting neither uses the default temperature. No base URL, API key
+         *     or other secret: those stay in the environment.
+         */
+        NewModelProfile: {
+            /** Name */
+            name: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "ollama" | "openai";
+            /** Model */
+            model: string;
+            /** Num Ctx */
+            num_ctx: number;
+            /** Temperature */
+            temperature?: number | null;
+            /** Reasoning Effort */
+            reasoning_effort?: ("low" | "medium" | "high") | null;
         };
         /**
          * NewOpportunity
@@ -7935,6 +8155,11 @@ export interface components {
              */
             resolved_at: string;
         };
+        /**
+         * ProfileState
+         * @enum {string}
+         */
+        ProfileState: "untested" | "verified" | "failed" | "retired";
         /**
          * ProposalStatus
          * @description The state of an Estimate Version's `estimates.propose_assumptions` job.
@@ -28748,7 +28973,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed or verified (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -28883,7 +29108,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed or verified (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29016,7 +29241,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed or verified (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29180,7 +29405,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed or verified (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29335,7 +29560,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed or verified (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29499,7 +29724,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
+            /** @description A field is invalid (the `detail` is the sentence to show; `validation_error`), the config references a prompt, schema or profile that is not deployed or verified (`registry_config_not_deployed`), its output schema is for another contract version (`registry_config_incompatible_contract`), or it grants a permission that is not a read tool (`registry_permission_forbidden_for_agents`) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -29858,6 +30083,887 @@ export interface operations {
                 };
             };
             /** @description A query parameter is invalid: a date that is not `YYYY-MM-DD`, `from` after `to`, or a page out of range (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_model_profiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProfileList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not manage model profiles (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    create_model_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewModelProfile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProfileView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not manage model profiles (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (`validation_error`) or the model is not on the approved-model allowlist (`registry_model_not_approved`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    retest_model_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The custom model profile's id. */
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProfileView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not manage model profiles (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No custom model profile with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (`validation_error`) or the model is not on the approved-model allowlist (`registry_model_not_approved`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    retire_model_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The custom model profile's id. */
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProfileView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not manage model profiles (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No custom model profile with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (`validation_error`) or the model is not on the approved-model allowlist (`registry_model_not_approved`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    list_approved_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovedModelList"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not manage model profiles (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    add_approved_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewApprovedModel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovedModelView"];
+                };
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not manage model profiles (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The model is already on the allowlist (`registry_approved_model_duplicate`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (`validation_error`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description Sign-in service unavailable (`auth_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    remove_approved_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The allowlist entry's id. */
+                approved_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid access token (`token_missing`, `token_expired`, `token_invalid`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description The caller may not manage model profiles (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description No allowlist entry with this id (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Code */
+                        code: string;
+                        /** Detail */
+                        detail?: string | null;
+                        /** Instance */
+                        instance?: string | null;
+                    };
+                };
+            };
+            /** @description A field is invalid (`validation_error`) */
             422: {
                 headers: {
                     [name: string]: unknown;

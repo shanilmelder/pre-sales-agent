@@ -71,6 +71,9 @@ class Action(StrEnum):
     REGISTRY_AGENT_REGISTER = "registry.agent.register"
     REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
     REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"
+    REGISTRY_MODEL_PROFILE_MANAGE = "registry.model_profile.manage"
+    """Read and change custom chat model profiles and the approved-model allowlist (platform
+    administrators only)."""
     DECISION_RESOLVE = "workflows.decision.resolve"
     REVIEW_REQUEST_CREATE = "reviews.review_request.create"
     """Story 9.1: send Review Requests for a submitted Estimate Version, and list the
@@ -211,6 +214,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.REGISTRY_AGENT_REGISTER: _W,
         Action.REGISTRY_AGENT_CONFIG_CREATE: _W,
         Action.REGISTRY_AGENT_SET_STATUS: _W,
+        Action.REGISTRY_MODEL_PROFILE_MANAGE: _W,
         Action.DECISION_RESOLVE: _A,
         Action.REVIEW_REQUEST_CREATE: _S,
         Action.REVIEW_REQUEST_CANCEL: _D,
