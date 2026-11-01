@@ -28,8 +28,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.platform.db import Base
 
 _NOW = text("now()")
-_AGENTS = "('engineering_agent', 'pm_agent', 'security_agent', 'critic_agent')"
-_ERROR_CODES = "('model_unavailable', 'model_timeout', 'output_invalid')"
+_AGENTS = (
+    "('engineering_agent', 'pm_agent', 'security_agent', 'critic_agent', "
+    "'conflict_detection', 'new_version')"
+)
+_NODES = "('conflict_detection', 'new_version')"
+_ERROR_CODES = "('model_unavailable', 'model_timeout', 'output_invalid', 'estimate_changed')"
 PROGRESS_EVENTS = (
     "workflows.run.queued",
     "workflows.task.started",
@@ -82,7 +86,9 @@ class WorkflowTaskRow(Base):
     `requires` ended without succeeding (Story 5.2). `requires`: the ids of the run's tasks it
     waits for (empty: it starts at once). `after` (Story 6.4): the ids of the run's tasks it
     starts after, once each has ended whatever the outcome (the Critic's: the specialists').
-    `config_version_id`: the registry config version pinned when the run was queued."""
+    `config_version_id`: the registry config version pinned when the run was queued; null for
+    a non-agent node (Story 9.6: a challenge run's `conflict_detection` and `new_version`),
+    which calls no model."""
 
     __tablename__ = "workflows_tasks"
     __table_args__ = (
@@ -97,6 +103,9 @@ class WorkflowTaskRow(Base):
             "skip_reason IS NULL OR (status = 'skipped' AND skip_reason IN ('agent_disabled'))",
             name="skip_reason",
         ),
+        CheckConstraint(
+            f"(config_version_id IS NULL) = (agent IN {_NODES})", name="config_version_pinned"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -107,7 +116,7 @@ class WorkflowTaskRow(Base):
     agent: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
     error_code: Mapped[str | None] = mapped_column(Text)
-    config_version_id: Mapped[UUID] = mapped_column(
+    config_version_id: Mapped[UUID | None] = mapped_column(
         Uuid,
         ForeignKey(
             "registry_agent_config_versions.id", name="fk_workflows_tasks_config_version_id"
@@ -212,6 +221,9 @@ class WorkflowPlanVersionRow(Base):
     )
     version: Mapped[int] = mapped_column(Integer)
     tasks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    pins: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    """Story 9.6: what the plan was made against (the active Requirements and Sources at
+    their versions, the latest Estimate Version number); null for older plans."""
     created_by_type: Mapped[str] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)

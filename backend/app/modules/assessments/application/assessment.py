@@ -390,13 +390,10 @@ async def finding_titles(
     }
 
 
-async def current_sizings(uow: UnitOfWork, opportunity_id: UUID) -> list[estimates.AgentSizing]:
-    """Each agent's current Assessment of the Opportunity with its effort rows and their
-    basis, in agent order (Story 8.3: the Estimate from the Assessments). No authorization."""
-    records = sorted(
-        await repo.current_assessments(uow, opportunity_id),
-        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
-    )
+async def _sizings(
+    uow: UnitOfWork, records: Sequence[repo.AssessmentRecord]
+) -> list[estimates.AgentSizing]:
+    """These Assessments with their effort rows and basis, in the order given."""
     rows: dict[UUID, list[estimates.SizingRow]] = {}
     for row in await repo.effort_of(uow, [r.id for r in records]):
         rows.setdefault(row.assessment_id, []).append(
@@ -416,3 +413,34 @@ async def current_sizings(uow: UnitOfWork, opportunity_id: UUID) -> list[estimat
         )
         for r in records
     ]
+
+
+async def current_sizings(uow: UnitOfWork, opportunity_id: UUID) -> list[estimates.AgentSizing]:
+    """Each agent's current Assessment of the Opportunity with its effort rows and their
+    basis, in agent order (Story 8.3: the Estimate from the Assessments). No authorization."""
+    records = sorted(
+        await repo.current_assessments(uow, opportunity_id),
+        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
+    )
+    return await _sizings(uow, records)
+
+
+async def run_sizing_pairs(
+    uow: UnitOfWork, opportunity_id: UUID, run_id: UUID
+) -> list[tuple[estimates.AgentSizing | None, estimates.AgentSizing]]:
+    """Story 9.6 (a Challenge's run): for each agent with an Assessment accepted in the run,
+    that agent's Assessment just before it (None for its first) and the run's, with their
+    effort rows, in agent order. No authorization."""
+    reruns = sorted(
+        await repo.run_assessments(uow, opportunity_id, run_id),
+        key=lambda r: AGENTS.index(AssessmentAgent(r.agent)),
+    )
+    pairs: list[tuple[estimates.AgentSizing | None, estimates.AgentSizing]] = []
+    for rerun in reruns:
+        previous = await repo.assessment_of_version(
+            uow, opportunity_id, rerun.agent, rerun.version - 1
+        )
+        (after,) = await _sizings(uow, [rerun])
+        before = None if previous is None else (await _sizings(uow, [previous]))[0]
+        pairs.append((before, after))
+    return pairs

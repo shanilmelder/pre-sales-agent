@@ -37,6 +37,9 @@ class RunErrorCode(StrEnum):
     OUTPUT_INVALID = "output_invalid"
     AGENT_DISABLED = "registry_agent_disabled"
     """The Agent is `disabled` or `eval_only` in the Agent Registry (Story 7.1)."""
+    ESTIMATE_CHANGED = "estimate_changed"
+    """Story 9.6: a newer Estimate Version appeared while a Challenge's run worked, so its
+    `new_version` node stored nothing."""
 
 
 class FindingCategory(StrEnum):

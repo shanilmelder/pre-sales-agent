@@ -104,6 +104,9 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "reviews.challenge.raised": "Challenge raised",
   "reviews.challenge.confirmed": "Reassessment confirmed",
   "reviews.challenge.declined": "Challenge declined",
+  // Story 9.6
+  "reviews.challenge.completed": "Challenge completed",
+  "reviews.challenge.failed": "Challenge reassessment failed",
   // Story 10.1
   "actuals.actual.recorded": "Actual recorded",
   "actuals.actual.corrected": "Actual corrected",

@@ -11,6 +11,7 @@ Requirements come by number, the order the Requirements tab lists them in.
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from app.modules.intake.adapters import repository as source_repo
 from app.modules.intake.adapters import requirements_repository as repo
 from app.platform.uow import UnitOfWork
 
@@ -48,6 +49,12 @@ async def active_requirement_snapshots(
         )
         for r in records
     ]
+
+
+async def source_version_pins(uow: UnitOfWork, opportunity_id: UUID) -> list[tuple[UUID, int]]:
+    """Story 9.6 (a challenge run's plan pins): each of the Opportunity's Sources with its
+    latest version, newest Source first."""
+    return [(r.id, r.version) for r in await source_repo.list_for(uow, opportunity_id)]
 
 
 async def active_requirement_ids(

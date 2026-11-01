@@ -90,6 +90,7 @@ export const REVIEW_FAILURE_REASONS: Record<RunErrorCode, string> = {
   model_timeout: "the model took too long to answer",
   output_invalid: "the model's answer couldn't be used",
   registry_agent_disabled: "its agent is disabled",
+  estimate_changed: "a newer Estimate Version was created while the run worked",
 };
 
 /** "Red Team review failed: <reason>" (a general reason for a code this build doesn't know). */

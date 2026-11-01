@@ -17,14 +17,25 @@
   item's subject, read lazily); `may_raise_challenge` (workflows: the Assessments tab's
   `can_challenge`, read lazily).
 - Story 9.9: `challenges_for` (`estimates`' lineage, read lazily).
+- Story 9.6 (a Challenge's reassessment run, read lazily by `workflows` and
+  `app.orchestration`): `challenge_brief`, `challenge_run`, `complete_challenge` and
+  `fail_challenge` (system actors); `challenge_version_link` (notifications, an outcome
+  item's link).
 """
 
 from app.modules.reviews.application.challenges import (
+    ChallengeBrief,
+    ChallengeRun,
+    challenge_brief,
+    challenge_run,
     challenge_status,
     challenge_suggestions,
+    challenge_version_link,
     challenges_for,
+    complete_challenge,
     confirm_reassessment,
     decline_challenge,
+    fail_challenge,
     get_challenge,
     may_raise_challenge,
     raise_challenge,
@@ -101,10 +112,12 @@ __all__ = [
     "STATUS_LABELS",
     "AssessmentOption",
     "AssessmentRef",
+    "ChallengeBrief",
     "ChallengeConfirm",
     "ChallengeCreate",
     "ChallengeDecline",
     "ChallengeRef",
+    "ChallengeRun",
     "ChallengeState",
     "ChallengeStatus",
     "ChallengeSuggestionView",
@@ -139,14 +152,19 @@ __all__ = [
     "VersionRef",
     "alternative_requested",
     "cancel_review_request",
+    "challenge_brief",
+    "challenge_run",
     "challenge_status",
     "challenge_suggestions",
+    "challenge_version_link",
     "challenges_for",
+    "complete_challenge",
     "confirm_reassessment",
     "create_from_body",
     "create_review_request",
     "decide",
     "decline_challenge",
+    "fail_challenge",
     "get_challenge",
     "list_open_requests",
     "list_review_requests",

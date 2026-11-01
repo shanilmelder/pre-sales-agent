@@ -4,6 +4,8 @@ import { anchorId } from "@/lib/submission";
 import {
   CalendarRangeIcon,
   ChevronDownIcon,
+  FilePlus2Icon,
+  GitCompareArrowsIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDotIcon,
@@ -77,6 +79,7 @@ import {
   CANCEL_RUN_DESCRIPTION,
   CANCEL_RUN_KEEP,
   CANCEL_RUN_TITLE,
+  CHALLENGE_RUN_LABEL,
   confidenceLabel,
   CONTINUE_WITHOUT,
   decisionSentence,
@@ -85,6 +88,7 @@ import {
   failureReason,
   findingKey,
   isAssessing,
+  isChallengeRun,
   isRunActive,
   isWaiting,
   mergeFindings,
@@ -170,7 +174,9 @@ const AGENT_ICONS: Record<TaskAgent, LucideIcon> = {
   engineering_agent: LayoutPanelLeftIcon,
   pm_agent: CalendarRangeIcon,
   security_agent: ShieldCheckIcon,
+  conflict_detection: GitCompareArrowsIcon,
   critic_agent: ScanSearchIcon,
+  new_version: FilePlus2Icon,
 };
 
 /** A recommendation: always an icon and a label, never colour alone. */
@@ -919,6 +925,7 @@ export function AgentRunPanel({
                 ) : failed &&
                 canStart &&
                 !assessing &&
+                !isChallengeRun(run) &&
                 run?.status !== "cancelled" ? (
                   <Button
                     type="button"
@@ -1118,6 +1125,11 @@ export function SpecialistAssessmentsHeader({
               >
                 {runStatusLabel(run)}
               </Pill>
+              {isChallengeRun(run) ? (
+                <span data-testid="run-type" className="text-label text-muted-foreground">
+                  {CHALLENGE_RUN_LABEL}
+                </span>
+              ) : null}
             </div>
             <p className="text-meta text-muted-foreground">
               Started {formatDateTime(run.queued_at || run.created_at)}

@@ -836,6 +836,7 @@ describe("a run waiting for a person (Story 5.5)", () => {
     run: {
       id: "r",
       status: "waiting_for_human",
+      run_type: "assessment",
       created_at: "2026-10-23T09:00:00Z",
       queued_at: "2026-10-23T09:00:00Z",
       finished_at: null,

@@ -635,9 +635,10 @@ class EstimatesEstimateVersionCreated(TracePayload):
     """Story 8.2: edited lines of the superseded draft carried onto a matching line."""
     uncarried_edit_count: int = 0
     """Story 8.2: edited lines of the superseded draft with no matching line."""
-    source: Literal["model", "assessments"] = "model"
+    source: Literal["model", "assessments", "challenge"] = "model"
     """Story 8.3: `assessments` when built from the specialist Assessments as an assessment
-    run finished (actor `system`), else `model`."""
+    run finished (actor `system`), else `model`. Story 9.6: `challenge` when a Challenge's
+    run built it from the challenged version (`base_version_id`)."""
     source_run_id: str | None = None
     """Story 8.3: that assessment run's id."""
     base_version_id: str | None = None
@@ -1676,6 +1677,51 @@ class ReviewsChallengeDeclined(TracePayload):
     challenge_id: str
     reason: str
     review_request_id: str | None = None
+
+
+class ChallengeLineDelta(BaseModel):
+    """One Estimate line a Challenge's reassessment changed (Story 9.6): hours before and
+    after (null when added or removed) and the difference."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    line_id: str
+    title: str
+    before_h: float | None = None
+    after_h: float | None = None
+    delta_h: float
+
+
+@register
+class ReviewsChallengeCompleted(TracePayload):
+    """A Challenge's reassessment run created a new Estimate Version from the challenged one
+    (Story 9.6): the run `workflow_run_id`, the previous and the new version, each changed
+    line's delta in hours and the total. Actor: the system (`workflows.execute`)."""
+
+    event_type: ClassVar[str] = "reviews.challenge.completed"
+
+    challenge_id: str
+    workflow_run_id: str
+    previous_version_id: str
+    previous_version: int
+    new_version_id: str
+    new_version: int
+    lines: list[ChallengeLineDelta]
+    total_delta_h: float
+
+
+@register
+class ReviewsChallengeFailed(TracePayload):
+    """A Challenge's reassessment run failed or was cancelled (Story 9.6): no new version;
+    the challenged one is unchanged. `error_code`: why, when known (e.g. `estimate_changed`).
+    Actor: the system (`workflows.execute`), or the person who cancelled the run."""
+
+    event_type: ClassVar[str] = "reviews.challenge.failed"
+
+    challenge_id: str
+    workflow_run_id: str
+    run_status: str
+    error_code: str | None = None
 
 
 @register
