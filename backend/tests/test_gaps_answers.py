@@ -8,6 +8,7 @@ jobs of `test_intake_extraction.py`."""
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -20,13 +21,13 @@ from app.agents.clarification_agent.schema import AnswerMatchOutput
 from app.modules.gaps.application import answer_matching
 from app.modules.gaps.application import public as gaps_public
 from app.modules.gaps.domain.gaps import injection_suspected
+from app.modules.registry.application import public as registry
 from app.modules.workflows.application import events as stream_events
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.jobs.runner import run_job
 from app.platform.model_gateway.port import StructuredRequest
 from app.platform.uow import unit_of_work
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_gaps_commands import _dismiss, _reopen
@@ -44,6 +45,7 @@ from tests.test_intake_extraction import (
     drain,
     out,
     upload,
+    verified_profile,
 )
 from tests.test_intake_parse_job import _alembic
 from tests.test_intake_requirement_edits import _list, _patch
@@ -54,7 +56,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
 
 ANSWERED_Q = "gaps.clarification_question.answered"
 ANSWERED_GAP = "gaps.gap.answered"
@@ -72,7 +73,7 @@ def _matching_settings(monkeypatch: pytest.MonkeyPatch, storage_dir: Any) -> Non
     monkeypatch.setattr(
         answer_matching,
         "matching_settings",
-        lambda: Settings(storage_dir=storage_dir, model_profile_chat="demo-chat"),
+        lambda: Settings(storage_dir=storage_dir, model_profile_chat="ollama-cloud-chat"),
     )
 
 
@@ -864,6 +865,35 @@ def test_a_source_over_the_input_budget_is_skipped_without_a_model_call(
     assert record.__dict__["reason"] == "input_too_large"
     assert record.__dict__["budget_chars"] == 10
     assert "uptime" not in str(record.__dict__).casefold()
+
+
+def test_the_budget_is_the_custom_profiles_context_size(
+    client: TestClient,
+    sync_engine: Engine,
+    db_url: str,
+    gateway: FakeGateway,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Within `ollama-cloud-chat`'s budget, over the smaller stored one. The pin is patched
+    onto the seeded version: a real new version would outlive this test."""
+    num_ctx = 16384
+    budget = answer_matching.matching_budget(num_ctx)
+    assert budget + 100 < answer_matching.matching_budget(32768)
+    name = verified_profile(sync_engine, num_ctx)
+    headers, opp, _ = sent(client, sync_engine, db_url, gateway)
+    text = f"{uuid4()} {REPLY} " * (budget // len(REPLY) + 1)
+    _reply_source(client, headers, opp["id"], db_url, text[: budget + 100])
+    pinned = registry.agent_config
+    monkeypatch.setattr(registry, "agent_config", lambda v: replace(pinned(v), profile=name))
+    calls = len(gateway.requests)
+
+    with caplog.at_level(logging.INFO):
+        assert drain(db_url, MATCH) == ["succeeded"]
+
+    assert len(gateway.requests) == calls
+    (record,) = [r for r in caplog.records if r.getMessage() == "gaps.answer_matching_skipped"]
+    assert record.__dict__["budget_chars"] == budget
 
 
 def test_an_answer_reports_the_requirements_it_added_and_versioned(

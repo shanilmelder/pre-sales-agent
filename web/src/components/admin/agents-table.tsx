@@ -36,7 +36,7 @@ export function AgentStatusPill({ status }: { status: AgentStatus }) {
 }
 
 /** Admin → Agents: every registered Agent with its current config version, model, status
- * (what it calls here, after any local profile override) and tool permissions as a card table, then the footnote. Each row's name is a button whose
+ * (what it calls) and tool permissions as a card table, then the footnote. Each row's name is a button whose
  * hit area covers the row. The rows are one Tab stop (roving tabindex: the last focused, else
  * the selected, else the first row); j/k (or the arrow keys) move between rows and Enter
  * opens the Agent's inspector (Story 7.3). */

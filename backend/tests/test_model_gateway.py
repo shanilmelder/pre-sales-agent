@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID
 
@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.ids import new_id
+from app.platform.model_gateway import profiles
 from app.platform.model_gateway.gateway import ModelGateway, field_paths
 from app.platform.model_gateway.openai_compat import schema_name
 from app.platform.model_gateway.port import (
@@ -72,9 +73,9 @@ INVALID = json.dumps({"requirements": [{"title": "x", "priority": REPLY_SECRET}]
 
 # The chat endpoint of each provider (the OpenAI base URL is `http://ollama.test/v1`).
 CHAT_PATHS = {"/api/chat": "ollama", "/v1/chat/completions": "openai"}
-# The profile each contract test uses per provider; both serve `LOCAL_MODEL`.
-PROFILES = {"ollama": "local-chat", "openai": "local-chat-openai"}
-LOCAL_MODEL = "qwen3:8b"
+# The profile each contract test uses per provider, and the model it serves.
+PROFILES = {"ollama": "ollama-cloud-chat", "openai": "openai-chat"}
+MODELS = {"ollama": "gpt-oss:120b-cloud", "openai": "gpt-4.1-mini"}
 OPENAI_URL = "http://ollama.test/v1/chat/completions"
 API_KEY = "sk-SECRET-key-5d2e"
 
@@ -176,13 +177,13 @@ class StubOllama:
 
 @pytest.fixture(params=["ollama", "openai"])
 def provider(request: pytest.FixtureRequest) -> str:
-    """Runs a contract test once per provider (through `local-chat` / `local-chat-openai`)."""
+    """Runs a contract test once per provider (through `ollama-cloud-chat` / `openai-chat`)."""
     name: str = request.param
     return name
 
 
 def _digest(provider: str) -> str:
-    """The digest a call records when the stub's `/api/tags` lists `LOCAL_MODEL`."""
+    """The digest a call records when the stub's `/api/tags` lists the model."""
     return DIGEST if provider == "ollama" else "unknown"
 
 
@@ -228,7 +229,7 @@ def _call(
     **settings: Any,
 ) -> StructuredResult[Extraction] | ModelGatewayError:
     """Run one call; return the result, or the typed error it raised. `provider` picks that
-    provider's local profile; None keeps the default profile (`demo-chat`, Ollama)."""
+    provider's local profile; None keeps the default profile (`ollama-cloud-chat`, Ollama)."""
 
     async def scenario() -> StructuredResult[Extraction] | ModelGatewayError:
         config = _settings(db_url, provider, **settings)
@@ -283,13 +284,13 @@ def _assert_private(*texts: str) -> None:
 def test_valid_reply_returns_result_and_writes_one_ok_row(
     db_url: str, sync_engine: Engine, provider: str
 ) -> None:
-    stub = StubOllama([VALID], tags_model=LOCAL_MODEL)
+    stub = StubOllama([VALID], tags_model=MODELS[provider])
     result = _call(db_url, stub, provider=provider)
     assert isinstance(result, StructuredResult)
     assert result.value.requirements[0].priority == 1
     assert (result.input_tokens, result.output_tokens, result.attempts) == (11, 7, 1)
     assert result.model_digest == _digest(provider)
-    assert (result.profile, result.model) == (PROFILES[provider], LOCAL_MODEL)
+    assert (result.profile, result.model) == (PROFILES[provider], MODELS[provider])
     row = _row(sync_engine, result.call_id)
     assert row["outcome"] == "ok"
     assert row["attempts"] == 1
@@ -301,7 +302,7 @@ def test_valid_reply_returns_result_and_writes_one_ok_row(
     assert (row["run_id"], row["opportunity_id"], row["task_id"]) == (RUN_ID, OPPORTUNITY_ID, None)
     assert (row["profile"], row["model"], row["priority"]) == (
         PROFILES[provider],
-        LOCAL_MODEL,
+        MODELS[provider],
         "interactive",
     )
     assert result.call_id.version == 7
@@ -661,29 +662,51 @@ def test_no_prompt_or_reply_text_in_logs_rows_or_errors(
 
 
 def test_profiles_are_defined() -> None:
-    assert MODEL_PROFILES["demo-chat"].model == "gpt-oss:120b-cloud"
-    assert MODEL_PROFILES["demo-chat"].num_ctx == 32768
-    assert MODEL_PROFILES["local-chat"].model == "qwen3:8b"
-    assert MODEL_PROFILES["local-chat"].num_ctx == 16384
-    openai_profile = MODEL_PROFILES["local-chat-openai"]
-    assert (openai_profile.model, openai_profile.num_ctx) == ("qwen3:8b", 16384)
-    assert openai_profile.provider == "openai"
+    assert MODEL_PROFILES["ollama-cloud-chat"].model == "gpt-oss:120b-cloud"
+    assert MODEL_PROFILES["ollama-cloud-chat"].num_ctx == 32768
+    assert MODEL_PROFILES["ollama-cloud-chat"].provider == "ollama"
     cloud = MODEL_PROFILES["openai-chat"]
     assert (cloud.model, cloud.provider) == ("gpt-4.1-mini", "openai")
-    assert MODEL_PROFILES["demo-chat"].provider == MODEL_PROFILES["local-chat"].provider == "ollama"
+    assert set(MODEL_PROFILES) == {"ollama-cloud-chat", "openai-chat"}
     assert all(p.temperature == 0.1 for p in MODEL_PROFILES.values())
     with pytest.raises(UnknownModelProfileError):
         get_profile("nope")
 
 
-def test_configured_local_profile_selects_qwen(db_url: str, sync_engine: Engine) -> None:
+@pytest.mark.parametrize("with_resolver", [True, False])
+def test_an_unknown_profile_raises_with_no_provider_call(db_url: str, with_resolver: bool) -> None:
     stub = StubOllama([VALID])
-    result = _call(db_url, stub, model_profile_chat="local-chat")
+
+    async def nothing(_: str) -> None:
+        return None
+
+    async def scenario() -> None:
+        config = _settings(db_url)
+        engine = create_engine(config)
+        try:
+            async with ModelGateway(
+                config,
+                engine,
+                transport=httpx.MockTransport(stub),
+                resolve_profile=nothing if with_resolver else None,
+            ) as gateway:
+                await gateway.complete_structured(_request(profile="no-such-profile"))
+        finally:
+            await engine.dispose()
+
+    with pytest.raises(UnknownModelProfileError):
+        run_async(scenario())
+    assert stub.chat_bodies == []
+
+
+def test_configured_ollama_profile_sends_its_options(db_url: str, sync_engine: Engine) -> None:
+    stub = StubOllama([VALID])
+    result = _call(db_url, stub, model_profile_chat="ollama-cloud-chat")
     assert isinstance(result, StructuredResult)
     [body] = stub.chat_bodies
-    assert body["model"] == "qwen3:8b"
-    assert body["options"] == {"temperature": 0.1, "num_ctx": 16384}
-    assert _row(sync_engine, result.call_id)["profile"] == "local-chat"
+    assert body["model"] == "gpt-oss:120b-cloud"
+    assert body["options"] == {"temperature": 0.1, "num_ctx": 32768}
+    assert _row(sync_engine, result.call_id)["profile"] == "ollama-cloud-chat"
 
 
 def test_unknown_configured_profile_fails_at_startup(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -694,21 +717,11 @@ def test_unknown_configured_profile_fails_at_startup(monkeypatch: pytest.MonkeyP
 
 def test_request_profile_overrides_configured_one(db_url: str) -> None:
     stub = StubOllama([VALID])
-    _call(db_url, stub, _request(profile="local-chat"))
-    assert stub.chat_bodies[0]["model"] == "qwen3:8b"
+    _call(db_url, stub, _request(profile="openai-chat"))
+    assert stub.chat_bodies[0]["model"] == "gpt-4.1-mini"
 
 
 # --- OpenAI-compatible adapter only -------------------------------------------------------
-
-
-def test_openai_profile_routes_to_the_openai_base_url(db_url: str, sync_engine: Engine) -> None:
-    stub = StubOllama([VALID])
-    result = _call(db_url, stub, model_profile_chat="local-chat-openai")
-    assert isinstance(result, StructuredResult)
-    [request] = stub.requests
-    assert (request.method, str(request.url)) == ("POST", OPENAI_URL)
-    assert stub.chat_bodies[0]["model"] == "qwen3:8b"
-    assert _row(sync_engine, result.call_id)["profile"] == "local-chat-openai"
 
 
 def test_openai_cloud_profile_sends_the_openai_model_id(db_url: str, sync_engine: Engine) -> None:
@@ -721,35 +734,6 @@ def test_openai_cloud_profile_sends_the_openai_model_id(db_url: str, sync_engine
     assert _row(sync_engine, result.call_id)["profile"] == "openai-chat"
 
 
-def test_openai_model_setting_overrides_the_profiles_model(
-    db_url: str, sync_engine: Engine
-) -> None:
-    stub = StubOllama([VALID])
-    result = _call(db_url, stub, model_profile_chat="openai-chat", openai_model="gpt-4.1")
-    assert isinstance(result, StructuredResult)
-    assert stub.chat_bodies[0]["model"] == "gpt-4.1"
-    assert result.model == "gpt-4.1"
-    row = _row(sync_engine, result.call_id)
-    assert (row["profile"], row["model"]) == ("openai-chat", "gpt-4.1")
-
-
-def test_openai_model_setting_leaves_ollama_profiles_alone(db_url: str) -> None:
-    stub = StubOllama([VALID])
-    _call(db_url, stub, model_profile_chat="local-chat", openai_model="gpt-4.1")
-    assert stub.chat_bodies[0]["model"] == "qwen3:8b"
-
-
-def test_blank_openai_settings_mean_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PSA_OPENAI_MODEL", "  ")
-    monkeypatch.setenv("PSA_OPENAI_REASONING_EFFORT", "")
-    settings = Settings()
-    assert (settings.openai_model, settings.openai_reasoning_effort) == (None, None)
-    monkeypatch.setenv("PSA_OPENAI_MODEL", " gpt-4.1 ")
-    monkeypatch.setenv("PSA_OPENAI_REASONING_EFFORT", " low ")
-    settings = Settings()
-    assert (settings.openai_model, settings.openai_reasoning_effort) == ("gpt-4.1", "low")
-
-
 def test_alert_email_recipients_are_a_comma_list(monkeypatch: pytest.MonkeyPatch) -> None:
     """Story 7.4: `PSA_ALERT_EMAIL_TO` is comma-separated; blanks are dropped."""
     monkeypatch.setenv("PSA_ALERT_EMAIL_TO", " a@x.test, ,b@x.test ")
@@ -759,16 +743,14 @@ def test_alert_email_recipients_are_a_comma_list(monkeypatch: pytest.MonkeyPatch
 
 
 def test_reasoning_effort_replaces_temperature_for_an_openai_reasoning_model(
-    db_url: str, sync_engine: Engine
+    db_url: str, sync_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub = StubOllama([VALID])
-    result = _call(
-        db_url,
-        stub,
-        model_profile_chat="openai-chat",
-        openai_model="o4-mini",
-        openai_reasoning_effort="medium",
+    reasoning = replace(
+        profiles.get_profile("openai-chat"), model="o4-mini", reasoning_effort="medium"
     )
+    monkeypatch.setattr(profiles, "MODEL_PROFILES", {"openai-chat": reasoning})
+    stub = StubOllama([VALID])
+    result = _call(db_url, stub, model_profile_chat="openai-chat")
     assert isinstance(result, StructuredResult)
     [body] = stub.chat_bodies
     assert body["model"] == "o4-mini"
@@ -786,14 +768,6 @@ def test_without_reasoning_effort_openai_requests_send_temperature(db_url: str) 
     assert "reasoning_effort" not in body
 
 
-def test_reasoning_effort_leaves_ollama_profiles_alone(db_url: str) -> None:
-    stub = StubOllama([VALID])
-    _call(db_url, stub, model_profile_chat="local-chat", openai_reasoning_effort="high")
-    [body] = stub.chat_bodies
-    assert body["options"]["temperature"] == 0.1
-    assert "reasoning_effort" not in body
-
-
 def test_openai_request_body_has_response_format_and_no_context_options(db_url: str) -> None:
     stub = StubOllama([VALID])
     _call(db_url, stub, provider="openai")
@@ -804,7 +778,7 @@ def test_openai_request_body_has_response_format_and_no_context_options(db_url: 
     }
     assert body["stream"] is False
     assert body["temperature"] == 0.1
-    assert body["model"] == "qwen3:8b"
+    assert body["model"] == "gpt-4.1-mini"
     assert [m["role"] for m in body["messages"]] == ["system", "user"]
     for key in ("options", "num_ctx", "format"):
         assert key not in body
@@ -828,7 +802,7 @@ def test_openai_schema_name_is_sanitised(title: str | None, name: str) -> None:
 
 
 def test_openai_digest_is_unknown_without_a_request(db_url: str, sync_engine: Engine) -> None:
-    stub = StubOllama([VALID], tags_model="qwen3:8b")  # /api/tags would know the digest
+    stub = StubOllama([VALID], tags_model="gpt-4.1-mini")  # /api/tags would know the digest
     result = _call(db_url, stub, provider="openai")
     assert isinstance(result, StructuredResult)
     assert result.model_digest == "unknown"
@@ -852,7 +826,9 @@ def test_openai_api_key_is_sent_as_bearer_and_never_logged(
                 await gw.complete_structured(_request())
                 with pytest.raises(ModelUnavailableError) as info:
                     await gw.complete_structured(_request())
-                await gw.complete_structured(_request(profile="local-chat"))  # Ollama: no key
+                await gw.complete_structured(
+                    _request(profile="ollama-cloud-chat")
+                )  # Ollama: no key
                 return info.value
         finally:
             await engine.dispose()

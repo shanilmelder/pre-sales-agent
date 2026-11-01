@@ -16,6 +16,10 @@ embedding profile's `batch_size` (one adapter request each, not retried: the cal
 retries), checks that every vector has the profile's `dims`, and writes one
 `platform_model_calls` row for the whole call (`output_tokens` 0). The texts are never logged.
 
+`complete_structured` takes built-in profiles from `profiles.MODEL_PROFILES` and asks the
+injected `resolve_profile` (the worker's, from the registry) for any other name, before taking
+a slot; a name neither knows raises `UnknownModelProfileError`.
+
 Create one gateway per process (the semaphore is per gateway) and close it with `aclose()`
 or `async with`. The worker makes every chat and Source-embedding call; the `api` process
 makes embedding calls only (Knowledge search queries, Story 3.3) and never a chat call.
@@ -52,10 +56,11 @@ from app.platform.model_gateway.port import (
 )
 from app.platform.model_gateway.profiles import (
     ModelProfile,
+    ProfileResolver,
     Provider,
+    UnknownModelProfileError,
     get_embed_profile,
     get_profile,
-    resolve_profile,
 )
 from app.platform.model_gateway.semaphore import PrioritySemaphore
 from app.platform.uow import unit_of_work
@@ -115,10 +120,14 @@ class ModelGateway:
         engine: AsyncEngine,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        resolve_profile: ProfileResolver | None = None,
     ) -> None:
-        """`transport` replaces the network (tests pass an `httpx.MockTransport`)."""
+        """`transport` replaces the network (tests pass an `httpx.MockTransport`).
+        `resolve_profile` finds chat profiles that aren't built in; without it, only the
+        built-ins resolve."""
         self._settings = settings
         self._engine = engine
+        self._resolve_profile = resolve_profile
         get_profile(settings.model_profile_chat)  # fail fast on an unknown profile
         get_embed_profile(settings.model_profile_embed)
         ollama_client = httpx.AsyncClient(base_url=settings.ollama_url, transport=transport)
@@ -135,15 +144,6 @@ class ModelGateway:
             "openai": OpenAICompatAdapter(openai_client),
         }
         self._semaphore = PrioritySemaphore(settings.model_slots)
-
-    def _profile(self, name: str) -> ModelProfile:
-        """The named profile as called (`resolve_profile`), so the request, the call record
-        and the logs all name the model actually called."""
-        return resolve_profile(
-            name,
-            openai_model=self._settings.openai_model,
-            openai_reasoning_effort=self._settings.openai_reasoning_effort,
-        )
 
     @property
     def semaphore(self) -> PrioritySemaphore:
@@ -167,7 +167,7 @@ class ModelGateway:
     async def complete_structured[T: BaseModel](
         self, request: StructuredRequest[T]
     ) -> StructuredResult[T]:
-        profile = self._profile(request.profile or self._settings.model_profile_chat)
+        profile = await self._chat_profile(request.profile or self._settings.model_profile_chat)
         timeout_s = request.timeout_s or self._settings.model_timeout_s
         call_id = new_id()
         async with self._semaphore.slot(request.priority):
@@ -220,6 +220,15 @@ class ModelGateway:
             latency_ms=run.latency_ms,
             attempts=run.attempts,
         )
+
+    async def _chat_profile(self, name: str) -> ModelProfile:
+        try:
+            return get_profile(name)
+        except UnknownModelProfileError:
+            found = None if self._resolve_profile is None else await self._resolve_profile(name)
+            if found is None:
+                raise
+            return found
 
     async def _attempt_all[T: BaseModel](
         self, request: StructuredRequest[T], profile: ModelProfile, timeout_s: float

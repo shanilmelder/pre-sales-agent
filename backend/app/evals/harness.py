@@ -598,9 +598,11 @@ async def _run_in_eval_db(
     reference: Sequence[ReferenceOpportunity],
     gateway: ModelGatewayPort | None,
     poll_s: float,
+    profiles: Sequence[registry.CustomProfile] = (),
 ) -> _Scored:
     await asyncio.to_thread(reset_eval_database, url, owner_url)
     async with unit_of_work(eval_db) as uow:
+        await registry.install_eval_profiles(uow, profiles)
         for agent, version in chosen:
             await registry.install_eval_config(uow, agent, version)
     created = await create_opportunities(eval_db, reference, settings)
@@ -666,6 +668,8 @@ async def _run(
     eval_db = create_engine(eval_settings)
     try:
         chosen = await choose_configs(main_db, options.configs)
+        async with unit_of_work(main_db) as uow:
+            profiles = await registry.custom_profiles_of(uow, [v for _, v in chosen])
         try:
             scored = await asyncio.wait_for(
                 _run_in_eval_db(
@@ -678,6 +682,7 @@ async def _run(
                     reference,
                     gateway,
                     options.poll_s,
+                    profiles,
                 ),
                 timeout=options.timeout_s,
             )

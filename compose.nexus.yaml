@@ -15,6 +15,7 @@ x-backend-env: &backend-env
   PSA_LOG_LEVEL: ${PSA_LOG_LEVEL:-INFO}
   PSA_STORAGE_DIR: /var/lib/psa/files
   PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
+  PSA_MODEL_PROFILE_EMBED: ${PSA_MODEL_PROFILE_EMBED:-bge-m3}
 
 services:
   postgres:
@@ -99,10 +100,6 @@ services:
       PSA_UPLOAD_MAX_BYTES: ${PSA_UPLOAD_MAX_BYTES:-52428800}
       PSA_KNOWLEDGE_STALE_MONTHS: ${PSA_KNOWLEDGE_STALE_MONTHS:-12}
       PSA_DOWNLOAD_SIGNING_KEY: ${PSA_DOWNLOAD_SIGNING_KEY:-local-dev-download-signing-key-change-me}
-      # The worker's chat model settings, for the Admin Agents view (no key: no chat calls).
-      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
-      PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
-      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -137,11 +134,8 @@ services:
       LANGGRAPH_STRICT_MSGPACK: "true"
       PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
       PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
-      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
       PSA_OPENAI_BASE_URL: ${PSA_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       PSA_OPENAI_API_KEY: ${PSA_OPENAI_API_KEY:-}
-      PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
-      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
       PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
       PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}

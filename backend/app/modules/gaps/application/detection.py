@@ -77,7 +77,6 @@ from app.modules.intake.application import public as intake
 from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
-from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
 from app.platform.locks import opportunity_lock
@@ -102,11 +101,6 @@ _log = get_logger(__name__)
 
 class DetectGaps(JobPayload):
     detection_id: UUID
-
-
-def detection_settings() -> Settings:
-    """Settings for the handler (the chat profile). Tests replace this."""
-    return get_settings()
 
 
 # --- queueing -------------------------------------------------------------------------------
@@ -503,7 +497,6 @@ async def _start(
 
 
 async def _detect(ctx: JobContext, payload: DetectGaps) -> None:
-    settings = detection_settings()
     detection_id = payload.detection_id
     ids: dict[str, object] = {"detection_id": str(detection_id)}
     started = await _start(ctx, detection_id)
@@ -512,7 +505,7 @@ async def _detect(ctx: JobContext, payload: DetectGaps) -> None:
         return
     opportunity_id, requirements, version = started
     ids["opportunity_id"] = str(opportunity_id)
-    config = registry.agent_config(version, settings)
+    config = registry.agent_config(version)
 
     if requirements:
         agent = ClarificationAgent(provider.current(), config=config)

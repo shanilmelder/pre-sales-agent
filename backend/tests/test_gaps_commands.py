@@ -33,7 +33,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
 
 IMPACT_CHANGED = "gaps.gap.impact_changed"
 DISMISSED = "gaps.gap.dismissed"

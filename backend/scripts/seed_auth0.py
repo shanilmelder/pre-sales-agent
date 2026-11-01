@@ -72,6 +72,7 @@ _ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.REGISTRY_AGENT_REGISTER,
             Action.REGISTRY_AGENT_CONFIG_CREATE,
             Action.REGISTRY_AGENT_SET_STATUS,
+            Action.REGISTRY_MODEL_PROFILE_MANAGE,
             # Reports (Story 10.3): platform administrators and the Head of Delivery only.
             Action.REPORTING_REPORT_READ,
             # The Opportunity outcome (Story 10.5): changing a won Opportunity's contract end
@@ -145,6 +146,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.REGISTRY_AGENT_REGISTER: "Register Agents in the Agent Registry",
     Action.REGISTRY_AGENT_CONFIG_CREATE: "Create a new config version of an Agent",
     Action.REGISTRY_AGENT_SET_STATUS: "Enable, disable or set an Agent to eval only",
+    Action.REGISTRY_MODEL_PROFILE_MANAGE: "Manage chat model profiles and approved models",
     Action.FINDING_OVERRIDE: "Override a Critic or Red Team Finding with a reason",
     Action.NOTIFICATION_READ: "Read and mark read one's own Inbox items",
     Action.ACTUAL_RECORD: "Record Actuals on Opportunities one can read",

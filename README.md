@@ -138,10 +138,10 @@ app.modules.intake.adapters.parse_cli`) with a wall-clock limit `PSA_PARSE_TIMEO
 `app/platform/model_gateway/` (AD-8) is the only path to a model: host Ollama's native
 `/api/chat` with `format` set to the output model's JSON Schema, validation and bounded
 retries, a priority-aware slot limit, and one `platform_model_calls` row per call. Settings:
-`PSA_OLLAMA_URL` (default `http://127.0.0.1:11434`), `PSA_MODEL_PROFILE_CHAT` (`demo-chat` =
-`gpt-oss:120b-cloud`, or `local-chat` = `qwen3:8b`), `PSA_MODEL_SLOTS` (default 3, so an
+`PSA_OLLAMA_URL` (default `http://127.0.0.1:11434`), `PSA_MODEL_PROFILE_CHAT` (`ollama-cloud-chat` =
+`gpt-oss:120b-cloud`, or `openai-chat` = `gpt-4.1-mini`), `PSA_MODEL_SLOTS` (default 3, so an
 assessment run's three specialist agents can call at once),
-`PSA_MODEL_MAX_RETRIES` and `PSA_MODEL_TIMEOUT_S`. `demo-chat` sends prompt text to Ollama's
+`PSA_MODEL_MAX_RETRIES` and `PSA_MODEL_TIMEOUT_S`. `ollama-cloud-chat` sends prompt text to Ollama's
 cloud: until IT approves it, use it only with sample or anonymised Opportunities.
 
 Embeddings (Story 3.3) use the gateway too: `PSA_MODEL_PROFILE_EMBED` (default `bge-m3`,
@@ -150,31 +150,23 @@ worker (`knowledge.embed_source`, `background`) and search queries in the api
 (`GET /api/v1/knowledge/search`), each call writing a `platform_model_calls` row. The api
 process uses its gateway for query embeddings only, never for chat.
 
-Each profile names its provider. `demo-chat` and `local-chat` use Ollama's native API;
-`local-chat-openai` (`qwen3:8b`) uses the OpenAI-compatible adapter: `POST
-{PSA_OPENAI_BASE_URL}/chat/completions` with `response_format` set to the JSON Schema, for
-vLLM or any `/v1` server. `PSA_OPENAI_BASE_URL` defaults to host Ollama's own `/v1`
-(`http://127.0.0.1:11434/v1`); `PSA_OPENAI_API_KEY` (optional) is sent as a bearer token.
-OpenAI-style endpoints can't set the context size per request, so for this provider the
-profile's `num_ctx` is what the server must be configured with (vLLM `--max-model-len`,
-Ollama `OLLAMA_CONTEXT_LENGTH` or a Modelfile). Its model digest is recorded as `unknown`.
-Switching provider is a config change: `PSA_MODEL_PROFILE_CHAT=local-chat-openai`.
+Each profile names its provider. `ollama-cloud-chat` uses Ollama's native API; `openai-chat`
+uses the OpenAI-compatible adapter: `POST {PSA_OPENAI_BASE_URL}/chat/completions` with
+`response_format` set to the JSON Schema. `PSA_OPENAI_API_KEY` is sent as a bearer token. The
+model digest of an `openai` call is recorded as `unknown`.
 
 `openai-chat` (`gpt-4.1-mini`) is OpenAI's cloud API through the same adapter: set
-`PSA_MODEL_PROFILE_CHAT=openai-chat`, `PSA_OPENAI_BASE_URL=https://api.openai.com/v1` and
-`PSA_OPENAI_API_KEY=sk-...`, then restart `api` and `worker`. Like `demo-chat` it sends
+`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` and `PSA_OPENAI_API_KEY=sk-...`, restart `api`
+and `worker`, and pin `openai-chat` on the Agent's config version. Like `ollama-cloud-chat` it sends
 prompt text to a cloud: sample or anonymised Opportunities only until IT approves it.
 
-To change the OpenAI model without a code change, set `PSA_OPENAI_MODEL` (e.g. `gpt-4.1`) and
-restart `api` and `worker`. It replaces the model id of every `openai`-provider profile, and
-call records, logs and the smoke output name the model actually called; empty keeps each
-profile's own. The model must support `json_schema` output.
-
-For a reasoning model (`o3`, `o4-mini`, `gpt-5`, ...) also set
-`PSA_OPENAI_REASONING_EFFORT` (`low`, `medium`, `high`; `minimal` on GPT-5): requests then
-send `reasoning_effort` and no `temperature`, which those models reject. Leave it empty for a
-regular model. Reasoning calls are slower, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if
-they time out; their `output_tokens` include the reasoning tokens.
+An Agent's model comes only from the profile its config version pins (Admin → Agents). To use
+another model, define a profile for it in `backend/app/platform/model_gateway/profiles.py`
+and pin that. The model must support `json_schema` output. A reasoning model (`o3`, `o4-mini`,
+`gpt-5`, ...) needs `reasoning_effort` set on its profile (`low`, `medium`, `high`; `minimal`
+on GPT-5): requests then send it and no `temperature`, which those models reject. Reasoning
+calls are slower, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if they time out; their
+`output_tokens` include the reasoning tokens.
 
 Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
 `api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama
@@ -188,12 +180,6 @@ cd backend
 PSA_OLLAMA_URL=http://127.0.0.1:11434 \
 PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
   uv run python -m app.platform.model_gateway.smoke   # prints `ok` with tokens and latency
-# The OpenAI-compatible adapter against host Ollama's /v1 (prints `ok ... digest=unknown`):
-# Start host Ollama with OLLAMA_CONTEXT_LENGTH=16384 for this profile (/v1 can't set it per request).
-PSA_MODEL_PROFILE_CHAT=local-chat-openai \
-PSA_OPENAI_BASE_URL=http://127.0.0.1:11434/v1 \
-PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
-  uv run python -m app.platform.model_gateway.smoke
 # OpenAI's cloud API (prints `ok ... digest=unknown`):
 PSA_MODEL_PROFILE_CHAT=openai-chat PSA_OPENAI_BASE_URL=https://api.openai.com/v1 PSA_OPENAI_API_KEY=sk-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke
 ```
@@ -266,6 +252,7 @@ session and the Auth0 session.
    `knowledge.checklist.create`, `knowledge.checklist.edit`, `knowledge.checklist.publish`,
    `knowledge.checklist.retire`, `registry.agent.register`,
    `registry.agent_config.create`, `registry.agent.set_status`,
+   `registry.model_profile.manage`,
    `assessments.finding.override`, `notifications.notification.read`,
    `reporting.report.read` (Story 10.3: Reports), `opportunities.outcome.record`,
    `opportunities.contract_end_date.update`, `opportunities.outcome.reopen` (Story 10.5: the
@@ -287,7 +274,7 @@ session and the Auth0 session.
 
    | Role | Permissions |
    | --- | --- |
-   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and three `registry.*` permissions, `reporting.report.read`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen`, `platform.retention.read` |
+   | `platform_administrator` | `identity.user.list`, `opportunities.opportunity.read`, the four `knowledge.catalogue_entry.*`, seven `knowledge.source.*`, four `knowledge.checklist.*` and four `registry.*` permissions, `reporting.report.read`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen`, `platform.retention.read` |
    | `presales_engineer` | `identity.user.search`, `opportunities.opportunity.create` |
    | `head_of_delivery` | `opportunities.opportunity.read`, `assessments.finding.override`, `reporting.report.read`, `opportunities.outcome.record`, `opportunities.contract_end_date.update`, `opportunities.outcome.reopen` |
    | `engineering_reviewer`, `pm_reviewer` | the four `knowledge.checklist.*` permissions (author Checklists) |

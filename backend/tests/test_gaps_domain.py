@@ -165,7 +165,7 @@ def test_requirements_enter_the_prompt_only_as_labelled_data_blocks() -> None:
     )
     assert "<<<END R2 token=tok>>>" in user.content
     assert agent.config.actor_id == "clarification_agent@0.1.0"
-    assert agent.config.profile == "demo-chat"
+    assert agent.config.profile == "ollama-cloud-chat"
 
 
 def test_the_prompt_asks_for_estimate_changing_customer_ready_questions_without_duplicates() -> (

@@ -14,7 +14,7 @@ export function configVersion(
     agent_id: agentId,
     version: n,
     semver: `0.${n}.0`,
-    model_profile: "demo-chat",
+    model_profile: "ollama-cloud-chat",
     model_digest: "unpinned",
     prompt_version: 1,
     input_schema_version: 1,
@@ -49,14 +49,13 @@ export function registryAgent(
     effective_model: {
       profile: current.model_profile,
       model: "gpt-oss:120b-cloud",
-      overridden: false,
     },
     ...over,
   };
 }
 
 export const OPTIONS: AgentConfigOptions = {
-  model_profiles: ["demo-chat", "local-chat"],
+  model_profiles: ["ollama-cloud-chat", "openai-chat"],
   prompt_versions: [1, 2],
   input_schema_versions: [1],
   output_schema_versions: [1],

@@ -77,7 +77,7 @@ function agent(
       restored_from_version: null,
       created_at: "2026-10-01T09:00:00Z",
     },
-    effective_model: { profile: "reasoning-large", model: "gpt-oss:120b-cloud", overridden: false },
+    effective_model: { profile: "reasoning-large", model: "gpt-oss:120b-cloud" },
   };
 }
 
@@ -160,20 +160,6 @@ describe("/admin/agents", () => {
     expect(toneOf(label)).toBe("neutral");
     expect(label.closest('[data-slot="pill"]')?.querySelector("svg")).toBeTruthy();
     expect(within(row).getByText("None")).toBeTruthy();
-  });
-
-  it("the Model column shows what a local profile override runs, and the pinned profile", async () => {
-    signedIn(["platform_administrator"]);
-    respond([
-      {
-        ...agent(1, "Intake Agent", "active"),
-        effective_model: { profile: "openai-chat", model: "gpt-5-mini", overridden: true },
-      },
-    ]);
-    renderPage(await AdminAgentsPage());
-    const row = rowOf("Intake Agent");
-    expect(within(row).getByText("gpt-5-mini")).toBeTruthy();
-    expect(within(row).getByText("openai-chat (override; pinned reasoning-large)")).toBeTruthy();
   });
 
   it("no Agents shows the empty text", async () => {

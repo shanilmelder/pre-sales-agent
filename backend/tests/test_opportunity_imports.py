@@ -75,7 +75,7 @@ def _import_jobs(monkeypatch: pytest.MonkeyPatch, storage_dir: Path) -> Iterator
         imports,
         "import_settings",
         lambda: Settings(
-            storage_dir=storage_dir, parse_timeout_s=60, model_profile_chat="demo-chat"
+            storage_dir=storage_dir, parse_timeout_s=60, model_profile_chat="ollama-cloud-chat"
         ),
     )
     MY_IMPORTS.clear()

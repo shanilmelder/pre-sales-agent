@@ -115,7 +115,7 @@ class SpecialistExecutor:
         versions = await registry.get_config_versions(uow, [task.pinned])
         version = versions[task.pinned]
         settings = executor_settings()
-        config = registry.agent_config(version, settings)
+        config = registry.agent_config(version)
         context = ToolContext(
             agent_id=version.agent_id,
             semver=version.semver,
@@ -195,7 +195,7 @@ class CriticExecutor:
         """Read the run's Assessments, the active Requirements and the uncovered ones, in the
         node's Unit of Work, with the task's pinned config version."""
         versions = await registry.get_config_versions(uow, [task.pinned])
-        config = registry.agent_config(versions[task.pinned], executor_settings())
+        config = registry.agent_config(versions[task.pinned])
         inputs = await assessments.load_critic_inputs(uow, task.opportunity_id, task.run_id)
         return CriticPrepared(task=task, inputs=inputs, config=config)
 

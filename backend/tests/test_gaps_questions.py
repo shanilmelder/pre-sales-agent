@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
 from app.modules.gaps.application import questions as questions_app
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.test_gaps_detection import events, extracted, gap, gaps_out, requeue, rows
 from tests.test_health import assert_problem
@@ -24,7 +23,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
 
 EDITED = "gaps.clarification_question.edited"
 APPROVED = "gaps.clarification_question.approved"

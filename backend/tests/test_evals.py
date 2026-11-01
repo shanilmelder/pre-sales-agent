@@ -15,6 +15,7 @@ import json
 import os
 import re
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -795,7 +796,7 @@ class ChainGateway:
         return StructuredResult(
             value=value,
             call_id=uuid4(),
-            profile="demo-chat",
+            profile="ollama-cloud-chat",
             model="fake",
             model_digest="fake",
             input_tokens=1,
@@ -844,7 +845,7 @@ def eval_settings(
     storage = tmp_path / "files"
     monkeypatch.setenv("PSA_STORAGE_DIR", str(storage))
     get_settings.cache_clear()
-    yield _settings(db_url, storage_dir=storage, model_profile_chat="demo-chat")
+    yield _settings(db_url, storage_dir=storage, model_profile_chat="ollama-cloud-chat")
     get_settings.cache_clear()
 
 
@@ -860,6 +861,45 @@ def _counts(engine: Engine) -> dict[str, int]:
         return {
             t: int(conn.execute(sa.text(f"SELECT count(*) FROM {t}")).scalar_one()) for t in tables
         }
+
+
+def test_a_custom_pinned_configs_profile_reaches_the_eval_database(
+    eval_settings: Settings,
+    sync_engine: Engine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = f"t-{uuid4().hex[:12]}"
+    with sync_engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO registry_model_profiles "
+                "(id, name, provider, model, num_ctx, temperature, state) "
+                "VALUES (:id, :name, 'ollama', 'gpt-oss:120b-cloud', 24000, 0.2, 'verified')"
+            ),
+            {"id": uuid4(), "name": name},
+        )
+    choose = harness.choose_configs
+    seen: list[int] = []
+
+    class Stop(Exception):
+        pass
+
+    async def pinned(*args: Any) -> list[Any]:
+        return [(a, replace(v, model_profile=name)) for a, v in await choose(*args)]
+
+    async def read_it(eval_db: Any, *_: Any) -> None:
+        seen.append((await registry.chat_profile(eval_db, name)).num_ctx)
+        raise Stop
+
+    monkeypatch.setattr(harness, "choose_configs", pinned)
+    monkeypatch.setattr(harness, "create_opportunities", read_it)
+    options = harness.EvalOptions(only=("parcel-hub-sortation",), out_dir=tmp_path / "out")
+
+    with pytest.raises(Stop):
+        run_async(harness.run_eval(options, settings=eval_settings))
+
+    assert seen == [24000]
 
 
 def test_the_harness_runs_one_opportunity_through_the_chain_and_stores_the_result(

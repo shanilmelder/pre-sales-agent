@@ -37,7 +37,6 @@ from app.platform.model_gateway.port import (
 )
 from app.platform.uow import unit_of_work
 from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_estimates_draft import SIX, detected, est_line, lines_out, versions
@@ -48,15 +47,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
-
-
-@pytest.fixture(autouse=True)
-def _review_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        assessments_review, "review_settings", lambda: Settings(model_profile_chat="demo-chat")
-    )
 
 
 def finding(
@@ -361,7 +351,7 @@ def test_a_review_stores_v1_with_ranked_findings_links_and_one_event(
     assert "Prices in EUR." in user.content
     assert request.caller.agent_id == "red_team_agent"
     assert request.caller.run_id == run["id"]
-    assert (request.profile, request.priority) == ("demo-chat", "background")
+    assert (request.profile, request.priority) == ("ollama-cloud-chat", "background")
     assert request.output_model is RedTeamOutput
 
     # Privacy: no Requirement, Gap or Finding text in logs or the trace.

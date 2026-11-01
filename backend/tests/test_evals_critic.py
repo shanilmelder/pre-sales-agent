@@ -16,7 +16,7 @@ from app.platform.model_gateway.port import ModelTimeoutError, StructuredRequest
 from tests.conftest import run_async
 from tests.test_intake_extraction import FakeGateway
 
-SETTINGS = Settings(model_profile_chat="demo-chat")
+SETTINGS = Settings(model_profile_chat="ollama-cloud-chat")
 
 
 def test_the_committed_fixtures_seed_the_three_defects() -> None:

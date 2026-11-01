@@ -30,7 +30,6 @@ from app.agents import manifest as deployed
 from app.modules.opportunities.application import imports
 from app.modules.registry.application import public as registry
 from app.modules.registry.domain import registry as rules
-from app.platform.config import Settings
 from app.platform.model_gateway.port import ModelUnavailableError
 from app.platform.tool_gateway.catalogue import READ_TOOLS
 from tests import test_assessments_specialists as specialist_tests
@@ -72,8 +71,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
 _assessment_profile = specialist_tests._assessment_profile
 _no_auto_run = specialist_tests._no_auto_run
 
@@ -122,7 +119,7 @@ def _if_match(version: int) -> dict[str, str]:
 def _config(**overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         "semver": "0.2.0",
-        "model_profile": "local-chat",
+        "model_profile": "openai-chat",
         "prompt_version": 1,
         "input_schema_version": 1,
         "output_schema_version": 1,
@@ -236,7 +233,7 @@ def test_the_manifest_lists_every_prompt_schema_and_profile() -> None:
         "v1.md",
         "v1-assumptions.md",
     }
-    assert manifest.has_profile("demo-chat") and not manifest.has_profile("gpt-9")
+    assert manifest.has_profile("ollama-cloud-chat") and not manifest.has_profile("gpt-9")
 
 
 def test_prompt_hashes_ignore_line_endings(tmp_path: Path) -> None:
@@ -312,16 +309,16 @@ def test_agent_id_rules() -> None:
             rules.tool_permissions([write])
 
 
-def test_the_profile_override_applies_only_when_set_explicitly(
+def test_an_agent_runs_on_its_pinned_profile_whatever_the_settings_say(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("PSA_MODEL_PROFILE_CHAT", raising=False)
+    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "openai-chat")
     version = rules.ConfigVersion(
         id=uuid4(),
         agent_id="pm_agent",
         version=1,
         semver="0.1.0",
-        model_profile="demo-chat",
+        model_profile="ollama-cloud-chat",
         model_digest="unpinned",
         prompt_version=1,
         input_schema_version=1,
@@ -332,27 +329,21 @@ def test_the_profile_override_applies_only_when_set_explicitly(
         created_by=None,
         created_at=None,  # type: ignore[arg-type]
     )
-    assert registry.effective_profile(version, Settings()) == "demo-chat"
-    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "local-chat")
-    config = registry.agent_config(version, Settings())
+    config = registry.agent_config(version)
     assert (config.profile, config.config_version_id, config.actor_id) == (
-        "local-chat",
+        "ollama-cloud-chat",
         version.id,
         "pm_agent@0.1.0",
     )
 
 
-def test_the_effective_model_names_the_profile_and_model_actually_called(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    for name in ("PSA_MODEL_PROFILE_CHAT", "PSA_OPENAI_MODEL", "PSA_OPENAI_REASONING_EFFORT"):
-        monkeypatch.delenv(name, raising=False)
+def test_the_effective_model_names_the_pinned_profile_and_its_model() -> None:
     version = rules.ConfigVersion(
         id=uuid4(),
         agent_id="pm_agent",
         version=1,
         semver="0.1.0",
-        model_profile="demo-chat",
+        model_profile="ollama-cloud-chat",
         model_digest="unpinned",
         prompt_version=1,
         input_schema_version=1,
@@ -363,23 +354,13 @@ def test_the_effective_model_names_the_profile_and_model_actually_called(
         created_by=None,
         created_at=None,  # type: ignore[arg-type]
     )
-    assert registry.effective_model(version, Settings()) == registry.EffectiveModel(
-        profile="demo-chat", model="gpt-oss:120b-cloud", overridden=False
+    assert registry.effective_model(version) == registry.EffectiveModel(
+        profile="ollama-cloud-chat", model="gpt-oss:120b-cloud"
     )
-    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "openai-chat")
-    assert registry.effective_model(version, Settings()).model == "gpt-4.1-mini"
-    monkeypatch.setenv("PSA_OPENAI_MODEL", "gpt-5-mini")
-    assert registry.effective_model(version, Settings()) == registry.EffectiveModel(
-        profile="openai-chat", model="gpt-5-mini", overridden=True
-    )
-    # PSA_OPENAI_MODEL replaces only `openai` provider profiles' model.
-    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "local-chat")
-    assert registry.effective_model(version, Settings()).model == "qwen3:8b"
     # A pinned profile this deployment doesn't define has no model.
-    monkeypatch.delenv("PSA_MODEL_PROFILE_CHAT")
     retired = replace(version, model_profile="retired-chat")
-    assert registry.effective_model(retired, Settings()) == registry.EffectiveModel(
-        profile="retired-chat", model=None, overridden=False
+    assert registry.effective_model(retired) == registry.EffectiveModel(
+        profile="retired-chat", model=None
     )
 
 
@@ -405,7 +386,7 @@ def test_the_seeded_agents_are_active_at_version_one(sync_engine: Engine) -> Non
             first["tool_permissions"],
             first["budgets"],
             first["created_by"],
-        ) == (1, "0.1.0", "demo-chat", "unpinned", 1, 1, 1, "1", [], {}, None)
+        ) == (1, "0.1.0", "ollama-cloud-chat", "unpinned", 1, 1, 1, "1", [], {}, None)
 
 
 def test_the_migration_backfills_existing_assessments_to_version_one(
@@ -465,7 +446,7 @@ def test_admins_list_and_read_agents(client: TestClient, sync_engine: Engine) ->
     assert pm.status_code == 200
     assert pm.headers["ETag"] == f'"{pm.json()["row_version"]}"'
     assert pm.json()["current_config"]["agent_id"] == "pm_agent"
-    assert set(pm.json()["effective_model"]) == {"profile", "model", "overridden"}
+    assert set(pm.json()["effective_model"]) == {"profile", "model"}
     versions = client.get(f"{URL}/pm_agent/config-versions", headers=admin).json()["items"]
     assert versions[-1]["id"] == str(rules.seed_config_version_id("pm_agent"))
     _problem(client.get(f"{URL}/nobody_agent", headers=admin), 404)
@@ -861,7 +842,7 @@ def test_a_restore_inserts_a_copy_and_records_its_source(
     "overrides",
     [
         {"prompt_version": 2},
-        {"model_profile": "demo-chat"},
+        {"model_profile": "ollama-cloud-chat"},
         {"tool_permissions": []},
         {"budgets": {"max_tokens_per_run": 1}},
     ],
@@ -941,8 +922,8 @@ def test_the_reason_migration_downgrades_and_upgrades(sync_engine: Engine) -> No
                     "INSERT INTO registry_agent_config_versions (id, agent_id, version, semver, "
                     "model_profile, model_digest, prompt_version, input_schema_version, "
                     "output_schema_version, contract_version, tool_permissions, budgets, "
-                    "restored_from_version) VALUES (:id, 'pm_agent', 999, '0.1.0', 'demo-chat', "
-                    "'unpinned', 1, 1, 1, '1', '[]', '{}', 999)"
+                    "restored_from_version) VALUES (:id, 'pm_agent', 999, '0.1.0', "
+                    "'ollama-cloud-chat', 'unpinned', 1, 1, 1, '1', '[]', '{}', 999)"
                 ),
                 {"id": uuid4()},
             )
@@ -1291,7 +1272,7 @@ def test_a_prompt_version_missing_a_named_prompt_file_is_422_not_deployed(
     resp = client.post(
         f"{URL}/estimating_agent/config-versions",
         headers={**admin, **_if_match(current["row_version"])},
-        json=_version(semver="0.1.0", model_profile="demo-chat", prompt_version=2),
+        json=_version(semver="0.1.0", model_profile="ollama-cloud-chat", prompt_version=2),
     )
     _problem(resp, 422, "registry_config_not_deployed")
     assert len(_version_rows(sync_engine, "estimating_agent")) == before

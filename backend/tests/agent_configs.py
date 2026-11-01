@@ -7,7 +7,7 @@ from app.modules.registry.domain.registry import seed_config_version_id
 SEED_SEMVER = "0.1.0"
 
 
-def seed_config(agent_id: str, profile: str = "demo-chat") -> AgentConfig:
+def seed_config(agent_id: str, profile: str = "ollama-cloud-chat") -> AgentConfig:
     """`agent_id`'s seeded config version 1 (0.1.0, prompt 1), calling `profile`."""
     return AgentConfig(
         agent_id=agent_id,

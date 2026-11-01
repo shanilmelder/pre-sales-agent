@@ -29,7 +29,7 @@ class _Gateway:
                 {"matches": [{"question": "Q1", "quote": "We run S/4HANA 2022."}]}
             ),
             call_id=uuid4(),
-            profile="demo-chat",
+            profile="ollama-cloud-chat",
             model="fake",
             model_digest="fake",
             input_tokens=1,

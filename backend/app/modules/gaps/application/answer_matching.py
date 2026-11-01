@@ -75,7 +75,6 @@ from app.platform.locks import opportunity_lock
 from app.platform.logging import get_logger
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelOutputInvalidError
-from app.platform.model_gateway.profiles import get_profile
 from app.platform.storage import BlobStore
 from app.platform.trace.catalogue import (
     GapsAnswerMatchConfirmed,
@@ -95,10 +94,11 @@ class MatchAnswers(JobPayload):
     version: int
 
 
-def matching_budget(profile: str) -> int:
+def matching_budget(num_ctx: int) -> int:
     """The most characters (code points) of Source and question text one match call may
-    carry for this profile, measured as intake's extraction does. Tests replace this."""
-    return intake.input_budget_chars(get_profile(profile).num_ctx)
+    carry for a profile with this context window, measured as intake's extraction does.
+    Tests replace this."""
+    return intake.input_budget_chars(num_ctx)
 
 
 def matching_settings() -> Settings:
@@ -307,9 +307,10 @@ async def _match(ctx: JobContext, payload: MatchAnswers) -> None:
         )
         return
     opportunity_id, questions, text, version = started
-    config = registry.agent_config(version, settings)
+    config = registry.agent_config(version)
     chars = len(text) + sum(len(q.text) + len(q.topic) for q in questions)
-    budget = matching_budget(config.profile)
+    profile = await registry.chat_profile(ctx.engine, config.profile)
+    budget = matching_budget(profile.num_ctx)
     if chars > budget:
         _log.info(
             "gaps.answer_matching_skipped",

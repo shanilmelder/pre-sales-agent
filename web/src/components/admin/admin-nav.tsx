@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 const SECTIONS = [
   { href: "/admin/users", label: "Users and roles" },
   { href: "/admin/agents", label: "Agents" },
+  { href: "/admin/model-profiles", label: "Model profiles" },
   { href: "/admin/catalogue", label: "Catalogue" },
   { href: "/admin/evals", label: "Evals" },
   { href: "/admin/retention", label: "Retention" },

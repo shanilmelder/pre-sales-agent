@@ -18,8 +18,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.platform.model_gateway.profiles import get_profile
-
 CONTRACT_VERSION: Literal["1"] = "1"
 AGENT_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
@@ -108,15 +106,15 @@ class AgentResult(_Contract):
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AgentConfig:
     """An agent's configuration: one config version from the Agent Registry, with the model
-    profile actually used (the version's, or the local-dev `PSA_MODEL_PROFILE_CHAT`
-    override)."""
+    profile it pins."""
 
     agent_id: str
     semver: str
     prompt_version: int
     """N in `agents/<agent_id>/prompts/v<N>.md`."""
     profile: str
-    """The ModelGateway profile name the agent calls; must be a defined profile."""
+    """The ModelGateway profile name the agent calls: a built-in or a custom profile. Custom
+    profiles live in the database, so the gateway resolves the name when it is called."""
     config_version_id: UUID
     """The registry config version's id; sent to the ModelGateway as `config_version`."""
 
@@ -127,7 +125,6 @@ class AgentConfig:
             raise ValueError(f"semver {self.semver!r} must be MAJOR.MINOR.PATCH")
         if self.prompt_version < 1:
             raise ValueError("prompt_version must be >= 1")
-        get_profile(self.profile)  # raises UnknownModelProfileError
 
     @property
     def actor_id(self) -> str:

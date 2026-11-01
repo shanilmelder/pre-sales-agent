@@ -1,5 +1,5 @@
-"""The registry module's tables (Stories 7.1, 7.3 and 7.6). An Agent's `created_by` holds
-identity's user ids without foreign keys (AD-2)."""
+"""The registry module's tables (Stories 7.1, 7.3 and 7.6), custom chat model profiles and the
+approved-model allowlist. `created_by` holds identity's user ids without foreign keys (AD-2)."""
 
 from datetime import datetime
 from typing import Any
@@ -86,6 +86,64 @@ class ConfigVersionRow(Base):
     """Why an administrator created it (Story 7.3); null for seeded and earlier rows."""
     restored_from_version: Mapped[int | None] = mapped_column(Integer)
     """The earlier version a restore copied (Story 7.3); null unless a restore."""
+    created_by: Mapped[UUID | None] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ModelProfileRow(Base):
+    """A custom chat model profile. The definition is immutable: the app role can update only
+    `state` and the test result columns, and has no DELETE. No secret lives here: base URLs
+    and API keys stay in the environment."""
+
+    __tablename__ = "registry_model_profiles"
+    __table_args__ = (
+        UniqueConstraint("name"),
+        CheckConstraint("name ~ '^[a-z0-9][a-z0-9._-]*$' AND char_length(name) <= 64", name="name"),
+        CheckConstraint("provider IN ('ollama', 'openai')", name="provider"),
+        CheckConstraint("char_length(model) BETWEEN 1 AND 128", name="model"),
+        CheckConstraint("num_ctx BETWEEN 16384 AND 2097152", name="num_ctx"),
+        CheckConstraint(
+            "(temperature IS NULL) <> (reasoning_effort IS NULL)", name="temperature_or_effort"
+        ),
+        CheckConstraint("temperature IS NULL OR temperature BETWEEN 0 AND 2", name="temperature"),
+        CheckConstraint(
+            "reasoning_effort IS NULL OR (provider = 'openai' "
+            "AND reasoning_effort IN ('low', 'medium', 'high'))",
+            name="reasoning_effort",
+        ),
+        CheckConstraint("state IN ('untested', 'verified', 'failed', 'retired')", name="state"),
+        CheckConstraint("latency_ms IS NULL OR latency_ms >= 0", name="latency_ms"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    provider: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(Text)
+    num_ctx: Mapped[int] = mapped_column(Integer)
+    temperature: Mapped[float | None] = mapped_column(Float)
+    reasoning_effort: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(Text)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[UUID | None] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
+
+
+class ApprovedModelRow(Base):
+    """One provider and model a custom profile may name. Removing a row doesn't affect
+    profiles that already name it."""
+
+    __tablename__ = "registry_approved_models"
+    __table_args__ = (
+        UniqueConstraint("provider", "model"),
+        CheckConstraint("provider IN ('ollama', 'openai')", name="provider"),
+        CheckConstraint("char_length(model) BETWEEN 1 AND 128", name="model"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    provider: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(Text)
     created_by: Mapped[UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_NOW)
 
