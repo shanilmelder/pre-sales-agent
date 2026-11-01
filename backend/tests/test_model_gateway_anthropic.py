@@ -226,9 +226,7 @@ def test_unset_fields_are_omitted(db_url: str, monkeypatch: pytest.MonkeyPatch) 
     plain = dataclasses.replace(
         MODEL_PROFILES[PROFILE], reasoning_effort=None, refusal_fallback=False
     )
-    monkeypatch.setattr(
-        "app.platform.model_gateway.gateway.get_profile", lambda *_a, **_k: plain
-    )
+    monkeypatch.setattr("app.platform.model_gateway.gateway.get_profile", lambda *_a, **_k: plain)
     stub = Stub(VALID)
     _call(db_url, stub, _request(messages=[Message(role="user", content="hello")]))
     [body] = stub.bodies

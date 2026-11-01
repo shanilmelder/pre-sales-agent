@@ -82,6 +82,7 @@ describe("/admin/users", () => {
     expect(within(sections).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "Users and roles",
       "Agents",
+      "Model profiles",
       "Catalogue",
       "Evals",
       "Retention",
