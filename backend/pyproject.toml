@@ -23,6 +23,8 @@ dependencies = [
     "psycopg-pool==3.3.3",  # the checkpointer's own pool (AD-6)
     "pgvector==0.4.2",  # MIT; the SQLAlchemy `vector` type for knowledge_chunks (Story 3.3)
     "pyyaml==6.0.3",  # MIT; the research allowlist (Story 5.4) and evals/ files (Story 7.6)
+    "anthropic==2.3.0",  # Apache-2.0; the SDK of the ModelGateway's Anthropic adapter
+    "httpx2==2.13.1",  # BSD-3-Clause; that SDK's HTTP client, typed in the gateway
 ]
 
 [dependency-groups]
@@ -117,6 +119,7 @@ forbidden_modules = [
     "app.platform.model_gateway.adapter",
     "app.platform.model_gateway.ollama",
     "app.platform.model_gateway.openai_compat",
+    "app.platform.model_gateway.anthropic_adapter",
 ]
 # Story 3.3: `GET /knowledge/search` embeds its query (one `bge-m3` call through the gateway,
 # recorded in `platform_model_calls`); the api process builds a gateway for that only and

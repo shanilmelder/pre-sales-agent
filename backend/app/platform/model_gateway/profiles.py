@@ -7,7 +7,9 @@ a registry change, never a code change at the call site: callers name a profile,
 handling, only sample or anonymised Opportunities may use them.
 
 Each profile names its provider: `ollama` (native `/api/chat`, the default) or `openai`
-(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`).
+(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`). `anthropic-chat`
+(`claude-opus-5-5`) has provider `anthropic`: Anthropic's API through the official SDK, with
+`PSA_ANTHROPIC_API_KEY`. It too sends prompt text off the host, so the same data rule applies.
 
 Embedding profiles (Story 3.3) live apart, in `EMBED_PROFILES`, picked by
 `PSA_MODEL_PROFILE_EMBED`: `bge-m3` (1024 dims) on host Ollama's `/api/embed`. An embedding
@@ -29,7 +31,7 @@ from typing import Literal
 
 STRUCTURED_TEMPERATURE = 0.1
 
-Provider = Literal["ollama", "openai"]
+Provider = Literal["ollama", "openai", "anthropic"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,15 +43,24 @@ class ModelProfile:
     """Context window. `ollama`: set explicitly on every request (Ollama's default is much
     smaller). `openai`: OpenAI-style endpoints can't set it per request, so this declares
     what the server must be configured with (vLLM `--max-model-len`, Ollama
-    `OLLAMA_CONTEXT_LENGTH` or a Modelfile); it is not sent."""
+    `OLLAMA_CONTEXT_LENGTH` or a Modelfile); it is not sent. `anthropic`: not sent either; it
+    sizes intake's extraction chunks."""
     temperature: float = STRUCTURED_TEMPERATURE
     provider: Provider = "ollama"
-    """Which adapter serves the profile: `ollama` (`/api/chat`) or `openai`
-    (`/chat/completions` at `PSA_OPENAI_BASE_URL`)."""
+    """Which adapter serves the profile: `ollama` (`/api/chat`), `openai`
+    (`/chat/completions` at `PSA_OPENAI_BASE_URL`) or `anthropic` (the Anthropic SDK)."""
     reasoning_effort: str | None = None
-    """`openai` provider only: set for a reasoning model (OpenAI's o-series, GPT-5), which
-    rejects `temperature`. The request then sends `reasoning_effort` (e.g. `low`, `medium`,
-    `high`) and no `temperature`. None: a regular model, sent `temperature`."""
+    """`openai`: set for a reasoning model (OpenAI's o-series, GPT-5), which rejects
+    `temperature`. The request then sends `reasoning_effort` (e.g. `low`, `medium`, `high`) and
+    no `temperature`. None: a regular model, sent `temperature`. `anthropic`: sent as
+    `output_config.effort`; None leaves it to the model's default. `anthropic` requests never
+    send `temperature`."""
+    max_tokens: int = 16000
+    """`anthropic` provider only: the output limit every request must state. Thinking counts
+    against it."""
+    refusal_fallback: bool = False
+    """`anthropic` provider only: let the API rerun a declined request on its default fallback
+    model."""
 
     def options(self) -> dict[str, float | int]:
         """The `options` object of an Ollama `/api/chat` request (Ollama provider only)."""
@@ -66,8 +77,19 @@ OPENAI_CHAT = ModelProfile(
     name="openai-chat", model="gpt-4.1-mini", num_ctx=32768, provider="openai"
 )
 
+# Anthropic's API. `num_ctx` is not sent (the model's own window is far larger); it sizes
+# intake's extraction chunks, kept equal to `ollama-cloud-chat`.
+ANTHROPIC_CHAT = ModelProfile(
+    name="anthropic-chat",
+    model="claude-opus-5-5",
+    num_ctx=32768,
+    provider="anthropic",
+    reasoning_effort="medium",
+    refusal_fallback=True,
+)
+
 MODEL_PROFILES: Mapping[str, ModelProfile] = MappingProxyType(
-    {profile.name: profile for profile in (OLLAMA_CLOUD_CHAT, OPENAI_CHAT)}
+    {profile.name: profile for profile in (OLLAMA_CLOUD_CHAT, OPENAI_CHAT, ANTHROPIC_CHAT)}
 )
 
 
