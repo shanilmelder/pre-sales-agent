@@ -27,7 +27,7 @@ describe("Agent config helpers", () => {
       budgets: { x: 1, y: 2 },
     });
     const b = configVersion(2, {
-      model_profile: "local-chat",
+      model_profile: "openai-chat",
       tool_permissions: ["c.d.list", "a.b.list"],
       budgets: { y: 2, x: 1 },
     });

@@ -37,8 +37,6 @@ storage_dir = conflict_tests.storage_dir
 _hidden_jobs = conflict_tests._hidden_jobs
 gateway = conflict_tests.gateway
 client = conflict_tests.client
-_chat_profile = conflict_tests._chat_profile
-_draft_profile = conflict_tests._draft_profile
 _assessment_profile = conflict_tests._assessment_profile
 _no_auto_run = conflict_tests._no_auto_run
 

@@ -32,9 +32,7 @@ config version into the eval database as its Agent's newest version (harness onl
 
 For other modules (no authorization): `current_config`, `get_config_version`, `list_agents`,
 `require_enabled` (409 `registry_agent_disabled` for a `disabled` or `eval_only` Agent) and
-`agent_config` (the `AgentConfig` an agent runs with, applying the local-dev profile
-override: when `PSA_MODEL_PROFILE_CHAT` is explicitly set it replaces the version's pinned
-profile, and the model call records the profile actually used).
+`agent_config` (the `AgentConfig` an agent runs with, on the profile the version pins).
 """
 
 import re
@@ -82,7 +80,6 @@ from app.modules.registry.domain.registry import (
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
-from app.platform.config import Settings, get_settings
 from app.platform.errors import (
     ForbiddenError,
     NotFoundError,
@@ -96,7 +93,7 @@ from app.platform.errors import (
 )
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
-from app.platform.model_gateway.profiles import UnknownModelProfileError, resolve_profile
+from app.platform.model_gateway.profiles import UnknownModelProfileError, get_profile
 from app.platform.tool_gateway import list_denials
 from app.platform.tool_gateway.catalogue import READ_TOOLS
 from app.platform.trace.catalogue import (
@@ -154,19 +151,14 @@ def version_view(
     )
 
 
-def effective_model(version: ConfigVersion, settings: Settings) -> EffectiveModel:
-    """What `version` calls in this deployment: `effective_profile` and that profile's model
-    as the ModelGateway resolves it (null for a profile this deployment doesn't define)."""
-    profile = effective_profile(version, settings)
+def effective_model(version: ConfigVersion) -> EffectiveModel:
+    """What `version` calls: its pinned profile and that profile's model (null for a profile
+    this deployment doesn't define)."""
     try:
-        model: str | None = resolve_profile(
-            profile,
-            openai_model=settings.openai_model,
-            openai_reasoning_effort=settings.openai_reasoning_effort,
-        ).model
+        model: str | None = get_profile(version.model_profile).model
     except UnknownModelProfileError:
         model = None
-    return EffectiveModel(profile=profile, model=model, overridden=profile != version.model_profile)
+    return EffectiveModel(profile=version.model_profile, model=model)
 
 
 def agent_view(agent: RegisteredAgent, names: Mapping[UUID, str] | None = None) -> RegistryAgent:
@@ -178,7 +170,7 @@ def agent_view(agent: RegisteredAgent, names: Mapping[UUID, str] | None = None) 
         row_version=agent.row_version,
         created_at=agent.created_at,
         current_config=version_view(agent.current, names),
-        effective_model=effective_model(agent.current, get_settings()),
+        effective_model=effective_model(agent.current),
     )
 
 
@@ -647,21 +639,13 @@ async def list_agents(uow: UnitOfWork) -> list[RegisteredAgent]:
     return await repo.list_agents(uow)
 
 
-def effective_profile(version: ConfigVersion, settings: Settings) -> str:
-    """The profile the agent calls: `PSA_MODEL_PROFILE_CHAT` when it is explicitly set (a
-    local-dev override), else the profile the config version pins."""
-    if "model_profile_chat" in settings.model_fields_set:
-        return settings.model_profile_chat
-    return version.model_profile
-
-
-def agent_config(version: ConfigVersion, settings: Settings) -> AgentConfig:
+def agent_config(version: ConfigVersion) -> AgentConfig:
     """The `AgentConfig` an agent runs with at this config version."""
     return AgentConfig(
         agent_id=version.agent_id,
         semver=version.semver,
         prompt_version=version.prompt_version,
-        profile=effective_profile(version, settings),
+        profile=version.model_profile,
         config_version_id=version.id,
     )
 

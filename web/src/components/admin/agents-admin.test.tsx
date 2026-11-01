@@ -28,7 +28,7 @@ import { RIGHT_PANE_TOGGLE_ID, ShellProviders } from "../shell/shell-context";
 import { AgentsAdmin } from "./agents-admin";
 
 const V1 = configVersion(1);
-const V2 = configVersion(2, { model_profile: "local-chat", prompt_version: 2 });
+const V2 = configVersion(2, { model_profile: "openai-chat", prompt_version: 2 });
 const PM = registryAgent(1, "PM Agent", V2, { row_version: 2 });
 const INTAKE = registryAgent(2, "Intake Agent", configVersion(1, {}, "intake_agent"));
 const SECURITY = registryAgent(3, "Security Agent", configVersion(1, {}, "security_agent"));
@@ -99,7 +99,7 @@ describe("AgentsAdmin", () => {
     const { container } = render(ui());
     await openPm(u);
     const details = within(pane()).getByRole("region", { name: "Current config" });
-    for (const text of ["pm_agent", "Enabled", "v2", "0.2.0", "local-chat", "None"]) {
+    for (const text of ["pm_agent", "Enabled", "v2", "0.2.0", "openai-chat", "None"]) {
       expect(within(details).getAllByText(text).length).toBeGreaterThan(0);
     }
     expect(within(details).getByText("Prompt version").nextSibling?.textContent).toBe("v2");
@@ -173,7 +173,7 @@ describe("AgentsAdmin", () => {
     const form = within(pane()).getByRole("form", { name: "New version" });
     // The profile picker lists the deployed profiles once the options are loaded.
     await waitFor(() =>
-      expect(within(form).getByRole("option", { name: "demo-chat" })).toBeTruthy(),
+      expect(within(form).getByRole("option", { name: "ollama-cloud-chat" })).toBeTruthy(),
     );
     const save = within(form).getByRole("button", { name: "Save version" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
@@ -200,7 +200,7 @@ describe("AgentsAdmin", () => {
       rowVersion: 2,
       config: {
         semver: "0.2.1",
-        model_profile: "local-chat",
+        model_profile: "openai-chat",
         prompt_version: 1,
         input_schema_version: 1,
         output_schema_version: 1,
@@ -210,7 +210,7 @@ describe("AgentsAdmin", () => {
       reason: "  Back to v1 ",
       restoredFromVersion: null,
     });
-    expect(within(rowOf("PM Agent")).getByText("demo-chat")).toBeTruthy();
+    expect(within(rowOf("PM Agent")).getByText("ollama-cloud-chat")).toBeTruthy();
     await waitFor(() => expect(historyItems()).toHaveLength(3));
     expect(historyItems()[0].textContent).toContain("v3 · 0.2.1 (current)");
     expect(within(pane()).queryByRole("form")).toBeNull();
@@ -273,7 +273,7 @@ describe("AgentsAdmin", () => {
     expect(
       (within(form).getByRole("button", { name: "Save version" }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    // Meanwhile another administrator saved v3 (back on demo-chat).
+    // Meanwhile another administrator saved v3 (back on ollama-cloud-chat).
     const v3 = configVersion(3, { semver: "0.3.0" });
     const theirs = { ...PM, row_version: 3, current_config: v3 };
     stored.pm_agent = { agent: theirs, versions: [v3, V2, V1] };
@@ -285,7 +285,7 @@ describe("AgentsAdmin", () => {
     // The form starts again from their version, so saving can't revert it.
     expect(
       (within(form).getByRole("combobox", { name: "Model profile" }) as HTMLSelectElement).value,
-    ).toBe("demo-chat");
+    ).toBe("ollama-cloud-chat");
     expect((within(form).getByRole("textbox", { name: "Semver" }) as HTMLInputElement).value).toBe(
       "0.3.1",
     );
@@ -348,7 +348,7 @@ describe("AgentsAdmin", () => {
     );
     expect(
       (within(form).getByRole("combobox", { name: "Model profile" }) as HTMLSelectElement).value,
-    ).toBe("demo-chat");
+    ).toBe("ollama-cloud-chat");
     expect(
       (within(form).getByRole("combobox", { name: "Prompt version" }) as HTMLSelectElement).value,
     ).toBe("1");
@@ -363,7 +363,7 @@ describe("AgentsAdmin", () => {
     expect(actions.createConfigVersion.mock.calls[0][0]).toMatchObject({
       restoredFromVersion: 1,
       reason: "Roll back",
-      config: { model_profile: "demo-chat", prompt_version: 1 },
+      config: { model_profile: "ollama-cloud-chat", prompt_version: 1 },
     });
     expect(within(rowOf("PM Agent")).getByText("0.2.0")).toBeTruthy();
   });

@@ -12,7 +12,7 @@ const AGENT = registryAgent(1, "PM Agent", V2, { row_version: 4 });
 const status = (code: number) => new Response(null, { status: code });
 const CONFIG = {
   semver: "0.2.1",
-  model_profile: "demo-chat",
+  model_profile: "ollama-cloud-chat",
   prompt_version: 2,
   input_schema_version: 1,
   output_schema_version: 1,

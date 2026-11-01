@@ -1,16 +1,13 @@
-"""Named model profiles. Changing model is a config change (`PSA_MODEL_PROFILE_CHAT`),
-never a code change at the call site: callers name a profile, not a model.
+"""Named model profiles. An Agent's config version pins one, so changing an Agent's model is
+a registry change, never a code change at the call site: callers name a profile, not a model.
 
-`demo-chat` (`gpt-oss:120b-cloud`) sends prompt text to Ollama's cloud. Until IT approves
-that data handling, only sample or anonymised Opportunities may use it. `local-chat`
-(`qwen3:8b`) runs fully on the host for when the cloud is unavailable or not allowed.
+`ollama-cloud-chat` (`gpt-oss:120b-cloud`) sends prompt text to Ollama's cloud. `openai-chat`
+(`gpt-4.1-mini`) is OpenAI's cloud API (`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` plus
+`PSA_OPENAI_API_KEY`). Both send prompt text off the host: until IT approves that data
+handling, only sample or anonymised Opportunities may use them.
 
 Each profile names its provider: `ollama` (native `/api/chat`, the default) or `openai`
-(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`, e.g. vLLM). `local-chat-openai`
-is `qwen3:8b` over the OpenAI-compatible adapter; with the default base URL it is served by
-host Ollama's own `/v1` endpoint. `openai-chat` (`gpt-4.1-mini`) is OpenAI's cloud API
-(`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` plus `PSA_OPENAI_API_KEY`); like
-`demo-chat` it sends prompt text off the host, so the same data rule applies.
+(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`).
 
 Embedding profiles (Story 3.3) live apart, in `EMBED_PROFILES`, picked by
 `PSA_MODEL_PROFILE_EMBED`: `bge-m3` (1024 dims) on host Ollama's `/api/embed`. An embedding
@@ -22,7 +19,7 @@ profile names against `MODEL_PROFILES` and `EMBED_PROFILES` at startup.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
 
@@ -55,21 +52,18 @@ class ModelProfile:
         return {"temperature": self.temperature, "num_ctx": self.num_ctx}
 
 
-DEMO_CHAT = ModelProfile(name="demo-chat", model="gpt-oss:120b-cloud", num_ctx=32768)
-LOCAL_CHAT = ModelProfile(name="local-chat", model="qwen3:8b", num_ctx=16384)
-# The server must run qwen3:8b with a 16384-token context (e.g. OLLAMA_CONTEXT_LENGTH=16384).
-LOCAL_CHAT_OPENAI = ModelProfile(
-    name="local-chat-openai", model="qwen3:8b", num_ctx=16384, provider="openai"
+OLLAMA_CLOUD_CHAT = ModelProfile(
+    name="ollama-cloud-chat", model="gpt-oss:120b-cloud", num_ctx=32768
 )
 # OpenAI's cloud API. A non-reasoning model: the adapter always sends `temperature`, which
 # OpenAI's reasoning models reject unless it is 1. `num_ctx` is not sent (the model's own
-# window is far larger); it sizes intake's extraction chunks, kept equal to `demo-chat`.
+# window is far larger); it sizes intake's extraction chunks, kept equal to `ollama-cloud-chat`.
 OPENAI_CHAT = ModelProfile(
     name="openai-chat", model="gpt-4.1-mini", num_ctx=32768, provider="openai"
 )
 
 MODEL_PROFILES: Mapping[str, ModelProfile] = MappingProxyType(
-    {profile.name: profile for profile in (DEMO_CHAT, LOCAL_CHAT, LOCAL_CHAT_OPENAI, OPENAI_CHAT)}
+    {profile.name: profile for profile in (OLLAMA_CLOUD_CHAT, OPENAI_CHAT)}
 )
 
 
@@ -102,22 +96,6 @@ def get_profile(name: str) -> ModelProfile:
     except KeyError:
         known = ", ".join(sorted(MODEL_PROFILES))
         raise UnknownModelProfileError(f"model profile {name!r} is not defined ({known})") from None
-
-
-def resolve_profile(
-    name: str, *, openai_model: str | None, openai_reasoning_effort: str | None
-) -> ModelProfile:
-    """The named profile as it is called. For an `openai` provider profile,
-    `PSA_OPENAI_MODEL` and `PSA_OPENAI_REASONING_EFFORT` (when set) replace its model and
-    reasoning effort; other profiles are returned as defined."""
-    profile = get_profile(name)
-    if profile.provider != "openai":
-        return profile
-    return replace(
-        profile,
-        model=openai_model or profile.model,
-        reasoning_effort=openai_reasoning_effort or profile.reasoning_effort,
-    )
 
 
 def get_embed_profile(name: str) -> EmbedProfile:

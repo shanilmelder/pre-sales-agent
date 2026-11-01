@@ -79,7 +79,6 @@ from app.modules.intake.application import public as intake
 from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
-from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
 from app.platform.locks import opportunity_lock
@@ -98,11 +97,6 @@ _log = get_logger(__name__)
 
 class DraftEstimate(JobPayload):
     draft_id: UUID
-
-
-def draft_settings() -> Settings:
-    """Settings for the handler (the chat profile). Tests replace this."""
-    return get_settings()
 
 
 # --- queueing -------------------------------------------------------------------------------
@@ -562,7 +556,6 @@ async def _start(ctx: JobContext, draft_id: UUID) -> _Started | None:
 
 
 async def _draft(ctx: JobContext, payload: DraftEstimate) -> None:
-    settings = draft_settings()
     draft_id = payload.draft_id
     ids: dict[str, object] = {"draft_id": str(draft_id)}
     started = await _start(ctx, draft_id)
@@ -577,7 +570,7 @@ async def _draft(ctx: JobContext, payload: DraftEstimate) -> None:
         _log.info("estimates.draft_empty", extra=ids)
         return
 
-    config = registry.agent_config(started.version, settings)
+    config = registry.agent_config(started.version)
     agent = EstimatingAgent(provider.current(), config=config)
     result = await agent.run(
         EstimatingTask(

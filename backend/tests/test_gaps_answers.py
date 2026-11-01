@@ -26,7 +26,6 @@ from app.platform.db import create_engine
 from app.platform.jobs.runner import run_job
 from app.platform.model_gateway.port import StructuredRequest
 from app.platform.uow import unit_of_work
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_gaps_commands import _dismiss, _reopen
@@ -54,7 +53,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
 
 ANSWERED_Q = "gaps.clarification_question.answered"
 ANSWERED_GAP = "gaps.gap.answered"
@@ -72,7 +70,7 @@ def _matching_settings(monkeypatch: pytest.MonkeyPatch, storage_dir: Any) -> Non
     monkeypatch.setattr(
         answer_matching,
         "matching_settings",
-        lambda: Settings(storage_dir=storage_dir, model_profile_chat="demo-chat"),
+        lambda: Settings(storage_dir=storage_dir, model_profile_chat="ollama-cloud-chat"),
     )
 
 

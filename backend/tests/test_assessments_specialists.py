@@ -63,8 +63,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
 
 AGENTS = ("engineering_agent", "pm_agent", "security_agent")
 TASKS = (*AGENTS, "critic_agent")
@@ -76,7 +74,7 @@ def _assessment_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         orchestration_executors,
         "executor_settings",
-        lambda: Settings(model_profile_chat="demo-chat"),
+        lambda: Settings(model_profile_chat="ollama-cloud-chat"),
     )
 
 
@@ -139,7 +137,7 @@ class AgentGateway:
         return StructuredResult(
             value=value,
             call_id=uuid4(),
-            profile="demo-chat",
+            profile="ollama-cloud-chat",
             model="fake",
             model_digest="fake",
             input_tokens=1,
@@ -500,7 +498,7 @@ def test_a_run_stores_three_assessments_with_findings_effort_and_trace(
         assert "<<<GAP G1 category=integration_details impact=high token=" in user.content
         assert "Prices in EUR." in user.content
         assert request.caller.run_id == run["id"]
-        assert (request.profile, request.priority) == ("demo-chat", "background")
+        assert (request.profile, request.priority) == ("ollama-cloud-chat", "background")
     engineering_request = next(r for r in fake.requests if r.caller.agent_id == "engineering_agent")
     assert engineering_request.output_model is EngineeringOutput
 
@@ -988,7 +986,7 @@ def _accept(
                     agent_id=agent.value,
                     semver="0.1.0",
                     prompt_version=1,
-                    profile="demo-chat",
+                    profile="ollama-cloud-chat",
                     config_version_id=task.config_version_id,
                 ),
             )

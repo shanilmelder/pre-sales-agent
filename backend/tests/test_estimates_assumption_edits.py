@@ -40,9 +40,6 @@ storage_dir = base.storage_dir
 _hidden_jobs = base._hidden_jobs
 gateway = base.gateway
 client = base.client
-_chat_profile = base._chat_profile
-_draft_profile = base._draft_profile
-_proposal_profile = base._proposal_profile
 
 EDITED = "estimates.assumption.edited"
 REASON = "The customer confirmed this on the call."

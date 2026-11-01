@@ -795,7 +795,7 @@ class ChainGateway:
         return StructuredResult(
             value=value,
             call_id=uuid4(),
-            profile="demo-chat",
+            profile="ollama-cloud-chat",
             model="fake",
             model_digest="fake",
             input_tokens=1,
@@ -844,7 +844,7 @@ def eval_settings(
     storage = tmp_path / "files"
     monkeypatch.setenv("PSA_STORAGE_DIR", str(storage))
     get_settings.cache_clear()
-    yield _settings(db_url, storage_dir=storage, model_profile_chat="demo-chat")
+    yield _settings(db_url, storage_dir=storage, model_profile_chat="ollama-cloud-chat")
     get_settings.cache_clear()
 
 

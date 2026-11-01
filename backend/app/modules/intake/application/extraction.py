@@ -643,7 +643,7 @@ async def _extract(ctx: JobContext, payload: ExtractRequirements) -> None:
         return
     opportunity_id, sources, version = started
     ids["opportunity_id"] = str(opportunity_id)
-    config = registry.agent_config(version, settings)
+    config = registry.agent_config(version)
     chars = sum(len(s.text) for s in sources)
     budget = input_budget_chars(get_profile(config.profile).num_ctx)
     if chars > budget:

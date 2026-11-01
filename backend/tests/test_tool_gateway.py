@@ -44,8 +44,6 @@ from app.platform.tool_gateway.catalogue import (
     RESEARCH_PAGE_FETCH,
 )
 from app.platform.uow import unit_of_work
-from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_estimates_draft import detected
@@ -56,8 +54,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
 
 STORY_5_4_TOOLS = frozenset(
     {

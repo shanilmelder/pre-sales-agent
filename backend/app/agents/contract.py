@@ -108,8 +108,7 @@ class AgentResult(_Contract):
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AgentConfig:
     """An agent's configuration: one config version from the Agent Registry, with the model
-    profile actually used (the version's, or the local-dev `PSA_MODEL_PROFILE_CHAT`
-    override)."""
+    profile it pins."""
 
     agent_id: str
     semver: str

@@ -95,7 +95,7 @@ class FakeGateway:
         return StructuredResult(
             value=value,
             call_id=uuid4(),
-            profile="demo-chat",
+            profile="ollama-cloud-chat",
             model="fake",
             model_digest="fake",
             input_tokens=1,
@@ -134,7 +134,7 @@ def storage_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         intake_extraction,
         "extraction_settings",
-        lambda: Settings(storage_dir=root, model_profile_chat="demo-chat"),
+        lambda: Settings(storage_dir=root, model_profile_chat="ollama-cloud-chat"),
     )
     return root
 
@@ -509,7 +509,7 @@ def test_extraction_stores_cited_requirements(
     assert request.caller.config_version == str(seed_config_version_id("intake_agent"))
     assert request.caller.run_id == extraction["id"]
     assert str(request.caller.opportunity_id) == opp["id"]
-    assert (request.profile, request.priority) == ("demo-chat", "background")
+    assert (request.profile, request.priority) == ("ollama-cloud-chat", "background")
     assert request.output_model is IntakeOutput
 
     # Privacy: no Source or Requirement text in logs or the trace.
@@ -717,7 +717,7 @@ def test_a_duplicate_job_for_a_finished_extraction_does_nothing(
 def test_input_over_the_budget_fails_without_a_model_call(
     client: TestClient, sync_engine: Engine, db_url: str, gateway: FakeGateway
 ) -> None:
-    budget = intake_extraction.input_budget_chars(32768)  # demo-chat
+    budget = intake_extraction.input_budget_chars(32768)  # ollama-cloud-chat
     big = ("Requirement text. " * (budget // 18 + 10))[: budget + 10]
     _, opp, _ = parsed(client, sync_engine, db_url, ("big.txt", f"{uuid4()} {big}"))
     gateway.replies = [out()]

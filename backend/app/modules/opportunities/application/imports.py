@@ -406,7 +406,7 @@ async def _read(ctx: JobContext, payload: ReadImport) -> None:
         return
 
     today = datetime.now(UTC).date()
-    config = registry.agent_config(version, settings)
+    config = registry.agent_config(version)
     result = await OpportunityIntakeAgent(provider.current(), config=config).run(
         OpportunityIntakeTask(import_id=import_id, today=today, text=text)
     )

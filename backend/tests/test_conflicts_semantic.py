@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
 from app.agents.conflict_agent.schema import ConflictOutput
-from app.modules.conflicts.application import semantic as conflicts_semantic
 from app.modules.workflows.application import events as stream_events
 from app.modules.workflows.application import runs as workflows_runs
 from app.platform.config import Settings
@@ -28,8 +27,6 @@ from app.platform.jobs.runner import run_job
 from app.platform.model_gateway.port import ModelUnavailableError, StructuredRequest
 from app.platform.uow import unit_of_work
 from tests import test_assessments_specialists as specialist_tests
-from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_assessments_specialists import (
@@ -54,8 +51,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
 _assessment_profile = specialist_tests._assessment_profile
 _no_auto_run = specialist_tests._no_auto_run
 
@@ -68,13 +63,6 @@ IDP = "Cloud identity provider required"
 SUMMARY = "Engineering assumes on-prem SSO; Security requires a cloud IdP."
 ENG_STANCE = "SSO authenticates against the customer's on-prem directory."
 SEC_STANCE = "Only a cloud identity provider is acceptable."
-
-
-@pytest.fixture(autouse=True)
-def _semantic_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        conflicts_semantic, "semantic_settings", lambda: Settings(model_profile_chat="demo-chat")
-    )
 
 
 # Labels: F1, F2 Engineering; F3 PM; F4 Security. Both size R1 alike, so no rule fires.
@@ -698,7 +686,7 @@ def test_the_conflict_agent_is_seeded_active_at_version_one(sync_engine: Engine)
     assert (version["version"], version["semver"], version["model_profile"]) == (
         1,
         "0.1.0",
-        "demo-chat",
+        "ollama-cloud-chat",
     )
     assert (version["prompt_version"], version["output_schema_version"]) == (1, 1)
     assert (version["contract_version"], version["tool_permissions"]) == ("1", [])

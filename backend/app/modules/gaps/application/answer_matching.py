@@ -307,7 +307,7 @@ async def _match(ctx: JobContext, payload: MatchAnswers) -> None:
         )
         return
     opportunity_id, questions, text, version = started
-    config = registry.agent_config(version, settings)
+    config = registry.agent_config(version)
     chars = len(text) + sum(len(q.text) + len(q.topic) for q in questions)
     budget = matching_budget(config.profile)
     if chars > budget:

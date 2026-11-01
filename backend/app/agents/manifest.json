@@ -1,17 +1,9 @@
 {
   "contract_version": "1",
   "profiles": {
-    "demo-chat": {
+    "ollama-cloud-chat": {
       "model": "gpt-oss:120b-cloud",
       "provider": "ollama"
-    },
-    "local-chat": {
-      "model": "qwen3:8b",
-      "provider": "ollama"
-    },
-    "local-chat-openai": {
-      "model": "qwen3:8b",
-      "provider": "openai"
     },
     "openai-chat": {
       "model": "gpt-4.1-mini",

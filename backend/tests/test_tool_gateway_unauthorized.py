@@ -37,8 +37,6 @@ from app.platform.tool_gateway import ToolContext, ToolDenied, ToolGateway, Tool
 from app.platform.tool_gateway.catalogue import GAP_LIST, REQUIREMENT_LIST
 from app.platform.uow import UnitOfWork, unit_of_work
 from tests import test_assessments_specialists as specialist_tests
-from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_assessments_specialists import (
@@ -60,8 +58,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
 _assessment_profile = specialist_tests._assessment_profile
 _no_auto_run = specialist_tests._no_auto_run
 

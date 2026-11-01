@@ -66,7 +66,6 @@ from app.modules.conflicts.domain.semantic import (
 from app.modules.intake.application import public as intake
 from app.modules.registry.application import public as registry
 from app.platform.actor import Actor
-from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
 from app.platform.logging import get_logger
@@ -85,11 +84,6 @@ class SemanticDetection(JobPayload):
     opportunity_id: UUID
     run_id: UUID
     detection_pass: int
-
-
-def semantic_settings() -> Settings:
-    """Settings for the handler (the chat profile). Tests replace this."""
-    return get_settings()
 
 
 # --- queueing -------------------------------------------------------------------------------
@@ -442,7 +436,7 @@ async def semantic_detection(ctx: JobContext, payload: SemanticDetection) -> Non
         if isinstance(started, str):
             await _gone_without_accept(ctx, payload)
             return
-        config = registry.agent_config(started.version, semantic_settings())
+        config = registry.agent_config(started.version)
         agent = ConflictAgent(provider.current(), config=config)
         result = await agent.run(_task(payload.opportunity_id, payload.run_id, started.findings))
         async with unit_of_work(ctx.engine) as uow:
