@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Product tour title card</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+  /* Rendered at 1920x1200 by headless Chrome for the video's opening scene. */
+  :root { --bg: #0f1220; --glow: #232a55; --ink: #eceef8; --muted: #a6abc6; --accent: #8b93ff;
+          --chip: #262c55; --chip-line: #4a5290; --primary: #4F5BD5; }
+  html, body { margin: 0; width: 1920px; height: 1200px; overflow: hidden; }
+  body {
+    font-family: Inter, "Segoe UI", system-ui, sans-serif; color: var(--ink);
+    background: radial-gradient(ellipse 60% 55% at 50% 30%, var(--glow) 0%, var(--bg) 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  }
+  .mark { width: 176px; height: 176px; margin-bottom: 52px; }
+  .eyebrow {
+    font-size: 30px; font-weight: 600; letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 22px; padding-left: 0.32em;
+  }
+  h1 { font-size: 120px; font-weight: 800; letter-spacing: -0.025em; margin: 0; line-height: 1.05; }
+  .tagline { font-size: 46px; font-weight: 400; color: var(--muted); margin: 44px 0 0; }
+  .flow { display: flex; align-items: center; gap: 22px; margin-top: 92px; }
+  .chip {
+    font-size: 29px; font-weight: 600; padding: 14px 26px; border-radius: 12px;
+    background: var(--chip); border: 2px solid var(--chip-line);
+  }
+  .arrow { font-size: 30px; color: #5d6285; }
+</style>
+</head>
+<body>
+  <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="16" fill="#4F5BD5"/>
+    <path d="M21 46V18H31A9 9 0 0 1 31 36H21" fill="none" stroke="#FFFFFF" stroke-width="7"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M48 7C48.7 11.6 50.4 13.3 55 14C50.4 14.7 48.7 16.4 48 21C47.3 16.4 45.6 14.7 41 14C45.6 13.3 47.3 11.6 48 7Z"
+          fill="#FFC861"/>
+  </svg>
+  <p class="eyebrow">Product tour</p>
+  <h1>Pre Sales Agent Framework</h1>
+  <p class="tagline">Every number traced to its source.</p>
+  <div class="flow">
+    <span class="chip">Sources</span><span class="arrow">→</span>
+    <span class="chip">Requirements</span><span class="arrow">→</span>
+    <span class="chip">Gaps</span><span class="arrow">→</span>
+    <span class="chip">Assessments</span><span class="arrow">→</span>
+    <span class="chip">Estimate</span><span class="arrow">→</span>
+    <span class="chip">Actuals</span>
+  </div>
+</body>
+</html>
