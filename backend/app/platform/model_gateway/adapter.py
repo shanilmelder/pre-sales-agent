@@ -24,7 +24,13 @@ class ChatReply:
     input_tokens: int
     output_tokens: int
     truncated: bool = False
-    """The reply was cut off at the length limit (`done_reason` / `finish_reason` `length`)."""
+    """The reply was cut off at the length limit (`done_reason` / `finish_reason` `length`,
+    `stop_reason` `max_tokens` or `model_context_window_exceeded`)."""
+    refused: bool = False
+    """The model declined the request (`stop_reason` `refusal`); `content` is empty."""
+    model: str | None = None
+    """The model that served the reply, when the provider says and it can differ from the
+    profile's (an Anthropic fallback). None: the profile's."""
 
 
 @dataclass(frozen=True, slots=True)

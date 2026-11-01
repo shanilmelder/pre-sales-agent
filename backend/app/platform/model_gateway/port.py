@@ -145,7 +145,8 @@ class ModelTimeoutError(ModelGatewayError):
 
 class ModelOutputInvalidError(ModelGatewayError):
     """Every attempt returned output that failed schema validation (retries exhausted), or
-    a reply was cut off (`error_code="truncated"`, not retried)."""
+    a reply was cut off (`error_code="truncated"`, not retried) or declined
+    (`error_code="refusal"`, not retried)."""
 
     outcome: Outcome = "invalid_output"
     error_code = "invalid_output"

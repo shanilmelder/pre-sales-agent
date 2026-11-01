@@ -16,9 +16,13 @@ from app.modules.registry.adapters.models import (
     EvalResultRow,
     ModelProfileRow,
 )
-from app.modules.registry.domain.model_profiles import ApprovedModel, CustomProfile, ProfileState
+from app.modules.registry.domain.model_profiles import (
+    ApprovedModel,
+    CustomProfile,
+    CustomProvider,
+    ProfileState,
+)
 from app.modules.registry.domain.registry import AgentStatus, ConfigVersion, RegisteredAgent
-from app.platform.model_gateway.profiles import Provider
 from app.platform.uow import UnitOfWork
 
 A = AgentRow
@@ -283,7 +287,7 @@ def custom_profile(row: P) -> CustomProfile:
     return CustomProfile(
         id=row.id,
         name=row.name,
-        provider=cast("Provider", row.provider),
+        provider=cast("CustomProvider", row.provider),
         model=row.model,
         num_ctx=row.num_ctx,
         temperature=row.temperature,
@@ -300,7 +304,7 @@ def custom_profile(row: P) -> CustomProfile:
 def _approved_model(row: M) -> ApprovedModel:
     return ApprovedModel(
         id=row.id,
-        provider=cast("Provider", row.provider),
+        provider=cast("CustomProvider", row.provider),
         model=row.model,
         created_by=row.created_by,
         created_at=row.created_at,

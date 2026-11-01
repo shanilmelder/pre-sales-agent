@@ -11,13 +11,17 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from app.platform.model_gateway.profiles import (
     STRUCTURED_TEMPERATURE,
     ModelProfile,
-    Provider,
 )
+
+CustomProvider = Literal["ollama", "openai"]
+"""The providers a custom profile can use, as the database constrains them. Narrower than the
+gateway's `Provider`: `anthropic` is built in only (`anthropic-chat`)."""
 
 SUBJECT_TYPE = "registry.model_profile"
 APPROVED_SUBJECT_TYPE = "registry.approved_model"
@@ -45,7 +49,7 @@ class CustomProfile:
 
     id: UUID
     name: str
-    provider: Provider
+    provider: CustomProvider
     model: str
     num_ctx: int
     temperature: float | None
@@ -76,7 +80,7 @@ class ApprovedModel:
     """A provider and model a custom profile may name."""
 
     id: UUID
-    provider: Provider
+    provider: CustomProvider
     model: str
     created_by: UUID | None
     created_at: datetime
@@ -108,7 +112,7 @@ def model_id(value: str) -> str:
 
 
 def sampling(
-    provider: Provider, temperature: float | None, reasoning_effort: str | None
+    provider: CustomProvider, temperature: float | None, reasoning_effort: str | None
 ) -> tuple[float | None, str | None]:
     """The stored `(temperature, reasoning_effort)`: one or the other, as the adapter sends
     them. A profile that sets neither gets the structured-output temperature."""
