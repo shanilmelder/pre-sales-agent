@@ -173,6 +173,13 @@ class Settings(BaseSettings):
             "sends `Authorization: Bearer <key>`; when unset, no auth header is sent."
         ),
     )
+    anthropic_api_key: SecretStr | None = Field(
+        default=None,
+        description=(
+            "API key for profiles with provider `anthropic`. Empty or unset: nothing else "
+            "changes, and a call on such a profile fails with `missing_api_key`."
+        ),
+    )
     model_profile_chat: str = Field(
         default="ollama-cloud-chat",
         description=(

@@ -9,7 +9,7 @@ Names and allowlist entries are unique per test: the tables are shared by every 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 from uuid import UUID, uuid4
 
 import httpx
@@ -39,6 +39,7 @@ from app.platform.model_gateway.port import (
 from app.platform.model_gateway.profiles import (
     MODEL_PROFILES,
     STRUCTURED_TEMPERATURE,
+    ModelProfile,
     UnknownModelProfileError,
 )
 from tests import test_intake_extraction as extraction_tests
@@ -154,9 +155,14 @@ def _new_version(
 # --- rules ----------------------------------------------------------------------------------
 
 
+def _custom_capable() -> list[ModelProfile]:
+    """The built-ins whose provider a custom profile can use (`anthropic` is built in only)."""
+    return [p for p in MODEL_PROFILES.values() if p.provider in get_args(rules.CustomProvider)]
+
+
 def test_the_seed_repeats_the_built_in_models() -> None:
     source = MIGRATION.read_text(encoding="utf-8")
-    for profile in MODEL_PROFILES.values():
+    for profile in _custom_capable():
         assert f'("{profile.provider}", "{profile.model}")' in source
 
 
@@ -269,6 +275,7 @@ def test_a_duplicate_name_stores_nothing(
         {"name": "Has Spaces"},
         {"name": "x" * 65},
         {"provider": "azure"},
+        {"provider": "anthropic"},  # built in only
         {"num_ctx": 1000},
         {"temperature": 3},
         {"reasoning_effort": "extreme", "temperature": None},
@@ -722,7 +729,7 @@ def test_the_allowlist_is_seeded_with_the_built_in_models(
     resp = client.get(APPROVED_URL, headers=admin)
     assert resp.status_code == 200, resp.text
     pairs = {(a["provider"], a["model"]) for a in resp.json()["items"]}
-    assert {(p.provider, p.model) for p in MODEL_PROFILES.values()} <= pairs
+    assert {(p.provider, p.model) for p in _custom_capable()} <= pairs
 
 
 def test_an_added_model_can_be_used_and_removing_it_leaves_profiles_alone(

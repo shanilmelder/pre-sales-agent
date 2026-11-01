@@ -10,10 +10,10 @@ from app.modules.registry.domain.model_profiles import (
     NUM_CTX_MAX,
     NUM_CTX_MIN,
     TEMPERATURE_MAX,
+    CustomProvider,
     ProfileState,
 )
 from app.modules.registry.domain.registry import AgentStatus
-from app.platform.model_gateway.profiles import Provider
 
 
 class AgentConfigVersion(BaseModel):
@@ -169,7 +169,7 @@ class ModelProfileView(BaseModel):
 
     id: str
     name: str
-    provider: Provider
+    provider: CustomProvider
     model: str
     num_ctx: int
     temperature: float | None
@@ -196,7 +196,7 @@ class NewModelProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: StrictStr
-    provider: Provider
+    provider: CustomProvider
     model: StrictStr
     num_ctx: int = Field(ge=NUM_CTX_MIN, le=NUM_CTX_MAX)
     temperature: float | None = Field(default=None, ge=0, le=TEMPERATURE_MAX)
@@ -207,7 +207,7 @@ class ApprovedModelView(BaseModel):
     """A provider and model a custom profile may name."""
 
     id: str
-    provider: Provider
+    provider: CustomProvider
     model: str
     created_at: datetime
 
@@ -221,7 +221,7 @@ class ApprovedModelList(BaseModel):
 class NewApprovedModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Provider
+    provider: CustomProvider
     model: StrictStr
 
 
