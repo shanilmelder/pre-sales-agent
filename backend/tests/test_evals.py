@@ -67,6 +67,7 @@ from tests.test_role_admin import _admin, _signed_in
 URL = "/api/v1/registry/evals"
 REPO = Path(__file__).resolve().parents[2]
 DEMO = REPO / "demo-data"
+DEMO_COPIES = REPO / "backend" / "tests" / "fixtures" / "imports"
 SOURCE = "s1.txt"
 TEXT = (
     "We need a goods-to-person picking system for the ambient area. "
@@ -449,7 +450,7 @@ def _demo_names() -> set[str]:
     """Names in the original demo scenarios: email display names and local parts, VTT
     speakers, the email domains' stems and the companies and sites they describe."""
     names = {"Meridian", "Riverside", "Harbourline", "Elmbridge"}
-    for path in DEMO.rglob("*"):
+    for path in (*DEMO.rglob("*"), *DEMO_COPIES.glob("*")):
         if path.suffix not in (".eml", ".vtt", ".txt"):
             continue
         text = path.read_text(encoding="utf-8")
