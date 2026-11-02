@@ -1,11 +1,11 @@
-# Runs the stack from images pushed to Nexus (no local build, no bind mounts), so it works
+# Runs the stack from images pushed to GHCR (no local build, no bind mounts), so it works
 # as a Portainer stack (Stacks > Add stack > paste this file).
-#   1. Portainer > Registries > Add custom registry: nexus.shanilmelder.com + credentials.
-#   docker compose -f compose.nexus.yaml pull
-#   docker compose -f compose.nexus.yaml up --wait -d
+#   1. Portainer > Registries > Add custom registry > GitHub Container Registry (ghcr.io), with
+#      a GitHub user and a token that has read:packages.
 #   2. Set the variables from .env.example in the stack's "Environment variables".
 #   3. Deploy. Pick another tag with PSA_IMAGE_TAG (default: latest).
-# CLI: docker login nexus.shanilmelder.com; docker compose -f compose.nexus.yaml --env-file .env up -d
+# CLI: echo $GHCR_TOKEN | docker login ghcr.io -u <github-user> --password-stdin
+#      docker compose -f compose.ghcr.yaml --env-file .env up -d
 name: pre-sales-agent
 
 x-restart: &restart
@@ -80,7 +80,7 @@ services:
   # One-shot: applies Alembic migrations as the schema owner on every deploy, then exits.
   # api and worker wait for it, so they never start against an unmigrated schema.
   migrate:
-    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-api:${PSA_IMAGE_TAG:-latest}
+    image: ghcr.io/shanilmelder/pre-sales-agent/pre-sales-agent-api:${PSA_IMAGE_TAG:-latest}
     command: ["alembic", "upgrade", "head"]
     environment:
       <<: *backend-env

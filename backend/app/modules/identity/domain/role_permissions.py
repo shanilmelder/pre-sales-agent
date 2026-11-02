@@ -50,12 +50,15 @@ _ROLE_PERMISSIONS: Mapping[Role, frozenset[Action]] = {
             Action.REGISTRY_AGENT_REGISTER,
             Action.REGISTRY_AGENT_CONFIG_CREATE,
             Action.REGISTRY_AGENT_SET_STATUS,
+            Action.REGISTRY_MODEL_PROFILE_MANAGE,
             # Reports (Story 10.3): platform administrators and the Head of Delivery only.
             Action.REPORTING_REPORT_READ,
             # The Opportunity outcome (Story 10.5): changing a won Opportunity's contract end
             # date and reopening one, with the Head of Delivery.
             Action.CONTRACT_END_DATE_UPDATE,
             Action.OUTCOME_REOPEN,
+            # Admin > Retention (Story 10.6): platform administrators only, read only.
+            Action.RETENTION_READ,
         }
     ),
     Role.PRESALES_ENGINEER: frozenset({Action.USER_SEARCH, Action.OPPORTUNITY_CREATE}),

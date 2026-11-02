@@ -37,9 +37,6 @@ from app.modules.identity.domain.role_permissions import (  # noqa: F401 - re-ex
     ROLE_PERMISSIONS,
 )
 from app.modules.identity.domain.roles import Role
-            Action.REGISTRY_MODEL_PROFILE_MANAGE,
-            # Admin > Retention (Story 10.6): platform administrators only, read only.
-            Action.RETENTION_READ,
 
 PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.USER_LIST: "List users and their roles (Admin > Users & roles)",
