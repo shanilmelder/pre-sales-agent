@@ -74,7 +74,7 @@ def _assessment_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         orchestration_executors,
         "executor_settings",
-        lambda: Settings(model_profile_chat="ollama-cloud-chat"),
+        lambda: Settings(),
     )
 
 

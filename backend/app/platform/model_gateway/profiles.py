@@ -1,27 +1,26 @@
-"""Named model profiles. An Agent's config version pins one, so changing an Agent's model is
-a registry change, never a code change at the call site: callers name a profile, not a model.
+"""Model profile types. An Agent's config version pins a chat profile by name, so changing an
+Agent's model is a registry change, never a code change at the call site: callers name a
+profile, not a model.
 
-`ollama-cloud-chat` (`gpt-oss:120b-cloud`) sends prompt text to Ollama's cloud. `openai-chat`
-(`gpt-4.1-mini`) is OpenAI's cloud API (`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` plus
-`PSA_OPENAI_API_KEY`). Both send prompt text off the host: until IT approves that data
-handling, only sample or anonymised Opportunities may use them.
+Every chat profile lives in the database (`registry_model_profiles`, managed under Admin > Model
+profiles); none is defined here. `app.modules.registry` stores them, and this package can't
+import it: each process that makes chat calls injects a `ProfileResolver` into its
+ModelGateway. Migration `0063` seeds `ollama-cloud-chat` (`gpt-oss:120b-cloud`, Ollama's cloud),
+`openai-chat` (`gpt-4.1-mini`, OpenAI's cloud API) and `anthropic-opus-chat` (`claude-opus-5-5`).
 
-Each profile names its provider: `ollama` (native `/api/chat`, the default) or `openai`
-(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`). `anthropic-chat`
-(`claude-opus-5-5`) has provider `anthropic`: Anthropic's API through the official SDK, with
-`PSA_ANTHROPIC_API_KEY`. It too sends prompt text off the host, so the same data rule applies.
+Each profile names its provider: `ollama` (native `/api/chat`), `openai` (any
+`/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`, with `PSA_OPENAI_API_KEY`) or
+`anthropic` (Anthropic's API through the official SDK, with `PSA_ANTHROPIC_API_KEY`). Cloud
+providers send prompt text off the host: until IT approves that data handling, only sample or
+anonymised Opportunities may use them.
 
-Embedding profiles (Story 3.3) live apart, in `EMBED_PROFILES`, picked by
+Embedding profiles (Story 3.3) are still built in, in `EMBED_PROFILES`, picked by
 `PSA_MODEL_PROFILE_EMBED`: `bge-m3` (1024 dims) on host Ollama's `/api/embed`. An embedding
 profile's name is what `knowledge_chunks.embedding_model` stores, and each one has its own
 partial HNSW index, so changing it is a re-embed, not just a config change.
 
 This module has no imports from the app: `app.platform.config` validates the configured
-profile names against `MODEL_PROFILES` and `EMBED_PROFILES` at startup.
-
-`MODEL_PROFILES` holds the built-ins. Platform administrators add custom chat profiles to the
-database (`app.modules.registry`), which this package can't import: the worker injects a
-`ProfileResolver` into its ModelGateway instead. `PSA_MODEL_PROFILE_CHAT` names a built-in.
+embedding profile name against `EMBED_PROFILES` at startup.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -38,7 +37,7 @@ Provider = Literal["ollama", "openai", "anthropic"]
 class ModelProfile:
     name: str
     model: str
-    """The model name the provider serves: an Ollama tag, or an OpenAI model id."""
+    """The model name the provider serves: an Ollama tag, or an OpenAI or Anthropic model id."""
     num_ctx: int
     """Context window. `ollama`: set explicitly on every request (Ollama's default is much
     smaller). `openai`: OpenAI-style endpoints can't set it per request, so this declares
@@ -67,32 +66,6 @@ class ModelProfile:
         return {"temperature": self.temperature, "num_ctx": self.num_ctx}
 
 
-OLLAMA_CLOUD_CHAT = ModelProfile(
-    name="ollama-cloud-chat", model="gpt-oss:120b-cloud", num_ctx=32768
-)
-# OpenAI's cloud API. A non-reasoning model: the adapter always sends `temperature`, which
-# OpenAI's reasoning models reject unless it is 1. `num_ctx` is not sent (the model's own
-# window is far larger); it sizes intake's extraction chunks, kept equal to `ollama-cloud-chat`.
-OPENAI_CHAT = ModelProfile(
-    name="openai-chat", model="gpt-4.1-mini", num_ctx=32768, provider="openai"
-)
-
-# Anthropic's API. `num_ctx` is not sent (the model's own window is far larger); it sizes
-# intake's extraction chunks, kept equal to `ollama-cloud-chat`.
-ANTHROPIC_CHAT = ModelProfile(
-    name="anthropic-chat",
-    model="claude-opus-5-5",
-    num_ctx=32768,
-    provider="anthropic",
-    reasoning_effort="medium",
-    refusal_fallback=True,
-)
-
-MODEL_PROFILES: Mapping[str, ModelProfile] = MappingProxyType(
-    {profile.name: profile for profile in (OLLAMA_CLOUD_CHAT, OPENAI_CHAT, ANTHROPIC_CHAT)}
-)
-
-
 @dataclass(frozen=True, slots=True)
 class EmbedProfile:
     """A named embedding model. `dims` is the length of every vector it returns; the
@@ -113,19 +86,11 @@ EMBED_PROFILES: Mapping[str, EmbedProfile] = MappingProxyType({BGE_M3.name: BGE_
 
 
 type ProfileResolver = Callable[[str], Awaitable[ModelProfile | None]]
-"""Finds a chat profile by name outside `MODEL_PROFILES`; None when there is no such profile."""
+"""Finds a chat profile by name in the registry; None when there is no such profile."""
 
 
 class UnknownModelProfileError(LookupError):
     """A profile name that is not defined. A programming or config error."""
-
-
-def get_profile(name: str) -> ModelProfile:
-    try:
-        return MODEL_PROFILES[name]
-    except KeyError:
-        known = ", ".join(sorted(MODEL_PROFILES))
-        raise UnknownModelProfileError(f"model profile {name!r} is not defined ({known})") from None
 
 
 def get_embed_profile(name: str) -> EmbedProfile:

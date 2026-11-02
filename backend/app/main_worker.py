@@ -7,7 +7,7 @@ outright has its job reclaimed by another worker once the lease expires).
 
 Job types are registered by importing the modules that define them (see `_JOB_MODULES`).
 The process's ModelGateway (one per process: its semaphore bounds concurrent model calls) is
-created here, with the registry's resolver for custom chat profiles, and installed for handlers
+created here, with the registry's resolver for chat profiles, and installed for handlers
 (`app.platform.model_gateway.provider`).
 
 Story 5.2: the worker also opens the LangGraph checkpointer's connection pool and installs

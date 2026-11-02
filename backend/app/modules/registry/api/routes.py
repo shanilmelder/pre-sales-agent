@@ -306,16 +306,16 @@ async def list_tool_denials(
     )
 
 
-# --- custom chat model profiles ---------------------------------------------------------------
+# --- chat model profiles ---------------------------------------------------------------------
 
 model_profiles_router = APIRouter(prefix="/registry/model-profiles", tags=["registry"])
-_PROFILE_ID = Annotated[UUID, Path(description="The custom model profile's id.")]
+_PROFILE_ID = Annotated[UUID, Path(description="The model profile's id.")]
 _PROFILE_DESCRIBED = {
     **_DESCRIBED,
     403: "The caller may not manage model profiles (`forbidden`)",
-    404: "No custom model profile with this id (`not_found`)",
-    409: "The name is taken by a custom or built-in profile "
-    "(`registry_model_profile_duplicate`), an Agent's current config version pins the profile "
+    404: "No model profile with this id (`not_found`)",
+    409: "The name is taken by another profile (`registry_model_profile_duplicate`), an "
+    "Agent's current config version pins the profile "
     "(`registry_model_profile_in_use`), or it is neither failed nor pending "
     "(`registry_model_profile_not_retestable`)",
     422: "A field is invalid (`validation_error`) or the model is not on the approved-model "

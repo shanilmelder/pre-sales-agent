@@ -7,8 +7,9 @@ Requirement (no Finding and no effort row cites it), an unsupported claim (Findi
 an inconsistent timeline (Finding keys). The runner builds the Critic's inputs with the
 task's own pure code (`assessments.critic_inputs`, which computes the uncovered
 Requirements; a case whose computed set differs from the seeded one is refused), sends them
-to `critic_agent` (prompt 1) on the live ModelGateway without a database, and scores the
-agent's own reply, **before the coverage backstop**:
+to `critic_agent` (prompt 1) on the live ModelGateway with the profile `--profile` names
+(read from the registry; no call rows are recorded), and scores the agent's own reply,
+**before the coverage backstop**:
 
 - an uncovered Requirement is found when a valid `coverage` Finding cites it;
 - the unsupported claim when a valid `unsupported_claim` Finding cites one of its Findings;
@@ -35,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.modules.assessments.application import public as assessments
 from app.modules.conflicts.application import public as conflicts
 from app.modules.intake.application import public as intake
+from app.modules.registry.application import public as registry
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.logging import get_logger
@@ -295,7 +297,8 @@ def _share(found: int, seeded: int) -> float | None:
 
 
 class _UnrecordedGateway(ModelGateway):
-    """The live gateway without its `platform_model_calls` row: the eval needs no database."""
+    """The live gateway without its `platform_model_calls` row: the eval reads the database
+    only for its chat profile, from the registry."""
 
     async def _record(self, *args: Any, **kwargs: Any) -> None:
         return None
@@ -338,7 +341,7 @@ async def run_critic_eval(
     settings: Settings,
     *,
     only: Sequence[str] = (),
-    profile: str | None = None,
+    profile: str,
     gateway: ModelGatewayPort | None = None,
     cases_dir: Path = CASES_DIR,
     out_dir: Path = OUT_DIR,
@@ -346,12 +349,13 @@ async def run_critic_eval(
     """Run the cases and write the report (see the module docstring). `gateway` replaces the
     live one (tests)."""
     cases = load_cases(cases_dir, only)
-    chosen = profile or settings.model_profile_chat
     engine: AsyncEngine | None = None
     live: ModelGateway | None = None
     if gateway is None:
-        engine = create_engine(settings)  # lazy: never connects, nothing is recorded
-        live = _UnrecordedGateway(settings, engine)
+        engine = create_engine(settings)  # read only for the profile; nothing is recorded
+        live = _UnrecordedGateway(
+            settings, engine, resolve_profile=registry.profile_resolver(engine)
+        )
         gateway = live
     per_case: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
@@ -359,7 +363,7 @@ async def run_critic_eval(
     seeded = {"uncovered": 0, "unsupported_claim": 0, "timeline": 0}
     try:
         for case in cases:
-            reported, dropped, error = await _reported(gateway, case, chosen)
+            reported, dropped, error = await _reported(gateway, case, profile)
             if error is not None:
                 errors[case.name] = error
             score = score_case(case, reported)
@@ -403,7 +407,7 @@ async def run_critic_eval(
         "created_at": datetime.now(UTC).isoformat(),
         "agent_id": "critic_agent",
         "prompt_version": 1,
-        "profile": chosen,
+        "profile": profile,
         "case_count": len(cases),
         "passed": bool(cases) and every_uncovered,
         "per_defect": {

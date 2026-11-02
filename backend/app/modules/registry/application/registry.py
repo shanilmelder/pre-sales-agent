@@ -95,7 +95,6 @@ from app.platform.errors import (
 )
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
-from app.platform.model_gateway.profiles import MODEL_PROFILES
 from app.platform.tool_gateway import list_denials
 from app.platform.tool_gateway.catalogue import READ_TOOLS
 from app.platform.trace.catalogue import (
@@ -157,11 +156,9 @@ def effective_model(
     version: ConfigVersion, custom_models: Mapping[str, str] | None = None
 ) -> EffectiveModel:
     """What `version` calls: its pinned profile and that profile's model. `custom_models` maps
-    custom profile names to models; the model is null for a name neither built in nor there."""
+    registry profile names to models; the model is null for a name not there."""
     name = version.model_profile
-    model = MODEL_PROFILES[name].model if name in MODEL_PROFILES else None
-    if model is None and custom_models is not None:
-        model = custom_models.get(name)
+    model = None if custom_models is None else custom_models.get(name)
     return EffectiveModel(profile=name, model=model)
 
 
@@ -226,8 +223,8 @@ async def _names(uow: UnitOfWork, versions: Iterable[ConfigVersion]) -> dict[UUI
 
 
 async def _custom_models(uow: UnitOfWork, agents: Iterable[RegisteredAgent]) -> dict[str, str]:
-    """The models of the custom profiles these Agents' current config versions pin."""
-    pinned = {a.current.model_profile for a in agents} - set(MODEL_PROFILES)
+    """The models of the registry profiles these Agents' current config versions pin."""
+    pinned = {a.current.model_profile for a in agents}
     return await repo.models_of_profiles(uow, pinned)
 
 
@@ -258,8 +255,8 @@ class _CheckedConfig:
 
 
 async def _profile_problem(uow: UnitOfWork, profile: str) -> str | None:
-    """Why a new config version can't pin `profile`, or None. A custom profile stays locked
-    until commit, so it can't be retired while the version is written."""
+    """Why a new config version can't pin `profile`, or None. The profile stays locked until
+    commit, so it can't be retired while the version is written."""
     custom = await repo.model_profile_named(uow, profile, for_share=True)
     if custom is None:
         return f"model profile {profile!r}"
@@ -272,9 +269,9 @@ async def _profile_problem(uow: UnitOfWork, profile: str) -> str | None:
 
 
 async def check_deployed(uow: UnitOfWork, agent_id: str, new: NewAgentConfig) -> _CheckedConfig:
-    """The field rules, then the manifest: every referenced prompt, schema and profile must
-    be deployed, or the profile a `verified` custom one, and the output schema written for
-    `CONTRACT_VERSION`."""
+    """The field rules, then deployment: the referenced prompt and schemas must be in the
+    deployed manifest, the profile must be a `verified` registry profile, and the output schema
+    must be written for `CONTRACT_VERSION`."""
     semver = _invalid(new.semver, rules.semver)
     try:
         tool_permissions = rules.tool_permissions(new.tool_permissions)
@@ -293,10 +290,9 @@ async def check_deployed(uow: UnitOfWork, agent_id: str, new: NewAgentConfig) ->
     output = manifest.schema(agent_id, "output", new.output_schema_version)
     if output is None:
         missing.append(f"output schema v{new.output_schema_version}")
-    if not manifest.has_profile(profile):
-        problem = await _profile_problem(uow, profile)
-        if problem is not None:
-            missing.append(problem)
+    problem = await _profile_problem(uow, profile)
+    if problem is not None:
+        missing.append(problem)
     if missing or output is None:
         raise RegistryConfigNotDeployedError(
             f"Not in the deployed manifest for {agent_id}: {', '.join(missing)}."
@@ -392,16 +388,16 @@ async def read_versions(uow: UnitOfWork, actor: Principal, agent_id: str) -> Age
 async def read_config_options(
     uow: UnitOfWork, actor: Principal, agent_id: str
 ) -> AgentConfigOptions:
-    """What `check_deployed` accepts for a new version of this Agent: the deployed and
-    `verified` custom model profiles, its prompt and input schema versions, its output schema
-    versions written for `CONTRACT_VERSION`, and the grantable tools (`read` actions that are
-    ToolGateway tools, each with its category; Story 7.4)."""
+    """What `check_deployed` accepts for a new version of this Agent: the `verified` model
+    profiles, its prompt and input schema versions, its output schema versions written for
+    `CONTRACT_VERSION`, and the grantable tools (`read` actions that are ToolGateway tools,
+    each with its category; Story 7.4)."""
     _require_admin(actor)
     agent = await _load(uow, agent_id)
     manifest = deployed.load()
     outputs = manifest.schemas(agent.agent_id, "output")
     return AgentConfigOptions(
-        model_profiles=sorted({*manifest.profiles(), *await repo.verified_profile_names(uow)}),
+        model_profiles=sorted(await repo.verified_profile_names(uow)),
         prompt_versions=manifest.prompt_versions(agent.agent_id),
         input_schema_versions=list(manifest.schemas(agent.agent_id, "input")),
         output_schema_versions=[

@@ -4014,7 +4014,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
             /**
@@ -5509,7 +5509,7 @@ export interface components {
         /**
          * EffectiveModel
          * @description The model profile an Agent's current config version pins and that profile's model;
-         *     `model` is null when the profile is neither built in nor stored.
+         *     `model` is null when no stored profile has the name.
          */
         EffectiveModel: {
             /** Profile */
@@ -7509,7 +7509,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
             /** Num Ctx */
@@ -7605,7 +7605,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
         };
@@ -7641,8 +7641,9 @@ export interface components {
          * NewModelProfile
          * @description A custom chat model profile. `model` must be on the approved-model allowlist for
          *     `provider`. Set `temperature` or `reasoning_effort`, not both; `reasoning_effort` needs
-         *     provider `openai`, and setting neither uses the default temperature. No base URL, API key
-         *     or other secret: those stay in the environment.
+         *     provider `openai` or `anthropic`, and setting neither uses the default temperature.
+         *     `anthropic` takes no `temperature`: setting neither there uses effort `medium`. No base
+         *     URL, API key or other secret: those stay in the environment.
          */
         NewModelProfile: {
             /** Name */
@@ -7651,7 +7652,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
             /** Num Ctx */
@@ -30280,7 +30281,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            /** @description The name is taken by another profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30353,7 +30354,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The custom model profile's id. */
+                /** @description The model profile's id. */
                 profile_id: string;
             };
             cookie?: never;
@@ -30413,7 +30414,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description No custom model profile with this id (`not_found`) */
+            /** @description No model profile with this id (`not_found`) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30435,7 +30436,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            /** @description The name is taken by another profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30508,7 +30509,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The custom model profile's id. */
+                /** @description The model profile's id. */
                 profile_id: string;
             };
             cookie?: never;
@@ -30568,7 +30569,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description No custom model profile with this id (`not_found`) */
+            /** @description No model profile with this id (`not_found`) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30590,7 +30591,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            /** @description The name is taken by another profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
             409: {
                 headers: {
                     [name: string]: unknown;

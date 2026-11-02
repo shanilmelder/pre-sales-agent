@@ -356,3 +356,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-model-adapter.md`
   summary: Check whether tokens from an attempt declined before a fallback are billed but unrecorded (medium, unverified).
   evidence: Top-level `usage` may cover only the final attempt; a live fallback reply's `usage.iterations` would settle it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-custom-profiles.md`
+  summary: Check whether a custom Claude profile at effort `high` truncates at `max_tokens` 16000 on real extraction chunks (unverified medium).
+  evidence: Thinking counts against the limit and the live test's small probe can't show it; a live run on a large chunk with a `high` profile would settle it.

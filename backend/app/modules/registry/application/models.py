@@ -49,7 +49,7 @@ class AgentConfigVersionList(BaseModel):
 
 class EffectiveModel(BaseModel):
     """The model profile an Agent's current config version pins and that profile's model;
-    `model` is null when the profile is neither built in nor stored."""
+    `model` is null when no stored profile has the name."""
 
     profile: str
     model: str | None
@@ -190,8 +190,9 @@ class ModelProfileList(BaseModel):
 class NewModelProfile(BaseModel):
     """A custom chat model profile. `model` must be on the approved-model allowlist for
     `provider`. Set `temperature` or `reasoning_effort`, not both; `reasoning_effort` needs
-    provider `openai`, and setting neither uses the default temperature. No base URL, API key
-    or other secret: those stay in the environment."""
+    provider `openai` or `anthropic`, and setting neither uses the default temperature.
+    `anthropic` takes no `temperature`: setting neither there uses effort `medium`. No base
+    URL, API key or other secret: those stay in the environment."""
 
     model_config = ConfigDict(extra="forbid")
 

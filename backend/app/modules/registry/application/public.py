@@ -1,6 +1,6 @@
 """registry's public API. Other modules read Agent config only from here (Story 7.1); the
 eval harness (`app.evals`) uses it for config versions and evaluation results (Story 7.6).
-`chat_profile` and `profile_resolver` find a profile by name, built in or custom."""
+`chat_profile` and `profile_resolver` find a chat profile by name in the registry."""
 
 from app.modules.registry.application.model_profiles import (
     add_approved_model,

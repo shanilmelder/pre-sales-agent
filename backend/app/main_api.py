@@ -40,6 +40,7 @@ from app.modules.registry.api.routes import denials_router as registry_denials_r
 from app.modules.registry.api.routes import evals_router as registry_evals_router
 from app.modules.registry.api.routes import model_profiles_router as registry_profiles_router
 from app.modules.registry.api.routes import router as registry_router
+from app.modules.registry.application import public as registry
 from app.modules.reporting.api.routes import router as reporting_router
 from app.modules.reviews.api.routes import router as reviews_router
 from app.modules.workflows.api.routes import router as workflows_router
@@ -91,7 +92,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
     engine = create_engine(settings)
-    model_gateway = ModelGateway(settings, engine)
+    model_gateway = ModelGateway(
+        settings, engine, resolve_profile=registry.profile_resolver(engine)
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

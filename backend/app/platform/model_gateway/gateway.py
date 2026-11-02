@@ -18,9 +18,10 @@ embedding profile's `batch_size` (one adapter request each, not retried: the cal
 retries), checks that every vector has the profile's `dims`, and writes one
 `platform_model_calls` row for the whole call (`output_tokens` 0). The texts are never logged.
 
-`complete_structured` takes built-in profiles from `profiles.MODEL_PROFILES` and asks the
-injected `resolve_profile` (the worker's, from the registry) for any other name, before taking
-a slot; a name neither knows raises `UnknownModelProfileError`.
+`complete_structured` resolves the request's profile name through the injected
+`resolve_profile` (the registry's, `registry.profile_resolver`) before taking a slot; every chat
+profile lives in the registry. A name it doesn't know, or any name on a gateway built without a
+resolver, raises `UnknownModelProfileError`.
 
 Create one gateway per process (the semaphore is per gateway) and close it with `aclose()`
 or `async with`. The worker makes every chat and Source-embedding call; the `api` process
@@ -65,7 +66,6 @@ from app.platform.model_gateway.profiles import (
     Provider,
     UnknownModelProfileError,
     get_embed_profile,
-    get_profile,
 )
 from app.platform.model_gateway.semaphore import PrioritySemaphore
 from app.platform.uow import unit_of_work
@@ -131,12 +131,11 @@ class ModelGateway:
     ) -> None:
         """`transport` replaces the network (tests pass an `httpx.MockTransport`);
         `anthropic_transport` does the same for the Anthropic SDK, which is built on `httpx2`.
-        `resolve_profile` finds chat profiles that aren't built in; without it, only the
-        built-ins resolve."""
+        `resolve_profile` finds chat profiles in the registry; without it, no chat profile
+        resolves (an embedding-only gateway)."""
         self._settings = settings
         self._engine = engine
         self._resolve_profile = resolve_profile
-        get_profile(settings.model_profile_chat)  # fail fast on an unknown profile
         get_embed_profile(settings.model_profile_embed)
         ollama_client = httpx.AsyncClient(base_url=settings.ollama_url, transport=transport)
         key = settings.openai_api_key
@@ -195,7 +194,7 @@ class ModelGateway:
     async def complete_structured[T: BaseModel](
         self, request: StructuredRequest[T]
     ) -> StructuredResult[T]:
-        profile = await self._chat_profile(request.profile or self._settings.model_profile_chat)
+        profile = await self._chat_profile(request.profile)
         timeout_s = request.timeout_s or self._settings.model_timeout_s
         call_id = new_id()
         async with self._semaphore.slot(request.priority):
@@ -251,13 +250,10 @@ class ModelGateway:
         )
 
     async def _chat_profile(self, name: str) -> ModelProfile:
-        try:
-            return get_profile(name)
-        except UnknownModelProfileError:
-            found = None if self._resolve_profile is None else await self._resolve_profile(name)
-            if found is None:
-                raise
-            return found
+        found = None if self._resolve_profile is None else await self._resolve_profile(name)
+        if found is None:
+            raise UnknownModelProfileError(f"model profile {name!r} is not defined")
+        return found
 
     async def _attempt_all[T: BaseModel](
         self, request: StructuredRequest[T], profile: ModelProfile, timeout_s: float

@@ -593,7 +593,7 @@ class RegistryAgentDuplicateError(ConflictError):
 
 
 class RegistryModelProfileDuplicateError(ConflictError):
-    """A chat model profile was created with the name of a custom or built-in profile."""
+    """A chat model profile was created with the name of an existing profile."""
 
     code = "registry_model_profile_duplicate"
     title = "Model profile already exists"
