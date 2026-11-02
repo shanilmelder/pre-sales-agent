@@ -64,8 +64,7 @@ class CustomProfile:
     @property
     def definition(self) -> ModelProfile:
         """What the ModelGateway calls. A reasoning profile stores no temperature, and the
-        adapter doesn't send one. An `anthropic` profile takes the refusal fallback, like
-        `anthropic-chat`."""
+        adapter doesn't send one. An `anthropic` profile takes the refusal fallback."""
         return ModelProfile(
             name=self.name,
             model=self.model,

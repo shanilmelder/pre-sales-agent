@@ -192,7 +192,7 @@ function ProfileRow({
   );
 }
 
-/** The custom profiles, newest first: name, model, state and latest test result. Every row
+/** Every chat profile, newest first: name, model, state and latest test result. Every row
  * says the profile sends prompt text off the host. */
 export function ModelProfileTable({
   profiles,

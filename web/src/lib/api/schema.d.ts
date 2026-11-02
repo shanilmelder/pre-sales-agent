@@ -5509,7 +5509,7 @@ export interface components {
         /**
          * EffectiveModel
          * @description The model profile an Agent's current config version pins and that profile's model;
-         *     `model` is null when the profile is neither built in nor stored.
+         *     `model` is null when no stored profile has the name.
          */
         EffectiveModel: {
             /** Profile */
@@ -30281,7 +30281,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            /** @description The name is taken by another profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30354,7 +30354,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The custom model profile's id. */
+                /** @description The model profile's id. */
                 profile_id: string;
             };
             cookie?: never;
@@ -30414,7 +30414,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description No custom model profile with this id (`not_found`) */
+            /** @description No model profile with this id (`not_found`) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30436,7 +30436,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            /** @description The name is taken by another profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -30509,7 +30509,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The custom model profile's id. */
+                /** @description The model profile's id. */
                 profile_id: string;
             };
             cookie?: never;
@@ -30569,7 +30569,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description No custom model profile with this id (`not_found`) */
+            /** @description No model profile with this id (`not_found`) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30591,7 +30591,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The name is taken by a custom or built-in profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
+            /** @description The name is taken by another profile (`registry_model_profile_duplicate`), an Agent's current config version pins the profile (`registry_model_profile_in_use`), or it is neither failed nor pending (`registry_model_profile_not_retestable`) */
             409: {
                 headers: {
                     [name: string]: unknown;

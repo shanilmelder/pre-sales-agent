@@ -7,6 +7,7 @@ Names and allowlist entries are unique per test: the tables are shared by every 
 """
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,17 +39,14 @@ from app.platform.model_gateway.port import (
     ModelUnavailableError,
     StructuredRequest,
 )
-from app.platform.model_gateway.profiles import (
-    MODEL_PROFILES,
-    STRUCTURED_TEMPERATURE,
-    UnknownModelProfileError,
-)
+from app.platform.model_gateway.profiles import STRUCTURED_TEMPERATURE, UnknownModelProfileError
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_gaps_detection import rows
 from tests.test_health import assert_problem
 from tests.test_intake_extraction import FakeGateway
 from tests.test_intake_parse_job import _alembic
+from tests.test_model_gateway import SEEDED
 from tests.test_registry import (
     URL as AGENTS_URL,
 )
@@ -73,7 +71,9 @@ MIGRATIONS = (
     VERSIONS / "20261102_0061_registry_model_profiles.py",
     VERSIONS / "20261102_0062_anthropic_custom_profiles.py",
 )
+SEED_MIGRATION = VERSIONS / "20261102_0063_seed_chat_profiles.py"
 BEFORE_ANTHROPIC = "0061_registry_model_profiles"
+BEFORE_SEED = "0062_anthropic_custom_profiles"
 LEASE = LeaseSettings(lease_s=30, heartbeat_s=5)
 MODEL = "gpt-oss:120b-cloud"
 CLAUDE = "claude-opus-5-5"
@@ -164,9 +164,9 @@ def _new_version(
 # --- rules ----------------------------------------------------------------------------------
 
 
-def test_the_seed_repeats_the_built_in_models() -> None:
+def test_the_allowlist_seed_covers_the_seeded_profiles_models() -> None:
     source = "".join(path.read_text(encoding="utf-8") for path in MIGRATIONS)
-    for profile in MODEL_PROFILES.values():
+    for profile in SEEDED.values():
         assert f'("{profile.provider}", "{profile.model}")' in source
 
 
@@ -214,16 +214,17 @@ def test_a_reasoning_profile_becomes_a_gateway_profile_without_its_own_temperatu
     assert definition.refusal_fallback is False
 
 
-def test_a_claude_profile_is_defined_like_the_built_in_one() -> None:
+def test_a_claude_profile_is_defined_like_the_seeded_one() -> None:
     definition = _stored("anthropic", CLAUDE).definition
-    built_in = MODEL_PROFILES["anthropic-chat"]
+    seeded = SEEDED["anthropic-chat"]
     assert (definition.provider, definition.reasoning_effort) == ("anthropic", "high")
-    assert definition.refusal_fallback is built_in.refusal_fallback is True
-    assert definition.max_tokens == built_in.max_tokens == 16000
+    assert definition.refusal_fallback is seeded.refusal_fallback is True
+    assert definition.max_tokens == seeded.max_tokens == 16000
 
 
-def test_a_custom_profile_is_not_in_the_manifest() -> None:
-    assert set(deployed.load().profiles()) == set(MODEL_PROFILES)
+def test_the_manifest_holds_no_profile() -> None:
+    assert "profiles" not in deployed.load().data
+    assert "profiles" not in deployed.build()
 
 
 # --- create ---------------------------------------------------------------------------------
@@ -278,7 +279,7 @@ def test_a_model_approved_for_another_provider_is_not_approved(
     assert_problem(resp.json(), 422, "registry_model_not_approved")
 
 
-@pytest.mark.parametrize("taken", ["custom", *MODEL_PROFILES])
+@pytest.mark.parametrize("taken", ["custom", *SEEDED])
 def test_a_duplicate_name_stores_nothing(
     client: TestClient, admin: dict[str, str], sync_engine: Engine, taken: str
 ) -> None:
@@ -959,20 +960,32 @@ def test_an_unknown_name_is_an_unknown_profile(db_url: str) -> None:
         run_async(scenario())
 
 
-def test_built_ins_need_no_database() -> None:
-    assert run_async(registry.chat_profile(None, "openai-chat")) is MODEL_PROFILES["openai-chat"]  # type: ignore[arg-type]
+@pytest.mark.parametrize("name", list(SEEDED))
+def test_a_seeded_profile_resolves_to_the_definition_the_code_used_to_hold(
+    db_url: str, name: str
+) -> None:
+    async def scenario() -> tuple[Any, Any]:
+        engine = create_engine(Settings(database_url=db_url))
+        try:
+            resolved = await registry.profile_resolver(engine)(name)
+            return resolved, await registry.chat_profile(engine, name)
+        finally:
+            await engine.dispose()
+
+    resolved, budgeted = run_async(scenario())
+    assert resolved == budgeted == SEEDED[name]
 
 
 # --- the allowlist --------------------------------------------------------------------------
 
 
-def test_the_allowlist_is_seeded_with_the_built_in_models(
+def test_the_allowlist_is_seeded_with_the_seeded_profiles_models(
     client: TestClient, admin: dict[str, str]
 ) -> None:
     resp = client.get(APPROVED_URL, headers=admin)
     assert resp.status_code == 200, resp.text
     pairs = {(a["provider"], a["model"]) for a in resp.json()["items"]}
-    assert {(p.provider, p.model) for p in MODEL_PROFILES.values()} <= pairs
+    assert {(p.provider, p.model) for p in SEEDED.values()} <= pairs
     assert ("anthropic", CLAUDE_SONNET) in pairs
 
 
@@ -1150,3 +1163,121 @@ def test_the_downgrade_removes_anthropic_rows_and_the_upgrade_restores_the_seed(
         sync_engine, "SELECT model FROM registry_approved_models WHERE provider = 'anthropic'"
     )
     assert {s["model"] for s in seeded} == {CLAUDE, CLAUDE_SONNET}
+
+
+# --- migration 0063: the seeded chat profiles --------------------------------------------------
+
+
+def _seed_id(name: str) -> UUID:
+    return uuid5(SEED_NAMESPACE, f"model-profile/{name}")
+
+
+def _profile_rows(engine: Engine) -> dict[str, dict[str, Any]]:
+    found = rows(engine, "SELECT * FROM registry_model_profiles WHERE name = ANY(:n)", n=[*SEEDED])
+    return {row["name"]: row for row in found}
+
+
+def test_the_seeded_profiles_are_listed_as_verified(
+    client: TestClient, admin: dict[str, str], sync_engine: Engine
+) -> None:
+    resp = client.get(URL, headers=admin)
+    assert resp.status_code == 200, resp.text
+    listed = {p["name"]: p for p in resp.json()["items"]}
+    for name, profile in SEEDED.items():
+        item = listed[name]
+        assert item["id"] == str(_seed_id(name))
+        assert item["state"] == "verified"
+        assert (item["provider"], item["model"], item["num_ctx"]) == (
+            profile.provider,
+            profile.model,
+            profile.num_ctx,
+        )
+    assert listed["ollama-cloud-chat"]["temperature"] == listed["openai-chat"]["temperature"] == 0.1
+    claude = listed["anthropic-chat"]
+    assert (claude["temperature"], claude["reasoning_effort"]) == (None, "medium")
+    assert all(row["created_by"] is None for row in _profile_rows(sync_engine).values())
+
+
+def test_a_seeded_profile_can_be_pinned(
+    client: TestClient,
+    admin: dict[str, str],
+    test_manifest: str,  # noqa: F811
+) -> None:
+    agent = _register(client, admin, test_manifest)
+    options = client.get(f"{AGENTS_URL}/{test_manifest}/config-options", headers=admin).json()
+    assert set(SEEDED) <= set(options["model_profiles"])
+
+    resp = _new_version(client, admin, agent, "openai-chat")
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["effective_model"] == {"profile": "openai-chat", "model": "gpt-4.1-mini"}
+
+
+def test_an_unpinned_seeded_profile_can_be_retired_and_a_pinned_one_cannot(
+    client: TestClient, admin: dict[str, str], sync_engine: Engine
+) -> None:
+    # The seeded Agents pin `ollama-cloud-chat`; no test pins `anthropic-chat`.
+    pinned = client.post(f"{URL}/{_seed_id('ollama-cloud-chat')}/retire", headers=admin)
+    assert pinned.status_code == 409, pinned.text
+    assert_problem(pinned.json(), 409, "registry_model_profile_in_use")
+
+    try:
+        retired = client.post(f"{URL}/{_seed_id('anthropic-chat')}/retire", headers=admin)
+        assert retired.status_code == 200, retired.text
+        assert retired.json()["state"] == "retired"
+    finally:
+        with sync_engine.begin() as conn:  # the tables are shared: restore the seed
+            conn.execute(
+                sa.text("UPDATE registry_model_profiles SET state = 'verified' WHERE id = :id"),
+                {"id": _seed_id("anthropic-chat")},
+            )
+
+
+def test_the_seed_migration_never_imports_the_app() -> None:
+    source = SEED_MIGRATION.read_text(encoding="utf-8")
+    assert "from app" not in source and "import app" not in source
+
+
+def test_the_seed_round_trip_keeps_a_name_that_already_exists(sync_engine: Engine) -> None:
+    owner_url = os.environ.get("PSA_MIGRATIONS_DATABASE_URL")
+    assert owner_url, "PSA_MIGRATIONS_DATABASE_URL (the owner role) is needed to clean up"
+    existing = uuid4()
+    _alembic("downgrade", BEFORE_SEED)
+    try:
+        assert _profile_rows(sync_engine) == {}
+        with sync_engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO registry_model_profiles "
+                    "(id, name, provider, model, num_ctx, temperature, state) "
+                    "VALUES (:id, 'openai-chat', 'openai', 'gpt-4.1-mini', 20000, 0.5, 'failed')"
+                ),
+                {"id": existing},
+            )
+
+        _alembic("upgrade", "head")
+        upgraded = _profile_rows(sync_engine)
+        assert UUID(str(upgraded["openai-chat"]["id"])) == existing
+        assert upgraded["openai-chat"]["state"] == "failed"
+        for name in ("ollama-cloud-chat", "anthropic-chat"):
+            assert UUID(str(upgraded[name]["id"])) == _seed_id(name)
+            assert upgraded[name]["state"] == "verified"
+
+        _alembic("downgrade", BEFORE_SEED)
+        downgraded = _profile_rows(sync_engine)
+        assert set(downgraded) == {"openai-chat"}
+        assert UUID(str(downgraded["openai-chat"]["id"])) == existing
+    finally:
+        owner = sa.create_engine(owner_url)
+        try:
+            with owner.begin() as conn:  # psa_app may not delete a profile
+                conn.execute(
+                    sa.text("DELETE FROM registry_model_profiles WHERE id = :id"), {"id": existing}
+                )
+        finally:
+            owner.dispose()
+        _alembic("upgrade", "head")
+
+    restored = _profile_rows(sync_engine)
+    assert {name: UUID(str(row["id"])) for name, row in restored.items()} == {
+        name: _seed_id(name) for name in SEEDED
+    }

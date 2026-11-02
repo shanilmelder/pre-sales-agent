@@ -57,6 +57,11 @@ describe("model profile states", () => {
     );
   });
 
+  it("labels a seeded verified profile that was never tested", () => {
+    const seeded = profile({ latency_ms: null, tested_at: null });
+    expect(testResult(seeded)).toBe("Seeded, not tested");
+  });
+
   it("names the temperature or the reasoning effort", () => {
     expect(samplingLabel(profile())).toBe("Temperature 0.1");
     expect(samplingLabel(profile({ temperature: null, reasoning_effort: "high" }))).toBe(

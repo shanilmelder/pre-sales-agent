@@ -50,9 +50,8 @@ class StructuredRequest[T: BaseModel]:
     output_model: type[T]
     """The reply must validate as this model; its JSON Schema is sent as the format."""
     caller: CallerMetadata
-    profile: str | None = None
-    """A built-in (`profiles.MODEL_PROFILES`) or custom profile name; None means the
-    configured chat profile."""
+    profile: str
+    """The name of a chat profile in the registry (`registry_model_profiles`)."""
     priority: Priority = "background"
     timeout_s: float | None = None
     """Timeout of each model request (attempt); None means `PSA_MODEL_TIMEOUT_S`."""

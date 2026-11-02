@@ -3,11 +3,11 @@ detection, per Conflict type.
 
 Each `evals/conflicts/<name>.yaml` case holds synthetic Findings per specialist agent and the
 Conflicts a reviewer expects (type and Finding keys); decoy cases expect none. The runner sends
-each case's Findings to `conflict_agent` (prompt 1) on the live ModelGateway, without a
-database (no call rows are recorded), validates the reply with the job's own pure validation
-(`conflicts.evaluate_semantic`), and matches each predicted Conflict to an unmatched expected
-one of the same type that shares at least two Findings. It writes precision and recall per
-type (and overall) to `evals/out/conflicts-<timestamp>/report.json`.
+each case's Findings to `conflict_agent` (prompt 1) on the live ModelGateway with the profile
+`--profile` names (read from the registry; no call rows are recorded), validates the reply
+with the job's own pure validation (`conflicts.evaluate_semantic`), and matches each predicted
+Conflict to an unmatched expected one of the same type that shares at least two Findings. It
+writes precision and recall per type (and overall) to `evals/out/conflicts-<timestamp>/report.json`.
 
 A case whose model call fails counts as predicting nothing and is listed under `errors`.
 Nothing is stored in the Agent Registry and there is no gate.
@@ -25,6 +25,7 @@ import yaml
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.modules.conflicts.application import public as conflicts
+from app.modules.registry.application import public as registry
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.logging import get_logger
@@ -255,7 +256,8 @@ def score(results: Sequence[tuple[Sequence[Predicted], Sequence[Expected]]]) -> 
 
 
 class _UnrecordedGateway(ModelGateway):
-    """The live gateway without its `platform_model_calls` row: the eval needs no database."""
+    """The live gateway without its `platform_model_calls` row: the eval reads the database
+    only for its chat profile, from the registry."""
 
     async def _record(self, *args: Any, **kwargs: Any) -> None:
         return None
@@ -291,7 +293,7 @@ async def run_conflicts_eval(
     settings: Settings,
     *,
     only: Sequence[str] = (),
-    profile: str | None = None,
+    profile: str,
     gateway: ModelGatewayPort | None = None,
     cases_dir: Path = CASES_DIR,
     out_dir: Path = OUT_DIR,
@@ -299,19 +301,20 @@ async def run_conflicts_eval(
     """Run the cases and write the report (see the module docstring). `gateway` replaces the
     live one (tests)."""
     cases = load_cases(cases_dir, only)
-    chosen = profile or settings.model_profile_chat
     engine: AsyncEngine | None = None
     live: ModelGateway | None = None
     if gateway is None:
-        engine = create_engine(settings)  # lazy: never connects, nothing is recorded
-        live = _UnrecordedGateway(settings, engine)
+        engine = create_engine(settings)  # read only for the profile; nothing is recorded
+        live = _UnrecordedGateway(
+            settings, engine, resolve_profile=registry.profile_resolver(engine)
+        )
         gateway = live
     try:
         results: list[tuple[Sequence[Predicted], Sequence[Expected]]] = []
         per_case: list[dict[str, Any]] = []
         errors: dict[str, str] = {}
         for case in cases:
-            predicted, dropped, error = await _predict(gateway, case, chosen)
+            predicted, dropped, error = await _predict(gateway, case, profile)
             if error is not None:
                 errors[case.name] = error
             results.append((predicted, case.expected))
@@ -339,7 +342,7 @@ async def run_conflicts_eval(
         "created_at": datetime.now(UTC).isoformat(),
         "agent_id": "conflict_agent",
         "prompt_version": 1,
-        "profile": chosen,
+        "profile": profile,
         "case_count": len(cases),
         "per_type": {t: tallies[t].as_dict() for t in TYPES},
         "overall": tallies["overall"].as_dict(),

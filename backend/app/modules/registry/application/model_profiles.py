@@ -1,10 +1,11 @@
-"""Custom chat model profiles and the approved-model allowlist: commands and queries.
+"""Chat model profiles (every one lives here) and the approved-model allowlist: commands and
+queries.
 
 Every command and query here needs `registry.model_profile.manage` (platform administrators);
 anyone else gets 403. Writes run in the caller's Unit of Work, trace with no Opportunity, and
 follow the rules of `domain.model_profiles`:
 
-- `create_model_profile`: validates, refuses a name taken by a custom or built-in profile (409
+- `create_model_profile`: validates, refuses a name another profile has (409
   `registry_model_profile_duplicate`) and a model off the allowlist (422
   `registry_model_not_approved`), then inserts the `untested` row, queues its live test
   (`application.jobs`) and traces `registry.model_profile.created`.
@@ -56,7 +57,6 @@ from app.platform.errors import (
 from app.platform.ids import new_id
 from app.platform.logging import get_logger
 from app.platform.model_gateway.profiles import (
-    MODEL_PROFILES,
     ModelProfile,
     UnknownModelProfileError,
 )
@@ -135,7 +135,7 @@ async def create_model_profile(
     except ValueError as exc:
         raise UnprocessableError(str(exc)) from None
     await repo.lock_model_profiles(uow)
-    if name in MODEL_PROFILES or await repo.model_profile_named(uow, name) is not None:
+    if await repo.model_profile_named(uow, name) is not None:
         raise RegistryModelProfileDuplicateError(f"A model profile named {name} already exists.")
     if not await repo.is_approved(uow, new.provider, model):
         raise RegistryModelNotApprovedError(
@@ -300,11 +300,8 @@ def profile_resolver(engine: AsyncEngine) -> Callable[[str], Awaitable[ModelProf
 
 
 async def chat_profile(engine: AsyncEngine, name: str) -> ModelProfile:
-    """The built-in or custom profile called `name`, for budgets that read its context size.
-    Raises `UnknownModelProfileError` for a name neither knows."""
-    builtin = MODEL_PROFILES.get(name)
-    if builtin is not None:
-        return builtin
+    """The registry profile called `name`, for budgets that read its context size. Raises
+    `UnknownModelProfileError` for a name it doesn't know."""
     stored = await _stored_profile(engine, name)
     if stored is None:
         raise UnknownModelProfileError(f"model profile {name!r} is not defined")

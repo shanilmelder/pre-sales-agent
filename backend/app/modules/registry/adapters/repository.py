@@ -351,7 +351,7 @@ async def verified_profile_names(uow: UnitOfWork) -> list[str]:
 
 
 async def models_of_profiles(uow: UnitOfWork, names: Collection[str]) -> dict[str, str]:
-    """The model each of these custom profile names calls."""
+    """The model each of these profile names calls."""
     if not names:
         return {}
     rows = await uow.session.execute(select(P.name, P.model).where(P.name.in_(list(names))))

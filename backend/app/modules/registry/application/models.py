@@ -49,7 +49,7 @@ class AgentConfigVersionList(BaseModel):
 
 class EffectiveModel(BaseModel):
     """The model profile an Agent's current config version pins and that profile's model;
-    `model` is null when the profile is neither built in nor stored."""
+    `model` is null when no stored profile has the name."""
 
     profile: str
     model: str | None

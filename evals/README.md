@@ -150,12 +150,13 @@ To grow the judged Evidence, copy pairs from `review-pending.yaml` into the Oppo
 Story 6.2 records a precision/recall baseline for `conflict_agent`, which compares the
 specialists' free-text Findings and proposes Conflicts (`architecture`, `assumption`,
 `evidence`, `scope`). It is separate from `make eval`: no eval database, nothing stored in the
-Agent Registry, no gate.
+Agent Registry, no gate. It reads its chat profile (`--profile`, required) from the registry of
+the database at `PSA_DATABASE_URL`.
 
 ```sh
-make eval-conflicts                                    # every case, PSA_MODEL_PROFILE_CHAT
-make eval-conflicts ARGS="--only scope-label-printing" # one case (repeatable)
-make eval-conflicts ARGS="--profile ollama-cloud-chat"         # another model profile
+make eval-conflicts ARGS="--profile ollama-cloud-chat"                               # every case
+make eval-conflicts ARGS="--profile ollama-cloud-chat --only scope-label-printing"   # one case
+make eval-conflicts ARGS="--profile anthropic-chat"            # another registry model profile
 ```
 
 Each case in `conflicts/<name>.yaml` holds synthetic Findings per specialist and the Conflicts
@@ -191,13 +192,13 @@ There are six cases: one per type and two decoys (an aligned design, unrelated t
 ## Critic (`make eval-critic`)
 
 Story 6.4 records the share of seeded defects `critic_agent` finds in a run's Assessments. Like
-`make eval-conflicts` it needs no eval database and stores nothing in the Agent Registry, but
-it has one gate: it **fails (exit 1) unless every case's uncovered Requirement is reported**.
+`make eval-conflicts` it needs no eval database (it reads only its required `--profile` from the
+registry) and stores nothing in the Agent Registry, but it has one gate: it **fails (exit 1) unless every case's uncovered Requirement is reported**.
 
 ```sh
-make eval-critic                                   # every case, PSA_MODEL_PROFILE_CHAT
-make eval-critic ARGS="--only erp-golive-crunch"   # one case (repeatable)
-make eval-critic ARGS="--profile ollama-cloud-chat"        # another model profile
+make eval-critic ARGS="--profile ollama-cloud-chat"                            # every case
+make eval-critic ARGS="--profile ollama-cloud-chat --only erp-golive-crunch"   # one case
+make eval-critic ARGS="--profile anthropic-chat"            # another registry model profile
 ```
 
 Each case in `critic/<name>.yaml` holds the active Requirements, the specialists' Findings and

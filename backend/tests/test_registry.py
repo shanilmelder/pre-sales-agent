@@ -220,7 +220,7 @@ def test_the_committed_manifest_matches_the_code() -> None:
     assert deployed.main(["--check"]) == 0
 
 
-def test_the_manifest_lists_every_prompt_schema_and_profile() -> None:
+def test_the_manifest_lists_every_prompt_and_schema_and_no_profile() -> None:
     manifest = deployed.load()
     for agent_id, _ in EVERY_SEEDED:
         assert manifest.has_prompt(agent_id, 1), agent_id
@@ -233,7 +233,7 @@ def test_the_manifest_lists_every_prompt_schema_and_profile() -> None:
         "v1.md",
         "v1-assumptions.md",
     }
-    assert manifest.has_profile("ollama-cloud-chat") and not manifest.has_profile("gpt-9")
+    assert "profiles" not in manifest.data  # every chat profile lives in the registry
 
 
 def test_prompt_hashes_ignore_line_endings(tmp_path: Path) -> None:
@@ -309,10 +309,10 @@ def test_agent_id_rules() -> None:
             rules.tool_permissions([write])
 
 
-def test_an_agent_runs_on_its_pinned_profile_whatever_the_settings_say(
+def test_an_agent_runs_on_its_pinned_profile_whatever_the_environment_says(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "openai-chat")
+    monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "openai-chat")  # a leftover, ignored
     version = rules.ConfigVersion(
         id=uuid4(),
         agent_id="pm_agent",
@@ -354,13 +354,17 @@ def test_the_effective_model_names_the_pinned_profile_and_its_model() -> None:
         created_by=None,
         created_at=None,  # type: ignore[arg-type]
     )
-    assert registry.effective_model(version) == registry.EffectiveModel(
+    models = {"ollama-cloud-chat": "gpt-oss:120b-cloud"}
+    assert registry.effective_model(version, models) == registry.EffectiveModel(
         profile="ollama-cloud-chat", model="gpt-oss:120b-cloud"
     )
-    # A pinned profile this deployment doesn't define has no model.
+    # A pinned profile the registry doesn't hold has no model.
     retired = replace(version, model_profile="retired-chat")
-    assert registry.effective_model(retired) == registry.EffectiveModel(
+    assert registry.effective_model(retired, models) == registry.EffectiveModel(
         profile="retired-chat", model=None
+    )
+    assert registry.effective_model(version) == registry.EffectiveModel(
+        profile="ollama-cloud-chat", model=None
     )
 
 
@@ -880,14 +884,20 @@ def test_restoring_a_version_the_agent_lacks_is_422(
     assert _agent_rows(sync_engine, test_manifest)["row_version"] == 1
 
 
-def test_admins_read_the_deployed_config_options(client: TestClient, test_manifest: str) -> None:
+def test_admins_read_the_deployed_config_options(
+    client: TestClient, test_manifest: str, sync_engine: Engine
+) -> None:
     admin, _ = _admin(client)
     _register(client, admin, test_manifest)
     resp = client.get(f"{URL}/{test_manifest}/config-options", headers=admin)
     assert resp.status_code == 200, resp.text
-    manifest = deployed.load()
+    verified = rows(
+        sync_engine,
+        "SELECT name FROM registry_model_profiles WHERE state = 'verified' ORDER BY name",
+    )
+    assert {"ollama-cloud-chat", "openai-chat", "anthropic-chat"} <= {r["name"] for r in verified}
     assert resp.json() == {
-        "model_profiles": sorted(manifest.data["profiles"]),
+        "model_profiles": sorted(r["name"] for r in verified),
         "prompt_versions": [1, 2],
         "input_schema_versions": [1],
         "output_schema_versions": [1],  # v2 is written for another contract version

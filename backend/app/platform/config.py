@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BeforeValidator, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from app.platform.model_gateway.profiles import EMBED_PROFILES, MODEL_PROFILES
+from app.platform.model_gateway.profiles import EMBED_PROFILES
 
 DEFAULT_DOWNLOAD_SIGNING_KEY = "local-dev-download-signing-key-change-me"
 """The local-only signing key; `prod` refuses to start with it."""
@@ -180,15 +180,6 @@ class Settings(BaseSettings):
             "changes, and a call on such a profile fails with `missing_api_key`."
         ),
     )
-    model_profile_chat: str = Field(
-        default="ollama-cloud-chat",
-        description=(
-            "Default model profile (`app.platform.model_gateway.profiles`) for chat calls that "
-            "name none: the smoke test and the evals. An Agent always calls the profile its "
-            "config version pins. `ollama-cloud-chat` sends prompt text to Ollama's cloud: "
-            "sample or anonymised data only."
-        ),
-    )
     model_profile_embed: str = Field(
         default="bge-m3",
         description=(
@@ -334,11 +325,6 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _known_model_profile(self) -> "Settings":
         # Fails at startup rather than on the first model call.
-        if self.model_profile_chat not in MODEL_PROFILES:
-            known = ", ".join(sorted(MODEL_PROFILES))
-            raise ValueError(
-                f"model_profile_chat {self.model_profile_chat!r} is not a known profile ({known})"
-            )
         if self.model_profile_embed not in EMBED_PROFILES:
             known = ", ".join(sorted(EMBED_PROFILES))
             raise ValueError(
