@@ -635,9 +635,10 @@ class EstimatesEstimateVersionCreated(TracePayload):
     """Story 8.2: edited lines of the superseded draft carried onto a matching line."""
     uncarried_edit_count: int = 0
     """Story 8.2: edited lines of the superseded draft with no matching line."""
-    source: Literal["model", "assessments"] = "model"
+    source: Literal["model", "assessments", "challenge"] = "model"
     """Story 8.3: `assessments` when built from the specialist Assessments as an assessment
-    run finished (actor `system`), else `model`."""
+    run finished (actor `system`), else `model`. Story 9.6: `challenge` when a Challenge's
+    run built it from the challenged version (`base_version_id`)."""
     source_run_id: str | None = None
     """Story 8.3: that assessment run's id."""
     base_version_id: str | None = None
@@ -1678,6 +1679,51 @@ class ReviewsChallengeDeclined(TracePayload):
     review_request_id: str | None = None
 
 
+class ChallengeLineDelta(BaseModel):
+    """One Estimate line a Challenge's reassessment changed (Story 9.6): hours before and
+    after (null when added or removed) and the difference."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    line_id: str
+    title: str
+    before_h: float | None = None
+    after_h: float | None = None
+    delta_h: float
+
+
+@register
+class ReviewsChallengeCompleted(TracePayload):
+    """A Challenge's reassessment run created a new Estimate Version from the challenged one
+    (Story 9.6): the run `workflow_run_id`, the previous and the new version, each changed
+    line's delta in hours and the total. Actor: the system (`workflows.execute`)."""
+
+    event_type: ClassVar[str] = "reviews.challenge.completed"
+
+    challenge_id: str
+    workflow_run_id: str
+    previous_version_id: str
+    previous_version: int
+    new_version_id: str
+    new_version: int
+    lines: list[ChallengeLineDelta]
+    total_delta_h: float
+
+
+@register
+class ReviewsChallengeFailed(TracePayload):
+    """A Challenge's reassessment run failed or was cancelled (Story 9.6): no new version;
+    the challenged one is unchanged. `error_code`: why, when known (e.g. `estimate_changed`).
+    Actor: the system (`workflows.execute`), or the person who cancelled the run."""
+
+    event_type: ClassVar[str] = "reviews.challenge.failed"
+
+    challenge_id: str
+    workflow_run_id: str
+    run_status: str
+    error_code: str | None = None
+
+
 @register
 class ReviewsReviewRequestReminded(TracePayload):
     """The daily reminder job gave the reviewer of a pending Review Request an Inbox
@@ -1755,6 +1801,73 @@ class RegistryAgentDisabled(TracePayload):
     to_config_version_id: str
 
 
+# Custom chat model profiles and the approved-model allowlist have no Opportunity either.
+# Subjects: the profile (`registry.model_profile`) and the allowlist entry
+# (`registry.approved_model`). Ids, names, codes and timings only: a test call's prompt and
+# reply are never here.
+
+
+@register
+class RegistryModelProfileCreated(TracePayload):
+    """An administrator created a custom chat model profile; its live test is queued."""
+
+    event_type: ClassVar[str] = "registry.model_profile.created"
+
+    profile_id: str
+    name: str
+    provider: str
+    model: str
+    num_ctx: int
+
+
+@register
+class RegistryModelProfileTested(TracePayload):
+    """A live test call finished. Actor: the system (`registry.test_model_profile`)."""
+
+    event_type: ClassVar[str] = "registry.model_profile.tested"
+
+    profile_id: str
+    name: str
+    state: Literal["verified", "failed"]
+    error_code: str | None = None
+    latency_ms: int
+
+
+@register
+class RegistryModelProfileRetired(TracePayload):
+    """An administrator retired a custom chat model profile. Versions and runs already
+    pinned to it keep using it; no new version can pin it."""
+
+    event_type: ClassVar[str] = "registry.model_profile.retired"
+
+    profile_id: str
+    name: str
+    from_state: str
+
+
+@register
+class RegistryApprovedModelAdded(TracePayload):
+    """An administrator added a provider and model to the approved-model allowlist."""
+
+    event_type: ClassVar[str] = "registry.approved_model.added"
+
+    approved_model_id: str
+    provider: str
+    model: str
+
+
+@register
+class RegistryApprovedModelRemoved(TracePayload):
+    """An administrator removed a model from the allowlist. Existing profiles aren't
+    affected."""
+
+    event_type: ClassVar[str] = "registry.approved_model.removed"
+
+    approved_model_id: str
+    provider: str
+    model: str
+
+
 @register
 class RegistryEvalCompleted(TracePayload):
     """`make eval` finished and stored a result (Story 7.6). Subject: the result
@@ -1808,3 +1921,22 @@ class PlatformToolCallDenialThresholdExceeded(TracePayload):
     actor_id: str
     denial_count: int
     threshold: int
+
+
+@register
+class PlatformPurgeCompleted(TracePayload):
+    """Story 10.6: the retention purge deleted one Opportunity's data, in the same transaction.
+    Appended with `opportunity_id = null` (the Opportunity is gone). Subject: the purged
+    Opportunity (`opportunities.opportunity`, `subject_id` = its UUID). Actor: the system
+    (`platform.purge`). `rule`: `lost_3y` or `won_7y`; `rows_by_module`: rows deleted per
+    module; `files_deleted`: blobs whose last reference went with it. Ids and counts only:
+    no name, title or content."""
+
+    event_type: ClassVar[str] = "platform.purge.completed"
+
+    purged_opportunity_id: str
+    rule: Literal["lost_3y", "won_7y"]
+    retention_until: str
+    """The retention date that passed (ISO `YYYY-MM-DD`)."""
+    rows_by_module: dict[str, int]
+    files_deleted: int

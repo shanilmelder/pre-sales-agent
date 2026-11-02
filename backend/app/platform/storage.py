@@ -54,6 +54,11 @@ class BlobStore:
             raise ValueError("not a lowercase hex SHA-256")
         return self._root / "sha256" / sha256[:2] / sha256[2:4] / sha256
 
+    async def delete(self, sha256: str) -> None:
+        """Story 10.6: remove the blob (only the retention purge calls this, once its reference
+        count is zero). A blob that is already missing is ignored."""
+        await asyncio.to_thread(_unlink_quietly, self.path_for(sha256))
+
     async def put_stream(
         self,
         chunks: AsyncIterable[bytes],

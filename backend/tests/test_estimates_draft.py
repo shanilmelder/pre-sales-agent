@@ -33,7 +33,6 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
 )
 from app.platform.uow import unit_of_work
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_gaps_detection import (
@@ -56,14 +55,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-
-
-@pytest.fixture(autouse=True)
-def _draft_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        estimates_draft, "draft_settings", lambda: Settings(model_profile_chat="demo-chat")
-    )
 
 
 MIX = {"engineer": 60, "project_manager": 20, "qa": 20}
@@ -326,7 +317,7 @@ def test_a_draft_stores_version_1_with_lines_links_and_one_event(
     assert "Prices in EUR." in user.content
     assert request.caller.agent_id == "estimating_agent"
     assert request.caller.run_id == draft["id"]
-    assert (request.profile, request.priority) == ("demo-chat", "background")
+    assert (request.profile, request.priority) == ("ollama-cloud-chat", "background")
     assert request.output_model is EstimatingOutput
 
     # Privacy: no Requirement, Gap or line text in logs or the trace.

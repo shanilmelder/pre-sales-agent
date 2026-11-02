@@ -1,0 +1,37 @@
+From: Priya Natarajan <priya.natarajan@aldermoor-health.example>
+To: Alex Chen <alex.chen@vendor.example>
+Subject: Invitation to tender - Aldermoor Patient & Referral Portal
+Date: Mon, 19 Oct 2026 09:04:11 +0100
+Message-ID: <aldermoor-itt-1019@aldermoor-health.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear Alex,
+
+Aldermoor Health Trust invites your company to tender for the Aldermoor Patient & Referral
+Portal. The Trust runs three hospitals (Aldermoor General, St Brannoc's and Fenwick
+Community Hospital) and serves about 450,000 registered patients.
+
+What we are buying:
+
+- A patient portal (web and mobile web) where patients see their upcoming outpatient
+  appointments, confirm, cancel or rebook them, read clinic letters and complete
+  pre-appointment questionnaires.
+- A referral and booking service for GP practices and our own clinicians, replacing the
+  paper and fax referrals we still receive for about 30% of outpatient activity.
+- Integration with our electronic patient record (CarePoint EPR), so appointments, letters
+  and referral status stay in step with the record.
+- Appointment reminders by SMS and email.
+
+Industry: Healthcare (acute hospital trust). Products we expect to see: patient portal,
+e-referral service, EPR integration (HL7 FHIR), notifications.
+
+The discovery call is booked for Thursday 22 October. Our CIO Owen Hartley, clinical
+safety officer Dr Leah Okafor and outpatients manager Sam Whitlock will join.
+
+Please reply with a draft estimate and your assumptions by 20 November 2026.
+
+Kind regards,
+Priya Natarajan
+Head of Digital Procurement, Aldermoor Health Trust

@@ -20,9 +20,6 @@ from app.modules.assessments.domain.findings import fingerprint, line_key
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.uow import unit_of_work
-from tests import test_assessments_red_team as red_team_tests
-from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_assessments_red_team import drafted, finding, findings_out
@@ -39,9 +36,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
-_review_profile = red_team_tests._review_profile
 
 REASON = "Customer confirmed the seasonal profile on the call."
 RESOLVED = "assessments.finding.resolved"

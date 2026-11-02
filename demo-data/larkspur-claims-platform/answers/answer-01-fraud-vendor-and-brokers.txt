@@ -1,0 +1,10 @@
+From Ronan Gallagher, 10 Nov 2026 - answers to your clarification questions
+
+Fraud scoring: we have chosen the vendor. Their service has a REST API returning a score
+from 0 to 1,000 and reason codes; we'll send you their API documentation. Scores are
+needed at FNOL and whenever a reserve changes by more than 20%.
+
+Brokers: brokers come through the broker hub, not their own accounts. The hub passes a
+signed token with the broker ID; you trust it.
+
+Test data: our data team will deliver an anonymised copy of ClaimsOne by 15 February 2027.

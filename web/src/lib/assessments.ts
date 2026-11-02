@@ -53,7 +53,21 @@ export const AGENTS: readonly { value: AssessmentAgent; label: string }[] = [
  * know). */
 export function agentLabel(value: TaskAgent): string {
   if (value === "critic_agent") return CRITIC_LABEL;
+  if (value === "conflict_detection") return CONFLICT_DETECTION_LABEL;
+  if (value === "new_version") return NEW_VERSION_LABEL;
   return AGENTS.find((a) => a.value === value)?.label ?? value;
+}
+
+/** Story 9.6: a challenge run's non-agent nodes, shown as task rows. */
+export const CONFLICT_DETECTION_LABEL = "Conflict detection";
+export const NEW_VERSION_LABEL = "New version";
+
+/** Story 9.6: what the run header says beside the status pill for a Challenge's run. */
+export const CHALLENGE_RUN_LABEL = "Challenge reassessment";
+
+/** Story 9.6: whether the run is a Challenge's reassessment (its tasks are never retried). */
+export function isChallengeRun(run: Pick<AssessmentRun, "run_type"> | null | undefined): boolean {
+  return run?.run_type === "challenge";
 }
 
 /** One line on what each agent assesses (or checks), shown on its run card. */
@@ -61,7 +75,9 @@ export const AGENT_ROLES: Record<TaskAgent, string> = {
   engineering_agent: "Feasibility, architecture and per-integration effort",
   pm_agent: "Delivery approach, phases and customer dependencies",
   security_agent: "Mandatory controls and the effort they need",
+  conflict_detection: "Compares the Assessments and the Estimate for Conflicts",
   critic_agent: CRITIC_ROLE,
+  new_version: "Creates the new Estimate Version from the challenged one",
 };
 
 /** An agent's role description ("" for one this build doesn't know). */

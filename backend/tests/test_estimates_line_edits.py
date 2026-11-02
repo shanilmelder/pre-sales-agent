@@ -16,8 +16,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
 from tests import test_estimates_assumptions as assumption_tests
-from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.test_estimates_draft import SIX, detected, est_line, line_rows, lines_out, versions
 from tests.test_gaps_detection import rows
@@ -29,9 +27,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
-_proposal_profile = assumption_tests._proposal_profile
 
 REASON = "Reuse the existing connector"
 MIX_RULE = "Role mix must name every role and add up to 100%."

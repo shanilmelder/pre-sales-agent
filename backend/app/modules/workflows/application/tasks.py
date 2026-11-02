@@ -27,6 +27,7 @@ from app.modules.workflows.adapters import repository as repo
 from app.modules.workflows.adapters.repository import TaskRecord
 from app.modules.workflows.application import progress
 from app.modules.workflows.domain.runs import (
+    NON_AGENT_NODES,
     PLAN_ESCALATION_CHOICES,
     RUN_IN_PROGRESS,
     RUN_SUBJECT_TYPE,
@@ -62,12 +63,25 @@ class NodeTask:
     run_id: UUID
     opportunity_id: UUID
     agent: str
-    config_version_id: UUID
+    config_version_id: UUID | None
+    """None for a non-agent node (Story 9.6)."""
     status: AssessmentTaskStatus
     run_status: AssessmentRunStatus
     readiness: Readiness
     requires: tuple[UUID, ...] = ()
     after: tuple[UUID, ...] = ()
+    run_type: str = "assessment"
+    """Story 9.6: its run's type; a `challenge` run's `trigger_ref` is its Challenge."""
+    trigger_ref: UUID | None = None
+    attempt: int = 1
+    """The job attempt working on it (set by the node; 1 when read here)."""
+
+    @property
+    def pinned(self) -> UUID:
+        """The config version an Agent's task pins; a non-agent node (Story 9.6) has none."""
+        if self.config_version_id is None:
+            raise LookupError(f"Task {self.id} ({self.agent}) pins no config version")
+        return self.config_version_id
 
     @property
     def pending(self) -> bool:
@@ -96,6 +110,8 @@ async def _node_task(uow: UnitOfWork, task: TaskRecord) -> NodeTask | None:
         readiness=readiness(task.requires, statuses, task.after),
         requires=task.requires,
         after=task.after,
+        run_type=run.run_type,
+        trigger_ref=run.trigger_ref,
     )
 
 
@@ -244,6 +260,8 @@ async def escalation(uow: UnitOfWork, task_id: UUID) -> Escalation | None:
     task = await repo.get_task_by_id(uow, task_id)
     if task is None or task.status != AssessmentTaskStatus.QUEUED:
         return None
+    if task.agent in NON_AGENT_NODES:  # Story 9.6: platform code, no Agent to be disabled
+        return None
     kind = DecisionKind.PLAN_ESCALATION.value
     found = await repo.task_decision(uow, task_id, kind)
     active = (await registry.current_config(uow, task.agent)).runs_tasks
@@ -309,7 +327,7 @@ async def skip_disabled_task(uow: UnitOfWork, task_id: UUID) -> bool:
             run_id=str(current.run_id),
             task_id=str(task_id),
             agent=current.agent,
-            config_version_id=str(current.config_version_id),
+            config_version_id=str(current.config_version_id or ""),
             reason=TaskSkipReason.AGENT_DISABLED.value,
         ),
         subject_type=RUN_SUBJECT_TYPE,

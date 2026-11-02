@@ -51,7 +51,8 @@ class StructuredRequest[T: BaseModel]:
     """The reply must validate as this model; its JSON Schema is sent as the format."""
     caller: CallerMetadata
     profile: str | None = None
-    """A profile name (`profiles.MODEL_PROFILES`); None means the configured chat profile."""
+    """A built-in (`profiles.MODEL_PROFILES`) or custom profile name; None means the
+    configured chat profile."""
     priority: Priority = "background"
     timeout_s: float | None = None
     """Timeout of each model request (attempt); None means `PSA_MODEL_TIMEOUT_S`."""
@@ -144,7 +145,8 @@ class ModelTimeoutError(ModelGatewayError):
 
 class ModelOutputInvalidError(ModelGatewayError):
     """Every attempt returned output that failed schema validation (retries exhausted), or
-    a reply was cut off (`error_code="truncated"`, not retried)."""
+    a reply was cut off (`error_code="truncated"`, not retried) or declined
+    (`error_code="refusal"`, not retried)."""
 
     outcome: Outcome = "invalid_output"
     error_code = "invalid_output"

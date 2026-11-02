@@ -23,21 +23,32 @@ PLAN_VERSION = 1
 
 
 class TaskAgent(StrEnum):
-    """The Agents a run plans a task for, in the order they are listed: the specialists, then
-    the Critic (Story 6.4)."""
+    """What a run plans a task for, in the order they are listed: the specialists, then (Story
+    9.6, a challenge run) Conflict detection, then the Critic (Story 6.4), then (Story 9.6)
+    the new Estimate Version. `conflict_detection` and `new_version` are non-agent nodes: no
+    config version, no model call."""
 
     ENGINEERING = "engineering_agent"
     PM = "pm_agent"
     SECURITY = "security_agent"
+    CONFLICT_DETECTION = "conflict_detection"
     CRITIC = "critic_agent"
+    NEW_VERSION = "new_version"
 
 
 TASK_AGENTS: tuple[TaskAgent, ...] = tuple(TaskAgent)
+NON_AGENT_NODES: frozenset[str] = frozenset(
+    {TaskAgent.CONFLICT_DETECTION.value, TaskAgent.NEW_VERSION.value}
+)
+"""Story 9.6: the plan's tasks that run platform code, not an Agent: never escalated, no
+config version."""
 AGENT_LABELS: dict[str, str] = {
     TaskAgent.ENGINEERING.value: "Engineering Agent",
     TaskAgent.PM.value: "PM Agent",
     TaskAgent.SECURITY.value: "Security Agent",
+    TaskAgent.CONFLICT_DETECTION.value: "Conflict detection",
     TaskAgent.CRITIC.value: "Critic",
+    TaskAgent.NEW_VERSION.value: "New version",
 }
 DECISION_SUBJECT_TYPE = "workflows.decision"
 """An Inbox item's subject when a run waits on a decision (Story 9.2)."""
@@ -60,7 +71,8 @@ def task_agent_rank(agent: str) -> int:
 
 class RunType(StrEnum):
     """What started a run (Story 9.5): an assessment of every agent, or a Challenge's
-    reassessment of the Assessments its owner confirmed (then the Critic)."""
+    reassessment of the Assessments its owner confirmed (Story 9.6: then Conflict detection,
+    the Critic and the new Estimate Version)."""
 
     ASSESSMENT = "assessment"
     CHALLENGE = "challenge"

@@ -1,0 +1,29 @@
+From: Declan Moran <declan.moran@larkspur-mutual.example>
+To: Alex Chen <alex.chen@vendor.example>
+Subject: Claims RFP - commercial terms
+Date: Thu, 22 Oct 2026 09:30:44 +0100
+Message-ID: <larkspur-proc-1022@larkspur-mutual.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear Alex,
+
+Commercial terms for your proposal:
+
+- Fixed price. Board-approved budget EUR 2.3 million for implementation and migration.
+- Go-live for all three lines of business (motor, travel and home) by 1 July 2027. We
+  cannot run two claims systems through another storm season.
+- Volumes for sizing: 30,000 claims a month, with storm peaks of 3x.
+- Every claim decision, including automatic settlements, must be approved by a claim
+  handler before payment. Our compliance team will not accept unattended payments.
+- Availability 99.9% during business hours (08:00-20:00, Monday to Saturday); FNOL
+  online 24/7.
+- Payment schedule: 25% at design sign-off, 25% at trial migration, 35% at go-live, 15%
+  after the first storm season.
+- Retention of 10% of each payment until all priority 1 and 2 defects are closed.
+- Show allowances for unknowns separately, with hours. Our audit committee reviews them.
+
+Kind regards,
+Declan Moran
+Procurement Manager

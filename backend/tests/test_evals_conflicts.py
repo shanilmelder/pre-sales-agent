@@ -162,7 +162,7 @@ def test_a_run_with_a_fake_gateway_writes_the_report(tmp_path: Path) -> None:
     fake.replies = [reply]
     outcome = run_async(
         ev.run_conflicts_eval(
-            Settings(model_profile_chat="demo-chat"), gateway=fake, out_dir=tmp_path
+            Settings(model_profile_chat="ollama-cloud-chat"), gateway=fake, out_dir=tmp_path
         )
     )
     written = json.loads((outcome.out_dir / "report.json").read_text(encoding="utf-8"))
@@ -183,7 +183,7 @@ def test_a_failed_model_call_counts_as_no_prediction(tmp_path: Path) -> None:
     fake.replies = [ModelTimeoutError("slow")]
     outcome = run_async(
         ev.run_conflicts_eval(
-            Settings(model_profile_chat="demo-chat"),
+            Settings(model_profile_chat="ollama-cloud-chat"),
             gateway=fake,
             out_dir=tmp_path,
             only=("decoy-unrelated-topics",),

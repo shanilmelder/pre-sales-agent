@@ -53,7 +53,8 @@ class TaskRecord:
     error_code: str | None
     started_at: datetime | None
     finished_at: datetime | None
-    config_version_id: UUID
+    config_version_id: UUID | None
+    """None for a non-agent node (Story 9.6)."""
     skip_reason: str | None = None
     requires: tuple[UUID, ...] = ()
     after: tuple[UUID, ...] = ()
@@ -62,11 +63,11 @@ class TaskRecord:
 @dataclass(frozen=True, slots=True)
 class NewTask:
     """A task of a new run, inserted `queued`. `config_version_id`: the registry config
-    version it pins."""
+    version it pins (None for a non-agent node, Story 9.6)."""
 
     id: UUID
     agent: str
-    config_version_id: UUID
+    config_version_id: UUID | None
     requires: tuple[UUID, ...] = ()
     after: tuple[UUID, ...] = ()
 
@@ -93,7 +94,7 @@ class PlanTask:
 
     task_id: UUID
     agent: str
-    config_version_id: UUID
+    config_version_id: UUID | None
     after: tuple[UUID, ...] = ()
 
 
@@ -105,6 +106,7 @@ class PlanVersionRecord:
     created_by_type: str
     created_by: str
     created_at: datetime
+    pins: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -634,6 +636,7 @@ async def insert_plan_version(
     version: int,
     tasks: Sequence[PlanTask],
     actor: Actor,
+    pins: dict[str, Any] | None = None,
 ) -> None:
     await uow.session.execute(
         insert(WorkflowPlanVersionRow).values(
@@ -644,11 +647,14 @@ async def insert_plan_version(
                 {
                     "task_id": str(t.task_id),
                     "agent": t.agent,
-                    "config_version_id": str(t.config_version_id),
+                    "config_version_id": (
+                        None if t.config_version_id is None else str(t.config_version_id)
+                    ),
                     "after": [str(a) for a in t.after],
                 }
                 for t in tasks
             ],
+            pins=pins,
             created_by_type=actor.type,
             created_by=actor.id,
         )
@@ -670,7 +676,9 @@ async def plan_versions_of(uow: UnitOfWork, run_id: UUID) -> list[PlanVersionRec
                 PlanTask(
                     task_id=UUID(t["task_id"]),
                     agent=t["agent"],
-                    config_version_id=UUID(t["config_version_id"]),
+                    config_version_id=(
+                        None if t.get("config_version_id") is None else UUID(t["config_version_id"])
+                    ),
                     after=tuple(UUID(a) for a in t.get("after", [])),
                 )
                 for t in row.tasks
@@ -678,6 +686,7 @@ async def plan_versions_of(uow: UnitOfWork, run_id: UUID) -> list[PlanVersionRec
             created_by_type=row.created_by_type,
             created_by=row.created_by,
             created_at=row.created_at,
+            pins=row.pins,
         )
         for row in rows.scalars()
     ]

@@ -51,9 +51,12 @@ ADMIN_ONLY = (
     Action.REGISTRY_AGENT_REGISTER,
     Action.REGISTRY_AGENT_CONFIG_CREATE,
     Action.REGISTRY_AGENT_SET_STATUS,
+    Action.REGISTRY_MODEL_PROFILE_MANAGE,
 )
 MODULES = {
     "actuals",
+    # Story 10.6: `platform.retention.read` (Admin > Retention; the purge is platform's).
+    "platform",
     "reporting",
     "identity",
     "notifications",

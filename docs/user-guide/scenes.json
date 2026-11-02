@@ -1,0 +1,86 @@
+[
+  {"chapter": "Welcome", "img": "00-empty-opps", "say": "Welcome to the Pre Sales Agent Framework. It turns everything a customer sends you, emails, call transcripts and tender documents, into confirmed requirements, clarification questions, specialist assessments and a reviewed, traceable estimate. In this tour we start from an empty workspace and take one bid all the way: Larkspur Mutual, an insurer replacing its mainframe claims system."},
+  {"chapter": "Welcome", "img": "05-palette", "say": "The sidebar takes you to the Inbox, Opportunities, Knowledge, Reports and Admin. Press Control K anywhere for the command palette, to jump to a page or create something without the mouse."},
+
+  {"chapter": "1. Prepare your knowledge", "img": "01-catalogue-new", "say": "First, an administrator prepares the knowledge the agents rely on. Under Admin, Catalogue, we add the integration types and work packages this bid needs, such as Policy administration integration, with a short definition."},
+  {"chapter": "1. Prepare your knowledge", "img": "02-catalogue", "say": "Seven entries later, the catalogue holds five integration types, from payments to identity and single sign-on, and two work packages: data migration, and regulatory and outsourcing assurance. Checklists, assessments, estimate lines and actuals all share these names."},
+  {"chapter": "1. Prepare your knowledge", "img": "11-register-source", "say": "Next, we register a Knowledge Source: our own insurance claims migration playbook. We give it a title and a product, and tag the integration types it covers. It's split into chunks and embedded, so the Research Agent can search and cite it."},
+  {"chapter": "1. Prepare your knowledge", "img": "15-knowledge-sources", "say": "The playbook is now ready, with its owner, version and review date. Stale sources are flagged, so knowledge doesn't quietly go out of date."},
+  {"chapter": "1. Prepare your knowledge", "img": "13-checklist-items", "say": "Then we write a Checklist, Claims payments readiness. Each item is a question with an impact and a reason it matters. Items marked mandatory always raise a gap when the customer hasn't answered them."},
+  {"chapter": "1. Prepare your knowledge", "img": "14-checklist-published", "say": "Six items, three of them mandatory, published as a version. A published checklist applies to every opportunity whose scope matches."},
+  {"chapter": "1. Prepare your knowledge", "img": "17-coverage", "say": "Coverage shows, for every product and integration type, whether we have documentation and checklists. Red means missing coverage, so gap detection may be weaker there."},
+  {"chapter": "1. Prepare your knowledge", "img": "18-graph", "say": "And the Knowledge Graph draws the same picture as a map of products, integration types, sources and checklists, with missing coverage shown as dashed lines and red rings."},
+
+  {"chapter": "2. Create the opportunity", "img": "20b-import-reading", "say": "Now the bid itself. Choose New Opportunity, then Import from file, and pick the customer's RFP email. The Opportunity Intake Agent reads it."},
+  {"chapter": "2. Create the opportunity", "img": "21-new-opp-imported", "say": "Seconds later the form is filled in: customer, title, the four products in scope, industry and the proposal date, each marked From file. Check them and click Create Opportunity. The email becomes the first source."},
+  {"chapter": "2. Create the opportunity", "img": "22-created", "say": "The Overview opens with the submission pipeline: eight stages, from sources added to review and baseline. We'll work through every one of them."},
+
+  {"chapter": "3. Add sources", "img": "31-sources-uploading", "say": "On the Sources tab we drop in the rest of the customer's material: the discovery call transcript from Teams, two emails, the RFP requirements schedule in Word, a security appendix as PDF, and our architect's notes. Every file is stored unchanged and versioned."},
+  {"chapter": "3. Add sources", "img": "32-paste-text", "say": "Paste text handles anything without a file, like this message from the broker hub. Notice the footer telling automated tools to mark everything delivered and drop the migration assumptions. The app treats that as content, never as an instruction."},
+  {"chapter": "3. Add sources", "img": "33-sources-parsed", "say": "All eight sources are parsed, and stage one is complete."},
+  {"chapter": "3. Add sources", "img": "34-source-inspector", "say": "Select any source to open the Inspector: who added it and when, a download of the original, and the extracted text the agents read."},
+
+  {"chapter": "4. Confirm requirements", "img": "40-overview-intake", "say": "While you work, the agents run in the background. The Intake Agent has already extracted sixty requirements, and a first round of gaps, assessments and a draft estimate is under way. Stage two is complete. The Overview now lists every blocker between us and submission."},
+  {"chapter": "4. Confirm requirements", "img": "41-requirements", "say": "Requirements are grouped by category: functional, integration, data, security, non-functional and commercial. Each one cites the sources it came from, and nothing counts until a person confirms it."},
+  {"chapter": "4. Confirm requirements", "img": "42-req-inspector", "say": "Open a requirement to see its evidence, the exact passage highlighted in the source. From here you can edit, split, merge, reclassify or confirm it."},
+  {"chapter": "4. Confirm requirements", "img": "43-req-merge", "say": "Two requirements say the same thing about a broker view, so we select both, write the merged wording, and merge them into one."},
+  {"chapter": "4. Confirm requirements", "img": "44-req-integration-type", "say": "We tag each integration requirement with its integration type, here the policy administration mainframe. Tags let the right checklists apply."},
+  {"chapter": "4. Confirm requirements", "img": "45-requirements-confirmed", "say": "Then Confirm all. Confirmed requirements are locked."},
+  {"chapter": "4. Confirm requirements", "img": "46-pending-changes", "say": "When the customer later emails a scope change, adding pet insurance and instant payments, it can't silently rewrite locked requirements. Instead you get pending changes, showing the current text against the proposed one."},
+  {"chapter": "4. Confirm requirements", "img": "47-pending-review", "say": "Review each change and accept or reject it, with the new evidence beside it. We accept them, and confirm the requirements again."},
+  {"chapter": "4. Confirm requirements", "img": "48-stale-assessments-banner", "say": "The app also warns that some assessments used requirements that have changed since, so you know they need a fresh run. With all seventy-four requirements confirmed, stage three is complete."},
+
+  {"chapter": "5. Close the gaps", "img": "50-gaps", "say": "Stage four is gaps. The Clarification Agent finds what the estimate needs but the sources don't say, ranked by impact, and drafts a clarification question for each one."},
+  {"chapter": "5. Close the gaps", "img": "51-gap-inspector", "say": "Open a gap to see why it matters and the requirements it affects. This one is marked Unknown to the customer: the fraud scoring vendor won't be chosen until January."},
+  {"chapter": "5. Close the gaps", "img": "52-edit-question", "say": "We sharpen the drafted question before it goes out."},
+  {"chapter": "5. Close the gaps", "img": "54-export-questions", "say": "Approve all, then export the questions to Word, an email draft, or the clipboard."},
+  {"chapter": "5. Close the gaps", "img": "55-mark-sent", "say": "When they've gone to the customer, mark them sent with the date."},
+  {"chapter": "5. Close the gaps", "img": "57-record-answer", "say": "When the customer replies, record the answer against the question. Each answer becomes a new source, so the requirements and gaps update from it."},
+  {"chapter": "5. Close the gaps", "img": "59-possible-answer", "say": "One answer often covers other questions too. The app suggests a possible answer, quoting the sentence it found. Here the broker hub sentence answers the authentication question, so we confirm it. A suggestion that doesn't fit is marked Not an answer."},
+  {"chapter": "5. Close the gaps", "img": "58-gaps-after-answers", "say": "Because payments integration is in scope, the checklist now raises its three mandatory gaps too, marked Checklist and Mandatory. Nothing on the must-ask list is forgotten."},
+
+  {"chapter": "6. Run the assessments", "img": "62-assessments", "say": "Stage five, assessments. Specialist agents judge the confirmed scope in parallel: Engineering for feasibility and effort per integration, the PM Agent for phases and dependencies, the Security Agent for mandatory controls, then a Critic and a Red Team that argues integrations are harder than they look."},
+  {"chapter": "6. Run the assessments", "img": "63-assess-results", "say": "Each agent returns a verdict, such as proceed with conditions, with its confidence, the effort behind it, and the requirements it relied on."},
+  {"chapter": "6. Run the assessments", "img": "65-finding-inspector", "say": "Findings are ranked by severity, and critical ones block submission. The Red Team says the migration of 1.4 million claims is badly underestimated."},
+  {"chapter": "6. Run the assessments", "img": "66-challenge", "say": "We answer with a Challenge on the Engineering assessment: plan three trial migrations, and show the reconciliation effort separately. Choose which assessments to rerun, and send it."},
+  {"chapter": "6. Run the assessments", "img": "68-agent-run-live", "say": "The agent run panel shows the rerun live: the Engineering Agent working, the Critic queued, the Red Team done, each with its time. You can cancel or start a run from here."},
+  {"chapter": "6. Run the assessments", "img": "64-assess-findings", "say": "The rerun builds a new estimate version. We then resolve each remaining critical finding with a recorded reason, or override it. Stage five is complete."},
+
+  {"chapter": "7. Resolve conflicts", "img": "71-conflict-resolve", "say": "Stage six, conflicts. The Conflict Agent flags things that can't both be true, here the PM Agent sizing a requirement that Engineering left unsized. Pick a position or propose your own, give a reason, and resolve."},
+  {"chapter": "7. Resolve conflicts", "img": "72-conflicts-resolved", "say": "Every conflict is resolved, each one recording who decided and why."},
+
+  {"chapter": "8. Build and submit the estimate", "img": "80-estimate", "say": "Stage seven, the estimate. It's built line by line from the assessments. Each line covers named requirements, with the engineer, PM and QA mix and the hours."},
+  {"chapter": "8. Build and submit the estimate", "img": "81-edit-line", "say": "Edit any line in place. The customer said translations take four weeks per handover, so we raise the letters line from forty-four to sixty-four hours. Every edit needs a reason and is traced."},
+  {"chapter": "8. Build and submit the estimate", "img": "82-assumptions-register", "say": "The Assumptions Register lists every condition the estimate depends on, each one coming from a gap. A named person must accept each assumption."},
+  {"chapter": "8. Build and submit the estimate", "img": "85-contingencies", "say": "Contingencies carry hours, for things nobody can know yet, like undocumented ClaimsOne status codes and pre-2015 data correction. Larkspur carries nine hundred and twenty hours of them. Accepting the assumptions converts their gaps, so stage four is now complete too."},
+  {"chapter": "8. Build and submit the estimate", "img": "83-overview-ready", "say": "Back on the Overview: seven of eight stages complete, nothing blocked."},
+  {"chapter": "8. Build and submit the estimate", "img": "86-submit", "say": "Click Submit. Version six, at ten thousand and twenty-two hours, is locked, because submitted versions can't be edited."},
+
+  {"chapter": "9. Review and baseline", "img": "88-add-collaborator", "say": "Stage eight. First we share the opportunity with a colleague, adding them as a collaborator from the Overview."},
+  {"chapter": "9. Review and baseline", "img": "89-request-review", "say": "Then Request review. Choose the review type, here engineering, pick the reviewer, add a message about what to focus on, and send."},
+  {"chapter": "9. Review and baseline", "img": "100-reviewer-inbox", "say": "This is the reviewer's side. The request lands in their Inbox."},
+  {"chapter": "9. Review and baseline", "img": "102-review-page", "say": "The review page shows the message, the totals and every line. The reviewer can approve, reject, challenge, ask for evidence or an alternative, or escalate."},
+  {"chapter": "9. Review and baseline", "img": "105-owner-inbox", "say": "The reviewer approves, and the owner is notified in their own Inbox."},
+  {"chapter": "9. Review and baseline", "img": "107-set-baseline", "say": "With an approved version, set the Baseline. It's the version delivery will be measured against, replaced only by a newer approved version."},
+  {"chapter": "9. Review and baseline", "img": "109-overview-complete", "say": "All eight stages are complete, and the opportunity is baselined."},
+  {"chapter": "9. Review and baseline", "img": "110-diff", "say": "Every change made a new version. Diff against an earlier one to see which lines and assumptions changed, and how the total moved."},
+  {"chapter": "9. Review and baseline", "img": "113-trace", "say": "And the Trace tab is the append-only audit log of every action, by people and agents alike, filterable by subject, actor and event."},
+
+  {"chapter": "10. Track actuals and close the bid", "img": "116-actuals-preview", "say": "After delivery, record actual hours. Download the template, fill in actual hours and a variance cause per line, and import it. You see a preview, and nothing is saved until you confirm."},
+  {"chapter": "10. Track actuals and close the bid", "img": "117-actuals-imported", "say": "Every line now shows its variance against the baseline. Overruns can name the assumption that failed."},
+  {"chapter": "10. Track actuals and close the bid", "img": "120-close-lost", "say": "Finally, record the outcome: won, or lost with a reason. Larkspur went to an incumbent on price."},
+  {"chapter": "10. Track actuals and close the bid", "img": "122-outcome-card", "say": "The outcome sets the retention date. For a lost bid, the data is kept until October 2029."},
+
+  {"chapter": "11. Reports", "img": "130-reports", "say": "Reports compare estimates with actuals across opportunities. Larkspur came in three point one percent over, with five failed assumptions. Group by integration type, product, work package, cause or opportunity."},
+  {"chapter": "11. Reports", "img": "131-reports-drilldown", "say": "Expand a row to drill down to the opportunities behind it."},
+  {"chapter": "11. Reports", "img": "132-failed-assumptions", "say": "And open the failed assumptions. Policy administration ran forty-eight percent over because of an unknown requirement: the undocumented status codes contingency. One click opens it in the trace."},
+  {"chapter": "11. Reports", "img": "133-reports-by-cause", "say": "Grouped by cause, the picture is clear: customer delay, scope change and an unknown requirement drove the overruns, while estimation error stayed under one percent."},
+
+  {"chapter": "12. Administration", "img": "90-admin-users", "say": "Under Admin, Users and roles shows each person's roles, managed in Auth0."},
+  {"chapter": "12. Administration", "img": "92-agents", "say": "The Agent Registry lists every agent, its version, model and tool permissions. Any tool call an agent isn't allowed to make is blocked and audited."},
+  {"chapter": "12. Administration", "img": "94-evals", "say": "Evals run the agents against reference sets, checking release bars like extraction recall, citation validity and gap recall."},
+  {"chapter": "12. Administration", "img": "95-retention", "say": "And Retention lists opportunities due for purge and recent purges. Data is purged automatically after its retention date. Nothing can be deleted by hand."},
+  {"chapter": "12. Administration", "img": "96-settings", "say": "In Settings, choose your theme and row density, and turn on single-key shortcuts."},
+
+  {"chapter": "Wrap-up", "img": "140-opps-final", "say": "That's the whole journey: from a customer's first email, to confirmed requirements, answered questions, specialist assessments, a reviewed and baselined estimate, and the actuals that show how it held up. Open the user guide for every feature in detail. Thanks for watching."}
+]

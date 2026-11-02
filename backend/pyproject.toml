@@ -23,6 +23,8 @@ dependencies = [
     "psycopg-pool==3.3.3",  # the checkpointer's own pool (AD-6)
     "pgvector==0.4.2",  # MIT; the SQLAlchemy `vector` type for knowledge_chunks (Story 3.3)
     "pyyaml==6.0.3",  # MIT; the research allowlist (Story 5.4) and evals/ files (Story 7.6)
+    "anthropic==2.3.0",  # Apache-2.0; the SDK of the ModelGateway's Anthropic adapter
+    "httpx2==2.13.1",  # BSD-3-Clause; that SDK's HTTP client, typed in the gateway
 ]
 
 [dependency-groups]
@@ -90,6 +92,25 @@ source_modules = ["app.main_api"]
 forbidden_modules = ["app.platform.jobs.runner", "app.main_worker"]
 
 [[tool.importlinter.contracts]]
+name = "The api process never imports the retention purge job or its steps (Story 10.6)"
+type = "forbidden"
+source_modules = ["app.main_api"]
+forbidden_modules = [
+    "app.platform.purge.job",
+    "app.modules.notifications.application.purge",
+    "app.modules.reviews.application.purge",
+    "app.modules.actuals.application.purge",
+    "app.modules.conflicts.application.purge",
+    "app.modules.assessments.application.purge",
+    "app.modules.estimates.application.purge",
+    "app.modules.gaps.application.purge",
+    "app.modules.intake.application.purge",
+    "app.modules.knowledge.application.purge",
+    "app.modules.workflows.application.purge",
+    "app.modules.opportunities.application.purge",
+]
+
+[[tool.importlinter.contracts]]
 name = "The api process never calls a chat model (AD-8)"
 type = "forbidden"
 source_modules = ["app.main_api"]
@@ -98,6 +119,7 @@ forbidden_modules = [
     "app.platform.model_gateway.adapter",
     "app.platform.model_gateway.ollama",
     "app.platform.model_gateway.openai_compat",
+    "app.platform.model_gateway.anthropic_adapter",
 ]
 # Story 3.3: `GET /knowledge/search` embeds its query (one `bge-m3` call through the gateway,
 # recorded in `platform_model_calls`); the api process builds a gateway for that only and

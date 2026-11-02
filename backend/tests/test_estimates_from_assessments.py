@@ -18,14 +18,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
 from app.modules.assessments.application.public import AssessmentAgent
-from app.modules.estimates.application import assumptions as estimates_assumptions
 from app.modules.estimates.application import public as estimates_public
-from app.platform.config import Settings
 from app.platform.model_gateway import provider
 from app.platform.model_gateway.port import ModelUnavailableError
 from tests import test_assessments_specialists as specialist_tests
 from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.test_assessments_specialists import (
     AgentGateway,
@@ -60,22 +57,11 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
 _assessment_profile = specialist_tests._assessment_profile
 _no_auto_run = specialist_tests._no_auto_run
 auto_run = specialist_tests.auto_run
 
 CREATED = "estimates.estimate_version.created"
-
-
-@pytest.fixture(autouse=True)
-def _proposal_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        estimates_assumptions,
-        "proposal_settings",
-        lambda: Settings(model_profile_chat="demo-chat"),
-    )
 
 
 def agent_out(*efforts: dict[str, Any], recommendation: str = "proceed_with_conditions") -> Any:

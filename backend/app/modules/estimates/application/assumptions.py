@@ -97,7 +97,6 @@ from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
 from app.platform.concurrency import parse_if_match
-from app.platform.config import Settings, get_settings
 from app.platform.errors import (
     EstimateVersionNotDraftError,
     ForbiddenError,
@@ -127,11 +126,6 @@ _log = get_logger(__name__)
 
 class ProposeAssumptions(JobPayload):
     version_id: UUID
-
-
-def proposal_settings() -> Settings:
-    """Settings for the handler (the chat profile). Tests replace this."""
-    return get_settings()
 
 
 async def enqueue_proposals(uow: UnitOfWork, *, version_id: UUID, opportunity_id: UUID) -> None:
@@ -460,7 +454,6 @@ async def _start(ctx: JobContext, version_id: UUID) -> _Started | None:
 
 
 async def _propose(ctx: JobContext, payload: ProposeAssumptions) -> None:
-    settings = proposal_settings()
     version_id = payload.version_id
     ids: dict[str, object] = {"version_id": str(version_id)}
     started = await _start(ctx, version_id)
@@ -477,7 +470,7 @@ async def _propose(ctx: JobContext, payload: ProposeAssumptions) -> None:
         _log.info("estimates.proposals_empty", extra=ids)
         return
 
-    config = registry.agent_config(started.version, settings)
+    config = registry.agent_config(started.version)
     agent = EstimatingAgent(provider.current(), config=config)
     result = await agent.propose_assumptions(
         AssumptionsTask(

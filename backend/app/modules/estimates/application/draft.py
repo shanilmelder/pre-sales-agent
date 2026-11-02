@@ -42,7 +42,7 @@ text.
 """
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import UUID
@@ -79,7 +79,6 @@ from app.modules.intake.application import public as intake
 from app.modules.registry.application import public as registry
 from app.platform import trace
 from app.platform.actor import Actor
-from app.platform.config import Settings, get_settings
 from app.platform.ids import new_id
 from app.platform.jobs import JobContext, JobPayload, JobType, enqueue, register
 from app.platform.locks import opportunity_lock
@@ -98,11 +97,6 @@ _log = get_logger(__name__)
 
 class DraftEstimate(JobPayload):
     draft_id: UUID
-
-
-def draft_settings() -> Settings:
-    """Settings for the handler (the chat profile). Tests replace this."""
-    return get_settings()
 
 
 # --- queueing -------------------------------------------------------------------------------
@@ -293,6 +287,8 @@ async def store_version(
     created_by: UUID | None = None,
     base: repo.VersionRecord | None = None,
     reason: str | None = None,
+    idempotency_key: str | None = None,
+    skip_edits: Collection[tuple[str, str]] = (),
 ) -> StoredVersion:
     """Store `lines` as the Opportunity's new `draft` Estimate Version, superseding its
     current draft, and do what follows every new version: carry the superseded draft's
@@ -307,7 +303,11 @@ async def store_version(
 
     `base` (Story 9.4, a person's **New version**): the rejected or approved version the lines
     were copied from; its Assumptions, Risks and line edits are carried instead of the current
-    draft's (there is none then), and the trace names it with the person's `reason`."""
+    draft's (there is none then), and the trace names it with the person's `reason`.
+
+    Story 9.6 (a Challenge's run): `base` is the challenged version, `idempotency_key` the
+    node's key, and `skip_edits` the (section, title) of the lines the rerun rebuilt, whose
+    edits on `base` are not carried."""
     # Story 8.7: the draft version being superseded, whose accepted Assumptions are carried.
     previous = base if base is not None else await repo.current_version(uow, opportunity_id)
     superseded = await repo.supersede_drafts(uow, opportunity_id)
@@ -326,6 +326,7 @@ async def store_version(
         source=source.value,
         source_run_id=source_run_id,
         created_by=created_by,
+        idempotency_key=idempotency_key,
         lines=[
             repo.NewLine(
                 line_id=new_id(),
@@ -355,7 +356,7 @@ async def store_version(
     edits = (
         CarriedEdits(0, 0)
         if previous is None
-        else await carry_edits(uow, source=previous, target_version_id=version_id)
+        else await carry_edits(uow, source=previous, target_version_id=version_id, skip=skip_edits)
     )
     created = EstimatesEstimateVersionCreated(
         version=number,
@@ -555,7 +556,6 @@ async def _start(ctx: JobContext, draft_id: UUID) -> _Started | None:
 
 
 async def _draft(ctx: JobContext, payload: DraftEstimate) -> None:
-    settings = draft_settings()
     draft_id = payload.draft_id
     ids: dict[str, object] = {"draft_id": str(draft_id)}
     started = await _start(ctx, draft_id)
@@ -570,7 +570,7 @@ async def _draft(ctx: JobContext, payload: DraftEstimate) -> None:
         _log.info("estimates.draft_empty", extra=ids)
         return
 
-    config = registry.agent_config(started.version, settings)
+    config = registry.agent_config(started.version)
     agent = EstimatingAgent(provider.current(), config=config)
     result = await agent.run(
         EstimatingTask(

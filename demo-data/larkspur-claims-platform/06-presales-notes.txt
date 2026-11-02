@@ -1,0 +1,27 @@
+Larkspur Mutual - presales notes (Alex Chen, solutions architect)
+Written after the discovery call (15 Oct 2026) and a half-day with the claims team.
+
+Claims floor
+- 85 handlers in three teams: motor, home, travel. Fraud team of 12 refers suspicious
+  claims to an external investigator (about 300 a year).
+- Handlers re-key the policy number and cover details from the mainframe green screen
+  into ClaimsOne for every claim. Average FNOL call 11 minutes.
+- Storm week, Feb 2026: 4,100 home claims in five days, handlers on overtime for a month.
+
+Reserving and finance
+- Reserves are set by handlers within authority limits (EUR 5k, 25k, 100k, above that
+  the claims manager). Authority limits must be enforced by the new system.
+- Finance closes the month on working day 3; postings must be in D365 by 06:00.
+
+Recoveries
+- Motor recoveries from third-party insurers run on a spreadsheet today, about EUR 4m a
+  year. They want it in the platform, but it wasn't in the RFP scope list.
+
+Observations and risks
+- Contradiction on volumes: 18,000 claims a month (call) vs 30,000 (procurement).
+- Contradiction on go-live: motor/travel Sept 2027 and home March 2028 (call) vs all lines
+  by 1 July 2027 (procurement).
+- Contradiction on automation: 40% straight-through settlement (COO) vs every payment
+  approved by a handler (procurement / compliance).
+- Fixed price EUR 2.3m with a 10% retention and 1.4 million claims to migrate is tight.
+- Regulator outsourcing review could add controls late in the project.

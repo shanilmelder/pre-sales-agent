@@ -155,7 +155,7 @@ Agent Registry, no gate.
 ```sh
 make eval-conflicts                                    # every case, PSA_MODEL_PROFILE_CHAT
 make eval-conflicts ARGS="--only scope-label-printing" # one case (repeatable)
-make eval-conflicts ARGS="--profile demo-chat"         # another model profile
+make eval-conflicts ARGS="--profile ollama-cloud-chat"         # another model profile
 ```
 
 Each case in `conflicts/<name>.yaml` holds synthetic Findings per specialist and the Conflicts
@@ -197,7 +197,7 @@ it has one gate: it **fails (exit 1) unless every case's uncovered Requirement i
 ```sh
 make eval-critic                                   # every case, PSA_MODEL_PROFILE_CHAT
 make eval-critic ARGS="--only erp-golive-crunch"   # one case (repeatable)
-make eval-critic ARGS="--profile demo-chat"        # another model profile
+make eval-critic ARGS="--profile ollama-cloud-chat"        # another model profile
 ```
 
 Each case in `critic/<name>.yaml` holds the active Requirements, the specialists' Findings and

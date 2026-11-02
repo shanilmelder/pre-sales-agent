@@ -15,7 +15,6 @@ from app.agents.contract import (
     Span,
     Unknown,
 )
-from app.platform.model_gateway.profiles import UnknownModelProfileError
 from tests.conftest import run_async
 
 PASSAGE = UUID("01920000-0000-7000-8000-0000000000aa")
@@ -120,7 +119,7 @@ def test_agent_config_actor_id_and_validation() -> None:
         agent_id="intake_agent",
         semver="1.2.0",
         prompt_version=1,
-        profile="demo-chat",
+        profile="ollama-cloud-chat",
         config_version_id=version_id,
     )
     assert config.actor_id == "intake_agent@1.2.0"
@@ -128,19 +127,34 @@ def test_agent_config_actor_id_and_validation() -> None:
     common = {"config_version_id": version_id}
     with pytest.raises(ValueError, match="snake_case"):
         AgentConfig(
-            agent_id="IntakeAgent", semver="1.0.0", prompt_version=1, profile="demo-chat", **common
+            agent_id="IntakeAgent",
+            semver="1.0.0",
+            prompt_version=1,
+            profile="ollama-cloud-chat",
+            **common,
         )
     with pytest.raises(ValueError, match="semver"):
         AgentConfig(
-            agent_id="intake_agent", semver="v1", prompt_version=1, profile="demo-chat", **common
+            agent_id="intake_agent",
+            semver="v1",
+            prompt_version=1,
+            profile="ollama-cloud-chat",
+            **common,
         )
-    with pytest.raises(UnknownModelProfileError):
+    # A custom profile lives in the database, so a config can't check its name: the gateway does.
+    assert (
         AgentConfig(
-            agent_id="intake_agent", semver="1.0.0", prompt_version=1, profile="gpt-9", **common
-        )
+            agent_id="intake_agent", semver="1.0.0", prompt_version=1, profile="custom", **common
+        ).profile
+        == "custom"
+    )
     with pytest.raises(ValueError, match="prompt_version"):
         AgentConfig(
-            agent_id="intake_agent", semver="1.0.0", prompt_version=0, profile="demo-chat", **common
+            agent_id="intake_agent",
+            semver="1.0.0",
+            prompt_version=0,
+            profile="ollama-cloud-chat",
+            **common,
         )
 
 
@@ -150,7 +164,7 @@ class _EchoAgent:
             agent_id="echo_agent",
             semver="0.1.0",
             prompt_version=1,
-            profile="local-chat",
+            profile="openai-chat",
             config_version_id=uuid4(),
         )
 

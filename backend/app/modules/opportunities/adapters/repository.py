@@ -593,3 +593,43 @@ async def trace_options(
         await distinct(TraceEvent.actor_type),
         await distinct(TraceEvent.event_type),
     )
+
+
+async def lock_outcome(
+    uow: UnitOfWork, opportunity_id: UUID
+) -> tuple[str | None, datetime | None, date | None] | None:
+    """Story 10.6: lock the Opportunity's row (`FOR UPDATE`) and return `(outcome,
+    outcome_recorded_at, contract_end_date)`; None when it doesn't exist."""
+    row = (
+        await uow.session.execute(
+            select(
+                OpportunityRow.outcome,
+                OpportunityRow.outcome_recorded_at,
+                OpportunityRow.contract_end_date,
+            )
+            .where(OpportunityRow.id == opportunity_id)
+            .with_for_update()
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return row.outcome, row.outcome_recorded_at, row.contract_end_date
+
+
+async def recorded_outcomes(uow: UnitOfWork) -> list[tuple[UUID, str, datetime, date | None]]:
+    """Story 10.6: `(id, outcome, outcome_recorded_at, contract_end_date)` of every
+    Opportunity with an outcome (the open ones have no retention date), for the retention
+    schedule. Ids and dates only."""
+    rows = await uow.session.execute(
+        select(
+            OpportunityRow.id,
+            OpportunityRow.outcome,
+            OpportunityRow.outcome_recorded_at,
+            OpportunityRow.contract_end_date,
+        ).where(OpportunityRow.outcome.is_not(None))
+    )
+    return [
+        (row.id, row.outcome, row.outcome_recorded_at, row.contract_end_date)
+        for row in rows
+        if row.outcome is not None and row.outcome_recorded_at is not None
+    ]

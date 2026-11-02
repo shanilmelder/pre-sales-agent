@@ -12,8 +12,6 @@ from sqlalchemy.engine import Engine
 from app.main_api import create_app
 from app.platform.config import Settings
 from app.platform.model_gateway.port import ModelUnavailableError
-from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.test_estimates_draft import SIX, detected, drafts, est_line, lines_out
 from tests.test_health import assert_problem
@@ -24,8 +22,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
 
 
 def _get(client: TestClient, headers: dict[str, str], opp_id: str) -> Any:

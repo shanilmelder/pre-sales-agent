@@ -1,9 +1,11 @@
-# Runs the stack from images pushed to GHCR (no local build).
-#   echo $GHCR_TOKEN | docker login ghcr.io -u <github-user> --password-stdin   # token: read:packages
-#   cp .env.example .env
-#   docker compose -f compose.ghcr.yaml pull
-#   docker compose -f compose.ghcr.yaml up --wait -d
-# Pick another tag with PSA_IMAGE_TAG (default: latest).
+# Runs the stack from images pushed to Nexus (no local build, no bind mounts), so it works
+# as a Portainer stack (Stacks > Add stack > paste this file).
+#   1. Portainer > Registries > Add custom registry: nexus.shanilmelder.com + credentials.
+#   docker compose -f compose.nexus.yaml pull
+#   docker compose -f compose.nexus.yaml up --wait -d
+#   2. Set the variables from .env.example in the stack's "Environment variables".
+#   3. Deploy. Pick another tag with PSA_IMAGE_TAG (default: latest).
+# CLI: docker login nexus.shanilmelder.com; docker compose -f compose.nexus.yaml --env-file .env up -d
 name: pre-sales-agent
 
 x-restart: &restart
@@ -15,6 +17,7 @@ x-backend-env: &backend-env
   PSA_LOG_LEVEL: ${PSA_LOG_LEVEL:-INFO}
   PSA_STORAGE_DIR: /var/lib/psa/files
   PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
+  PSA_MODEL_PROFILE_EMBED: ${PSA_MODEL_PROFILE_EMBED:-bge-m3}
 
 services:
   postgres:
@@ -25,9 +28,46 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       PSA_APP_DB_PASSWORD: ${PSA_APP_DB_PASSWORD:?set PSA_APP_DB_PASSWORD in .env}
+      PSA_PURGE_DB_PASSWORD: ${PSA_PURGE_DB_PASSWORD:-}
+    # Portainer has no repo checkout to bind-mount, so the role init scripts (psa_app, and
+    # psa_purge for Story 10.6) are written into the container at start (first start of an
+    # empty volume runs them). Keep in step with ops/postgres/init/.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        cat > /docker-entrypoint-initdb.d/10-app-role.sh <<'EOF'
+        set -e
+        if [ -z "$${PSA_APP_DB_PASSWORD:-}" ]; then
+          echo "10-app-role.sh: PSA_APP_DB_PASSWORD must be set" >&2
+          exit 1
+        fi
+        psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" \
+          -v app_password="$$PSA_APP_DB_PASSWORD" -v db_name="$$POSTGRES_DB" <<'EOSQL'
+        SELECT format('CREATE ROLE psa_app LOGIN PASSWORD %L', :'app_password')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'psa_app')
+        \gexec
+        SELECT format('ALTER ROLE psa_app WITH LOGIN PASSWORD %L', :'app_password')
+        \gexec
+        GRANT CONNECT, TEMPORARY ON DATABASE :"db_name" TO psa_app;
+        EOSQL
+        EOF
+        cat > /docker-entrypoint-initdb.d/20-purge-role.sh <<'EOF'
+        set -e
+        psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" \
+          -v purge_password="$${PSA_PURGE_DB_PASSWORD:-}" -v db_name="$$POSTGRES_DB" <<'EOSQL'
+        SELECT 'CREATE ROLE psa_purge NOLOGIN'
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'psa_purge')
+        \gexec
+        SELECT format('ALTER ROLE psa_purge WITH LOGIN PASSWORD %L', :'purge_password')
+        WHERE :'purge_password' <> ''
+        \gexec
+        GRANT CONNECT ON DATABASE :"db_name" TO psa_purge;
+        EOSQL
+        EOF
+        exec docker-entrypoint.sh postgres
     volumes:
       - pgdata:/var/lib/postgresql
-      - ./ops/postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:${PSA_POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -36,6 +76,21 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # One-shot: applies Alembic migrations as the schema owner on every deploy, then exits.
+  # api and worker wait for it, so they never start against an unmigrated schema.
+  migrate:
+    image: nexus.shanilmelder.com/pre-sales-agent/pre-sales-agent-api:${PSA_IMAGE_TAG:-latest}
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *backend-env
+      PSA_MIGRATIONS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    healthcheck:
+      disable: true
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   api:
     <<: *restart
@@ -47,17 +102,13 @@ services:
       PSA_UPLOAD_MAX_BYTES: ${PSA_UPLOAD_MAX_BYTES:-52428800}
       PSA_KNOWLEDGE_STALE_MONTHS: ${PSA_KNOWLEDGE_STALE_MONTHS:-12}
       PSA_DOWNLOAD_SIGNING_KEY: ${PSA_DOWNLOAD_SIGNING_KEY:-local-dev-download-signing-key-change-me}
-      # The worker's chat model settings, for the Admin Agents view (no key: no chat calls).
-      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
-      PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
-      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - files:/var/lib/psa/files
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${PSA_API_PORT:-8000}:8000"
     healthcheck:
@@ -68,8 +119,8 @@ services:
         - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)"
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 10s
+      retries: 6
+      start_period: 40s
 
   worker:
     <<: *restart
@@ -85,21 +136,23 @@ services:
       LANGGRAPH_STRICT_MSGPACK: "true"
       PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
       PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
-      PSA_MODEL_PROFILE_CHAT: ${PSA_MODEL_PROFILE_CHAT:-demo-chat}
       PSA_OPENAI_BASE_URL: ${PSA_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       PSA_OPENAI_API_KEY: ${PSA_OPENAI_API_KEY:-}
-      PSA_OPENAI_MODEL: ${PSA_OPENAI_MODEL:-}
-      PSA_OPENAI_REASONING_EFFORT: ${PSA_OPENAI_REASONING_EFFORT:-}
+      # Anthropic's API for `anthropic` profiles (anthropic-chat). It sends prompt text to a
+      # cloud: sample or anonymised Opportunities only.
+      PSA_ANTHROPIC_API_KEY: ${PSA_ANTHROPIC_API_KEY:-}
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}
       PSA_MODEL_MAX_RETRIES: ${PSA_MODEL_MAX_RETRIES:-2}
       PSA_MODEL_TIMEOUT_S: ${PSA_MODEL_TIMEOUT_S:-120}
+      # Story 10.6: the purge role's URL, worker only (blank: the purge deletes nothing).
+      PSA_PURGE_DATABASE_URL: ${PSA_PURGE_DATABASE_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - files:/var/lib/psa/files
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -126,7 +179,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${PSA_WEB_PORT:-3000}:3000"
+      - "${PSA_WEB_BIND:-0.0.0.0}:${PSA_WEB_PORT:-8192}:3000"
     healthcheck:
       test:
         - CMD

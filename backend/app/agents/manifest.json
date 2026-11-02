@@ -1,17 +1,13 @@
 {
   "contract_version": "1",
   "profiles": {
-    "demo-chat": {
+    "anthropic-chat": {
+      "model": "claude-opus-5-5",
+      "provider": "anthropic"
+    },
+    "ollama-cloud-chat": {
       "model": "gpt-oss:120b-cloud",
       "provider": "ollama"
-    },
-    "local-chat": {
-      "model": "qwen3:8b",
-      "provider": "ollama"
-    },
-    "local-chat-openai": {
-      "model": "qwen3:8b",
-      "provider": "openai"
     },
     "openai-chat": {
       "model": "gpt-4.1-mini",
@@ -119,7 +115,7 @@
       "input": {
         "1": {
           "contract_version": "1",
-          "sha256": "7ab481abdd2f45f7841eb1caddbf20ceabffe689ce57c0f799d5595958dec2f6"
+          "sha256": "d9544e9f9d2f608eb41a06821e891e0c13b872a2da6dd4021f68a7283237e01d"
         }
       },
       "output": {
@@ -175,7 +171,7 @@
       "input": {
         "1": {
           "contract_version": "1",
-          "sha256": "7ab481abdd2f45f7841eb1caddbf20ceabffe689ce57c0f799d5595958dec2f6"
+          "sha256": "d9544e9f9d2f608eb41a06821e891e0c13b872a2da6dd4021f68a7283237e01d"
         }
       },
       "output": {
@@ -203,7 +199,7 @@
       "input": {
         "1": {
           "contract_version": "1",
-          "sha256": "7ab481abdd2f45f7841eb1caddbf20ceabffe689ce57c0f799d5595958dec2f6"
+          "sha256": "d9544e9f9d2f608eb41a06821e891e0c13b872a2da6dd4021f68a7283237e01d"
         }
       },
       "output": {

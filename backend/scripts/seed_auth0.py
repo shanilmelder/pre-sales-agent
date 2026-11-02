@@ -37,6 +37,9 @@ from app.modules.identity.domain.role_permissions import (  # noqa: F401 - re-ex
     ROLE_PERMISSIONS,
 )
 from app.modules.identity.domain.roles import Role
+            Action.REGISTRY_MODEL_PROFILE_MANAGE,
+            # Admin > Retention (Story 10.6): platform administrators only, read only.
+            Action.RETENTION_READ,
 
 PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.USER_LIST: "List users and their roles (Admin > Users & roles)",
@@ -61,6 +64,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.REGISTRY_AGENT_REGISTER: "Register Agents in the Agent Registry",
     Action.REGISTRY_AGENT_CONFIG_CREATE: "Create a new config version of an Agent",
     Action.REGISTRY_AGENT_SET_STATUS: "Enable, disable or set an Agent to eval only",
+    Action.REGISTRY_MODEL_PROFILE_MANAGE: "Manage chat model profiles and approved models",
     Action.FINDING_OVERRIDE: "Override a Critic or Red Team Finding with a reason",
     Action.NOTIFICATION_READ: "Read and mark read one's own Inbox items",
     Action.ACTUAL_RECORD: "Record Actuals on Opportunities one can read",
@@ -71,6 +75,7 @@ PERMISSION_DESCRIPTIONS: Mapping[Action, str] = {
     Action.OUTCOME_RECORD: "Close any Opportunity as lost or mark it won",
     Action.CONTRACT_END_DATE_UPDATE: "Change a won Opportunity's contract end date",
     Action.OUTCOME_REOPEN: "Reopen an Opportunity that has an outcome",
+    Action.RETENTION_READ: "Read the Opportunities due for purge and the recent purges",
 }
 
 TIMEOUT = 30.0

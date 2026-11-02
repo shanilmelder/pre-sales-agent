@@ -1,0 +1,10 @@
+From Owen Hartley, 9 Nov 2026 - answers to your clarification questions
+
+Test system: we've decided you get a dedicated CarePoint test system, a copy of production
+refreshed monthly with synthetic patients. It will be available from 11 January 2027.
+
+Patient sign-in: patients will use the national citizen login. Trust-managed accounts are
+out of scope. Proxy (carer) access goes through the same login.
+
+Clinical safety officer: Dr Okafor confirms two days a month, and will review the hazard
+log at each design milestone.

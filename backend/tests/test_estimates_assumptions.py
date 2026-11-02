@@ -43,17 +43,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
-
-
-@pytest.fixture(autouse=True)
-def _proposal_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        estimates_assumptions,
-        "proposal_settings",
-        lambda: Settings(model_profile_chat="demo-chat"),
-    )
 
 
 FOUR = (
@@ -337,7 +326,7 @@ def test_proposals_are_stored_unaccepted_and_priced_into_the_totals(
     assert "Clarification Question:" in user.content
     assert request.output_model is AssumptionsOutput
     assert request.caller.run_id == version["id"]
-    assert (request.profile, request.priority) == ("demo-chat", "background")
+    assert (request.profile, request.priority) == ("ollama-cloud-chat", "background")
 
     # Privacy: no Gap, line or Assumption text in logs or the trace.
     logged = caplog.text + str([r.__dict__ for r in caplog.records])

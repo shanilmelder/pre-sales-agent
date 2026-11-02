@@ -20,10 +20,7 @@ from app.platform.actor import Actor
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.uow import unit_of_work
-from tests import test_assessments_red_team as red_team_tests
-from tests import test_estimates_assumptions as assumption_tests
 from tests import test_estimates_draft as draft_tests
-from tests import test_gaps_detection as detection_tests
 from tests import test_intake_extraction as extraction_tests
 from tests.conftest import run_async
 from tests.test_assessments_findings_decisions import override
@@ -40,10 +37,6 @@ storage_dir = extraction_tests.storage_dir
 _hidden_jobs = extraction_tests._hidden_jobs
 gateway = extraction_tests.gateway
 client = extraction_tests.client
-_chat_profile = detection_tests._chat_profile
-_draft_profile = draft_tests._draft_profile
-_review_profile = red_team_tests._review_profile
-_proposal_profile = assumption_tests._proposal_profile
 
 SUBMITTED = "estimates.estimate_version.submitted"
 SUPERSEDED = "estimates.estimate_version.superseded"

@@ -7,7 +7,8 @@ outright has its job reclaimed by another worker once the lease expires).
 
 Job types are registered by importing the modules that define them (see `_JOB_MODULES`).
 The process's ModelGateway (one per process: its semaphore bounds concurrent model calls) is
-created here and installed for handlers (`app.platform.model_gateway.provider`).
+created here, with the registry's resolver for custom chat profiles, and installed for handlers
+(`app.platform.model_gateway.provider`).
 
 Story 5.2: the worker also opens the LangGraph checkpointer's connection pool and installs
 the graph runner (`app.orchestration.runner`) as `workflows`' runner hook, so only this
@@ -29,6 +30,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.modules.registry.application import public as registry
 from app.platform.config import Settings, get_settings
 from app.platform.db import create_engine
 from app.platform.ids import new_id
@@ -59,7 +61,24 @@ _JOB_MODULES: tuple[str, ...] = (
     "app.modules.opportunities.application.imports",
     "app.modules.reviews.application.reminders",
     "app.modules.actuals.application.imports",
+    "app.modules.registry.application.jobs",
     "app.platform.alerts.jobs",
+    "app.platform.purge.job",
+)
+# Story 10.6: modules whose import registers their retention purge step (and, for
+# opportunities, the retention selector; for workflows, the run ids). Worker only.
+_PURGE_MODULES: tuple[str, ...] = (
+    "app.modules.notifications.application.purge",
+    "app.modules.reviews.application.purge",
+    "app.modules.actuals.application.purge",
+    "app.modules.conflicts.application.purge",
+    "app.modules.assessments.application.purge",
+    "app.modules.estimates.application.purge",
+    "app.modules.gaps.application.purge",
+    "app.modules.intake.application.purge",
+    "app.modules.knowledge.application.purge",
+    "app.modules.workflows.application.purge",
+    "app.modules.opportunities.application.purge",
 )
 _JITTER = 0.2
 EXECUTE_JOB_TYPE = "workflows.execute"
@@ -70,7 +89,7 @@ SCHEDULE_CHECK_S = 60.0
 
 
 def load_job_types() -> None:
-    for name in _JOB_MODULES:
+    for name in (*_JOB_MODULES, *_PURGE_MODULES):
         importlib.import_module(name)
 
 
@@ -183,7 +202,7 @@ async def run(
     stack = contextlib.AsyncExitStack()
     try:
         if models is None:
-            models = ModelGateway(settings, db)
+            models = ModelGateway(settings, db, resolve_profile=registry.profile_resolver(db))
         model_gateway.install(models)
         # Only a worker that claims `workflows.execute` or `workflows.resume` jobs needs the
         # graph runner.

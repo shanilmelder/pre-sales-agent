@@ -71,6 +71,9 @@ class Action(StrEnum):
     REGISTRY_AGENT_REGISTER = "registry.agent.register"
     REGISTRY_AGENT_CONFIG_CREATE = "registry.agent_config.create"
     REGISTRY_AGENT_SET_STATUS = "registry.agent.set_status"
+    REGISTRY_MODEL_PROFILE_MANAGE = "registry.model_profile.manage"
+    """Read and change custom chat model profiles and the approved-model allowlist (platform
+    administrators only)."""
     DECISION_RESOLVE = "workflows.decision.resolve"
     REVIEW_REQUEST_CREATE = "reviews.review_request.create"
     """Story 9.1: send Review Requests for a submitted Estimate Version, and list the
@@ -124,6 +127,10 @@ class Action(StrEnum):
     REPORTING_REPORT_READ = "reporting.report.read"
     """Story 10.3: read Reports (estimate versus actual across the Opportunities one can
     read). Head of Delivery and platform administrators only (a permission, no relation)."""
+    RETENTION_READ = "platform.retention.read"
+    """Story 10.6: read Admin > Retention (the Opportunities due for purge in the next 30 days
+    and the recent purges; ids, outcomes and dates only). Platform administrators only (a
+    permission, no relation). Nothing can be deleted through the API."""
     NOTIFICATION_READ = "notifications.notification.read"
     """Story 9.2: read and mark read one's own Inbox items (every role, `ANY_ROLE_GRANTS`)."""
     # Story 5.4: the ToolGateway's READ tools (`app.platform.tool_gateway.catalogue`). Agents
@@ -207,6 +214,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.REGISTRY_AGENT_REGISTER: _W,
         Action.REGISTRY_AGENT_CONFIG_CREATE: _W,
         Action.REGISTRY_AGENT_SET_STATUS: _W,
+        Action.REGISTRY_MODEL_PROFILE_MANAGE: _W,
         Action.DECISION_RESOLVE: _A,
         Action.REVIEW_REQUEST_CREATE: _S,
         Action.REVIEW_REQUEST_CANCEL: _D,
@@ -225,6 +233,7 @@ ACTION_CATEGORIES: Mapping[Action, PermissionCategory] = MappingProxyType(
         Action.CONTRACT_END_DATE_UPDATE: _W,
         Action.OUTCOME_REOPEN: _W,
         Action.REPORTING_REPORT_READ: _R,
+        Action.RETENTION_READ: _R,
         Action.TOOL_REQUIREMENT_LIST: _R,
         Action.TOOL_PASSAGE_READ: _R,
         Action.TOOL_CHUNK_READ: _R,

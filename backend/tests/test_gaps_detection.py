@@ -66,13 +66,6 @@ ITEMS = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _chat_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        gaps_detection, "detection_settings", lambda: Settings(model_profile_chat="demo-chat")
-    )
-
-
 def gap(
     title: str,
     related: list[str],
@@ -327,7 +320,7 @@ def test_detection_stores_ranked_gaps_with_drafted_questions(
     assert "Prices in EUR." in user.content
     assert request.caller.agent_id == "clarification_agent"
     assert request.caller.run_id == detection["id"]
-    assert (request.profile, request.priority) == ("demo-chat", "background")
+    assert (request.profile, request.priority) == ("ollama-cloud-chat", "background")
     assert request.output_model is ClarificationOutput
 
     # Privacy: no Requirement, Gap or question text in logs or the trace.

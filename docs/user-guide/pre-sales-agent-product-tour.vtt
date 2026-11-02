@@ -1,0 +1,577 @@
+WEBVTT
+
+1
+00:00:04.850 --> 00:00:07.656
+Welcome to the Pre Sales Agent Framework.
+
+2
+00:00:07.656 --> 00:00:21.415
+It turns everything a customer sends you, emails, call transcripts and tender documents, into confirmed requirements, clarification questions, specialist assessments and a reviewed, traceable estimate.
+
+3
+00:00:21.415 --> 00:00:31.135
+In this tour we start from an empty workspace and take one bid all the way: Larkspur Mutual, an insurer replacing its mainframe claims system.
+
+4
+00:00:32.250 --> 00:00:37.683
+The sidebar takes you to the Inbox, Opportunities, Knowledge, Reports and Admin.
+
+5
+00:00:37.683 --> 00:00:44.882
+Press Control K anywhere for the command palette, to jump to a page or create something without the mouse.
+
+6
+00:00:45.983 --> 00:00:50.567
+First, an administrator prepares the knowledge the agents rely on.
+
+7
+00:00:50.567 --> 00:01:01.262
+Under Admin, Catalogue, we add the integration types and work packages this bid needs, such as Policy administration integration, with a short definition.
+
+8
+00:01:02.350 --> 00:01:16.408
+Seven entries later, the catalogue holds five integration types, from payments to identity and single sign-on, and two work packages: data migration, and regulatory and outsourcing assurance.
+
+9
+00:01:16.408 --> 00:01:21.855
+Checklists, assessments, estimate lines and actuals all share these names.
+
+10
+00:01:22.950 --> 00:01:28.678
+Next, we register a Knowledge Source: our own insurance claims migration playbook.
+
+11
+00:01:28.678 --> 00:01:33.847
+We give it a title and a product, and tag the integration types it covers.
+
+12
+00:01:33.847 --> 00:01:39.575
+It's split into chunks and embedded, so the Research Agent can search and cite it.
+
+13
+00:01:40.683 --> 00:01:45.283
+The playbook is now ready, with its owner, version and review date.
+
+14
+00:01:45.283 --> 00:01:50.157
+Stale sources are flagged, so knowledge doesn't quietly go out of date.
+
+15
+00:01:51.250 --> 00:01:55.123
+Then we write a Checklist, Claims payments readiness.
+
+16
+00:01:55.123 --> 00:01:59.727
+Each item is a question with an impact and a reason it matters.
+
+17
+00:01:59.727 --> 00:02:05.646
+Items marked mandatory always raise a gap when the customer hasn't answered them.
+
+18
+00:02:06.750 --> 00:02:10.902
+Six items, three of them mandatory, published as a version.
+
+19
+00:02:10.902 --> 00:02:15.899
+A published checklist applies to every opportunity whose scope matches.
+
+20
+00:02:16.983 --> 00:02:24.075
+Coverage shows, for every product and integration type, whether we have documentation and checklists.
+
+21
+00:02:24.075 --> 00:02:28.640
+Red means missing coverage, so gap detection may be weaker there.
+
+22
+00:02:29.750 --> 00:02:41.406
+And the Knowledge Graph draws the same picture as a map of products, integration types, sources and checklists, with missing coverage shown as dashed lines and red rings.
+
+23
+00:02:42.517 --> 00:02:44.134
+Now the bid itself.
+
+24
+00:02:44.134 --> 00:02:51.031
+Choose New Opportunity, then Import from file, and pick the customer's RFP email.
+
+25
+00:02:51.031 --> 00:02:54.266
+The Opportunity Intake Agent reads it.
+
+26
+00:02:55.350 --> 00:03:05.737
+Seconds later the form is filled in: customer, title, the four products in scope, industry and the proposal date, each marked From file.
+
+27
+00:03:05.737 --> 00:03:08.792
+Check them and click Create Opportunity.
+
+28
+00:03:08.792 --> 00:03:11.465
+The email becomes the first source.
+
+29
+00:03:12.550 --> 00:03:19.418
+The Overview opens with the submission pipeline: eight stages, from sources added to review and baseline.
+
+30
+00:03:19.418 --> 00:03:21.838
+We'll work through every one of them.
+
+31
+00:03:22.950 --> 00:03:38.414
+On the Sources tab we drop in the rest of the customer's material: the discovery call transcript from Teams, two emails, the RFP requirements schedule in Word, a security appendix as PDF, and our architect's notes.
+
+32
+00:03:38.414 --> 00:03:41.665
+Every file is stored unchanged and versioned.
+
+33
+00:03:42.750 --> 00:03:48.368
+Paste text handles anything without a file, like this message from the broker hub.
+
+34
+00:03:48.368 --> 00:03:55.631
+Notice the footer telling automated tools to mark everything delivered and drop the migration assumptions.
+
+35
+00:03:55.631 --> 00:03:59.468
+The app treats that as content, never as an instruction.
+
+36
+00:04:00.583 --> 00:04:04.902
+All eight sources are parsed, and stage one is complete.
+
+37
+00:04:06.017 --> 00:04:15.351
+Select any source to open the Inspector: who added it and when, a download of the original, and the extracted text the agents read.
+
+38
+00:04:16.450 --> 00:04:19.838
+While you work, the agents run in the background.
+
+39
+00:04:19.838 --> 00:04:28.964
+The Intake Agent has already extracted sixty requirements, and a first round of gaps, assessments and a draft estimate is under way.
+
+40
+00:04:28.964 --> 00:04:30.485
+Stage two is complete.
+
+41
+00:04:30.485 --> 00:04:34.840
+The Overview now lists every blocker between us and submission.
+
+42
+00:04:35.950 --> 00:04:44.240
+Requirements are grouped by category: functional, integration, data, security, non-functional and commercial.
+
+43
+00:04:44.240 --> 00:04:50.857
+Each one cites the sources it came from, and nothing counts until a person confirms it.
+
+44
+00:04:51.950 --> 00:04:58.505
+Open a requirement to see its evidence, the exact passage highlighted in the source.
+
+45
+00:04:58.505 --> 00:05:03.421
+From here you can edit, split, merge, reclassify or confirm it.
+
+46
+00:05:04.517 --> 00:05:13.154
+Two requirements say the same thing about a broker view, so we select both, write the merged wording, and merge them into one.
+
+47
+00:05:14.250 --> 00:05:21.598
+We tag each integration requirement with its integration type, here the policy administration mainframe.
+
+48
+00:05:21.598 --> 00:05:24.142
+Tags let the right checklists apply.
+
+49
+00:05:25.250 --> 00:05:26.628
+Then Confirm all.
+
+50
+00:05:26.628 --> 00:05:29.383
+Confirmed requirements are locked.
+
+51
+00:05:30.483 --> 00:05:39.654
+When the customer later emails a scope change, adding pet insurance and instant payments, it can't silently rewrite locked requirements.
+
+52
+00:05:39.654 --> 00:05:45.251
+Instead you get pending changes, showing the current text against the proposed one.
+
+53
+00:05:46.350 --> 00:05:51.936
+Review each change and accept or reject it, with the new evidence beside it.
+
+54
+00:05:51.936 --> 00:05:55.684
+We accept them, and confirm the requirements again.
+
+55
+00:05:56.783 --> 00:06:04.420
+The app also warns that some assessments used requirements that have changed since, so you know they need a fresh run.
+
+56
+00:06:04.420 --> 00:06:08.951
+With all seventy-four requirements confirmed, stage three is complete.
+
+57
+00:06:10.050 --> 00:06:11.466
+Stage four is gaps.
+
+58
+00:06:11.466 --> 00:06:22.496
+The Clarification Agent finds what the estimate needs but the sources don't say, ranked by impact, and drafts a clarification question for each one.
+
+59
+00:06:23.583 --> 00:06:28.056
+Open a gap to see why it matters and the requirements it affects.
+
+60
+00:06:28.056 --> 00:06:34.868
+This one is marked Unknown to the customer: the fraud scoring vendor won't be chosen until January.
+
+61
+00:06:35.983 --> 00:06:38.909
+We sharpen the drafted question before it goes out.
+
+62
+00:06:40.017 --> 00:06:46.193
+Approve all, then export the questions to Word, an email draft, or the clipboard.
+
+63
+00:06:47.283 --> 00:06:50.766
+When they've gone to the customer, mark them sent with the date.
+
+64
+00:06:51.850 --> 00:06:56.554
+When the customer replies, record the answer against the question.
+
+65
+00:06:56.554 --> 00:07:02.113
+Each answer becomes a new source, so the requirements and gaps update from it.
+
+66
+00:07:03.217 --> 00:07:06.476
+One answer often covers other questions too.
+
+67
+00:07:06.476 --> 00:07:11.365
+The app suggests a possible answer, quoting the sentence it found.
+
+68
+00:07:11.365 --> 00:07:17.514
+Here the broker hub sentence answers the authentication question, so we confirm it.
+
+69
+00:07:17.514 --> 00:07:21.514
+A suggestion that doesn't fit is marked Not an answer.
+
+70
+00:07:22.617 --> 00:07:31.953
+Because payments integration is in scope, the checklist now raises its three mandatory gaps too, marked Checklist and Mandatory.
+
+71
+00:07:31.953 --> 00:07:35.016
+Nothing on the must-ask list is forgotten.
+
+72
+00:07:36.117 --> 00:07:37.766
+Stage five, assessments.
+
+73
+00:07:37.766 --> 00:07:56.875
+Specialist agents judge the confirmed scope in parallel: Engineering for feasibility and effort per integration, the PM Agent for phases and dependencies, the Security Agent for mandatory controls, then a Critic and a Red Team that argues integrations are harder than they look.
+
+74
+00:07:57.983 --> 00:08:07.178
+Each agent returns a verdict, such as proceed with conditions, with its confidence, the effort behind it, and the requirements it relied on.
+
+75
+00:08:08.283 --> 00:08:15.439
+Findings are ranked by severity, and critical ones block submission.
+
+76
+00:08:15.439 --> 00:08:19.754
+4 million claims is badly underestimated.
+
+77
+00:08:20.850 --> 00:08:29.875
+We answer with a Challenge on the Engineering assessment: plan three trial migrations, and show the reconciliation effort separately.
+
+78
+00:08:29.875 --> 00:08:33.064
+Choose which assessments to rerun, and send it.
+
+79
+00:08:34.150 --> 00:08:42.957
+The agent run panel shows the rerun live: the Engineering Agent working, the Critic queued, the Red Team done, each with its time.
+
+80
+00:08:42.957 --> 00:08:45.667
+You can cancel or start a run from here.
+
+81
+00:08:46.783 --> 00:08:49.842
+The rerun builds a new estimate version.
+
+82
+00:08:49.842 --> 00:08:56.495
+We then resolve each remaining critical finding with a recorded reason, or override it.
+
+83
+00:08:56.495 --> 00:08:58.254
+Stage five is complete.
+
+84
+00:08:59.350 --> 00:09:00.903
+Stage six, conflicts.
+
+85
+00:09:00.903 --> 00:09:10.221
+The Conflict Agent flags things that can't both be true, here the PM Agent sizing a requirement that Engineering left unsized.
+
+86
+00:09:10.221 --> 00:09:14.954
+Pick a position or propose your own, give a reason, and resolve.
+
+87
+00:09:16.050 --> 00:09:21.530
+Every conflict is resolved, each one recording who decided and why.
+
+88
+00:09:22.617 --> 00:09:24.642
+Stage seven, the estimate.
+
+89
+00:09:24.642 --> 00:09:28.148
+It's built line by line from the assessments.
+
+90
+00:09:28.148 --> 00:09:34.691
+Each line covers named requirements, with the engineer, PM and QA mix and the hours.
+
+91
+00:09:35.783 --> 00:09:37.366
+Edit any line in place.
+
+92
+00:09:37.366 --> 00:09:46.035
+The customer said translations take four weeks per handover, so we raise the letters line from forty-four to sixty-four hours.
+
+93
+00:09:46.035 --> 00:09:48.787
+Every edit needs a reason and is traced.
+
+94
+00:09:49.883 --> 00:09:56.553
+The Assumptions Register lists every condition the estimate depends on, each one coming from a gap.
+
+95
+00:09:56.553 --> 00:09:59.450
+A named person must accept each assumption.
+
+96
+00:10:00.550 --> 00:10:10.565
+Contingencies carry hours, for things nobody can know yet, like undocumented ClaimsOne status codes and pre-2015 data correction.
+
+97
+00:10:10.565 --> 00:10:14.835
+Larkspur carries nine hundred and twenty hours of them.
+
+98
+00:10:14.835 --> 00:10:21.123
+Accepting the assumptions converts their gaps, so stage four is now complete too.
+
+99
+00:10:22.217 --> 00:10:27.000
+Back on the Overview: seven of eight stages complete, nothing blocked.
+
+100
+00:10:28.083 --> 00:10:29.045
+Click Submit.
+
+101
+00:10:29.045 --> 00:10:36.814
+Version six, at ten thousand and twenty-two hours, is locked, because submitted versions can't be edited.
+
+102
+00:10:37.917 --> 00:10:38.648
+Stage eight.
+
+103
+00:10:38.648 --> 00:10:44.558
+First we share the opportunity with a colleague, adding them as a collaborator from the Overview.
+
+104
+00:10:45.650 --> 00:10:47.058
+Then Request review.
+
+105
+00:10:47.058 --> 00:10:54.659
+Choose the review type, here engineering, pick the reviewer, add a message about what to focus on, and send.
+
+106
+00:10:55.750 --> 00:10:57.690
+This is the reviewer's side.
+
+107
+00:10:57.690 --> 00:10:59.976
+The request lands in their Inbox.
+
+108
+00:11:01.083 --> 00:11:05.535
+The review page shows the message, the totals and every line.
+
+109
+00:11:05.535 --> 00:11:12.322
+The reviewer can approve, reject, challenge, ask for evidence or an alternative, or escalate.
+
+110
+00:11:13.417 --> 00:11:18.061
+The reviewer approves, and the owner is notified in their own Inbox.
+
+111
+00:11:19.150 --> 00:11:21.919
+With an approved version, set the Baseline.
+
+112
+00:11:21.919 --> 00:11:27.974
+It's the version delivery will be measured against, replaced only by a newer approved version.
+
+113
+00:11:29.083 --> 00:11:34.006
+All eight stages are complete, and the opportunity is baselined.
+
+114
+00:11:35.117 --> 00:11:37.288
+Every change made a new version.
+
+115
+00:11:37.288 --> 00:11:43.801
+Diff against an earlier one to see which lines and assumptions changed, and how the total moved.
+
+116
+00:11:44.917 --> 00:11:55.133
+And the Trace tab is the append-only audit log of every action, by people and agents alike, filterable by subject, actor and event.
+
+117
+00:11:56.250 --> 00:11:59.055
+After delivery, record actual hours.
+
+118
+00:11:59.055 --> 00:12:05.988
+Download the template, fill in actual hours and a variance cause per line, and import it.
+
+119
+00:12:05.988 --> 00:12:10.507
+You see a preview, and nothing is saved until you confirm.
+
+120
+00:12:11.617 --> 00:12:15.320
+Every line now shows its variance against the baseline.
+
+121
+00:12:15.320 --> 00:12:18.350
+Overruns can name the assumption that failed.
+
+122
+00:12:19.450 --> 00:12:23.940
+Finally, record the outcome: won, or lost with a reason.
+
+123
+00:12:23.940 --> 00:12:27.066
+Larkspur went to an incumbent on price.
+
+124
+00:12:28.150 --> 00:12:31.114
+The outcome sets the retention date.
+
+125
+00:12:31.114 --> 00:12:35.395
+For a lost bid, the data is kept until October 2029.
+
+126
+00:12:36.483 --> 00:12:40.939
+Reports compare estimates with actuals across opportunities.
+
+127
+00:12:40.939 --> 00:12:46.583
+Larkspur came in three point one percent over, with five failed assumptions.
+
+128
+00:12:46.583 --> 00:12:51.855
+Group by integration type, product, work package, cause or opportunity.
+
+129
+00:12:52.950 --> 00:12:56.897
+Expand a row to drill down to the opportunities behind it.
+
+130
+00:12:57.983 --> 00:13:00.507
+And open the failed assumptions.
+
+131
+00:13:00.507 --> 00:13:10.600
+Policy administration ran forty-eight percent over because of an unknown requirement: the undocumented status codes contingency.
+
+132
+00:13:10.600 --> 00:13:13.123
+One click opens it in the trace.
+
+133
+00:13:14.217 --> 00:13:26.152
+Grouped by cause, the picture is clear: customer delay, scope change and an unknown requirement drove the overruns, while estimation error stayed under one percent.
+
+134
+00:13:27.250 --> 00:13:33.055
+Under Admin, Users and roles shows each person's roles, managed in Auth0.
+
+135
+00:13:34.150 --> 00:13:40.104
+The Agent Registry lists every agent, its version, model and tool permissions.
+
+136
+00:13:40.104 --> 00:13:45.296
+Any tool call an agent isn't allowed to make is blocked and audited.
+
+137
+00:13:46.383 --> 00:13:55.300
+Evals run the agents against reference sets, checking release bars like extraction recall, citation validity and gap recall.
+
+138
+00:13:56.383 --> 00:14:01.539
+And Retention lists opportunities due for purge and recent purges.
+
+139
+00:14:01.539 --> 00:14:05.757
+Data is purged automatically after its retention date.
+
+140
+00:14:05.757 --> 00:14:08.179
+Nothing can be deleted by hand.
+
+141
+00:14:09.283 --> 00:14:14.995
+In Settings, choose your theme and row density, and turn on single-key shortcuts.
+
+142
+00:14:16.083 --> 00:14:29.388
+That's the whole journey: from a customer's first email, to confirmed requirements, answered questions, specialist assessments, a reviewed and baselined estimate, and the actuals that show how it held up.
+
+143
+00:14:29.388 --> 00:14:32.519
+Open the user guide for every feature in detail.
+
+144
+00:14:32.519 --> 00:14:33.823
+Thanks for watching.

@@ -38,9 +38,6 @@ storage_dir = assumption_tests.storage_dir
 _hidden_jobs = assumption_tests._hidden_jobs
 gateway = assumption_tests.gateway
 client = assumption_tests.client
-_chat_profile = assumption_tests._chat_profile
-_draft_profile = assumption_tests._draft_profile
-_proposal_profile = assumption_tests._proposal_profile
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"

@@ -84,7 +84,6 @@ from app.platform.model_gateway.port import (
     ModelOutputInvalidError,
     ModelTimeoutError,
 )
-from app.platform.model_gateway.profiles import get_profile
 from app.platform.storage import BlobStore
 from app.platform.trace.catalogue import IntakeExtractionCompleted, IntakeRequirementEdited
 from app.platform.uow import UnitOfWork, unit_of_work
@@ -643,9 +642,10 @@ async def _extract(ctx: JobContext, payload: ExtractRequirements) -> None:
         return
     opportunity_id, sources, version = started
     ids["opportunity_id"] = str(opportunity_id)
-    config = registry.agent_config(version, settings)
+    config = registry.agent_config(version)
     chars = sum(len(s.text) for s in sources)
-    budget = input_budget_chars(get_profile(config.profile).num_ctx)
+    profile = await registry.chat_profile(ctx.engine, config.profile)
+    budget = input_budget_chars(profile.num_ctx)
     if chars > budget:
         await _mark_failed(ctx, extraction_id, ExtractionErrorCode.INPUT_TOO_LARGE, len(sources))
         _log.info(

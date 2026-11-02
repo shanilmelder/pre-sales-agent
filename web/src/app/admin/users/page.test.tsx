@@ -82,8 +82,10 @@ describe("/admin/users", () => {
     expect(within(sections).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "Users and roles",
       "Agents",
+      "Model profiles",
       "Catalogue",
       "Evals",
+      "Retention",
     ]);
     expect(
       within(sections).getByRole("link", { name: "Users and roles" }).getAttribute("aria-current"),

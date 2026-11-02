@@ -29,6 +29,15 @@ class Settings(BaseSettings):
             "unset. The app itself connects as the least-privileged psa_app role."
         ),
     )
+    purge_database_url: str | None = Field(
+        default=None,
+        description=(
+            "Story 10.6: URL of the privileged `psa_purge` role, which may DELETE Opportunity "
+            "data. Set on the worker only and read only by the daily `platform.purge` job; the "
+            "api and every other job use database_url. Unset or blank: the job logs "
+            "`purge.not_configured` and deletes nothing."
+        ),
+    )
     db_connect_timeout_s: float = Field(default=2.0, gt=0)
     auth0_domain: str = Field(
         default="",
@@ -210,27 +219,20 @@ class Settings(BaseSettings):
             "sends `Authorization: Bearer <key>`; when unset, no auth header is sent."
         ),
     )
-    openai_model: str | None = Field(
+    anthropic_api_key: SecretStr | None = Field(
         default=None,
         description=(
-            "Optional model id that every profile with provider `openai` sends instead of its "
-            "own (e.g. `gpt-4.1` with `openai-chat`), so the model is a `.env` change. Empty "
-            "or unset keeps the profile's model. Ollama profiles ignore it."
-        ),
-    )
-    openai_reasoning_effort: str | None = Field(
-        default=None,
-        description=(
-            "Set when the `openai`-provider model is a reasoning model (OpenAI's o-series, "
-            "GPT-5): requests then send this `reasoning_effort` (e.g. `low`, `medium`, `high`) "
-            "and no `temperature`, which those models reject. Empty or unset: a regular model."
+            "API key for profiles with provider `anthropic`. Empty or unset: nothing else "
+            "changes, and a call on such a profile fails with `missing_api_key`."
         ),
     )
     model_profile_chat: str = Field(
-        default="demo-chat",
+        default="ollama-cloud-chat",
         description=(
-            "Named model profile (`app.platform.model_gateway.profiles`) used for chat calls. "
-            "`demo-chat` sends prompt text to Ollama's cloud: sample or anonymised data only."
+            "Default model profile (`app.platform.model_gateway.profiles`) for chat calls that "
+            "name none: the smoke test and the evals. An Agent always calls the profile its "
+            "config version pins. `ollama-cloud-chat` sends prompt text to Ollama's cloud: "
+            "sample or anonymised data only."
         ),
     )
     model_profile_embed: str = Field(
@@ -367,10 +369,10 @@ class Settings(BaseSettings):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
-    @field_validator("openai_model", "openai_reasoning_effort", mode="before")
+    @field_validator("purge_database_url", mode="before")
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
-        # An empty value in `.env` (`PSA_OPENAI_MODEL=`) means "use the profile's own".
+        # An empty value in `.env` means unset.
         if isinstance(value, str):
             return value.strip() or None
         return value

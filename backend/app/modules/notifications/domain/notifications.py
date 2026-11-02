@@ -35,6 +35,12 @@ class NotificationKind(StrEnum):
     """Story 9.5: a reviewer raised a Challenge; the Opportunity's owner confirms or declines."""
     CHALLENGE_DECLINED = "challenge_declined"
     """Story 9.5: the owner declined the challenger's Challenge, with a reason."""
+    CHALLENGE_COMPLETED = "challenge_completed"
+    """Story 9.6: a Challenge's reassessment created a new Estimate Version; to the owner and
+    the challenger."""
+    CHALLENGE_FAILED = "challenge_failed"
+    """Story 9.6: a Challenge's reassessment failed or was cancelled; the challenged version
+    is unchanged. To the owner and the challenger."""
 
 
 class ChannelName(StrEnum):
@@ -66,6 +72,8 @@ KIND_GROUP: dict[NotificationKind, InboxGroup] = {
     NotificationKind.REVIEW_REPLIED: InboxGroup.REVIEWS,
     NotificationKind.CHALLENGE_RAISED: InboxGroup.CHALLENGES,
     NotificationKind.CHALLENGE_DECLINED: InboxGroup.CHALLENGES,
+    NotificationKind.CHALLENGE_COMPLETED: InboxGroup.CHALLENGES,
+    NotificationKind.CHALLENGE_FAILED: InboxGroup.CHALLENGES,
 }
 
 

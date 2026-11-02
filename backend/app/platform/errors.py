@@ -592,6 +592,34 @@ class RegistryAgentDuplicateError(ConflictError):
     title = "Agent already registered"
 
 
+class RegistryModelProfileDuplicateError(ConflictError):
+    """A chat model profile was created with the name of a custom or built-in profile."""
+
+    code = "registry_model_profile_duplicate"
+    title = "Model profile already exists"
+
+
+class RegistryModelProfileInUseError(ConflictError):
+    """A chat model profile an Agent's current config version pins can't be retired."""
+
+    code = "registry_model_profile_in_use"
+    title = "Model profile in use"
+
+
+class RegistryModelProfileNotRetestableError(ConflictError):
+    """Only a chat model profile that is `failed` or `untested` can be tested again."""
+
+    code = "registry_model_profile_not_retestable"
+    title = "Model profile can't be tested again"
+
+
+class RegistryApprovedModelDuplicateError(ConflictError):
+    """The provider and model are already on the approved-model allowlist."""
+
+    code = "registry_approved_model_duplicate"
+    title = "Model already approved"
+
+
 class GoneError(ProblemError):
     """The resource existed but no longer can be used (410)."""
 
@@ -745,10 +773,18 @@ class ModelUnavailableProblem(ProblemError):
 
 class RegistryConfigNotDeployedError(UnprocessableError):
     """A config version references a prompt, schema or model profile that is not in the
-    deployed manifest (Story 7.1)."""
+    deployed manifest (Story 7.1), or a custom profile that isn't `verified`."""
 
     code = "registry_config_not_deployed"
     title = "Config not deployed"
+
+
+class RegistryModelNotApprovedError(UnprocessableError):
+    """A chat model profile names a provider and model that aren't on the approved-model
+    allowlist."""
+
+    code = "registry_model_not_approved"
+    title = "Model not approved"
 
 
 class RegistryPermissionForbiddenForAgentsError(UnprocessableError):

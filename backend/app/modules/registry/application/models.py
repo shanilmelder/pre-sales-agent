@@ -6,6 +6,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
+from app.modules.registry.domain.model_profiles import (
+    NUM_CTX_MAX,
+    NUM_CTX_MIN,
+    TEMPERATURE_MAX,
+    CustomProvider,
+    ProfileState,
+)
 from app.modules.registry.domain.registry import AgentStatus
 
 
@@ -41,22 +48,17 @@ class AgentConfigVersionList(BaseModel):
 
 
 class EffectiveModel(BaseModel):
-    """The model profile and model an Agent's current config version actually calls in this
-    deployment. `profile` is `PSA_MODEL_PROFILE_CHAT` when that local-dev override is set
-    (`overridden`), else the version's pinned `model_profile`. `model` is the profile's
-    model, after `PSA_OPENAI_MODEL` for an `openai` provider profile; null when the profile
-    is not defined in this deployment."""
+    """The model profile an Agent's current config version pins and that profile's model;
+    `model` is null when the profile is neither built in nor stored."""
 
     profile: str
     model: str | None
-    overridden: bool
 
 
 class RegistryAgent(BaseModel):
     """An Agent with its status and current (newest) config version. Only an `active` Agent
     gets new tasks; `disabled` and `eval_only` don't. `effective_model`: what the current
-    config version calls here, which a local-dev override can make differ from its pinned
-    profile."""
+    config version calls."""
 
     id: str
     agent_id: str
@@ -74,7 +76,8 @@ class RegistryAgentList(BaseModel):
 
 class NewAgentConfig(BaseModel):
     """A config version. The prompt, both schema versions and the model profile must be in
-    the deployed manifest (422 `registry_config_not_deployed`), and the output schema must be
+    the deployed manifest, or the profile a `verified` custom one (422
+    `registry_config_not_deployed`), and the output schema must be
     written for the deployed `AgentResult` contract version (422
     `registry_config_incompatible_contract`). `tool_permissions`: action names
     (`<module>.<entity>.<verb>`), at most 50; `budgets`: at most 20 keys."""
@@ -114,7 +117,8 @@ class ToolPermissionOption(BaseModel):
 
 class AgentConfigOptions(BaseModel):
     """What a new config version of this Agent may reference, from the deployed manifest
-    (Story 7.3): the model profiles, the Agent's deployed prompt versions, its input schema
+    (Story 7.3): the model profiles (with `verified` custom ones), the Agent's deployed prompt
+    versions, its input schema
     versions and its output schema versions written for the deployed contract version, and
     the grantable tool permissions (`read` actions that are ToolGateway tools, Story 7.4).
     Each list is sorted."""
@@ -153,6 +157,72 @@ class ToolDenialPage(BaseModel):
     page: int = Field(ge=1)
     page_size: int = Field(ge=1)
     total: int = Field(ge=0)
+
+
+ReasoningEffort = Literal["low", "medium", "high"]
+
+
+class ModelProfileView(BaseModel):
+    """A custom chat model profile. `state` `untested` means its live test is queued or
+    running. `error_code`, `latency_ms` and `tested_at` are its latest test result (null
+    before a result). `temperature` is null for a reasoning profile."""
+
+    id: str
+    name: str
+    provider: CustomProvider
+    model: str
+    num_ctx: int
+    temperature: float | None
+    reasoning_effort: str | None
+    state: ProfileState
+    error_code: str | None
+    latency_ms: int | None
+    tested_at: datetime | None
+    created_at: datetime
+
+
+class ModelProfileList(BaseModel):
+    """Custom chat model profiles, newest first."""
+
+    items: list[ModelProfileView]
+
+
+class NewModelProfile(BaseModel):
+    """A custom chat model profile. `model` must be on the approved-model allowlist for
+    `provider`. Set `temperature` or `reasoning_effort`, not both; `reasoning_effort` needs
+    provider `openai`, and setting neither uses the default temperature. No base URL, API key
+    or other secret: those stay in the environment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: StrictStr
+    provider: CustomProvider
+    model: StrictStr
+    num_ctx: int = Field(ge=NUM_CTX_MIN, le=NUM_CTX_MAX)
+    temperature: float | None = Field(default=None, ge=0, le=TEMPERATURE_MAX)
+    reasoning_effort: ReasoningEffort | None = None
+
+
+class ApprovedModelView(BaseModel):
+    """A provider and model a custom profile may name."""
+
+    id: str
+    provider: CustomProvider
+    model: str
+    created_at: datetime
+
+
+class ApprovedModelList(BaseModel):
+    """The approved-model allowlist, by provider and model."""
+
+    items: list[ApprovedModelView]
+
+
+class NewApprovedModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: CustomProvider
+    model: StrictStr
 
 
 class NewAgent(BaseModel):

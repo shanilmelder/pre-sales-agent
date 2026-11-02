@@ -28,6 +28,8 @@ const SEED: Partial<Record<Role, readonly Permission[]>> = {
     "knowledge.source.retry_parse",
     "knowledge.source.review",
     "opportunities.opportunity.read",
+    "platform.retention.read",
+    "registry.model_profile.manage",
     "reporting.report.read",
   ],
   presales_engineer: ["identity.user.search", "opportunities.opportunity.create"],

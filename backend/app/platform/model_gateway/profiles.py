@@ -1,16 +1,15 @@
-"""Named model profiles. Changing model is a config change (`PSA_MODEL_PROFILE_CHAT`),
-never a code change at the call site: callers name a profile, not a model.
+"""Named model profiles. An Agent's config version pins one, so changing an Agent's model is
+a registry change, never a code change at the call site: callers name a profile, not a model.
 
-`demo-chat` (`gpt-oss:120b-cloud`) sends prompt text to Ollama's cloud. Until IT approves
-that data handling, only sample or anonymised Opportunities may use it. `local-chat`
-(`qwen3:8b`) runs fully on the host for when the cloud is unavailable or not allowed.
+`ollama-cloud-chat` (`gpt-oss:120b-cloud`) sends prompt text to Ollama's cloud. `openai-chat`
+(`gpt-4.1-mini`) is OpenAI's cloud API (`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` plus
+`PSA_OPENAI_API_KEY`). Both send prompt text off the host: until IT approves that data
+handling, only sample or anonymised Opportunities may use them.
 
 Each profile names its provider: `ollama` (native `/api/chat`, the default) or `openai`
-(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`, e.g. vLLM). `local-chat-openai`
-is `qwen3:8b` over the OpenAI-compatible adapter; with the default base URL it is served by
-host Ollama's own `/v1` endpoint. `openai-chat` (`gpt-4.1-mini`) is OpenAI's cloud API
-(`PSA_OPENAI_BASE_URL=https://api.openai.com/v1` plus `PSA_OPENAI_API_KEY`); like
-`demo-chat` it sends prompt text off the host, so the same data rule applies.
+(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`). `anthropic-chat`
+(`claude-opus-5-5`) has provider `anthropic`: Anthropic's API through the official SDK, with
+`PSA_ANTHROPIC_API_KEY`. It too sends prompt text off the host, so the same data rule applies.
 
 Embedding profiles (Story 3.3) live apart, in `EMBED_PROFILES`, picked by
 `PSA_MODEL_PROFILE_EMBED`: `bge-m3` (1024 dims) on host Ollama's `/api/embed`. An embedding
@@ -19,16 +18,20 @@ partial HNSW index, so changing it is a re-embed, not just a config change.
 
 This module has no imports from the app: `app.platform.config` validates the configured
 profile names against `MODEL_PROFILES` and `EMBED_PROFILES` at startup.
+
+`MODEL_PROFILES` holds the built-ins. Platform administrators add custom chat profiles to the
+database (`app.modules.registry`), which this package can't import: the worker injects a
+`ProfileResolver` into its ModelGateway instead. `PSA_MODEL_PROFILE_CHAT` names a built-in.
 """
 
-from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
 
 STRUCTURED_TEMPERATURE = 0.1
 
-Provider = Literal["ollama", "openai"]
+Provider = Literal["ollama", "openai", "anthropic"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,36 +43,53 @@ class ModelProfile:
     """Context window. `ollama`: set explicitly on every request (Ollama's default is much
     smaller). `openai`: OpenAI-style endpoints can't set it per request, so this declares
     what the server must be configured with (vLLM `--max-model-len`, Ollama
-    `OLLAMA_CONTEXT_LENGTH` or a Modelfile); it is not sent."""
+    `OLLAMA_CONTEXT_LENGTH` or a Modelfile); it is not sent. `anthropic`: not sent either; it
+    sizes intake's extraction chunks."""
     temperature: float = STRUCTURED_TEMPERATURE
     provider: Provider = "ollama"
-    """Which adapter serves the profile: `ollama` (`/api/chat`) or `openai`
-    (`/chat/completions` at `PSA_OPENAI_BASE_URL`)."""
+    """Which adapter serves the profile: `ollama` (`/api/chat`), `openai`
+    (`/chat/completions` at `PSA_OPENAI_BASE_URL`) or `anthropic` (the Anthropic SDK)."""
     reasoning_effort: str | None = None
-    """`openai` provider only: set for a reasoning model (OpenAI's o-series, GPT-5), which
-    rejects `temperature`. The request then sends `reasoning_effort` (e.g. `low`, `medium`,
-    `high`) and no `temperature`. None: a regular model, sent `temperature`."""
+    """`openai`: set for a reasoning model (OpenAI's o-series, GPT-5), which rejects
+    `temperature`. The request then sends `reasoning_effort` (e.g. `low`, `medium`, `high`) and
+    no `temperature`. None: a regular model, sent `temperature`. `anthropic`: sent as
+    `output_config.effort`; None leaves it to the model's default. `anthropic` requests never
+    send `temperature`."""
+    max_tokens: int = 16000
+    """`anthropic` provider only: the output limit every request must state. Thinking counts
+    against it."""
+    refusal_fallback: bool = False
+    """`anthropic` provider only: let the API rerun a declined request on its default fallback
+    model."""
 
     def options(self) -> dict[str, float | int]:
         """The `options` object of an Ollama `/api/chat` request (Ollama provider only)."""
         return {"temperature": self.temperature, "num_ctx": self.num_ctx}
 
 
-DEMO_CHAT = ModelProfile(name="demo-chat", model="gpt-oss:120b-cloud", num_ctx=32768)
-LOCAL_CHAT = ModelProfile(name="local-chat", model="qwen3:8b", num_ctx=16384)
-# The server must run qwen3:8b with a 16384-token context (e.g. OLLAMA_CONTEXT_LENGTH=16384).
-LOCAL_CHAT_OPENAI = ModelProfile(
-    name="local-chat-openai", model="qwen3:8b", num_ctx=16384, provider="openai"
+OLLAMA_CLOUD_CHAT = ModelProfile(
+    name="ollama-cloud-chat", model="gpt-oss:120b-cloud", num_ctx=32768
 )
 # OpenAI's cloud API. A non-reasoning model: the adapter always sends `temperature`, which
 # OpenAI's reasoning models reject unless it is 1. `num_ctx` is not sent (the model's own
-# window is far larger); it sizes intake's extraction chunks, kept equal to `demo-chat`.
+# window is far larger); it sizes intake's extraction chunks, kept equal to `ollama-cloud-chat`.
 OPENAI_CHAT = ModelProfile(
     name="openai-chat", model="gpt-4.1-mini", num_ctx=32768, provider="openai"
 )
 
+# Anthropic's API. `num_ctx` is not sent (the model's own window is far larger); it sizes
+# intake's extraction chunks, kept equal to `ollama-cloud-chat`.
+ANTHROPIC_CHAT = ModelProfile(
+    name="anthropic-chat",
+    model="claude-opus-5-5",
+    num_ctx=32768,
+    provider="anthropic",
+    reasoning_effort="medium",
+    refusal_fallback=True,
+)
+
 MODEL_PROFILES: Mapping[str, ModelProfile] = MappingProxyType(
-    {profile.name: profile for profile in (DEMO_CHAT, LOCAL_CHAT, LOCAL_CHAT_OPENAI, OPENAI_CHAT)}
+    {profile.name: profile for profile in (OLLAMA_CLOUD_CHAT, OPENAI_CHAT, ANTHROPIC_CHAT)}
 )
 
 
@@ -92,8 +112,12 @@ BGE_M3 = EmbedProfile(name="bge-m3", model="bge-m3", dims=1024)
 EMBED_PROFILES: Mapping[str, EmbedProfile] = MappingProxyType({BGE_M3.name: BGE_M3})
 
 
+type ProfileResolver = Callable[[str], Awaitable[ModelProfile | None]]
+"""Finds a chat profile by name outside `MODEL_PROFILES`; None when there is no such profile."""
+
+
 class UnknownModelProfileError(LookupError):
-    """A profile name that is not defined here. A programming or config error."""
+    """A profile name that is not defined. A programming or config error."""
 
 
 def get_profile(name: str) -> ModelProfile:
@@ -102,22 +126,6 @@ def get_profile(name: str) -> ModelProfile:
     except KeyError:
         known = ", ".join(sorted(MODEL_PROFILES))
         raise UnknownModelProfileError(f"model profile {name!r} is not defined ({known})") from None
-
-
-def resolve_profile(
-    name: str, *, openai_model: str | None, openai_reasoning_effort: str | None
-) -> ModelProfile:
-    """The named profile as it is called. For an `openai` provider profile,
-    `PSA_OPENAI_MODEL` and `PSA_OPENAI_REASONING_EFFORT` (when set) replace its model and
-    reasoning effort; other profiles are returned as defined."""
-    profile = get_profile(name)
-    if profile.provider != "openai":
-        return profile
-    return replace(
-        profile,
-        model=openai_model or profile.model,
-        reasoning_effort=openai_reasoning_effort or profile.reasoning_effort,
-    )
 
 
 def get_embed_profile(name: str) -> EmbedProfile:

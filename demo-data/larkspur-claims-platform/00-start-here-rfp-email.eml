@@ -1,0 +1,35 @@
+From: Declan Moran <declan.moran@larkspur-mutual.example>
+To: Alex Chen <alex.chen@vendor.example>
+Subject: RFP - Larkspur Mutual claims platform replacement
+Date: Tue, 13 Oct 2026 10:15:02 +0100
+Message-ID: <larkspur-rfp-1013@larkspur-mutual.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Dear Alex,
+
+Larkspur Mutual is a member-owned general insurer with about 410,000 policies across home,
+motor and travel. We are replacing our claims system, ClaimsOne, a 2004 in-house
+application that runs on the same mainframe as our policy administration system.
+
+Scope of the RFP:
+
+- A claims platform covering first notification of loss (FNOL), triage, handling,
+  reserving, settlement and recoveries for home, motor and travel claims.
+- Online claim submission for members, with photo upload, and a broker view.
+- Integration with our policy administration system (mainframe), our finance ERP for
+  reserve and payment postings, our bank for claim payments, and our document system for
+  letters.
+- Migration of open claims and seven years of closed claims history.
+
+Industry: Insurance (general insurance, mutual). Products we expect: claims management
+platform, member self-service, payments integration, data migration.
+
+Please join a discovery call on Thursday 15 October with our COO Aoife Brennan, head of
+IT Ronan Gallagher and claims operations lead Martina Kelly. Responses are due on
+27 November 2026.
+
+Regards,
+Declan Moran
+Procurement Manager, Larkspur Mutual

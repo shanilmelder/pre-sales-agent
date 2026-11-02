@@ -67,7 +67,12 @@ export function isReviewKind(kind: NotificationKind): boolean {
   return REVIEW_KINDS.includes(kind);
 }
 
-const CHALLENGE_KINDS: readonly NotificationKind[] = ["challenge_raised", "challenge_declined"];
+const CHALLENGE_KINDS: readonly NotificationKind[] = [
+  "challenge_raised",
+  "challenge_declined",
+  "challenge_completed",
+  "challenge_failed",
+];
 
 /** The label at the right of a row and in the detail's header (Story 9.5: "Challenge"). */
 export function kindLabel(kind: NotificationKind): "Review" | "Challenge" | "Update" {
@@ -136,6 +141,10 @@ export function itemBody(item: InboxItem): string {
       return `${who} challenged this${where}. Confirm which Assessments rerun, or decline.`;
     case "challenge_declined":
       return `Your Challenge${where} was declined. The reason is below.`;
+    case "challenge_completed":
+      return `The reassessment${where} created a new Estimate Version. Open it to see what changed.`;
+    case "challenge_failed":
+      return `The reassessment${where} didn't finish, so no new version was created.`;
   }
 }
 
@@ -198,6 +207,8 @@ export const INBOX_TRACE_EVENTS: readonly string[] = [
   "reviews.challenge.raised",
   "reviews.challenge.confirmed",
   "reviews.challenge.declined",
+  "reviews.challenge.completed",
+  "reviews.challenge.failed",
   "conflicts.conflict.escalated",
   "workflows.run.waiting_for_human",
 ];

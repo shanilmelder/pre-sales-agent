@@ -315,3 +315,44 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-9-trace-and-compare.md`
   summary: `web/src/components/opportunities/estimate-export.test.tsx` fails two tests with `TypeError: object.stream is not a function` (jsdom Blob in the local Node), independent of 9.9.
   evidence: Reproduced on `main` (455831d) in `D:\pre-sales-agent\web` with the same error; 9.9 does not touch the export component or its test. Other full-suite failures seen during 9.9 verification (checklist-inspector, finding-decisions, requirement-lifecycle, specialist-assessments) were load-related timeouts/duplicates and pass when run alone.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: Make export blobs (gaps question export, actuals error report) reference-counted per Opportunity so the retention purge can delete them.
+  evidence: They are written with `put_stream` and no `platform_files` row (`gaps/application/question_export.py:103`, `actuals/application/imports.py:246`), so Story 10.6 cannot find them; split out at planning on 2026-10-28.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: `opportunities_imports` rows (filename, suggestions JSONB, counted file reference) are never purged because they carry no `opportunity_id`.
+  evidence: The import is linked to the Opportunity it created only by `consumed_at` (`opportunities/adapters/models.py:88`); the retention purge cannot attribute it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: An upload of identical bytes racing the purge's blob unlink can leave a reference to a deleted file.
+  evidence: Uploads call `put_stream` before `files.add_reference`; the purge's row lock in `_delete_blobs` guards the count, not the file on disk.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-controlled-retention-purge.md`
+  summary: A blob whose unlink failed after the purge committed stays on disk at `ref_count = 0`; add a sweep of zero-ref blobs.
+  evidence: `_delete_blobs` logs `purge.blob_delete_failed` and no later run revisits that sha256.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-6-challenge-reassessment.md`
+  summary: A Challenge run's Conflict detection runs before the new Estimate Version exists, so any Conflict rule that reads Estimate lines checks the challenged version, not the new one (unverified, medium if true).
+  evidence: The frozen plan order is specialists → conflict_detection → Critic → new_version. Settle it by checking whether `conflicts.detect_for_run`'s rules read Estimate lines.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: A custom profile's `num_ctx` is declared, not proven by the fixed test call.
+  evidence: The probe is tiny, and `openai` never sends `num_ctx`, so an overstated value inflates intake and answer-matching budgets.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: The critic and conflict evals and the gateway smoke test can't resolve custom profiles.
+  evidence: They build gateways with no resolver and abort with `UnknownModelProfileError`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: The pin and retire row lock has no concurrency test.
+  evidence: Only a two-connection test can show a concurrent retire blocks and returns 409.
+- source_spec: `_bmad-output/implementation-artifacts/spec-admin-chat-model-profiles.md`
+  summary: A future built-in profile could shadow a stored custom profile of the same name (unverified, medium).
+  evidence: Settle by checking whether the gateway resolves built-ins first and whether any release adds a colliding name.
+- source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-model-adapter.md`
+  summary: Make deterministic model failures (refusal, missing_api_key, unsupported_schema, http_400, http_401) permanent job failures.
+  evidence: `jobs/runner.py` retries anything that isn't a `PermanentJobError` until attempts run out, for all providers.
+- source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-model-adapter.md`
+  summary: Assert that `ModelGateway.aclose` closes its HTTP clients.
+  evidence: No test observes closure for any provider's client.
+- source_spec: `_bmad-output/implementation-artifacts/spec-anthropic-model-adapter.md`
+  summary: Check whether tokens from an attempt declined before a fallback are billed but unrecorded (medium, unverified).
+  evidence: Top-level `usage` may cover only the final attempt; a live fallback reply's `usage.iterations` would settle it.

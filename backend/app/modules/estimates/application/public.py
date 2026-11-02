@@ -3,7 +3,9 @@
 `set_baseline`, `version_approvers` and `list_versions`. Story 9.9: `get_line_lineage`,
 `get_assumption_lineage` and `compare_any`. Story 10.1: `current_baseline_ref`, `version_lines`
 and `version_assumptions`, for Actuals. Story 10.4: `assumption_details` (a failed Assumption's
-number, hours, acceptance and Evidence) and `LineageEvidence`, for the Actuals Inspector."""
+number, hours, acceptance and Evidence) and `LineageEvidence`, for the Actuals Inspector. Story
+9.6 (a Challenge's run, `workflows` and `reviews`): `challenge_lines`,
+`create_version_from_run`, `challenge_delta` and `latest_version_number`."""
 
 from uuid import UUID
 
@@ -17,6 +19,15 @@ from app.modules.estimates.application.baseline import (
 from app.modules.estimates.application.blockers import (
     get_submission_blockers,
     submission_blocker_counts,
+)
+from app.modules.estimates.application.challenge_version import (
+    ChallengeDelta,
+    ChallengeVersion,
+    LineDelta,
+    challenge_delta,
+    challenge_lines,
+    create_version_from_run,
+    latest_version_number,
 )
 from app.modules.estimates.application.compare import (
     compare_any,
@@ -138,6 +149,8 @@ __all__ = [
     "BaselineRef",
     "BaselineSet",
     "Blocker",
+    "ChallengeDelta",
+    "ChallengeVersion",
     "CreatedVersion",
     "CurrentEstimate",
     "EstimateDraft",
@@ -149,6 +162,7 @@ __all__ = [
     "ExportFile",
     "ExportFormat",
     "LineConflict",
+    "LineDelta",
     "LineDiff",
     "LineLineage",
     "LineRef",
@@ -180,10 +194,13 @@ __all__ = [
     "apply_decision",
     "assumption_details",
     "build_from_assessments",
+    "challenge_delta",
+    "challenge_lines",
     "compare_any",
     "compare_versions",
     "create_risk",
     "create_version",
+    "create_version_from_run",
     "current_baseline_ref",
     "current_estimates",
     "current_reviewable_version",
@@ -197,6 +214,7 @@ __all__ = [
     "get_estimate",
     "get_line_lineage",
     "get_submission_blockers",
+    "latest_version_number",
     "list_versions",
     "lock_for_decision",
     "mark_approved",

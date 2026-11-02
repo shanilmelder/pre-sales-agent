@@ -22,17 +22,13 @@ from tests.fixtures.drilldown import CAUSE, WMS, drilled
 from tests.test_actuals_api import _save
 from tests.test_intake_extraction import BASE, FakeGateway
 
-# The fixtures the lineage flow needs (fake gateways, hidden jobs, agent profiles).
+# The fixtures the lineage flow needs (fake gateways, hidden jobs).
 storage_dir = lineage_tests.storage_dir
 _hidden_jobs = lineage_tests._hidden_jobs
 gateway = lineage_tests.gateway
 client = lineage_tests.client
-_chat_profile = lineage_tests._chat_profile
-_draft_profile = lineage_tests._draft_profile
 _assessment_profile = lineage_tests._assessment_profile
 _no_auto_run = lineage_tests._no_auto_run
-_proposal_profile = lineage_tests._proposal_profile
-_review_profile = lineage_tests._review_profile
 _matching_settings = lineage_tests._matching_settings
 
 REPORTS = "/api/v1/reports/estimate-vs-actual"

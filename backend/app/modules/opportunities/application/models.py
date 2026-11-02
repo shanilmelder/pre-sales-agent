@@ -364,3 +364,40 @@ class OpportunityImport(BaseModel):
     error_code: ImportErrorCode | None
     suggestions: ImportSuggestions | None
     created_at: datetime
+
+
+# --- Admin > Retention (Story 10.6) ----------------------------------------------------------
+
+RetentionRuleName = Literal["lost_3y", "won_7y"]
+
+
+class RetentionDueItem(BaseModel):
+    """An Opportunity whose data is due for purge: ids, outcome and dates only."""
+
+    opportunity_id: str
+    outcome: Outcome
+    rule: RetentionRuleName = Field(
+        description="`lost_3y`: lost, kept 3 years after the outcome; `won_7y`: won, kept 7 "
+        "years after the contract end date."
+    )
+    retention_until: date = Field(
+        description="The last day the data is kept; the daily purge deletes it the day after."
+    )
+
+
+class PurgeEventItem(BaseModel):
+    """One `platform.purge.completed` event: what the purge deleted. Ids and counts only."""
+
+    purged_opportunity_id: str
+    rule: RetentionRuleName
+    rows_by_module: dict[str, int] = Field(description="Rows deleted, per module.")
+    files_deleted: int = Field(description="Stored files whose last reference went with it.")
+    occurred_at: datetime
+
+
+class RetentionOverview(BaseModel):
+    """Admin > Retention. `due`: retention date on or before today plus 30 days (overdue ones
+    not yet purged included), earliest first. `recent`: the last 20 purges, newest first."""
+
+    due: list[RetentionDueItem]
+    recent: list[PurgeEventItem]

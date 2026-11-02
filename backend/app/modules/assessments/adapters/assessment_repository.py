@@ -247,6 +247,22 @@ async def run_assessments(
     return list(newest.values())
 
 
+async def assessment_of_version(
+    uow: UnitOfWork, opportunity_id: UUID, agent: str, version: int
+) -> AssessmentRecord | None:
+    """Story 9.6: the agent's Assessment of the Opportunity with this version number."""
+    row = (
+        await uow.session.execute(
+            select(AssessmentRow).where(
+                AssessmentRow.opportunity_id == opportunity_id,
+                AssessmentRow.agent == agent,
+                AssessmentRow.version == version,
+            )
+        )
+    ).scalar_one_or_none()
+    return None if row is None else _assessment(row)
+
+
 async def assessments_by_id(
     uow: UnitOfWork, assessment_ids: Sequence[UUID]
 ) -> list[AssessmentRecord]:
