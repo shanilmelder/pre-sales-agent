@@ -1,6 +1,6 @@
 """Seed the three chat profiles that used to be built into the code.
 
-`ollama-cloud-chat`, `openai-chat` and `anthropic-chat` become `verified` rows of
+`ollama-cloud-chat`, `openai-chat` and `anthropic-opus-chat` become `verified` rows of
 `registry_model_profiles`, so every chat profile lives in the registry and the Admin list shows
 them all. Their models are already approved (`0061`, `0062`). Ids are deterministic:
 `uuid5(SEED_NAMESPACE, "model-profile/<name>")`; `created_by` is null. A name that already exists
@@ -38,7 +38,7 @@ NUM_CTX = 32768
 SEED_PROFILES: tuple[tuple[str, str, str, float | None, str | None], ...] = (
     ("ollama-cloud-chat", "ollama", "gpt-oss:120b-cloud", 0.1, None),
     ("openai-chat", "openai", "gpt-4.1-mini", 0.1, None),
-    ("anthropic-chat", "anthropic", "claude-opus-5-5", None, "medium"),
+    ("anthropic-opus-chat", "anthropic", "claude-opus-5-5", None, "medium"),
 )
 
 

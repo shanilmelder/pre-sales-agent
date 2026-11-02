@@ -151,7 +151,7 @@ process uses its gateway for query embeddings only, never for chat.
 
 Every chat profile lives in the Agent Registry (Admin > Model profiles); none is defined in
 code. Migration `0063` seeds three `verified` ones: `ollama-cloud-chat` (`gpt-oss:120b-cloud`),
-`openai-chat` (`gpt-4.1-mini`) and `anthropic-chat` (`claude-opus-5-5`, effort `medium`). They
+`openai-chat` (`gpt-4.1-mini`) and `anthropic-opus-chat` (`claude-opus-5-5`, effort `medium`). They
 behave like any other profile: listed, retirable when no Agent pins them, immutable.
 
 Each profile names its provider. `ollama-cloud-chat` uses Ollama's native API; `openai-chat`
@@ -172,7 +172,7 @@ on GPT-5): requests then send it and no `temperature`, which those models reject
 calls are slower, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if they time out; their
 `output_tokens` include the reasoning tokens.
 
-`anthropic-chat` (`claude-opus-5-5`) is Anthropic's API, through the official SDK: set
+`anthropic-opus-chat` (`claude-opus-5-5`) is Anthropic's API, through the official SDK: set
 `PSA_ANTHROPIC_API_KEY=sk-ant-...`, restart `worker` (the only service that gets the key, as
 the `api` never makes a chat call), then pin the profile on an Agent's config version in Admin
 > Agents. Like `ollama-cloud-chat` it sends prompt text to a cloud: sample or anonymised
@@ -186,8 +186,8 @@ Administrators can also add more `anthropic` profiles in Admin > Model profiles,
 `ollama` and `openai` ones. `claude-opus-5-5` and `claude-sonnet-5-5` are approved already; other
 Claude models go through Approved models. A custom Claude profile takes a reasoning effort
 (`low`, `medium` or `high`; default `medium`), never a temperature, and behaves like
-`anthropic-chat`: it needs `PSA_ANTHROPIC_API_KEY` on the `worker`, and it can be pinned once its
-live test passes. Without the key the test fails with `missing_api_key`; set the key, restart
+`anthropic-opus-chat`: it needs `PSA_ANTHROPIC_API_KEY` on the `worker`, and it can be pinned once
+its live test passes. Without the key the test fails with `missing_api_key`; set the key, restart
 `worker`, and test the profile again. The live test has its own fixed 90 s timeout per attempt:
 `PSA_MODEL_TIMEOUT_S` doesn't change it.
 
@@ -206,7 +206,7 @@ PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost
 # OpenAI's cloud API (prints `ok ... digest=unknown`):
 PSA_OPENAI_BASE_URL=https://api.openai.com/v1 PSA_OPENAI_API_KEY=sk-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke --profile openai-chat
 # Anthropic's API (prints `ok ... digest=unknown`):
-PSA_ANTHROPIC_API_KEY=sk-ant-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke --profile anthropic-chat
+PSA_ANTHROPIC_API_KEY=sk-ant-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke --profile anthropic-opus-chat
 ```
 
 ## Authentication (Auth0)

@@ -6,7 +6,7 @@ Every chat profile lives in the database (`registry_model_profiles`, managed und
 profiles); none is defined here. `app.modules.registry` stores them, and this package can't
 import it: each process that makes chat calls injects a `ProfileResolver` into its
 ModelGateway. Migration `0063` seeds `ollama-cloud-chat` (`gpt-oss:120b-cloud`, Ollama's cloud),
-`openai-chat` (`gpt-4.1-mini`, OpenAI's cloud API) and `anthropic-chat` (`claude-opus-5-5`).
+`openai-chat` (`gpt-4.1-mini`, OpenAI's cloud API) and `anthropic-opus-chat` (`claude-opus-5-5`).
 
 Each profile names its provider: `ollama` (native `/api/chat`), `openai` (any
 `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`, with `PSA_OPENAI_API_KEY`) or

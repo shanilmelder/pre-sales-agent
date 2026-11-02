@@ -5,7 +5,7 @@
 `--profile` (required) names a profile in `registry_model_profiles`. Needs a reachable Ollama
 (`PSA_OLLAMA_URL`, signed in for cloud profiles; for an `openai` profile such as
 `openai-chat`, the server at `PSA_OPENAI_BASE_URL`; for an `anthropic` profile such as
-`anthropic-chat`, `PSA_ANTHROPIC_API_KEY`) and a migrated database (`PSA_DATABASE_URL`) for the
+`anthropic-opus-chat`, `PSA_ANTHROPIC_API_KEY`) and a migrated database (`PSA_DATABASE_URL`) for the
 profile and the call row. The prompt is a fixed, non-customer text.
 
 A command-line entry point, like `main_worker`: it is the one `app.platform` module allowed to

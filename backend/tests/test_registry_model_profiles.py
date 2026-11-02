@@ -216,7 +216,7 @@ def test_a_reasoning_profile_becomes_a_gateway_profile_without_its_own_temperatu
 
 def test_a_claude_profile_is_defined_like_the_seeded_one() -> None:
     definition = _stored("anthropic", CLAUDE).definition
-    seeded = SEEDED["anthropic-chat"]
+    seeded = SEEDED["anthropic-opus-chat"]
     assert (definition.provider, definition.reasoning_effort) == ("anthropic", "high")
     assert definition.refusal_fallback is seeded.refusal_fallback is True
     assert definition.max_tokens == seeded.max_tokens == 16000
@@ -1193,7 +1193,7 @@ def test_the_seeded_profiles_are_listed_as_verified(
             profile.num_ctx,
         )
     assert listed["ollama-cloud-chat"]["temperature"] == listed["openai-chat"]["temperature"] == 0.1
-    claude = listed["anthropic-chat"]
+    claude = listed["anthropic-opus-chat"]
     assert (claude["temperature"], claude["reasoning_effort"]) == (None, "medium")
     assert all(row["created_by"] is None for row in _profile_rows(sync_engine).values())
 
@@ -1215,20 +1215,20 @@ def test_a_seeded_profile_can_be_pinned(
 def test_an_unpinned_seeded_profile_can_be_retired_and_a_pinned_one_cannot(
     client: TestClient, admin: dict[str, str], sync_engine: Engine
 ) -> None:
-    # The seeded Agents pin `ollama-cloud-chat`; no test pins `anthropic-chat`.
+    # The seeded Agents pin `ollama-cloud-chat`; no test pins `anthropic-opus-chat`.
     pinned = client.post(f"{URL}/{_seed_id('ollama-cloud-chat')}/retire", headers=admin)
     assert pinned.status_code == 409, pinned.text
     assert_problem(pinned.json(), 409, "registry_model_profile_in_use")
 
     try:
-        retired = client.post(f"{URL}/{_seed_id('anthropic-chat')}/retire", headers=admin)
+        retired = client.post(f"{URL}/{_seed_id('anthropic-opus-chat')}/retire", headers=admin)
         assert retired.status_code == 200, retired.text
         assert retired.json()["state"] == "retired"
     finally:
         with sync_engine.begin() as conn:  # the tables are shared: restore the seed
             conn.execute(
                 sa.text("UPDATE registry_model_profiles SET state = 'verified' WHERE id = :id"),
-                {"id": _seed_id("anthropic-chat")},
+                {"id": _seed_id("anthropic-opus-chat")},
             )
 
 
@@ -1258,7 +1258,7 @@ def test_the_seed_round_trip_keeps_a_name_that_already_exists(sync_engine: Engin
         upgraded = _profile_rows(sync_engine)
         assert UUID(str(upgraded["openai-chat"]["id"])) == existing
         assert upgraded["openai-chat"]["state"] == "failed"
-        for name in ("ollama-cloud-chat", "anthropic-chat"):
+        for name in ("ollama-cloud-chat", "anthropic-opus-chat"):
             assert UUID(str(upgraded[name]["id"])) == _seed_id(name)
             assert upgraded[name]["state"] == "verified"
 

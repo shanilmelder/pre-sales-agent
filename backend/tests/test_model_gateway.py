@@ -80,8 +80,8 @@ SEEDED: dict[str, ModelProfile] = {
     "openai-chat": ModelProfile(
         name="openai-chat", model="gpt-4.1-mini", num_ctx=32768, provider="openai"
     ),
-    "anthropic-chat": ModelProfile(
-        name="anthropic-chat",
+    "anthropic-opus-chat": ModelProfile(
+        name="anthropic-opus-chat",
         model="claude-opus-5-5",
         num_ctx=32768,
         provider="anthropic",

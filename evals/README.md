@@ -156,7 +156,7 @@ the database at `PSA_DATABASE_URL`.
 ```sh
 make eval-conflicts ARGS="--profile ollama-cloud-chat"                               # every case
 make eval-conflicts ARGS="--profile ollama-cloud-chat --only scope-label-printing"   # one case
-make eval-conflicts ARGS="--profile anthropic-chat"            # another registry model profile
+make eval-conflicts ARGS="--profile anthropic-opus-chat"            # another registry model profile
 ```
 
 Each case in `conflicts/<name>.yaml` holds synthetic Findings per specialist and the Conflicts
@@ -198,7 +198,7 @@ registry) and stores nothing in the Agent Registry, but it has one gate: it **fa
 ```sh
 make eval-critic ARGS="--profile ollama-cloud-chat"                            # every case
 make eval-critic ARGS="--profile ollama-cloud-chat --only erp-golive-crunch"   # one case
-make eval-critic ARGS="--profile anthropic-chat"            # another registry model profile
+make eval-critic ARGS="--profile anthropic-opus-chat"            # another registry model profile
 ```
 
 Each case in `critic/<name>.yaml` holds the active Requirements, the specialists' Findings and

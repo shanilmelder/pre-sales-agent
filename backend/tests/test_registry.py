@@ -895,7 +895,8 @@ def test_admins_read_the_deployed_config_options(
         sync_engine,
         "SELECT name FROM registry_model_profiles WHERE state = 'verified' ORDER BY name",
     )
-    assert {"ollama-cloud-chat", "openai-chat", "anthropic-chat"} <= {r["name"] for r in verified}
+    seeded = {"ollama-cloud-chat", "openai-chat", "anthropic-opus-chat"}
+    assert seeded <= {r["name"] for r in verified}
     assert resp.json() == {
         "model_profiles": sorted(r["name"] for r in verified),
         "prompt_versions": [1, 2],

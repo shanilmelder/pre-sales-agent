@@ -39,7 +39,7 @@ from app.platform.model_gateway.profiles import EmbedProfile
 from tests.conftest import run_async
 from tests.test_model_gateway import SEEDED, resolve_seeded
 
-PROFILE = "anthropic-chat"
+PROFILE = "anthropic-opus-chat"
 MODEL = "claude-opus-5-5"
 API_KEY = "sk-ant-SECRET-key-5d2e"
 PROMPT_SECRET = "PROMPT-SECRET-Acme-warehouse-7f3a"
