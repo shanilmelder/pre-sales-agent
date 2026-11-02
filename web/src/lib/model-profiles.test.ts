@@ -7,6 +7,7 @@ import {
   modelsFor,
   nameError,
   numCtxError,
+  PROVIDERS,
   samplingLabel,
   stateLabel,
   temperatureError,
@@ -61,6 +62,11 @@ describe("model profile states", () => {
     expect(samplingLabel(profile({ temperature: null, reasoning_effort: "high" }))).toBe(
       "Reasoning effort high",
     );
+    expect(
+      samplingLabel(
+        profile({ provider: "anthropic", temperature: null, reasoning_effort: "medium" }),
+      ),
+    ).toBe("Reasoning effort medium");
   });
 });
 
@@ -82,12 +88,18 @@ describe("model profile form rules", () => {
 });
 
 describe("lists", () => {
+  it("offers every provider", () => {
+    expect(PROVIDERS).toEqual(["ollama", "openai", "anthropic"]);
+  });
+
   it("offers only the provider's approved models", () => {
     const approved: ApprovedModel[] = [
       { id: "1", provider: "ollama", model: "a", created_at: "2026-11-02T09:00:00Z" },
       { id: "2", provider: "openai", model: "b", created_at: "2026-11-02T09:00:00Z" },
+      { id: "3", provider: "anthropic", model: "c", created_at: "2026-11-02T09:00:00Z" },
     ];
     expect(modelsFor(approved, "openai")).toEqual(["b"]);
+    expect(modelsFor(approved, "anthropic")).toEqual(["c"]);
   });
 
   it("puts a new profile first and replaces a known one", () => {

@@ -171,13 +171,21 @@ calls are slower, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if they time out;
 `anthropic-chat` (`claude-opus-5-5`) is Anthropic's API, through the official SDK: set
 `PSA_ANTHROPIC_API_KEY=sk-ant-...`, restart `worker` (the only service that gets the key, as
 the `api` never makes a chat call), then pin the profile on an Agent's config version in Admin
-> Agents. It is a built-in, not an admin-managed custom profile. Like `ollama-cloud-chat` it
-sends prompt text to a cloud: sample or anonymised Opportunities only until IT
-approves it. Without a key other profiles are unaffected, and a call on this one fails with
-`missing_api_key`. It serves chat only (`bge-m3` stays on Ollama) and its digest is recorded
-as `unknown`. A declined request is rerun on Anthropic's default fallback model, and call
-records and logs name the model that served the reply. Claude calls can run long, so raise
-`PSA_MODEL_TIMEOUT_S` (default 120) if they time out.
+> Agents. Like `ollama-cloud-chat` it sends prompt text to a cloud: sample or anonymised
+Opportunities only until IT approves it. Without a key other profiles are unaffected, and a
+call on this one fails with `missing_api_key`. It serves chat only (`bge-m3` stays on Ollama)
+and its digest is recorded as `unknown`. A declined request is rerun on Anthropic's default
+fallback model, and call records and logs name the model that served the reply. Claude calls
+can run long, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if they time out.
+
+Administrators can also add custom `anthropic` profiles in Admin > Model profiles, alongside
+`ollama` and `openai` ones. `claude-opus-5-5` and `claude-sonnet-5-5` are approved already; other
+Claude models go through Approved models. A custom Claude profile takes a reasoning effort
+(`low`, `medium` or `high`; default `medium`), never a temperature, and behaves like
+`anthropic-chat`: it needs `PSA_ANTHROPIC_API_KEY` on the `worker`, and it can be pinned once its
+live test passes. Without the key the test fails with `missing_api_key`; set the key, restart
+`worker`, and test the profile again. The live test has its own fixed 90 s timeout per attempt:
+`PSA_MODEL_TIMEOUT_S` doesn't change it.
 
 Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
 `api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama

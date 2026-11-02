@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState, useTransition, type FormEvent } fro
 import { createProfile, type ProfileResult } from "@/app/admin/model-profiles/actions";
 import { useAnnounce } from "@/components/shell/live-region";
 import {
+  DEFAULT_ANTHROPIC_EFFORT,
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
   modelsFor,
@@ -30,8 +31,10 @@ const labelClass = "text-label text-muted-foreground";
 type Field = "name" | "numCtx" | "temperature";
 
 /** The create form in the right pane: name, provider, an approved model, context size, and a
- * temperature or (for `openai`) a reasoning effort. Base URLs and keys stay in the environment,
- * so the form has none. The API's sentences show under the form; nothing is saved on error. */
+ * temperature (`ollama`), either a temperature or a reasoning effort (`openai`), or a reasoning
+ * effort (`anthropic`, whose requests never send a temperature). Base URLs and keys stay in the
+ * environment, so the form has none. The API's sentences show under the form; nothing is saved
+ * on error. */
 export function ModelProfileCreateForm({
   approved,
   onCreated,
@@ -54,7 +57,7 @@ export function ModelProfileCreateForm({
   const id = useId();
   const nameRef = useRef<HTMLInputElement>(null);
   const models = modelsFor(approved, provider);
-  const usesEffort = provider === "openai" && effort !== "";
+  const usesEffort = provider === "anthropic" || (provider === "openai" && effort !== "");
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -63,7 +66,7 @@ export function ModelProfileCreateForm({
   function chooseProvider(next: Provider) {
     setProvider(next);
     setModel(modelsFor(approved, next)[0] ?? "");
-    if (next !== "openai") setEffort("");
+    setEffort((current) => (next === "anthropic" ? current || DEFAULT_ANTHROPIC_EFFORT : ""));
   }
 
   function fail(text: string) {
@@ -223,7 +226,7 @@ export function ModelProfileCreateForm({
           </p>
         ) : null}
       </div>
-      {provider === "openai" ? (
+      {provider !== "ollama" ? (
         <div className="flex flex-col gap-1">
           <label htmlFor={`${id}-effort`} className={labelClass}>
             Reasoning effort
@@ -234,7 +237,7 @@ export function ModelProfileCreateForm({
             onChange={(event) => setEffort(event.target.value as ReasoningEffort | "")}
             className={inputClass}
           >
-            <option value="">None (use temperature)</option>
+            {provider === "openai" ? <option value="">None (use temperature)</option> : null}
             {REASONING_EFFORTS.map((e) => (
               <option key={e} value={e}>
                 {e}

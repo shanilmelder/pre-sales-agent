@@ -4014,7 +4014,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
             /**
@@ -7509,7 +7509,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
             /** Num Ctx */
@@ -7605,7 +7605,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
         };
@@ -7641,8 +7641,9 @@ export interface components {
          * NewModelProfile
          * @description A custom chat model profile. `model` must be on the approved-model allowlist for
          *     `provider`. Set `temperature` or `reasoning_effort`, not both; `reasoning_effort` needs
-         *     provider `openai`, and setting neither uses the default temperature. No base URL, API key
-         *     or other secret: those stay in the environment.
+         *     provider `openai` or `anthropic`, and setting neither uses the default temperature.
+         *     `anthropic` takes no `temperature`: setting neither there uses effort `medium`. No base
+         *     URL, API key or other secret: those stay in the environment.
          */
         NewModelProfile: {
             /** Name */
@@ -7651,7 +7652,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "openai";
+            provider: "ollama" | "openai" | "anthropic";
             /** Model */
             model: string;
             /** Num Ctx */

@@ -6,10 +6,11 @@ a registry change, never a code change at the call site: callers name a profile,
 `PSA_OPENAI_API_KEY`). Both send prompt text off the host: until IT approves that data
 handling, only sample or anonymised Opportunities may use them.
 
-Each profile names its provider: `ollama` (native `/api/chat`, the default) or `openai`
-(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`). `anthropic-chat`
-(`claude-opus-5-5`) has provider `anthropic`: Anthropic's API through the official SDK, with
-`PSA_ANTHROPIC_API_KEY`. It too sends prompt text off the host, so the same data rule applies.
+Each profile names its provider: `ollama` (native `/api/chat`, the default), `openai`
+(any `/v1/chat/completions` server at `PSA_OPENAI_BASE_URL`) or `anthropic` (Anthropic's API
+through the official SDK, with `PSA_ANTHROPIC_API_KEY`). `anthropic-chat` (`claude-opus-5-5`)
+is the built-in `anthropic` profile, and custom profiles can use that provider too. They also
+send prompt text off the host, so the same data rule applies.
 
 Embedding profiles (Story 3.3) live apart, in `EMBED_PROFILES`, picked by
 `PSA_MODEL_PROFILE_EMBED`: `bge-m3` (1024 dims) on host Ollama's `/api/embed`. An embedding
@@ -38,7 +39,7 @@ Provider = Literal["ollama", "openai", "anthropic"]
 class ModelProfile:
     name: str
     model: str
-    """The model name the provider serves: an Ollama tag, or an OpenAI model id."""
+    """The model name the provider serves: an Ollama tag, or an OpenAI or Anthropic model id."""
     num_ctx: int
     """Context window. `ollama`: set explicitly on every request (Ollama's default is much
     smaller). `openai`: OpenAI-style endpoints can't set it per request, so this declares

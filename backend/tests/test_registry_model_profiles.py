@@ -9,10 +9,11 @@ Names and allowlist entries are unique per test: the tables are shared by every 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, get_args
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID, uuid4, uuid5
 
 import httpx
+import httpx2
 import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -22,6 +23,7 @@ from app.agents import manifest as deployed
 from app.modules.registry.application import public as registry
 from app.modules.registry.application.jobs import TEST_AGENT_ID, TEST_PROFILE, ProbeReply
 from app.modules.registry.domain import model_profiles as rules
+from app.modules.registry.domain.registry import SEED_NAMESPACE
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.jobs import queue as q
@@ -39,7 +41,6 @@ from app.platform.model_gateway.port import (
 from app.platform.model_gateway.profiles import (
     MODEL_PROFILES,
     STRUCTURED_TEMPERATURE,
-    ModelProfile,
     UnknownModelProfileError,
 )
 from tests import test_intake_extraction as extraction_tests
@@ -47,6 +48,7 @@ from tests.conftest import run_async
 from tests.test_gaps_detection import rows
 from tests.test_health import assert_problem
 from tests.test_intake_extraction import FakeGateway
+from tests.test_intake_parse_job import _alembic
 from tests.test_registry import (
     URL as AGENTS_URL,
 )
@@ -66,9 +68,16 @@ client = extraction_tests.client
 URL = "/api/v1/registry/model-profiles"
 APPROVED_URL = "/api/v1/registry/approved-models"
 BACKEND = Path(__file__).resolve().parents[1]
-MIGRATION = BACKEND / "migrations" / "versions" / "20261102_0061_registry_model_profiles.py"
+VERSIONS = BACKEND / "migrations" / "versions"
+MIGRATIONS = (
+    VERSIONS / "20261102_0061_registry_model_profiles.py",
+    VERSIONS / "20261102_0062_anthropic_custom_profiles.py",
+)
+BEFORE_ANTHROPIC = "0061_registry_model_profiles"
 LEASE = LeaseSettings(lease_s=30, heartbeat_s=5)
 MODEL = "gpt-oss:120b-cloud"
+CLAUDE = "claude-opus-5-5"
+CLAUDE_SONNET = "claude-sonnet-5-5"
 
 
 @pytest.fixture
@@ -155,14 +164,9 @@ def _new_version(
 # --- rules ----------------------------------------------------------------------------------
 
 
-def _custom_capable() -> list[ModelProfile]:
-    """The built-ins whose provider a custom profile can use (`anthropic` is built in only)."""
-    return [p for p in MODEL_PROFILES.values() if p.provider in get_args(rules.CustomProvider)]
-
-
 def test_the_seed_repeats_the_built_in_models() -> None:
-    source = MIGRATION.read_text(encoding="utf-8")
-    for profile in _custom_capable():
+    source = "".join(path.read_text(encoding="utf-8") for path in MIGRATIONS)
+    for profile in MODEL_PROFILES.values():
         assert f'("{profile.provider}", "{profile.model}")' in source
 
 
@@ -172,16 +176,24 @@ def test_temperature_and_reasoning_effort_are_mutually_exclusive() -> None:
     assert rules.sampling("openai", None, "low") == (None, "low")
     with pytest.raises(ValueError, match="not both"):
         rules.sampling("openai", 0.4, "low")
-    with pytest.raises(ValueError, match="openai"):
+    with pytest.raises(ValueError, match="`openai` or `anthropic`"):
         rules.sampling("ollama", None, "low")
 
 
-def test_a_reasoning_profile_becomes_a_gateway_profile_without_its_own_temperature() -> None:
-    profile = rules.CustomProfile(
+def test_a_claude_profile_uses_a_reasoning_effort_never_a_temperature() -> None:
+    assert rules.sampling("anthropic", None, "high") == (None, "high")
+    assert rules.sampling("anthropic", None, None) == (None, "medium")
+    for effort in (None, "low"):
+        with pytest.raises(ValueError, match="reasoning effort"):
+            rules.sampling("anthropic", 0.4, effort)
+
+
+def _stored(provider_name: rules.CustomProvider, model: str) -> rules.CustomProfile:
+    return rules.CustomProfile(
         id=uuid4(),
         name="reasoner",
-        provider="openai",
-        model="gpt-4.1-mini",
+        provider=provider_name,
+        model=model,
         num_ctx=20000,
         temperature=None,
         reasoning_effort="high",
@@ -192,10 +204,22 @@ def test_a_reasoning_profile_becomes_a_gateway_profile_without_its_own_temperatu
         created_by=None,
         created_at=datetime.now(UTC),
     )
-    definition = profile.definition
+
+
+def test_a_reasoning_profile_becomes_a_gateway_profile_without_its_own_temperature() -> None:
+    definition = _stored("openai", "gpt-4.1-mini").definition
     assert (definition.provider, definition.reasoning_effort) == ("openai", "high")
     assert (definition.model, definition.num_ctx) == ("gpt-4.1-mini", 20000)
     assert definition.temperature == STRUCTURED_TEMPERATURE
+    assert definition.refusal_fallback is False
+
+
+def test_a_claude_profile_is_defined_like_the_built_in_one() -> None:
+    definition = _stored("anthropic", CLAUDE).definition
+    built_in = MODEL_PROFILES["anthropic-chat"]
+    assert (definition.provider, definition.reasoning_effort) == ("anthropic", "high")
+    assert definition.refusal_fallback is built_in.refusal_fallback is True
+    assert definition.max_tokens == built_in.max_tokens == 16000
 
 
 def test_a_custom_profile_is_not_in_the_manifest() -> None:
@@ -275,7 +299,6 @@ def test_a_duplicate_name_stores_nothing(
         {"name": "Has Spaces"},
         {"name": "x" * 65},
         {"provider": "azure"},
-        {"provider": "anthropic"},  # built in only
         {"num_ctx": 1000},
         {"temperature": 3},
         {"reasoning_effort": "extreme", "temperature": None},
@@ -312,6 +335,102 @@ def test_a_reasoning_profile_stores_no_temperature(
     )
     assert profile["temperature"] is None
     assert profile["reasoning_effort"] == "medium"
+
+
+def _claude(**overrides: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "provider": "anthropic",
+        "model": CLAUDE,
+        "temperature": None,
+        "reasoning_effort": "high",
+    }
+    return {**fields, **overrides}
+
+
+def test_a_claude_profile_stores_its_effort_and_queues_its_test(
+    client: TestClient, admin: dict[str, str], sync_engine: Engine
+) -> None:
+    profile = _create(client, admin, **_claude())
+
+    assert profile["provider"] == "anthropic"
+    assert profile["state"] == "untested"
+    assert profile["temperature"] is None
+    assert profile["reasoning_effort"] == "high"
+    jobs = rows(
+        sync_engine,
+        "SELECT status FROM platform_jobs WHERE job_type = :t AND payload->>'profile_id' = :p",
+        t=TEST_PROFILE,
+        p=profile["id"],
+    )
+    assert [j["status"] for j in jobs] == ["queued"]
+
+
+def test_both_seeded_claude_models_can_be_used(client: TestClient, admin: dict[str, str]) -> None:
+    profile = _create(client, admin, **_claude(model=CLAUDE_SONNET))
+    assert profile["model"] == CLAUDE_SONNET
+
+
+def test_a_claude_profile_defaults_an_omitted_effort(
+    client: TestClient, admin: dict[str, str]
+) -> None:
+    body = _form(provider="anthropic", model=CLAUDE)
+    del body["temperature"]
+
+    resp = client.post(URL, json=body, headers=admin)
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["temperature"] is None
+    assert resp.json()["reasoning_effort"] == "medium"
+
+
+def test_a_temperature_on_a_claude_profile_stores_nothing(
+    client: TestClient, admin: dict[str, str], sync_engine: Engine
+) -> None:
+    name = _name()
+    body = _form(name=name, **_claude(temperature=0.3, reasoning_effort=None))
+
+    resp = client.post(URL, json=body, headers=admin)
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, "validation_error")
+    assert "Claude profiles use a reasoning effort" in resp.json()["detail"]
+    assert rows(sync_engine, "SELECT 1 FROM registry_model_profiles WHERE name = :n", n=name) == []
+
+
+def test_an_unapproved_claude_model_stores_nothing(
+    client: TestClient, admin: dict[str, str], sync_engine: Engine
+) -> None:
+    name = _name()
+    body = _form(name=name, **_claude(model="claude-unlisted"))
+
+    resp = client.post(URL, json=body, headers=admin)
+
+    assert resp.status_code == 422, resp.text
+    assert_problem(resp.json(), 422, "registry_model_not_approved")
+    assert rows(sync_engine, "SELECT 1 FROM registry_model_profiles WHERE name = :n", n=name) == []
+
+
+def test_an_effort_on_ollama_stores_nothing_and_names_both_providers(
+    client: TestClient, admin: dict[str, str], sync_engine: Engine
+) -> None:
+    name = _name()
+    body = _form(name=name, temperature=None, reasoning_effort="low")
+
+    resp = client.post(URL, json=body, headers=admin)
+
+    assert resp.status_code == 422, resp.text
+    assert "`openai`" in resp.json()["detail"]
+    assert "`anthropic`" in resp.json()["detail"]
+    assert rows(sync_engine, "SELECT 1 FROM registry_model_profiles WHERE name = :n", n=name) == []
+
+
+def test_a_claude_model_can_be_added_to_the_allowlist(
+    client: TestClient, admin: dict[str, str]
+) -> None:
+    model = f"claude-{uuid4().hex[:10]}"
+    added = client.post(APPROVED_URL, json={"provider": "anthropic", "model": model}, headers=admin)
+    assert added.status_code == 201, added.text
+    assert _create(client, admin, **_claude(model=model))["model"] == model
 
 
 # --- the live test --------------------------------------------------------------------------
@@ -605,6 +724,23 @@ def test_the_agent_routes_show_a_custom_profiles_model(
     assert agent["effective_model"] == expected
 
 
+def test_a_verified_claude_profile_can_be_pinned(
+    client: TestClient,
+    admin: dict[str, str],
+    db_url: str,
+    gateway: FakeGateway,
+    test_manifest: str,  # noqa: F811
+) -> None:
+    profile = _verified(client, admin, db_url, gateway, **_claude())
+    assert profile["state"] == "verified"
+    agent = _register(client, admin, test_manifest)
+
+    resp = _new_version(client, admin, agent, profile["name"])
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["effective_model"] == {"profile": profile["name"], "model": CLAUDE}
+
+
 # --- resolving ------------------------------------------------------------------------------
 
 
@@ -678,6 +814,113 @@ def test_a_run_uses_the_stored_definition_and_records_the_profile(
     assert [c["model"] for c in calls] == [MODEL]
 
 
+def _anthropic_reply() -> httpx2.Response:
+    return httpx2.Response(
+        200,
+        json={
+            "id": "msg_stub",
+            "type": "message",
+            "role": "assistant",
+            "model": CLAUDE,
+            "content": [{"type": "text", "text": json.dumps({"status": "ok"})}],
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+
+
+def _drain_stale_tests(db_url: str) -> None:
+    """Run the live tests earlier tests left queued, on a fake: the queue is shared, and the
+    real gateway below must see only the profile under test."""
+    fake = FakeGateway()
+    fake.replies = [ProbeReply(status="ok")]
+    provider.install(fake)
+    try:
+        _test_jobs(db_url)
+    finally:
+        provider.install(None)
+
+
+def _test_with_real_gateway(db_url: str, api_key: str | None) -> list[dict[str, Any]]:
+    """Run the queued live tests the way the worker does: its gateway and resolver, with the
+    Anthropic SDK's transport stubbed. The bodies of the requests that reached it."""
+    sent: list[dict[str, Any]] = []
+
+    def transport(request: httpx2.Request) -> httpx2.Response:
+        sent.append(json.loads(request.content))
+        return _anthropic_reply()
+
+    async def scenario() -> None:
+        settings = Settings(database_url=db_url, anthropic_api_key=api_key)
+        engine = create_engine(settings)
+        try:
+            async with ModelGateway(
+                settings,
+                engine,
+                anthropic_transport=httpx2.MockTransport(transport),
+                resolve_profile=registry.profile_resolver(engine),
+            ) as models:
+                provider.install(models)
+                try:
+                    for _ in range(50):
+                        job = await q.claim(
+                            engine, owner="test", lease_s=30, job_types=(TEST_PROFILE,)
+                        )
+                        if job is None:
+                            break
+                        await run_job(engine, job, LEASE)
+                finally:
+                    provider.install(None)
+        finally:
+            await engine.dispose()
+
+    run_async(scenario())
+    return sent
+
+
+def test_a_claude_profile_reaches_the_anthropic_adapter_with_its_effort(
+    client: TestClient,
+    admin: dict[str, str],
+    sync_engine: Engine,
+    db_url: str,
+) -> None:
+    _drain_stale_tests(db_url)
+    profile = _create(client, admin, **_claude(reasoning_effort="low"))
+
+    (body,) = _test_with_real_gateway(db_url, "sk-ant-test")
+
+    assert _listed(client, admin, profile["id"])["state"] == "verified"
+    assert body["model"] == CLAUDE
+    assert body["output_config"]["effort"] == "low"
+    assert body["fallbacks"] == "default"
+    assert body["max_tokens"] == 16000
+    assert "temperature" not in body
+    calls = rows(
+        sync_engine,
+        "SELECT model FROM platform_model_calls WHERE profile = :p",
+        p=profile["name"],
+    )
+    assert [c["model"] for c in calls] == [CLAUDE]
+
+
+def test_no_key_on_the_worker_fails_the_test_until_it_is_set(
+    client: TestClient, admin: dict[str, str], db_url: str
+) -> None:
+    _drain_stale_tests(db_url)
+    profile = _create(client, admin, **_claude())
+
+    assert _test_with_real_gateway(db_url, None) == []
+
+    found = _listed(client, admin, profile["id"])
+    assert (found["state"], found["error_code"]) == ("failed", "missing_api_key")
+
+    resp = client.post(f"{URL}/{profile['id']}/test", headers=admin)
+    assert resp.status_code == 200, resp.text
+    _test_with_real_gateway(db_url, "sk-ant-test")
+    assert _listed(client, admin, profile["id"])["state"] == "verified"
+
+
 def test_a_retired_profile_keeps_serving_what_is_pinned_to_it(
     client: TestClient, admin: dict[str, str], db_url: str, gateway: FakeGateway
 ) -> None:
@@ -729,7 +972,19 @@ def test_the_allowlist_is_seeded_with_the_built_in_models(
     resp = client.get(APPROVED_URL, headers=admin)
     assert resp.status_code == 200, resp.text
     pairs = {(a["provider"], a["model"]) for a in resp.json()["items"]}
-    assert {(p.provider, p.model) for p in _custom_capable()} <= pairs
+    assert {(p.provider, p.model) for p in MODEL_PROFILES.values()} <= pairs
+    assert ("anthropic", CLAUDE_SONNET) in pairs
+
+
+def test_the_claude_seed_has_the_deterministic_ids(sync_engine: Engine) -> None:
+    seeded = rows(
+        sync_engine,
+        "SELECT id, model FROM registry_approved_models "
+        "WHERE provider = 'anthropic' AND created_by IS NULL",
+    )
+    ids = {row["model"]: UUID(str(row["id"])) for row in seeded}
+    for model in (CLAUDE, CLAUDE_SONNET):
+        assert ids[model] == uuid5(SEED_NAMESPACE, f"approved-model/anthropic/{model}")
 
 
 def test_an_added_model_can_be_used_and_removing_it_leaves_profiles_alone(
@@ -809,3 +1064,89 @@ def test_the_table_has_no_secret_column(sync_engine: Engine) -> None:
     )
     names = {c["column_name"] for c in columns}
     assert not {n for n in names if "key" in n or "url" in n or "secret" in n}
+
+
+# --- migration 0062 -------------------------------------------------------------------------
+
+
+def _insert_profile(conn: sa.Connection, provider_name: str, effort: str | None) -> None:
+    conn.execute(
+        sa.text(
+            "INSERT INTO registry_model_profiles "
+            "(id, name, provider, model, num_ctx, temperature, reasoning_effort, state) "
+            "VALUES (:id, :name, :provider, 'm', 20000, :temperature, :effort, 'untested')"
+        ),
+        {
+            "id": uuid4(),
+            "name": _name(),
+            "provider": provider_name,
+            "temperature": None if effort else 0.1,
+            "effort": effort,
+        },
+    )
+
+
+def _insert_approved(conn: sa.Connection, provider_name: str) -> None:
+    conn.execute(
+        sa.text("INSERT INTO registry_approved_models (id, provider, model) VALUES (:id, :p, :m)"),
+        {"id": uuid4(), "p": provider_name, "m": f"m-{uuid4().hex[:10]}"},
+    )
+
+
+def _checks(engine: Engine) -> dict[str, str]:
+    found = rows(
+        engine,
+        "SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint "
+        "WHERE contype = 'c' AND conrelid = ANY("
+        "ARRAY['registry_model_profiles'::regclass, 'registry_approved_models'::regclass])",
+    )
+    return {row["conname"]: row["definition"] for row in found}
+
+
+@pytest.mark.parametrize(
+    "insert",
+    [
+        lambda conn: _insert_profile(conn, "anthropic", "medium"),
+        lambda conn: _insert_profile(conn, "anthropic", None),
+        lambda conn: _insert_approved(conn, "anthropic"),
+    ],
+)
+def test_the_old_constraints_refuse_anthropic_after_a_downgrade(
+    sync_engine: Engine, insert: Any
+) -> None:
+    _alembic("downgrade", BEFORE_ANTHROPIC)
+    try:
+        with pytest.raises(sa.exc.IntegrityError), sync_engine.begin() as conn:
+            insert(conn)
+    finally:
+        _alembic("upgrade", "head")
+
+
+def test_the_downgrade_removes_anthropic_rows_and_the_upgrade_restores_the_seed(
+    client: TestClient, admin: dict[str, str], sync_engine: Engine
+) -> None:
+    claude = _create(client, admin, **_claude())
+    other = _create(client, admin)
+    widened = _checks(sync_engine)
+    added = f"claude-{uuid4().hex[:10]}"
+    resp = client.post(APPROVED_URL, json={"provider": "anthropic", "model": added}, headers=admin)
+    assert resp.status_code == 201, resp.text
+
+    _alembic("downgrade", BEFORE_ANTHROPIC)
+    try:
+        narrowed = _checks(sync_engine)
+        assert set(narrowed) == set(widened)  # replaced by name, none left beside the old ones
+        assert not [d for d in narrowed.values() if "anthropic" in d]
+        ids = {str(p["id"]) for p in rows(sync_engine, "SELECT id FROM registry_model_profiles")}
+        assert claude["id"] not in ids
+        assert other["id"] in ids
+        approved = rows(sync_engine, "SELECT provider FROM registry_approved_models")
+        assert {a["provider"] for a in approved} == {"ollama", "openai"}
+    finally:
+        _alembic("upgrade", "head")
+
+    assert _checks(sync_engine) == widened
+    seeded = rows(
+        sync_engine, "SELECT model FROM registry_approved_models WHERE provider = 'anthropic'"
+    )
+    assert {s["model"] for s in seeded} == {CLAUDE, CLAUDE_SONNET}

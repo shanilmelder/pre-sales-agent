@@ -7,9 +7,10 @@ export type ApprovedModel = components["schemas"]["ApprovedModelView"];
 export type ProfileState = ModelProfile["state"];
 export type Provider = ModelProfile["provider"];
 
-export const PROVIDERS: readonly Provider[] = ["ollama", "openai"];
+export const PROVIDERS: readonly Provider[] = ["ollama", "openai", "anthropic"];
 export const REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+export const DEFAULT_ANTHROPIC_EFFORT: ReasoningEffort = "medium";
 
 export const NAME_MAX = 64;
 export const NUM_CTX_MIN = 16384;

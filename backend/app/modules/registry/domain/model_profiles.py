@@ -11,17 +11,16 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
 from uuid import UUID
 
 from app.platform.model_gateway.profiles import (
     STRUCTURED_TEMPERATURE,
     ModelProfile,
+    Provider,
 )
 
-CustomProvider = Literal["ollama", "openai"]
-"""The providers a custom profile can use, as the database constrains them. Narrower than the
-gateway's `Provider`: `anthropic` is built in only (`anthropic-chat`)."""
+CustomProvider = Provider
+"""The providers a custom profile can use, as the database constrains them: all the gateway's."""
 
 SUBJECT_TYPE = "registry.model_profile"
 APPROVED_SUBJECT_TYPE = "registry.approved_model"
@@ -33,6 +32,7 @@ NUM_CTX_MIN = 16_384
 """Below this, intake's reserves leave no room for Source text (`input_budget_chars`)."""
 NUM_CTX_MAX = 2_097_152
 TEMPERATURE_MAX = 2.0
+DEFAULT_ANTHROPIC_EFFORT = "medium"
 
 
 class ProfileState(StrEnum):
@@ -64,7 +64,8 @@ class CustomProfile:
     @property
     def definition(self) -> ModelProfile:
         """What the ModelGateway calls. A reasoning profile stores no temperature, and the
-        adapter doesn't send one."""
+        adapter doesn't send one. An `anthropic` profile takes the refusal fallback, like
+        `anthropic-chat`."""
         return ModelProfile(
             name=self.name,
             model=self.model,
@@ -72,6 +73,7 @@ class CustomProfile:
             temperature=STRUCTURED_TEMPERATURE if self.temperature is None else self.temperature,
             provider=self.provider,
             reasoning_effort=self.reasoning_effort,
+            refusal_fallback=self.provider == "anthropic",
         )
 
 
@@ -115,11 +117,16 @@ def sampling(
     provider: CustomProvider, temperature: float | None, reasoning_effort: str | None
 ) -> tuple[float | None, str | None]:
     """The stored `(temperature, reasoning_effort)`: one or the other, as the adapter sends
-    them. A profile that sets neither gets the structured-output temperature."""
+    them. A profile that sets neither gets the structured-output temperature, or for
+    `anthropic`, whose requests never send a temperature, the default effort."""
+    if provider == "anthropic":
+        if temperature is not None:
+            raise ValueError("Claude profiles use a reasoning effort, not a temperature.")
+        return None, reasoning_effort or DEFAULT_ANTHROPIC_EFFORT
     if reasoning_effort is None:
         return (STRUCTURED_TEMPERATURE if temperature is None else temperature), None
     if temperature is not None:
         raise ValueError("Set a temperature or a reasoning effort, not both.")
     if provider != "openai":
-        raise ValueError("Reasoning effort needs the `openai` provider.")
+        raise ValueError("Reasoning effort needs the `openai` or `anthropic` provider.")
     return None, reasoning_effort
