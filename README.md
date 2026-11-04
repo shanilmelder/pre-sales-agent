@@ -138,8 +138,7 @@ app.modules.intake.adapters.parse_cli`) with a wall-clock limit `PSA_PARSE_TIMEO
 `app/platform/model_gateway/` (AD-8) is the only path to a model: host Ollama's native
 `/api/chat` with `format` set to the output model's JSON Schema, validation and bounded
 retries, a priority-aware slot limit, and one `platform_model_calls` row per call. Settings:
-`PSA_OLLAMA_URL` (default `http://127.0.0.1:11434`), `PSA_MODEL_PROFILE_CHAT` (`ollama-cloud-chat` =
-`gpt-oss:120b-cloud`, or `openai-chat` = `gpt-4.1-mini`), `PSA_MODEL_SLOTS` (default 3, so an
+`PSA_OLLAMA_URL` (default `http://127.0.0.1:11434`), `PSA_MODEL_SLOTS` (default 3, so an
 assessment run's three specialist agents can call at once),
 `PSA_MODEL_MAX_RETRIES` and `PSA_MODEL_TIMEOUT_S`. `ollama-cloud-chat` sends prompt text to Ollama's
 cloud: until IT approves it, use it only with sample or anonymised Opportunities.
@@ -149,6 +148,11 @@ Embeddings (Story 3.3) use the gateway too: `PSA_MODEL_PROFILE_EMBED` (default `
 worker (`knowledge.embed_source`, `background`) and search queries in the api
 (`GET /api/v1/knowledge/search`), each call writing a `platform_model_calls` row. The api
 process uses its gateway for query embeddings only, never for chat.
+
+Every chat profile lives in the Agent Registry (Admin > Model profiles); none is defined in
+code. Migration `0063` seeds three `verified` ones: `ollama-cloud-chat` (`gpt-oss:120b-cloud`),
+`openai-chat` (`gpt-4.1-mini`) and `anthropic-opus-chat` (`claude-opus-5-5`, effort `medium`). They
+behave like any other profile: listed, retirable when no Agent pins them, immutable.
 
 Each profile names its provider. `ollama-cloud-chat` uses Ollama's native API; `openai-chat`
 uses the OpenAI-compatible adapter: `POST {PSA_OPENAI_BASE_URL}/chat/completions` with
@@ -160,41 +164,49 @@ model digest of an `openai` call is recorded as `unknown`.
 and `worker`, and pin `openai-chat` on the Agent's config version. Like `ollama-cloud-chat` it sends
 prompt text to a cloud: sample or anonymised Opportunities only until IT approves it.
 
-An Agent's model comes only from the profile its config version pins (Admin → Agents). To use
-another model, define a profile for it in `backend/app/platform/model_gateway/profiles.py`
-and pin that. The model must support `json_schema` output. A reasoning model (`o3`, `o4-mini`,
+An Agent's model comes only from the profile its config version pins (Admin → Agents), and only
+a `verified` profile can be pinned. To use another model, add it to Approved models, create a
+profile for it in Admin > Model profiles, and pin that once its live test passes. The model must support `json_schema` output. A reasoning model (`o3`, `o4-mini`,
 `gpt-5`, ...) needs `reasoning_effort` set on its profile (`low`, `medium`, `high`; `minimal`
 on GPT-5): requests then send it and no `temperature`, which those models reject. Reasoning
 calls are slower, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if they time out; their
 `output_tokens` include the reasoning tokens.
 
-`anthropic-chat` (`claude-opus-5-5`) is Anthropic's API, through the official SDK: set
+`anthropic-opus-chat` (`claude-opus-5-5`) is Anthropic's API, through the official SDK: set
 `PSA_ANTHROPIC_API_KEY=sk-ant-...`, restart `worker` (the only service that gets the key, as
 the `api` never makes a chat call), then pin the profile on an Agent's config version in Admin
-> Agents. It is a built-in, not an admin-managed custom profile. Like `ollama-cloud-chat` it
-sends prompt text to a cloud: sample or anonymised Opportunities only until IT
-approves it. Without a key other profiles are unaffected, and a call on this one fails with
-`missing_api_key`. It serves chat only (`bge-m3` stays on Ollama) and its digest is recorded
-as `unknown`. A declined request is rerun on Anthropic's default fallback model, and call
-records and logs name the model that served the reply. Claude calls can run long, so raise
-`PSA_MODEL_TIMEOUT_S` (default 120) if they time out.
+> Agents. Like `ollama-cloud-chat` it sends prompt text to a cloud: sample or anonymised
+Opportunities only until IT approves it. Without a key other profiles are unaffected, and a
+call on this one fails with `missing_api_key`. It serves chat only (`bge-m3` stays on Ollama)
+and its digest is recorded as `unknown`. A declined request is rerun on Anthropic's default
+fallback model, and call records and logs name the model that served the reply. Claude calls
+can run long, so raise `PSA_MODEL_TIMEOUT_S` (default 120) if they time out.
+
+Administrators can also add more `anthropic` profiles in Admin > Model profiles, alongside
+`ollama` and `openai` ones. `claude-opus-5-5` and `claude-sonnet-5-5` are approved already; other
+Claude models go through Approved models. A custom Claude profile takes a reasoning effort
+(`low`, `medium` or `high`; default `medium`), never a temperature, and behaves like
+`anthropic-opus-chat`: it needs `PSA_ANTHROPIC_API_KEY` on the `worker`, and it can be pinned once
+its live test passes. Without the key the test fails with `missing_api_key`; set the key, restart
+`worker`, and test the profile again. The live test has its own fixed 90 s timeout per attempt:
+`PSA_MODEL_TIMEOUT_S` doesn't change it.
 
 Host Ollama setup: set `OLLAMA_NUM_PARALLEL` on the host to at least `PSA_MODEL_SLOTS`. The
 `api` and `worker` containers reach it at `host.docker.internal`; on Linux the host Ollama
 must listen beyond loopback for that (`OLLAMA_HOST=0.0.0.0`). Host-side commands (smoke,
 worker outside Docker) should use `PSA_OLLAMA_URL=http://127.0.0.1:11434`, not the
 `host.docker.internal` value from `.env`. Smoke check (needs `ollama serve`, `ollama signin`
-for cloud models, and a migrated database):
+for cloud models, and a migrated database; `--profile` names a registry profile and is required):
 
 ```sh
 cd backend
 PSA_OLLAMA_URL=http://127.0.0.1:11434 \
 PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa \
-  uv run python -m app.platform.model_gateway.smoke   # prints `ok` with tokens and latency
+  uv run python -m app.platform.model_gateway.smoke --profile ollama-cloud-chat   # prints `ok`
 # OpenAI's cloud API (prints `ok ... digest=unknown`):
-PSA_MODEL_PROFILE_CHAT=openai-chat PSA_OPENAI_BASE_URL=https://api.openai.com/v1 PSA_OPENAI_API_KEY=sk-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke
+PSA_OPENAI_BASE_URL=https://api.openai.com/v1 PSA_OPENAI_API_KEY=sk-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke --profile openai-chat
 # Anthropic's API (prints `ok ... digest=unknown`):
-PSA_MODEL_PROFILE_CHAT=anthropic-chat PSA_ANTHROPIC_API_KEY=sk-ant-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke
+PSA_ANTHROPIC_API_KEY=sk-ant-... PSA_DATABASE_URL=postgresql+psycopg://psa_app:change-me-app-local-only@localhost:5432/psa   uv run python -m app.platform.model_gateway.smoke --profile anthropic-opus-chat
 ```
 
 ## Authentication (Auth0)

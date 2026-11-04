@@ -73,7 +73,7 @@ def _matching_settings(monkeypatch: pytest.MonkeyPatch, storage_dir: Any) -> Non
     monkeypatch.setattr(
         answer_matching,
         "matching_settings",
-        lambda: Settings(storage_dir=storage_dir, model_profile_chat="ollama-cloud-chat"),
+        lambda: Settings(storage_dir=storage_dir),
     )
 
 

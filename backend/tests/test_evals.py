@@ -845,7 +845,7 @@ def eval_settings(
     storage = tmp_path / "files"
     monkeypatch.setenv("PSA_STORAGE_DIR", str(storage))
     get_settings.cache_clear()
-    yield _settings(db_url, storage_dir=storage, model_profile_chat="ollama-cloud-chat")
+    yield _settings(db_url, storage_dir=storage)
     get_settings.cache_clear()
 
 

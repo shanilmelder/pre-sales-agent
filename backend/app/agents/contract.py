@@ -113,8 +113,8 @@ class AgentConfig:
     prompt_version: int
     """N in `agents/<agent_id>/prompts/v<N>.md`."""
     profile: str
-    """The ModelGateway profile name the agent calls: a built-in or a custom profile. Custom
-    profiles live in the database, so the gateway resolves the name when it is called."""
+    """The ModelGateway profile name the agent calls. Every chat profile lives in the registry's
+    database, so the gateway resolves the name when it is called."""
     config_version_id: UUID
     """The registry config version's id; sent to the ModelGateway as `config_version`."""
 

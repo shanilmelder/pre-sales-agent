@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from pydantic import BaseModel
 from sqlalchemy.engine import Engine
 
-from app.agents.manifest import SCHEMA_VERSIONS, build
+from app.agents.manifest import SCHEMA_VERSIONS
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.model_gateway.gateway import ModelGateway
@@ -35,10 +35,11 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
     StructuredResult,
 )
-from app.platform.model_gateway.profiles import MODEL_PROFILES, EmbedProfile
+from app.platform.model_gateway.profiles import EmbedProfile
 from tests.conftest import run_async
+from tests.test_model_gateway import SEEDED, resolve_seeded
 
-PROFILE = "anthropic-chat"
+PROFILE = "anthropic-opus-chat"
 MODEL = "claude-opus-5-5"
 API_KEY = "sk-ant-SECRET-key-5d2e"
 PROMPT_SECRET = "PROMPT-SECRET-Acme-warehouse-7f3a"
@@ -144,7 +145,10 @@ def _call(
         engine = create_engine(config)
         try:
             async with ModelGateway(
-                config, engine, anthropic_transport=httpx2.MockTransport(stub)
+                config,
+                engine,
+                anthropic_transport=httpx2.MockTransport(stub),
+                resolve_profile=resolve_seeded,
             ) as gateway:
                 try:
                     return await gateway.complete_structured(request or _request())
@@ -214,19 +218,17 @@ def test_request_carries_the_profiles_settings_and_no_sampling_config(db_url: st
         assert key not in body
 
 
-def test_called_via_configured_chat_profile(db_url: str, sync_engine: Engine) -> None:
+def test_called_via_the_registry_profile(db_url: str, sync_engine: Engine) -> None:
     stub = Stub(VALID)
-    result = _call(db_url, stub, _request(profile=None), model_profile_chat=PROFILE)
+    result = _call(db_url, stub)
     assert isinstance(result, StructuredResult)
     assert _row(sync_engine, result.call_id)["profile"] == PROFILE
     assert stub.bodies[0]["model"] == MODEL
 
 
 def test_unset_fields_are_omitted(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    plain = dataclasses.replace(
-        MODEL_PROFILES[PROFILE], reasoning_effort=None, refusal_fallback=False
-    )
-    monkeypatch.setattr("app.platform.model_gateway.gateway.get_profile", lambda *_a, **_k: plain)
+    plain = dataclasses.replace(SEEDED[PROFILE], reasoning_effort=None, refusal_fallback=False)
+    monkeypatch.setitem(SEEDED, PROFILE, plain)
     stub = Stub(VALID)
     _call(db_url, stub, _request(messages=[Message(role="user", content="hello")]))
     [body] = stub.bodies
@@ -546,10 +548,6 @@ def test_no_prompt_reply_or_key_in_logs_rows_or_errors(
 
 
 # --- profile, config and schemas ----------------------------------------------------------
-
-
-def test_manifest_lists_the_profile() -> None:
-    assert build()["profiles"][PROFILE] == {"provider": "anthropic", "model": MODEL}
 
 
 def test_key_stays_out_of_the_settings_repr(db_url: str) -> None:

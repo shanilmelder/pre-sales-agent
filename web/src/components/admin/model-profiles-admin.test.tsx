@@ -32,6 +32,13 @@ import { ModelProfilesAdmin } from "./model-profiles-admin";
 const APPROVED: ApprovedModel[] = [
   { id: "a1", provider: "ollama", model: "gpt-oss:120b-cloud", created_at: "2026-11-02T09:00:00Z" },
   { id: "a2", provider: "openai", model: "gpt-4.1-mini", created_at: "2026-11-02T09:00:00Z" },
+  { id: "a3", provider: "anthropic", model: "claude-opus-5-5", created_at: "2026-11-02T09:00:00Z" },
+  {
+    id: "a4",
+    provider: "anthropic",
+    model: "claude-sonnet-5-5",
+    created_at: "2026-11-02T09:00:00Z",
+  },
 ];
 
 function profile(over: Partial<ModelProfile> = {}): ModelProfile {
@@ -131,6 +138,94 @@ describe("ModelProfilesAdmin", () => {
       }),
     );
     expect(await screen.findByText("Not approved.")).toBeTruthy();
+  });
+
+  it("sends a Claude profile's effort, default medium, with no temperature or None option", async () => {
+    const user = userEvent.setup();
+    actions.createProfile.mockResolvedValue({ kind: "invalid", detail: "Not approved." });
+    render(ui([]));
+
+    await user.click(screen.getByRole("button", { name: "New profile" }));
+    await user.type(await screen.findByLabelText("Name"), "claude");
+    await user.selectOptions(screen.getByLabelText("Provider"), "anthropic");
+
+    const effort = screen.getByLabelText("Reasoning effort") as HTMLSelectElement;
+    expect(effort.value).toBe("medium");
+    expect(within(effort).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(screen.queryByLabelText("Temperature")).toBeNull();
+    const models = screen.getByLabelText("Model ID");
+    expect(within(models).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+    ]);
+
+    await user.click(screen.getByRole("button", { name: "Create and test" }));
+
+    await waitFor(() =>
+      expect(actions.createProfile).toHaveBeenCalledWith({
+        name: "claude",
+        provider: "anthropic",
+        model: "claude-opus-5-5",
+        num_ctx: 32768,
+        temperature: null,
+        reasoning_effort: "medium",
+      }),
+    );
+  });
+
+  it("carries the effort across providers and clears it on ollama", async () => {
+    const user = userEvent.setup();
+    render(ui([]));
+
+    await user.click(screen.getByRole("button", { name: "New profile" }));
+    const provider = await screen.findByLabelText("Provider");
+    await user.selectOptions(provider, "openai");
+    const effort = () => screen.getByLabelText("Reasoning effort") as HTMLSelectElement;
+    expect(effort().value).toBe("");
+    expect(screen.getByLabelText("Temperature")).toBeTruthy();
+
+    await user.selectOptions(provider, "anthropic");
+    expect(effort().value).toBe("medium");
+    expect(screen.queryByLabelText("Temperature")).toBeNull();
+
+    await user.selectOptions(provider, "ollama");
+    expect(screen.queryByLabelText("Reasoning effort")).toBeNull();
+    expect(screen.getByLabelText("Temperature")).toBeTruthy();
+
+    await user.selectOptions(provider, "openai");
+    expect(effort().value).toBe("");
+  });
+
+  it("clears the effort leaving Claude, so openai shows None and Temperature", async () => {
+    const user = userEvent.setup();
+    render(ui([]));
+
+    await user.click(screen.getByRole("button", { name: "New profile" }));
+    const provider = await screen.findByLabelText("Provider");
+    await user.selectOptions(provider, "anthropic");
+    await user.selectOptions(provider, "openai");
+
+    const effort = screen.getByLabelText("Reasoning effort") as HTMLSelectElement;
+    expect(effort.value).toBe("");
+    expect(effort.selectedOptions[0].textContent).toBe("None (use temperature)");
+    expect(screen.getByLabelText("Temperature")).toBeTruthy();
+  });
+
+  it("keeps a chosen effort moving to Claude", async () => {
+    const user = userEvent.setup();
+    render(ui([]));
+
+    await user.click(screen.getByRole("button", { name: "New profile" }));
+    const provider = await screen.findByLabelText("Provider");
+    await user.selectOptions(provider, "openai");
+    await user.selectOptions(screen.getByLabelText("Reasoning effort"), "high");
+    await user.selectOptions(provider, "anthropic");
+
+    expect((screen.getByLabelText("Reasoning effort") as HTMLSelectElement).value).toBe("high");
   });
 
   it("re-reads the list while a test is pending and shows the result", async () => {
@@ -252,6 +347,30 @@ describe("ModelProfileApproved", () => {
 
     expect(await screen.findByText("llama4")).toBeTruthy();
     expect(actions.addApprovedModel).toHaveBeenCalledWith({ provider: "ollama", model: "llama4" });
+  });
+
+  it("offers anthropic", async () => {
+    const user = userEvent.setup();
+    actions.addApprovedModel.mockResolvedValue({
+      kind: "ok",
+      model: {
+        id: "a5",
+        provider: "anthropic",
+        model: "claude-next",
+        created_at: "2026-11-02T09:00:00Z",
+      },
+    });
+    render(approved());
+
+    await user.selectOptions(screen.getByLabelText("Provider"), "anthropic");
+    await user.type(screen.getByLabelText("Model ID"), "claude-next");
+    await user.click(screen.getByRole("button", { name: "Approve model" }));
+
+    expect(await screen.findByText("claude-next")).toBeTruthy();
+    expect(actions.addApprovedModel).toHaveBeenCalledWith({
+      provider: "anthropic",
+      model: "claude-next",
+    });
   });
 
   it("shows the API's sentence for a duplicate", async () => {

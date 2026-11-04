@@ -111,15 +111,16 @@ services:
       LANGGRAPH_STRICT_MSGPACK: "true"
       PSA_PARSE_TIMEOUT_S: ${PSA_PARSE_TIMEOUT_S:-120}
       PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
-      # ModelGateway (Story 2.4): host Ollama, reached through host-gateway. `ollama-cloud-chat`
-      # sends prompt text to Ollama's cloud: sample or anonymised Opportunities only.
+      # ModelGateway (Story 2.4): host Ollama, reached through host-gateway. Chat profiles live
+      # in the Agent Registry. `ollama-cloud-chat` sends prompt text to Ollama's cloud: sample or
+      # anonymised Opportunities only.
       PSA_OLLAMA_URL: ${PSA_OLLAMA_URL:-http://host.docker.internal:11434}
       PSA_MODEL_PROFILE_EMBED: ${PSA_MODEL_PROFILE_EMBED:-bge-m3}
       # OpenAI-compatible server for `openai` profiles: https://api.openai.com/v1 for
       # openai-chat. Its context size is set server-side, not per request.
       PSA_OPENAI_BASE_URL: ${PSA_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       PSA_OPENAI_API_KEY: ${PSA_OPENAI_API_KEY:-}
-      # Anthropic's API for `anthropic` profiles (anthropic-chat). It sends prompt text to a
+      # Anthropic's API for `anthropic` profiles (anthropic-opus-chat). It sends prompt text to a
       # cloud: sample or anonymised Opportunities only.
       PSA_ANTHROPIC_API_KEY: ${PSA_ANTHROPIC_API_KEY:-}
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}

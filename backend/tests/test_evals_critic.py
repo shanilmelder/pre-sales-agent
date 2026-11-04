@@ -15,8 +15,10 @@ from app.platform.config import Settings
 from app.platform.model_gateway.port import ModelTimeoutError, StructuredRequest
 from tests.conftest import run_async
 from tests.test_intake_extraction import FakeGateway
+from tests.test_model_gateway import StubOllama, stubbed
 
-SETTINGS = Settings(model_profile_chat="ollama-cloud-chat")
+SETTINGS = Settings()
+PROFILE = "ollama-cloud-chat"
 
 
 def test_the_committed_fixtures_seed_the_three_defects() -> None:
@@ -85,7 +87,7 @@ def test_an_unknown_or_unreadable_case_is_refused(
     (tmp_path / "broken.yaml").write_text("requirements: [unclosed\n", encoding="utf-8")
     with pytest.raises(ev.CaseError, match="can't be read"):
         ev.load_cases(tmp_path)
-    assert main(["critic", "--only", "no-such-case"]) == 2
+    assert main(["critic", "--profile", "ollama-cloud-chat", "--only", "no-such-case"]) == 2
 
 
 def test_scoring_counts_only_matching_categories() -> None:
@@ -158,7 +160,9 @@ def test_a_run_that_reports_every_uncovered_requirement_passes(tmp_path: Path) -
 
     fake = FakeGateway()
     fake.replies = [reply]
-    outcome = run_async(ev.run_critic_eval(SETTINGS, gateway=fake, out_dir=tmp_path))
+    outcome = run_async(
+        ev.run_critic_eval(SETTINGS, profile=PROFILE, gateway=fake, out_dir=tmp_path)
+    )
 
     written = json.loads((outcome.out_dir / "report.json").read_text(encoding="utf-8"))
     assert outcome.out_dir.name.startswith("critic-")
@@ -179,7 +183,9 @@ def test_a_missed_uncovered_requirement_fails_the_run_even_with_the_backstop(
     fake = FakeGateway()
     fake.replies = [CriticOutput(findings=[])]  # the code backstops; the agent found nothing
     outcome = run_async(
-        ev.run_critic_eval(SETTINGS, gateway=fake, out_dir=tmp_path, only=("erp-golive-crunch",))
+        ev.run_critic_eval(
+            SETTINGS, profile=PROFILE, gateway=fake, out_dir=tmp_path, only=("erp-golive-crunch",)
+        )
     )
     assert outcome.report["passed"] is False
     assert outcome.report["overall"]["found"] == 0
@@ -191,14 +197,29 @@ def test_a_missed_uncovered_requirement_fails_the_run_even_with_the_backstop(
         {**ev.run_critic_eval.__kwdefaults__, "gateway": fake, "out_dir": tmp_path},
     )
     monkeypatch.setattr("app.evals.__main__.get_settings", lambda: SETTINGS)
-    assert main(["critic", "--only", "erp-golive-crunch"]) == 1
+    assert main(["critic", "--profile", "ollama-cloud-chat", "--only", "erp-golive-crunch"]) == 1
 
 
 def test_a_failed_model_call_finds_nothing(tmp_path: Path) -> None:
     fake = FakeGateway()
     fake.replies = [ModelTimeoutError("slow")]
     outcome = run_async(
-        ev.run_critic_eval(SETTINGS, gateway=fake, out_dir=tmp_path, only=("parcel-hub-sso",))
+        ev.run_critic_eval(
+            SETTINGS, profile=PROFILE, gateway=fake, out_dir=tmp_path, only=("parcel-hub-sso",)
+        )
     )
     assert outcome.report["errors"] == {"parcel-hub-sso": "ModelTimeoutError"}
     assert outcome.report["passed"] is False
+
+
+def test_the_live_gateway_resolves_the_profile_from_the_registry(
+    db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = StubOllama(['{"findings": []}'])
+    monkeypatch.setattr(ev, "_UnrecordedGateway", stubbed(ev._UnrecordedGateway, stub))
+    settings = Settings(database_url=db_url, ollama_url="http://ollama.test")
+    outcome = run_async(
+        ev.run_critic_eval(settings, profile=PROFILE, out_dir=tmp_path, only=("parcel-hub-sso",))
+    )
+    assert [body["model"] for body in stub.chat_bodies] == ["gpt-oss:120b-cloud"]
+    assert outcome.report["profile"] == PROFILE

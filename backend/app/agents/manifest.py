@@ -7,7 +7,9 @@
   an agent's input (its task) or output (its extension) at a version, hashed from
   `TypeAdapter(model).json_schema()`. The Pydantic models (and task dataclasses) are the
   source of truth; the JSON Schema is generated from them.
-- **Profiles:** every ModelGateway profile, with its provider and model.
+
+Model profiles are not in the manifest: every chat profile lives in the registry
+(`registry_model_profiles`), and a config version may pin only a `verified` one.
 
 `manifest.json` next to this file is generated (`uv run python -m app.agents.manifest`) and
 committed; CI regenerates it and fails on any `git diff` (locally, `--check` exits 1 on
@@ -51,7 +53,6 @@ from app.agents.red_team_agent.agent import RedTeamTask
 from app.agents.red_team_agent.schema import RedTeamOutput
 from app.agents.security_agent.schema import SecurityOutput
 from app.agents.specialist.agent import SpecialistTask
-from app.platform.model_gateway.profiles import MODEL_PROFILES
 
 AGENTS_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = AGENTS_DIR / "manifest.json"
@@ -132,7 +133,7 @@ def _prompts(agents_dir: Path) -> dict[str, dict[str, dict[str, str]]]:
 
 
 def build(agents_dir: Path = AGENTS_DIR) -> dict[str, Any]:
-    """The manifest computed from the code: prompts, schemas and profiles."""
+    """The manifest computed from the code: prompts and schemas."""
     schemas: dict[str, dict[str, dict[str, dict[str, str]]]] = {}
     for item in SCHEMA_VERSIONS:
         kinds = schemas.setdefault(item.agent, {"input": {}, "output": {}})
@@ -147,10 +148,6 @@ def build(agents_dir: Path = AGENTS_DIR) -> dict[str, Any]:
         "contract_version": CONTRACT_VERSION,
         "prompts": _prompts(agents_dir),
         "schemas": schemas,
-        "profiles": {
-            name: {"provider": profile.provider, "model": profile.model}
-            for name, profile in sorted(MODEL_PROFILES.items())
-        },
     }
 
 
@@ -179,9 +176,6 @@ class Manifest:
         entry = self.data.get("schemas", {}).get(agent, {}).get(kind, {}).get(str(version))
         return entry if isinstance(entry, Mapping) else None
 
-    def has_profile(self, name: str) -> bool:
-        return name in self.data.get("profiles", {})
-
     def prompt_versions(self, agent: str) -> list[int]:
         """The agent's deployed prompt versions (each passing `has_prompt`), ascending."""
         listed = self.data.get("prompts", {}).get(agent, {})
@@ -197,10 +191,6 @@ class Manifest:
             if str(key).isdigit() and isinstance(entry, Mapping)
         }
         return dict(sorted(found.items()))
-
-    def profiles(self) -> list[str]:
-        """Every deployed model profile name, sorted."""
-        return sorted(self.data.get("profiles", {}))
 
 
 @cache

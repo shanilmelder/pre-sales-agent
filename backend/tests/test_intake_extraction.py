@@ -136,7 +136,7 @@ def storage_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         intake_extraction,
         "extraction_settings",
-        lambda: Settings(storage_dir=root, model_profile_chat="ollama-cloud-chat"),
+        lambda: Settings(storage_dir=root),
     )
     return root
 

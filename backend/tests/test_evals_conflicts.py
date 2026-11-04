@@ -14,6 +14,7 @@ from app.platform.config import Settings
 from app.platform.model_gateway.port import ModelTimeoutError, StructuredRequest
 from tests.conftest import run_async
 from tests.test_intake_extraction import FakeGateway
+from tests.test_model_gateway import StubOllama, stubbed
 
 
 def test_the_committed_cases_cover_every_type_and_two_decoys() -> None:
@@ -87,7 +88,7 @@ def test_an_unreadable_case_file_is_refused_with_exit_two(
         "__kwdefaults__",
         {**ev.run_conflicts_eval.__kwdefaults__, "cases_dir": tmp_path},
     )
-    assert main(["conflicts"]) == 2
+    assert main(["conflicts", "--profile", "ollama-cloud-chat"]) == 2
 
 
 def P(type_: str, *keys: str) -> ev.Predicted:
@@ -162,7 +163,7 @@ def test_a_run_with_a_fake_gateway_writes_the_report(tmp_path: Path) -> None:
     fake.replies = [reply]
     outcome = run_async(
         ev.run_conflicts_eval(
-            Settings(model_profile_chat="ollama-cloud-chat"), gateway=fake, out_dir=tmp_path
+            Settings(), profile="ollama-cloud-chat", gateway=fake, out_dir=tmp_path
         )
     )
     written = json.loads((outcome.out_dir / "report.json").read_text(encoding="utf-8"))
@@ -183,7 +184,8 @@ def test_a_failed_model_call_counts_as_no_prediction(tmp_path: Path) -> None:
     fake.replies = [ModelTimeoutError("slow")]
     outcome = run_async(
         ev.run_conflicts_eval(
-            Settings(model_profile_chat="ollama-cloud-chat"),
+            Settings(),
+            profile="ollama-cloud-chat",
             gateway=fake,
             out_dir=tmp_path,
             only=("decoy-unrelated-topics",),
@@ -194,4 +196,41 @@ def test_a_failed_model_call_counts_as_no_prediction(tmp_path: Path) -> None:
 
 
 def test_an_unknown_case_is_refused_on_the_command_line() -> None:
-    assert main(["conflicts", "--only", "no-such-case"]) == 2
+    assert main(["conflicts", "--profile", "ollama-cloud-chat", "--only", "no-such-case"]) == 2
+
+
+@pytest.mark.parametrize("command", ["conflicts", "critic"])
+def test_a_missing_profile_is_a_usage_error(command: str) -> None:
+    with pytest.raises(SystemExit) as info:
+        main([command])
+    assert info.value.code == 2
+
+
+def test_the_live_gateway_resolves_the_profile_from_the_registry(
+    db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = StubOllama(['{"conflicts": []}'])
+    monkeypatch.setattr(ev, "_UnrecordedGateway", stubbed(ev._UnrecordedGateway, stub))
+    settings = Settings(database_url=db_url, ollama_url="http://ollama.test")
+    outcome = run_async(
+        ev.run_conflicts_eval(
+            settings,
+            profile="ollama-cloud-chat",
+            out_dir=tmp_path,
+            only=("decoy-unrelated-topics",),
+        )
+    )
+    assert [body["model"] for body in stub.chat_bodies] == ["gpt-oss:120b-cloud"]
+    assert outcome.report["profile"] == "ollama-cloud-chat"
+
+
+def test_an_unknown_profile_is_refused_with_exit_two(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub = StubOllama([])
+    monkeypatch.setattr(ev, "_UnrecordedGateway", stubbed(ev._UnrecordedGateway, stub))
+    monkeypatch.setattr("app.evals.__main__.get_settings", lambda: Settings(database_url=db_url))
+    command = ["conflicts", "--profile", "no-such-profile", "--only", "decoy-unrelated-topics"]
+    assert main(command) == 2
+    assert stub.chat_bodies == []
+    assert "no model profile named 'no-such-profile'" in capsys.readouterr().err

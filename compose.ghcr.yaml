@@ -138,7 +138,7 @@ services:
       PSA_PARSE_MAX_MEMORY_MB: ${PSA_PARSE_MAX_MEMORY_MB:-1024}
       PSA_OPENAI_BASE_URL: ${PSA_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       PSA_OPENAI_API_KEY: ${PSA_OPENAI_API_KEY:-}
-      # Anthropic's API for `anthropic` profiles (anthropic-chat). It sends prompt text to a
+      # Anthropic's API for `anthropic` profiles (anthropic-opus-chat). It sends prompt text to a
       # cloud: sample or anonymised Opportunities only.
       PSA_ANTHROPIC_API_KEY: ${PSA_ANTHROPIC_API_KEY:-}
       PSA_MODEL_SLOTS: ${PSA_MODEL_SLOTS:-3}

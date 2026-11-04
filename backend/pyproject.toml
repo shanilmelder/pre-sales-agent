@@ -84,6 +84,9 @@ name = "Platform does not depend on business modules, orchestration or agents"
 type = "forbidden"
 source_modules = ["app.platform"]
 forbidden_modules = ["app.modules", "app.orchestration", "app.agents"]
+# The smoke check is a command-line entry point: its gateway resolves chat profiles through the
+# registry, where every chat profile lives.
+ignore_imports = ["app.platform.model_gateway.smoke -> app.modules.registry.application.public"]
 
 [[tool.importlinter.contracts]]
 name = "The api process never imports the job claim loop (AD-1, AD-29)"

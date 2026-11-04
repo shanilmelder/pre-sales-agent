@@ -99,7 +99,7 @@ class ModelProfileRow(Base):
     __table_args__ = (
         UniqueConstraint("name"),
         CheckConstraint("name ~ '^[a-z0-9][a-z0-9._-]*$' AND char_length(name) <= 64", name="name"),
-        CheckConstraint("provider IN ('ollama', 'openai')", name="provider"),
+        CheckConstraint("provider IN ('ollama', 'openai', 'anthropic')", name="provider"),
         CheckConstraint("char_length(model) BETWEEN 1 AND 128", name="model"),
         CheckConstraint("num_ctx BETWEEN 16384 AND 2097152", name="num_ctx"),
         CheckConstraint(
@@ -107,7 +107,7 @@ class ModelProfileRow(Base):
         ),
         CheckConstraint("temperature IS NULL OR temperature BETWEEN 0 AND 2", name="temperature"),
         CheckConstraint(
-            "reasoning_effort IS NULL OR (provider = 'openai' "
+            "reasoning_effort IS NULL OR (provider IN ('openai', 'anthropic') "
             "AND reasoning_effort IN ('low', 'medium', 'high'))",
             name="reasoning_effort",
         ),
@@ -137,7 +137,7 @@ class ApprovedModelRow(Base):
     __tablename__ = "registry_approved_models"
     __table_args__ = (
         UniqueConstraint("provider", "model"),
-        CheckConstraint("provider IN ('ollama', 'openai')", name="provider"),
+        CheckConstraint("provider IN ('ollama', 'openai', 'anthropic')", name="provider"),
         CheckConstraint("char_length(model) BETWEEN 1 AND 128", name="model"),
     )
 

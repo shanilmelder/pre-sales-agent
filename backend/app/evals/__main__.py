@@ -1,13 +1,13 @@
 """`python -m app.evals run [--config <agent_id>=<version> ...] [--only <slug> ...]
 [--timeout <s>]` (`make eval ARGS="..."`), and `python -m app.evals conflicts [--only <case>
-...] [--profile <name>]` (`make eval-conflicts ARGS="..."`, Story 6.2: precision and recall of
+...] --profile <name>` (`make eval-conflicts ARGS="..."`, Story 6.2: precision and recall of
 semantic Conflict detection per type; exit 0 once the report is written, 2 for an invalid or
-unknown case), `python -m app.evals critic [--only <case> ...] [--profile <name>]` (`make
-eval-critic ARGS="..."`, Story 6.4: the share of seeded defects the Critic finds; exit 0 when
-every case's uncovered Requirement is reported, 1 otherwise, 2 for an invalid or unknown
-case), and `python -m app.evals retrieval [--timeout <s>]` (`make eval-retrieval`,
-Story 3.3: hit rate at k and citation validity of Knowledge search in the eval database;
-exit 0 once the report is written, 2 refused, 3 timed out).
+unknown case or an unknown profile), `python -m app.evals critic [--only <case> ...]
+--profile <name>` (`make eval-critic ARGS="..."`, Story 6.4: the share of seeded defects the
+Critic finds; exit 0 when every case's uncovered Requirement is reported, 1 otherwise, 2 for
+an invalid or unknown case or profile), and `python -m app.evals retrieval [--timeout <s>]`
+(`make eval-retrieval`, Story 3.3: hit rate at k and citation validity of Knowledge search in
+the eval database; exit 0 once the report is written, 2 refused, 3 timed out).
 
 Exit codes: 0 passed; 1 failed (a bar missed or regressed, or a stage failed; the result
 is still stored); 2 refused or could not run (an unknown `--only` slug, invalid
@@ -35,6 +35,7 @@ from app.evals.harness import (
 from app.evals.report import render
 from app.platform.config import get_settings
 from app.platform.logging import configure_logging
+from app.platform.model_gateway.profiles import UnknownModelProfileError
 
 EXIT_FAILED, EXIT_REFUSED, EXIT_TIMED_OUT = 1, 2, 3
 
@@ -74,7 +75,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Run only this case (repeatable).",
     )
     semantic.add_argument(
-        "--profile", default=None, help="The model profile (default: PSA_MODEL_PROFILE_CHAT)."
+        "--profile", required=True, help="The chat model profile (a registry profile name)."
     )
     critic = commands.add_parser(
         "critic", help="Run the Critic cases (evals/critic/): share of seeded defects found."
@@ -87,7 +88,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Run only this case (repeatable).",
     )
     critic.add_argument(
-        "--profile", default=None, help="The model profile (default: PSA_MODEL_PROFILE_CHAT)."
+        "--profile", required=True, help="The chat model profile (a registry profile name)."
     )
     retrieval = commands.add_parser(
         "retrieval", help="Score Knowledge search on evals/knowledge/ (hit rate, citations)."
@@ -136,6 +137,9 @@ def _conflicts(args: argparse.Namespace) -> int:
     except conflicts_eval.CaseError as exc:
         print(f"Eval refused: {exc}", file=sys.stderr)
         return EXIT_REFUSED
+    except UnknownModelProfileError:
+        print(f"Eval refused: no model profile named {args.profile!r}", file=sys.stderr)
+        return EXIT_REFUSED
     print(conflicts_eval.render(outcome.report))
     print(f"\nReport: {outcome.out_dir / 'report.json'}")
     return 0
@@ -151,6 +155,9 @@ def _critic(args: argparse.Namespace) -> int:
         )
     except critic_eval.CaseError as exc:
         print(f"Eval refused: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
+    except UnknownModelProfileError:
+        print(f"Eval refused: no model profile named {args.profile!r}", file=sys.stderr)
         return EXIT_REFUSED
     print(critic_eval.render(outcome.report))
     print(f"\nReport: {outcome.out_dir / 'report.json'}")

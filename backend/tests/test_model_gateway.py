@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.platform.config import Settings
 from app.platform.db import create_engine
 from app.platform.ids import new_id
-from app.platform.model_gateway import profiles
 from app.platform.model_gateway.gateway import ModelGateway, field_paths
 from app.platform.model_gateway.openai_compat import schema_name
 from app.platform.model_gateway.port import (
@@ -38,11 +37,7 @@ from app.platform.model_gateway.port import (
     StructuredRequest,
     StructuredResult,
 )
-from app.platform.model_gateway.profiles import (
-    MODEL_PROFILES,
-    UnknownModelProfileError,
-    get_profile,
-)
+from app.platform.model_gateway.profiles import ModelProfile, UnknownModelProfileError
 from app.platform.model_gateway.semaphore import PrioritySemaphore
 from tests.conftest import UNREACHABLE_DB, run_async
 
@@ -77,6 +72,30 @@ CHAT_PATHS = {"/api/chat": "ollama", "/v1/chat/completions": "openai"}
 PROFILES = {"ollama": "ollama-cloud-chat", "openai": "openai-chat"}
 MODELS = {"ollama": "gpt-oss:120b-cloud", "openai": "gpt-4.1-mini"}
 OPENAI_URL = "http://ollama.test/v1/chat/completions"
+# The definitions migration `0063` seeds in the registry; tests resolve them from this dict.
+SEEDED: dict[str, ModelProfile] = {
+    "ollama-cloud-chat": ModelProfile(
+        name="ollama-cloud-chat", model="gpt-oss:120b-cloud", num_ctx=32768
+    ),
+    "openai-chat": ModelProfile(
+        name="openai-chat", model="gpt-4.1-mini", num_ctx=32768, provider="openai"
+    ),
+    "anthropic-opus-chat": ModelProfile(
+        name="anthropic-opus-chat",
+        model="claude-opus-5-5",
+        num_ctx=32768,
+        provider="anthropic",
+        reasoning_effort="medium",
+        refusal_fallback=True,
+    ),
+}
+
+
+async def resolve_seeded(name: str) -> ModelProfile | None:
+    """A dict `ProfileResolver` over `SEEDED` (read at call time, so tests can patch it)."""
+    return SEEDED.get(name)
+
+
 API_KEY = "sk-SECRET-key-5d2e"
 
 
@@ -187,7 +206,7 @@ def _digest(provider: str) -> str:
     return DIGEST if provider == "ollama" else "unknown"
 
 
-def _settings(db_url: str, provider: str | None = None, **overrides: Any) -> Settings:
+def _settings(db_url: str, **overrides: Any) -> Settings:
     fields: dict[str, Any] = {
         "database_url": db_url,
         "ollama_url": "http://ollama.test",
@@ -196,8 +215,6 @@ def _settings(db_url: str, provider: str | None = None, **overrides: Any) -> Set
         # One slot, so the slot tests can hold it (the default is 3 since Epic 5 slice 5A).
         "model_slots": 1,
     }
-    if provider is not None:
-        fields["model_profile_chat"] = PROFILES[provider]
     return Settings(**(fields | overrides))
 
 
@@ -214,6 +231,7 @@ def _request(**overrides: Any) -> StructuredRequest[Extraction]:
             run_id=RUN_ID,
             opportunity_id=OPPORTUNITY_ID,
         ),
+        "profile": "ollama-cloud-chat",
         "priority": "interactive",
         "timeout_s": 5,
     }
@@ -229,21 +247,30 @@ def _call(
     **settings: Any,
 ) -> StructuredResult[Extraction] | ModelGatewayError:
     """Run one call; return the result, or the typed error it raised. `provider` picks that
-    provider's local profile; None keeps the default profile (`ollama-cloud-chat`, Ollama)."""
+    provider's seeded profile; None keeps the request's (`ollama-cloud-chat`, Ollama)."""
+    request = request or _request()
+    if provider is not None:
+        request = replace(request, profile=PROFILES[provider])
 
     async def scenario() -> StructuredResult[Extraction] | ModelGatewayError:
-        config = _settings(db_url, provider, **settings)
+        config = _settings(db_url, **settings)
         engine = create_engine(config)
         try:
-            async with ModelGateway(config, engine, transport=httpx.MockTransport(stub)) as gateway:
+            async with _gateway(config, engine, httpx.MockTransport(stub)) as gateway:
                 try:
-                    return await gateway.complete_structured(request or _request())
+                    return await gateway.complete_structured(request)
                 except ModelGatewayError as exc:
                     return exc
         finally:
             await engine.dispose()
 
     return run_async(scenario())
+
+
+def _gateway(
+    settings: Settings, engine: AsyncEngine, transport: httpx.AsyncBaseTransport
+) -> ModelGateway:
+    return ModelGateway(settings, engine, transport=transport, resolve_profile=resolve_seeded)
 
 
 def _row(engine: Engine, call_id: UUID | None) -> dict[str, Any]:
@@ -334,9 +361,7 @@ def test_digest_is_cached_per_gateway(db_url: str) -> None:
         settings = _settings(db_url)
         engine = create_engine(settings)
         try:
-            async with ModelGateway(
-                settings, engine, transport=httpx.MockTransport(stub)
-            ) as gateway:
+            async with _gateway(settings, engine, httpx.MockTransport(stub)) as gateway:
                 await gateway.complete_structured(_request())
                 await gateway.complete_structured(_request())
         finally:
@@ -484,7 +509,7 @@ def test_unknown_digest_is_cached_briefly(db_url: str) -> None:
         settings = _settings(db_url)
         engine = create_engine(settings)
         try:
-            async with ModelGateway(settings, engine, transport=httpx.MockTransport(stub)) as gw:
+            async with _gateway(settings, engine, httpx.MockTransport(stub)) as gw:
                 await gw.complete_structured(_request())
                 await gw.complete_structured(_request())
         finally:
@@ -582,7 +607,7 @@ def test_cancelled_call_writes_no_row(db_url: str, sync_engine: Engine, provider
     marker = f"cancelled-{new_id()}"
 
     async def scenario() -> None:
-        settings = _settings(db_url, provider)
+        settings = _settings(db_url)
         engine = create_engine(settings)
         started = asyncio.Event()
 
@@ -593,10 +618,11 @@ def test_cancelled_call_writes_no_row(db_url: str, sync_engine: Engine, provider
 
         caller = CallerMetadata(agent_id="intake_agent", config_version=marker)
         try:
-            async with ModelGateway(
-                settings, engine, transport=httpx.MockTransport(StubOllama([hang]))
+            async with _gateway(
+                settings, engine, httpx.MockTransport(StubOllama([hang]))
             ) as gateway:
-                task = asyncio.create_task(gateway.complete_structured(_request(caller=caller)))
+                request = _request(caller=caller, profile=PROFILES[provider])
+                task = asyncio.create_task(gateway.complete_structured(request))
                 await started.wait()
                 task.cancel()
                 with pytest.raises(asyncio.CancelledError):
@@ -661,23 +687,6 @@ def test_no_prompt_or_reply_text_in_logs_rows_or_errors(
 # --- profiles -----------------------------------------------------------------------------
 
 
-def test_profiles_are_defined() -> None:
-    assert MODEL_PROFILES["ollama-cloud-chat"].model == "gpt-oss:120b-cloud"
-    assert MODEL_PROFILES["ollama-cloud-chat"].num_ctx == 32768
-    assert MODEL_PROFILES["ollama-cloud-chat"].provider == "ollama"
-    cloud = MODEL_PROFILES["openai-chat"]
-    assert (cloud.model, cloud.provider) == ("gpt-4.1-mini", "openai")
-    assert set(MODEL_PROFILES) == {"ollama-cloud-chat", "openai-chat", "anthropic-chat"}
-    claude = MODEL_PROFILES["anthropic-chat"]
-    assert (claude.model, claude.provider) == ("claude-opus-5-5", "anthropic")
-    assert (claude.num_ctx, claude.max_tokens) == (32768, 16000)
-    assert (claude.reasoning_effort, claude.refusal_fallback) == ("medium", True)
-    assert not any(p.refusal_fallback for p in MODEL_PROFILES.values() if p.provider != "anthropic")
-    assert all(p.temperature == 0.1 for p in MODEL_PROFILES.values())
-    with pytest.raises(UnknownModelProfileError):
-        get_profile("nope")
-
-
 @pytest.mark.parametrize("with_resolver", [True, False])
 def test_an_unknown_profile_raises_with_no_provider_call(db_url: str, with_resolver: bool) -> None:
     stub = StubOllama([VALID])
@@ -704,9 +713,9 @@ def test_an_unknown_profile_raises_with_no_provider_call(db_url: str, with_resol
     assert stub.chat_bodies == []
 
 
-def test_configured_ollama_profile_sends_its_options(db_url: str, sync_engine: Engine) -> None:
+def test_resolved_ollama_profile_sends_its_options(db_url: str, sync_engine: Engine) -> None:
     stub = StubOllama([VALID])
-    result = _call(db_url, stub, model_profile_chat="ollama-cloud-chat")
+    result = _call(db_url, stub, provider="ollama")
     assert isinstance(result, StructuredResult)
     [body] = stub.chat_bodies
     assert body["model"] == "gpt-oss:120b-cloud"
@@ -714,13 +723,29 @@ def test_configured_ollama_profile_sends_its_options(db_url: str, sync_engine: E
     assert _row(sync_engine, result.call_id)["profile"] == "ollama-cloud-chat"
 
 
-def test_unknown_configured_profile_fails_at_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_leftover_chat_profile_variable_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PSA_MODEL_PROFILE_CHAT", "gpt-5-turbo")
-    with pytest.raises(ValidationError, match="not a known profile"):
-        Settings()
+    assert not hasattr(Settings(), "model_profile_chat")
 
 
-def test_request_profile_overrides_configured_one(db_url: str) -> None:
+def test_a_gateway_without_a_resolver_knows_no_chat_profile(db_url: str) -> None:
+    stub = StubOllama([VALID])
+
+    async def scenario() -> None:
+        config = _settings(db_url)
+        engine = create_engine(config)
+        try:
+            async with ModelGateway(config, engine, transport=httpx.MockTransport(stub)) as gw:
+                await gw.complete_structured(_request())  # a seeded name
+        finally:
+            await engine.dispose()
+
+    with pytest.raises(UnknownModelProfileError, match="ollama-cloud-chat"):
+        run_async(scenario())
+    assert stub.chat_bodies == []
+
+
+def test_the_request_profile_picks_the_model(db_url: str) -> None:
     stub = StubOllama([VALID])
     _call(db_url, stub, _request(profile="openai-chat"))
     assert stub.chat_bodies[0]["model"] == "gpt-4.1-mini"
@@ -731,7 +756,7 @@ def test_request_profile_overrides_configured_one(db_url: str) -> None:
 
 def test_openai_cloud_profile_sends_the_openai_model_id(db_url: str, sync_engine: Engine) -> None:
     stub = StubOllama([VALID])
-    result = _call(db_url, stub, model_profile_chat="openai-chat")
+    result = _call(db_url, stub, provider="openai")
     assert isinstance(result, StructuredResult)
     [request] = stub.requests
     assert (request.method, str(request.url)) == ("POST", OPENAI_URL)
@@ -750,12 +775,10 @@ def test_alert_email_recipients_are_a_comma_list(monkeypatch: pytest.MonkeyPatch
 def test_reasoning_effort_replaces_temperature_for_an_openai_reasoning_model(
     db_url: str, sync_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    reasoning = replace(
-        profiles.get_profile("openai-chat"), model="o4-mini", reasoning_effort="medium"
-    )
-    monkeypatch.setattr(profiles, "MODEL_PROFILES", {"openai-chat": reasoning})
+    reasoning = replace(SEEDED["openai-chat"], model="o4-mini", reasoning_effort="medium")
+    monkeypatch.setitem(SEEDED, "openai-chat", reasoning)
     stub = StubOllama([VALID])
-    result = _call(db_url, stub, model_profile_chat="openai-chat")
+    result = _call(db_url, stub, provider="openai")
     assert isinstance(result, StructuredResult)
     [body] = stub.chat_bodies
     assert body["model"] == "o4-mini"
@@ -767,7 +790,7 @@ def test_reasoning_effort_replaces_temperature_for_an_openai_reasoning_model(
 
 def test_without_reasoning_effort_openai_requests_send_temperature(db_url: str) -> None:
     stub = StubOllama([VALID])
-    _call(db_url, stub, model_profile_chat="openai-chat")
+    _call(db_url, stub, provider="openai")
     [body] = stub.chat_bodies
     assert body["temperature"] == 0.1
     assert "reasoning_effort" not in body
@@ -823,17 +846,15 @@ def test_openai_api_key_is_sent_as_bearer_and_never_logged(
     stub = StubOllama([VALID, httpx.Response(401, text="bad key"), VALID])
 
     async def scenario() -> ModelGatewayError:
-        settings = _settings(db_url, "openai", openai_api_key=f" {API_KEY}\n")
+        settings = _settings(db_url, openai_api_key=f" {API_KEY}\n")
         assert API_KEY not in repr(settings)
         engine = create_engine(settings)
         try:
-            async with ModelGateway(settings, engine, transport=httpx.MockTransport(stub)) as gw:
-                await gw.complete_structured(_request())
+            async with _gateway(settings, engine, httpx.MockTransport(stub)) as gw:
+                await gw.complete_structured(_request(profile="openai-chat"))
                 with pytest.raises(ModelUnavailableError) as info:
-                    await gw.complete_structured(_request())
-                await gw.complete_structured(
-                    _request(profile="ollama-cloud-chat")
-                )  # Ollama: no key
+                    await gw.complete_structured(_request(profile="openai-chat"))
+                await gw.complete_structured(_request())  # Ollama: no key
                 return info.value
         finally:
             await engine.dispose()
@@ -997,8 +1018,9 @@ def test_slot_is_released_on_error() -> None:
 
 def test_gateway_releases_slot_after_errors_and_cancellation(db_url: str, provider: str) -> None:
     async def scenario() -> None:
-        settings = _settings(db_url, provider)
+        settings = _settings(db_url)
         engine: AsyncEngine = create_engine(settings)
+        profile = PROFILES[provider]
         started = asyncio.Event()
 
         async def slow() -> Reply:
@@ -1008,20 +1030,20 @@ def test_gateway_releases_slot_after_errors_and_cancellation(db_url: str, provid
 
         stub = StubOllama([httpx.Response(500), slow, VALID])
         try:
-            async with ModelGateway(
-                settings, engine, transport=httpx.MockTransport(stub)
-            ) as gateway:
+            async with _gateway(settings, engine, httpx.MockTransport(stub)) as gateway:
                 with pytest.raises(ModelUnavailableError):
-                    await gateway.complete_structured(_request())
+                    await gateway.complete_structured(_request(profile=profile))
                 assert gateway.semaphore.free == 1
-                task = asyncio.create_task(gateway.complete_structured(_request()))
+                task = asyncio.create_task(gateway.complete_structured(_request(profile=profile)))
                 await started.wait()
                 assert gateway.semaphore.free == 0
                 task.cancel()
                 with pytest.raises(asyncio.CancelledError):
                     await task
                 assert gateway.semaphore.free == 1
-                result = await gateway.complete_structured(_request(priority="background"))
+                result = await gateway.complete_structured(
+                    _request(priority="background", profile=profile)
+                )
                 assert result.attempts == 1
         finally:
             await engine.dispose()
@@ -1034,8 +1056,9 @@ def test_gateway_waits_for_a_slot_with_priority(db_url: str, provider: str) -> N
     interactive call reaches the model first."""
 
     async def scenario() -> list[str]:
-        settings = _settings(db_url, provider)
+        settings = _settings(db_url)
         engine = create_engine(settings)
+        profile = PROFILES[provider]
         release_first = asyncio.Event()
         first_started = asyncio.Event()
         seen: list[str] = []
@@ -1053,14 +1076,16 @@ def test_gateway_waits_for_a_slot_with_priority(db_url: str, provider: str) -> N
 
         stub = Recording([first, VALID, VALID])
         try:
-            async with ModelGateway(
-                settings, engine, transport=httpx.MockTransport(stub)
-            ) as gateway:
-                holder = asyncio.create_task(gateway.complete_structured(_request()))
+            async with _gateway(settings, engine, httpx.MockTransport(stub)) as gateway:
+                holder = asyncio.create_task(gateway.complete_structured(_request(profile=profile)))
                 await first_started.wait()
 
                 def req(tag: str, priority: str) -> StructuredRequest[Extraction]:
-                    return _request(messages=[Message(role="user", content=tag)], priority=priority)
+                    return _request(
+                        messages=[Message(role="user", content=tag)],
+                        priority=priority,
+                        profile=profile,
+                    )
 
                 sem = gateway.semaphore
                 bg = asyncio.create_task(gateway.complete_structured(req("bg", "background")))
@@ -1079,12 +1104,13 @@ def test_gateway_waits_for_a_slot_with_priority(db_url: str, provider: str) -> N
 def test_request_validation() -> None:
     caller = CallerMetadata(agent_id="a", config_version="1")
     with pytest.raises(ValueError, match="at least one message"):
-        StructuredRequest(messages=[], output_model=Extraction, caller=caller)
+        StructuredRequest(messages=[], output_model=Extraction, caller=caller, profile="p")
     with pytest.raises(ValueError, match="timeout_s"):
         StructuredRequest(
             messages=[Message(role="user", content="x")],
             output_model=Extraction,
             caller=caller,
+            profile="p",
             timeout_s=0,
         )
 
@@ -1111,7 +1137,7 @@ def _embed_run(
         config = _settings(db_url)
         engine = create_engine(config)
         try:
-            async with ModelGateway(config, engine, transport=httpx.MockTransport(stub)) as gw:
+            async with _gateway(config, engine, httpx.MockTransport(stub)) as gw:
                 try:
                     return await gw.embed(
                         EmbedRequest(
@@ -1193,3 +1219,51 @@ def test_embed_failing_in_the_second_batch_raises_after_one_error_row(
     (row,) = _embed_rows(sync_engine, since)
     assert (row["outcome"], row["error_code"], row["attempts"]) == ("error", "http_503", 2)
     assert row["id"] == result.call_id
+
+
+# --- the smoke check ----------------------------------------------------------------------------
+
+
+def stubbed(gateway: type[ModelGateway], stub: StubOllama) -> type[ModelGateway]:
+    """`gateway` with its network replaced by `stub`; everything else, including the registry
+    resolver its caller injects, stays real."""
+
+    class Stubbed(gateway):  # type: ignore[valid-type,misc]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, transport=httpx.MockTransport(stub), **kwargs)
+
+    return Stubbed
+
+
+def _smoke(db_url: str, monkeypatch: pytest.MonkeyPatch, stub: StubOllama, profile: str) -> int:
+    from app.platform.model_gateway import smoke
+
+    monkeypatch.setattr(smoke, "get_settings", lambda: _settings(db_url))
+    monkeypatch.setattr(smoke, "ModelGateway", stubbed(ModelGateway, stub))
+    return run_async(smoke._main(profile))
+
+
+def test_the_smoke_check_needs_a_profile() -> None:
+    from app.platform.model_gateway import smoke
+
+    with pytest.raises(SystemExit) as info:
+        smoke.main([])
+    assert info.value.code == 2
+
+
+def test_the_smoke_check_resolves_its_profile_from_the_registry(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub = StubOllama(['{"status": "ok", "sum": 5}'])
+    assert _smoke(db_url, monkeypatch, stub, "ollama-cloud-chat") == 0
+    assert [body["model"] for body in stub.chat_bodies] == ["gpt-oss:120b-cloud"]
+    assert capsys.readouterr().out.startswith("ok profile=ollama-cloud-chat ")
+
+
+def test_the_smoke_check_refuses_an_unknown_profile(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub = StubOllama([])
+    assert _smoke(db_url, monkeypatch, stub, "no-such-profile") == 2
+    assert stub.chat_bodies == []
+    assert capsys.readouterr().out.strip() == "unknown_profile profile=no-such-profile"

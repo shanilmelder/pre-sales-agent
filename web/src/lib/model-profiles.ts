@@ -7,9 +7,10 @@ export type ApprovedModel = components["schemas"]["ApprovedModelView"];
 export type ProfileState = ModelProfile["state"];
 export type Provider = ModelProfile["provider"];
 
-export const PROVIDERS: readonly Provider[] = ["ollama", "openai"];
+export const PROVIDERS: readonly Provider[] = ["ollama", "openai", "anthropic"];
 export const REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+export const DEFAULT_ANTHROPIC_EFFORT: ReasoningEffort = "medium";
 
 export const NAME_MAX = 64;
 export const NUM_CTX_MIN = 16384;
@@ -26,7 +27,7 @@ export const OFF_HOST_WARNING =
   "This profile sends prompt text off the host. Use it only with sample or anonymised " +
   "Opportunities until IT approves that data handling.";
 export const OFF_HOST_NOTE = "Sends prompt text off the host";
-export const NO_PROFILES = "No custom model profiles yet. The built-in profiles are always there.";
+export const NO_PROFILES = "No model profiles yet.";
 export const NO_APPROVED_MODELS = "No approved models yet.";
 export const NO_APPROVED_FOR_PROVIDER = "No model is approved for this provider yet.";
 
@@ -67,7 +68,12 @@ export function samplingLabel(profile: ModelProfile): string {
 }
 
 /** The latest test result in plain words, or null before one. Codes and timings only. */
+export const SEEDED_RESULT = "Seeded, not tested";
+
+/** The latest live test's outcome. A `verified` profile with no test (one a migration seeds)
+ * says so; null when there is no result yet. */
 export function testResult(profile: ModelProfile): string | null {
+  if (profile.state === "verified" && profile.latency_ms === null) return SEEDED_RESULT;
   if (profile.state === "untested" || profile.latency_ms === null) return null;
   const took = `${profile.latency_ms.toLocaleString("en-GB")} ms`;
   return profile.error_code ? `${profile.error_code} after ${took}` : `Passed in ${took}`;
