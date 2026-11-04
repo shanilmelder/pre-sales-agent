@@ -12,6 +12,7 @@ through the same application services the API uses. From `backend/`:
 
     uv run python -m scripts.seed_demo
     uv run python -m scripts.seed_demo --dry-run   # list what would be created
+    uv run python -m scripts.seed_demo --limit 1   # only the first demo Opportunity
 
 The api image holds only `app/` and `migrations/`, so on a cluster pipe the file into the pod:
 
@@ -105,7 +106,7 @@ async def ensure_seed_user(uow: UnitOfWork) -> Principal:
     )
 
 
-async def seed(dry_run: bool) -> int:
+async def seed(dry_run: bool, limit: int | None = None) -> int:
     engine = create_engine(get_settings())
     created = 0
     try:
@@ -114,7 +115,7 @@ async def seed(dry_run: bool) -> int:
             page = await opportunities.list_mine(uow, owner, page_size=100)
             have = {item.customer_name for item in page.items}
             today = date.today()
-            for demo in DEMOS:
+            for demo in DEMOS[:limit]:
                 if demo.customer in have:
                     print(f"exists   {demo.customer}")
                     continue
@@ -150,8 +151,11 @@ class _DryRun(Exception):
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--dry-run", action="store_true", help="show what would be created")
+    parser.add_argument(
+        "--limit", type=int, metavar="N", help="create only the first N demo Opportunities"
+    )
     args = parser.parse_args(argv)
-    return asyncio.run(seed(args.dry_run))
+    return asyncio.run(seed(args.dry_run, args.limit))
 
 
 if __name__ == "__main__":
